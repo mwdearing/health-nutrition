@@ -1,0 +1,19 @@
+name: public-hygiene
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reject private paths, tracker ids and attribution text
+        run: |
+          if git grep -nE -e '/home/[a-z]+/' -e '/var/lib/' -e 'PILA-[0-9]' -e 'Co-Authored-By' -e 'Generated with' -- . ':(exclude).github/workflows/public-hygiene.yml' ':(exclude).github/scripts/attribution_check.py'; then
+            echo "Private or attribution text found in the tree." >&2
+            exit 1
+          fi
