@@ -1,0 +1,19 @@
+# Swift / Xcode
+.build/
+.swiftpm/
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Local tooling
+.acceptance/
+.paperclip/
+
+.DS_Store
