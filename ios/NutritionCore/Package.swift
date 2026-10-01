@@ -9,9 +9,12 @@ let package = Package(
     ],
     products: [
         .library(name: "NutritionCore", targets: ["NutritionCore"]),
+        .library(name: "NutritionDomain", targets: ["NutritionDomain"]),
     ],
     targets: [
         .target(name: "NutritionCore"),
         .testTarget(name: "NutritionCoreTests", dependencies: ["NutritionCore"]),
+        .target(name: "NutritionDomain", path: "Sources/NutritionDomain"),
+        .testTarget(name: "NutritionDomainTests", dependencies: ["NutritionDomain"]),
     ]
 )
