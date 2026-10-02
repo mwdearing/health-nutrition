@@ -26,12 +26,7 @@ def fixture_root() -> Path:
     configured_root = os.environ.get("DSLD_FIXTURE_DIR")
     if configured_root:
         return Path(configured_root)
-    return (
-        Path(__file__).resolve().parents[2]
-        / "contracts"
-        / "providers"
-        / "dsld"
-    )
+    return Path(__file__).resolve().parents[2] / "contracts" / "providers" / "dsld"
 
 
 @pytest.fixture(scope="module")
@@ -41,14 +36,12 @@ def manifest(fixture_root: Path) -> dict[str, Any]:
 
 
 def _entry_path(fixture_root: Path, entry: dict[str, Any]) -> Path:
-    return fixture_root / entry["path"]
+    return fixture_root / entry["file"]
 
 
 def _label_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     entries = [
-        entry
-        for entry in manifest["files"]
-        if LABEL_METADATA_KEYS.intersection(entry)
+        entry for entry in manifest["files"] if LABEL_METADATA_KEYS.intersection(entry)
     ]
     assert entries
     return entries
@@ -62,7 +55,7 @@ def test_manifest_files_listed(
     fixture_root: Path,
     manifest: dict[str, Any],
 ) -> None:
-    listed_paths = {entry["path"] for entry in manifest["files"]}
+    listed_paths = {entry["file"] for entry in manifest["files"]}
     fixture_paths = {
         path.relative_to(fixture_root).as_posix()
         for path in (fixture_root / "fixtures").rglob("*")
@@ -123,7 +116,7 @@ def test_version_json(
     fixture_root: Path,
     manifest: dict[str, Any],
 ) -> None:
-    version_path = fixture_root / "version.json"
+    version_path = fixture_root / "fixtures" / "version.json"
     version = json.loads(version_path.read_text(encoding="utf-8"))
 
     assert version["config"] == "production"
