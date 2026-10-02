@@ -1,6 +1,6 @@
 # ADR 0001: Persistence for the intake journal (SwiftData or Core Data)
 
-Status: Proposed. Decision: pending, Michael decides.
+Status: Accepted. Decision: SwiftData (2026-10-01).
 
 ## Context
 
@@ -61,7 +61,7 @@ Notes on what the cases do and do not prove:
 
 ## Recommendation
 
-Recommend SwiftData. All six cases pass on both stores, so by the rule set before
+SwiftData was recommended. All six cases pass on both stores, so by the rule set before
 the run (SwiftData only if every case passes) it wins on less code and a fit with the
 iOS 18 minimum. Caveats: the failure-injection cases prove rollback and an untouched
 v1 file, not a real constraint violation or full disk, and the migrations tested are
@@ -71,16 +71,19 @@ is small.
 
 ## Decision
 
-Pending: Michael decides.
+SwiftData, decided on 2026-10-01 by Michael's delegation, on the spike results above (all
+six cases pass on both stores). Review date: 2026-11-02. The journal store is built on
+SwiftData in the `NutritionJournal` target (see `docs/journal-store.md`); the
+`JournalStore` protocol stays as the seam. Before the first release, re-run the
+failed-migration case with a real schema change.
 
 ## Consequences
 
-- Whichever store is chosen, the other implementation and the spike targets are
-  deleted, and the protocol stays as the seam for the real journal.
-- Choosing SwiftData ties data access to model classes and a macro toolchain; choosing
-  Core Data keeps a hand-built or editor-built model and untyped key access unless
-  wrapped.
-- Schema changes after release need a migration test per version either way; the
+- The spike targets (`JournalStoreSpike` and its tests, including the Core Data
+  implementation) are removed in a follow-up cleanup pull request after the journal
+  store (NC-02) merges. The protocol stays as the seam for the real journal.
+- Choosing SwiftData ties data access to model classes and a macro toolchain.
+- Schema changes after release need a migration test per version; the
   failed-migration case above becomes a release gate.
 - Outbox and revision stay in one store and one transaction in both options; no
   cross-store design is needed.
