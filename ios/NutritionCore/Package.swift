@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "NutritionCore", targets: ["NutritionCore"]),
         .library(name: "NutritionDomain", targets: ["NutritionDomain"]),
         .library(name: "NutritionProviders", targets: ["NutritionProviders"]),
+        .library(name: "NutritionJournal", targets: ["NutritionJournal"]),
     ],
     targets: [
         .target(name: "NutritionCore"),
@@ -21,5 +22,7 @@ let package = Package(
         .testTarget(name: "NutritionProvidersTests", dependencies: ["NutritionProviders"], resources: [.copy("Fixtures")]),
         .target(name: "JournalStoreSpike", swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "JournalStoreSpikeTests", dependencies: ["JournalStoreSpike"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "NutritionJournal", dependencies: ["NutritionDomain"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "NutritionJournalTests", dependencies: ["NutritionJournal"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
