@@ -8,7 +8,7 @@ The app reads one product at a time from the Open Food Facts API v3
 (`/api/v3/product/<barcode>`) after the user scans or types a barcode. The request
 asks only for the fields it needs: code, product name, brands, serving size,
 serving quantity, the basis of the nutrition data, the nutriments and the last
-modification time. The use is read-only; the app never writes to Open Food Facts.
+modification time and the unit of the product quantity. The use is read-only; the app never writes to Open Food Facts.
 
 Nutrient amounts are decoded as decimal numbers. Open Food Facts normalises the
 `_100g` and `_serving` values to canonical units (kcal for energy, grams for every
@@ -20,14 +20,15 @@ Amounts in the `*_100g` and `*_serving` fields are read in the canonical units o
 Open Food Facts (kcal for energy, grams for all other nutrients), and the `*_unit`
 field is ignored because it only describes the unit the contributor entered.
 
-The basis of the values is one of four cases:
+The basis of the values is one of four cases. Only `nutrition_data_per` and
+`product_quantity_unit` decide it; the serving size text is kept as text and is never
+used to infer the basis.
 
 - `perServing`: `nutrition_data_per` is "serving"; the `_serving` values are read.
-- `per100ml`: otherwise, and the serving size text has a volume unit (ml, cl, dl, l,
-  fl oz).
-- `per100g`: otherwise, and the serving size text has a mass unit (g, mg, kg, oz).
-- `per100Unspecified`: 100 g or 100 ml, the source does not say (no serving size, or
-  a unit that is not recognised). Nothing is guessed.
+- `per100ml`: otherwise, and `product_quantity_unit` is "ml" (any case).
+- `per100g`: otherwise, and `product_quantity_unit` is "g" (any case).
+- `per100Unspecified`: 100 g or 100 ml, the source does not say (the unit is missing
+  or anything else). Nothing is guessed.
 
 The product always carries all nine standard nutrient keys; a missing one is unknown.
 

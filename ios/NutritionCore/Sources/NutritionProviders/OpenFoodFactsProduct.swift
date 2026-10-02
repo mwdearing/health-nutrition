@@ -8,41 +8,20 @@ public enum OpenFoodFactsBasis: String, Sendable, Hashable {
     case per100Unspecified
     case perServing
 
-    /// `nutrition_data_per == "serving"` means per serving. Otherwise the unit of the serving size
-    /// text decides: volume gives per 100 ml, mass gives per 100 g, anything else is unspecified.
-    static func decide(dataPer: String?, servingSize: String?) -> OpenFoodFactsBasis {
+    /// `nutrition_data_per == "serving"` means per serving. Otherwise only `product_quantity_unit`
+    /// decides: "ml" gives per 100 ml, "g" gives per 100 g, anything else or missing is unspecified.
+    static func decide(dataPer: String?, quantityUnit: String?) -> OpenFoodFactsBasis {
         if dataPer == "serving" {
             return .perServing
         }
-        guard let unit = servingUnit(servingSize) else {
+        switch quantityUnit?.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "ml":
+            return .per100ml
+        case "g":
+            return .per100g
+        default:
             return .per100Unspecified
         }
-        if ["ml", "cl", "dl", "l", "floz"].contains(unit) {
-            return .per100ml
-        }
-        if ["g", "mg", "kg", "oz"].contains(unit) {
-            return .per100g
-        }
-        return .per100Unspecified
-    }
-
-    /// The unit after a leading number, lowercased, without spaces or dots, ignoring a trailing
-    /// parenthetical. Nil when the text does not start with a number.
-    private static func servingUnit(_ text: String?) -> String? {
-        guard let text else {
-            return nil
-        }
-        var rest = Substring(text.lowercased().trimmingCharacters(in: .whitespaces))
-        let digitsEnd = rest.firstIndex { !($0.isASCII && ($0.isNumber || $0 == "." || $0 == ",")) } ?? rest.endIndex
-        guard digitsEnd != rest.startIndex, rest[..<digitsEnd].contains(where: { $0.isASCII && $0.isNumber }) else {
-            return nil
-        }
-        rest = rest[digitsEnd...]
-        if let open = rest.firstIndex(of: "(") {
-            rest = rest[..<open]
-        }
-        let unit = rest.filter { $0 != " " && $0 != "." }
-        return unit.isEmpty ? nil : unit
     }
 }
 
@@ -141,7 +120,7 @@ struct OpenFoodFactsScalar: Decodable {
         else {
             return nil
         }
-        return Decimal(string: raw, locale: nil)
+        return Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX"))
     }
 }
 
@@ -159,6 +138,7 @@ struct OpenFoodFactsResponse: Decodable {
         let nutrition_data_per: OpenFoodFactsScalar?
         let nutriments: [String: OpenFoodFactsScalar]?
         let last_modified_t: OpenFoodFactsScalar?
+        let product_quantity_unit: OpenFoodFactsScalar?
     }
 
     let result: Result?
@@ -179,7 +159,7 @@ extension OpenFoodFactsProduct {
     ]
 
     init(body: OpenFoodFactsResponse.Body, requestedBarcode: String) {
-        let basis = OpenFoodFactsBasis.decide(dataPer: body.nutrition_data_per?.text, servingSize: body.serving_size?.text)
+        let basis = OpenFoodFactsBasis.decide(dataPer: body.nutrition_data_per?.text, quantityUnit: body.product_quantity_unit?.text)
         let suffix = basis == .perServing ? "_serving" : "_100g"
         let source = body.nutriments ?? [:]
         var nutrients: [String: NutrientValue] = [:]

@@ -3,7 +3,7 @@ import Foundation
 public actor OpenFoodFactsClient {
     public static let requestedFields = [
         "code", "product_name", "brands", "serving_size", "serving_quantity",
-        "nutrition_data_per", "nutriments", "last_modified_t",
+        "nutrition_data_per", "nutriments", "last_modified_t", "product_quantity_unit",
     ]
     /// Open Food Facts allows 100 product reads per minute; we stay far below at 15.
     public static let maxLookups = 15

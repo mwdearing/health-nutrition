@@ -53,7 +53,7 @@ final class OpenFoodFactsClientTests: XCTestCase {
     }
 
     private func dec(_ text: String) -> Decimal {
-        Decimal(string: text, locale: nil)!
+        Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))!
     }
 
     private func found(_ outcome: OpenFoodFactsOutcome, file: StaticString = #filePath, line: UInt = #line) throws -> OpenFoodFactsProduct {
@@ -141,32 +141,46 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], .known(dec("1.5"), .g))
     }
 
-    private func basis(servingSize: String?, per: String = "100g") async throws -> OpenFoodFactsBasis {
+    private func basis(servingSize: String? = nil, quantityUnit: String?, per: String = "100g") async throws -> OpenFoodFactsBasis {
         let size = servingSize.map { "\"serving_size\":\"\($0)\"," } ?? ""
+        let unit = quantityUnit.map { "\"product_quantity_unit\":\"\($0)\"," } ?? ""
         let json = """
         {"code":"2000000000015","result":{"id":"product_found"},
-         "product":{\(size)"nutrition_data_per":"\(per)","nutriments":{"fat_100g":1}}}
+         "product":{\(size)\(unit)"nutrition_data_per":"\(per)","nutriments":{"fat_100g":1}}}
         """
         return try found(await client(StubTransport(body: Data(json.utf8))).lookup(barcode: foundCode)).basis
     }
 
-    func testBasisFromServingSizeUnit() async throws {
-        let drink = try await basis(servingSize: "250 ml")
+    func testBasisFromProductQuantityUnitOnly() async throws {
+        let powder = try await basis(servingSize: "200 ml", quantityUnit: "g")
+        XCTAssertEqual(powder, .per100g)
+        XCTAssertNotEqual(powder, .per100ml)
+        let powderNoUnit = try await basis(servingSize: "200 ml", quantityUnit: nil)
+        XCTAssertEqual(powderNoUnit, .per100Unspecified)
+        XCTAssertNotEqual(powderNoUnit, .per100ml)
+        let drink = try await basis(quantityUnit: "ml")
         XCTAssertEqual(drink, .per100ml)
-        let solid = try await basis(servingSize: "30 g")
+        let solid = try await basis(servingSize: "30 g", quantityUnit: "g")
         XCTAssertEqual(solid, .per100g)
-        let fluidOunce = try await basis(servingSize: "8 fl.oz (240 ml)")
-        XCTAssertEqual(fluidOunce, .per100ml)
-        let litre = try await basis(servingSize: "1,5L")
-        XCTAssertEqual(litre, .per100ml)
-        let missing = try await basis(servingSize: nil)
+        let missing = try await basis(quantityUnit: nil)
         XCTAssertEqual(missing, .per100Unspecified)
-        let unrecognised = try await basis(servingSize: "1 biscuit")
-        XCTAssertEqual(unrecognised, .per100Unspecified)
-        let noNumber = try await basis(servingSize: "ml")
-        XCTAssertEqual(noNumber, .per100Unspecified)
-        let perServing = try await basis(servingSize: "250 ml", per: "serving")
+        let upper = try await basis(quantityUnit: " ML ")
+        XCTAssertEqual(upper, .per100ml)
+        let other = try await basis(quantityUnit: "oz")
+        XCTAssertEqual(other, .per100Unspecified)
+        let perServing = try await basis(quantityUnit: "ml", per: "serving")
         XCTAssertEqual(perServing, .perServing)
+    }
+
+    func testTextAmountsDecodeExactly() async throws {
+        let json = """
+        {"code":"2000000000015","result":{"id":"product_found"},
+         "product":{"nutriments":{"fat_100g":"1.5","sugars_100g":"0.01"}}}
+        """
+        let product = try found(await client(StubTransport(body: Data(json.utf8))).lookup(barcode: foundCode))
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], .known(dec("1.5"), .g))
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sugars], .known(dec("0.01"), .g))
+        XCTAssertEqual(Decimal(string: "1.5", locale: Locale(identifier: "en_US_POSIX")), dec("1.5"))
     }
 
     func testInitializerFillsMissingStandardKeysWithUnknown() {
@@ -283,7 +297,7 @@ final class OpenFoodFactsClientTests: XCTestCase {
         let fields = components.queryItems?.first { $0.name == "fields" }?.value
         XCTAssertEqual(
             fields,
-            "code,product_name,brands,serving_size,serving_quantity,nutrition_data_per,nutriments,last_modified_t"
+            "code,product_name,brands,serving_size,serving_quantity,nutrition_data_per,nutriments,last_modified_t,product_quantity_unit"
         )
         XCTAssertEqual(components.queryItems?.count, 1)
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
