@@ -17,15 +17,11 @@ final class StubTransport: OpenFoodFactsTransport, @unchecked Sendable {
     }
 
     var requests: [URLRequest] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recorded
+        lock.withLock { recorded }
     }
 
     func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        lock.lock()
-        recorded.append(request)
-        lock.unlock()
+        lock.withLock { recorded.append(request) }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
         return (body, response)
     }
@@ -36,15 +32,11 @@ final class TestClock: @unchecked Sendable {
     private var current = Date(timeIntervalSince1970: 1_800_000_000)
 
     func now() -> Date {
-        lock.lock()
-        defer { lock.unlock() }
-        return current
+        lock.withLock { current }
     }
 
     func advance(_ seconds: TimeInterval) {
-        lock.lock()
-        current = current.addingTimeInterval(seconds)
-        lock.unlock()
+        lock.withLock { current = current.addingTimeInterval(seconds) }
     }
 }
 
