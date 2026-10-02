@@ -82,22 +82,28 @@ public struct Token: Sendable, Equatable {
     public let name: String
     public let light: RGB
     public let dark: RGB
+    /// The "#RRGGBB" text the token was declared with (upper-case when built from RGB values).
+    public let lightHex: String
+    public let darkHex: String
 
     public init(name: String, light: RGB, dark: RGB) {
         self.name = name
         self.light = light
         self.dark = dark
+        self.lightHex = light.hex
+        self.darkHex = dark.hex
     }
 
-    /// Takes "#RRGGBB" strings. A malformed string becomes black, and the tests reject
-    /// every table entry that does not round-trip, so a typo cannot ship unnoticed.
+    /// Takes "#RRGGBB" strings. A malformed string becomes black here, but the original text is
+    /// kept in `lightHex` / `darkHex`, and the tests re-parse every declared string with the
+    /// throwing `RGB(hex:)`, so a typo in the table fails the tests instead of shipping.
     public init(name: String, light: String, dark: String) {
         let black = RGB(red: 0, green: 0, blue: 0)
-        self.init(
-            name: name,
-            light: (try? RGB(hex: light)) ?? black,
-            dark: (try? RGB(hex: dark)) ?? black
-        )
+        self.name = name
+        self.light = (try? RGB(hex: light)) ?? black
+        self.dark = (try? RGB(hex: dark)) ?? black
+        self.lightHex = light
+        self.darkHex = dark
     }
 }
 

@@ -121,6 +121,20 @@ final class NutritionTokensTests: XCTestCase {
         XCTAssertEqual(try rgb("#000000").relativeLuminance, 0.0, accuracy: 0.0001)
     }
 
+    func testEveryDeclaredHexLiteralParsesAndRoundTrips() throws {
+        for item in NutritionTokens.audited + NutritionTokens.semantic {
+            for (label, text) in [("light", item.lightHex), ("dark", item.darkHex)] {
+                let parsed = try RGB(hex: text)
+                XCTAssertEqual(parsed.hex, text.uppercased(), "\(item.name) \(label)")
+            }
+            XCTAssertEqual(item.light, try RGB(hex: item.lightHex), "\(item.name) light stored value")
+            XCTAssertEqual(item.dark, try RGB(hex: item.darkHex), "\(item.name) dark stored value")
+        }
+        let broken = Token(name: "broken", light: "#12345", dark: "#ZZZZZZ")
+        XCTAssertThrowsError(try RGB(hex: broken.lightHex))
+        XCTAssertThrowsError(try RGB(hex: broken.darkHex))
+    }
+
     func testTokenNamesAreUnique() {
         let names = (NutritionTokens.audited + NutritionTokens.semantic).map { $0.name }
         XCTAssertEqual(Set(names).count, names.count)
