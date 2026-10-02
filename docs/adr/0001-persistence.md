@@ -35,17 +35,17 @@ and for Core Data a store opened with automatic migration switched off.
 
 ## Results
 
-Nothing could be compiled or run on the machine that wrote the spike. Every cell
-below is therefore pending the macOS CI run; nothing is claimed as passing.
+The spike was written without a Swift compiler; the macOS CI run (swift-test job on
+the pull request) compiled and ran it. All twelve tests passed (12 executed, 0 failures).
 
 | Case | SwiftData | Core Data |
 | --- | --- | --- |
-| MigrationV1ToV2KeepsData | not run locally; CI result pending | not run locally; CI result pending |
-| RevisionAndOutboxCommitAtomically | not run locally; CI result pending | not run locally; CI result pending |
-| FailedSaveLeavesNeitherRevisionNorOutbox | not run locally; CI result pending | not run locally; CI result pending |
-| BackgroundContextReadsCommittedData | not run locally; CI result pending | not run locally; CI result pending |
-| FailedMigrationLeavesStoreReadable | not run locally; CI result pending | not run locally; CI result pending |
-| ReopenAfterCloseKeepsData | not run locally; CI result pending | not run locally; CI result pending |
+| MigrationV1ToV2KeepsData | pass | pass |
+| RevisionAndOutboxCommitAtomically | pass | pass |
+| FailedSaveLeavesNeitherRevisionNorOutbox | pass | pass |
+| BackgroundContextReadsCommittedData | pass | pass |
+| FailedMigrationLeavesStoreReadable | pass | pass |
+| ReopenAfterCloseKeepsData | pass | pass |
 
 Notes on what the cases do and do not prove:
 
@@ -61,12 +61,13 @@ Notes on what the cases do and do not prove:
 
 ## Recommendation
 
-Fill in after the CI results are read. Provisional, before any result exists:
-choose Core Data if the failed-migration and background-read cases are not clean
-for SwiftData, because the journal's guarantees (atomic pair, recoverable upgrade)
-matter more than less boilerplate. Choose SwiftData only if all six cases pass on
-both stores, since it then costs less code and fits the iOS 18 minimum. The
-`JournalStore` protocol keeps the choice reversible while the app is small.
+Recommend SwiftData. All six cases pass on both stores, so by the rule set before
+the run (SwiftData only if every case passes) it wins on less code and a fit with the
+iOS 18 minimum. Caveats: the failure-injection cases prove rollback and an untouched
+v1 file, not a real constraint violation or full disk, and the migrations tested are
+lightweight; re-run the failed-migration case with a real schema change before the
+first release. The `JournalStore` protocol keeps the choice reversible while the app
+is small.
 
 ## Decision
 
