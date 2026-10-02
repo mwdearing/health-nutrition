@@ -106,8 +106,8 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], NutrientValue.unknown)
         XCTAssertNotEqual(product.nutrients[OpenFoodFactsProduct.fat], .known(0, .g))
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sugars], NutrientValue.unknown)
-        // A value without a unit is not guessed.
-        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sodium], NutrientValue.unknown)
+        // The unit field is ignored and canonical units apply (grams for sodium).
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sodium], .known(dec("0.01"), .g))
         XCTAssertNil(product.servingQuantity)
     }
 
