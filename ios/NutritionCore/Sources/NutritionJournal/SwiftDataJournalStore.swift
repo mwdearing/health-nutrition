@@ -155,6 +155,8 @@ private struct StoredComponent: Codable {
 
 public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
     private let lock = NSLock()
+    /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
+    private let writeLock = NSLock()
     private var failFlag = false
     private var container: ModelContainer?
     private let enabledDestinations: Set<JournalDestination>
@@ -195,6 +197,8 @@ public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
 
     /// Runs `body` on a fresh context and saves once. Any failure rolls the context back.
     private func commit<T>(_ body: (ModelContext) throws -> T) throws -> T {
+        writeLock.lock()
+        defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
         context.autosaveEnabled = false
         do {
@@ -367,7 +371,7 @@ public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
         }.sorted { ($0.revision, $0.destination.rawValue) < ($1.revision, $1.destination.rawValue) }
     }
 
-    /// Operations not yet acknowledged, oldest revision first.
+    /// Operations not yet acknowledged, oldest revision first, upsert before delete within a revision.
     public func pendingOutbox() throws -> [OutboxOperation] {
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
@@ -381,8 +385,16 @@ public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
                 destination: destination, payloadHash: row.payloadHash, attempts: row.attempts,
                 nextAttemptAt: row.nextAttemptAt, acknowledgedAt: row.acknowledgedAt)
         }.sorted {
-            ($0.intakeID, $0.revision, $0.destination.rawValue, $0.kind.rawValue)
-                < ($1.intakeID, $1.revision, $1.destination.rawValue, $1.kind.rawValue)
+            ($0.intakeID, $0.revision, Self.kindRank($0.kind), $0.destination.rawValue)
+                < ($1.intakeID, $1.revision, Self.kindRank($1.kind), $1.destination.rawValue)
+        }
+    }
+
+    /// Creation order within one revision: an upsert is always queued before a delete.
+    private static func kindRank(_ kind: OutboxKind) -> Int {
+        switch kind {
+        case .upsert: return 0
+        case .delete: return 1
         }
     }
 

@@ -27,6 +27,7 @@ Amounts are `Decimal` in memory and decimal text on disk, never binary floating 
 Every write (`create`, `edit`, `delete`) is one `ModelContext.save()` covering the
 revision, the projections and the outbox operations. A failure rolls the context back,
 so none of them is left behind. Each operation uses a fresh context with autosave off.
+Writes are serialized by a store-wide write lock held through the save, so concurrent edits get consecutive revision numbers. `pendingOutbox()` returns operations by intake, revision, then upsert before delete, then destination.
 A disabled destination gets a `disabled` projection and no outbox operation.
 
 ## Testing

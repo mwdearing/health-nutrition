@@ -236,4 +236,44 @@ final class JournalStoreTests: XCTestCase {
         store.close()
         XCTAssertThrowsError(try store.activeIntakes()) { XCTAssertEqual($0 as? JournalError, .closed) }
     }
+
+    func testCreateThenDeleteListsUpsertBeforeDeletePerDestination() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        let operations = try store.pendingOutbox()
+        XCTAssertEqual(operations.count, 4)
+        for destination in JournalDestination.allCases {
+            let kinds = operations.filter { $0.destination == destination }.map(\.kind)
+            XCTAssertEqual(kinds, [.upsert, .delete])
+        }
+        let firstDelete = operations.firstIndex { $0.kind == .delete }
+        let lastUpsert = operations.lastIndex { $0.kind == .upsert }
+        XCTAssertNotNil(firstDelete)
+        XCTAssertNotNil(lastUpsert)
+        XCTAssertLessThan(try XCTUnwrap(lastUpsert), try XCTUnwrap(firstDelete))
+    }
+
+    func testConcurrentEditsGetDistinctConsecutiveRevisions() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        let failures = NSLock()
+        var errors: [Error] = []
+        let id = intakeID
+        let at = when
+        let amount = oats(5)
+        DispatchQueue.concurrentPerform(iterations: 8) { _ in
+            do {
+                try store.edit(intakeID: id, components: [amount], product: nil, changeReason: "e", now: at)
+            } catch {
+                failures.withLock { errors.append(error) }
+            }
+        }
+        XCTAssertTrue(errors.isEmpty)
+        XCTAssertEqual(try store.revisions(of: intakeID).map(\.number), Array(1...9))
+        let current = try store.projections(of: intakeID).filter(\.isCurrent)
+        XCTAssertEqual(current.count, JournalDestination.allCases.count)
+        XCTAssertEqual(Set(current.map(\.destination)).count, JournalDestination.allCases.count)
+        XCTAssertTrue(current.allSatisfy { $0.revision == 9 })
+    }
 }
