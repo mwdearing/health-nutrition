@@ -13,28 +13,31 @@ public actor OpenFoodFactsClient {
     private let transport: OpenFoodFactsTransport
     private let userAgent: String
     private let now: @Sendable () -> Date
-    private var recent: [Date] = []
+    private let monotonic: @Sendable () -> TimeInterval
+    private var recent: [TimeInterval] = []
 
     public init(
         environment: OpenFoodFactsEnvironment = .production,
         transport: OpenFoodFactsTransport = URLSessionOpenFoodFactsTransport(),
         appVersion: String,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        monotonic: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     ) {
         self.environment = environment
         self.transport = transport
         self.userAgent = "HealthNutrition/\(appVersion) (https://github.com/mwdearing/health-nutrition/issues)"
         self.now = now
+        self.monotonic = monotonic
     }
 
     public func lookup(barcode: String) async -> OpenFoodFactsOutcome {
         guard BarcodeValidator.isValid(barcode) else {
             return .invalidBarcode
         }
-        let current = now()
-        recent.removeAll { current.timeIntervalSince($0) >= Self.windowSeconds }
+        let current = monotonic()
+        recent.removeAll { current - $0 >= Self.windowSeconds }
         if recent.count >= Self.maxLookups, let oldest = recent.first {
-            return .rateLimited(retryAfter: max(0, oldest.addingTimeInterval(Self.windowSeconds).timeIntervalSince(current)))
+            return .rateLimited(retryAfter: max(0, oldest + Self.windowSeconds - current))
         }
         recent.append(current)
 
@@ -54,8 +57,8 @@ public actor OpenFoodFactsClient {
         case 404:
             return .notFound
         case 429, 503:
-            let header = response.value(forHTTPHeaderField: "Retry-After").flatMap { TimeInterval($0.trimmingCharacters(in: .whitespaces)) }
-            return .rateLimited(retryAfter: header)
+            let header = response.value(forHTTPHeaderField: "Retry-After")
+            return .rateLimited(retryAfter: header.flatMap { parseRetryAfter($0, now: now()) })
         default:
             return .transport("HTTP status \(response.statusCode)")
         }
@@ -92,4 +95,20 @@ public actor OpenFoodFactsClient {
         }
         return .found(OpenFoodFactsProduct(body: body, requestedBarcode: barcode))
     }
+}
+
+/// Retry-After is either delay-seconds or an HTTP-date (RFC 9110); the result is never negative.
+func parseRetryAfter(_ raw: String, now: Date) -> TimeInterval? {
+    let value = raw.trimmingCharacters(in: .whitespaces)
+    if !value.isEmpty, value.unicodeScalars.allSatisfy({ $0.value >= 48 && $0.value <= 57 }) {
+        return TimeInterval(value)
+    }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "GMT")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+    guard let date = formatter.date(from: value) else {
+        return nil
+    }
+    return max(0, date.timeIntervalSince(now))
 }

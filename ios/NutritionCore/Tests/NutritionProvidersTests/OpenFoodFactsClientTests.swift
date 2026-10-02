@@ -35,6 +35,10 @@ final class TestClock: @unchecked Sendable {
         lock.withLock { current }
     }
 
+    func uptime() -> TimeInterval {
+        lock.withLock { current.timeIntervalSince1970 - 1_800_000_000 + 5_000 }
+    }
+
     func advance(_ seconds: TimeInterval) {
         lock.withLock { current = current.addingTimeInterval(seconds) }
     }
@@ -61,7 +65,7 @@ final class OpenFoodFactsClientTests: XCTestCase {
     }
 
     private func client(_ transport: StubTransport, environment: OpenFoodFactsEnvironment = .production, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
-        OpenFoodFactsClient(environment: environment, transport: transport, appVersion: "1.0.0", now: { clock.now() })
+        OpenFoodFactsClient(environment: environment, transport: transport, appVersion: "1.0.0", now: { clock.now() }, monotonic: { clock.uptime() })
     }
 
     func testFoundPer100g() async throws {
@@ -107,16 +111,34 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertNil(product.servingQuantity)
     }
 
-    func testUnknownUnitIsUnknown() async throws {
+    func testUnitFieldIsIgnoredAndCanonicalUnitsApply() async throws {
         let json = """
         {"code":"2000000000015","result":{"id":"product_found"},
-         "product":{"nutriments":{"proteins_100g":5,"proteins_unit":"stone","sodium_100g":400,"sodium_unit":"mg",
-                                  "fat_100g":3,"fat_unit":"kcal"}}}
+         "product":{"nutriments":{"proteins_100g":5,"proteins_unit":"stone","sodium_100g":0.4,"sodium_unit":"mg",
+                                  "energy-kcal_100g":300,"energy-kcal_unit":"kJ"}}}
         """
         let product = try found(await client(StubTransport(body: Data(json.utf8))).lookup(barcode: foundCode))
-        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.protein], NutrientValue.unknown)
-        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sodium], .known(dec("400"), .mg))
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.protein], .known(dec("5"), .g))
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sodium], .known(dec("0.4"), .g))
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.energyKcal], .known(dec("300"), .kcal))
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], NutrientValue.unknown)
+    }
+
+    func testMalformedTextAmountsAreUnknown() async throws {
+        for bad in ["-", "++1", "1-2", "", "1.2.3", "1e3", "12abc", ".5", "5."] {
+            let json = """
+            {"code":"2000000000015","result":{"id":"product_found"},
+             "product":{"nutriments":{"fat_100g":"\(bad)","proteins_100g":"-2"}}}
+            """
+            let product = try found(await client(StubTransport(body: Data(json.utf8))).lookup(barcode: foundCode))
+            XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], NutrientValue.unknown, bad)
+            XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.protein], NutrientValue.unknown)
+        }
+        let ok = """
+        {"code":"2000000000015","result":{"id":"product_found"},"product":{"nutriments":{"fat_100g":"+1.5"}}}
+        """
+        let product = try found(await client(StubTransport(body: Data(ok.utf8))).lookup(barcode: foundCode))
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], .known(dec("1.5"), .g))
     }
 
     func testNotFoundByResultId() async throws {
@@ -134,6 +156,16 @@ final class OpenFoodFactsClientTests: XCTestCase {
         let transport = StubTransport(status: 429, headers: ["Retry-After": "30"])
         let outcome = await client(transport).lookup(barcode: foundCode)
         XCTAssertEqual(outcome, .rateLimited(retryAfter: 30))
+    }
+
+    func testRetryAfterHttpDateIsRelativeToInjectedClock() async throws {
+        // The test clock starts at 2027-01-15 08:00:00 UTC (1_800_000_000).
+        let transport = StubTransport(status: 429, headers: ["Retry-After": "Fri, 15 Jan 2027 08:01:30 GMT"])
+        let outcome = await client(transport).lookup(barcode: foundCode)
+        XCTAssertEqual(outcome, .rateLimited(retryAfter: 90))
+        let past = StubTransport(status: 503, headers: ["Retry-After": "Fri, 15 Jan 2027 07:00:00 GMT"])
+        let pastOutcome = await client(past).lookup(barcode: foundCode)
+        XCTAssertEqual(pastOutcome, .rateLimited(retryAfter: 0))
     }
 
     func testRateLimitedHttp503WithoutRetryAfter() async throws {
@@ -218,10 +250,10 @@ final class OpenFoodFactsClientTests: XCTestCase {
 
     func testStagingSendsBasicAuthOnlyOnStaging() async throws {
         let staging = StubTransport(body: try fixture("found_per_100g"))
-        _ = await client(staging, environment: .staging).lookup(barcode: foundCode)
+        _ = await client(staging, environment: .staging(authorization: "Basic dGVzdA==")).lookup(barcode: foundCode)
         let stagingRequest = try XCTUnwrap(staging.requests.first)
         XCTAssertEqual(stagingRequest.url?.host, "world.openfoodfacts.net")
-        XCTAssertEqual(stagingRequest.value(forHTTPHeaderField: "Authorization"), "Basic b2ZmOm9mZg==")
+        XCTAssertEqual(stagingRequest.value(forHTTPHeaderField: "Authorization"), "Basic dGVzdA==")
 
         let production = StubTransport(body: try fixture("found_per_100g"))
         _ = await client(production, environment: .production).lookup(barcode: foundCode)

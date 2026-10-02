@@ -10,9 +10,11 @@ asks only for the fields it needs: code, product name, brands, serving size,
 serving quantity, the basis of the nutrition data, the nutriments and the last
 modification time. The use is read-only; the app never writes to Open Food Facts.
 
-Nutrient amounts are decoded as decimal numbers. A nutriment the source does not
-give, or gives with a unit the app does not know, is shown as unknown and never
-as zero.
+Nutrient amounts are decoded as decimal numbers. Open Food Facts normalises the
+`_100g` and `_serving` values to canonical units (kcal for energy, grams for every
+other nutrient), so the app reads them in those units and ignores the `_unit` field,
+which only describes the unit the contributor typed. A nutriment the source does not
+give, or gives as malformed text, is shown as unknown and never as zero.
 
 ## Licences
 
@@ -42,13 +44,15 @@ as zero.
   `HealthNutrition/<version> (https://github.com/mwdearing/health-nutrition/issues)`.
 - Open Food Facts allows 100 product reads per minute per client. The client
   limits itself to 15 lookups in any rolling 60 seconds and answers further calls
-  with a rate-limited outcome without sending a request. HTTP 429 and 503 are also
-  reported as rate limited, using the Retry-After header when present.
+  with a rate-limited outcome without sending a request. The window uses a monotonic
+  clock. HTTP 429 and 503 are also reported as rate limited, using the Retry-After
+  header (seconds or HTTP-date) when present.
 - A barcode is checked locally first (digits only, EAN-8, UPC-A or EAN-13, correct
   check digit); an invalid barcode never causes a request.
 - Tests use a stub transport and fixtures with invented values. The staging server
-  (`world.openfoodfacts.net`, shared basic-auth credentials, sent only to staging)
-  is for manual checks, never production data.
+  (`world.openfoodfacts.net`) is for manual checks, never production data. Its
+  basic-auth credentials are published in the Open Food Facts documentation; the
+  caller injects the header value at manual-test time and it is never committed.
 
 ## Review
 

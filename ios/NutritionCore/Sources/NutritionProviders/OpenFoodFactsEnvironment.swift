@@ -15,11 +15,15 @@ public struct OpenFoodFactsEnvironment: Sendable, Hashable {
         authorizationHeader: nil
     )
 
-    /// Staging is for tests only. Its shared basic-auth credentials are public.
-    public static let staging = OpenFoodFactsEnvironment(
-        baseURL: URL(string: "https://world.openfoodfacts.net")!,
-        authorizationHeader: "Basic " + Data("off:off".utf8).base64EncodedString()
-    )
+    /// Staging is for manual checks only. The caller injects the Authorization header value
+    /// (the staging credentials are published in the Open Food Facts documentation); it is
+    /// never stored in this repository.
+    public static func staging(authorization: String?) -> OpenFoodFactsEnvironment {
+        OpenFoodFactsEnvironment(
+            baseURL: URL(string: "https://world.openfoodfacts.net")!,
+            authorizationHeader: authorization
+        )
+    }
 }
 
 public enum OpenFoodFactsAttribution: Sendable {

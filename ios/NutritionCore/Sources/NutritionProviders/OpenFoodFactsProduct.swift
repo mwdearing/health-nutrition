@@ -77,15 +77,23 @@ struct OpenFoodFactsScalar: Decodable {
         }
     }
 
-    private static func parse(_ raw: String) -> Decimal? {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty,
-              trimmed.allSatisfy({ "0123456789.-+".contains($0) }),
-              trimmed.filter({ $0 == "." }).count <= 1
+    /// Accepts only [+-]?digits(.digits)?; anything else is nil.
+    static func parse(_ raw: String) -> Decimal? {
+        var scalars = Array(raw.unicodeScalars)
+        if let first = scalars.first, first == "+" || first == "-" {
+            scalars.removeFirst()
+        }
+        func isDigit(_ scalar: Unicode.Scalar) -> Bool {
+            scalar.value >= 48 && scalar.value <= 57
+        }
+        let parts = scalars.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard scalars.filter({ $0 == "." }).count <= 1,
+              !parts.isEmpty,
+              parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(isDigit) })
         else {
             return nil
         }
-        return Decimal(string: trimmed, locale: nil)
+        return Decimal(string: raw, locale: nil)
     }
 }
 
@@ -130,7 +138,6 @@ extension OpenFoodFactsProduct {
         for entry in Self.mapping {
             nutrients[entry.key] = Self.value(
                 amount: source[entry.source + suffix]?.decimal,
-                unitText: source[entry.source + "_unit"]?.text,
                 energy: entry.energy
             )
         }
@@ -149,35 +156,12 @@ extension OpenFoodFactsProduct {
         )
     }
 
-    private static func value(amount: Decimal?, unitText: String?, energy: Bool) -> NutrientValue {
+    /// Open Food Facts normalises `<key>_100g` and `<key>_serving` to canonical units (kcal for
+    /// energy, grams for everything else); `<key>_unit` only describes the entered unit and is ignored.
+    private static func value(amount: Decimal?, energy: Bool) -> NutrientValue {
         guard let amount, amount >= 0 else {
             return .unknown
         }
-        let unit: MeasureUnit
-        if let unitText {
-            guard let resolved = resolve(unitText) else {
-                return .unknown
-            }
-            unit = resolved
-        } else if energy {
-            unit = .kcal
-        } else {
-            return .unknown
-        }
-        let expected: UnitDimension = energy ? .energy : .mass
-        guard unit.dimension == expected else {
-            return .unknown
-        }
-        return .known(amount, unit)
-    }
-
-    private static func resolve(_ text: String) -> MeasureUnit? {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        switch trimmed.lowercased() {
-        case "\u{00B5}g", "\u{03BC}g", "mcg", "ug":
-            return .mcg
-        default:
-            return try? UnitRegistry.unit(for: trimmed.lowercased())
-        }
+        return .known(amount, energy ? .kcal : .g)
     }
 }
