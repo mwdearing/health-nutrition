@@ -1,0 +1,128 @@
+{
+  "provider": "NIH DSLD",
+  "base_url": "https://api.ods.od.nih.gov/dsld/",
+  "api_version": "9.5.0",
+  "spec_version": "9.4.0",
+  "license": "CC0 1.0 Universal",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "retrieved_on": "2026-10-02",
+  "selection": [
+    "magnesium citrate",
+    "creatine monohydrate",
+    "vitamin D3",
+    "proprietary blend",
+    "fish oil",
+    "multivitamin",
+    "zinc gluconate",
+    "probiotic",
+    "melatonin",
+    "methylcobalamin"
+  ],
+  "files": [
+    {
+      "file": "fixtures/version.json",
+      "url": "https://api.ods.od.nih.gov/dsld/version",
+      "sha256": "25c3fd919273bd2b7d9a51c1c22aa1159e6256b8a0274602d7285414a045861c"
+    },
+    {
+      "file": "fixtures/labels/204235.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/204235",
+      "sha256": "e3ac8951a09eb88604cf1836a675be1e93ebd864cb4521240baa23d01a3a9bf8",
+      "label_id": 204235,
+      "off_market": 1,
+      "entry_date": "2019-07-24",
+      "search_term": "magnesium citrate",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/205180.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/205180",
+      "sha256": "eeab8fd8e904cc16c40a8bbbd574a497a98d52054e8ce2d1fd1b2f0f13affaab",
+      "label_id": 205180,
+      "off_market": 1,
+      "entry_date": "2019-07-24",
+      "search_term": "creatine monohydrate",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/1225.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/1225",
+      "sha256": "3862d42dbe42ecc6fdef7ec4ae9e7e677e2a98e4e6fe000a1ad5e772c64e9274",
+      "label_id": 1225,
+      "off_market": 1,
+      "entry_date": "2011-10-26",
+      "search_term": "vitamin D3",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/78540.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/78540",
+      "sha256": "c48e3797307e4469445d83453e4dede448d1d370f43e01a3e4f0e3f53913dd4f",
+      "label_id": 78540,
+      "off_market": 0,
+      "entry_date": "2017-11-20",
+      "search_term": "proprietary blend",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/64567.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/64567",
+      "sha256": "c181e131fb83cc35f5d4f44a34df454eab8855c6f5e3e003e22173323090e69c",
+      "label_id": 64567,
+      "off_market": 1,
+      "entry_date": "2016-09-22",
+      "search_term": "fish oil",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/29011.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/29011",
+      "sha256": "6f80f6f7695c0d5e6a018e9553984020b73bf9fb09fc3404e42166d11d2d7402",
+      "label_id": 29011,
+      "off_market": 0,
+      "entry_date": "2014-01-24",
+      "search_term": "multivitamin",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/254073.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/254073",
+      "sha256": "4a94ad26ad7860870425fed9c3dca10b78666a2b449c1b5bf8153b15e3af4882",
+      "label_id": 254073,
+      "off_market": 1,
+      "entry_date": "2021-08-23",
+      "search_term": "zinc gluconate",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/202695.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/202695",
+      "sha256": "e0e41d2f67cbe135d230d3e16807c5985e56ccaf451a3911e112fabf8852a1b1",
+      "label_id": 202695,
+      "off_market": 1,
+      "entry_date": "2019-05-28",
+      "search_term": "probiotic",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/216782.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/216782",
+      "sha256": "07f038ea5241319ac3b3e1ef87cff61b0e6851332f8feb1eea60258e42136f51",
+      "label_id": 216782,
+      "off_market": 0,
+      "entry_date": "2020-03-24",
+      "search_term": "melatonin",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/240278.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/240278",
+      "sha256": "a7c30a37feaada75fa8f0f19e57e2a83ea12099980fff04f97c65f32c3b9ba4a",
+      "label_id": 240278,
+      "off_market": 0,
+      "entry_date": "2020-11-21",
+      "search_term": "methylcobalamin",
+      "hit_rank": 1
+    }
+  ]
+}
