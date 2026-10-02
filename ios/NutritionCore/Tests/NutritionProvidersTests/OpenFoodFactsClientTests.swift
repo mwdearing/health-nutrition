@@ -141,6 +141,47 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], .known(dec("1.5"), .g))
     }
 
+    private func basis(servingSize: String?, per: String = "100g") async throws -> OpenFoodFactsBasis {
+        let size = servingSize.map { "\"serving_size\":\"\($0)\"," } ?? ""
+        let json = """
+        {"code":"2000000000015","result":{"id":"product_found"},
+         "product":{\(size)"nutrition_data_per":"\(per)","nutriments":{"fat_100g":1}}}
+        """
+        return try found(await client(StubTransport(body: Data(json.utf8))).lookup(barcode: foundCode)).basis
+    }
+
+    func testBasisFromServingSizeUnit() async throws {
+        let drink = try await basis(servingSize: "250 ml")
+        XCTAssertEqual(drink, .per100ml)
+        let solid = try await basis(servingSize: "30 g")
+        XCTAssertEqual(solid, .per100g)
+        let fluidOunce = try await basis(servingSize: "8 fl.oz (240 ml)")
+        XCTAssertEqual(fluidOunce, .per100ml)
+        let litre = try await basis(servingSize: "1,5L")
+        XCTAssertEqual(litre, .per100ml)
+        let missing = try await basis(servingSize: nil)
+        XCTAssertEqual(missing, .per100Unspecified)
+        let unrecognised = try await basis(servingSize: "1 biscuit")
+        XCTAssertEqual(unrecognised, .per100Unspecified)
+        let noNumber = try await basis(servingSize: "ml")
+        XCTAssertEqual(noNumber, .per100Unspecified)
+        let perServing = try await basis(servingSize: "250 ml", per: "serving")
+        XCTAssertEqual(perServing, .perServing)
+    }
+
+    func testInitializerFillsMissingStandardKeysWithUnknown() {
+        let product = OpenFoodFactsProduct(
+            barcode: foundCode, name: nil, brands: nil, servingSize: nil, servingQuantity: nil,
+            basis: .per100Unspecified, lastModified: nil,
+            nutrients: [OpenFoodFactsProduct.fat: .known(dec("2"), .g)]
+        )
+        XCTAssertEqual(product.nutrients.count, 9)
+        for key in OpenFoodFactsProduct.standardKeys where key != OpenFoodFactsProduct.fat {
+            XCTAssertEqual(product.nutrients[key], NutrientValue.unknown, key)
+        }
+        XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], .known(dec("2"), .g))
+    }
+
     func testNotFoundByResultId() async throws {
         let transport = StubTransport(body: try fixture("not_found"))
         let outcome = await client(transport).lookup(barcode: "2000000000022")

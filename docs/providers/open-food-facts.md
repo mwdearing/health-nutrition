@@ -16,6 +16,21 @@ other nutrient), so the app reads them in those units and ignores the `_unit` fi
 which only describes the unit the contributor typed. A nutriment the source does not
 give, or gives as malformed text, is shown as unknown and never as zero.
 
+Amounts in the `*_100g` and `*_serving` fields are read in the canonical units of
+Open Food Facts (kcal for energy, grams for all other nutrients), and the `*_unit`
+field is ignored because it only describes the unit the contributor entered.
+
+The basis of the values is one of four cases:
+
+- `perServing`: `nutrition_data_per` is "serving"; the `_serving` values are read.
+- `per100ml`: otherwise, and the serving size text has a volume unit (ml, cl, dl, l,
+  fl oz).
+- `per100g`: otherwise, and the serving size text has a mass unit (g, mg, kg, oz).
+- `per100Unspecified`: 100 g or 100 ml, the source does not say (no serving size, or
+  a unit that is not recognised). Nothing is guessed.
+
+The product always carries all nine standard nutrient keys; a missing one is unknown.
+
 ## Licences
 
 - The database is available under the Open Database License (ODbL).

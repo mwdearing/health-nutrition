@@ -3,7 +3,47 @@ import NutritionDomain
 
 public enum OpenFoodFactsBasis: String, Sendable, Hashable {
     case per100g
+    case per100ml
+    /// 100 g or 100 ml, the source does not say.
+    case per100Unspecified
     case perServing
+
+    /// `nutrition_data_per == "serving"` means per serving. Otherwise the unit of the serving size
+    /// text decides: volume gives per 100 ml, mass gives per 100 g, anything else is unspecified.
+    static func decide(dataPer: String?, servingSize: String?) -> OpenFoodFactsBasis {
+        if dataPer == "serving" {
+            return .perServing
+        }
+        guard let unit = servingUnit(servingSize) else {
+            return .per100Unspecified
+        }
+        if ["ml", "cl", "dl", "l", "floz"].contains(unit) {
+            return .per100ml
+        }
+        if ["g", "mg", "kg", "oz"].contains(unit) {
+            return .per100g
+        }
+        return .per100Unspecified
+    }
+
+    /// The unit after a leading number, lowercased, without spaces or dots, ignoring a trailing
+    /// parenthetical. Nil when the text does not start with a number.
+    private static func servingUnit(_ text: String?) -> String? {
+        guard let text else {
+            return nil
+        }
+        var rest = Substring(text.lowercased().trimmingCharacters(in: .whitespaces))
+        let digitsEnd = rest.firstIndex { !($0.isASCII && ($0.isNumber || $0 == "." || $0 == ",")) } ?? rest.endIndex
+        guard digitsEnd != rest.startIndex, rest[..<digitsEnd].contains(where: { $0.isASCII && $0.isNumber }) else {
+            return nil
+        }
+        rest = rest[digitsEnd...]
+        if let open = rest.firstIndex(of: "(") {
+            rest = rest[..<open]
+        }
+        let unit = rest.filter { $0 != " " && $0 != "." }
+        return unit.isEmpty ? nil : unit
+    }
 }
 
 public struct OpenFoodFactsProduct: Sendable, Hashable {
@@ -44,8 +84,16 @@ public struct OpenFoodFactsProduct: Sendable, Hashable {
         self.servingQuantity = servingQuantity
         self.basis = basis
         self.lastModified = lastModified
-        self.nutrients = nutrients
+        var complete = nutrients
+        for key in Self.standardKeys where complete[key] == nil {
+            complete[key] = .unknown
+        }
+        self.nutrients = complete
     }
+
+    public static let standardKeys = [
+        energyKcal, protein, carbohydrates, sugars, fat, saturatedFat, fiber, sodium, salt,
+    ]
 }
 
 public enum OpenFoodFactsOutcome: Sendable, Equatable {
@@ -131,7 +179,7 @@ extension OpenFoodFactsProduct {
     ]
 
     init(body: OpenFoodFactsResponse.Body, requestedBarcode: String) {
-        let basis: OpenFoodFactsBasis = body.nutrition_data_per?.text == "serving" ? .perServing : .per100g
+        let basis = OpenFoodFactsBasis.decide(dataPer: body.nutrition_data_per?.text, servingSize: body.serving_size?.text)
         let suffix = basis == .perServing ? "_serving" : "_100g"
         let source = body.nutriments ?? [:]
         var nutrients: [String: NutrientValue] = [:]
