@@ -1,0 +1,17 @@
+{
+  "code": "2000000001012",
+  "status": "success",
+  "result": { "id": "product_found", "name": "Product found", "lc_name": "Product found" },
+  "product": {
+    "code": "2000000001012",
+    "product_name": "Sample Plain Rice Cake",
+    "brands": "Example Foods",
+    "nutrition_data_per": "100g",
+    "last_modified_t": 1700000100,
+    "nutriments": {
+      "proteins_100g": "3",
+      "proteins_unit": "g",
+      "sodium_100g": 0.01
+    }
+  }
+}

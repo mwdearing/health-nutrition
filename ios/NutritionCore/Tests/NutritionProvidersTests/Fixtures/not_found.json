@@ -1,0 +1,5 @@
+{
+  "code": "2000000000022",
+  "status": "failure",
+  "result": { "id": "product_not_found", "name": "Product not found", "lc_name": "Product not found" }
+}
