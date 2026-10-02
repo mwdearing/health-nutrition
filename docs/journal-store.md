@@ -30,6 +30,12 @@ so none of them is left behind. Each operation uses a fresh context with autosav
 Writes are serialized by a store-wide write lock held through the save, so concurrent edits get consecutive revision numbers. `pendingOutbox()` returns operations by intake, revision, then upsert before delete, then destination.
 A disabled destination gets a `disabled` projection and no outbox operation.
 
+## Usage constraints
+
+The app must use ONE `SwiftDataJournalStore` per database file. The write lock is per instance, so two instances on the same file are unsupported and can assign duplicate revision numbers.
+
+Delivery acknowledgement is not part of this store yet: there is no method to mark an outbox operation as delivered, so `pendingOutbox()` keeps returning queued operations. It arrives with the delivery-worker PR.
+
 ## Testing
 
 Tests run on real on-disk stores in a unique temporary directory. A test flag makes the
