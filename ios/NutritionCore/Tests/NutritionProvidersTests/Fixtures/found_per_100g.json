@@ -9,6 +9,7 @@
     "serving_size": "30 g",
     "serving_quantity": 30,
     "nutrition_data_per": "100g",
+    "product_quantity_unit": "g",
     "last_modified_t": 1700000000,
     "nutriments": {
       "energy-kcal_100g": 450,
