@@ -21,7 +21,7 @@ These fixture files are derived from that public domain data.
 
 ## Selection Method
 
-Fixtures are selected using a fixed set of search terms (not by brand or product name):
+Fixtures are selected using a fixed set of 10 search terms (not by brand or product name):
 
 1. `magnesium citrate`
 2. `creatine monohydrate`
@@ -35,8 +35,18 @@ Fixtures are selected using a fixed set of search terms (not by brand or product
 10. `methylcobalamin`
 
 For each term, the first label returned with non-empty `ingredientRows` is saved.
-If coverage requirements (off-market status, IU units, citrate forms, proprietary blends,
-creatine rows) are not met by the first hit, subsequent hits are checked.
+At most 2 extra labels may be added if a coverage requirement is not met by the
+first 10 picks. The result is 10–12 label fixtures total.
+
+## Coverage Requirements
+
+The selection is validated against these coverage items:
+
+- At least one off-market label (`offMarket == 1`)
+- At least one row with quantity unit "IU"
+- At least one form name containing "Citrate"
+- At least one "Proprietary Blend" row or a row with `nestedRows`
+- At least one creatine row
 
 ## Exclusions
 

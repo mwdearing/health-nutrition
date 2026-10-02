@@ -5,7 +5,7 @@
   "spec_version": "9.4.0",
   "license": "CC0 1.0 Universal",
   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-  "retrieved_on": "2026-10-01",
+  "retrieved_on": "2026-10-02",
   "selection": [
     "magnesium citrate",
     "creatine monohydrate",
@@ -25,116 +25,14 @@
       "sha256": "25c3fd919273bd2b7d9a51c1c22aa1159e6256b8a0274602d7285414a045861c"
     },
     {
-      "file": "fixtures/labels/10685.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/10685",
-      "sha256": "50c821c6bd30b18b4913d8ed6d11f1428b2814fc4b8111a5aec386e766e6cd7c",
-      "label_id": 10685,
-      "off_market": 1,
-      "entry_date": "2012-07-25"
-    },
-    {
-      "file": "fixtures/labels/1225.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/1225",
-      "sha256": "3862d42dbe42ecc6fdef7ec4ae9e7e677e2a98e4e6fe000a1ad5e772c64e9274",
-      "label_id": 1225,
-      "off_market": 1,
-      "entry_date": "2011-10-26"
-    },
-    {
-      "file": "fixtures/labels/175207.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/175207",
-      "sha256": "4899152ffadc4ef0938ec6da4ff4ba609d5f8b81d82f86dd53dfe916d4c81ba7",
-      "label_id": 175207,
-      "off_market": 1,
-      "entry_date": "2018-03-23"
-    },
-    {
-      "file": "fixtures/labels/178317.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/178317",
-      "sha256": "bad6ab021d71b5cd0a87c79297f463c1cf121a1373e07660e475413616cd4121",
-      "label_id": 178317,
-      "off_market": 0,
-      "entry_date": "2018-06-25"
-    },
-    {
-      "file": "fixtures/labels/178362.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/178362",
-      "sha256": "619d61ba24c9c9253ab4c9dc9d515017ec9c1c5c37925e2a167426bcb41d71f5",
-      "label_id": 178362,
-      "off_market": 0,
-      "entry_date": "2018-06-25"
-    },
-    {
-      "file": "fixtures/labels/178384.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/178384",
-      "sha256": "8f0d510fc79d36c8b1fa0860b960f190421ccd8fc67000cb827e9507460ef774",
-      "label_id": 178384,
-      "off_market": 0,
-      "entry_date": "2018-06-25"
-    },
-    {
-      "file": "fixtures/labels/178399.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/178399",
-      "sha256": "3c692e2d90aa44a7b0b79ebafaab86c0d207cf1c9efcf1976f41920219e65afb",
-      "label_id": 178399,
-      "off_market": 0,
-      "entry_date": "2018-06-25"
-    },
-    {
-      "file": "fixtures/labels/178792.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/178792",
-      "sha256": "a5904c68bbf9daf8a531bdad45bc2acc5a4222710173f5009e8b35f62fae885e",
-      "label_id": 178792,
-      "off_market": 0,
-      "entry_date": "2018-07-25"
-    },
-    {
-      "file": "fixtures/labels/18263.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/18263",
-      "sha256": "bce31d32deba8dd8e2ee9217ae8edea1e9620a3bd468a30b45e3634b9ff1d803",
-      "label_id": 18263,
-      "off_market": 0,
-      "entry_date": "2013-02-25"
-    },
-    {
-      "file": "fixtures/labels/182723.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/182723",
-      "sha256": "89ba71bab209f4a32c040150efc79912af99a6c183be182b04a254a1873f9099",
-      "label_id": 182723,
-      "off_market": 0,
-      "entry_date": "2018-11-21"
-    },
-    {
-      "file": "fixtures/labels/185040.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/185040",
-      "sha256": "9a4fd515f96736f516de07b0f35082d8c1d49fcc66c80a0dc19d8001483bd5fe",
-      "label_id": 185040,
-      "off_market": 1,
-      "entry_date": "2019-02-25"
-    },
-    {
-      "file": "fixtures/labels/200021.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/200021",
-      "sha256": "2ad690e4debc8297eddaa99979be7f19f3166069456b91fc8fae27ec2a72e6ad",
-      "label_id": 200021,
-      "off_market": 1,
-      "entry_date": "2019-02-25"
-    },
-    {
-      "file": "fixtures/labels/202695.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/202695",
-      "sha256": "e0e41d2f67cbe135d230d3e16807c5985e56ccaf451a3911e112fabf8852a1b1",
-      "label_id": 202695,
-      "off_market": 1,
-      "entry_date": "2019-05-28"
-    },
-    {
       "file": "fixtures/labels/204235.json",
       "url": "https://api.ods.od.nih.gov/dsld/v9/label/204235",
       "sha256": "e3ac8951a09eb88604cf1836a675be1e93ebd864cb4521240baa23d01a3a9bf8",
       "label_id": 204235,
       "off_market": 1,
-      "entry_date": "2019-07-24"
+      "entry_date": "2019-07-24",
+      "search_term": "magnesium citrate",
+      "hit_rank": 1
     },
     {
       "file": "fixtures/labels/205180.json",
@@ -142,471 +40,19 @@
       "sha256": "eeab8fd8e904cc16c40a8bbbd574a497a98d52054e8ce2d1fd1b2f0f13affaab",
       "label_id": 205180,
       "off_market": 1,
-      "entry_date": "2019-07-24"
+      "entry_date": "2019-07-24",
+      "search_term": "creatine monohydrate",
+      "hit_rank": 1
     },
     {
-      "file": "fixtures/labels/205615.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/205615",
-      "sha256": "a0103c146d77b0fafd1533f670a8cf5a44c315f38ca60c471c4ac0ada2de4f8d",
-      "label_id": 205615,
-      "off_market": 0,
-      "entry_date": "2019-08-23"
-    },
-    {
-      "file": "fixtures/labels/206609.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/206609",
-      "sha256": "f0ad24b596bb391039ae71e8c61bef2bd1efed9b6a142866fead7599de6a6d9e",
-      "label_id": 206609,
-      "off_market": 0,
-      "entry_date": "2019-10-23"
-    },
-    {
-      "file": "fixtures/labels/216782.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/216782",
-      "sha256": "07f038ea5241319ac3b3e1ef87cff61b0e6851332f8feb1eea60258e42136f51",
-      "label_id": 216782,
-      "off_market": 0,
-      "entry_date": "2020-03-24"
-    },
-    {
-      "file": "fixtures/labels/219624.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/219624",
-      "sha256": "fc3aac75c5dd3f73547f75d4a13d938c28e921db05af25af789740ac5f61c63b",
-      "label_id": 219624,
+      "file": "fixtures/labels/1225.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/1225",
+      "sha256": "3862d42dbe42ecc6fdef7ec4ae9e7e677e2a98e4e6fe000a1ad5e772c64e9274",
+      "label_id": 1225,
       "off_market": 1,
-      "entry_date": "2020-05-22"
-    },
-    {
-      "file": "fixtures/labels/219907.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/219907",
-      "sha256": "0aaf58d202f8392c87a62e31f79a252c2adeb40e2277f1c7ab8c21c1c59818ac",
-      "label_id": 219907,
-      "off_market": 1,
-      "entry_date": "2020-05-22"
-    },
-    {
-      "file": "fixtures/labels/221286.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/221286",
-      "sha256": "0ae9a7332e1e504b105538fce6b11599c61518f10db7bd8b11f3943232e9c4f6",
-      "label_id": 221286,
-      "off_market": 1,
-      "entry_date": "2020-06-24"
-    },
-    {
-      "file": "fixtures/labels/222730.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/222730",
-      "sha256": "a69bc28f4bdce39eab4a48d76177e982039b813b8939876b4eb114f6fc88dfa5",
-      "label_id": 222730,
-      "off_market": 1,
-      "entry_date": "2020-05-22"
-    },
-    {
-      "file": "fixtures/labels/223426.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/223426",
-      "sha256": "ede92e45eb38baa38efef0b0d9593ba3f9d6eb07047fb03a713bcca761e6b4b6",
-      "label_id": 223426,
-      "off_market": 0,
-      "entry_date": "2020-06-24"
-    },
-    {
-      "file": "fixtures/labels/232825.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/232825",
-      "sha256": "e03918cf1f647494d77400ef202368a8a65577892e822a8e553e681a7239256d",
-      "label_id": 232825,
-      "off_market": 1,
-      "entry_date": "2020-08-23"
-    },
-    {
-      "file": "fixtures/labels/235543.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/235543",
-      "sha256": "5a59d3deccf12b1abac8ac0372dd56eaf1f1de5a2927448f8e080ab700e1af3f",
-      "label_id": 235543,
-      "off_market": 1,
-      "entry_date": "2020-09-25"
-    },
-    {
-      "file": "fixtures/labels/23903.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/23903",
-      "sha256": "7929f4d2df3d907181f78d078071711e7b0304e84c87e388ba80ef952a2b88f9",
-      "label_id": 23903,
-      "off_market": 0,
-      "entry_date": "2013-07-25"
-    },
-    {
-      "file": "fixtures/labels/239327.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/239327",
-      "sha256": "bb74f98e5ce635c9aa7e513cf9d94f5001f62e85fd5e8e2bcfe13bb27eb5c569",
-      "label_id": 239327,
-      "off_market": 1,
-      "entry_date": "2020-10-23"
-    },
-    {
-      "file": "fixtures/labels/239571.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/239571",
-      "sha256": "3886a568c790caf0499f00ff210db7c52bef79f7877bc723b34598578e1f5d6a",
-      "label_id": 239571,
-      "off_market": 0,
-      "entry_date": "2020-11-21"
-    },
-    {
-      "file": "fixtures/labels/240275.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/240275",
-      "sha256": "56a4f375203310645e778fff114e70e61a46c6291bbf0afbad56e3c7b3c194a5",
-      "label_id": 240275,
-      "off_market": 0,
-      "entry_date": "2021-01-22"
-    },
-    {
-      "file": "fixtures/labels/240278.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/240278",
-      "sha256": "a7c30a37feaada75fa8f0f19e57e2a83ea12099980fff04f97c65f32c3b9ba4a",
-      "label_id": 240278,
-      "off_market": 0,
-      "entry_date": "2020-11-21"
-    },
-    {
-      "file": "fixtures/labels/243557.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/243557",
-      "sha256": "f7624092a12a0fcef3fc31613c95e28ae216c91297cf6cb3b39a9186a488b3be",
-      "label_id": 243557,
-      "off_market": 1,
-      "entry_date": "2021-02-25"
-    },
-    {
-      "file": "fixtures/labels/252799.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/252799",
-      "sha256": "8d2f72e7f0580ce42032446e04bf18ce12146c76de5781b503b0397584908347",
-      "label_id": 252799,
-      "off_market": 1,
-      "entry_date": "2021-08-23"
-    },
-    {
-      "file": "fixtures/labels/253108.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/253108",
-      "sha256": "e9c85667ea668c2ff729e84fd59af60954863c90ca34adef0c8a1a491378c19f",
-      "label_id": 253108,
-      "off_market": 0,
-      "entry_date": "2021-08-23"
-    },
-    {
-      "file": "fixtures/labels/254059.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/254059",
-      "sha256": "b43f0115a097be7f5d59301a670dd2ca4323079d8c9ec1dc6f7c1085850d1af3",
-      "label_id": 254059,
-      "off_market": 1,
-      "entry_date": "2021-08-23"
-    },
-    {
-      "file": "fixtures/labels/254073.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/254073",
-      "sha256": "4a94ad26ad7860870425fed9c3dca10b78666a2b449c1b5bf8153b15e3af4882",
-      "label_id": 254073,
-      "off_market": 1,
-      "entry_date": "2021-08-23"
-    },
-    {
-      "file": "fixtures/labels/254074.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/254074",
-      "sha256": "df97d9bf98bfaa0b3e7e770a4f5e636aec697f8303bffeabf11752a8e649b22b",
-      "label_id": 254074,
-      "off_market": 1,
-      "entry_date": "2021-08-23"
-    },
-    {
-      "file": "fixtures/labels/255200.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/255200",
-      "sha256": "23e2074123fcbee2b8cd3d55e5ea16dc706776faae8c7809e0907ae0aae6d6c8",
-      "label_id": 255200,
-      "off_market": 1,
-      "entry_date": "2021-09-24"
-    },
-    {
-      "file": "fixtures/labels/256811.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/256811",
-      "sha256": "ecd5601721d4401eb9d54c1f7d0b4050b1a913b5f0f62dd64431465c41504c10",
-      "label_id": 256811,
-      "off_market": 1,
-      "entry_date": "2021-11-19"
-    },
-    {
-      "file": "fixtures/labels/264934.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/264934",
-      "sha256": "e876138a2e3c0258a8d40f9c95b6c1d2af4c79b3741f69eb8d18adc188caf2d9",
-      "label_id": 264934,
-      "off_market": 1,
-      "entry_date": "2022-06-16"
-    },
-    {
-      "file": "fixtures/labels/26915.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/26915",
-      "sha256": "a18d5d7f1e6ad54de0b930f464ebc92871a9c32bc14f10a805a23be94fc5b521",
-      "label_id": 26915,
-      "off_market": 0,
-      "entry_date": "2013-10-25"
-    },
-    {
-      "file": "fixtures/labels/277770.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/277770",
-      "sha256": "4f196d454280009de685e090a0042113a020c163789eb1ec6f1c1b0972ec72fa",
-      "label_id": 277770,
-      "off_market": 0,
-      "entry_date": "2022-11-22"
-    },
-    {
-      "file": "fixtures/labels/281123.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/281123",
-      "sha256": "e09d9d1f89cec792e23385d52c9aecbb0c169a776f12ca8b16d309052b058617",
-      "label_id": 281123,
-      "off_market": 1,
-      "entry_date": "2023-02-21"
-    },
-    {
-      "file": "fixtures/labels/29011.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/29011",
-      "sha256": "6f80f6f7695c0d5e6a018e9553984020b73bf9fb09fc3404e42166d11d2d7402",
-      "label_id": 29011,
-      "off_market": 0,
-      "entry_date": "2014-01-24"
-    },
-    {
-      "file": "fixtures/labels/299064.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/299064",
-      "sha256": "1204d454f56f51c7e08e6fe7f04fc6571fdcf58b7895551f2cefe68bdcd7ff92",
-      "label_id": 299064,
-      "off_market": 0,
-      "entry_date": "2023-11-22"
-    },
-    {
-      "file": "fixtures/labels/303756.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/303756",
-      "sha256": "dca07427cb713734118d29f4e3abddb91fc0ee96cae6c020c8293f7226b3b58a",
-      "label_id": 303756,
-      "off_market": 0,
-      "entry_date": "2024-03-22"
-    },
-    {
-      "file": "fixtures/labels/320628.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/320628",
-      "sha256": "f77e365a74db346c0ef074151c77c6b790406c29bce9327516fa75a0a4f66a3c",
-      "label_id": 320628,
-      "off_market": 0,
-      "entry_date": "2024-10-24"
-    },
-    {
-      "file": "fixtures/labels/32176.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/32176",
-      "sha256": "e88a007c2f6beb51d0c74bc5a5835554cb403b628eba4ba2df2715cd8fe7e8c0",
-      "label_id": 32176,
-      "off_market": 1,
-      "entry_date": "2014-04-25"
-    },
-    {
-      "file": "fixtures/labels/332395.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/332395",
-      "sha256": "65c12256b01e75a7310c5079687bc6d39ba9f1ccbbdc6132767539d21abc8939",
-      "label_id": 332395,
-      "off_market": 0,
-      "entry_date": "2025-06-25"
-    },
-    {
-      "file": "fixtures/labels/3478.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/3478",
-      "sha256": "c4f9b04b65cc5967d3c140280a315c0815971108765d11db03b538967f0ca18d",
-      "label_id": 3478,
-      "off_market": 1,
-      "entry_date": "2011-12-23"
-    },
-    {
-      "file": "fixtures/labels/34828.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/34828",
-      "sha256": "1a3ef83abdf7e24edbea5f52d7fa1eee257ec2d38c04733c0e3809772efd7921",
-      "label_id": 34828,
-      "off_market": 0,
-      "entry_date": "2014-06-25"
-    },
-    {
-      "file": "fixtures/labels/3551.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/3551",
-      "sha256": "64f1ae51fd1e06c48c93079b9c770ec08cb573378282d50d4c522413df15d44c",
-      "label_id": 3551,
-      "off_market": 1,
-      "entry_date": "2011-12-23"
-    },
-    {
-      "file": "fixtures/labels/37662.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/37662",
-      "sha256": "89a4473c37b744f8ff33f9095309e8ae28bcd35398bc236a8e82c51e34c8e711",
-      "label_id": 37662,
-      "off_market": 0,
-      "entry_date": "2014-10-10"
-    },
-    {
-      "file": "fixtures/labels/43750.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/43750",
-      "sha256": "2f1f38d59b0c62209d22e0f6f71c1c7e2946f8ca44e34a2b080381bc3a0eae46",
-      "label_id": 43750,
-      "off_market": 1,
-      "entry_date": "2015-03-25"
-    },
-    {
-      "file": "fixtures/labels/46772.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/46772",
-      "sha256": "f1c09fbc80999b2cc1f90e517dbbad259f78ae24b08cd81b27e4e398789b8c72",
-      "label_id": 46772,
-      "off_market": 1,
-      "entry_date": "2015-06-25"
-    },
-    {
-      "file": "fixtures/labels/46773.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/46773",
-      "sha256": "07910aed7b9414291df9a1a487c2a4acf07f28e9b53ab9fbe580d5dd17707568",
-      "label_id": 46773,
-      "off_market": 1,
-      "entry_date": "2015-06-25"
-    },
-    {
-      "file": "fixtures/labels/55911.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/55911",
-      "sha256": "30eac28c606a942a64286c51a3ee3d82b2316ae2257533ca37ef2cd1ed63ad3b",
-      "label_id": 55911,
-      "off_market": 1,
-      "entry_date": "2016-01-25"
-    },
-    {
-      "file": "fixtures/labels/56730.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/56730",
-      "sha256": "cd9a6a56efe6e7d147bd52aeb50a0ee732279125fafee0bd61701964a4775929",
-      "label_id": 56730,
-      "off_market": 1,
-      "entry_date": "2016-02-23"
-    },
-    {
-      "file": "fixtures/labels/59672.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/59672",
-      "sha256": "bc9747c83ce33d3fe14b152f84db6ca5277bba1bb400ce60ef2cc68cec2f83b2",
-      "label_id": 59672,
-      "off_market": 1,
-      "entry_date": "2016-06-24"
-    },
-    {
-      "file": "fixtures/labels/59832.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/59832",
-      "sha256": "fc2ffcb6ac80ce936bb9491fc688a7f3bd4cd5db3624ea10faad579e14034281",
-      "label_id": 59832,
-      "off_market": 1,
-      "entry_date": "2016-05-22"
-    },
-    {
-      "file": "fixtures/labels/60344.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/60344",
-      "sha256": "09a09e7224291d42c3c12a412c25b1a46ead7bce3d9534d84cf2e8bbbb1dc563",
-      "label_id": 60344,
-      "off_market": 0,
-      "entry_date": "2016-06-24"
-    },
-    {
-      "file": "fixtures/labels/6141.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/6141",
-      "sha256": "463d04a9cbe63e316bf6baf9a5dfeb5da793f99b5c6be847a12f908b73a63ab8",
-      "label_id": 6141,
-      "off_market": 1,
-      "entry_date": "2012-03-23"
-    },
-    {
-      "file": "fixtures/labels/64489.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/64489",
-      "sha256": "320c3fc335d45b9912b4a791b5b8f48dd9f22a39c17e4592c76d796a63021709",
-      "label_id": 64489,
-      "off_market": 0,
-      "entry_date": "2016-09-22"
-    },
-    {
-      "file": "fixtures/labels/64567.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/64567",
-      "sha256": "c181e131fb83cc35f5d4f44a34df454eab8855c6f5e3e003e22173323090e69c",
-      "label_id": 64567,
-      "off_market": 1,
-      "entry_date": "2016-09-22"
-    },
-    {
-      "file": "fixtures/labels/66308.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/66308",
-      "sha256": "03358a423fc0aabc2bf554d500f9db5927d8dc02101def68a83ccf320536d76b",
-      "label_id": 66308,
-      "off_market": 1,
-      "entry_date": "2016-11-21"
-    },
-    {
-      "file": "fixtures/labels/70405.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/70405",
-      "sha256": "23ecd1ec242c9232654de560e3ea44987bd10441b4deaa1484cb86e70f3ed1f2",
-      "label_id": 70405,
-      "off_market": 0,
-      "entry_date": "2017-02-24"
-    },
-    {
-      "file": "fixtures/labels/70900.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/70900",
-      "sha256": "839f463a67d02ae22fd3dd3564f9230c77bab2d356d8bc9f168e54657c6f70e0",
-      "label_id": 70900,
-      "off_market": 0,
-      "entry_date": "2017-02-24"
-    },
-    {
-      "file": "fixtures/labels/71004.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/71004",
-      "sha256": "135bdd6152d9cb502247815ed400e5e06fdbbafe10c45935352efc0e428a779e",
-      "label_id": 71004,
-      "off_market": 1,
-      "entry_date": "2017-02-24"
-    },
-    {
-      "file": "fixtures/labels/71588.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/71588",
-      "sha256": "1f5a8d985822a7ee01c9e07965906fb5d75d1ad610ef902ff031dd3def927f1d",
-      "label_id": 71588,
-      "off_market": 1,
-      "entry_date": "2017-03-24"
-    },
-    {
-      "file": "fixtures/labels/71656.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/71656",
-      "sha256": "537f27716bc1483f24e0803aed4dbb6d3037f1608b8f750832b88c50757dc585",
-      "label_id": 71656,
-      "off_market": 1,
-      "entry_date": "2017-03-24"
-    },
-    {
-      "file": "fixtures/labels/71666.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/71666",
-      "sha256": "07228b3f0539a51cbec84d1c228108f2ea4aaa8d1a6012a048c9580e5080f90e",
-      "label_id": 71666,
-      "off_market": 1,
-      "entry_date": "2017-03-24"
-    },
-    {
-      "file": "fixtures/labels/73481.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/73481",
-      "sha256": "769dd3af30918dc65b19803bc6bf32d22e03113f0550e01cef56ece23ad9b055",
-      "label_id": 73481,
-      "off_market": 1,
-      "entry_date": "2017-05-24"
-    },
-    {
-      "file": "fixtures/labels/73648.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/73648",
-      "sha256": "ab81ff8080fdd11a32adedab26c5a5bef826d81b73c65fb4746af313c0fe7de2",
-      "label_id": 73648,
-      "off_market": 1,
-      "entry_date": "2017-05-24"
-    },
-    {
-      "file": "fixtures/labels/73651.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/73651",
-      "sha256": "1f92f6580eff83d40ed9cfb90f0ab309edf23cc47f434f6b65dda8979d192cb6",
-      "label_id": 73651,
-      "off_market": 1,
-      "entry_date": "2017-05-24"
+      "entry_date": "2011-10-26",
+      "search_term": "vitamin D3",
+      "hit_rank": 1
     },
     {
       "file": "fixtures/labels/78540.json",
@@ -614,39 +60,69 @@
       "sha256": "c48e3797307e4469445d83453e4dede448d1d370f43e01a3e4f0e3f53913dd4f",
       "label_id": 78540,
       "off_market": 0,
-      "entry_date": "2017-11-20"
+      "entry_date": "2017-11-20",
+      "search_term": "proprietary blend",
+      "hit_rank": 1
     },
     {
-      "file": "fixtures/labels/79532.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/79532",
-      "sha256": "a2a20ddde16d8301f42eca40c1a8d8d5edd622bd875bec46e6daed05dbd029eb",
-      "label_id": 79532,
+      "file": "fixtures/labels/64567.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/64567",
+      "sha256": "c181e131fb83cc35f5d4f44a34df454eab8855c6f5e3e003e22173323090e69c",
+      "label_id": 64567,
       "off_market": 1,
-      "entry_date": "2017-12-22"
+      "entry_date": "2016-09-22",
+      "search_term": "fish oil",
+      "hit_rank": 1
     },
     {
-      "file": "fixtures/labels/79559.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/79559",
-      "sha256": "11855f853569280a117173ad8ad70c51f0b81ebc0cc45f762219b175e7c0df4f",
-      "label_id": 79559,
-      "off_market": 1,
-      "entry_date": "2017-11-20"
-    },
-    {
-      "file": "fixtures/labels/80196.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/80196",
-      "sha256": "a51bf248ac316aa01fa69395b3aff2059245bdbd460e62eaa71e2e621ff540e2",
-      "label_id": 80196,
-      "off_market": 1,
-      "entry_date": "2017-11-20"
-    },
-    {
-      "file": "fixtures/labels/82602.json",
-      "url": "https://api.ods.od.nih.gov/dsld/v9/label/82602",
-      "sha256": "efd84bc591e757d40e91ad8d2a6aaea3195251e30d354df520e72cb7d6ddf2dc",
-      "label_id": 82602,
+      "file": "fixtures/labels/29011.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/29011",
+      "sha256": "6f80f6f7695c0d5e6a018e9553984020b73bf9fb09fc3404e42166d11d2d7402",
+      "label_id": 29011,
       "off_market": 0,
-      "entry_date": "2018-01-25"
+      "entry_date": "2014-01-24",
+      "search_term": "multivitamin",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/254073.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/254073",
+      "sha256": "4a94ad26ad7860870425fed9c3dca10b78666a2b449c1b5bf8153b15e3af4882",
+      "label_id": 254073,
+      "off_market": 1,
+      "entry_date": "2021-08-23",
+      "search_term": "zinc gluconate",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/202695.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/202695",
+      "sha256": "e0e41d2f67cbe135d230d3e16807c5985e56ccaf451a3911e112fabf8852a1b1",
+      "label_id": 202695,
+      "off_market": 1,
+      "entry_date": "2019-05-28",
+      "search_term": "probiotic",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/216782.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/216782",
+      "sha256": "07f038ea5241319ac3b3e1ef87cff61b0e6851332f8feb1eea60258e42136f51",
+      "label_id": 216782,
+      "off_market": 0,
+      "entry_date": "2020-03-24",
+      "search_term": "melatonin",
+      "hit_rank": 1
+    },
+    {
+      "file": "fixtures/labels/240278.json",
+      "url": "https://api.ods.od.nih.gov/dsld/v9/label/240278",
+      "sha256": "a7c30a37feaada75fa8f0f19e57e2a83ea12099980fff04f97c65f32c3b9ba4a",
+      "label_id": 240278,
+      "off_market": 0,
+      "entry_date": "2020-11-21",
+      "search_term": "methylcobalamin",
+      "hit_rank": 1
     }
   ]
 }
