@@ -130,6 +130,9 @@ public final class LibraryViewModel: ObservableObject {
             let id = try repeater.create(from: item.template, now: now)
             errorMessage = nil
             return id
+        } catch IntakeRepeatError.productUnavailable {
+            errorMessage = IntakeRepeatError.productUnavailableMessage
+            return nil
         } catch {
             errorMessage = "Could not add the item."
             return nil
@@ -150,6 +153,10 @@ public final class LibraryViewModel: ObservableObject {
     public func addFavorite(_ item: LibraryItem) {
         guard !item.template.components.contains(where: { $0.amount.isNaN }) else {
             errorMessage = "This item has an unknown amount and cannot be saved as a favorite."
+            return
+        }
+        guard item.template.components.allSatisfy({ AmountParser.parse(DecimalFormatting.text($0.amount)) != nil }) else {
+            errorMessage = "This item has an amount that cannot be saved as a favorite."
             return
         }
         let components = item.template.components.map {

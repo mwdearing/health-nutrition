@@ -102,6 +102,7 @@ public final class EntryDetailViewModel: ObservableObject {
                     destination: $0.destination, label: Self.label($0.destination),
                     stateText: Self.stateText($0.state), iconName: Self.icon($0.state))
             }
+            fieldErrors = [:]
             errorMessage = nil
         } catch {
             errorMessage = "Could not read this entry."
@@ -174,6 +175,9 @@ public final class EntryDetailViewModel: ObservableObject {
                 return nil
             }
             return try repeater.create(repeating: intake, now: now)
+        } catch IntakeRepeatError.productUnavailable {
+            errorMessage = IntakeRepeatError.productUnavailableMessage
+            return nil
         } catch {
             errorMessage = "Could not repeat the entry."
             return nil

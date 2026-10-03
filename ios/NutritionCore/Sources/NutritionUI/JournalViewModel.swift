@@ -91,6 +91,9 @@ public final class JournalViewModel: ObservableObject {
             let newID = try repeater.create(repeating: intake, now: now)
             load(now: now)
             return newID
+        } catch IntakeRepeatError.productUnavailable {
+            errorMessage = IntakeRepeatError.productUnavailableMessage
+            return nil
         } catch {
             errorMessage = "Could not repeat the entry."
             return nil

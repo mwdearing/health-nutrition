@@ -47,4 +47,16 @@ final class FavoritesStoreTests: XCTestCase {
         try store.add(changed)
         XCTAssertEqual(try store.list().map(\.displayName), ["Renamed"])
     }
+
+    func testConcurrentAddsOfSameIdLeaveExactlyOneFavorite() throws {
+        let store = try SwiftDataFavoritesStore(url: try makeURL())
+        let template = sample("fav-race")
+        let failures = NSLock()
+        var errors = 0
+        DispatchQueue.concurrentPerform(iterations: 20) { _ in
+            do { try store.add(template) } catch { failures.withLock { errors += 1 } }
+        }
+        XCTAssertEqual(errors, 0)
+        XCTAssertEqual(try store.list().map(\.id), ["fav-race"])
+    }
 }

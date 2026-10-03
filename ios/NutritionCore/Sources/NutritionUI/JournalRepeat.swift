@@ -36,6 +36,13 @@ public struct RepeatTemplate: Equatable {
     }
 }
 
+/// Why a repeat was refused before anything was written.
+enum IntakeRepeatError: Error, Equatable {
+    case productUnavailable
+
+    static let productUnavailableMessage = "The product for this item is no longer available."
+}
+
 /// Creates a NEW intake from a template: new id, now, current time zone. One `create` call.
 struct IntakeRepeater {
     let store: JournalStore
@@ -53,7 +60,10 @@ struct IntakeRepeater {
     func create(from template: RepeatTemplate, now: Date) throws -> String {
         var product: ProductDefinition?
         if let snapshotID = template.productSnapshotID {
-            product = try store.product(snapshotID: snapshotID)
+            guard let found = try store.product(snapshotID: snapshotID) else {
+                throw IntakeRepeatError.productUnavailable
+            }
+            product = found
         }
         let intake = Intake(
             id: makeID(), category: template.category, occurredAt: now,

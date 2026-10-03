@@ -419,4 +419,42 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertTrue(saved)
         XCTAssertEqual(store.lastEditProductSnapshotID, "snap-9")
     }
+
+    func testRepeatWithMissingProductSnapshotCreatesNothingAndShowsMessage() throws {
+        let store = try makeStore()
+        let library = LibraryViewModel(store: store, favorites: try makeFavorites())
+        let template = RepeatTemplate(
+            displayName: "Bar", category: "food",
+            components: [IntakeComponent(componentID: "bar", name: "Bar", amount: 1, unit: .g)],
+            productSnapshotID: "missing-snapshot")
+        let item = LibraryItem(id: "recent:x", title: "Bar", detail: "", isFavorite: false, template: template)
+        XCTAssertNil(library.select(item, now: now))
+        XCTAssertEqual(store.createCalls, 0)
+        XCTAssertEqual(library.errorMessage, "The product for this item is no longer available.")
+    }
+
+    func testRecentWithZeroAmountCannotBeFavorited() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        try addFood(store, name: "Water", at: now, amount: 0)
+        let library = LibraryViewModel(store: store, favorites: favorites)
+        library.load()
+        let recent = try XCTUnwrap(library.sections.last?.items.first)
+        library.addFavorite(recent)
+        XCTAssertNotNil(library.errorMessage)
+        XCTAssertEqual(try favorites.list().count, 0)
+    }
+
+    func testLoadClearsFieldErrorsAfterInvalidSave() throws {
+        let store = try makeStore()
+        let id = try addFood(store, name: "Oats", at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        XCTAssertFalse(model.save(
+            components: [EditedComponent(componentID: "oats", name: "Oats", amountText: "0", unit: .g)],
+            changeReason: "Edited", now: now))
+        XCTAssertNotNil(model.fieldErrors["oats"])
+        model.load(now: now)
+        XCTAssertTrue(model.fieldErrors.isEmpty)
+    }
 }

@@ -82,6 +82,8 @@ final class FavoriteRecord {
 /// Favorites in their own store file, next to the journal file; the URL is injected.
 public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable {
     private let lock = NSLock()
+    /// Held across each whole write (fetch, delete, insert, save) so concurrent writers cannot interleave.
+    private let writeLock = NSLock()
     private var container: ModelContainer?
 
     public init(url: URL) throws {
@@ -101,6 +103,8 @@ public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable 
     }
 
     public func add(_ favorite: FavoriteTemplate) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
         let id = favorite.id
         let existing = try context.fetch(FetchDescriptor<FavoriteRecord>(
@@ -115,6 +119,8 @@ public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable 
     }
 
     public func remove(id: String) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<FavoriteRecord>(
             predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id }))
