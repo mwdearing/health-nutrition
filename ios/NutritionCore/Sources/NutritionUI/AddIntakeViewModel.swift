@@ -67,8 +67,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The attribution the source requires next to its values.
     @Published public private(set) var attribution: ProductAttribution?
     /// The product the prefilled values came from, written as a snapshot on save. Nil until a lookup
-    /// succeeds, so an entry typed by hand stays exactly as it was.
+    /// succeeds, so an entry typed by hand stays exactly as it was, and nil again as soon as a later
+    /// lookup finds nothing.
     @Published public private(set) var lookedUp: LookedUpProduct?
+    /// The name and brand the last successful lookup filled in, so a later lookup can tell an edited
+    /// field from one it filled itself.
+    private var filledName: String?
+    private var filledBrand: String?
 
     public let timeZoneIdentifier: String
     public let units: [MeasureUnit] = UnitRegistry.all
@@ -150,18 +155,38 @@ public final class AddIntakeViewModel: ObservableObject {
         guard generation == lookupGeneration, barcode == trimmed else { return }
         switch result {
         case .found(let product):
-            // A source may answer with the barcode it found under a slightly different code; the
-            // form is filling in for the barcode in the field, so only that answer is used.
-            guard product.barcode == trimmed else { return }
+            // A source may answer with a different spelling of the same code (a UPC-A padded to 13
+            // digits), but an answer for a genuinely different product must not fill this form.
+            guard BarcodeShape.areEquivalent(product.barcode, trimmed) else { return }
             apply(product)
             lookupState = .found(product)
         case .notFound:
+            invalidateLookup()
             lookupState = .notFound
         case .rateLimited(let retryAfterSeconds):
+            invalidateLookup()
             lookupState = .rateLimited(retryAfterSeconds: retryAfterSeconds)
         case .failed(let reason):
+            invalidateLookup()
             lookupState = .failed(reason)
         }
+    }
+
+    /// Drops everything an earlier lookup put into the form, so a failed or empty lookup for a second
+    /// barcode cannot leave the first product's values, or its snapshot, attached to the next entry.
+    ///
+    /// A field the user has since edited is left alone: only what the lookup itself filled in is
+    /// cleared, so typing over a looked-up name and then getting a rate limit does not lose the typing.
+    func invalidateLookup() {
+        if let filledName, name == filledName { name = "" }
+        if let filledBrand, brand == filledBrand { brand = "" }
+        filledName = nil
+        filledBrand = nil
+        prefilledNutrients = [:]
+        lookupBasis = nil
+        serving = nil
+        attribution = nil
+        lookedUp = nil
     }
 
     /// Fills the form from a looked-up product. The amount is left alone: the user confirms how much
@@ -171,11 +196,13 @@ public final class AddIntakeViewModel: ObservableObject {
            !productName.isEmpty
         {
             name = productName
+            filledName = productName
         }
         if let productBrand = product.brand?.trimmingCharacters(in: .whitespacesAndNewlines),
            !productBrand.isEmpty
         {
             brand = productBrand
+            filledBrand = productBrand
         }
         var filled: [String: NutrientValue] = [:]
         for key in LookedUpProduct.standardKeys {
@@ -219,11 +246,15 @@ public final class AddIntakeViewModel: ObservableObject {
     /// attribution source and the source's own version, so the entry can be traced back later.
     func productSnapshot() -> ProductDefinition? {
         guard let lookedUp else { return nil }
+        // The name and brand are the ones in the form, not the source's: the user may have corrected
+        // or cleared them, and the snapshot has to say what was actually recorded.
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         return ProductDefinition(
-            snapshotID: lookedUp.snapshotIdentity(),
+            snapshotID: lookedUp.snapshotIdentity(name: trimmedName, brand: trimmedBrand),
             productID: lookedUp.barcode,
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            brand: lookedUp.brand?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            name: trimmedName,
+            brand: trimmedBrand,
             barcode: lookedUp.barcode,
             labelBasis: lookedUp.labelBasis,
             catalogOrigin: lookedUp.attribution?.source ?? "unknown",
@@ -231,8 +262,9 @@ public final class AddIntakeViewModel: ObservableObject {
         )
     }
 
-    /// Component ids are slugs: `[a-z0-9][a-z0-9._-]{0,63}`.
-    static func slug(_ text: String) -> String {
+    /// Component ids are slugs: `[a-z0-9][a-z0-9._-]{0,63}`. A pure function, so it is callable
+    /// from outside the main actor (the snapshot identity in `BarcodeLookup.swift` needs it).
+    nonisolated static func slug(_ text: String) -> String {
         var result = ""
         var lastWasDash = false
         for scalar in text.lowercased().unicodeScalars {

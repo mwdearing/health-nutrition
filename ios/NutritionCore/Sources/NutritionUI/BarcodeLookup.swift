@@ -47,25 +47,33 @@ public struct ProductAttribution: Sendable, Hashable {
 
 /// What one serving is, for values given per serving. Without it "per serving" leaves the numbers
 /// ambiguous, because a serving may be 30 g or 250 mL.
+///
+/// A source may give the size only as text ("1 biscuit"), so the text is enough on its own; the
+/// quantity and unit are filled in when the source states them.
 public struct ServingDefinition: Sendable, Hashable {
-    /// The quantity of one serving.
-    public let quantity: Decimal
-    public let unit: MeasureUnit
-    /// The source's own wording, such as "30 g", used when it gives one.
+    /// The quantity of one serving, when the source gives a number.
+    public let quantity: Decimal?
+    public let unit: MeasureUnit?
+    /// The source's own wording, such as "30 g" or "1 biscuit", used when it gives one.
     public let text: String?
 
-    public init(quantity: Decimal, unit: MeasureUnit, text: String? = nil) {
+    public init(quantity: Decimal?, unit: MeasureUnit?, text: String? = nil) {
         self.quantity = quantity
         self.unit = unit
         self.text = text
     }
 
-    /// "30 g", or "250 mL". Never an empty string: an unusable definition is not shown at all.
+    /// The source's wording when it has one, otherwise the quantity with its unit. Empty when the
+    /// source said nothing at all; an unusable definition is then not shown rather than faked.
     public var label: String {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
+        guard let quantity else { return "" }
+        guard let unit else { return "\(quantity)" }
         return "\(quantity) \(unit.symbol)"
     }
+
+    public var isEmpty: Bool { label.isEmpty }
 }
 
 /// One product found by a barcode lookup. Every value is optional except the barcode: a source that
@@ -129,11 +137,13 @@ public struct LookedUpProduct: Sendable, Hashable {
         nutrients[nutrient] ?? .unknown
     }
 
-    /// A stable id for this exact set of values. Looking the same barcode up twice gives the same id,
-    /// so re-using it is not a conflict; changed values give a different id, so a store never sees
-    /// one id standing for two different products.
-    public func snapshotIdentity() -> String {
+    /// A stable id for a snapshot of this product. It covers every field that gets stored, including
+    /// the name and brand the user settled on, so saving the same product twice under two different
+    /// names gives two different ids and neither is mistaken for the other.
+    public func snapshotIdentity(name: String, brand: String?) -> String {
         var signature = barcode + "|" + basis.rawValue + "|" + (version ?? "")
+        signature += "|name=" + name
+        signature += "|brand=" + (brand ?? "")
         if let serving {
             signature += "|serving=" + serving.label
         }
@@ -212,5 +222,22 @@ public enum BarcodeShape {
             sum += digit * (offset.isMultiple(of: 2) ? 3 : 1)
         }
         return (10 - sum % 10) % 10 == digits[digits.count - 1]
+    }
+
+    /// Whether two codes stand for the same product. A UPC-A of 12 digits is written as a GTIN-13
+    /// with a leading zero, and a source may answer with that 13-digit form for a 12-digit request;
+    /// leading zeros are therefore not part of a code's identity.
+    public static func areEquivalent(_ left: String, _ right: String) -> Bool {
+        if left == right { return true }
+        return normalize(left) == normalize(right)
+    }
+
+    /// The code without leading zeros, so "0500011263792" and "500011263792" are the same code.
+    public static func normalize(_ barcode: String) -> String {
+        var digits = Substring(barcode)
+        while digits.count > 1, digits.first == "0" {
+            digits = digits.dropFirst()
+        }
+        return String(digits)
     }
 }

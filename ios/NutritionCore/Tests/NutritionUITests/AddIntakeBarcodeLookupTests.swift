@@ -138,8 +138,21 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
 
         // "per serving" on its own leaves the numbers ambiguous: a serving may be 30 g or 250 mL.
         XCTAssertEqual(model.serving?.label, "30 g")
-        XCTAssertEqual(model.serving?.quantity, Decimal(30))
+        XCTAssertEqual(try XCTUnwrap(model.serving?.quantity), Decimal(30))
         XCTAssertEqual(model.lookupMessage, "Filled in from the barcode (per serving (30 g)). Check the amount, then save.")
+    }
+
+    func testTextOnlyServingDefinitionIsKeptAndLabelled() {
+        // A source may give the size only as text, with no number to read.
+        let biscuit = ServingDefinition(quantity: nil, unit: nil, text: "1 biscuit")
+        XCTAssertEqual(biscuit.label, "1 biscuit")
+        XCTAssertFalse(biscuit.isEmpty)
+        // Nothing said at all is unusable rather than faked.
+        XCTAssertTrue(ServingDefinition(quantity: nil, unit: nil, text: nil).isEmpty)
+        XCTAssertTrue(ServingDefinition(quantity: nil, unit: nil, text: "   ").isEmpty)
+        // The source's wording wins over a number, because it carries the unit.
+        XCTAssertEqual(ServingDefinition(quantity: Decimal(250), unit: .mL, text: "250 ml").label, "250 ml")
+        XCTAssertEqual(ServingDefinition(quantity: Decimal(30), unit: .g, text: nil).label, "30 g")
     }
 
     // MARK: Other outcomes
@@ -243,6 +256,104 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
 
     // MARK: Request identity
 
+    func testReplyPaddedToThirteenDigitsIsAccepted() async throws {
+        // A 12-digit UPC-A asked for as itself comes back as a GTIN-13 with a leading zero; that is
+        // the same product, so the form must fill in rather than sit on its spinner for ever.
+        let upc = "500011263792"
+        XCTAssertTrue(BarcodeShape.isValid(upc))
+        let model = try makeModel(
+            FakeBarcodeLookup(result: .found(oatMilk(barcode: "0" + upc))))
+        model.barcode = upc
+
+        await model.lookUpBarcode()
+
+        XCTAssertEqual(model.name, "Oat drink")
+        XCTAssertEqual(model.lookupState, .found(oatMilk(barcode: "0" + upc)))
+    }
+
+    func testEquivalenceIgnoresLeadingZerosButNotDifferentCodes() {
+        XCTAssertTrue(BarcodeShape.areEquivalent("500011263792", "0500011263792"))
+        XCTAssertTrue(BarcodeShape.areEquivalent("4006381333931", "4006381333931"))
+        XCTAssertFalse(BarcodeShape.areEquivalent("4006381333931", "5000112637922"))
+    }
+
+    func testNotFoundAfterAFoundLookupClearsTheEarlierProduct() async throws {
+        let first = validBarcode
+        let product = oatMilk()
+        let lookup = FakeBarcodeLookup(resultForBarcode: { barcode in
+            barcode == first ? .found(product) : .notFound
+        })
+        let store = try makeStore()
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC", lookup: lookup)
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
+        XCTAssertNotNil(model.lookedUp)
+
+        // The second barcode is not in the catalog. Nothing from the first may survive, or saving the
+        // entry the user types now would attach the first product's barcode and snapshot to it.
+        model.barcode = otherBarcode
+        await model.lookUpBarcode()
+
+        XCTAssertEqual(model.lookupState, .notFound)
+        XCTAssertNil(model.lookedUp)
+        XCTAssertNil(model.lookupBasis)
+        XCTAssertNil(model.serving)
+        XCTAssertNil(model.attribution)
+        XCTAssertTrue(model.prefilledNutrients.isEmpty)
+        XCTAssertEqual(model.name, "")
+        XCTAssertEqual(model.brand, "")
+        XCTAssertNil(model.productSnapshot())
+
+        // What the user types now is saved without any product attached.
+        model.name = "Something else"
+        model.amountText = "30"
+        XCTAssertTrue(model.save(now: now))
+        let revision = try XCTUnwrap(
+            try store.revisions(of: try XCTUnwrap(try store.activeIntakes().first).id).first)
+        XCTAssertNil(revision.productSnapshotID)
+    }
+
+    func testFailedAndRateLimitedAlsoClearTheEarlierProduct() async throws {
+        let first = validBarcode
+        let product = oatMilk()
+        for result in [BarcodeLookupResult.failed("offline"), .rateLimited(retryAfterSeconds: 30)] {
+            let lookup = FakeBarcodeLookup(resultForBarcode: { barcode in
+                barcode == first ? .found(product) : result
+            })
+            let model = try makeModel(lookup)
+            model.barcode = validBarcode
+            await model.lookUpBarcode()
+            XCTAssertNotNil(model.lookedUp)
+
+            model.barcode = otherBarcode
+            await model.lookUpBarcode()
+
+            XCTAssertNil(model.lookedUp, "\(result)")
+            XCTAssertTrue(model.prefilledNutrients.isEmpty, "\(result)")
+            XCTAssertNil(model.productSnapshot(), "\(result)")
+        }
+    }
+
+    func testAnEditedFieldSurvivesAFailedLookup() async throws {
+        let first = validBarcode
+        let product = oatMilk()
+        let lookup = FakeBarcodeLookup(resultForBarcode: { barcode in
+            barcode == first ? .found(product) : .failed("offline")
+        })
+        let model = try makeModel(lookup)
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
+
+        // The user types over what the lookup filled in; that text is theirs, not the lookup's.
+        model.name = "My own name"
+        model.barcode = otherBarcode
+        await model.lookUpBarcode()
+
+        XCTAssertEqual(model.name, "My own name")
+        XCTAssertNil(model.lookedUp)
+    }
+
     func testReplyForADifferentBarcodeIsIgnored() async throws {
         // A source can answer with the code it filed the product under; that answer belongs to the
         // form for that code, not to the barcode now in the field.
@@ -306,13 +417,62 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
 
     func testSaveStoresTheSameSnapshotIDForTheSameLookup() async throws {
         let product = oatMilk()
-        XCTAssertEqual(product.snapshotIdentity(), product.snapshotIdentity())
+        XCTAssertEqual(
+            product.snapshotIdentity(name: "Oat drink", brand: "Example Foods"),
+            product.snapshotIdentity(name: "Oat drink", brand: "Example Foods"))
         // Changed values must not re-use one id for two different products.
         let changed = LookedUpProduct(
             barcode: product.barcode, name: product.name, brand: product.brand, basis: product.basis,
             nutrients: [LookedUpProduct.energyKcal: .known(Decimal(46), .kcal)],
             attribution: product.attribution, version: product.version)
-        XCTAssertNotEqual(product.snapshotIdentity(), changed.snapshotIdentity())
+        XCTAssertNotEqual(
+            product.snapshotIdentity(name: "Oat drink", brand: "Example Foods"),
+            changed.snapshotIdentity(name: "Oat drink", brand: "Example Foods"))
+    }
+
+    func testSnapshotIdentityCoversTheSavedNameAndBrand() {
+        // The snapshot stores the name and brand the user settled on, so two saves of one product
+        // under different names need two ids; otherwise the second save is refused as a conflict.
+        let product = oatMilk()
+        let base = product.snapshotIdentity(name: "Oat drink", brand: "Example Foods")
+        XCTAssertNotEqual(base, product.snapshotIdentity(name: "Oat drink, 1 l", brand: "Example Foods"))
+        XCTAssertNotEqual(base, product.snapshotIdentity(name: "Oat drink", brand: nil))
+    }
+
+    func testSavingTheSameProductTwiceUnderDifferentNamesSucceeds() async throws {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC",
+            lookup: FakeBarcodeLookup(result: .found(oatMilk())))
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
+        model.amountText = "250"
+        XCTAssertTrue(model.save(now: now))
+
+        model.name = "Oat drink, one bottle"
+        model.amountText = "1000"
+        XCTAssertTrue(model.save(now: now))
+
+        XCTAssertNil(model.saveError)
+        XCTAssertEqual(try store.activeIntakes().count, 2)
+    }
+
+    func testSaveStoresTheEditedBrand() async throws {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC",
+            lookup: FakeBarcodeLookup(result: .found(oatMilk())))
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
+        // The user corrects the brand the source gave before saving.
+        model.brand = "Example Foods (corrected)"
+        model.amountText = "250"
+
+        XCTAssertTrue(model.save(now: now))
+
+        let snapshotID = try XCTUnwrap(
+            try store.revisions(of: try XCTUnwrap(try store.activeIntakes().first).id).first?.productSnapshotID)
+        XCTAssertEqual(try store.product(snapshotID: snapshotID)?.brand, "Example Foods (corrected)")
     }
 
     func testHandTypedEntryStoresNoProduct() throws {

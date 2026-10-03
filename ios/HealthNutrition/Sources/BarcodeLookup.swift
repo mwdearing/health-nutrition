@@ -54,17 +54,16 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
             source: catalogOrigin, text: OpenFoodFactsAttribution.text, url: OpenFoodFactsAttribution.url)
     }
 
-    /// Only for per-serving values: without the serving size those figures are ambiguous. The source's
-    /// own wording is preferred, because it carries the unit; when the source gives no wording the
-    /// quantity is shown in grams, which is what the provider's per-serving fields are in for a solid
-    /// product, rather than a unit the source never stated.
+    /// Only for per-serving values: without the serving size those figures are ambiguous. The source
+    /// may give the size only as text ("1 biscuit"), only as a number, or as both; whichever it gives
+    /// is carried, and a per-serving response with neither says nothing rather than guessing.
     private static func serving(from product: OpenFoodFactsProduct) -> ServingDefinition? {
-        guard product.basis == .perServing, let quantity = product.servingQuantity, quantity > 0 else {
-            return nil
-        }
+        guard product.basis == .perServing else { return nil }
         let text = product.servingSize?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ServingDefinition(
-            quantity: quantity, unit: .g, text: text?.isEmpty == false ? text : nil)
+        let trimmedText = (text?.isEmpty == false) ? text : nil
+        let quantity = product.servingQuantity.flatMap { $0 > 0 ? $0 : nil }
+        guard trimmedText != nil || quantity != nil else { return nil }
+        return ServingDefinition(quantity: quantity, unit: quantity == nil ? nil : .g, text: trimmedText)
     }
 
     /// The last-modified timestamp, so an entry can be traced to the version of the data it was
