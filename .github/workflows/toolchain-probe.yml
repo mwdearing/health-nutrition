@@ -1,0 +1,40 @@
+name: toolchain-probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/toolchain-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [macos-26, macos-latest]
+    runs-on: ${{ matrix.image }}
+    steps:
+      - name: Probe toolchain
+        shell: bash
+        run: |
+          echo "=== sw_vers ==="
+          sw_vers
+          echo "=== Installed Xcode apps ==="
+          ls -d /Applications/Xcode*.app || true
+          echo "=== Version of each Xcode app ==="
+          for app in /Applications/Xcode*.app; do
+            [ -e "$app" ] || continue
+            echo "--- $app"
+            "$app/Contents/Developer/usr/bin/xcodebuild" -version || true
+          done
+          echo "=== xcode-select -p ==="
+          xcode-select -p
+          echo "=== xcodebuild -version ==="
+          xcodebuild -version
+          echo "=== xcodebuild -showsdks ==="
+          xcodebuild -showsdks
+          echo "=== swift --version ==="
+          swift --version
