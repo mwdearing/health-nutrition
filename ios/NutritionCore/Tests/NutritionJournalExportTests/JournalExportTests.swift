@@ -270,7 +270,8 @@ final class JournalExportTests: XCTestCase {
         let shape: [String: Any]
         if let definitionName {
             let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any], "the schema must define $defs")
-            shape = try XCTUnwrap(definitions[definitionName] as? [String: Any], "the \$defs/\(definitionName)")
+            shape = try XCTUnwrap(
+                definitions[definitionName] as? [String: Any], "the schema does not define \(definitionName)")
         } else {
             shape = schema
         }
