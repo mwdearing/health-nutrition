@@ -90,6 +90,8 @@ jobs:
             exit 1
           fi
           echo "Found $app"
+          mkdir -p "$RUNNER_TEMP/ipa"
+          cd "$RUNNER_TEMP/ipa"
           mkdir -p Payload
           cp -R "$app" Payload/
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "Payload/HealthNutrition.app/Info.plist"
@@ -98,12 +100,13 @@ jobs:
           zip -qry HealthNutrition-unsigned.ipa Payload
           shasum -a 256 HealthNutrition-unsigned.ipa > HealthNutrition-unsigned.ipa.sha256
           cat HealthNutrition-unsigned.ipa.sha256
+          ls -l HealthNutrition-unsigned.ipa HealthNutrition-unsigned.ipa.sha256
       - name: Upload the unsigned ipa
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: HealthNutrition-unsigned-ipa
           path: |
-            ios/HealthNutrition/HealthNutrition-unsigned.ipa
-            ios/HealthNutrition/HealthNutrition-unsigned.ipa.sha256
+            ${{ runner.temp }}/ipa/HealthNutrition-unsigned.ipa
+            ${{ runner.temp }}/ipa/HealthNutrition-unsigned.ipa.sha256
           if-no-files-found: error
           retention-days: 14
