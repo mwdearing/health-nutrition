@@ -5,6 +5,8 @@ DerivedData/
 build/
 xcuserdata/
 *.xcuserstate
+# The app project is generated from ios/HealthNutrition/project.yml
+ios/HealthNutrition/*.xcodeproj/
 
 # Python
 .venv/

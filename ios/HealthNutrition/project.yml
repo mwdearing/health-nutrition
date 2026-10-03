@@ -1,0 +1,64 @@
+name: HealthNutrition
+
+options:
+  bundleIdPrefix: com.mwdearing
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "18.0"
+  groupSortPosition: top
+  generateEmptyDirectories: false
+
+packages:
+  NutritionCore:
+    path: ../NutritionCore
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ALWAYS_SEARCH_USER_PATHS: NO
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  HealthNutrition:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sources
+      - path: Resources
+    dependencies:
+      - package: NutritionCore
+        product: NutritionUI
+      - package: NutritionCore
+        product: NutritionJournal
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mwdearing.HealthNutrition
+        PRODUCT_NAME: HealthNutrition
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: HealthNutrition
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        # No DEVELOPMENT_TEAM here: set your own team in Xcode, never commit it.
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+schemes:
+  HealthNutrition:
+    build:
+      targets:
+        HealthNutrition: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    archive:
+      config: Release

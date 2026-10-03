@@ -24,3 +24,18 @@ jobs:
       - name: Test NutritionCore
         working-directory: ios/NutritionCore
         run: swift test
+
+  app-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: xcodegen generate
+      - name: Build the app for the iOS Simulator
+        working-directory: ios/HealthNutrition
+        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
