@@ -157,8 +157,7 @@ final class JournalExportTests: XCTestCase {
         let text = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(text.contains("\"amount\":\"37.5\""), text)
         XCTAssertFalse(text.contains("\"amount\":37.5"), text)
-        let object = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let intakes = try XCTUnwrap(object["intakes"] as? [[String: Any]])
         let revisions = try XCTUnwrap(intakes.first?["revisions"] as? [[String: Any]])
         let components = try XCTUnwrap(revisions.last?["components"] as? [[String: Any]])
@@ -178,9 +177,9 @@ final class JournalExportTests: XCTestCase {
             revision(firstID, number: 1, components: [component("oats", Decimal.nan)]),
         ]
         let document = try makeExport(store: store)
-        let component = try XCTUnwrap(document.intakes.first?.revisions.first?.components.first)
-        XCTAssertEqual(component.valueState, .unknown)
-        XCTAssertNil(component.amount)
+        let exported = try XCTUnwrap(document.intakes.first?.revisions.first?.components.first)
+        XCTAssertEqual(exported.valueState, .unknown)
+        XCTAssertNil(exported.amount)
         XCTAssertFalse(try JournalExporter.json(document).contains("\"amount\":0"))
     }
 
@@ -195,14 +194,14 @@ final class JournalExportTests: XCTestCase {
     }
 
     func testFavoritesAreExportedAsStoredTemplatesSortedByID() throws {
-        let favorites = self.favorites()
-        let document = try makeExport(store: StubJournalStore(), favorites: favorites)
+        let favoritesStore = self.favorites()
+        let document = try makeExport(store: StubJournalStore(), favorites: favoritesStore)
         let exported = try XCTUnwrap(document.favorites.first)
         XCTAssertEqual(exported.id, "fav-tea-1")
         XCTAssertEqual(exported.displayName, "Sample tea")
         XCTAssertEqual(exported.components.first?.amount, "250")
         XCTAssertEqual(exported.components.first?.unit, "mL")
-        XCTAssertEqual(exported.productSnapshotID, nil)
+        XCTAssertNil(exported.productSnapshotID)
     }
 
     func testARevisionWithAMissingProductSnapshotFailsLoudly() throws {
