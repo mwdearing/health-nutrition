@@ -3,8 +3,8 @@ import SwiftUI
 /// The HealthNutrition app.
 ///
 /// One journal store and one favorites store are created here, for the app's lifetime, and shared
-/// with every screen (see `docs/journal-store.md`). There is no network access and no HealthKit
-/// access in this target yet.
+/// with every screen (see `docs/journal-store.md`). The only network access is the barcode lookup a
+/// user asks for in Add intake; there is no HealthKit access in this target yet.
 @MainActor
 @main
 struct HealthNutritionApp: App {

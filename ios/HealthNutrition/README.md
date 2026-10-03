@@ -4,7 +4,13 @@ The iOS app target. It is a thin shell: the screens come from the `NutritionUI` 
 data from the `NutritionJournal` store, both in the `NutritionCore` Swift package in
 `../NutritionCore`.
 
-The app has no network access. HealthKit arrives as a debug-only spike first
+The app makes one kind of network request: a barcode lookup in Add intake, when the user asks for
+one. Nothing else leaves the device, and no request is sent while the user is typing. The lookup
+reads a single product from Open Food Facts and nothing is sent back; see
+[docs/providers/open-food-facts.md](../../docs/providers/open-food-facts.md) for the fields read, the
+rate limits honoured and the attribution the licence requires.
+
+HealthKit arrives as a debug-only spike first
 (`Sources/Debug/HealthKitSpikeView.swift`, see [ADR 0002](../../docs/adr/0002-healthkit-sync.md)): the target
 declares the capability and the usage strings, but nothing in a release build reads or writes health data.
 
@@ -23,7 +29,11 @@ declares the capability and the usage strings, but nothing in a release build re
 - `Sources/Debug/HealthKitSpikeView.swift`: the debug-only HealthKit write spike, whole file inside
   `#if DEBUG`. It writes synthetic samples to measure how HealthKit resolves a repeated sync
   identifier, and deletes them again.
-- `Sources/AppServices.swift`: the store and view model setup.
+- `Sources/AppServices.swift`: the store and view model setup, including the barcode lookup client the
+  app shares for its lifetime.
+- `Sources/BarcodeLookup.swift`: the adapter between the nutrition-data client and the lookup protocol
+  the screens depend on. The screens never see the client or the source; this file fills in the
+  attribution and serving definition that a licensed source requires.
 - `Resources/Assets.xcassets`: an empty `AppIcon` and an `AccentColor`.
 
 ## Generating the project

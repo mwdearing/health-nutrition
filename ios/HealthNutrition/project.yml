@@ -32,6 +32,10 @@ targets:
         product: NutritionUI
       - package: NutritionCore
         product: NutritionJournal
+      # Barcode lookups in Add intake. The app target owns the network client and adapts it to the
+      # lookup protocol the UI depends on; NutritionUI itself never links a networking framework.
+      - package: NutritionCore
+        product: NutritionProviders
     # HealthKit capability. Nothing in the app calls HealthKit outside #if DEBUG
     # (see Sources/Debug/HealthKitSpikeView.swift), but the entitlement and the usage strings
     # have to be in the target for the debug spike to run on a device.
