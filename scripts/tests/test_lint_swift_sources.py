@@ -193,6 +193,143 @@ def test_clean_tree_exits_zero(tmp_path: Path) -> None:
     assert result.stdout == ""
 
 
+def test_colour_call_split_across_lines_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Wrapped.swift": (
+            "import SwiftUI\n"
+            "let tint = Color(\n"
+            "    red: 1,\n"
+            "    green: 0,\n"
+            "    blue: 0\n"
+            ")\n"
+        ),
+        f"{UI}/WrappedFont.swift": (
+            "import SwiftUI\n"
+            "let font = Font.system(\n"
+            "    size: 14\n"
+            ")\n"
+            'Text("x").font(\n    .system(\n        size: 14\n    )\n)\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("Wrapped.swift", 2, "colour-literal"),
+        ("WrappedFont.swift", 2, "fixed-font"),
+        # The chained call opens on line 5 and the prohibited label sits on line 7;
+        # the finding is reported where the construct starts.
+        ("WrappedFont.swift", 5, "fixed-font"),
+    ]
+
+
+def test_declaration_specific_import_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/BadHKClass.swift": "import SwiftUI\nimport class HealthKit.HKHealthStore\n",
+        f"{UI}/BadAttr.swift": "import SwiftUI\n@_implementationOnly import Network\n",
+        f"{JOURNAL}/BadNetStruct.swift": "import Foundation\nimport struct Network.NWEndpoint\n",
+        f"{JOURNAL}/BadNetTypealias.swift": "import Foundation\nimport typealias Network.NWProtocolTCP\n",
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("BadNetStruct.swift", 2, "forbidden-import"),
+        ("BadNetTypealias.swift", 2, "forbidden-import"),
+        ("BadAttr.swift", 2, "forbidden-import"),
+        ("BadHKClass.swift", 2, "forbidden-import"),
+    ]
+
+
+def test_string_interpolation_content_is_still_code(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Interpolated.swift": (
+            "import Foundation\n"
+            'let text = "\\(Double(value))"\n'
+            'let other = "value is \\(count) and Double is prose"\n'
+            'let nested = "\\("\\(Double(1))")"\n'
+        ),
+        f"{UI}/Interpolated.swift": (
+            "import SwiftUI\n"
+            'let label = "\\(Color(red: 1, green: 0, blue: 0))"\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("Interpolated.swift", 2, "binary-float"),
+        ("Interpolated.swift", 4, "binary-float"),
+        ("Interpolated.swift", 2, "colour-literal"),
+    ]
+
+
+def test_nested_block_comments_are_ignored(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Nested.swift": (
+            "import Foundation\n"
+            "/* outer comment\n"
+            "   /* inner comment mentioning Double and URLSession */\n"
+            "   still prose: Color(red: 1, green: 0, blue: 0)\n"
+            "*/\n"
+            "let value: Decimal\n"
+        ),
+        f"{UI}/Nested.swift": (
+            "import SwiftUI\n"
+            "/* outer\n"
+            "   /* inner with Font.system(size: 9) */\n"
+            "   #FF0000 and import HealthKit\n"
+            "*/\n"
+            'Text("x").font(.body)\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_extended_string_literal_delimiters_are_honoured(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Extended.swift": (
+            "import Foundation\n"
+            'let quoted = #"she said "Double" loudly"#\n'
+            'let multi = ##"""\n'
+            'Color(red: 1) and URLSession\n'
+            'Double\n'
+            '"""##\n'
+            'let after = "still code"\n'
+            'let value: Double\n'
+        ),
+        f"{UI}/Extended.swift": (
+            "import SwiftUI\n"
+            'let quoted = #"a "#FF0000" literal in raw text"#\n'
+            'Text("x").font(.body)\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("Extended.swift", 8, "binary-float"),
+    ]
+
+
+def test_inferred_floating_point_literal_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Inferred.swift": (
+            "import Foundation\n"
+            "let grams = 0.1\n"
+            "let scaled = grams * 2.5\n"
+            "let exact = Decimal(string: \"0.25\")\n"
+            "let hash: UInt64 = 0xcbf2_9ce4_8422_2325\n"
+            "let count = 42\n"
+        ),
+        f"{JOURNAL}/Inferred.swift": "import Foundation\nlet share = 1e-3\n",
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("Inferred.swift", 2, "binary-float"),
+        ("Inferred.swift", 3, "binary-float"),
+        ("Inferred.swift", 2, "binary-float"),
+    ]
+
+
 def test_rules_do_not_fire_outside_their_scopes(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{PROVIDERS}/Transport.swift": (
