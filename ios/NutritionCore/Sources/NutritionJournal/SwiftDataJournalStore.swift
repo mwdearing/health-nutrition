@@ -153,7 +153,7 @@ private struct StoredComponent: Codable {
     var unitSymbol: String
 }
 
-public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalStore, JournalTombstoneSource, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -413,15 +413,24 @@ public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
     }
 
     private static func readActiveIntakes(container: ModelContainer) throws -> [Intake] {
+        try readIntakes(container: container, lifecycle: .active)
+    }
+
+    /// Deleted intakes, kept as tombstones so an export can retract them later.
+    public func deletedIntakes() throws -> [Intake] {
+        try Self.readIntakes(container: try openContainer(), lifecycle: .deleted)
+    }
+
+    private static func readIntakes(container: ModelContainer, lifecycle: IntakeLifecycle) throws -> [Intake] {
         let context = ModelContext(container)
-        let active = IntakeLifecycle.active.rawValue
+        let raw = lifecycle.rawValue
         let rows = try context.fetch(FetchDescriptor<IntakeRecord>(
-            predicate: #Predicate<IntakeRecord> { $0.lifecycleRaw == active }))
+            predicate: #Predicate<IntakeRecord> { $0.lifecycleRaw == raw }))
         return rows.map {
             Intake(
                 id: $0.intakeID, category: $0.category, occurredAt: $0.occurredAt,
                 timeZoneIdentifier: $0.timeZoneIdentifier, meal: $0.meal, note: $0.note,
-                lifecycle: .active, currentRevision: $0.currentRevision)
+                lifecycle: lifecycle, currentRevision: $0.currentRevision)
         }.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) }
     }
 

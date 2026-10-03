@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/health-nutrition/contracts/journal-export/v1.schema.json",
+  "title": "Journal export, schema version 1",
+  "description": "A versioned, local export of the journal. Adding or changing any field means a new schema version; version 1 never changes shape. Amounts are exact decimal strings in the POSIX format. Unknown amounts are null with value_state unknown, never 0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites"],
+  "properties": {
+    "schema_version": {
+      "description": "Version of this schema the document follows. This build writes 1.",
+      "const": 1
+    },
+    "exported_at": {
+      "description": "When the export was made, ISO-8601 in UTC.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "app_version": {
+      "description": "Version string of the app that wrote the export, injected at export time.",
+      "type": "string",
+      "minLength": 1
+    },
+    "intakes": {
+      "description": "Active intakes, each with every revision, sorted by id.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/intake" }
+    },
+    "tombstones": {
+      "description": "Deleted intakes, so a later import can retract them. Sorted by intake_id.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/tombstone" }
+    },
+    "favorites": {
+      "description": "Favorite templates, as stored. Sorted by id.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/favorite" }
+    }
+  },
+  "$defs": {
+    "intake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "occurred_at", "time_zone", "meal", "note", "current_revision", "revisions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/intake_id" },
+        "category": { "type": "string", "minLength": 1 },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "time_zone": { "type": "string", "minLength": 1 },
+        "meal": { "type": ["string", "null"] },
+        "note": { "type": ["string", "null"] },
+        "current_revision": { "type": "integer", "minimum": 1 },
+        "revisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/revision" }
+        }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "created_at", "change_reason", "product_snapshot_id", "provenance", "components"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "change_reason": { "type": "string" },
+        "product_snapshot_id": { "type": ["string", "null"] },
+        "provenance": {
+          "oneOf": [{ "$ref": "#/$defs/provenance" }, { "type": "null" }]
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/component" }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_id", "product_id", "name", "brand", "barcode", "label_basis", "catalog_origin", "catalog_version"
+      ],
+      "properties": {
+        "snapshot_id": { "type": "string", "minLength": 1 },
+        "product_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "brand": { "type": ["string", "null"] },
+        "barcode": { "type": ["string", "null"] },
+        "label_basis": { "type": "string", "minLength": 1 },
+        "catalog_origin": { "type": "string", "minLength": 1 },
+        "catalog_version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_id", "name", "amount", "unit", "value_state"],
+      "properties": {
+        "component_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "name": { "type": "string" },
+        "amount": {
+          "description": "Exact decimal text, or null when the value state is unknown.",
+          "type": ["string", "null"],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "unit": { "type": "string", "minLength": 1 },
+        "value_state": { "enum": ["known", "unknown"] }
+      }
+    },
+    "tombstone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intake_id", "revision", "occurred_at", "time_zone"],
+      "properties": {
+        "intake_id": { "$ref": "#/$defs/intake_id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "time_zone": { "type": "string", "minLength": 1 }
+      }
+    },
+    "favorite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "display_name", "category", "meal", "product_snapshot_id", "components"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 },
+        "category": { "type": "string", "minLength": 1 },
+        "meal": { "type": ["string", "null"] },
+        "product_snapshot_id": { "type": ["string", "null"] },
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/component" }
+        }
+      }
+    },
+    "intake_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}
