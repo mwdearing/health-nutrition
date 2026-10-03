@@ -36,7 +36,7 @@ public struct LibraryView: View {
                             } label: {
                                 Image(systemName: item.isFavorite ? "star.fill" : "star")
                                     .foregroundStyle(TokenColors.accent)
-                                    .accessibilityLabel(item.isFavorite ? "Favorite" : "Not a favorite")
+                                    .accessibilityHidden(true)
                             }
                             .accessibilityLabel(item.isFavorite ? "Remove \(item.title) from favorites" : "Add \(item.title) to favorites")
                         }

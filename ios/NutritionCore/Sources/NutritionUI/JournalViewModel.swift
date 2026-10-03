@@ -13,6 +13,8 @@ public struct JournalRow: Equatable, Identifiable {
 public struct JournalDaySection: Equatable, Identifiable {
     /// Local day in the intakes' own time zone, as yyyy-MM-dd.
     public let id: String
+    /// Locale-formatted day (medium date style) in the intakes' own time zone.
+    public let title: String
     public let rows: [JournalRow]
 }
 
@@ -25,13 +27,16 @@ public final class JournalViewModel: ObservableObject {
 
     private let store: JournalStore
     private let repeater: IntakeRepeater
+    private let locale: Locale
 
     public init(
         store: JournalStore,
         timeZoneIdentifier: String = TimeZone.current.identifier,
+        locale: Locale = .current,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
     ) {
         self.store = store
+        self.locale = locale
         self.repeater = IntakeRepeater(store: store, timeZoneIdentifier: timeZoneIdentifier, makeID: makeID)
     }
 
@@ -40,6 +45,7 @@ public final class JournalViewModel: ObservableObject {
         do {
             var skipped = 0
             var groups: [String: [JournalRow]] = [:]
+            var titles: [String: String] = [:]
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
                 guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else {
                     skipped += 1
@@ -55,10 +61,14 @@ public final class JournalViewModel: ObservableObject {
                     id: intake.id, title: AmountText.title(current.components),
                     detail: AmountText.summary(current.components), occurredAt: intake.occurredAt,
                     timeZoneIdentifier: intake.timeZoneIdentifier)
-                groups[Self.dayKey(intake.occurredAt, zone: zone), default: []].append(row)
+                let key = Self.dayKey(intake.occurredAt, zone: zone)
+                if titles[key] == nil {
+                    titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
+                }
+                groups[key, default: []].append(row)
             }
             sections = groups.keys.sorted(by: >).map { key in
-                JournalDaySection(id: key, rows: (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt })
+                JournalDaySection(id: key, title: titles[key] ?? key, rows: (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt })
             }
             skippedCount = skipped
             errorMessage = nil
@@ -82,6 +92,15 @@ public final class JournalViewModel: ObservableObject {
             errorMessage = "Could not repeat the entry."
             return nil
         }
+    }
+
+    static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = zone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
     }
 
     static func dayKey(_ date: Date, zone: TimeZone) -> String {

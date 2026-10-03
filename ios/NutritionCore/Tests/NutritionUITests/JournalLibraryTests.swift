@@ -152,6 +152,16 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(detail.components.first?.amountText, "unknown")
     }
 
+    func testDayHeaderTitleUsesFixedLocaleAndIntakeZone() throws {
+        let store = try makeStore()
+        let date = Date(timeIntervalSince1970: 1_705_361_400)
+        _ = try addFood(store, name: "Oats", at: date, amount: 1, product: product("snap-t"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+        model.load(now: date)
+        XCTAssertEqual(model.sections.first?.id, "2024-01-15")
+        XCTAssertEqual(model.sections.first?.title, "Jan 15, 2024")
+    }
+
     func testRepeatCreatesNewIntakeWithCopiedComponentsAndLeavesOriginal() throws {
         let store = try makeStore()
         let snapshot = product("snap-1")

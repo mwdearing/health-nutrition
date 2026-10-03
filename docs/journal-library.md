@@ -19,3 +19,8 @@ Today has Journal and Library links, and Add intake has "From library". These ar
 
 ## Deferred
 Recipes (ingredient lines, yield and per-serving math) are deferred to NC-04b.
+
+## Follow-ups
+
+- The navigation hooks (`onOpenJournal`, `onOpenLibrary`, `onFromLibrary`) are optional closures that no host supplies yet. Connect them when the app shell exists.
+- Unknown amount handling: "unknown" is shown only for a NaN amount, an empty component list or a blank name, because `Decimal` cannot otherwise represent a missing amount. Revisit when the model can.

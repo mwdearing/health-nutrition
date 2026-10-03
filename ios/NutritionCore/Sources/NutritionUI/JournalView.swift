@@ -14,7 +14,7 @@ public struct JournalView: View {
     public var body: some View {
         List {
             ForEach(model.sections) { section in
-                Section(section.id) {
+                Section(section.title) {
                     ForEach(section.rows) { row in
                         Button {
                             onSelect(row.id)
