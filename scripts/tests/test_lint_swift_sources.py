@@ -419,6 +419,90 @@ def test_division_is_not_mistaken_for_a_regex_literal(tmp_path: Path) -> None:
     assert findings(result) == [("Division.swift", 4, "binary-float")]
 
 
+def test_postfix_force_unwrap_before_a_slash_is_not_a_regex_opener(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Postfix.swift": (
+            "let a = foo!/Double(n)/2\n"
+            "let b = value! / 2\n"
+            "let c = ok? / Double(2)\n"
+            "let d = /Double/\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # `foo!` ends an operand, so the slash on line 1 divides and its `Double`
+    # counts. Line 4 is a real pattern, so its text is not code.
+    assert findings(result) == [
+        ("Postfix.swift", 1, "binary-float"),
+        ("Postfix.swift", 3, "binary-float"),
+    ]
+
+
+def test_interpolation_inside_an_extended_regex_is_still_code(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/RegexInterpolation.swift": (
+            'let r = #/[0-9]+\\#(Double(input)!)/#\n'
+            'let prose = #/Double \\(Double) stays text/#\n'
+            'let plain = /Double/\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The interpolated expression is compiled Swift; a plain `\(` needs the same
+    # number of hashes to be one, and line 3 is a pattern, so neither counts.
+    assert findings(result) == [
+        ("RegexInterpolation.swift", 1, "binary-float"),
+    ]
+
+
+def test_multiline_hash_regex_spans_lines(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/MultilineRegex.swift": (
+            "let r = #/\n"
+            "  Double | Float\n"
+            "  /#\n"
+            "let x: Double = 1\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The scan runs to the closing /#, so the pattern text is never inspected
+    # and the code after the literal is still checked.
+    assert findings(result) == [("MultilineRegex.swift", 4, "binary-float")]
+
+
+def test_hex_float_literal_with_underscored_exponent_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/HexUnderscore.swift": (
+            "let a = 0x1p1_0\n"
+            "let b = 0x1.fp2_0\n"
+            "let c = 0x1_000\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # Underscores are allowed in a hex float exponent; a hex integer is not a
+    # floating-point literal even with underscores.
+    assert findings(result) == [
+        ("HexUnderscore.swift", 1, "binary-float"),
+        ("HexUnderscore.swift", 2, "binary-float"),
+    ]
+
+
+def test_hash_delimited_regex_may_start_with_a_space(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/LeadingSpace.swift": (
+            "let r = #/ Double /#\n"
+            "let q = x / Double(2)\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # Only a bare `/` needs the pattern to start at the slash; with hash
+    # delimiters a leading space is part of the pattern.
+    assert findings(result) == [("LeadingSpace.swift", 2, "binary-float")]
+
+
 def test_lint_allow_text_inside_a_string_does_not_allow(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{DOMAIN}/Doc.swift": (

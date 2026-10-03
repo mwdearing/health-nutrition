@@ -28,7 +28,8 @@ binary-float
     ``Double`` or ``Float``, and no untyped floating-point literal such as
     ``0.1``, ``1e-3`` or the hexadecimal ``0x1.fp2``, which Swift would infer as
     ``Double``. A hex integer such as ``0xFF`` is not a floating-point literal.
-    Quantities use ``Decimal``.
+    Underscores are allowed in a hex float exponent (``0x1p1_0``) but do not
+    make a hex integer a float. Quantities use ``Decimal``.
 
 Matching runs over the whole masked source rather than one line at a time, so a
 prohibited call wrapped over several lines is still matched. A finding is
@@ -43,7 +44,10 @@ interpolation needs the same number of hashes as the literal, so ``\\#(`` inside
 
 A regex literal is ``/.../`` or ``#/.../#`` (and more hashes). To keep division
 out of it, a bare ``/`` only opens a regex where an expression may begin, and the
-literal has to close on its own line.
+literal has to close on its own line; a postfix ``!`` or ``?`` ends an operand,
+so the slash after ``foo!`` divides. A hash-delimited literal is unambiguous: its
+pattern may start with a space, it may span several lines, and an interpolation
+inside it is code, exactly as in an extended string.
 
 Allowing a finding
 ------------------
@@ -90,7 +94,8 @@ BINARY_FLOAT_TYPE = re.compile(r"\b(?:Double|Float)\b")
 BINARY_FLOAT_LITERAL = re.compile(
     r"(?<![0-9A-Za-z_.])(?:[0-9][0-9_]*\.[0-9][0-9_]*(?:[eE][+-]?[0-9]+)?"
     r"|[0-9][0-9_]*[eE][+-]?[0-9]+"
-    r"|0[xX][0-9A-Fa-f_]*(?:\.[0-9A-Fa-f_]*)?[pP][+-]?[0-9]+)"
+    # The exponent of a hex float may carry underscores too: `0x1.fp2_0`.
+    r"|0[xX][0-9A-Fa-f_]*(?:\.[0-9A-Fa-f_]*)?[pP][+-]?[0-9][0-9_]*)"
     r"(?![0-9A-Za-z_])"
 )
 
@@ -163,29 +168,54 @@ def _mask_regex(source: str, i: int, hashes: int, out: list[str]) -> int | None:
     """Mask a regex literal opening at ``i``, or return ``None``.
 
     Swift spells regex literals ``/.../`` with an optional number of hashes in
-    front: ``#/.../#`` and ``##/.../##``. Their contents are a pattern, not code.
+    front: ``#/.../#`` and ``##/.../##``. Their contents are a pattern, not code,
+    except for the interpolations, which are compiled Swift and stay visible.
+
     To keep division out of it a bare ``/`` only opens a regex where an
-    expression may begin, and the literal has to close on its own line.
+    expression may begin, and the literal has to close on its own line. A
+    hash-delimited literal is unambiguous, so its pattern may start with a space
+    and may span several lines: the scan runs to the closing delimiter.
     """
     n = len(source)
     start = i + hashes
     if start >= n or source[start] != "/":
         return None
     j = start + 1
-    if j >= n or source[j] in " \t\n":
-        # A space or newline after the slash reads as division.
+    if not hashes and (j >= n or source[j] in " \t\n"):
+        # A space or newline after a bare slash reads as division. `#/ Double /#`
+        # has no such ambiguity, so hashes allow a leading space.
         return None
     terminator = "/" + "#" * hashes
+    # As in an extended string, an interpolation needs the same number of
+    # hashes as the literal: `\#(` inside `#/.../#`.
+    interpolator = "\\" + "#" * hashes + "("
+    parts: list[str] = []
+    # Where the pending text to blank starts; interpolated code is written out
+    # as it is met, so it is never blanked by a later segment.
+    emitted = i
     while j < n:
         ch = source[j]
-        if ch == "\n":
+        if ch == "\n" and not hashes:
+            # Only a bare pattern has to close on its own line.
             return None
         if ch == "\\" and j + 1 < n:
+            if hashes and source.startswith(interpolator, j):
+                parts.append(_blank(source[emitted:j + len(interpolator)]))
+                j += len(interpolator)
+                j = _mask_code(source, j, parts, stop_on_close_paren=True)
+                if j < n and source[j] == ")":
+                    parts.append(")")
+                    j += 1
+                emitted = j
+                continue
+            parts.append(_blank(source[emitted:j + 2]))
             j += 2
+            emitted = j
             continue
         if source.startswith(terminator, j):
             end = j + len(terminator)
-            out.append(_blank(source[i:end]))
+            parts.append(_blank(source[emitted:end]))
+            out.extend(parts)
             return end
         j += 1
     return None
@@ -328,7 +358,9 @@ def _mask_code(
 
 
 # Characters after which a `/` opens a regex literal rather than a division.
-REGEX_PREFIXES = "=(,:[!&|?+-*%<>^~"
+# `!` and `?` are absent: `foo!/Double(n)/2` is a force-unwrap followed by a
+# division, so a postfix operator ends an operand rather than starting one.
+REGEX_PREFIXES = "=(,:[&|+-*%<>^~"
 REGEX_KEYWORDS = {"return", "case", "in", "where", "is", "as", "try", "match", "guard", "throw"}
 
 
