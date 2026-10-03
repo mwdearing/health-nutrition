@@ -59,16 +59,15 @@ final class HealthKitSpikeRunner {
                 return
             }
             do {
-                let processed = try await self.store.requestAuthorization(
+                // The async requestAuthorization returns nothing: it completes once the prompt is
+                // done, and HealthKit deliberately never says which types were granted.
+                try await self.store.requestAuthorization(
                     toShare: [Self.waterType, Self.proteinType],
                     read: [Self.waterType, Self.proteinType]
                 )
-                // `processed` says the request ran, not that every type was granted; HealthKit
-                // deliberately reports nothing more than this.
-                self.authorizationSummary = processed ? "requested" : "refused"
+                self.authorizationSummary = "requested"
                 self.record(
-                    "authorization requested (write and read: dietaryWater, dietaryProtein), processed: \(processed)"
-                )
+                    "authorization requested (write and read: dietaryWater, dietaryProtein)")
             } catch {
                 self.authorizationSummary = "failed"
                 self.record("authorization failed: \(error.localizedDescription)")
@@ -231,16 +230,14 @@ final class HealthKitSpikeRunner {
         }
         record("existing spike samples: \(samples.count)")
         for sample in samples.sorted(by: { $0.startDate < $1.startDate }) {
-            record(
-                "  \(sample.type.identifier) \(sample.quantity)"
-                    + " uuid=\(sample.uuid.uuidString)"
-                    + " syncVersion=\(syncVersion(of: sample))"
-                    + " start=\(stamp(sample.startDate))"
-                    + " end=\(stamp(sample.endDate))"
-                    + " source=\(sample.sourceRevision.source.bundleIdentifier)"
-                    + " product=\(sample.sourceRevision.product)"
-                    + " own=\(sample.sourceRevision.source == HKSource.default())"
-            )
+            // Each field is bound to its own `let` and the line is one interpolation: a long chain
+            // of concatenations here is slow for the type checker to resolve.
+            let id = sample.uuid.uuidString
+            let version = syncVersion(of: sample)
+            let source = sample.sourceRevision.source.bundleIdentifier
+            let product = sample.sourceRevision.product
+            let own = sample.sourceRevision.source == HKSource.default()
+            record("  \(sample.type.identifier) \(sample.quantity) uuid=\(id) syncVersion=\(version) start=\(stamp(sample.startDate)) end=\(stamp(sample.endDate)) source=\(source) product=\(product) own=\(own)")
         }
     }
 
