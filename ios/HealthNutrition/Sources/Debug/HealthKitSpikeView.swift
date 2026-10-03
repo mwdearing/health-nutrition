@@ -33,7 +33,7 @@ final class HealthKitSpikeRunner {
 
     private let store = HKHealthStore()
     private let logger = Logger(
-        subsystem: "com.mwdearing.HealthNutrition", category: "HealthKitSpike")
+        subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "HealthKitSpike")
 
     /// A fixed spike identifier, so a re-run targets the same samples. Synthetic amounts only:
     /// nothing here is anyone's real intake.
