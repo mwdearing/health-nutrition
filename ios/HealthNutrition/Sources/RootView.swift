@@ -11,6 +11,7 @@ struct RootView: View {
     @State private var selection: AppTab = .today
     @State private var addingIntake = false
     @State private var selectedIntakeID: String?
+    @Environment(\.scenePhase) private var scenePhase
 
     private enum AppTab: Hashable {
         case today
@@ -51,6 +52,11 @@ struct RootView: View {
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
         }
+        // Today's totals depend on the local day: recompute them when the app comes back to the
+        // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { reload() }
+        }
         .sheet(isPresented: $addingIntake) {
             AddIntakeView(
                 model: AddIntakeViewModel(store: services.journalStore, now: Date()),
@@ -83,13 +89,13 @@ struct RootView: View {
     }
 }
 
-/// Shown when the journal file cannot be opened at all.
+/// Shown when a store file cannot be opened at all.
 struct StartupFailureView: View {
     let message: String?
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("The journal could not be opened.").font(.headline)
+            Text("The app's storage could not be opened.").font(.headline)
             Text(message ?? "Quit the app and try again; if it keeps failing, reinstall the app.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)

@@ -16,8 +16,7 @@ struct HealthNutritionApp: App {
             _services = State(initialValue: try AppServices.make())
         } catch {
             _services = State(initialValue: nil)
-            _startupError = State(
-                initialValue: "The journal store file could not be opened: \(error.localizedDescription)")
+            _startupError = State(initialValue: error.localizedDescription)
         }
     }
 

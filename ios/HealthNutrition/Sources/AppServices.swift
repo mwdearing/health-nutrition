@@ -29,16 +29,36 @@ final class AppServices {
         let directory = defaultDirectory
         // No delivery worker exists yet (HealthKit writer and relay outbox come later): queue nothing for them,
         // so entries never sit in a permanent Pending state.
-        let journalStore = try SwiftDataJournalStore(
-            url: directory.appendingPathComponent("journal.store"),
-            enabledDestinations: []
-        )
+        let journalStore: SwiftDataJournalStore
+        do {
+            journalStore = try SwiftDataJournalStore(
+                url: directory.appendingPathComponent("journal.store"),
+                enabledDestinations: []
+            )
+        } catch {
+            throw StoreStartupError.journal(error)
+        }
         do {
             let favoritesStore = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
             return AppServices(journalStore: journalStore, favoritesStore: favoritesStore)
         } catch {
             journalStore.close()
-            throw error
+            throw StoreStartupError.favorites(error)
+        }
+    }
+
+    /// Which store file failed to open at startup, so the failure screen names the right one.
+    enum StoreStartupError: LocalizedError {
+        case journal(Error)
+        case favorites(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .journal(let error):
+                return "The journal store file could not be opened: \(error.localizedDescription)"
+            case .favorites(let error):
+                return "The favorites store file could not be opened: \(error.localizedDescription)"
+            }
         }
     }
 

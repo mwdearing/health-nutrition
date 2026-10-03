@@ -60,7 +60,7 @@ jobs:
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 
-  # Manual only: an unsigned device build, packaged for Michael to sign and sideload himself.
+  # Manual only: an unsigned device build, for whoever runs it to sign with their own identity and sideload.
   unsigned-ipa:
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
