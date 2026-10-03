@@ -20,12 +20,14 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            TodayView(
-                model: services.today,
-                onAddIntake: { addingIntake = true },
-                onOpenJournal: { selection = .journal },
-                onOpenLibrary: { selection = .library }
-            )
+            NavigationStack {
+                TodayView(
+                    model: services.today,
+                    onAddIntake: { addingIntake = true },
+                    onOpenJournal: { selection = .journal },
+                    onOpenLibrary: { selection = .library }
+                )
+            }
             .tabItem { Label("Today", systemImage: "sun.max") }
             .tag(AppTab.today)
 

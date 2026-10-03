@@ -17,7 +17,7 @@ on:
       bundle_id:
         description: "Bundle identifier to build with"
         required: false
-        default: com.mwdearing.HealthNutrition
+        default: dev.example.HealthNutrition
         type: string
       configuration:
         description: "Build configuration"

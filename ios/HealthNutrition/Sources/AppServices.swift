@@ -27,7 +27,12 @@ final class AppServices {
     /// Opens both store files in `directory`, creating them if needed.
     static func make() throws -> AppServices {
         let directory = defaultDirectory
-        let journalStore = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        // No delivery worker exists yet (HealthKit writer and relay outbox come later): queue nothing for them,
+        // so entries never sit in a permanent Pending state.
+        let journalStore = try SwiftDataJournalStore(
+            url: directory.appendingPathComponent("journal.store"),
+            enabledDestinations: []
+        )
         do {
             let favoritesStore = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
             return AppServices(journalStore: journalStore, favoritesStore: favoritesStore)

@@ -56,7 +56,7 @@ material, and CI never signs anything.
 
 To get a device build, run the workflow by hand: **Actions > ios > Run workflow**. Inputs:
 
-- `bundle_id` (default `com.mwdearing.HealthNutrition`)
+- `bundle_id` (default `dev.example.HealthNutrition`, a placeholder: enter your own bundle identifier when you run the workflow, matching the provisioning profile you sign with)
 - `configuration` (default `Release`)
 - `marketing_version` (default empty, which uses `0.1.<run number>`)
 

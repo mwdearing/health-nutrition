@@ -1,7 +1,7 @@
 name: HealthNutrition
 
 options:
-  bundleIdPrefix: com.mwdearing
+  bundleIdPrefix: dev.example
   createIntermediateGroups: true
   deploymentTarget:
     iOS: "18.0"
@@ -34,7 +34,7 @@ targets:
         product: NutritionJournal
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.mwdearing.HealthNutrition
+        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutrition
         PRODUCT_NAME: HealthNutrition
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
