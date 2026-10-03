@@ -4,11 +4,18 @@ public struct TodayView: View {
     @ObservedObject var model: TodayViewModel
     private let now: () -> Date
     private let onAddIntake: () -> Void
+    private let onOpenJournal: (() -> Void)?
+    private let onOpenLibrary: (() -> Void)?
 
-    public init(model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void) {
+    public init(
+        model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
+        onOpenJournal: (() -> Void)? = nil, onOpenLibrary: (() -> Void)? = nil
+    ) {
         self.model = model
         self.now = now
         self.onAddIntake = onAddIntake
+        self.onOpenJournal = onOpenJournal
+        self.onOpenLibrary = onOpenLibrary
     }
 
     public var body: some View {
@@ -57,6 +64,26 @@ public struct TodayView: View {
                     VStack(alignment: .leading) {
                         Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
                         Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                    }
+                }
+            }
+            if onOpenJournal != nil || onOpenLibrary != nil {
+                Section {
+                    if let onOpenJournal {
+                        Button {
+                            onOpenJournal()
+                        } label: {
+                            Text("Journal").font(.body)
+                        }
+                        .accessibilityLabel("Open the journal")
+                    }
+                    if let onOpenLibrary {
+                        Button {
+                            onOpenLibrary()
+                        } label: {
+                            Text("Library").font(.body)
+                        }
+                        .accessibilityLabel("Open the library")
                     }
                 }
             }
