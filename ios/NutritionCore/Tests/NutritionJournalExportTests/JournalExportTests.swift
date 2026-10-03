@@ -402,8 +402,10 @@ final class JournalExportTests: XCTestCase {
         let products = try XCTUnwrap(properties["products"] as? [String: Any])
         XCTAssertEqual(
             try XCTUnwrap(products["items"] as? [String: Any])["$ref"] as? String, "#/$defs/provenance")
-        XCTAssertTrue(
-            try XCTUnwrap(properties["required"] as? [String]).contains("products"), "products is required")
+        // `required` is a sibling of `properties` at the top level of the schema, not one of its entries.
+        let required = try XCTUnwrap(schema["required"] as? [String])
+        XCTAssertTrue(required.contains("products"), "products is required")
+        XCTAssertEqual(Set(required), Set(properties.keys), "every schema property is required")
     }
 
     func testSchemaTiesAnAmountToItsValueState() throws {
