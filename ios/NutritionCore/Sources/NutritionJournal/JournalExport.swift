@@ -46,6 +46,28 @@ public struct JournalExportComponent: Sendable, Hashable, Codable {
             self.valueState = .known
         }
     }
+
+    /// Writes `amount` as an explicit `null` when it is missing. Synthesized encoding would leave the key out
+    /// with `encodeIfPresent`, and the v1 schema marks `amount` as required-but-nullable.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(componentID, forKey: .componentID)
+        try container.encode(name, forKey: .name)
+        try encodeNullable(amount, forKey: .amount, in: &container)
+        try container.encode(unit, forKey: .unit)
+        try container.encode(valueState, forKey: .valueState)
+    }
+}
+
+/// Encodes an optional as the value or as an explicit JSON `null`, never by leaving the key out.
+func encodeNullable<T: Encodable, Key: CodingKey>(
+    _ value: T?, forKey key: Key, in container: inout KeyedEncodingContainer<Key>
+) throws {
+    if let value {
+        try container.encode(value, forKey: key)
+    } else {
+        try container.encodeNil(forKey: key)
+    }
 }
 
 /// Where the recorded amounts came from: the immutable product snapshot a revision points at.
@@ -90,6 +112,20 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
             barcode: product.barcode, labelBasis: product.labelBasis, catalogOrigin: product.catalogOrigin,
             catalogVersion: product.catalogVersion)
     }
+
+    /// `brand` and `barcode` are required-but-nullable in the schema, so both are always written, as `null`
+    /// when the product has neither.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(snapshotID, forKey: .snapshotID)
+        try container.encode(productID, forKey: .productID)
+        try container.encode(name, forKey: .name)
+        try encodeNullable(brand, forKey: .brand, in: &container)
+        try encodeNullable(barcode, forKey: .barcode, in: &container)
+        try container.encode(labelBasis, forKey: .labelBasis)
+        try container.encode(catalogOrigin, forKey: .catalogOrigin)
+        try container.encode(catalogVersion, forKey: .catalogVersion)
+    }
 }
 
 /// One revision. Every revision of an intake is exported, not only the current one, so the history survives.
@@ -128,6 +164,18 @@ public struct JournalExportRevision: Sendable, Hashable, Codable {
             productSnapshotID: revision.productSnapshotID, provenance: provenance,
             components: revision.components.map(JournalExportComponent.init(component:)))
     }
+
+    /// `product_snapshot_id` and `provenance` are required-but-nullable in the schema, so an intake recorded
+    /// by hand rather than from a product writes both as `null` instead of leaving them out.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(number, forKey: .number)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(changeReason, forKey: .changeReason)
+        try encodeNullable(productSnapshotID, forKey: .productSnapshotID, in: &container)
+        try encodeNullable(provenance, forKey: .provenance, in: &container)
+        try container.encode(components, forKey: .components)
+    }
 }
 
 /// An active intake with its whole revision history.
@@ -164,6 +212,20 @@ public struct JournalExportIntake: Sendable, Hashable, Codable {
         self.note = note
         self.currentRevision = currentRevision
         self.revisions = revisions
+    }
+
+    /// `meal` and `note` are required-but-nullable in the schema, so an entry without them writes both as
+    /// `null` rather than omitting the keys.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(category, forKey: .category)
+        try container.encode(occurredAt, forKey: .occurredAt)
+        try container.encode(timeZoneIdentifier, forKey: .timeZoneIdentifier)
+        try encodeNullable(meal, forKey: .meal, in: &container)
+        try encodeNullable(note, forKey: .note, in: &container)
+        try container.encode(currentRevision, forKey: .currentRevision)
+        try container.encode(revisions, forKey: .revisions)
     }
 }
 
@@ -226,15 +288,33 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
         self.components = components
     }
 
-    public init(favorite: FavoriteTemplate) {
+    /// A stored favorite holds decimal text that the favorites store does not itself validate, so a malformed
+    /// amount such as `"1.2.3"` reaches this initializer. Writing it out with `value_state: known` would
+    /// produce a document that fails the schema's decimal pattern, so the export fails loudly instead of
+    /// producing a backup that no reader can use.
+    public init(favorite: FavoriteTemplate) throws {
         self.init(
             id: favorite.id, displayName: favorite.displayName, category: favorite.category, meal: favorite.meal,
             productSnapshotID: favorite.productSnapshotID,
-            components: favorite.components.map {
-                JournalExportComponent(
-                    componentID: $0.componentID, name: $0.name, amount: $0.amountText, unit: $0.unitSymbol,
-                    valueState: .known)
+            components: try favorite.components.map { component in
+                guard DecimalText.isValidDecimalText(component.amountText) else {
+                    throw JournalExportError.malformedFavoriteAmount(favorite.id, component.amountText)
+                }
+                return JournalExportComponent(
+                    componentID: component.componentID, name: component.name, amount: component.amountText,
+                    unit: component.unitSymbol, valueState: .known)
             })
+    }
+
+    /// `meal` and `product_snapshot_id` are required-but-nullable in the schema and are always written.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(category, forKey: .category)
+        try encodeNullable(meal, forKey: .meal, in: &container)
+        try encodeNullable(productSnapshotID, forKey: .productSnapshotID, in: &container)
+        try container.encode(components, forKey: .components)
     }
 }
 
@@ -289,6 +369,8 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case notUTF8
     /// The document declares a schema version this build does not understand, so its fields are not read.
     case unsupportedSchemaVersion(Int)
+    /// A stored favorite holds an amount that is not exact decimal text, which the schema cannot express.
+    case malformedFavoriteAmount(String, String)
 }
 
 /// One active intake with every one of its revisions, as read in a single pass.
@@ -375,12 +457,19 @@ public enum JournalExporter {
             for revision in item.revisions {
                 var provenance: JournalExportProvenance?
                 if let snapshotID = revision.productSnapshotID {
-                    guard let product = try store.product(snapshotID: snapshotID) else {
-                        throw JournalExportError.missingProductSnapshot(snapshotID)
+                    // A snapshot is immutable, so one that is already resolved needs no second query. A long
+                    // journal that keeps using the same product would otherwise cost one fetch per revision.
+                    let resolved: JournalExportProvenance
+                    if let cached = productsByID[snapshotID] {
+                        resolved = cached
+                    } else {
+                        guard let product = try store.product(snapshotID: snapshotID) else {
+                            throw JournalExportError.missingProductSnapshot(snapshotID)
+                        }
+                        resolved = JournalExportProvenance(product: product)
+                        productsByID[snapshotID] = resolved
                     }
-                    let resolved = JournalExportProvenance(product: product)
                     provenance = resolved
-                    productsByID[snapshotID] = resolved
                 }
                 revisions.append(JournalExportRevision(revision: revision, provenance: provenance))
             }
@@ -392,11 +481,11 @@ public enum JournalExporter {
         }
         var favoriteList: [JournalExportFavorite] = []
         if let favorites {
-            favoriteList = try favorites.list().map { JournalExportFavorite(favorite: $0) }
+            favoriteList = try favorites.list().map { try JournalExportFavorite(favorite: $0) }
             // A favorite keeps the product it was made from even when every intake that used it is deleted,
             // because repeating the favorite later needs the snapshot and not just the id.
             for favorite in favoriteList {
-                guard let snapshotID = favorite.productSnapshotID else { continue }
+                guard let snapshotID = favorite.productSnapshotID, productsByID[snapshotID] == nil else { continue }
                 guard let product = try store.product(snapshotID: snapshotID) else {
                     throw JournalExportError.missingProductSnapshot(snapshotID)
                 }
@@ -411,14 +500,14 @@ public enum JournalExporter {
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID })
     }
 
-    /// Deterministic JSON: sorted keys and ISO-8601 dates with fractional seconds, so the same journal
-    /// encodes to the same bytes and subsecond timestamps survive the round trip.
+    /// Deterministic JSON: sorted keys and ISO-8601 dates with microsecond precision, so the same journal
+    /// encodes to the same bytes and no timestamp is rounded on its way out.
     public static func encode(_ export: JournalExport) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(fractionalISO8601.string(from: date))
+            try container.encode(JournalExporter.microsecondFormatter().string(from: date))
         }
         return try encoder.encode(export)
     }
@@ -430,8 +519,8 @@ public enum JournalExporter {
         return text
     }
 
-    /// Reads a document back, with the same date strategy the writer uses. Whole-second dates are still
-    /// accepted, so a file written by an older build of this app imports cleanly.
+    /// Reads a document back, with the same date strategy the writer uses. Millisecond and whole-second dates
+    /// are still accepted, so a file written by an earlier build of this app imports cleanly.
     ///
     /// A document that declares another schema version is refused: this reader does not know what its extra
     /// or changed fields mean, and guessing would silently drop data.
@@ -440,8 +529,16 @@ public enum JournalExporter {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let text = try container.decode(String.self)
-            if let date = fractionalISO8601.date(from: text) ?? wholeSecondISO8601.date(from: text) {
+            // Whole-second text goes to the plain ISO-8601 reader, and text with a fraction to the six-digit
+            // one, so a second is never put through a formatter that has to guess how many digits it has.
+            if text.contains(".") {
+                if let date = JournalExporter.microsecondFormatter().date(from: text) { return date }
+            } else if let date = JournalExporter.wholeSecondFormatter().date(from: text) {
                 return date
+            }
+            // An older build wrote three fractional digits; those files must still import.
+            for formatter in JournalExporter.legacyFormatters() {
+                if let date = formatter.date(from: text) { return date }
             }
             throw DecodingError.dataCorruptedError(
                 in: container, debugDescription: "not an ISO-8601 date: \(text)")
@@ -453,21 +550,49 @@ public enum JournalExporter {
         return document
     }
 
-    /// ISO-8601 in UTC with fractional seconds, the format `encode` writes.
-    static let fractionalISO8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter
-    }()
+    /// The date text `encode` writes: ISO-8601 in UTC with **six** fractional digits, so a timestamp survives
+    /// the round trip exactly.
+    ///
+    /// `ISO8601DateFormatter` cannot do this: its `.withFractionalSeconds` option always writes three digits,
+    /// which silently rounds a `Date` to the nearest millisecond and can move two entries onto the same
+    /// instant. A `Date` is a floating-point count of seconds, and an epoch value near 1.7e9 seconds spends ten
+    /// of its sixteen significant decimal digits there, so six fractional digits is the finest text that still
+    /// parses back to the same instant. The schema describes the dates as `format: date-time`, which RFC 3339
+    /// allows at any fractional length.
+    static let microsecondDateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
 
-    /// Whole-second ISO-8601 in UTC, for reading documents written before fractional seconds were kept.
-    static let wholeSecondISO8601: ISO8601DateFormatter = {
+    /// A fresh formatter per call. `DateFormatter` is a reference type that Foundation does not promise to
+    /// keep thread-safe across mutations, and this is only used a handful of times per export.
+    static func microsecondFormatter() -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = microsecondDateFormat
+        return formatter
+    }
+
+    /// Whole-second ISO-8601 in UTC, the shape a date with no fraction takes.
+    static func wholeSecondFormatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter
-    }()
+    }
+
+    /// Millisecond ISO-8601, the shape an earlier build of this app wrote. Nothing produces it any more, but
+    /// an existing backup must still import.
+    static func legacyFormatters() -> [ISO8601DateFormatter] {
+        [
+            {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                formatter.timeZone = TimeZone(secondsFromGMT: 0)
+                return formatter
+            }(),
+            wholeSecondFormatter(),
+        ]
+    }
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.
     public static func fileName(exportedAt: Date) -> String {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.org/health-nutrition/contracts/journal-export/v1.schema.json",
   "title": "Journal export, schema version 1",
-  "description": "A versioned, local export of the journal. Adding or changing any field means a new schema version; version 1 never changes shape. Amounts are exact decimal strings in the POSIX format. Unknown amounts are null with value_state unknown, never 0.",
+  "description": "A versioned, local export of the journal. Adding or changing any field means a new schema version; version 1 never changes shape. Amounts are exact decimal strings in the POSIX format. Unknown amounts are null with value_state unknown, never 0. Every key listed in a required list is always present: a value that is not known is written as null, never left out. Dates are ISO-8601 in UTC with six fractional digits (microseconds), which is the finest fraction that survives a round trip through a date holding a Double number of seconds.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites", "products"],

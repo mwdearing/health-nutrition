@@ -100,6 +100,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
             try data.write(to: url, options: .atomic)
+            // A second export in another second gets a different file name, so the copy this screen was
+            // holding would be left behind with nothing able to remove it. It holds the same journal, so it
+            // goes before the new URL replaces it.
+            if exportFileURL != url { removeExportFile() }
             exportFileURL = url
             exportFileName = name
             entryCount = document.intakes.count

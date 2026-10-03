@@ -150,6 +150,35 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: firstURL.path))
     }
 
+    func testExportingAgainInALaterSecondReplacesTheFileInsteadOfLeavingTheOldOne() throws {
+        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        XCTAssertTrue(model.export(now: now))
+        let firstURL = try XCTUnwrap(model.exportFileURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstURL.path))
+        addTeardownBlock { try? FileManager.default.removeItem(at: firstURL) }
+        // A second later the file name changes, so the first copy would otherwise stay in the temporary
+        // directory with nothing left able to delete it.
+        let later = now.addingTimeInterval(1)
+        XCTAssertTrue(model.export(now: later))
+        let secondURL = try XCTUnwrap(model.exportFileURL)
+        XCTAssertNotEqual(secondURL, firstURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: firstURL.path))
+        // Only the current copy is left for clearExport() to remove.
+        model.clearExport()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondURL.path))
+    }
+
+    func testExportingTwiceInTheSameSecondKeepsTheSingleFile() throws {
+        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        XCTAssertTrue(model.export(now: now))
+        let url = try XCTUnwrap(model.exportFileURL)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(model.export(now: now))
+        XCTAssertEqual(model.exportFileURL, url)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
     func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
         let store = filledStore()
         let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())

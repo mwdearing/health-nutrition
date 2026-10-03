@@ -56,6 +56,20 @@ private final class SnapshotStubStore: StubJournalStore, JournalSnapshotSource {
     }
 }
 
+/// Counts the snapshot lookups the exporter makes, so a test can prove an immutable product is fetched once
+/// rather than once per revision.
+private final class CountingSnapshotStore: StubJournalStore, JournalSnapshotSource {
+    var productQueryCount = 0
+    var snapshot = JournalSnapshot(activeIntakes: [], deletedIntakes: [])
+
+    func readJournalSnapshot() throws -> JournalSnapshot { snapshot }
+
+    override func product(snapshotID: String) throws -> ProductDefinition? {
+        productQueryCount += 1
+        return try super.product(snapshotID: snapshotID)
+    }
+}
+
 private final class StubFavoritesStore: FavoritesStore, @unchecked Sendable {
     var items: [FavoriteTemplate] = []
 
@@ -145,6 +159,131 @@ final class JournalExportTests: XCTestCase {
         XCTAssertEqual(decoded.intakes.first?.revisions.count, 2)
     }
 
+    func testEveryNullableContractFieldIsWrittenAsAnExplicitJSONNull() throws {
+        // Nothing in this document has a meal, a note, a brand or a barcode, and the second intake has no
+        // product at all, so a synthesized encoder would leave all of those keys out of a schema that requires
+        // them. The first intake also carries an unknown amount, which must be written as null and not omitted.
+        let store = StubJournalStore()
+        store.intakes = [
+            Intake(
+                id: firstID, category: "water", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                currentRevision: 1),
+            intake(secondID, revision: 1),
+        ]
+        store.revisionsByIntake[firstID] = [
+            IntakeRevision(
+                intakeID: firstID, number: 1,
+                components: [component("water", Decimal.nan), component("oats", Decimal(string: "40")!)],
+                productSnapshotID: nil, changeReason: "created", createdAt: now),
+        ]
+        store.revisionsByIntake[secondID] = [
+            revision(secondID, number: 1, components: [component("oats", Decimal(string: "40")!)],
+                     snapshotID: "snap-1"),
+        ]
+        store.products["snap-1"] = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-oats", name: "Sample rolled oats",
+            labelBasis: "per100g", catalogOrigin: "sample-catalog", catalogVersion: "1")
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-plain-1", displayName: "Sample water", category: "drink",
+            components: [FavoriteComponent(componentID: "water", name: "Water", amountText: "250", unitSymbol: "mL")])]
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(text.contains("\"meal\":null"), text)
+        XCTAssertTrue(text.contains("\"note\":null"), text)
+        XCTAssertTrue(text.contains("\"provenance\":null"), text)
+        XCTAssertTrue(text.contains("\"product_snapshot_id\":null"), text)
+        XCTAssertTrue(text.contains("\"amount\":null"), text)
+        let document = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let provenance = try XCTUnwrap((document["products"] as? [[String: Any]])?.first)
+        XCTAssertTrue(provenance["brand"] is NSNull, "a product without a brand writes brand as null")
+        XCTAssertTrue(provenance["barcode"] is NSNull, "a product without a barcode writes barcode as null")
+        let favorite = try XCTUnwrap((document["favorites"] as? [[String: Any]])?.first)
+        XCTAssertTrue(favorite["meal"] is NSNull, "a favorite without a meal writes meal as null")
+        XCTAssertTrue(favorite["product_snapshot_id"] is NSNull)
+    }
+
+    func testAnExportFullOfNullsHasEveryKeyTheSchemaRequires() throws {
+        // The committed example has a note, a product and a brand; a real export often has none of them.
+        // This walks the encoded document against the schema's own `required` lists so the writer, not just
+        // the round-trip test, is held to the contract.
+        let store = StubJournalStore()
+        store.intakes = [
+            Intake(
+                id: firstID, category: "water", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                currentRevision: 1),
+        ]
+        store.revisionsByIntake[firstID] = [
+            IntakeRevision(
+                intakeID: firstID, number: 1,
+                components: [component("water", Decimal.nan), component("oats", Decimal(string: "40")!)],
+                productSnapshotID: nil, changeReason: "created", createdAt: now),
+        ]
+        store.deleted = [intake(secondID, at: now, revision: 2)]
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-plain-1", displayName: "Sample water", category: "drink",
+            components: [FavoriteComponent(componentID: "water", name: "Water", amountText: "250", unitSymbol: "mL")])]
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+        let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let schema = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: try contractFile("v1.schema", "json")) as? [String: Any])
+        let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
+
+        try assertRequiredKeys(encoded, against: schema, definitionName: nil, path: "$")
+        for (key, definition) in [
+            ("intakes", "intake"), ("tombstones", "tombstone"), ("favorites", "favorite"), ("products", "provenance"),
+        ] {
+            for item in try XCTUnwrap(encoded[key] as? [[String: Any]], key) {
+                try assertRequiredKeys(item, against: schema, definitionName: definition, path: "$.\(key)")
+            }
+        }
+        let intakes = try XCTUnwrap(encoded["intakes"] as? [[String: Any]])
+        for intake in intakes {
+            for revision in try XCTUnwrap(intake["revisions"] as? [[String: Any]]) {
+                try assertRequiredKeys(revision, against: schema, definitionName: "revision", path: "$.revisions")
+                let provenance = try XCTUnwrap(revision["provenance"])
+                if let object = provenance as? [String: Any] {
+                    try assertRequiredKeys(
+                        object, against: schema, definitionName: "provenance", path: "$.provenance")
+                } else {
+                    XCTAssertTrue(provenance is NSNull, "a missing provenance must be null, not absent")
+                }
+                for component in try XCTUnwrap(revision["components"] as? [[String: Any]]) {
+                    try assertRequiredKeys(
+                        component, against: schema, definitionName: "component", path: "$.components")
+                }
+            }
+        }
+        XCTAssertFalse(definitions.isEmpty, "the schema must define the object shapes")
+    }
+
+    /// Checks one encoded object against the shape the schema states for it: every required key is present,
+    /// even when its value is `null`, and no key the schema does not define turns up.
+    private func assertRequiredKeys(
+        _ object: [String: Any], against schema: [String: Any], definitionName: String?, path: String
+    ) throws {
+        let shape: [String: Any]
+        if let definitionName {
+            let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any], "the schema must define $defs")
+            shape = try XCTUnwrap(definitions[definitionName] as? [String: Any], "the \$defs/\(definitionName)")
+        } else {
+            shape = schema
+        }
+        let required = try XCTUnwrap(shape["required"] as? [String], "\(path) has no required list in the schema")
+        for key in required {
+            XCTAssertNotNil(object[key], "\(path) is missing the required key \(key)")
+        }
+        let properties = try XCTUnwrap(shape["properties"] as? [String: Any], "\(path) has no properties")
+        for key in object.keys where properties[key] == nil {
+            XCTFail("\(path) has \(key), which the schema does not define")
+        }
+    }
+
     func testEncoderOutputIsDeterministicForTheSameData() throws {
         let store = filledStore()
         let first = try JournalExporter.encode(try makeExport(store: store))
@@ -227,6 +366,117 @@ final class JournalExportTests: XCTestCase {
         XCTAssertNil(exported.productSnapshotID)
     }
 
+    func testSubMillisecondTimestampsSurviveSoOrderingIsNeverLost() throws {
+        let store = StubJournalStore()
+        let base = Date(timeIntervalSince1970: 1_705_264_200)
+        // Two entries 0.2 milliseconds apart: a three-digit fraction rounds both onto the same instant, six
+        // digits keep them apart. The gap is still far below a millisecond, so this fails a rounded writer.
+        store.intakes = [
+            intake(firstID, at: base.addingTimeInterval(0.123_4), revision: 1),
+            intake(secondID, at: base.addingTimeInterval(0.123_6), revision: 1),
+        ]
+        store.revisionsByIntake[firstID] = [
+            IntakeRevision(
+                intakeID: firstID, number: 1, components: [component("oats", Decimal(string: "40")!)],
+                productSnapshotID: nil, changeReason: "created",
+                createdAt: base.addingTimeInterval(0.000_001)),
+        ]
+        store.revisionsByIntake[secondID] = [
+            IntakeRevision(
+                intakeID: secondID, number: 1, components: [component("tea", Decimal(string: "250")!)],
+                productSnapshotID: nil, changeReason: "created",
+                createdAt: base.addingTimeInterval(0.999_999)),
+        ]
+        let document = try JournalExporter.makeExport(
+            store: store, favorites: nil, appVersion: "0.1.0",
+            exportedAt: base.addingTimeInterval(0.555_555))
+        let text = try JournalExporter.json(document)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.123400Z"), text)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.123600Z"), text)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.000001Z"), text)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.999999Z"), text)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.555555Z"), text)
+        let decoded = try JournalExporter.decode(try JournalExporter.encode(document))
+        // A tolerance of one microsecond catches millisecond rounding (which moves a timestamp by up to half a
+        // millisecond) without demanding more of a `Date` than its own resolution.
+        let tolerance = 0.000_001
+        XCTAssertEqual(decoded.exportedAt.timeIntervalSince1970, base.addingTimeInterval(0.555_555).timeIntervalSince1970, accuracy: tolerance)
+        let occurred = decoded.intakes.sorted { $0.id < $1.id }.map(\.occurredAt)
+        XCTAssertEqual(occurred.count, 2)
+        XCTAssertNotEqual(occurred[0], occurred[1], "two entries 0.2 ms apart must not collapse onto one instant")
+        XCTAssertEqual(occurred[0].timeIntervalSince1970, base.addingTimeInterval(0.123_4).timeIntervalSince1970, accuracy: tolerance)
+        XCTAssertEqual(occurred[1].timeIntervalSince1970, base.addingTimeInterval(0.123_6).timeIntervalSince1970, accuracy: tolerance)
+        let created = decoded.intakes.first?.revisions.first?.createdAt
+        XCTAssertEqual(
+            try XCTUnwrap(created).timeIntervalSince1970, base.addingTimeInterval(0.000_001).timeIntervalSince1970,
+            accuracy: tolerance)
+    }
+
+    func testMillisecondAndWholeSecondDatesWrittenByEarlierBuildsStillDecode() throws {
+        // Three-digit and no-digit date text must keep importing; the committed example uses whole seconds.
+        let milliseconds = try JournalExporter.decode(
+            Data(#"{"schema_version":1,"exported_at":"2024-01-15T09:15:00.250Z","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#.utf8))
+        XCTAssertEqual(milliseconds.exportedAt.timeIntervalSince1970, 1_705_310_100.25)
+        let wholeSeconds = try JournalExporter.decode(
+            Data(#"{"schema_version":1,"exported_at":"2024-01-15T09:15:00Z","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#.utf8))
+        XCTAssertEqual(wholeSeconds.exportedAt.timeIntervalSince1970, 1_705_310_100)
+    }
+
+    func testAMalformedFavoriteAmountFailsTheExportRatherThanWritingAnUnusableBackup() throws {
+        // The favorites store accepts decimal-looking text such as "1.2.3", which the schema's decimal
+        // pattern does not allow, so the export must refuse it rather than call it a known amount.
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-broken-1", displayName: "Sample broken", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "1.2.3", unitSymbol: "g")])]
+        XCTAssertThrowsError(
+            try JournalExporter.makeExport(
+                store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+        ) { error in
+            XCTAssertEqual(error as? JournalExportError, .malformedFavoriteAmount("fav-broken-1", "1.2.3"))
+        }
+    }
+
+    func testWellFormedFavoriteAmountsAreStillExported() throws {
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [
+            FavoriteTemplate(
+                id: "fav-a-1", displayName: "Sample whole", category: "food",
+                components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "250", unitSymbol: "g")]),
+            FavoriteTemplate(
+                id: "fav-b-1", displayName: "Sample decimal", category: "food",
+                components: [FavoriteComponent(
+                    componentID: "oats", name: "Oats", amountText: "0.5", unitSymbol: "g")]),
+        ]
+        let document = try JournalExporter.makeExport(
+            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+        XCTAssertEqual(document.favorites.map(\.components.first?.amount), ["0.5", "250"])
+    }
+
+    func testOneProductSnapshotIsResolvedOnceEvenWhenManyRevisionsUseIt() throws {
+        let store = CountingSnapshotStore()
+        let snapshot = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-oats", name: "Sample rolled oats",
+            labelBasis: "per100g", catalogOrigin: "sample-catalog", catalogVersion: "1")
+        store.snapshot = JournalSnapshot(
+            activeIntakes: [JournalExportIntakeSnapshot(
+                intake: intake(firstID, revision: 3),
+                revisions: (1...3).map { number in
+                    IntakeRevision(
+                        intakeID: firstID, number: number,
+                        components: [component("oats", Decimal(string: "40")!)],
+                        productSnapshotID: "snap-1", changeReason: "created",
+                        createdAt: Date(timeIntervalSince1970: TimeInterval(1_705_264_200 + number * 60)))
+                })],
+            deletedIntakes: [])
+        store.products["snap-1"] = snapshot
+        let document = try JournalExporter.makeExport(
+            store: store, favorites: nil, appVersion: "0.1.0", exportedAt: now)
+        XCTAssertEqual(store.productQueryCount, 1, "an immutable snapshot must not be fetched once per revision")
+        XCTAssertEqual(document.products.map(\.snapshotID), ["snap-1"])
+        XCTAssertEqual(document.intakes.first?.revisions.count, 3)
+    }
+
     func testFractionalSecondsSurviveEncodingSoTwoEntriesInOneSecondStayDistinct() throws {
         let store = StubJournalStore()
         let base = Date(timeIntervalSince1970: 1_705_264_200)
@@ -250,20 +500,17 @@ final class JournalExportTests: XCTestCase {
             store: store, favorites: nil, appVersion: "0.1.0",
             exportedAt: base.addingTimeInterval(0.5))
         let text = try JournalExporter.json(document)
-        XCTAssertTrue(text.contains("2024-01-14T20:30:00.250Z"), text)
-        XCTAssertTrue(text.contains("2024-01-14T20:30:00.125Z"), text)
-        XCTAssertTrue(text.contains("2024-01-14T20:30:00.500Z"), text)
-        XCTAssertFalse(text.contains(".000Z"), text)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.250000Z"), text)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.125000Z"), text)
+        XCTAssertTrue(text.contains("2024-01-14T20:30:00.500000Z"), text)
         let decoded = try JournalExporter.decode(try JournalExporter.encode(document))
-        XCTAssertEqual(decoded, document)
-        XCTAssertEqual(
-            decoded.exportedAt.timeIntervalSince1970, base.addingTimeInterval(0.5).timeIntervalSince1970,
-            accuracy: 0.0005)
+        XCTAssertEqual(decoded.appVersion, document.appVersion)
+        XCTAssertEqual(decoded.intakes.map(\.id), document.intakes.map(\.id))
         let occurred = decoded.intakes.sorted { $0.id < $1.id }.map(\.occurredAt)
         XCTAssertEqual(occurred.count, 2)
-        XCTAssertNotEqual(occurred[0], occurred[1])
-        XCTAssertEqual(occurred[0].timeIntervalSince1970, base.addingTimeInterval(0.25).timeIntervalSince1970, accuracy: 0.0005)
-        XCTAssertEqual(occurred[1].timeIntervalSince1970, base.addingTimeInterval(0.75).timeIntervalSince1970, accuracy: 0.0005)
+        XCTAssertNotEqual(occurred[0], occurred[1], "two entries in one second must stay in order")
+        XCTAssertEqual(occurred[0].timeIntervalSince1970, base.addingTimeInterval(0.25).timeIntervalSince1970, accuracy: 0.000_001)
+        XCTAssertEqual(occurred[1].timeIntervalSince1970, base.addingTimeInterval(0.75).timeIntervalSince1970, accuracy: 0.000_001)
     }
 
     func testWholeSecondDatesFromTheCommittedExampleStillDecode() throws {

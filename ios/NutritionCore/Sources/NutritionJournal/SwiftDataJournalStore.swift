@@ -436,11 +436,11 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
         var active: [JournalExportIntakeSnapshot] = []
         var deleted: [Intake] = []
         for row in rows {
+            let lifecycle = try Self.lifecycle(rawValue: row.lifecycleRaw)
             let intake = Intake(
                 id: row.intakeID, category: row.category, occurredAt: row.occurredAt,
                 timeZoneIdentifier: row.timeZoneIdentifier, meal: row.meal, note: row.note,
-                lifecycle: IntakeLifecycle(rawValue: row.lifecycleRaw) ?? .active,
-                currentRevision: row.currentRevision)
+                lifecycle: lifecycle, currentRevision: row.currentRevision)
             if intake.lifecycle == .deleted {
                 deleted.append(intake)
                 continue
@@ -461,6 +461,17 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
         return JournalSnapshot(
             activeIntakes: active.sorted { ($0.intake.occurredAt, $0.intake.id) < ($1.intake.occurredAt, $1.intake.id) },
             deletedIntakes: deleted.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) })
+    }
+
+    /// Maps a stored lifecycle string to its value. An unrecognised value means the row is corrupt or was
+    /// written by a build this one does not understand: the ordinary active read leaves such a row out
+    /// because it predicates on the exact `active` value, so defaulting it to `active` here would put a
+    /// deleted entry back into an export as live data. Refuse it instead.
+    static func lifecycle(rawValue: String) throws -> IntakeLifecycle {
+        guard let lifecycle = IntakeLifecycle(rawValue: rawValue) else {
+            throw JournalError.corruptRecord("lifecycle:\(rawValue)")
+        }
+        return lifecycle
     }
 
     private static func readIntakes(container: ModelContainer, lifecycle: IntakeLifecycle) throws -> [Intake] {

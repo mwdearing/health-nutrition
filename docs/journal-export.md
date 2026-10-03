@@ -4,8 +4,9 @@
 A single JSON file with everything the journal holds on this device: every intake with **all** of its
 revisions, the tombstones of deleted intakes, and the favorite templates. The app builds it locally and
 encodes it with `JSONEncoder` using sorted keys and ISO-8601 dates in UTC, so the same journal always encodes
-to the same bytes. Dates keep their fractional seconds, so two entries written in the same second stay in
-order and a restore reproduces the journal exactly; a file written with whole-second dates still reads back.
+to the same bytes. Dates carry **six fractional digits**, so a timestamp survives the round trip exactly: a
+three-digit fraction would round a `Date` to the nearest millisecond and could move two entries onto the same
+instant. Millisecond and whole-second dates written by earlier builds still import.
 
 The contract lives in the repository next to the code:
 - `contracts/journal-export/v1.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines.
@@ -49,7 +50,18 @@ revision points at, so the export says where the amounts came from.
 tombstones remain, so without this list the favorite would keep a `product_snapshot_id` that nothing in the
 document defines, and repeating it after a restore would need the catalog. Every referenced snapshot travels
 with the document; an export whose reference cannot be resolved fails loudly with
-`JournalExportError.missingProductSnapshot` rather than writing a dangling id.
+`JournalExportError.missingProductSnapshot` rather than writing a dangling id. A snapshot is immutable, so one
+already resolved is reused instead of being fetched again for every revision that names it.
+
+## Nulls, and what the export refuses to write
+- Every key a `required` list names is always present. A value that is not known is written as an explicit
+  JSON `null` - `meal`, `note`, `product_snapshot_id`, `provenance`, `brand`, `barcode` and an unknown
+  `amount` - because the schema marks them required-but-nullable and a missing key does not validate.
+- A favorite's stored amount text is checked against the schema's decimal pattern before it is written. The
+  favorites store accepts text such as `1.2.3`, which the pattern does not allow, so the export fails with
+  `JournalExportError.malformedFavoriteAmount` rather than writing a backup no reader could use.
+- A stored intake whose lifecycle value is neither `active` nor `deleted` is corrupt, so the snapshot read
+  fails with `JournalError.corruptRecord` instead of treating the row as live data.
 
 ## Versioning rule
 `schema_version` never changes shape. Adding a field, removing one, renaming one or changing what a field
@@ -65,8 +77,8 @@ version 2 file is never half-understood.
 - Data leaves the app only through the system share sheet or a file exporter the person opens, and only
   because they asked. Nothing is shared on a timer or in the background.
 - Deleting the app deletes its store; the temporary export file is removed from disk when the export is
-  cleared, and also when an export attempt fails, so the screen never points at a file it has already
-  deleted or leaves one behind with nothing able to remove it.
+  cleared, when an export attempt fails, and when a new export replaces it in another second. At most one
+  copy of the journal is ever left in the temporary directory.
 - Apple Health and HealthRelay are listed on that screen as **shown but disabled**: the switches cannot be
   turned on until those work packages ship, so the screen never implies that data is already leaving the
   device.
