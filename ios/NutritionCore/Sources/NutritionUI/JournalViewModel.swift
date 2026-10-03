@@ -31,13 +31,16 @@ public final class JournalViewModel: ObservableObject {
 
     public init(
         store: JournalStore,
-        timeZoneIdentifier: String = TimeZone.current.identifier,
+        timeZoneIdentifier: String? = nil,
+        timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         locale: Locale = .current,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
     ) {
         self.store = store
         self.locale = locale
-        self.repeater = IntakeRepeater(store: store, timeZoneIdentifier: timeZoneIdentifier, makeID: makeID)
+        self.repeater = IntakeRepeater(
+            store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
+            makeID: makeID)
     }
 
     /// Groups active intakes by the local day of each intake's own time zone, newest first.

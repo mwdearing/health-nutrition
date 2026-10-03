@@ -21,17 +21,17 @@ public struct RepeatTemplate: Equatable {
         self.productSnapshotID = productSnapshotID
     }
 
-    public init(favorite: FavoriteTemplate) {
+    /// Returns nil when any component has a malformed amount or unit: the whole template is rejected.
+    public init?(favorite: FavoriteTemplate) {
         var parsed: [IntakeComponent] = []
         for item in favorite.components {
-            if let amount = Decimal(string: item.amountText, locale: AmountParser.locale), !amount.isNaN,
+            guard let amount = AmountParser.parse(item.amountText),
                 let unit = try? MeasureUnit(symbol: item.unitSymbol)
-            {
-                parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: unit))
-            }
+            else { return nil }
+            parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: unit))
         }
         self.init(
-            displayName: favorite.displayName, category: favorite.category, components: parsed,
+            displayName: favorite.displayName, category: favorite.category, meal: favorite.meal, components: parsed,
             productSnapshotID: favorite.productSnapshotID)
     }
 }
@@ -39,8 +39,15 @@ public struct RepeatTemplate: Equatable {
 /// Creates a NEW intake from a template: new id, now, current time zone. One `create` call.
 struct IntakeRepeater {
     let store: JournalStore
-    let timeZoneIdentifier: String
+    /// Resolved at create time, so a zone change after init is honored.
+    let timeZoneProvider: () -> String
     let makeID: () -> String
+
+    /// A fixed override wins; otherwise the provider is asked on every create.
+    static func resolver(override: String?, provider: @escaping () -> String) -> () -> String {
+        if let override { return { override } }
+        return provider
+    }
 
     @discardableResult
     func create(from template: RepeatTemplate, now: Date) throws -> String {
@@ -50,7 +57,7 @@ struct IntakeRepeater {
         }
         let intake = Intake(
             id: makeID(), category: template.category, occurredAt: now,
-            timeZoneIdentifier: timeZoneIdentifier, meal: template.meal)
+            timeZoneIdentifier: timeZoneProvider(), meal: template.meal)
         try store.create(intake, components: template.components, product: product, now: now)
         return intake.id
     }

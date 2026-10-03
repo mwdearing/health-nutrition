@@ -28,6 +28,7 @@ public struct LibraryView: View {
                                     Text(item.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
                                 }
                             }
+                            .buttonStyle(.borderless)
                             .accessibilityLabel("Add \(item.title), \(item.detail)")
                             .accessibilityHint("Adds a new entry now with the same amounts")
                             Spacer()
@@ -38,6 +39,7 @@ public struct LibraryView: View {
                                     .foregroundStyle(TokenColors.accent)
                                     .accessibilityHidden(true)
                             }
+                            .buttonStyle(.borderless)
                             .accessibilityLabel(item.isFavorite ? "Remove \(item.title) from favorites" : "Add \(item.title) to favorites")
                         }
                     }

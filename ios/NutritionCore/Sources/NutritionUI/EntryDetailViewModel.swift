@@ -61,12 +61,15 @@ public final class EntryDetailViewModel: ObservableObject {
     public init(
         store: JournalStore,
         intakeID: String,
-        timeZoneIdentifier: String = TimeZone.current.identifier,
+        timeZoneIdentifier: String? = nil,
+        timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
     ) {
         self.store = store
         self.intakeID = intakeID
-        self.repeater = IntakeRepeater(store: store, timeZoneIdentifier: timeZoneIdentifier, makeID: makeID)
+        self.repeater = IntakeRepeater(
+            store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
+            makeID: makeID)
     }
 
     public func load(now: Date) {
@@ -120,7 +123,11 @@ public final class EntryDetailViewModel: ObservableObject {
         fieldErrors = errors
         guard errors.isEmpty, !parsed.isEmpty else { return false }
         do {
-            let snapshotID = try store.revisions(of: intakeID).first { $0.number == currentRevision }?.productSnapshotID
+            guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
+                errorMessage = "This entry is no longer available."
+                return false
+            }
+            let snapshotID = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }?.productSnapshotID
             var product: ProductDefinition?
             if let snapshotID { product = try store.product(snapshotID: snapshotID) }
             let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)

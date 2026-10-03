@@ -24,6 +24,13 @@ public struct EntryDetailView: View {
                                 .accessibilityLabel("Amount of \(component.name)")
                             Text(component.unit.symbol).font(.body).foregroundStyle(TokenColors.textSecondary)
                         }
+                        if component.amountText == "unknown" {
+                            Text("Amount: \(component.amountText)")
+                                .font(.footnote)
+                                .foregroundStyle(TokenColors.textSecondary)
+                                .accessibilityLabel("Amount of \(component.name)")
+                                .accessibilityValue(component.amountText)
+                        }
                         if let message = model.fieldErrors[component.id] {
                             Text(message).font(.footnote).foregroundStyle(TokenColors.error)
                         }

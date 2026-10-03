@@ -24,16 +24,18 @@ public struct FavoriteTemplate: Sendable, Hashable, Codable, Identifiable {
     public var category: String
     public var components: [FavoriteComponent]
     public var productSnapshotID: String?
+    public var meal: String?
 
     public init(
         id: String, displayName: String, category: String, components: [FavoriteComponent],
-        productSnapshotID: String? = nil
+        productSnapshotID: String? = nil, meal: String? = nil
     ) {
         self.id = id
         self.displayName = displayName
         self.category = category
         self.components = components
         self.productSnapshotID = productSnapshotID
+        self.meal = meal
     }
 }
 
@@ -61,10 +63,11 @@ final class FavoriteRecord {
     var componentsJSON: String
     var productSnapshotID: String?
     var addedAt: Date
+    var meal: String?
 
     init(
         favoriteID: String, displayName: String, category: String, componentsJSON: String,
-        productSnapshotID: String?, addedAt: Date
+        productSnapshotID: String?, addedAt: Date, meal: String? = nil
     ) {
         self.favoriteID = favoriteID
         self.displayName = displayName
@@ -72,6 +75,7 @@ final class FavoriteRecord {
         self.componentsJSON = componentsJSON
         self.productSnapshotID = productSnapshotID
         self.addedAt = addedAt
+        self.meal = meal
     }
 }
 
@@ -106,7 +110,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable 
         context.insert(FavoriteRecord(
             favoriteID: favorite.id, displayName: favorite.displayName, category: favorite.category,
             componentsJSON: String(decoding: data, as: UTF8.self),
-            productSnapshotID: favorite.productSnapshotID, addedAt: Date()))
+            productSnapshotID: favorite.productSnapshotID, addedAt: Date(), meal: favorite.meal))
         try context.save()
     }
 
@@ -128,7 +132,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable 
             }
             return FavoriteTemplate(
                 id: row.favoriteID, displayName: row.displayName, category: row.category,
-                components: components, productSnapshotID: row.productSnapshotID)
+                components: components, productSnapshotID: row.productSnapshotID, meal: row.meal)
         }
     }
 

@@ -9,6 +9,7 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
     var createCalls = 0
     var editCalls = 0
     var deleteCalls = 0
+    var lastEditProductSnapshotID: String?
 
     init(inner: SwiftDataJournalStore) { self.inner = inner }
 
@@ -23,6 +24,7 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
     }
     func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date) throws -> IntakeRevision {
         editCalls += 1
+        lastEditProductSnapshotID = product?.snapshotID
         return try inner.edit(intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now)
     }
     func delete(intakeID: String, now: Date) throws {
@@ -318,5 +320,103 @@ final class JournalLibraryTests: XCTestCase {
         let components = try store.revisions(of: created.id).first?.components
         XCTAssertEqual(components?.first?.amount, 250)
         XCTAssertEqual(components?.first?.unit, .mL)
+    }
+
+    // MARK: Review fixes
+
+    private func makeFavorites() throws -> SwiftDataFavoritesStore {
+        try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
+    }
+
+    func testMalformedFavoriteAmountRejectsWholeTemplateAndCreatesNothing() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        try favorites.add(FavoriteTemplate(
+            id: "bad", displayName: "Odd", category: "drink",
+            components: [FavoriteComponent(componentID: "x", name: "X", amountText: "1.2.3", unitSymbol: "mL")]))
+        XCTAssertNil(RepeatTemplate(favorite: try XCTUnwrap(favorites.list().first)))
+        let library = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
+        library.load()
+        let item = try XCTUnwrap(library.sections.first?.items.first)
+        XCTAssertNil(library.select(item, now: now))
+        XCTAssertEqual(store.createCalls, 0)
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+    }
+
+    func testTimeZoneProviderIsResolvedAtCreateTime() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        try favorites.add(FavoriteTemplate(
+            id: "f", displayName: "Tea", category: "drink",
+            components: [FavoriteComponent(componentID: "tea", name: "Tea", amountText: "250", unitSymbol: "mL")]))
+        var zone = "UTC"
+        let library = LibraryViewModel(store: store, favorites: favorites, timeZoneProvider: { zone })
+        library.load()
+        let item = try XCTUnwrap(library.sections.first?.items.first)
+        let first = try XCTUnwrap(library.select(item, now: now))
+        zone = "Asia/Tokyo"
+        let second = try XCTUnwrap(library.select(item, now: now))
+        let intakes = try store.activeIntakes()
+        XCTAssertEqual(intakes.first { $0.id == first }?.timeZoneIdentifier, "UTC")
+        XCTAssertEqual(intakes.first { $0.id == second }?.timeZoneIdentifier, "Asia/Tokyo")
+    }
+
+    func testFavoriteMealPersistsAcrossReopenAndRepeatCopiesIt() throws {
+        let directory = try makeDirectory()
+        let store = try makeStore()
+        let url = directory.appendingPathComponent("favorites.store")
+        let favorites = try SwiftDataFavoritesStore(url: url)
+        try favorites.add(FavoriteTemplate(
+            id: "f", displayName: "Oats", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "g")],
+            meal: "breakfast"))
+        favorites.close()
+        let reopened = try SwiftDataFavoritesStore(url: url)
+        XCTAssertEqual(try reopened.list().first?.meal, "breakfast")
+        let library = LibraryViewModel(store: store, favorites: reopened, timeZoneIdentifier: "UTC")
+        library.load()
+        let item = try XCTUnwrap(library.sections.first?.items.first)
+        let newID = try XCTUnwrap(library.select(item, now: now))
+        XCTAssertEqual(try store.activeIntakes().first { $0.id == newID }?.meal, "breakfast")
+    }
+
+    func testFavoritingRecentTwiceLeavesOneFavoriteAndRecentIsMarked() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        try addFood(store, name: "Oats", at: now)
+        let library = LibraryViewModel(store: store, favorites: favorites)
+        library.load()
+        let recent = try XCTUnwrap(library.sections.last?.items.first)
+        library.addFavorite(recent)
+        library.addFavorite(recent)
+        XCTAssertEqual(try favorites.list().count, 1)
+        XCTAssertEqual(library.sections.last?.items.first?.isFavorite, true)
+    }
+
+    func testRecentKeyDoesNotCollideOnPlusInNames() throws {
+        let store = try makeStore()
+        let first = UUID().uuidString.lowercased()
+        let second = UUID().uuidString.lowercased()
+        try store.create(
+            Intake(id: first, category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "ab", name: "A+B", amount: 1, unit: .g)], product: nil, now: now)
+        try store.create(
+            Intake(id: second, category: "food", occurredAt: now.addingTimeInterval(1), timeZoneIdentifier: "UTC"),
+            components: [
+                IntakeComponent(componentID: "a", name: "A", amount: 1, unit: .g),
+                IntakeComponent(componentID: "b", name: "B", amount: 1, unit: .g),
+            ], product: nil, now: now.addingTimeInterval(1))
+        XCTAssertEqual(try RecentItemsProvider(store: store).recents().count, 2)
+    }
+
+    func testSaveWithoutLoadKeepsProductAssociation() throws {
+        let store = try makeStore()
+        let id = try addFood(store, name: "Bar", at: now, product: product("snap-9"))
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        let saved = model.save(
+            components: [EditedComponent(componentID: "bar", name: "Bar", amountText: "50", unit: .g)],
+            changeReason: "Edited", now: now)
+        XCTAssertTrue(saved)
+        XCTAssertEqual(store.lastEditProductSnapshotID, "snap-9")
     }
 }
