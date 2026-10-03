@@ -137,30 +137,56 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         XCTAssertEqual(model.exportFileURL, url)
     }
 
-    func testAFailedExportExplainsItselfAndClearsTheFile() {
+    func testAFailedExportExplainsItselfAndClearsTheFile() throws {
         let store = filledStore()
         let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())
         XCTAssertTrue(model.export(now: now))
+        let firstURL = try XCTUnwrap(model.exportFileURL)
         store.failReads = true
         XCTAssertFalse(model.export(now: now))
         XCTAssertEqual(model.exportState, .failed)
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.exportFailedMessage)
         XCTAssertNil(model.exportFileURL)
-        XCTAssertFalse(model.canExport)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: firstURL.path))
     }
 
-    func testClearExportReturnsTheScreenToItsEmptyState() throws {
+    func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
+        let store = filledStore()
+        let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())
+        store.failReads = true
+        XCTAssertFalse(model.export(now: now))
+        XCTAssertEqual(model.exportState, .failed)
+        XCTAssertNotNil(model.errorMessage)
+        // The only way out of a failure is another tap on the same button.
+        XCTAssertTrue(model.canExport)
+        store.failReads = false
+        XCTAssertTrue(model.export(now: now))
+        XCTAssertEqual(model.exportState, .ready)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNotNil(model.exportFileURL)
+    }
+
+    func testClearExportReturnsTheScreenToItsEmptyStateAndRemovesTheFile() throws {
         let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let url = try XCTUnwrap(model.exportFileURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         model.clearExport()
         XCTAssertEqual(model.exportState, .idle)
         XCTAssertNil(model.exportFileURL)
         XCTAssertNil(model.exportFileName)
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(model.entryCount, 0)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
-        try? FileManager.default.removeItem(at: url)
+        // The journal JSON holds the whole history, so forgetting it must delete it too.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testClearingWithoutAnExportIsHarmlessAndReportsNothing() {
+        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        model.clearExport()
+        XCTAssertEqual(model.exportState, .idle)
+        XCTAssertNil(model.exportFileURL)
+        XCTAssertNil(model.errorMessage)
     }
 
     func testTombstonesOfDeletedEntriesTravelWithTheExport() throws {

@@ -5,7 +5,7 @@
   "description": "A versioned, local export of the journal. Adding or changing any field means a new schema version; version 1 never changes shape. Amounts are exact decimal strings in the POSIX format. Unknown amounts are null with value_state unknown, never 0.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites"],
+  "required": ["schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites", "products"],
   "properties": {
     "schema_version": {
       "description": "Version of this schema the document follows. This build writes 1.",
@@ -35,6 +35,11 @@
       "description": "Favorite templates, as stored. Sorted by id.",
       "type": "array",
       "items": { "$ref": "#/$defs/favorite" }
+    },
+    "products": {
+      "description": "Every product snapshot any revision or favorite refers to, sorted by snapshot_id. Revisions also carry their own copy in provenance; this list is what lets a favorite that outlives its intakes be repeated after a restore.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/provenance" }
     }
   },
   "$defs": {
@@ -104,13 +109,28 @@
         },
         "name": { "type": "string" },
         "amount": {
-          "description": "Exact decimal text, or null when the value state is unknown.",
-          "type": ["string", "null"],
-          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          "description": "Exact decimal text, or null when the value state is unknown. The two are tied together by oneOf: known means decimal text, unknown means null.",
+          "type": ["string", "null"]
         },
         "unit": { "type": "string", "minLength": 1 },
         "value_state": { "enum": ["known", "unknown"] }
-      }
+      },
+      "oneOf": [
+        {
+          "title": "Known amount",
+          "properties": {
+            "amount": { "type": "string", "pattern": "^-?[0-9]+(\\.[0-9]+)?$" },
+            "value_state": { "const": "known" }
+          }
+        },
+        {
+          "title": "Missing amount",
+          "properties": {
+            "amount": { "type": "null" },
+            "value_state": { "const": "unknown" }
+          }
+        }
+      ]
     },
     "tombstone": {
       "type": "object",
