@@ -35,21 +35,37 @@ builds too (`ios/HealthNutrition/Sources/RootView.swift`). The target carries th
 capability (`HealthNutrition.entitlements`) and the two usage strings, because HealthKit only
 prompts for authorization when the binary declares it.
 
-The spike uses synthetic amounts only: 250 mL of water and 10 g of protein, tagged with a fixed sync
-identifier. It is not anyone's real intake.
+The spike uses synthetic amounts only: 250 mL of water and 10 g of protein. It is not anyone's real
+intake.
 
-Steps, each of which appends a line to an on-screen list and logs the same line with `Logger`:
+Water and protein each carry their **own** sync identifier, the spike namespace with a `.water` and
+a `.protein` suffix. A sync identifier identifies one piece of data, so one shared identifier would
+let the water and protein writes resolve against each other and confound the sample counts and UUID
+comparisons this spike exists to make.
+
+A failed HealthKit query is recorded as an error, never as "no samples found". An unsuccessful
+observation must not be paste-able into the Results table below as if it were an empty store.
+
+Steps, each of which appends a row to an on-screen list and logs the same row with `Logger`:
 
 1. Request authorization to share (write) `dietaryWater` and `dietaryProtein`, and to read the same
    two so the spike can query back what it wrote.
-2. Save a 250 mL water sample and a 10 g protein sample with `HKMetadataKeySyncIdentifier` set to
-   the spike id and `HKMetadataKeySyncVersion` set to 1, then list every sample that exists for that
-   sync identifier with its UUID, sync version, timestamps and source.
-3. Save the same sync identifier again with version 2 (higher) and list what exists afterwards.
-4. Save it again with version 2 (equal) and with version 1 (lower), recording the result or the
-   error of each, listing the samples after each save.
-5. Delete the samples carrying the spike sync identifier **and** `HKSource.default()`, that is only
+2. **Reset**: delete any app-owned spike samples left behind by an earlier or interrupted run, so
+   this run's version 1 really is the first write. Step 1 does this automatically too; a leftover
+   version-2 sample would otherwise make this run's version 1 a *lower* write and its version 2 an
+   *equal* one, and every label below would be wrong.
+3. Save a 250 mL water sample and a 10 g protein sample, each with `HKMetadataKeySyncIdentifier` set
+   to its own spike id and `HKMetadataKeySyncVersion` set to 1, then list every sample that exists
+   for those identifiers with its UUID, sync version, timestamps and source.
+4. Save each identifier again with version 2 (higher) and list what exists afterwards.
+5. Save each identifier again with version 2 (**equal** to what step 4 wrote) and then with version 1
+   (**lower**), recording the result or error of each save in turn, and listing the samples after
+   each.
+6. Delete the samples carrying the spike sync identifiers **and** `HKSource.default()`, that is only
    the ones this app wrote, then report how many remain.
+
+Every step button is disabled while a step is running, so no step can be silently dropped by tapping
+it mid-run.
 
 **Copy results** puts the whole transcript on the clipboard.
 
@@ -58,15 +74,28 @@ Steps, each of which appends a line to an on-screen list and logs the same line 
 1. In this repository, run **Actions > ios > Run workflow**.
 2. Set `configuration` to **Debug** (the default is Release, which has no spike in it). Leave
    `bundle_id` and `marketing_version` at their defaults.
-3. Download the `HealthNutrition-unsigned.ipa` artifact. The build is unsigned, so sign it yourself
-   (Apple developer certificate, AltStore or SideStore) and sideload it on your iPhone. The signing
-   team id and profile stay local and are never committed.
-4. On first launch, allow Health access for the app when iOS asks, for both read and write. The
+3. Download the `HealthNutrition-unsigned.ipa` artifact.
+4. **The signing profile must have the HealthKit capability.** The `unsigned-ipa` job builds with
+   `CODE_SIGNING_ALLOWED=NO`, so the downloaded artifact carries no code signature and therefore no
+   entitlement at all: `HealthNutrition.entitlements` exists in the source tree, but it is only
+   embedded once the app is re-signed. Entitlements live in the code signature, so you must:
+
+   - enable the **HealthKit** capability on the App ID for the bundle identifier you sign with (in
+     the developer portal, or in Xcode under Signing & Capabilities), and
+   - regenerate the provisioning profile so it includes that capability, then sign and sideload the
+     ipa with that profile (your own certificate, AltStore or SideStore).
+
+   A profile without the HealthKit capability produces an app that installs but cannot run the spike:
+   authorization fails even though the entitlements file is in the repository. Check the signed
+   binary before installing, for example with `codesign -d --entitlements - <app path>`, and confirm
+   `com.apple.developer.healthkit` is present.
+5. The signing team id and profile stay local and are never committed.
+6. On first launch, allow Health access for the app when iOS asks, for both read and write. The
    spike needs write access to `dietaryWater` and `dietaryProtein` to run at all.
-5. Open the **HealthKit** tab and run the steps in order: request authorization, step 1, step 2, step
-   3, step 4.
-6. Tap **Copy results** and paste the transcript into the Results section below.
-7. Step 4 deletes the samples, but check the Health app afterwards as well: the point of step 4 is
+7. Open the **HealthKit** tab and run the steps in order: request authorization, reset, step 1, step
+   2, step 3 (equal then lower), step 4.
+8. Tap **Copy results** and paste the transcript into the Results section below.
+9. Step 4 deletes the samples, but check the Health app afterwards as well: the point of step 4 is
    partly to confirm that the delete actually removed them. If any sample survives, delete it by hand
    in the Health app and note that in the transcript.
 
@@ -86,7 +115,11 @@ journal writer must not assume a particular dedupe behaviour.
 ## Consequences
 
 - The HealthKit capability and the two usage strings are in the app target from now on, but nothing
-  in a release build reads or writes health data: the only caller is behind `#if DEBUG`.
+  in a release build reads or writes health data: the only caller is behind `#if DEBUG`. The
+  capability is only inert until someone sideloads a HealthKit-enabled signed build, so the run
+  instructions above are a prerequisite for the spike, not an optional extra.
+- Each quantity gets its own sync identifier in the writer too, derived from the journal intake id
+  and the nutrient, so two nutrients in one intake never resolve against each other.
 - The writer (NC-07) follows what this table says, not what the documentation says. If the device
   shows that HealthKit ignores a lower version silently, the writer can skip the re-save instead of
   treating it as an error.
