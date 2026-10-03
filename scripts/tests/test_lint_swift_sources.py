@@ -343,6 +343,97 @@ def test_rules_do_not_fire_outside_their_scopes(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_access_level_import_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/PrivateHK.swift": "private import HealthKit\n",
+        f"{JOURNAL}/InternalNet.swift": "internal import Network\n",
+        f"{UI}/Preconcurrency.swift": "@preconcurrency public import HealthKit\n",
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("InternalNet.swift", 1, "forbidden-import"),
+        ("Preconcurrency.swift", 1, "forbidden-import"),
+        ("PrivateHK.swift", 1, "forbidden-import"),
+    ]
+
+
+def test_hexadecimal_float_literal_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Hex.swift": (
+            "let scaled = 0x1.fp2\n"
+            "let tiny = 0x1p-2\n"
+            "let mask = 0xFF\n"
+            "let other = 0x1F\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A hex float is a Double; a hex integer is not a floating-point literal.
+    assert findings(result) == [
+        ("Hex.swift", 1, "binary-float"),
+        ("Hex.swift", 2, "binary-float"),
+    ]
+
+
+def test_extended_string_interpolation_content_is_still_code(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/ExtendedInterpolation.swift": (
+            'let value = #"result: \\#(Double(input))"#\n'
+            'let prose = #"a plain \\(Double) stays text"#\n'
+            'let nested = ##"result: \\##(Float(input))"##\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("ExtendedInterpolation.swift", 1, "binary-float"),
+        ("ExtendedInterpolation.swift", 3, "binary-float"),
+    ]
+
+
+def test_regex_literal_contents_are_not_code(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Regex.swift": (
+            "let pattern = #/Double|Float/#\n"
+            "let bare = /Double/\n"
+            "let ratio: Double = 1\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("Regex.swift", 3, "binary-float")]
+
+
+def test_division_is_not_mistaken_for_a_regex_literal(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Division.swift": (
+            "let half = total / 2\n"
+            "let third = total / 3 / 4\n"
+            "let scaled = total /= 2\n"
+            "let value: Double = 1\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("Division.swift", 4, "binary-float")]
+
+
+def test_lint_allow_text_inside_a_string_does_not_allow(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Doc.swift": (
+            'let doc = """\n'
+            "    \\(Double(value)) // lint-allow: binary-float\n"
+            '    """\n'
+            "let ok: Double = 1 // lint-allow: binary-float\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # Only the real trailing comment on line 4 counts as an exemption.
+    assert findings(result) == [("Doc.swift", 2, "binary-float")]
+
+
 def test_missing_root_is_reported_as_an_error(tmp_path: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(SCRIPT), str(tmp_path / "nope")],
