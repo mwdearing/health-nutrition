@@ -60,7 +60,7 @@ public struct DSLDLabelAdapter: Sendable {
 
             // A row that states a form and a mass measures the compound itself; anything else reads as
             // the active nutrient. International units are never treated as a compound mass.
-            let isMass = Self.unit(for: Self.unitSymbol(in: quantity))?.dimension == .mass
+            let isMass = Self.unitSymbol(in: quantity).flatMap { Self.unit(for: $0) }?.dimension == .mass
             let fact = try CompoundFact(
                 kind: isMass && formName != nil ? .compound : .nutrient,
                 substanceIdentifier: substanceIdentifier,
@@ -176,7 +176,7 @@ public struct DSLDLabelAdapter: Sendable {
                 BlendMember(
                     labelName: memberName,
                     substanceIdentifier: text(in: member, "ingredientId"),
-                    amount: amount(from: servingQuantity(in: member))
+                    amount: Self.amount(from: Self.servingQuantity(in: member))
                 )
             )
         }
