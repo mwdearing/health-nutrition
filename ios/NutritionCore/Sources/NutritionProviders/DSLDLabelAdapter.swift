@@ -90,7 +90,8 @@ public struct DSLDLabelAdapter: Sendable {
                 rowOrder: rowOrder,
                 labelIdentifier: labelIdentifier,
                 amount: amount,
-                servingOrder: servingOrder
+                servingOrder: servingOrder,
+                firstOrder: firstOrder
             ) {
                 blends.append(blend)
                 continue
@@ -290,7 +291,8 @@ public struct DSLDLabelAdapter: Sendable {
         rowOrder: String,
         labelIdentifier: Int,
         amount: NutrientValue,
-        servingOrder: Int
+        servingOrder: Int,
+        firstOrder: Int
     ) throws -> ProprietaryBlend? {
         let category = text(in: object, "category")?.lowercased()
         let group = text(in: object, "ingredientGroup")?.lowercased()
@@ -306,7 +308,7 @@ public struct DSLDLabelAdapter: Sendable {
                 BlendMember(
                     labelName: memberName,
                     substanceIdentifier: literalText(in: member, "ingredientId"),
-                    amount: Self.amount(from: Self.servingQuantity(in: member))
+                    amount: Self.amount(from: quantityEntry(in: member, for: servingOrder, firstOrder: firstOrder))
                 )
             )
         }
