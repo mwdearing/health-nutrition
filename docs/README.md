@@ -6,3 +6,4 @@ Public architecture decisions and design notes for this project live here.
 - [Journal store: revisions, projections and outbox](journal-store.md)
 - [Today screen, quick water and Add intake](today-screen.md)
 - [Journal, entry detail, Library, favorites and repeat](journal-library.md)
+- [ADR 0002: HealthKit sync identifier and sync version](adr/0002-healthkit-sync.md)

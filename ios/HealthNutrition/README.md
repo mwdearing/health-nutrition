@@ -4,18 +4,25 @@ The iOS app target. It is a thin shell: the screens come from the `NutritionUI` 
 data from the `NutritionJournal` store, both in the `NutritionCore` Swift package in
 `../NutritionCore`.
 
-The app has no network access and no HealthKit capability yet. HealthKit arrives later, together
-with the spike that measures write latency.
+The app has no network access. HealthKit arrives as a debug-only spike first
+(`Sources/Debug/HealthKitSpikeView.swift`, see [ADR 0002](../../docs/adr/0002-healthkit-sync.md)): the target
+declares the capability and the usage strings, but nothing in a release build reads or writes health data.
 
 ## What the target contains
 
 - `project.yml`: the XcodeGen spec for the `HealthNutrition` app (iOS 18, Swift 5 language mode).
+- `HealthNutrition.entitlements`: the HealthKit capability. No signing team id, certificate or
+  profile is ever committed here.
 - `Sources/HealthNutritionApp.swift`: the app entry point. It creates one `SwiftDataJournalStore`
   and one `SwiftDataFavoritesStore` for the app's lifetime and hands them to the screens. One
   store instance per database file is required: the store serializes writes with a lock that
   belongs to the instance, so two instances on the same file would assign duplicate revision
   numbers (see [docs/journal-store.md](../../docs/journal-store.md)).
-- `Sources/RootView.swift`: the tab shell with Today, Journal and Library.
+- `Sources/RootView.swift`: the tab shell with Today, Journal and Library, plus a HealthKit tab in
+  debug builds only.
+- `Sources/Debug/HealthKitSpikeView.swift`: the debug-only HealthKit write spike, whole file inside
+  `#if DEBUG`. It writes synthetic samples to measure how HealthKit resolves a repeated sync
+  identifier, and deletes them again.
 - `Sources/AppServices.swift`: the store and view model setup.
 - `Resources/Assets.xcassets`: an empty `AppIcon` and an `AccentColor`.
 
@@ -57,7 +64,8 @@ material, and CI never signs anything.
 To get a device build, run the workflow by hand: **Actions > ios > Run workflow**. Inputs:
 
 - `bundle_id` (default `dev.example.HealthNutrition`, a placeholder: enter your own bundle identifier when you run the workflow, matching the provisioning profile you sign with)
-- `configuration` (default `Release`)
+- `configuration` (default `Release`, or `Debug` for the HealthKit spike, which only exists in
+  debug builds)
 - `marketing_version` (default empty, which uses `0.1.<run number>`)
 
 That runs the `unsigned-ipa` job, which only ever runs on `workflow_dispatch`. It generates the
