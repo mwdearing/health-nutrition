@@ -33,7 +33,7 @@ public struct AddIntakeView: View {
                     HStack {
                         TextField("Barcode", text: $model.barcode)
                             .font(.body)
-                            .keyboardType(.numberPad)
+                            .digitsOnlyKeyboard()
                             .accessibilityLabel("Barcode")
                             .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
                             .onSubmit { Task { await model.lookUpBarcode() } }
@@ -119,5 +119,18 @@ public struct AddIntakeView: View {
         case nil:
             return "unknown"
         }
+    }
+}
+
+/// The keyboard is only set where the platform has one. This package also builds for macOS, where
+/// `keyboardType` and the text-input modifiers do not exist, so they stay behind this one door.
+private extension View {
+    @ViewBuilder
+    func digitsOnlyKeyboard() -> some View {
+        #if os(iOS)
+        self.keyboardType(.numberPad).textContentType(nil)
+        #else
+        self
+        #endif
     }
 }
