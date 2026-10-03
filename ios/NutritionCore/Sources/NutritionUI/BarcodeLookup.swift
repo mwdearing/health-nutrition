@@ -232,7 +232,7 @@ public enum BarcodeShape {
         return normalize(left) == normalize(right)
     }
 
-    /// The code without leading zeros, so "0500011263792" and "500011263792" are the same code.
+    /// The code without leading zeros, so "0500011263796" and "500011263796" are the same code.
     public static func normalize(_ barcode: String) -> String {
         var digits = Substring(barcode)
         while digits.count > 1, digits.first == "0" {

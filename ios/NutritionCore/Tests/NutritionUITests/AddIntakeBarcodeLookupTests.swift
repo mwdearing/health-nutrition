@@ -259,7 +259,7 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
     func testReplyPaddedToThirteenDigitsIsAccepted() async throws {
         // A 12-digit UPC-A asked for as itself comes back as a GTIN-13 with a leading zero; that is
         // the same product, so the form must fill in rather than sit on its spinner for ever.
-        let upc = "500011263792"
+        let upc = "500011263796"
         XCTAssertTrue(BarcodeShape.isValid(upc))
         let model = try makeModel(
             FakeBarcodeLookup(result: .found(oatMilk(barcode: "0" + upc))))
@@ -272,7 +272,7 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
     }
 
     func testEquivalenceIgnoresLeadingZerosButNotDifferentCodes() {
-        XCTAssertTrue(BarcodeShape.areEquivalent("500011263792", "0500011263792"))
+        XCTAssertTrue(BarcodeShape.areEquivalent("500011263796", "0500011263796"))
         XCTAssertTrue(BarcodeShape.areEquivalent("4006381333931", "4006381333931"))
         XCTAssertFalse(BarcodeShape.areEquivalent("4006381333931", "5000112637922"))
     }
