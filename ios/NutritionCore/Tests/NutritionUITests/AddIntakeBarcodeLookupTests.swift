@@ -19,30 +19,24 @@ private final class FakeBarcodeLookup: BarcodeProductLookup, @unchecked Sendable
     }
 }
 
-private struct UnsupportedStore: JournalStore, @unchecked Sendable {
-    struct Unsupported: Error {}
-
-    func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision { throw Unsupported() }
-    func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date) throws -> IntakeRevision { throw Unsupported() }
-    func delete(intakeID: String, now: Date) throws { throw Unsupported() }
-    func activeIntakes() throws -> [Intake] { [] }
-    func revisions(of intakeID: String) throws -> [IntakeRevision] { [] }
-    func projections(of intakeID: String) throws -> [DestinationProjection] { [] }
-    func pendingOutbox() throws -> [OutboxOperation] { [] }
-    func product(snapshotID: String) throws -> ProductDefinition? { nil }
-    func activeIntakesFromBackground() async throws -> [Intake] { [] }
-    func close() {}
-}
-
 @MainActor
 final class AddIntakeBarcodeLookupTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
     /// 13 digits with a correct check digit.
     private let validBarcode = "4006381333931"
 
-    private func makeModel(_ lookup: BarcodeProductLookup?) -> AddIntakeViewModel {
+    /// These tests never save, so the store is only there to satisfy the view model; a real store on
+    /// a temporary file keeps the double honest if a test ever does save.
+    private func makeStore() throws -> SwiftDataJournalStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+    }
+
+    private func makeModel(_ lookup: BarcodeProductLookup?) throws -> AddIntakeViewModel {
         AddIntakeViewModel(
-            store: UnsupportedStore(), now: now, timeZoneIdentifier: "UTC", lookup: lookup)
+            store: try makeStore(), now: now, timeZoneIdentifier: "UTC", lookup: lookup)
     }
 
     private func oatMilk() -> LookedUpProduct {
@@ -60,8 +54,8 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         )
     }
 
-    func testFoundPrefillsNameBrandAndNutrients() async {
-        let model = makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
+    func testFoundPrefillsNameBrandAndNutrients() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
         model.barcode = validBarcode
 
         await model.lookUpBarcode()
@@ -77,8 +71,8 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertEqual(model.amountText, "")
     }
 
-    func testNotFoundShowsNotFoundMessageAndPrefillsNothing() async {
-        let model = makeModel(FakeBarcodeLookup(result: .notFound))
+    func testNotFoundShowsNotFoundMessageAndPrefillsNothing() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .notFound))
         model.name = "Typed by hand"
         model.barcode = validBarcode
 
@@ -90,8 +84,8 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertTrue(model.prefilledNutrients.isEmpty)
     }
 
-    func testRateLimitedShowsTryLaterMessage() async {
-        let model = makeModel(FakeBarcodeLookup(result: .rateLimited))
+    func testRateLimitedShowsTryLaterMessage() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .rateLimited))
         model.barcode = validBarcode
 
         await model.lookUpBarcode()
@@ -101,8 +95,8 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertTrue(model.prefilledNutrients.isEmpty)
     }
 
-    func testFailedShowsFailureMessage() async {
-        let model = makeModel(FakeBarcodeLookup(result: .failed("offline")))
+    func testFailedShowsFailureMessage() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .failed("offline")))
         model.barcode = validBarcode
 
         await model.lookUpBarcode()
@@ -112,9 +106,9 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertTrue(model.prefilledNutrients.isEmpty)
     }
 
-    func testInvalidBarcodeMakesNoLookupCall() async {
+    func testInvalidBarcodeMakesNoLookupCall() async throws {
         let lookup = FakeBarcodeLookup(result: .found(oatMilk()))
-        let model = makeModel(lookup)
+        let model = try makeModel(lookup)
 
         for text in ["", "   ", "123", "12345678901234", "400638133393x", "4 006381 333931"] {
             model.barcode = text
@@ -127,8 +121,8 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertTrue(model.prefilledNutrients.isEmpty)
     }
 
-    func testNutrientMissingFromTheResultStaysUnknownNotZero() async {
-        let model = makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
+    func testNutrientMissingFromTheResultStaysUnknownNotZero() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
         model.barcode = validBarcode
 
         await model.lookUpBarcode()
@@ -140,9 +134,9 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         }
     }
 
-    func testBarcodeIsTrimmedBeforeTheLookup() async {
+    func testBarcodeIsTrimmedBeforeTheLookup() async throws {
         let lookup = FakeBarcodeLookup(result: .found(oatMilk()))
-        let model = makeModel(lookup)
+        let model = try makeModel(lookup)
         model.barcode = "  \(validBarcode) "
 
         await model.lookUpBarcode()
@@ -151,8 +145,8 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertEqual(model.barcode, validBarcode)
     }
 
-    func testWithoutAnInjectedLookupTheFormOffersNoBarcode() async {
-        let model = makeModel(nil)
+    func testWithoutAnInjectedLookupTheFormOffersNoBarcode() async throws {
+        let model = try makeModel(nil)
         XCTAssertFalse(model.canLookUpBarcode)
         model.barcode = validBarcode
         await model.lookUpBarcode()
