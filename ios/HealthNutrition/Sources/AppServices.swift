@@ -1,5 +1,6 @@
 import Foundation
 import NutritionJournal
+import NutritionProviders
 import NutritionUI
 
 /// The stores and view models the app runs on.
@@ -15,6 +16,9 @@ final class AppServices {
     let today: TodayViewModel
     let journal: JournalViewModel
     let library: LibraryViewModel
+    /// Barcode lookups in Add intake. One client for the app's lifetime, so its rolling rate-limit
+    /// window is shared and never reset by opening the form again.
+    let barcodeLookup: BarcodeProductLookup
 
     private init(journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore) {
         self.journalStore = journalStore
@@ -22,6 +26,14 @@ final class AppServices {
         today = TodayViewModel(store: journalStore)
         journal = JournalViewModel(store: journalStore)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
+        barcodeLookup = OpenFoodFactsProductLookup(
+            client: OpenFoodFactsClient(appVersion: Self.appVersion))
+    }
+
+    /// The marketing version from the bundle; the provider requires a User-Agent that names the app
+    /// and its version. The debug "0" keeps the header well formed before the first build stamp.
+    static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
     /// Opens both store files in `directory`, creating them if needed.

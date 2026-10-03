@@ -1,3 +1,4 @@
+import NutritionDomain
 import SwiftUI
 
 public struct AddIntakeView: View {
@@ -27,9 +28,41 @@ public struct AddIntakeView: View {
                 .accessibilityLabel("Add from library")
                 .accessibilityHint("Shows favorites and recent items")
             }
+            if model.canLookUpBarcode {
+                Section("Barcode") {
+                    HStack {
+                        TextField("Barcode", text: $model.barcode)
+                            .font(.body)
+                            .keyboardType(.numberPad)
+                            .accessibilityLabel("Barcode")
+                            .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
+                            .onSubmit { Task { await model.lookUpBarcode() } }
+                        Button("Look up") {
+                            Task { await model.lookUpBarcode() }
+                        }
+                        .disabled(model.lookupState.isLoading)
+                        .accessibilityLabel("Look up barcode")
+                        .accessibilityHint("Fills in the name, brand and nutrients for this barcode")
+                    }
+                    if model.lookupState.isLoading {
+                        ProgressView().accessibilityLabel("Looking up the barcode")
+                    }
+                    if let message = model.lookupMessage {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                            .accessibilityLabel(message)
+                    }
+                }
+            }
             Section("Food or drink") {
                 TextField("Name", text: $model.name)
                     .font(.body)
+                if model.canLookUpBarcode, !model.brand.isEmpty {
+                    TextField("Brand", text: $model.brand)
+                        .font(.body)
+                        .accessibilityLabel("Brand")
+                }
                 if let message = model.nameError {
                     Text(message).font(.footnote).foregroundStyle(TokenColors.error)
                 }
@@ -45,6 +78,17 @@ public struct AddIntakeView: View {
                 }
                 DatePicker("When", selection: $model.occurredAt)
             }
+            if model.canLookUpBarcode, let basis = model.lookupBasis {
+                Section("From the barcode (\(basis.label))") {
+                    ForEach(LookedUpProduct.standardKeys, id: \.self) { key in
+                        LabeledContent(
+                            LookedUpProduct.displayNames[key] ?? key,
+                            value: Self.text(for: model.prefilledNutrients[key])
+                        )
+                        .font(.footnote)
+                    }
+                }
+            }
             if let message = model.saveError {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
             }
@@ -59,5 +103,21 @@ public struct AddIntakeView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Add intake")
+    }
+
+    /// A nutrient the source did not give reads as unknown, never as zero.
+    static func text(for value: NutrientValue?) -> String {
+        switch value {
+        case .known(let amount, let unit):
+            return "\(amount) \(unit.symbol)"
+        case .unknown:
+            return "unknown"
+        case .notApplicable:
+            return "not applicable"
+        case .belowReportingThreshold:
+            return "below reporting threshold"
+        case nil:
+            return "unknown"
+        }
     }
 }

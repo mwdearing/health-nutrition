@@ -32,6 +32,31 @@ used to infer the basis.
 
 The product always carries all nine standard nutrient keys; a missing one is unknown.
 
+## In the app
+
+Add intake has a barcode field with a Look up button. The request is sent only when the user taps
+that button or submits the field; there is no search and nothing is sent while the user types. A
+lookup needs 8, 12 or 13 digits, so a barcode of the wrong shape is answered with a message and no
+request at all.
+
+The lookup runs through the `BarcodeProductLookup` protocol in the UI package, which knows only the
+shape of a product (barcode, name, brand, basis and nine nutrient values). The app target injects the
+implementation that talks to the API, so the UI never sees the network or the provider name. One
+client is built at startup, with the required User-Agent, and shared, so its rolling rate-limit
+window is not reset by reopening the form.
+
+Each outcome has its own message on the form:
+
+- found: the name and brand are filled in and the nutrients the source gives are shown per the basis
+  it states (per 100 g, per 100 mL or per serving). A nutrient the source does not give stays
+  unknown and is never shown or stored as zero.
+- not found: the form keeps whatever the user typed, so they can enter the details themselves.
+- rate limited or failed: nothing is filled in and the user is asked to try again.
+- invalid barcode: the message names the accepted lengths and no request is sent.
+
+The amount, unit and time are never taken from the source: the user confirms how much they ate.
+Camera scanning is not part of this; the user types the barcode.
+
 ## Licences
 
 - The database is available under the Open Database License (ODbL).

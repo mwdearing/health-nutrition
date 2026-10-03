@@ -73,7 +73,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $addingIntake) {
             AddIntakeView(
-                model: AddIntakeViewModel(store: services.journalStore, now: Date()),
+                model: AddIntakeViewModel(
+                    store: services.journalStore, now: Date(), lookup: services.barcodeLookup
+                ),
                 now: { Date() },
                 onSaved: {
                     addingIntake = false

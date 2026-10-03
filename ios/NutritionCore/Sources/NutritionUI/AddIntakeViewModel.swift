@@ -27,9 +27,28 @@ public enum AmountParser {
     }
 }
 
+/// Where the last barcode lookup stands. A lookup only ever starts from an explicit user action,
+/// so there is no state that changes while the user types.
+public enum BarcodeLookupState: Sendable, Equatable {
+    case idle
+    case loading
+    case found(LookedUpProduct)
+    case notFound
+    case invalidBarcode
+    case rateLimited
+    case failed(String)
+
+    public var isLoading: Bool {
+        if case .loading = self { return true }
+        return false
+    }
+}
+
 @MainActor
 public final class AddIntakeViewModel: ObservableObject {
     @Published public var name: String = ""
+    @Published public var brand: String = ""
+    @Published public var barcode: String = ""
     @Published public var amountText: String = ""
     @Published public var unit: MeasureUnit = .g
     @Published public var category: String = "food"
@@ -37,23 +56,100 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public private(set) var nameError: String?
     @Published public private(set) var amountError: String?
     @Published public private(set) var saveError: String?
+    @Published public private(set) var lookupState: BarcodeLookupState = .idle
+    /// Nutrients prefilled from the last successful lookup; a nutrient the source did not give
+    /// stays `.unknown` and is never stored as zero.
+    @Published public private(set) var prefilledNutrients: [String: NutrientValue] = [:]
+    @Published public private(set) var lookupBasis: BarcodeLookupBasis?
 
     public let timeZoneIdentifier: String
     public let units: [MeasureUnit] = UnitRegistry.all
 
     private let store: JournalStore
     private let makeID: () -> String
+    private let lookup: BarcodeProductLookup?
+
+    public var canLookUpBarcode: Bool { lookup != nil }
 
     public init(
         store: JournalStore,
         now: Date,
         timeZoneIdentifier: String = TimeZone.current.identifier,
-        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+        makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
+        lookup: BarcodeProductLookup? = nil
     ) {
         self.store = store
         self.occurredAt = now
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
+        self.lookup = lookup
+    }
+
+    /// One line explaining the last lookup, or nil when there is nothing to say.
+    public var lookupMessage: String? {
+        switch lookupState {
+        case .idle:
+            return nil
+        case .loading:
+            return "Looking up the barcode…"
+        case .found(let product):
+            let basis = product.basis.label
+            return "Filled in from the barcode (\(basis)). Check the amount, then save."
+        case .notFound:
+            return "No product found for that barcode. Fill in the details yourself."
+        case .invalidBarcode:
+            return "A barcode has 8, 12 or 13 digits. Nothing was looked up."
+        case .rateLimited:
+            return "Too many lookups just now. Try again in a minute."
+        case .failed:
+            return "The lookup did not finish. Try again in a moment."
+        }
+    }
+
+    /// Looks up the barcode the user typed, after checking its shape. An invalid barcode is
+    /// reported without calling the lookup at all.
+    public func lookUpBarcode() async {
+        guard let lookup else { return }
+        let trimmed = barcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard BarcodeShape.isValid(trimmed) else {
+            lookupState = .invalidBarcode
+            return
+        }
+        barcode = trimmed
+        lookupState = .loading
+        let result = await lookup.lookUp(barcode: trimmed)
+        switch result {
+        case .found(let product):
+            apply(product)
+            lookupState = .found(product)
+        case .notFound:
+            lookupState = .notFound
+        case .rateLimited:
+            lookupState = .rateLimited
+        case .failed(let reason):
+            lookupState = .failed(reason)
+        }
+    }
+
+    /// Fills the form from a looked-up product. The amount is left alone: the user confirms how much
+    /// they actually ate.
+    private func apply(_ product: LookedUpProduct) {
+        if let productName = product.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !productName.isEmpty
+        {
+            name = productName
+        }
+        if let productBrand = product.brand?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !productBrand.isEmpty
+        {
+            brand = productBrand
+        }
+        var filled: [String: NutrientValue] = [:]
+        for key in LookedUpProduct.standardKeys {
+            filled[key] = product.nutrients[key] ?? .unknown
+        }
+        prefilledNutrients = filled
+        lookupBasis = product.basis
     }
 
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
