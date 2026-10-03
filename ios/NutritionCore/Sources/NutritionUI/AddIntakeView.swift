@@ -4,15 +4,29 @@ public struct AddIntakeView: View {
     @ObservedObject var model: AddIntakeViewModel
     private let now: () -> Date
     private let onSaved: () -> Void
+    private let onFromLibrary: (() -> Void)?
 
-    public init(model: AddIntakeViewModel, now: @escaping () -> Date = { Date() }, onSaved: @escaping () -> Void) {
+    public init(
+        model: AddIntakeViewModel, now: @escaping () -> Date = { Date() }, onSaved: @escaping () -> Void,
+        onFromLibrary: (() -> Void)? = nil
+    ) {
         self.model = model
         self.now = now
         self.onSaved = onSaved
+        self.onFromLibrary = onFromLibrary
     }
 
     public var body: some View {
         Form {
+            if let onFromLibrary {
+                Button {
+                    onFromLibrary()
+                } label: {
+                    Text("From library").font(.headline)
+                }
+                .accessibilityLabel("Add from library")
+                .accessibilityHint("Shows favorites and recent items")
+            }
             Section("Food or drink") {
                 TextField("Name", text: $model.name)
                     .font(.body)

@@ -1,0 +1,152 @@
+import Foundation
+import NutritionDomain
+import NutritionJournal
+
+/// A recent item, derived from the journal and not stored.
+public struct RecentItem: Equatable, Identifiable {
+    /// Product snapshot id, else category plus component names.
+    public let id: String
+    public let template: RepeatTemplate
+    public let lastUsedAt: Date
+}
+
+/// Distinct recent items, newest first.
+public struct RecentItemsProvider {
+    public static let defaultLimit = 20
+    private let store: JournalStore
+
+    public init(store: JournalStore) {
+        self.store = store
+    }
+
+    public func recents(limit: Int = RecentItemsProvider.defaultLimit) throws -> [RecentItem] {
+        var seen = Set<String>()
+        var result: [RecentItem] = []
+        let intakes = try store.activeIntakes().filter { $0.lifecycle == .active }.sorted { $0.occurredAt > $1.occurredAt }
+        for intake in intakes {
+            guard result.count < limit else { break }
+            guard let revisions = try? store.revisions(of: intake.id),
+                let current = revisions.first(where: { $0.number == intake.currentRevision })
+            else { continue }
+            let key = Self.key(category: intake.category, revision: current)
+            guard seen.insert(key).inserted else { continue }
+            result.append(RecentItem(
+                id: key,
+                template: RepeatTemplate(
+                    displayName: AmountText.title(current.components), category: intake.category, meal: intake.meal,
+                    components: current.components, productSnapshotID: current.productSnapshotID),
+                lastUsedAt: intake.occurredAt))
+        }
+        return result
+    }
+
+    static func key(category: String, revision: IntakeRevision) -> String {
+        if let snapshot = revision.productSnapshotID { return "product:\(snapshot)" }
+        let names = revision.components.map { $0.name.lowercased() }.sorted().joined(separator: "+")
+        return "\(category)|\(names)"
+    }
+}
+
+public struct LibraryItem: Equatable, Identifiable {
+    public let id: String
+    public let title: String
+    public let detail: String
+    public let isFavorite: Bool
+    public let template: RepeatTemplate
+}
+
+public struct LibrarySection: Equatable, Identifiable {
+    public var id: String { title }
+    public let title: String
+    public let items: [LibraryItem]
+}
+
+@MainActor
+public final class LibraryViewModel: ObservableObject {
+    /// Favorites first, then Recents.
+    @Published public private(set) var sections: [LibrarySection] = []
+    @Published public private(set) var errorMessage: String?
+
+    private let store: JournalStore
+    private let favorites: FavoritesStore
+    private let repeater: IntakeRepeater
+
+    public init(
+        store: JournalStore,
+        favorites: FavoritesStore,
+        timeZoneIdentifier: String = TimeZone.current.identifier,
+        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+    ) {
+        self.store = store
+        self.favorites = favorites
+        self.repeater = IntakeRepeater(store: store, timeZoneIdentifier: timeZoneIdentifier, makeID: makeID)
+    }
+
+    public func load() {
+        do {
+            let favoriteItems = try favorites.list().map { favorite -> LibraryItem in
+                let template = RepeatTemplate(favorite: favorite)
+                return LibraryItem(
+                    id: "favorite:\(favorite.id)", title: favorite.displayName,
+                    detail: AmountText.summary(template.components), isFavorite: true, template: template)
+            }
+            let recentItems = try RecentItemsProvider(store: store).recents().map { recent in
+                LibraryItem(
+                    id: "recent:\(recent.id)", title: recent.template.displayName,
+                    detail: AmountText.summary(recent.template.components), isFavorite: false, template: recent.template)
+            }
+            sections = [
+                LibrarySection(title: "Favorites", items: favoriteItems),
+                LibrarySection(title: "Recents", items: recentItems),
+            ]
+            errorMessage = nil
+        } catch {
+            errorMessage = "Could not read the library."
+        }
+    }
+
+    /// Repeats the item as a new intake: one `create`.
+    @discardableResult
+    public func select(_ item: LibraryItem, now: Date) -> String? {
+        guard !item.template.components.isEmpty else {
+            errorMessage = "This item has no amounts to repeat."
+            return nil
+        }
+        do {
+            let id = try repeater.create(from: item.template, now: now)
+            errorMessage = nil
+            return id
+        } catch {
+            errorMessage = "Could not add the item."
+            return nil
+        }
+    }
+
+    /// Saves the item as a favorite template (a copy, not a link to the intake).
+    public func addFavorite(_ item: LibraryItem) {
+        let components = item.template.components.map {
+            FavoriteComponent(
+                componentID: $0.componentID, name: $0.name, amountText: DecimalFormatting.text($0.amount),
+                unitSymbol: $0.unit.symbol)
+        }
+        let favorite = FavoriteTemplate(
+            id: UUID().uuidString.lowercased(), displayName: item.title, category: item.template.category,
+            components: components, productSnapshotID: item.template.productSnapshotID)
+        do {
+            try favorites.add(favorite)
+            load()
+        } catch {
+            errorMessage = "Could not save the favorite."
+        }
+    }
+
+    public func removeFavorite(_ item: LibraryItem) {
+        guard item.isFavorite else { return }
+        do {
+            try favorites.remove(id: String(item.id.dropFirst("favorite:".count)))
+            load()
+        } catch {
+            errorMessage = "Could not remove the favorite."
+        }
+    }
+}
