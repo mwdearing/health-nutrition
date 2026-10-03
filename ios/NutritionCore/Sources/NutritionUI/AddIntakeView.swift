@@ -1,3 +1,4 @@
+import Foundation
 import NutritionDomain
 import SwiftUI
 
@@ -80,12 +81,29 @@ public struct AddIntakeView: View {
             }
             if model.canLookUpBarcode, let basis = model.lookupBasis {
                 Section("From the barcode (\(basis.label))") {
+                    if let serving = model.serving {
+                        LabeledContent("One serving", value: serving.label)
+                            .font(.footnote)
+                    }
                     ForEach(LookedUpProduct.standardKeys, id: \.self) { key in
                         LabeledContent(
                             LookedUpProduct.displayNames[key] ?? key,
                             value: Self.text(for: model.prefilledNutrients[key])
                         )
                         .font(.footnote)
+                    }
+                    // Shown next to every value above: some sources licence their data only if the
+                    // attribution travels with it. Both the wording and the link come from the
+                    // source, so the UI never has to know which source it is.
+                    if let attribution = model.attribution {
+                        Text(attribution.text)
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                        if let url = URL(string: attribution.url) {
+                            Link(attribution.url, destination: url)
+                                .font(.footnote)
+                                .accessibilityLabel("Read the licence for these nutrition facts")
+                        }
                     }
                 }
             }

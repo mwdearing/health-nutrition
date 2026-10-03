@@ -35,7 +35,8 @@ public enum BarcodeLookupState: Sendable, Equatable {
     case found(LookedUpProduct)
     case notFound
     case invalidBarcode
-    case rateLimited
+    /// How long the source asked the caller to wait, when it said.
+    case rateLimited(retryAfterSeconds: Int?)
     case failed(String)
 
     public var isLoading: Bool {
@@ -61,6 +62,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// stays `.unknown` and is never stored as zero.
     @Published public private(set) var prefilledNutrients: [String: NutrientValue] = [:]
     @Published public private(set) var lookupBasis: BarcodeLookupBasis?
+    /// What one serving is, when the values are per serving.
+    @Published public private(set) var serving: ServingDefinition?
+    /// The attribution the source requires next to its values.
+    @Published public private(set) var attribution: ProductAttribution?
+    /// The product the prefilled values came from, written as a snapshot on save. Nil until a lookup
+    /// succeeds, so an entry typed by hand stays exactly as it was.
+    @Published public private(set) var lookedUp: LookedUpProduct?
 
     public let timeZoneIdentifier: String
     public let units: [MeasureUnit] = UnitRegistry.all
@@ -68,6 +76,9 @@ public final class AddIntakeViewModel: ObservableObject {
     private let store: JournalStore
     private let makeID: () -> String
     private let lookup: BarcodeProductLookup?
+    /// Counts the lookups this form has started. A reply is applied only if it is still the newest
+    /// one and the field still holds the barcode that was asked for.
+    private var lookupGeneration = 0
 
     public var canLookUpBarcode: Bool { lookup != nil }
 
@@ -93,21 +104,37 @@ public final class AddIntakeViewModel: ObservableObject {
         case .loading:
             return "Looking up the barcode…"
         case .found(let product):
-            let basis = product.basis.label
-            return "Filled in from the barcode (\(basis)). Check the amount, then save."
+            return "Filled in from the barcode (\(product.labelBasis)). Check the amount, then save."
         case .notFound:
             return "No product found for that barcode. Fill in the details yourself."
         case .invalidBarcode:
-            return "A barcode has 8, 12 or 13 digits. Nothing was looked up."
-        case .rateLimited:
-            return "Too many lookups just now. Try again in a minute."
+            return "A barcode has 8, 12 or 13 digits and a correct check digit. Nothing was looked up."
+        case .rateLimited(let retryAfterSeconds):
+            return Self.rateLimitMessage(retryAfterSeconds: retryAfterSeconds)
         case .failed:
             return "The lookup did not finish. Try again in a moment."
         }
     }
 
-    /// Looks up the barcode the user typed, after checking its shape. An invalid barcode is
-    /// reported without calling the lookup at all.
+    /// Tells the user how long the source asked them to wait, rather than always one minute: a
+    /// source that asked for longer would rate-limit an eager retry straight away.
+    static func rateLimitMessage(retryAfterSeconds: Int?) -> String {
+        guard let seconds = retryAfterSeconds, seconds > 0 else {
+            return "Too many lookups just now. Try again in a minute."
+        }
+        if seconds < 60 {
+            return "Too many lookups just now. Try again in \(seconds) seconds."
+        }
+        let minutes = (seconds + 59) / 60
+        return "Too many lookups just now. Try again in about \(minutes) minute\(minutes == 1 ? "" : "s")."
+    }
+
+    /// Looks up the barcode the user typed, after checking its shape and check digit. An invalid
+    /// barcode is reported without calling the lookup at all.
+    ///
+    /// A reply is applied only when it is still the newest lookup this form started and the field
+    /// still holds the barcode that was asked for, so a slow reply can never fill the form with
+    /// another product's values.
     public func lookUpBarcode() async {
         guard let lookup else { return }
         let trimmed = barcode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,16 +143,22 @@ public final class AddIntakeViewModel: ObservableObject {
             return
         }
         barcode = trimmed
+        lookupGeneration += 1
+        let generation = lookupGeneration
         lookupState = .loading
         let result = await lookup.lookUp(barcode: trimmed)
+        guard generation == lookupGeneration, barcode == trimmed else { return }
         switch result {
         case .found(let product):
+            // A source may answer with the barcode it found under a slightly different code; the
+            // form is filling in for the barcode in the field, so only that answer is used.
+            guard product.barcode == trimmed else { return }
             apply(product)
             lookupState = .found(product)
         case .notFound:
             lookupState = .notFound
-        case .rateLimited:
-            lookupState = .rateLimited
+        case .rateLimited(let retryAfterSeconds):
+            lookupState = .rateLimited(retryAfterSeconds: retryAfterSeconds)
         case .failed(let reason):
             lookupState = .failed(reason)
         }
@@ -150,6 +183,9 @@ public final class AddIntakeViewModel: ObservableObject {
         }
         prefilledNutrients = filled
         lookupBasis = product.basis
+        serving = product.basis == .perServing ? product.serving : nil
+        attribution = product.attribution
+        lookedUp = product
     }
 
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
@@ -167,12 +203,32 @@ public final class AddIntakeViewModel: ObservableObject {
         let component = IntakeComponent(
             componentID: Self.slug(trimmedName), name: trimmedName, amount: amount, unit: unit)
         do {
-            try store.create(intake, components: [component], product: nil, now: now)
+            try store.create(intake, components: [component], product: productSnapshot(), now: now)
             return true
         } catch {
             saveError = "Could not save the intake."
             return false
         }
+    }
+
+    /// The product snapshot to store with the entry, or nil for an entry typed by hand.
+    ///
+    /// The journal's `ProductDefinition` holds the barcode, brand and basis of a product but no
+    /// nutrient values, so the prefilled nutrients stay on the form; storing them would need a
+    /// change to the journal type. Everything the snapshot does carry is carried here, including the
+    /// attribution source and the source's own version, so the entry can be traced back later.
+    func productSnapshot() -> ProductDefinition? {
+        guard let lookedUp else { return nil }
+        return ProductDefinition(
+            snapshotID: lookedUp.snapshotIdentity(),
+            productID: lookedUp.barcode,
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            brand: lookedUp.brand?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            barcode: lookedUp.barcode,
+            labelBasis: lookedUp.labelBasis,
+            catalogOrigin: lookedUp.attribution?.source ?? "unknown",
+            catalogVersion: lookedUp.version ?? "unknown"
+        )
     }
 
     /// Component ids are slugs: `[a-z0-9][a-z0-9._-]{0,63}`.
@@ -192,5 +248,13 @@ public final class AddIntakeViewModel: ObservableObject {
         while result.hasSuffix("-") { result.removeLast() }
         if result.isEmpty { return "item" }
         return String(result.prefix(64))
+    }
+}
+
+extension String {
+    /// nil when the string holds nothing but whitespace, so an empty brand is stored as absent
+    /// rather than as an empty string.
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
