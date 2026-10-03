@@ -195,14 +195,17 @@ final class DSLDLabelAdapterTests: XCTestCase {
         let label = try adapter.parse(DSLDFixtures.label(204235))
         let magnesium = try XCTUnwrap(label.fact(named: "Magnesium"))
         XCTAssertEqual(magnesium.substanceIdentifier, "6520", "the identifier is the DSLD id, not the display name")
-        XCTAssertEqual(magnesium.provenance, "NIH DSLD label 204235, ingredient row 1")
+        XCTAssertEqual(magnesium.provenance, "NIH DSLD label 204235, ingredient row 1, serving size 1")
 
         let blend = try adapter.parse(DSLDFixtures.label(216782))
             .blends.first { $0.labelName == "Proprietary Blend" }
         let proprietaryBlend = try XCTUnwrap(blend)
         XCTAssertEqual(proprietaryBlend.identifier, "dsld-216782-284535")
         XCTAssertEqual(proprietaryBlend.members.first?.substanceIdentifier, "231239", "a nested member keeps its numeric id")
-        XCTAssertEqual(proprietaryBlend.totalFact.provenance, "NIH DSLD label 216782, proprietary blend row 1")
+        XCTAssertEqual(
+            proprietaryBlend.totalFact.provenance,
+            "NIH DSLD label 216782, proprietary blend row 1, serving size 1"
+        )
     }
 
     // MARK: - Flags and serving sizes
@@ -315,6 +318,57 @@ final class DSLDLabelAdapterTests: XCTestCase {
         XCTAssertEqual(label.facts[1].amount, .belowReportingThreshold(MeasureUnit.mg))
     }
 
+    func testFactsAreKeptForEveryServingSizeTheLabelLists() throws {
+        let label = try parseInline(
+            """
+            {"id":13,"fullName":"Two servings","brandName":"Test","offMarket":0,
+             "servingSizes":[
+              {"order":1,"minQuantity":1,"maxQuantity":1,"unit":"Tablet(s)","inSFB":true},
+              {"order":2,"minQuantity":2,"maxQuantity":2,"unit":"Tablet(s)","inSFB":false}],
+             "ingredientRows":[
+              {"order":1,"name":"Vitamin C","forms":[],"nestedRows":[],
+               "quantity":[{"servingSizeOrder":1,"operator":"=","quantity":60,"unit":"mg"},
+                           {"servingSizeOrder":2,"operator":"=","quantity":120,"unit":"mg"}]},
+              {"order":2,"name":"Zinc","forms":[],"nestedRows":[],
+               "quantity":[{"servingSizeOrder":1,"operator":"=","quantity":5,"unit":"mg"}]}]}
+            """
+        )
+        XCTAssertEqual(label.servingSizes.count, 2)
+        XCTAssertEqual(label.servings.count, 2, "every serving size the label lists keeps its own facts")
+
+        let first = label.servings[0]
+        XCTAssertEqual(first.order, 1)
+        XCTAssertEqual(first.servingSize?.minimum, Quantity(value: dec("1"), unit: .serving))
+        XCTAssertEqual(first.facts.map(\.labelName), ["Vitamin C", "Zinc"])
+        XCTAssertEqual(first.facts[0].amount, .known(dec("60"), .mg))
+
+        let second = label.servings[1]
+        XCTAssertEqual(second.order, 2)
+        XCTAssertEqual(second.servingSize?.minimum, Quantity(value: dec("2"), unit: .serving))
+        XCTAssertEqual(second.facts[0].amount, .known(dec("120"), .mg), "the second serving keeps its own amount")
+        XCTAssertEqual(
+            second.facts[1].amount, .unknown,
+            "a row that states no amount for the second serving is unknown there, not the first amount"
+        )
+
+        // The plain facts and blends are the first serving size.
+        XCTAssertEqual(label.facts, first.facts)
+        XCTAssertEqual(label.fact(named: "Vitamin C")?.amount, .known(dec("60"), .mg))
+    }
+
+    func testEveryRecordedLabelKeepsItsServingSizesAssociated() throws {
+        for entry in try DSLDFixtures.recordedLabels() {
+            let label = try adapter.parse(DSLDFixtures.data(entry.file))
+            XCTAssertEqual(
+                label.servings.count, label.servingSizes.count,
+                "\(entry.file) does not associate its facts with every serving size"
+            )
+            for serving in label.servings {
+                XCTAssertNotNil(serving.servingSize, "\(entry.file) has no serving size for order \(serving.order)")
+            }
+        }
+    }
+
     // MARK: - Decimal exactness
 
     func testDecimalAmountsAreParsedExactlyFromTheirJsonText() throws {
@@ -377,6 +431,54 @@ final class DSLDLabelAdapterTests: XCTestCase {
         }
         // A plain zero and a zero after a decimal point stay valid.
         XCTAssertNoThrow(try parseInline("{\"id\":9,\"fullName\":\"Zero\",\"ingredientRows\":[{\"order\":1,\"name\":\"X\",\"forms\":[],\"nestedRows\":[],\"quantity\":[{\"operator\":\"=\",\"quantity\":0.10,\"unit\":\"mg\"}]}]}"))
+    }
+
+    func testOverPreciseOrOutOfRangeDecimalLiteralsAreRejected() {
+        // 41 significant digits: more than a Decimal holds, so it must not be rounded silently.
+        let overPrecise = """
+        {"id":14,"fullName":"Precise","ingredientRows":[{"order":1,"name":"Vitamin C","forms":[],
+         "nestedRows":[],"quantity":[{"operator":"=","quantity":1.23456789012345678901234567890123456789012,"unit":"mg"}]}]}
+        """
+        XCTAssertThrowsError(try parseInline(overPrecise)) { error in
+            guard case DSLDAdapterError.malformedJSON = error else {
+                return XCTFail("expected malformedJSON for an over-precise literal, got \(error)")
+            }
+        }
+        // An exponent far outside what a Decimal can hold.
+        XCTAssertThrowsError(try parseInline(
+            "{\"id\":15,\"ingredientRows\":[{\"order\":1,\"name\":\"X\",\"quantity\":[{\"operator\":\"=\",\"quantity\":1e400,\"unit\":\"mg\"}]}]}"
+        )) { error in
+            guard case DSLDAdapterError.malformedJSON = error else {
+                return XCTFail("expected malformedJSON for an out-of-range exponent, got \(error)")
+            }
+        }
+        // 38 significant digits still round-trips exactly.
+        XCTAssertNoThrow(try parseInline(
+            "{\"id\":16,\"ingredientRows\":[{\"order\":1,\"name\":\"X\",\"forms\":[],\"nestedRows\":[],\"quantity\":[{\"operator\":\"=\",\"quantity\":1.2345678901234567890123456789012345678,\"unit\":\"mg\"}]}]}"
+        ))
+    }
+
+    func testStringErrorsCarryAbsoluteDocumentOffsets() {
+        // A prefix long enough that a run-relative offset could not be mistaken for the real position.
+        let prefix = "{\"id\":17,\"fullName\":\"A rather long product name that pushes the string well past byte zero\",\"x\":\""
+        let broken = Data((prefix + "\u{0C}" + "\",\"ingredientRows\":[]}").utf8)
+        XCTAssertThrowsError(try adapter.parse(broken)) { error in
+            guard case DSLDAdapterError.malformedJSON(_, let offset) = error else {
+                return XCTFail("expected malformedJSON, got \(error)")
+            }
+            XCTAssertEqual(offset, prefix.utf8.count, "the offset must point at the offending byte in the document")
+        }
+
+        // Invalid UTF-8 reports the same way.
+        var brokenUTF8: [UInt8] = Array(prefix.utf8)
+        brokenUTF8.append(0xF5)
+        brokenUTF8.append(contentsOf: Array("\",\"ingredientRows\":[]}".utf8))
+        XCTAssertThrowsError(try adapter.parse(Data(brokenUTF8))) { error in
+            guard case DSLDAdapterError.malformedJSON(_, let offset) = error else {
+                return XCTFail("expected malformedJSON, got \(error)")
+            }
+            XCTAssertEqual(offset, prefix.utf8.count)
+        }
     }
 
     func testInvalidBytesAndControlCharactersInStringsAreRejected() {

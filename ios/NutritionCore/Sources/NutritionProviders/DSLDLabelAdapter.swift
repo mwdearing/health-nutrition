@@ -34,15 +34,52 @@ public struct DSLDLabelAdapter: Sendable {
 
         let brandName = Self.text(in: root, "brandName") ?? ""
         let fullName = Self.text(in: root, "fullName") ?? brandName
+        let servingSizes = Self.servingSizes(in: root)
+        let orders = Self.servingOrders(in: root, sizes: servingSizes)
+
+        // DSLD states every ingredient row once per serving size. The label therefore keeps one set of
+        // facts and blends per serving size instead of only the first one, so an amount is never read
+        // with the serving size it does not belong to.
+        var servings: [DSLDServingFacts] = []
+        for order in orders {
+            let parsed = try Self.rows(in: rows, labelIdentifier: identifier, servingOrder: order, firstOrder: orders[0])
+            servings.append(
+                DSLDServingFacts(
+                    order: order,
+                    servingSize: servingSizes.first { $0.order == order },
+                    facts: parsed.facts,
+                    blends: parsed.blends
+                )
+            )
+        }
+        let primary = servings[0]
+
+        return DSLDSupplementLabel(
+            id: identifier,
+            fullName: fullName,
+            brandName: brandName,
+            offMarket: root["offMarket"]?.flagValue ?? false,
+            servingSizes: servingSizes,
+            facts: primary.facts,
+            blends: primary.blends,
+            servings: servings
+        )
+    }
+
+    /// Reads every ingredient row for one serving size.
+    private static func rows(
+        in rows: [DSLDJSON],
+        labelIdentifier: Int,
+        servingOrder: Int,
+        firstOrder: Int
+    ) throws -> (facts: [CompoundFact], blends: [ProprietaryBlend]) {
         var facts: [CompoundFact] = []
         var blends: [ProprietaryBlend] = []
-
         for row in rows {
             guard let object = row.objectValue else { continue }
             guard let name = Self.text(in: object, "name"), !name.isEmpty else { continue }
             let substanceIdentifier = Self.literalText(in: object, "ingredientId") ?? name
-            let quantity = Self.servingQuantity(in: object)
-            let amount = Self.amount(from: quantity)
+            let amount = Self.amount(from: quantityEntry(in: object, for: servingOrder, firstOrder: firstOrder))
             let formName = Self.formName(in: object)
             let rowOrder = Self.literalText(in: object, "order") ?? "?"
 
@@ -51,8 +88,9 @@ public struct DSLDLabelAdapter: Sendable {
                 name: name,
                 substanceIdentifier: substanceIdentifier,
                 rowOrder: rowOrder,
-                labelIdentifier: identifier,
-                amount: amount
+                labelIdentifier: labelIdentifier,
+                amount: amount,
+                servingOrder: servingOrder
             ) {
                 blends.append(blend)
                 continue
@@ -64,7 +102,7 @@ public struct DSLDLabelAdapter: Sendable {
                     substanceIdentifier: substanceIdentifier,
                     formName: formName,
                     amount: amount,
-                    provenance: "NIH DSLD label \(identifier), ingredient row \(rowOrder)"
+                    provenance: "NIH DSLD label \(labelIdentifier), ingredient row \(rowOrder), serving size \(servingOrder)"
                 )
             )
 
@@ -78,23 +116,17 @@ public struct DSLDLabelAdapter: Sendable {
                         name: memberName,
                         substanceIdentifier: Self.literalText(in: member, "ingredientId") ?? memberName,
                         formName: Self.formName(in: member),
-                        amount: Self.amount(from: Self.servingQuantity(in: member)),
-                        provenance: "NIH DSLD label \(identifier), ingredient row \(rowOrder), nested row "
+                        amount: Self.amount(
+                            from: quantityEntry(in: member, for: servingOrder, firstOrder: firstOrder)
+                        ),
+                        provenance: "NIH DSLD label \(labelIdentifier), ingredient row \(rowOrder), nested row "
                             + (Self.literalText(in: member, "order") ?? "?")
+                            + ", serving size \(servingOrder)"
                     )
                 )
             }
         }
-
-        return DSLDSupplementLabel(
-            id: identifier,
-            fullName: fullName,
-            brandName: brandName,
-            offMarket: root["offMarket"]?.flagValue ?? false,
-            servingSizes: Self.servingSizes(in: root),
-            facts: facts,
-            blends: blends
-        )
+        return (facts, blends)
     }
 
     // MARK: - Identifier and text
@@ -177,8 +209,10 @@ public struct DSLDLabelAdapter: Sendable {
             }
             let unitText = object["unit"]?.stringValue ?? ""
             let unit: MeasureUnit = (try? UnitRegistry.unit(for: unitText)) ?? .serving
+            let order = literalText(in: object, "order").flatMap { Int($0) } ?? (sizes.count + 1)
             sizes.append(
                 DSLDServingSize(
+                    order: order,
                     minimum: Quantity(value: minimum, unit: unit),
                     maximum: Quantity(value: Swift.max(minimum, maximum), unit: unit),
                     unitText: unitText,
@@ -189,22 +223,60 @@ public struct DSLDLabelAdapter: Sendable {
         return sizes
     }
 
-    // MARK: - Ingredient rows
-
-    /// A row repeats its amount once per serving size. The adapter reads the entry for the first
-    /// serving size, falling back to the first entry the row carries.
-    private static func servingQuantity(in object: [String: DSLDJSON]) -> [String: DSLDJSON]? {
-        guard let entries = object["quantity"]?.arrayValue, !entries.isEmpty else { return nil }
-        let first = entries[0].objectValue
-        let firstOrder = first?["servingSizeOrder"]?.numberText
-        if let firstOrder, firstOrder != "1" {
-            for entry in entries {
-                if entry.objectValue?["servingSizeOrder"]?.numberText == "1" {
-                    return entry.objectValue
+    /// Every serving size the label speaks of, in label order: the ones it lists plus the ones its
+    /// quantity entries name. A label with none of either still has one serving size, the first.
+    private static func servingOrders(in root: [String: DSLDJSON], sizes: [DSLDServingSize]) -> [Int] {
+        var orders: [Int] = []
+        for size in sizes {
+            if !orders.contains(size.order) {
+                orders.append(size.order)
+            }
+        }
+        for row in root["ingredientRows"]?.arrayValue ?? [] {
+            guard let object = row.objectValue else { continue }
+            for entry in quantityEntries(of: object) + nestedQuantityEntries(of: object) {
+                guard let text = entry["servingSizeOrder"]?.numberText, let order = Int(text) else { continue }
+                if !orders.contains(order) {
+                    orders.append(order)
                 }
             }
         }
-        return first
+        return orders.isEmpty ? [1] : orders.sorted()
+    }
+
+    private static func quantityEntries(of object: [String: DSLDJSON]) -> [[String: DSLDJSON]] {
+        (object["quantity"]?.arrayValue ?? []).compactMap { $0.objectValue }
+    }
+
+    private static func nestedQuantityEntries(of object: [String: DSLDJSON]) -> [[String: DSLDJSON]] {
+        var entries: [[String: DSLDJSON]] = []
+        for nested in object["nestedRows"]?.arrayValue ?? [] {
+            guard let member = nested.objectValue else { continue }
+            entries.append(contentsOf: quantityEntries(of: member))
+        }
+        return entries
+    }
+
+    // MARK: - Ingredient rows
+
+    /// The quantity entry of a row for one serving size.
+    ///
+    /// DSLD repeats the amount of a row once per serving size and names the serving size in
+    /// `servingSizeOrder`. An entry that names no serving size belongs to the label's first one. A row
+    /// that states no entry for the serving size being read has no amount for it, which is unknown and
+    /// never the amount of another serving size.
+    private static func quantityEntry(
+        in object: [String: DSLDJSON],
+        for order: Int,
+        firstOrder: Int
+    ) -> [String: DSLDJSON]? {
+        let entries = quantityEntries(of: object)
+        guard !entries.isEmpty else { return nil }
+        for entry in entries {
+            guard let text = entry["servingSizeOrder"]?.numberText, Int(text) == order else { continue }
+            return entry
+        }
+        return order == firstOrder ? entries[0] : nil
     }
 
     /// A proprietary blend is a row DSLD marks as a blend: `category` is "blend" or the row is named as a
@@ -217,7 +289,8 @@ public struct DSLDLabelAdapter: Sendable {
         substanceIdentifier: String,
         rowOrder: String,
         labelIdentifier: Int,
-        amount: NutrientValue
+        amount: NutrientValue,
+        servingOrder: Int
     ) throws -> ProprietaryBlend? {
         let category = text(in: object, "category")?.lowercased()
         let group = text(in: object, "ingredientGroup")?.lowercased()
@@ -243,7 +316,7 @@ public struct DSLDLabelAdapter: Sendable {
             total: amount,
             basis: .compoundMass,
             members: members,
-            provenance: "NIH DSLD label \(labelIdentifier), proprietary blend row \(rowOrder)"
+            provenance: "NIH DSLD label \(labelIdentifier), proprietary blend row \(rowOrder), serving size \(servingOrder)"
         )
     }
 

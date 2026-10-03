@@ -204,25 +204,32 @@ struct DSLDJSONReader {
             while let current = peek(), current != UInt8(ascii: "\""), current != UInt8(ascii: "\\") {
                 index += 1
             }
-            try appendLiteralRun(Array(bytes[start..<index]), to: &units)
+            try appendLiteralRun(Array(bytes[start..<index]), documentStart: start, to: &units)
         }
         throw DSLDAdapterError.malformedJSON(reason: "a string is not closed", offset: index)
     }
 
     /// Appends a run of unescaped bytes to the string being read.
     ///
+    /// `documentStart` is where the run begins in the whole document, so every position reported from
+    /// here is an absolute byte offset and not one relative to the start of the run.
+    ///
     /// The bytes must be well-formed UTF-8, and JSON requires every control character below U+0020 to
     /// be escaped, so a literal one is rejected instead of being carried into the value or replaced by
     /// a substitution character.
-    private func appendLiteralRun(_ run: [UInt8], to units: inout [UInt16]) throws {
+    private func appendLiteralRun(
+        _ run: [UInt8],
+        documentStart: Int,
+        to units: inout [UInt16]
+    ) throws {
         var position = 0
         while position < run.count {
             let start = position
-            let scalar = try readScalar(from: run, at: &position)
+            let scalar = try readScalar(from: run, at: &position, documentStart: documentStart)
             guard scalar.value >= 0x20 else {
                 throw DSLDAdapterError.malformedJSON(
                     reason: "a control character in a string is not escaped",
-                    offset: start
+                    offset: documentStart + start
                 )
             }
             units.append(contentsOf: Array(String(scalar).utf16))
@@ -230,7 +237,12 @@ struct DSLDJSONReader {
     }
 
     /// Reads one UTF-8 scalar at `position`, rejecting overlong forms, surrogates and out-of-range values.
-    private func readScalar(from bytes: [UInt8], at position: inout Int) throws -> Unicode.Scalar {
+    /// Positions are reported as absolute offsets into the document.
+    private func readScalar(
+        from bytes: [UInt8],
+        at position: inout Int,
+        documentStart: Int
+    ) throws -> Unicode.Scalar {
         let start = position
         let first = bytes[start]
         let length: Int
@@ -240,29 +252,47 @@ struct DSLDJSONReader {
         case 0xE0...0xEF: length = 3
         case 0xF0...0xF4: length = 4
         default:
-            throw DSLDAdapterError.malformedJSON(reason: "a byte is not valid UTF-8", offset: start)
+            throw DSLDAdapterError.malformedJSON(
+                reason: "a byte is not valid UTF-8",
+                offset: documentStart + start
+            )
         }
         guard start + length <= bytes.count else {
-            throw DSLDAdapterError.malformedJSON(reason: "a UTF-8 sequence is truncated", offset: start)
+            throw DSLDAdapterError.malformedJSON(
+                reason: "a UTF-8 sequence is truncated",
+                offset: documentStart + start
+            )
         }
         for offset in 1..<length {
             let continuation = bytes[start + offset]
             guard (continuation & 0xC0) == 0x80 else {
-                throw DSLDAdapterError.malformedJSON(reason: "a byte is not valid UTF-8", offset: start + offset)
+                throw DSLDAdapterError.malformedJSON(
+                    reason: "a byte is not valid UTF-8",
+                    offset: documentStart + start + offset
+                )
             }
         }
         if length > 1 {
             let second = bytes[start + 1]
             if length == 3, (first == 0xE0 && second < 0xA0) || (first == 0xED && second > 0x9F) {
-                throw DSLDAdapterError.malformedJSON(reason: "a UTF-8 sequence is not a scalar value", offset: start)
+                throw DSLDAdapterError.malformedJSON(
+                    reason: "a UTF-8 sequence is not a scalar value",
+                    offset: documentStart + start
+                )
             }
             if length == 4, (first == 0xF0 && second < 0x90) || (first == 0xF4 && second > 0x8F) {
-                throw DSLDAdapterError.malformedJSON(reason: "a UTF-8 sequence is not a scalar value", offset: start)
+                throw DSLDAdapterError.malformedJSON(
+                    reason: "a UTF-8 sequence is not a scalar value",
+                    offset: documentStart + start
+                )
             }
         }
         let text = String(decoding: bytes[start..<(start + length)], as: UTF8.self)
         guard let scalar = text.unicodeScalars.first, text.unicodeScalars.count == 1 else {
-            throw DSLDAdapterError.malformedJSON(reason: "a byte is not valid UTF-8", offset: start)
+            throw DSLDAdapterError.malformedJSON(
+                reason: "a byte is not valid UTF-8",
+                offset: documentStart + start
+            )
         }
         position = start + length
         return scalar
@@ -315,7 +345,72 @@ struct DSLDJSONReader {
         guard Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")) != nil else {
             throw DSLDAdapterError.malformedJSON(reason: "a number is not decimal", offset: start)
         }
+        // `Decimal(string:)` succeeds after rounding when a literal carries more digits or a larger
+        // exponent than a Decimal can hold, which would publish a rounded amount as if it were exact.
+        // Such a literal is refused instead.
+        if let reason = Self.exactnessProblem(in: text) {
+            throw DSLDAdapterError.malformedJSON(reason: reason, offset: start)
+        }
         return .number(text)
+    }
+
+    /// The number of significant digits a `Decimal` keeps, and the range of its adjusted exponent.
+    private static let maximumSignificantDigits = 38
+    private static let maximumAdjustedExponent = 127
+
+    /// Returns why a valid JSON number cannot be represented exactly, or nil when it can.
+    private static func exactnessProblem(in text: String) -> String? {
+        let characters = Array(text)
+        var index = 0
+        if characters[index] == "-" {
+            index += 1
+        }
+        var integerDigits = ""
+        while index < characters.count, characters[index].isNumber {
+            integerDigits.append(characters[index])
+            index += 1
+        }
+        var fractionDigits = ""
+        if index < characters.count, characters[index] == "." {
+            index += 1
+            while index < characters.count, characters[index].isNumber {
+                fractionDigits.append(characters[index])
+                index += 1
+            }
+        }
+        var literalExponent = 0
+        if index < characters.count {
+            index += 1
+            var negative = false
+            if index < characters.count, characters[index] == "-" {
+                negative = true
+                index += 1
+            } else if index < characters.count, characters[index] == "+" {
+                index += 1
+            }
+            var magnitude = 0
+            while index < characters.count, characters[index].isNumber {
+                if magnitude < 1_000 {
+                    magnitude = magnitude * 10 + (Int(characters[index].asciiValue ?? 0) - 48)
+                }
+                index += 1
+            }
+            literalExponent = negative ? -magnitude : magnitude
+        }
+
+        let digits = integerDigits + fractionDigits
+        let significant = digits.drop { $0 == "0" }
+        guard !significant.isEmpty else { return nil }
+        let leadingZeros = digits.count - significant.count
+        if significant.count > Self.maximumSignificantDigits {
+            return "a number has more significant digits than a decimal keeps exactly"
+        }
+        // The place value of the leading significant digit, moved by any exponent the literal carries.
+        let adjustedExponent = (integerDigits.count - 1 - leadingZeros) + literalExponent
+        if adjustedExponent > Self.maximumAdjustedExponent || adjustedExponent < -Self.maximumAdjustedExponent {
+            return "a number is outside the range a decimal keeps exactly"
+        }
+        return nil
     }
 
     /// Reads the integer part of a number. JSON allows a single leading zero and nothing more, so a zero

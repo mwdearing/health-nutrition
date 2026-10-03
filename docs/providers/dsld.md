@@ -20,13 +20,14 @@ and the adapter keeps that basis; it does not normalise to 100 g and it does not
 | `fullName` | `fullName` | Falls back to `brandName`, then to empty text. Never invented. |
 | `brandName` | `brandName` | Empty text when absent. |
 | `offMarket` | `offMarket` (`Bool`) | `1` is true, `0` is false. Absent or unreadable is false. |
-| `servingSizes[]` | `servingSizes` (`DSLDServingSize`, wrapping `Quantity`) | `minQuantity`/`maxQuantity` with the registry unit of `unit` when the registry knows it, otherwise a count of `.serving`; the original text stays in `unitText`. `inSFB` becomes `isFactsPanelServing`. |
-| `ingredientRows[]` | `facts` (`CompoundFact`) | One fact per row that is not a blend, on the per-serving basis the row states. |
+| `servingSizes[]` | `servingSizes` (`DSLDServingSize`, wrapping `Quantity`) | `order` becomes the serving-size order, `minQuantity`/`maxQuantity` with the registry unit of `unit` when the registry knows it, otherwise a count of `.serving`; the original text stays in `unitText`. `inSFB` becomes `isFactsPanelServing`. |
+| `ingredientRows[]` | `facts` (`CompoundFact`) | One fact per row that is not a blend, for the first serving size. |
+| `servings` (`DSLDServingFacts`) | `servings` | The facts and blends of every serving size the label lists, each with its `servingSizeOrder` and its `DSLDServingSize`. `facts` and `blends` are only the first entry. |
 | `ingredientRows[].ingredientId` | `substanceIdentifier` | The DSLD ingredient id, kept as text whether the source writes it as a JSON number or a string; the row name is the fallback. |
 | `ingredientRows[].order` | provenance only | Kept in the provenance text so the row stays traceable. |
 | `ingredientRows[].name` | `labelName` | A row with no name is skipped, because a fact without a name cannot be shown. |
 | `ingredientRows[].forms[].name` | `chemicalForm` | The first form name the row states, for example "Magnesium Citrate". |
-| `ingredientRows[].quantity[]` | `amount` (`NutrientValue`) | The entry for the first serving size; see the amount rules below. |
+| `ingredientRows[].quantity[]` | `amount` (`NutrientValue`) | The entry whose `servingSizeOrder` matches the serving size being read; see the amount rules below. |
 | `category` is `blend`, or the name or ingredient group says "Proprietary Blend" | `blends` (`ProprietaryBlend`) | The row amount is the blend total and the nested rows are the members. A blend total is not repeated in `facts`. |
 | `ingredientRows[].nestedRows[]` of an ordinary nutrient | further `facts` | Nesting alone is not blend metadata: DSLD also nests a nutrient under its own breakdown (Folate with Folic Acid, Calories with Calories from Fat). The parent stays a fact and the child becomes a fact of its own, with its own identifier and amount. |
 | `ingredientRows[].nestedRows[]` of a blend | `blends[].members` (`BlendMember`) | A nested row that states an amount keeps it; a nested row with no amount is `.unknown`. |
@@ -47,6 +48,16 @@ and the adapter keeps that basis; it does not normalise to 100 g and it does not
   `.unknown`. A bound never becomes a known exact amount.
 - Blend members are usually undisclosed and read as `.unknown`. A member amount is never inferred from
   the blend total, and the total is never divided among the members.
+
+## Serving sizes
+
+- DSLD states each ingredient row once per serving size and names the serving size in `servingSizeOrder`.
+  The adapter reads every serving size the label speaks of — the ones in `servingSizes[]` and the ones its
+  quantity entries name — and keeps one `DSLDServingFacts` per order in `servings`.
+- An amount is never taken from a different serving size than the one being read. A row that states no
+  entry for a serving size is `.unknown` for that serving size, not the amount of the first one.
+- `facts` and `blends` are the first serving size, kept for the common single-serving label;
+  `serving(_:)` looks a serving size up by order and returns nil when the label does not state it.
 
 ## Basis rules
 
@@ -89,7 +100,13 @@ as text instead, so `0.1` stays `0.1` and `2.5` stays `2.5`. The same literal te
 
 The reader only accepts well-formed JSON. It rejects a number with a leading zero (`01`), a string that
 contains an unescaped control character below U+0020, and bytes that are not well-formed UTF-8, rather
-than passing them on with a substituted character.
+than passing them on with a substituted character. Positions in `malformedJSON` are absolute byte
+offsets into the document.
+
+A literal that a `Decimal` cannot hold exactly is rejected as `malformedJSON` rather than rounded:
+`Decimal(string:)` succeeds after rounding for a literal with more than 38 significant digits or with an
+adjusted exponent outside ±127, and publishing that rounded value as a known amount would break the
+exactness this adapter promises.
 
 ## Malformed input
 
