@@ -252,10 +252,6 @@ public struct JournalExport: Sendable, Hashable, Codable {
     public var intakes: [JournalExportIntake]
     public var tombstones: [JournalExportTombstone]
     public var favorites: [JournalExportFavorite]
-    /// Every product snapshot the document refers to, sorted by snapshot id. Revisions carry their own copy
-    /// in `provenance`; this list is what lets a favorite outlive the intakes it came from, so a later import
-    /// can repeat it without the catalog.
-    public var products: [JournalExportProvenance]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -264,13 +260,11 @@ public struct JournalExport: Sendable, Hashable, Codable {
         case intakes
         case tombstones
         case favorites
-        case products
     }
 
     public init(
         schemaVersion: Int = JournalExport.currentSchemaVersion, exportedAt: Date, appVersion: String,
-        intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite],
-        products: [JournalExportProvenance] = []
+        intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite]
     ) {
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
@@ -278,7 +272,6 @@ public struct JournalExport: Sendable, Hashable, Codable {
         self.intakes = intakes
         self.tombstones = tombstones
         self.favorites = favorites
-        self.products = products
     }
 }
 
@@ -287,39 +280,6 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case missingProductSnapshot(String)
     /// The encoded bytes were not valid UTF-8 text.
     case notUTF8
-    /// The document declares a schema version this build does not understand, so its fields are not read.
-    case unsupportedSchemaVersion(Int)
-}
-
-/// One active intake with every one of its revisions, as read in a single pass.
-public struct JournalExportIntakeSnapshot: Sendable {
-    public var intake: Intake
-    public var revisions: [IntakeRevision]
-
-    public init(intake: Intake, revisions: [IntakeRevision]) {
-        self.intake = intake
-        self.revisions = revisions
-    }
-}
-
-/// A consistent read of the whole journal: active intakes with their revisions, and deleted intakes, all as
-/// of one moment.
-public struct JournalSnapshot: Sendable {
-    public var activeIntakes: [JournalExportIntakeSnapshot]
-    public var deletedIntakes: [Intake]
-
-    public init(activeIntakes: [JournalExportIntakeSnapshot], deletedIntakes: [Intake]) {
-        self.activeIntakes = activeIntakes
-        self.deletedIntakes = deletedIntakes
-    }
-}
-
-/// A store that can read the journal in one pass. The exporter prefers this over separate list calls: an
-/// entry deleted between two reads would otherwise be in neither the intakes nor the tombstones, and would
-/// vanish from the backup without a trace.
-public protocol JournalSnapshotSource: AnyObject, Sendable {
-    /// Active intakes with all their revisions, plus deleted intakes, from one read.
-    func readJournalSnapshot() throws -> JournalSnapshot
 }
 
 /// A store that also knows its deleted intakes. The SwiftData journal store keeps tombstones; a store that
@@ -337,50 +297,23 @@ public enum JournalExporter {
 
     /// Reads the whole journal, its tombstones and the favorites, and builds the document.
     /// Collections are sorted by id so two runs over the same data produce the same document.
-    ///
-    /// A store that offers `readJournalSnapshot()` is read in one pass, so a deletion or an edit that lands
-    /// mid-export cannot leave an entry in neither the intakes nor the tombstones.
     public static func makeExport(
         store: JournalStore, favorites: FavoritesStore? = nil, appVersion: String, exportedAt: Date
     ) throws -> JournalExport {
-        let snapshot: JournalSnapshot?
-        if let source = store as? JournalSnapshotSource {
-            snapshot = try source.readJournalSnapshot()
-        } else {
-            snapshot = nil
+        var tombstones: [JournalExportTombstone] = []
+        if let source = store as? JournalTombstoneSource {
+            tombstones = try source.deletedIntakes().map { JournalExportTombstone(intake: $0) }
         }
-        let intakeSnapshots: [JournalExportIntakeSnapshot]
-        let deletedIntakes: [Intake]
-        if let snapshot {
-            intakeSnapshots = snapshot.activeIntakes
-            deletedIntakes = snapshot.deletedIntakes
-        } else {
-            // A store without a snapshot API is read call by call. Nothing can promise atomicity there, so
-            // the journal store implements `JournalSnapshotSource` instead.
-            var collected: [JournalExportIntakeSnapshot] = []
-            for intake in try store.activeIntakes() where intake.lifecycle == .active {
-                collected.append(
-                    JournalExportIntakeSnapshot(intake: intake, revisions: try store.revisions(of: intake.id)))
-            }
-            intakeSnapshots = collected
-            deletedIntakes = try (store as? JournalTombstoneSource)?.deletedIntakes() ?? []
-        }
-
-        // Every snapshot the document refers to, so a restore never has to ask the catalog for it.
-        var productsByID: [String: JournalExportProvenance] = [:]
         var intakes: [JournalExportIntake] = []
-        for item in intakeSnapshots {
-            let intake = item.intake
+        for intake in try store.activeIntakes() where intake.lifecycle == .active {
             var revisions: [JournalExportRevision] = []
-            for revision in item.revisions {
+            for revision in try store.revisions(of: intake.id) {
                 var provenance: JournalExportProvenance?
                 if let snapshotID = revision.productSnapshotID {
                     guard let product = try store.product(snapshotID: snapshotID) else {
                         throw JournalExportError.missingProductSnapshot(snapshotID)
                     }
-                    let resolved = JournalExportProvenance(product: product)
-                    provenance = resolved
-                    productsByID[snapshotID] = resolved
+                    provenance = JournalExportProvenance(product: product)
                 }
                 revisions.append(JournalExportRevision(revision: revision, provenance: provenance))
             }
@@ -393,33 +326,19 @@ public enum JournalExporter {
         var favoriteList: [JournalExportFavorite] = []
         if let favorites {
             favoriteList = try favorites.list().map { JournalExportFavorite(favorite: $0) }
-            // A favorite keeps the product it was made from even when every intake that used it is deleted,
-            // because repeating the favorite later needs the snapshot and not just the id.
-            for favorite in favoriteList {
-                guard let snapshotID = favorite.productSnapshotID else { continue }
-                guard let product = try store.product(snapshotID: snapshotID) else {
-                    throw JournalExportError.missingProductSnapshot(snapshotID)
-                }
-                productsByID[snapshotID] = JournalExportProvenance(product: product)
-            }
         }
         return JournalExport(
             exportedAt: exportedAt, appVersion: appVersion,
             intakes: intakes.sorted { $0.id < $1.id },
-            tombstones: deletedIntakes.map { JournalExportTombstone(intake: $0) }.sorted { $0.intakeID < $1.intakeID },
-            favorites: favoriteList.sorted { $0.id < $1.id },
-            products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID })
+            tombstones: tombstones.sorted { $0.intakeID < $1.intakeID },
+            favorites: favoriteList.sorted { $0.id < $1.id })
     }
 
-    /// Deterministic JSON: sorted keys and ISO-8601 dates with fractional seconds, so the same journal
-    /// encodes to the same bytes and subsecond timestamps survive the round trip.
+    /// Deterministic JSON: sorted keys and ISO-8601 dates, so the same journal encodes to the same bytes.
     public static func encode(_ export: JournalExport) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.dateEncodingStrategy = .custom { date, encoder in
-            var container = encoder.singleValueContainer()
-            try container.encode(fractionalISO8601.string(from: date))
-        }
+        encoder.dateEncodingStrategy = .iso8601
         return try encoder.encode(export)
     }
 
@@ -430,44 +349,12 @@ public enum JournalExporter {
         return text
     }
 
-    /// Reads a document back, with the same date strategy the writer uses. Whole-second dates are still
-    /// accepted, so a file written by an older build of this app imports cleanly.
-    ///
-    /// A document that declares another schema version is refused: this reader does not know what its extra
-    /// or changed fields mean, and guessing would silently drop data.
+    /// Reads a document back, with the same date strategy the writer uses.
     public static func decode(_ data: Data) throws -> JournalExport {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let text = try container.decode(String.self)
-            if let date = fractionalISO8601.date(from: text) ?? wholeSecondISO8601.date(from: text) {
-                return date
-            }
-            throw DecodingError.dataCorruptedError(
-                in: container, debugDescription: "not an ISO-8601 date: \(text)")
-        }
-        let document = try decoder.decode(JournalExport.self, from: data)
-        guard document.schemaVersion == JournalExport.currentSchemaVersion else {
-            throw JournalExportError.unsupportedSchemaVersion(document.schemaVersion)
-        }
-        return document
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(JournalExport.self, from: data)
     }
-
-    /// ISO-8601 in UTC with fractional seconds, the format `encode` writes.
-    static let fractionalISO8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter
-    }()
-
-    /// Whole-second ISO-8601 in UTC, for reading documents written before fractional seconds were kept.
-    static let wholeSecondISO8601: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter
-    }()
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.
     public static func fileName(exportedAt: Date) -> String {

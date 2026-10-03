@@ -97,17 +97,5 @@
         }
       ]
     }
-  ],
-  "products": [
-    {
-      "snapshot_id": "snap-oats-1",
-      "product_id": "product-oats",
-      "name": "Sample rolled oats",
-      "brand": "Sample Brand",
-      "barcode": "0000000000017",
-      "label_basis": "per100g",
-      "catalog_origin": "sample-catalog",
-      "catalog_version": "1"
-    }
   ]
 }

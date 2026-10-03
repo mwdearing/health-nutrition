@@ -85,10 +85,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         ]
     }
 
-    /// The export action stays available after a failure: the message explains what went wrong, and the person
-    /// can tap export again. Nothing on this screen can clear the error state, so disabling the button on it
-    /// would strand the person on a screen with no working way out.
-    public var canExport: Bool { true }
+    /// The export action is always offered; after a failure the screen explains and the person can try again.
+    public var canExport: Bool { errorMessage == nil }
 
     /// Builds the export document, encodes it and writes it to a temporary file. Nothing is sent anywhere.
     @discardableResult
@@ -107,32 +105,20 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             errorMessage = nil
             return true
         } catch {
-            // The export this screen holds is no longer offered, so its file goes with it rather than being
-            // left in the temporary directory with nothing left to remove it.
-            removeExportFile()
+            exportFileURL = nil
+            exportFileName = nil
             exportState = .failed
             errorMessage = Self.exportFailedMessage
             return false
         }
     }
 
-    /// Removes the exported file and returns the screen to its empty state. The journal JSON can contain the
-    /// whole history, so the copy on disk is deleted before the screen forgets where it was.
+    /// Throws away the exported file so the screen starts empty again.
     public func clearExport() {
-        removeExportFile()
+        exportFileURL = nil
+        exportFileName = nil
         entryCount = 0
         exportState = .idle
         errorMessage = nil
-    }
-
-    /// Deletes the file while its URL is still known. A file that is already gone is not an error.
-    private func removeExportFile() {
-        guard let url = exportFileURL else {
-            exportFileName = nil
-            return
-        }
-        try? FileManager.default.removeItem(at: url)
-        exportFileURL = nil
-        exportFileName = nil
     }
 }

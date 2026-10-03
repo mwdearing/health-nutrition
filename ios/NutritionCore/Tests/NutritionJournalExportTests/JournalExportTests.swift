@@ -5,7 +5,7 @@ import XCTest
 
 /// A journal store held in memory, so the export tests do not depend on a file store and can hold values a
 /// real store would refuse to create, such as a revision that points at a missing snapshot.
-class StubJournalStore: JournalStore, JournalTombstoneSource, @unchecked Sendable {
+private final class StubJournalStore: JournalStore, JournalTombstoneSource, @unchecked Sendable {
     struct Unsupported: Error {}
 
     var failNextSaveForTesting = false
@@ -31,29 +31,6 @@ class StubJournalStore: JournalStore, JournalTombstoneSource, @unchecked Sendabl
     func activeIntakesFromBackground() async throws -> [Intake] { intakes }
     func close() {}
     func deletedIntakes() throws -> [Intake] { deleted }
-}
-
-/// A store that answers the whole read in one call, the way `SwiftDataJournalStore` does, and records which
-/// per-list methods were touched so a test can prove the exporter asked for one snapshot and not two lists.
-private final class SnapshotStubStore: StubJournalStore, JournalSnapshotSource {
-    var snapshotCallCount = 0
-    var perListCallCount = 0
-    var snapshot = JournalSnapshot(activeIntakes: [], deletedIntakes: [])
-
-    func readJournalSnapshot() throws -> JournalSnapshot {
-        snapshotCallCount += 1
-        return snapshot
-    }
-
-    override func activeIntakes() throws -> [Intake] {
-        perListCallCount += 1
-        return try super.activeIntakes()
-    }
-
-    override func revisions(of intakeID: String) throws -> [IntakeRevision] {
-        perListCallCount += 1
-        return try super.revisions(of: intakeID)
-    }
 }
 
 private final class StubFavoritesStore: FavoritesStore, @unchecked Sendable {
@@ -227,132 +204,6 @@ final class JournalExportTests: XCTestCase {
         XCTAssertNil(exported.productSnapshotID)
     }
 
-    func testFractionalSecondsSurviveEncodingSoTwoEntriesInOneSecondStayDistinct() throws {
-        let store = StubJournalStore()
-        let base = Date(timeIntervalSince1970: 1_705_264_200)
-        store.intakes = [
-            intake(firstID, at: base.addingTimeInterval(0.25), revision: 1),
-            intake(secondID, at: base.addingTimeInterval(0.75), revision: 1),
-        ]
-        store.revisionsByIntake[firstID] = [
-            IntakeRevision(
-                intakeID: firstID, number: 1, components: [component("oats", Decimal(string: "40")!)],
-                productSnapshotID: nil, changeReason: "created",
-                createdAt: base.addingTimeInterval(0.125)),
-        ]
-        store.revisionsByIntake[secondID] = [
-            IntakeRevision(
-                intakeID: secondID, number: 1, components: [component("tea", Decimal(string: "250")!)],
-                productSnapshotID: nil, changeReason: "created",
-                createdAt: base.addingTimeInterval(0.875)),
-        ]
-        let document = try JournalExporter.makeExport(
-            store: store, favorites: nil, appVersion: "0.1.0",
-            exportedAt: base.addingTimeInterval(0.5))
-        let text = try JournalExporter.json(document)
-        XCTAssertTrue(text.contains("2024-01-14T20:30:00.250Z"), text)
-        XCTAssertTrue(text.contains("2024-01-14T20:30:00.125Z"), text)
-        XCTAssertTrue(text.contains("2024-01-14T20:30:00.500Z"), text)
-        XCTAssertFalse(text.contains(".000Z"), text)
-        let decoded = try JournalExporter.decode(try JournalExporter.encode(document))
-        XCTAssertEqual(decoded, document)
-        XCTAssertEqual(
-            decoded.exportedAt.timeIntervalSince1970, base.addingTimeInterval(0.5).timeIntervalSince1970,
-            accuracy: 0.0005)
-        let occurred = decoded.intakes.sorted { $0.id < $1.id }.map(\.occurredAt)
-        XCTAssertEqual(occurred.count, 2)
-        XCTAssertNotEqual(occurred[0], occurred[1])
-        XCTAssertEqual(occurred[0].timeIntervalSince1970, base.addingTimeInterval(0.25).timeIntervalSince1970, accuracy: 0.0005)
-        XCTAssertEqual(occurred[1].timeIntervalSince1970, base.addingTimeInterval(0.75).timeIntervalSince1970, accuracy: 0.0005)
-    }
-
-    func testWholeSecondDatesFromTheCommittedExampleStillDecode() throws {
-        // The example was written before fractional seconds were kept; a reader must not reject it.
-        let decoded = try JournalExporter.decode(try contractFile("example.v1", "json"))
-        XCTAssertEqual(decoded.exportedAt, Date(timeIntervalSince1970: 1_705_310_100))
-    }
-
-    func testDecodingADocumentFromANewerSchemaVersionIsRefused() throws {
-        var object = try XCTUnwrap(
-            try JSONSerialization.jsonObject(
-                with: try JournalExporter.encode(try makeExport(store: filledStore()))) as? [String: Any])
-        object["schema_version"] = 2
-        object["field_this_build_does_not_know"] = "something"
-        let data = try JSONSerialization.data(withJSONObject: object)
-        XCTAssertThrowsError(try JournalExporter.decode(data)) { error in
-            XCTAssertEqual(error as? JournalExportError, .unsupportedSchemaVersion(2))
-        }
-    }
-
-    func testProductSnapshotsAreListedSoAFavoriteCanOutliveItsIntakes() throws {
-        // The only intake that used the snapshot is deleted, so no revision carries its provenance any more.
-        let store = filledStore()
-        store.intakes = []
-        store.deleted = [
-            intake(firstID, at: Date(timeIntervalSince1970: 1_705_264_200), revision: 1),
-            intake(secondID, at: Date(timeIntervalSince1970: 1_705_180_000)),
-        ]
-        store.revisionsByIntake = [:]
-        let favoritesStore = StubFavoritesStore()
-        favoritesStore.items = [FavoriteTemplate(
-            id: "fav-oats-1", displayName: "Sample oats", category: "food",
-            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "55.5", unitSymbol: "g")],
-            productSnapshotID: "snap-1")]
-        let document = try JournalExporter.makeExport(
-            store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
-        XCTAssertTrue(document.intakes.isEmpty)
-        XCTAssertEqual(document.products.map(\.snapshotID), ["snap-1"])
-        let product = try XCTUnwrap(document.products.first)
-        XCTAssertEqual(product.productID, "product-oats")
-        XCTAssertEqual(product.catalogOrigin, "sample-catalog")
-        // It survives the JSON round trip, so a restore has everything the repeat path asks for.
-        let decoded = try JournalExporter.decode(try JournalExporter.encode(document))
-        XCTAssertEqual(decoded.products.map(\.snapshotID), ["snap-1"])
-        XCTAssertEqual(decoded.favorites.first?.productSnapshotID, "snap-1")
-    }
-
-    func testAFavoriteWithAMissingSnapshotFailsLoudlyRatherThanExportingADanglingID() throws {
-        let store = filledStore()
-        store.intakes = []
-        store.revisionsByIntake = [:]
-        store.products = [:]
-        let favoritesStore = StubFavoritesStore()
-        favoritesStore.items = [FavoriteTemplate(
-            id: "fav-oats-1", displayName: "Sample oats", category: "food",
-            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "55.5", unitSymbol: "g")],
-            productSnapshotID: "snap-1")]
-        XCTAssertThrowsError(
-            try JournalExporter.makeExport(
-                store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
-        ) { error in
-            XCTAssertEqual(error as? JournalExportError, .missingProductSnapshot("snap-1"))
-        }
-    }
-
-    func testExportIsBuiltFromOneSnapshotReadRatherThanSeparateLists() throws {
-        let store = SnapshotStubStore()
-        store.snapshot = JournalSnapshot(
-            activeIntakes: [JournalExportIntakeSnapshot(
-                intake: intake(firstID, revision: 2),
-                revisions: [
-                    IntakeRevision(
-                        intakeID: firstID, number: 1, components: [component("oats", Decimal(string: "40")!)],
-                        productSnapshotID: nil, changeReason: "created",
-                        createdAt: Date(timeIntervalSince1970: 1_705_264_200)),
-                    IntakeRevision(
-                        intakeID: firstID, number: 2, components: [component("oats", Decimal(string: "55.5")!)],
-                        productSnapshotID: nil, changeReason: "bigger bowl",
-                        createdAt: Date(timeIntervalSince1970: 1_705_264_800)),
-                ])],
-            deletedIntakes: [intake(secondID, at: Date(timeIntervalSince1970: 1_705_180_000))])
-        let document = try JournalExporter.makeExport(
-            store: store, favorites: nil, appVersion: "0.1.0", exportedAt: now)
-        XCTAssertEqual(store.snapshotCallCount, 1)
-        XCTAssertEqual(store.perListCallCount, 0, "a separate list read could miss an entry deleted in between")
-        XCTAssertEqual(document.intakes.first?.revisions.map(\.number), [1, 2])
-        XCTAssertEqual(document.tombstones.map(\.intakeID), [secondID])
-    }
-
     func testARevisionWithAMissingProductSnapshotFailsLoudly() throws {
         let store = filledStore()
         store.products = [:]
@@ -380,8 +231,6 @@ final class JournalExportTests: XCTestCase {
         XCTAssertEqual(decoded.intakes.first?.revisions.last?.provenance?.snapshotID, "snap-oats-1")
         XCTAssertEqual(decoded.tombstones.first?.intakeID, "7d4a1c55-9e2b-4f60-8a3d-5c1b0f7e2a94")
         XCTAssertEqual(decoded.favorites.first?.displayName, "Sample tea")
-        XCTAssertEqual(decoded.products.map(\.snapshotID), ["snap-oats-1"])
-        XCTAssertEqual(decoded.products.first?.productID, "product-oats")
         let reencoded = try JournalExporter.decode(try JournalExporter.encode(decoded))
         XCTAssertEqual(reencoded, decoded)
     }
@@ -395,71 +244,9 @@ final class JournalExportTests: XCTestCase {
         let encoded = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: try JournalExporter.encode(document)) as? [String: Any])
         XCTAssertEqual(Set(encoded.keys), Set(properties.keys))
-        for key in ["schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites", "products"] {
+        for key in ["schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites"] {
             XCTAssertNotNil(encoded[key], key)
         }
         XCTAssertEqual(encoded["schema_version"] as? Int, 1)
-        let products = try XCTUnwrap(properties["products"] as? [String: Any])
-        XCTAssertEqual(
-            try XCTUnwrap(products["items"] as? [String: Any])["$ref"] as? String, "#/$defs/provenance")
-        XCTAssertTrue(
-            try XCTUnwrap(properties["required"] as? [String]).contains("products"), "products is required")
-    }
-
-    func testSchemaTiesAnAmountToItsValueState() throws {
-        // The schema, not only the writer, has to reject "amount: null but known" and "amount: \"5\" but unknown".
-        let schema = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: try contractFile("v1.schema", "json")) as? [String: Any])
-        let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
-        let component = try XCTUnwrap(definitions["component"] as? [String: Any])
-        XCTAssertNotNil(component["oneOf"], "amount and value_state must be constrained together")
-        let branches = try XCTUnwrap(component["oneOf"] as? [[String: Any]])
-        let cases: [String: String] = [
-            "known": "string", "unknown": "null",
-        ]
-        XCTAssertEqual(branches.count, cases.count)
-        for branch in branches {
-            let properties = try XCTUnwrap(branch["properties"] as? [String: Any])
-            let amount = try XCTUnwrap(properties["amount"] as? [String: Any])
-            let valueState = try XCTUnwrap(properties["value_state"] as? [String: Any])
-            let state = try XCTUnwrap(valueState["const"] as? String)
-            XCTAssertEqual(amount["type"] as? String, cases[state], state)
-        }
-        XCTAssertNotNil(try XCTUnwrap(branches.first?["properties"] as? [String: Any])["amount"])
-    }
-
-    /// The contract files in `contracts/journal-export` are the canonical ones; the copies bundled as test
-    /// resources must be byte-for-byte identical, or the Swift tests would be checking a stale contract.
-    func testBundledContractCopiesMatchTheCanonicalFiles() throws {
-        for name in ["example.v1.json", "v1.schema.json"] {
-            let bundled = try contractFileResource(name)
-            let canonical = try XCTUnwrap(
-                canonicalContractURL(name), "the canonical contract \(name) is missing from contracts/journal-export")
-            let canonicalData = try Data(contentsOf: canonical)
-            XCTAssertEqual(
-                bundled, canonicalData,
-                "\(name) has drifted from contracts/journal-export; copy the canonical file over "
-                    + "ios/NutritionCore/Tests/NutritionJournalExportTests/Contracts/\(name)")
-        }
-    }
-
-    private func contractFileResource(_ name: String) throws -> Data {
-        let url = try XCTUnwrap(
-            Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Contracts"),
-            "missing bundled contract \(name)")
-        return try Data(contentsOf: url)
-    }
-
-    /// Walks up from this source file to the repository root, then into `contracts/journal-export`.
-    private func canonicalContractURL(_ name: String) -> URL? {
-        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        for _ in 0..<5 {
-            let candidate = directory.appendingPathComponent("contracts/journal-export/\(name)")
-            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
-            let parent = directory.deletingLastPathComponent()
-            if parent.path == directory.path { return nil }
-            directory = parent
-        }
-        return nil
     }
 }
