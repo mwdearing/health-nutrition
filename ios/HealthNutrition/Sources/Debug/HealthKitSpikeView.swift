@@ -30,14 +30,40 @@ struct SpikeLogEntry: Identifiable {
 /// data, so sharing one between the two quantities would let their writes resolve against each
 /// other and confound the counts the transcript is for.
 ///
-/// Every row is also logged with `Logger`, so the results are readable from the device console,
-/// and the whole transcript can be copied to the clipboard for pasting into
-/// `docs/adr/0002-healthkit-sync.md`.
+/// The steps are gated on a tracked phase, in the order authorize, version 1, version 2 (higher),
+/// equal then lower, delete. An out-of-order step would make a later label describe the wrong
+/// operation, so a step is only enabled once its prerequisite succeeded. Reset re-locks the whole
+/// sequence.
+///
+/// Every row is also logged with `Logger`, so the results are readable from the device console, and
+/// **Copy results** puts a redacted transcript on the clipboard, ready for pasting into
+/// `docs/adr/0002-healthkit-sync.md` without leaking local deployment details.
 ///
 /// The whole file is behind `#if DEBUG`, so no Release build of the app contains this code.
 @MainActor
 @Observable
 final class HealthKitSpikeRunner {
+    /// How far this run has got. Each step is enabled only when the phase matches its prerequisite,
+    /// so the experiment cannot be run out of order.
+    enum Phase: Int, Comparable {
+        /// Nothing done yet: Health access has not been granted.
+        case needsAuthorization
+        /// Health access requested, store is clean: version 1 may be written.
+        case readyForVersionOne
+        /// Version 1 written: the higher-version write may follow.
+        case savedVersionOne
+        /// Version 2 written: the equal and lower writes may follow.
+        case savedVersionTwo
+        /// Equal and lower writes done: the samples may be deleted.
+        case savedEqualAndLower
+        /// The run finished with the delete.
+        case finished
+
+        static func < (lhs: Phase, rhs: Phase) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
     /// One row per action and its result, shown on screen and copied as a single transcript.
     private(set) var entries: [SpikeLogEntry] = []
 
@@ -45,8 +71,15 @@ final class HealthKitSpikeRunner {
     /// step cannot be silently dropped by tapping it mid-run.
     private(set) var isBusy = false
 
+    /// How far the current run has got. Reset and delete put it back to the start of the sequence.
+    private(set) var phase: Phase = .needsAuthorization
+
     /// What the authorization request reported, as far as HealthKit is willing to say.
     private(set) var authorizationSummary = "not requested"
+
+    /// Whether Health access has been granted in this app session. Sticky across resets: HealthKit
+    /// remembers the grant, so a reset must not send the operator back through the prompt.
+    private var hasAuthorization = false
 
     private let store = HKHealthStore()
     private let logger = Logger(
@@ -91,11 +124,33 @@ final class HealthKitSpikeRunner {
     )
     private static let spikeTargets = [waterTarget, proteinTarget]
 
-    /// The transcript, for the clipboard.
+    /// The transcript for the clipboard, with the local bundle identifier and device name redacted
+    /// so it can be pasted into the public repository as it stands.
     var transcript: String {
-        let header = "HealthKit write spike (synthetic samples)"
+        let header = "HealthKit write spike (synthetic samples, bundle id and device name redacted)"
         return ([header] + entries.map(\.text)).joined(separator: "\n")
     }
+
+    // MARK: - Step availability
+
+    /// True when the operator may request authorization: any time nothing else is running.
+    var canRequestAuthorization: Bool { !isBusy }
+
+    /// True when the operator may reset: any time nothing else is running. Reset is always allowed
+    /// because it is how a run is abandoned and started over.
+    var canReset: Bool { !isBusy }
+
+    /// Version 1 needs Health access first.
+    var canSaveInitialSamples: Bool { !isBusy && phase == .readyForVersionOne }
+
+    /// The higher-version write means nothing unless version 1 is already in the store.
+    var canSaveHigherVersion: Bool { !isBusy && phase == .savedVersionOne }
+
+    /// "Equal" is only equal to the version 2 that step 2 wrote.
+    var canSaveEqualAndLowerVersions: Bool { !isBusy && phase == .savedVersionTwo }
+
+    /// The delete is the last step of the run.
+    var canDeleteOwnSamples: Bool { !isBusy && phase == .savedEqualAndLower }
 
     // MARK: - Steps
 
@@ -115,8 +170,10 @@ final class HealthKitSpikeRunner {
                     read: [Self.waterType, Self.proteinType]
                 )
                 self.authorizationSummary = "requested"
+                self.hasAuthorization = true
                 self.record(
                     "authorization requested (write and read: dietaryWater, dietaryProtein)")
+                await self.openRun(clearTranscript: false)
             } catch {
                 self.authorizationSummary = "failed"
                 self.record("authorization failed: \(error.localizedDescription)")
@@ -124,25 +181,40 @@ final class HealthKitSpikeRunner {
         }
     }
 
-    /// Reset: delete any app-owned spike samples left behind by an earlier or interrupted run.
-    /// Without this, a leftover version-2 sample would make this run's version 1 a *lower* write
-    /// and its version 2 an *equal* one, so the labels in the transcript would be wrong.
+    /// Reset: delete any app-owned spike samples left behind by an earlier or interrupted run, clear
+    /// the transcript and re-lock the step sequence. Without the delete, a leftover version-2 sample
+    /// would make this run's version 1 a *lower* write and its version 2 an *equal* one, so every
+    /// label in the transcript would be wrong.
     func resetForNewRun() async {
         await run {
             _ = await self.deleteLeftoverSamples(label: "reset")
-            await self.recordExistingSamples()
+            await self.openRun(clearTranscript: true)
         }
     }
 
     /// Step 1: save one water sample (250 mL) and one protein sample (10 g), each with its own sync
-    /// identifier and sync version 1. It first clears leftovers, so the run starts clean.
+    /// identifier and sync version 1.
+    ///
+    /// This also starts a fresh run: the transcript is cleared and leftovers are deleted first. If
+    /// that cleanup cannot be confirmed, step 1 records the failure and does **not** write, because
+    /// an unknown starting state makes every later label wrong and would add samples to an
+    /// experiment already in doubt.
     func saveInitialSamples() async {
         await run {
-            _ = await self.deleteLeftoverSamples(label: "step 1 preflight")
+            guard self.phase == .readyForVersionOne else {
+                self.record("step 1: skipped, not the next step in the sequence")
+                return
+            }
+            await self.openRun(clearTranscript: true)
+            guard await self.deleteLeftoverSamples(label: "step 1 preflight") != nil else {
+                self.record("step 1: ABORTED, the store was not confirmed empty, so nothing was written")
+                return
+            }
             self.record(
                 "step 1: saving water 250 mL and protein 10 g at syncVersion \(Self.initialSyncVersion)"
             )
-            await self.saveAllTargets(syncVersion: Self.initialSyncVersion, label: "step 1")
+            await self.saveAllTargets(
+                syncVersion: Self.initialSyncVersion, label: "step 1", next: .savedVersionOne)
         }
     }
 
@@ -151,8 +223,13 @@ final class HealthKitSpikeRunner {
     /// survive.
     func saveHigherVersion() async {
         await run {
+            guard self.phase == .savedVersionOne else {
+                self.record("step 2: skipped, run step 1 first")
+                return
+            }
             await self.saveAllTargets(
-                syncVersion: Self.higherSyncVersion, label: "step 2 (higher version)")
+                syncVersion: Self.higherSyncVersion, label: "step 2 (higher version)",
+                next: .savedVersionTwo)
         }
     }
 
@@ -162,12 +239,18 @@ final class HealthKitSpikeRunner {
     /// no-op, or as a new sample.
     func saveEqualAndLowerVersions() async {
         await run {
+            guard self.phase == .savedVersionTwo else {
+                self.record("step 3: skipped, run step 2 first")
+                return
+            }
             await self.saveAllTargets(
                 syncVersion: Self.higherSyncVersion,
-                label: "step 3a (equal version \(Self.higherSyncVersion))")
+                label: "step 3a (equal version \(Self.higherSyncVersion))",
+                next: .savedEqualAndLower)
             await self.saveAllTargets(
                 syncVersion: Self.initialSyncVersion,
-                label: "step 3b (lower version \(Self.initialSyncVersion))")
+                label: "step 3b (lower version \(Self.initialSyncVersion))",
+                next: .savedEqualAndLower)
         }
     }
 
@@ -176,6 +259,10 @@ final class HealthKitSpikeRunner {
     /// app's own writes are touched.
     func deleteOwnSamples() async {
         await run {
+            guard self.phase == .savedEqualAndLower else {
+                self.record("step 4: skipped, run step 3 first")
+                return
+            }
             do {
                 let mine = try await self.ownSpikeSamples()
                 if mine.isEmpty {
@@ -188,7 +275,23 @@ final class HealthKitSpikeRunner {
                 self.record("step 4: FAILED, whether anything was deleted is unknown: \(error.localizedDescription)")
             }
             await self.recordExistingSamples()
+            // The run is over: re-lock the sequence so a stray tap cannot reuse the phase.
+            self.phase = .finished
         }
+    }
+
+    // MARK: - Run bookkeeping
+
+    /// Put the sequence back to its first experimental step and show what is in the store now.
+    ///
+    /// `clearTranscript` is used when a new run begins: a transcript that mixes two runs has counts
+    /// and UUID transitions that cannot be attributed to one experiment.
+    private func openRun(clearTranscript: Bool) async {
+        if clearTranscript {
+            entries.removeAll()
+        }
+        phase = hasAuthorization ? .readyForVersionOne : .needsAuthorization
+        await recordExistingSamples()
     }
 
     // MARK: - HealthKit work
@@ -260,7 +363,8 @@ final class HealthKitSpikeRunner {
     }
 
     /// Delete any app-owned spike samples from an earlier run, so this run's version 1 really is
-    /// the first write. Returns the number deleted, or nil if the state could not be established.
+    /// the first write. Returns the number deleted, or nil if the clean state could not be
+    /// established, which the caller must treat as "do not write".
     private func deleteLeftoverSamples(label: String) async -> Int? {
         do {
             let mine = try await ownSpikeSamples()
@@ -280,11 +384,12 @@ final class HealthKitSpikeRunner {
     }
 
     /// Save both spike targets at `syncVersion` and record each save separately, so a failure on
-    /// one quantity cannot hide the other.
-    private func saveAllTargets(syncVersion: Int, label: String) async {
+    /// one quantity cannot hide the other. `next` is the phase this step unlocks.
+    private func saveAllTargets(syncVersion: Int, label: String, next: Phase) async {
         for target in Self.spikeTargets {
             await save(target: target, syncVersion: syncVersion, label: label)
         }
+        phase = next
         await recordExistingSamples()
     }
 
@@ -326,12 +431,12 @@ final class HealthKitSpikeRunner {
             // of concatenations here is slow for the type checker to resolve.
             let id = sample.uuid.uuidString
             let sync = syncVersion(of: sample)
-            let source = sample.sourceRevision.source.bundleIdentifier
+            let source = sample.sourceRevision.source.bundleIdentifier ?? "unknown"
             // `sourceRevision.version` is the source's own revision counter; `productType` is
             // optional and nil for samples HealthKit itself wrote, so it is not what to log here.
             let sourceVersion = sample.sourceRevision.version
             let own = sample.sourceRevision.source == HKSource.default()
-            record("  \(sample.sampleType.identifier) \(sample.quantity) uuid=\(id) syncVersion=\(sync) start=\(stamp(sample.startDate)) end=\(stamp(sample.endDate)) source=\(source) sourceVersion=\(sourceVersion) own=\(own)")
+            record("  \(sample.sampleType.identifier) \(sample.quantity) uuid=\(id) syncVersion=\(sync) start=\(stamp(sample.startDate)) end=\(stamp(sample.endDate)) source=\(redact(source)) sourceVersion=\(sourceVersion) own=\(own)")
         }
     }
 
@@ -346,9 +451,25 @@ final class HealthKitSpikeRunner {
         date.formatted(.iso8601)
     }
 
+    /// Replace the local deployment details with placeholders, so a transcript copied off the phone
+    /// can go into the public repository without carrying a private bundle identifier or the
+    /// operator's device name.
+    private func redact(_ text: String) -> String {
+        var out = text
+        if let bundle = Bundle.main.bundleIdentifier, !bundle.isEmpty {
+            out = out.replacingOccurrences(of: bundle, with: "<bundle-id>")
+        }
+        let device = UIDevice.current.name
+        if !device.isEmpty {
+            out = out.replacingOccurrences(of: device, with: "<device>")
+        }
+        return out
+    }
+
     private func record(_ text: String) {
-        logger.info("\(text, privacy: .public)")
-        entries.append(SpikeLogEntry(text: text))
+        let redacted = redact(text)
+        logger.info("\(redacted, privacy: .public)")
+        entries.append(SpikeLogEntry(text: redacted))
     }
 
     /// Keeps `isBusy` honest for a step, whatever it does.
@@ -361,48 +482,61 @@ final class HealthKitSpikeRunner {
 }
 
 /// The DEBUG-only spike screen: authorization, reset, one button per step, the transcript, and a
-/// way to copy it.
+/// way to copy it. Each step is enabled only once its prerequisite has succeeded.
 struct HealthKitSpikeView: View {
     let runner: HealthKitSpikeRunner
 
     @State private var copied = false
+
+    /// What to tell the operator to do next, derived from the completed phase.
+    private var nextStep: String {
+        switch runner.phase {
+        case .needsAuthorization: return "Request Health access to begin."
+        case .readyForVersionOne: return "Run step 1."
+        case .savedVersionOne: return "Run step 2."
+        case .savedVersionTwo: return "Run step 3."
+        case .savedEqualAndLower: return "Run step 4, then reset for the next run."
+        case .finished: return "Run finished. Copy the results, or reset."
+        }
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Health") {
                     Text("Authorization: \(runner.authorizationSummary)")
+                    Text("Next: \(nextStep)")
                     Button("Request authorization") {
                         Task { await runner.requestAuthorization() }
                     }
-                    .disabled(runner.isBusy)
+                    .disabled(!runner.canRequestAuthorization)
                 }
 
                 Section("Steps (synthetic samples)") {
-                    Button("Reset: delete leftover samples from an earlier run") {
+                    Button("Reset: clear the transcript and delete leftover samples") {
                         Task { await runner.resetForNewRun() }
                     }
-                    .disabled(runner.isBusy)
+                    .disabled(!runner.canReset)
 
                     Button("1. Save water 250 mL and protein 10 g") {
                         Task { await runner.saveInitialSamples() }
                     }
-                    .disabled(runner.isBusy)
+                    .disabled(!runner.canSaveInitialSamples)
 
                     Button("2. Save again with a higher sync version") {
                         Task { await runner.saveHigherVersion() }
                     }
-                    .disabled(runner.isBusy)
+                    .disabled(!runner.canSaveHigherVersion)
 
                     Button("3. Save again with the equal, then the lower, sync version") {
                         Task { await runner.saveEqualAndLowerVersions() }
                     }
-                    .disabled(runner.isBusy)
+                    .disabled(!runner.canSaveEqualAndLowerVersions)
 
                     Button("4. Delete the samples this app wrote") {
                         Task { await runner.deleteOwnSamples() }
                     }
-                    .disabled(runner.isBusy)
+                    .disabled(!runner.canDeleteOwnSamples)
                 }
 
                 Section("Results") {
@@ -412,13 +546,14 @@ struct HealthKitSpikeView: View {
                     ForEach(runner.entries) { entry in
                         Text(entry.text).font(.footnote.monospaced())
                     }
-                    Button("Copy results") {
+                    Button("Copy results (redacted)") {
                         UIPasteboard.general.string = runner.transcript
                         copied = true
                     }
-                    .disabled(runner.isBusy)
                     if copied {
-                        Text("Copied to the clipboard.").font(.footnote).foregroundStyle(.secondary)
+                        Text("Copied, with the bundle id and device name redacted.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
