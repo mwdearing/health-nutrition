@@ -122,7 +122,10 @@ slipped past the text replacement; it was redacted by hand before the transcript
 
 ## Results
 
-Device run on 2026-10-03 (iPhone, Debug build 0.1.64, sideloaded with a HealthKit-capable profile).
+Device run on 2026-10-03 (iPhone on the iOS 26 runtime, Debug build 0.1.64, sideloaded with a
+HealthKit-capable profile; the exact iOS point release was not captured by the spike). The equal and
+lower version behaviour below is observed, not documented by Apple, so it holds for this runtime only:
+re-run the spike after each major iOS release before relying on it there.
 Transcript as copied from the app; the source bundle identifier was redacted by hand to `<bundle-id>`
 (see the redaction note above).
 
@@ -173,14 +176,20 @@ was granted from what the sheet showed; it relies on the result of each save ins
 - **One sync identifier per (intake, nutrient)**, derived from the journal intake id and the nutrient,
   so two nutrients of one intake never resolve against each other.
 - **The sync version is the journal revision number.** An edit writes the next revision with a higher
-  version and HealthKit replaces the sample. Re-sending the same revision (a retry) is harmless:
-  an equal version replaces the sample with identical content.
+  version and HealthKit replaces the sample. Re-sending the same revision (a retry) replaces the
+  sample again, so a retry is harmless **only if the sample is rebuilt entirely from the stored
+  revision**: start and end come from the intake's own time, quantity and metadata from the revision,
+  never `Date()` or any other attempt-specific value (the run shows HealthKit accepts an equal-version
+  replacement whose timestamps differ).
 - **A lower version is a no-op that still reports success**, so the writer must never rely on a
   successful save to mean "the store now holds this revision": it only ever sends the current
   revision, and verifies by querying the sync identifier when it needs certainty.
 - **The journal never keys anything off a HealthKit UUID.** UUIDs change on every accepted save and
   the UUID returned for an ignored save does not exist. Deletes go by sync identifier **and**
   `HKSource.default()`, which the run showed works and touches only this app's samples.
-- Authorization: the permission sheet under-reports which types are covered, so the writer treats a
-  save's error (not the sheet) as the authority on whether a type may be written, and surfaces a
-  per-type "not allowed in Health" state from that.
+- Authorization: the permission sheet under-reports which types are covered, so the writer does not
+  infer anything from it. Write permission per type comes from
+  `HKHealthStore.authorizationStatus(for:)` (`sharingAuthorized` or not), and a save failure is only
+  treated as "not allowed in Health" when its error is `HKError.Code.errorAuthorizationDenied`; any
+  other save error (invalid sample, restrictions, a transient store error) stays a retryable delivery
+  error.
