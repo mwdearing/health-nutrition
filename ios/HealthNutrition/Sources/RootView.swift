@@ -12,11 +12,18 @@ struct RootView: View {
     @State private var addingIntake = false
     @State private var selectedIntakeID: String?
     @Environment(\.scenePhase) private var scenePhase
+    #if DEBUG
+    // One runner for the app's lifetime, so the transcript survives tab switches.
+    @State private var healthKitSpike = HealthKitSpikeRunner()
+    #endif
 
     private enum AppTab: Hashable {
         case today
         case journal
         case library
+        #if DEBUG
+        case spike
+        #endif
     }
 
     var body: some View {
@@ -51,6 +58,13 @@ struct RootView: View {
             LibraryView(model: services.library, onAdded: { reload() })
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
+
+            #if DEBUG
+            // Debug builds only: measures how HealthKit resolves a repeated sync identifier.
+            HealthKitSpikeView(runner: healthKitSpike)
+                .tabItem { Label("HealthKit", systemImage: "waveform.path.ecg") }
+                .tag(AppTab.spike)
+            #endif
         }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.

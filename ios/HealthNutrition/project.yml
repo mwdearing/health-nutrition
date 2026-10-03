@@ -32,6 +32,11 @@ targets:
         product: NutritionUI
       - package: NutritionCore
         product: NutritionJournal
+    # HealthKit capability. Nothing in the app calls HealthKit outside #if DEBUG
+    # (see Sources/Debug/HealthKitSpikeView.swift), but the entitlement and the usage strings
+    # have to be in the target for the debug spike to run on a device.
+    entitlements:
+      path: HealthNutrition.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutrition
@@ -42,6 +47,8 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: HealthNutrition
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "The debug HealthKit spike writes a few test water and protein samples so their sync behaviour can be measured. You delete them again from the spike screen."
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         TARGETED_DEVICE_FAMILY: "1,2"
