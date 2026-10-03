@@ -37,7 +37,7 @@ final class HealthKitSpikeRunner {
 
     /// A fixed spike identifier, so a re-run targets the same samples. Synthetic amounts only:
     /// nothing here is anyone's real intake.
-    private static let spikeSyncIdentifier = "com.mwdearing.healthnutrition.spike.nc06"
+    private static let spikeSyncIdentifier = "dev.example.healthnutrition.spike.nc06"
     private static let initialSyncVersion = 1
 
     private static let waterType = HKQuantityType(.dietaryWater)
