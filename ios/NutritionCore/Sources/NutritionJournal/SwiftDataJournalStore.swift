@@ -153,7 +153,7 @@ private struct StoredComponent: Codable {
     var unitSymbol: String
 }
 
-public final class SwiftDataJournalStore: JournalStore, JournalTombstoneSource, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -419,6 +419,46 @@ public final class SwiftDataJournalStore: JournalStore, JournalTombstoneSource, 
     /// Deleted intakes, kept as tombstones so an export can retract them later.
     public func deletedIntakes() throws -> [Intake] {
         try Self.readIntakes(container: try openContainer(), lifecycle: .deleted)
+    }
+
+    /// One consistent read of the journal for the exporter: active intakes with every revision, and deleted
+    /// intakes, all from a single model context. The write lock is held for the read, so an export cannot
+    /// observe an entry that was deleted after the active list was read but before the tombstones were, which
+    /// would leave it in neither list.
+    public func readJournalSnapshot() throws -> JournalSnapshot {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<IntakeRecord>())
+        let revisionRows = try context.fetch(FetchDescriptor<RevisionRecord>())
+        let revisionsByIntake = Dictionary(grouping: revisionRows, by: \.intakeID)
+
+        var active: [JournalExportIntakeSnapshot] = []
+        var deleted: [Intake] = []
+        for row in rows {
+            let intake = Intake(
+                id: row.intakeID, category: row.category, occurredAt: row.occurredAt,
+                timeZoneIdentifier: row.timeZoneIdentifier, meal: row.meal, note: row.note,
+                lifecycle: IntakeLifecycle(rawValue: row.lifecycleRaw) ?? .active,
+                currentRevision: row.currentRevision)
+            if intake.lifecycle == .deleted {
+                deleted.append(intake)
+                continue
+            }
+            let revisions = (revisionsByIntake[row.intakeID] ?? [])
+                .sorted { $0.number < $1.number }
+                .map { revision in
+                    IntakeRevision(
+                        intakeID: revision.intakeID, number: revision.number,
+                        components: try Self.decode(revision.componentsJSON),
+                        productSnapshotID: revision.productSnapshotID,
+                        changeReason: revision.changeReason, createdAt: revision.createdAt)
+                }
+            active.append(JournalExportIntakeSnapshot(intake: intake, revisions: revisions))
+        }
+        return JournalSnapshot(
+            activeIntakes: active.sorted { ($0.intake.occurredAt, $0.intake.id) < ($1.intake.occurredAt, $1.intake.id) },
+            deletedIntakes: deleted.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) })
     }
 
     private static func readIntakes(container: ModelContainer, lifecycle: IntakeLifecycle) throws -> [Intake] {
