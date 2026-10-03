@@ -10,6 +10,39 @@ private struct FixedFacts: NutrientFactsLookup {
     }
 }
 
+/// Serves canned intakes so tests can hold stored values the real store would refuse to create.
+private final class StubJournalStore: JournalStore, @unchecked Sendable {
+    var failNextSaveForTesting = false
+    let intakes: [Intake]
+    let components: [String: [IntakeComponent]]
+
+    init(intakes: [Intake], components: [String: [IntakeComponent]]) {
+        self.intakes = intakes
+        self.components = components
+    }
+
+    private struct Unsupported: Error {}
+
+    func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision {
+        throw Unsupported()
+    }
+    func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date) throws -> IntakeRevision {
+        throw Unsupported()
+    }
+    func delete(intakeID: String, now: Date) throws { throw Unsupported() }
+    func activeIntakes() throws -> [Intake] { intakes }
+    func revisions(of intakeID: String) throws -> [IntakeRevision] {
+        [IntakeRevision(
+            intakeID: intakeID, number: 1, components: components[intakeID] ?? [], productSnapshotID: nil,
+            changeReason: "test", createdAt: Date(timeIntervalSince1970: 0))]
+    }
+    func projections(of intakeID: String) throws -> [DestinationProjection] { [] }
+    func pendingOutbox() throws -> [OutboxOperation] { [] }
+    func product(snapshotID: String) throws -> ProductDefinition? { nil }
+    func activeIntakesFromBackground() async throws -> [Intake] { intakes }
+    func close() {}
+}
+
 @MainActor
 final class TodayTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -163,6 +196,46 @@ final class TodayTests: XCTestCase {
         model.load(now: now)
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(string: "350.3")!)
         XCTAssertEqual(model.waterSkippedCount, 1)
+    }
+
+    func testWaterTotalAddsLitresAndMillilitres() throws {
+        let store = try makeStore()
+        _ = try addFood(store, name: "Water", id: "water", at: now, amount: 1, unit: .L, category: "water")
+        _ = try addFood(store, name: "Water", id: "water", at: now, amount: 250, unit: .mL, category: "water")
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, Decimal(1250))
+    }
+
+    func testWaterTotalSkipsInvalidAmounts() throws {
+        var intakes: [Intake] = []
+        var components: [String: [IntakeComponent]] = [:]
+        let amounts: [(String, Decimal, MeasureUnit)] = [
+            ("a", 0, .mL), ("b", -5, .mL), ("c", Decimal.nan, .mL), ("d", -1, .L), ("e", 100, .mL),
+        ]
+        for (id, amount, unit) in amounts {
+            intakes.append(Intake(id: id, category: "water", occurredAt: now, timeZoneIdentifier: "UTC"))
+            components[id] = [IntakeComponent(componentID: "water", name: "Water", amount: amount, unit: unit)]
+        }
+        let model = TodayViewModel(store: StubJournalStore(intakes: intakes, components: components), timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, Decimal(100))
+        XCTAssertEqual(model.waterSkippedCount, 4)
+    }
+
+    func testInvalidTimeZoneIntakeIsSkippedAndCounted() throws {
+        let store = try makeStore()
+        _ = try addFood(store, name: "Good", id: "good", at: now)
+        _ = try addFood(store, name: "Bad zone", id: "bad", at: now, zone: "Not/AZone")
+        _ = try addFood(store, name: "Bad water", id: "water", at: now, zone: "Nope", amount: 500, unit: .mL, category: "water")
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertEqual(model.rows.map(\.title), ["Good"])
+        XCTAssertEqual(model.skippedIntakeCount, 2)
+        XCTAssertEqual(model.waterTotalMilliliters, 0)
+        XCTAssertEqual(model.coverage.first?.total, 1)
+        model.load(now: now)
+        XCTAssertEqual(model.skippedIntakeCount, 2)
     }
 
     func testCoverageCountsUnknownAsMissing() throws {

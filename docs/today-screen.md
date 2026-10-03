@@ -19,8 +19,13 @@ project yet; the app target will wire `NutritionUI` later. Tests cover the view 
   binary floating point. Invalid text sets a field error and writes nothing.
 - **Local day**: an intake is on Today when its time falls on the same calendar day as "now" in the intake's own time
   zone. Deleted intakes are hidden.
-- **Water total** is the exact `Decimal` sum, in mL, of the volume components of water intakes. A component whose unit
-  is not a volume is skipped and counted (`waterSkippedCount`), never treated as zero.
+- **Water total** is the exact `Decimal` sum, in mL, of the volume components of intakes with category `water`. Other
+  categories never contribute, whatever their unit. A component whose unit is not a volume is skipped and counted
+  (`waterSkippedCount`), never treated as zero. So is a stored amount that is NaN or not above zero, checked before and
+  after conversion to mL.
+- **Invalid time zone**: a stored intake whose time zone identifier is not a valid time zone is left out of Today (no
+  row, not in the water total or coverage) and counted in `skippedIntakeCount`, which is reset on each load. There is no
+  fallback to the current time zone for stored intakes.
 
 ## Coverage wording
 Each tracked nutrient (potassium, sodium, protein, fiber by default) shows `"<missing> of <total> foods lack <nutrient>"`,

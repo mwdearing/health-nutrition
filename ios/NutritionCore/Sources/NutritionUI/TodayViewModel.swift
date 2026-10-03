@@ -26,6 +26,8 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var waterTotalMilliliters: Decimal = 0
     /// Water components skipped because their unit is not a volume (never counted as zero).
     @Published public private(set) var waterSkippedCount: Int = 0
+    /// Stored intakes left out of Today because their time zone identifier is not a valid time zone.
+    @Published public private(set) var skippedIntakeCount: Int = 0
     @Published public private(set) var coverage: [CoverageLine] = []
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
@@ -53,8 +55,14 @@ public final class TodayViewModel: ObservableObject {
     /// Reloads Today: active intakes on the local day of each intake's own time zone.
     public func load(now: Date) {
         do {
-            let intakes = try store.activeIntakes().filter {
-                $0.lifecycle == .active && Self.isSameLocalDay($0, as: now)
+            var skippedIntakes = 0
+            var intakes: [Intake] = []
+            for intake in try store.activeIntakes() where intake.lifecycle == .active {
+                guard let sameDay = Self.isSameLocalDay(intake, as: now) else {
+                    skippedIntakes += 1
+                    continue
+                }
+                if sameDay { intakes.append(intake) }
             }
             var newRows: [TodayRow] = []
             var waterTotal = Decimal(0)
@@ -66,7 +74,9 @@ public final class TodayViewModel: ObservableObject {
                 if intake.category == "water" {
                     for component in components {
                         if component.unit.dimension == .volume,
-                            let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
+                            Self.isPositive(component.amount),
+                            let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
+                            Self.isPositive(converted.value)
                         {
                             waterTotal += converted.value
                         } else {
@@ -86,6 +96,7 @@ public final class TodayViewModel: ObservableObject {
             rows = newRows
             waterTotalMilliliters = waterTotal
             waterSkippedCount = skipped
+            skippedIntakeCount = skippedIntakes
             coverage = trackedNutrients.map { nutrient in
                 CoverageLine.make(
                     nutrient: nutrient,
@@ -147,9 +158,15 @@ public final class TodayViewModel: ObservableObject {
         "\(DecimalFormatting.text(waterTotalMilliliters)) millilitres today"
     }
 
-    static func isSameLocalDay(_ intake: Intake, as now: Date) -> Bool {
+    private static func isPositive(_ value: Decimal) -> Bool {
+        !value.isNaN && value > 0
+    }
+
+    /// Nil when the intake's stored time zone identifier is not a valid time zone (no fallback).
+    static func isSameLocalDay(_ intake: Intake, as now: Date) -> Bool? {
+        guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: intake.timeZoneIdentifier) ?? TimeZone.current
+        calendar.timeZone = zone
         return calendar.isDate(intake.occurredAt, inSameDayAs: now)
     }
 
