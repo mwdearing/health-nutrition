@@ -100,6 +100,10 @@ public final class TodayViewModel: ObservableObject {
     /// Writes one water intake (one `create`) and returns the undo handle, valid for 10 seconds.
     @discardableResult
     public func quickAddWater(milliliters: Decimal = 250, now: Date) -> UndoHandle? {
+        guard !milliliters.isNaN, milliliters > 0 else {
+            errorMessage = "Enter a water amount above zero."
+            return nil
+        }
         let intake = Intake(
             id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: timeZoneIdentifier)
         let component = IntakeComponent(componentID: "water", name: "Water", amount: milliliters, unit: .mL)

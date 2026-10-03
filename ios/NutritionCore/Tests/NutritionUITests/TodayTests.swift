@@ -58,6 +58,31 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(string: "330.5")!)
     }
 
+    func testQuickAddWaterInvalidAmountsWriteNothing() throws {
+        let store = try makeStore()
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        for amount in [Decimal(0), Decimal(-250), Decimal.nan] {
+            let handle = model.quickAddWater(milliliters: amount, now: now)
+            XCTAssertNil(handle)
+            XCTAssertNil(model.undo)
+            XCTAssertEqual(model.errorMessage, "Enter a water amount above zero.")
+            XCTAssertTrue(try store.activeIntakes().isEmpty)
+            XCTAssertTrue(try store.pendingOutbox().isEmpty)
+        }
+    }
+
+    func testQuickAddWaterInvalidThenPositiveFractionalAmountStoredExactly() throws {
+        let store = try makeStore()
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        XCTAssertNil(model.quickAddWater(milliliters: 0, now: now))
+        let handle = model.quickAddWater(milliliters: Decimal(string: "333.5")!, now: now)
+        XCTAssertNotNil(handle)
+        let intakes = try store.activeIntakes()
+        XCTAssertEqual(intakes.count, 1)
+        let revisions = try store.revisions(of: intakes[0].id)
+        XCTAssertEqual(revisions.first?.components.first?.amount, Decimal(string: "333.5")!)
+    }
+
     func testUndoDeletesTheQuickAddedIntakeAndQueuesDeleteOps() throws {
         let store = try makeStore()
         let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
