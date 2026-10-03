@@ -1,6 +1,7 @@
 # ADR 0002: HealthKit sync identifier and sync version for the journal writer
 
-Status: Proposed. The device run has not happened yet, so the Results section below is pending.
+Status: Accepted (device run 2026-10-03, iPhone, Debug build 0.1.64). The Results section below records
+what HealthKit actually did; the journal writer follows it.
 
 ## Context
 
@@ -73,8 +74,10 @@ describe the wrong operation. Every button is also disabled while a step is runn
 be silently dropped by tapping it mid-run. The screen shows which step is next.
 
 **Copy results** puts a redacted transcript on the clipboard: the app's bundle identifier is replaced
-with `<bundle-id>` and the device name with `<device>`, so what is copied carries no local deployment
-details and can be pasted into this public repository as it stands.
+with `<bundle-id>` (case-insensitively) and the device name with `<device>`, and a sample's source is
+printed only as `this app` or `another app`, never as a bundle identifier. (The first device run
+showed why: the source identifier HealthKit reported did not match `Bundle.main` text exactly, so it
+slipped past the text replacement; it was redacted by hand before the transcript went in below.)
 
 ## How to run it
 
@@ -119,28 +122,65 @@ details and can be pasted into this public repository as it stands.
 
 ## Results
 
-**Pending.** To be filled in from the device run: the transcript copied out of the spike, plus the
-answer to each of the four questions above. Until it is filled in, this ADR stays Proposed and the
-journal writer must not assume a particular dedupe behaviour.
+Device run on 2026-10-03 (iPhone, Debug build 0.1.64, sideloaded with a HealthKit-capable profile).
+Transcript as copied from the app; the source bundle identifier was redacted by hand to `<bundle-id>`
+(see the redaction note above).
+
+```text
+HealthKit write spike (synthetic samples, bundle id and device name redacted)
+existing spike samples: none
+step 1 preflight: no leftover app-owned spike samples found
+step 1: saving water 250 mL and protein 10 g at syncVersion 1
+step 1: saved water 250 mL syncVersion=1 uuid=2BE9A68E-F245-4C4F-AAA6-737D167CEF7F
+step 1: saved protein 10 g syncVersion=1 uuid=C5AF1A64-A663-4E93-BBF7-93EECE73D8EC
+existing spike samples: 2
+  HKQuantityTypeIdentifierDietaryWater 250 mL uuid=2BE9A68E-F245-4C4F-AAA6-737D167CEF7F syncVersion=1 start=2026-10-03T23:46:54Z end=2026-10-03T23:46:54Z source=<bundle-id> sourceVersion=Optional("64") own=true
+  HKQuantityTypeIdentifierDietaryProtein 10 g uuid=C5AF1A64-A663-4E93-BBF7-93EECE73D8EC syncVersion=1 start=2026-10-03T23:46:54Z end=2026-10-03T23:46:54Z source=<bundle-id> sourceVersion=Optional("64") own=true
+step 2 (higher version): saved water 250 mL syncVersion=2 uuid=5F10DA37-E5AE-4A03-8856-9832D227FE02
+step 2 (higher version): saved protein 10 g syncVersion=2 uuid=6C8D66DE-D3D7-4E57-B777-9CCCFFE59EB2
+existing spike samples: 2
+  HKQuantityTypeIdentifierDietaryWater 250 mL uuid=5F10DA37-E5AE-4A03-8856-9832D227FE02 syncVersion=2 start=2026-10-03T23:46:59Z end=2026-10-03T23:46:59Z source=<bundle-id> sourceVersion=Optional("64") own=true
+  HKQuantityTypeIdentifierDietaryProtein 10 g uuid=6C8D66DE-D3D7-4E57-B777-9CCCFFE59EB2 syncVersion=2 start=2026-10-03T23:46:59Z end=2026-10-03T23:46:59Z source=<bundle-id> sourceVersion=Optional("64") own=true
+step 3a (equal version 2): saved water 250 mL syncVersion=2 uuid=7B46D2B9-F280-4BB8-9A4E-0E232E0A4A17
+step 3a (equal version 2): saved protein 10 g syncVersion=2 uuid=B6362392-1D11-419D-A822-7CC35929D15E
+existing spike samples: 2
+  HKQuantityTypeIdentifierDietaryWater 250 mL uuid=7B46D2B9-F280-4BB8-9A4E-0E232E0A4A17 syncVersion=2 start=2026-10-03T23:47:05Z end=2026-10-03T23:47:05Z source=<bundle-id> sourceVersion=Optional("64") own=true
+  HKQuantityTypeIdentifierDietaryProtein 10 g uuid=B6362392-1D11-419D-A822-7CC35929D15E syncVersion=2 start=2026-10-03T23:47:05Z end=2026-10-03T23:47:05Z source=<bundle-id> sourceVersion=Optional("64") own=true
+step 3b (lower version 1): saved water 250 mL syncVersion=1 uuid=32C1A684-F39F-44B3-9980-2F90EC11F031
+step 3b (lower version 1): saved protein 10 g syncVersion=1 uuid=C3383A82-F1C8-4B07-88ED-A4A3482FDB96
+existing spike samples: 2
+  HKQuantityTypeIdentifierDietaryWater 250 mL uuid=7B46D2B9-F280-4BB8-9A4E-0E232E0A4A17 syncVersion=2 start=2026-10-03T23:47:05Z end=2026-10-03T23:47:05Z source=<bundle-id> sourceVersion=Optional("64") own=true
+  HKQuantityTypeIdentifierDietaryProtein 10 g uuid=B6362392-1D11-419D-A822-7CC35929D15E syncVersion=2 start=2026-10-03T23:47:05Z end=2026-10-03T23:47:05Z source=<bundle-id> sourceVersion=Optional("64") own=true
+step 4: deleted 2 app-owned spike sample(s)
+existing spike samples: none
+```
 
 | Question | Answer |
 | --- | --- |
-| Higher sync version: replaced, and is the UUID stable? | pending device run |
-| Equal or lower sync version: ignored, error, or duplicate? | pending device run |
-| Are UUIDs stable across a re-save? | pending device run |
-| Delete by sync identifier, narrowed to `HKSource`? | pending device run |
+| Higher sync version: replaced, and is the UUID stable? | **Replaced.** Exactly one sample per identifier remains, carrying version 2, and it has a **new UUID**; the version-1 sample is gone. |
+| Equal or lower sync version: ignored, error, or duplicate? | **Equal replaces** (one sample remains, version 2, again a new UUID). **Lower is silently ignored**: `save` reports success and returns a new object, but the store keeps the version-2 sample with its UUID unchanged. No error, no duplicate. |
+| Are UUIDs stable across a re-save? | **No.** Every accepted save (higher or equal) mints a new UUID; the UUID a save returns for an ignored lower version does not exist in the store. |
+| Delete by sync identifier, narrowed to `HKSource`? | **Works.** Querying by the two sync identifiers and filtering to `HKSource.default()` found both samples; deleting them left none. |
+
+Permission sheet: on first authorization the system sheet listed only **Water** under both "write"
+and "read", yet both the water and the protein writes were accepted. The writer must not infer what
+was granted from what the sheet showed; it relies on the result of each save instead.
 
 ## Consequences
 
-- The HealthKit capability and the two usage strings are in the app target from now on, but nothing
-  in a release build reads or writes health data: the only caller is behind `#if DEBUG`. The
-  capability is only inert until someone sideloads a HealthKit-enabled signed build, so the run
-  instructions above are a prerequisite for the spike, not an optional extra.
-- Each quantity gets its own sync identifier in the writer too, derived from the journal intake id
-  and the nutrient, so two nutrients in one intake never resolve against each other.
-- The writer (NC-07) follows what this table says, not what the documentation says. If the device
-  shows that HealthKit ignores a lower version silently, the writer can skip the re-save instead of
-  treating it as an error.
-- If a re-save turns out to mint a new UUID, the journal cannot key a Health delete off the UUID it
-  stored, and must delete by sync identifier and source instead. That is a design decision for the
-  writer, taken after this run.
+- The HealthKit capability and the two usage strings are in the app target, but nothing in a release
+  build reads or writes health data yet: the only caller is behind `#if DEBUG`.
+- **One sync identifier per (intake, nutrient)**, derived from the journal intake id and the nutrient,
+  so two nutrients of one intake never resolve against each other.
+- **The sync version is the journal revision number.** An edit writes the next revision with a higher
+  version and HealthKit replaces the sample. Re-sending the same revision (a retry) is harmless:
+  an equal version replaces the sample with identical content.
+- **A lower version is a no-op that still reports success**, so the writer must never rely on a
+  successful save to mean "the store now holds this revision": it only ever sends the current
+  revision, and verifies by querying the sync identifier when it needs certainty.
+- **The journal never keys anything off a HealthKit UUID.** UUIDs change on every accepted save and
+  the UUID returned for an ignored save does not exist. Deletes go by sync identifier **and**
+  `HKSource.default()`, which the run showed works and touches only this app's samples.
+- Authorization: the permission sheet under-reports which types are covered, so the writer treats a
+  save's error (not the sheet) as the authority on whether a type may be written, and surfaces a
+  per-type "not allowed in Health" state from that.
