@@ -445,15 +445,17 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
                 deleted.append(intake)
                 continue
             }
-            let revisions = (revisionsByIntake[row.intakeID] ?? [])
-                .sorted { $0.number < $1.number }
-                .map { revision in
+            var revisions: [IntakeRevision] = []
+            for revision in (revisionsByIntake[row.intakeID] ?? []).sorted(by: { $0.number < $1.number }) {
+                // A stored row whose components cannot be read is corrupt; the caller must hear about it
+                // rather than get an intake with no amounts.
+                let components = try Self.decode(revision.componentsJSON)
+                revisions.append(
                     IntakeRevision(
-                        intakeID: revision.intakeID, number: revision.number,
-                        components: try Self.decode(revision.componentsJSON),
-                        productSnapshotID: revision.productSnapshotID,
-                        changeReason: revision.changeReason, createdAt: revision.createdAt)
-                }
+                        intakeID: revision.intakeID, number: revision.number, components: components,
+                        productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
+                        createdAt: revision.createdAt))
+            }
             active.append(JournalExportIntakeSnapshot(intake: intake, revisions: revisions))
         }
         return JournalSnapshot(
