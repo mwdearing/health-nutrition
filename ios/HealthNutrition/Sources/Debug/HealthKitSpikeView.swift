@@ -431,12 +431,15 @@ final class HealthKitSpikeRunner {
             // of concatenations here is slow for the type checker to resolve.
             let id = sample.uuid.uuidString
             let sync = syncVersion(of: sample)
-            let source = sample.sourceRevision.source.bundleIdentifier ?? "unknown"
             // `sourceRevision.version` is the source's own revision counter; `productType` is
             // optional and nil for samples HealthKit itself wrote, so it is not what to log here.
             let sourceVersion = sample.sourceRevision.version
             let own = sample.sourceRevision.source == HKSource.default()
-            record("  \(sample.sampleType.identifier) \(sample.quantity) uuid=\(id) syncVersion=\(sync) start=\(stamp(sample.startDate)) end=\(stamp(sample.endDate)) source=\(redact(source)) sourceVersion=\(sourceVersion) own=\(own)")
+            // The source is never printed: on a sideloaded build its bundle identifier can differ from
+            // Bundle.main's (case or a signing-tool suffix), so text redaction would miss it. "this
+            // app" or "another app" is all the transcript needs.
+            let source = own ? "this app" : "another app"
+            record("  \(sample.sampleType.identifier) \(sample.quantity) uuid=\(id) syncVersion=\(sync) start=\(stamp(sample.startDate)) end=\(stamp(sample.endDate)) source=\(source) sourceVersion=\(sourceVersion) own=\(own)")
         }
     }
 
@@ -457,7 +460,7 @@ final class HealthKitSpikeRunner {
     private func redact(_ text: String) -> String {
         var out = text
         if let bundle = Bundle.main.bundleIdentifier, !bundle.isEmpty {
-            out = out.replacingOccurrences(of: bundle, with: "<bundle-id>")
+            out = out.replacingOccurrences(of: bundle, with: "<bundle-id>", options: .caseInsensitive)
         }
         let device = UIDevice.current.name
         if !device.isEmpty {
