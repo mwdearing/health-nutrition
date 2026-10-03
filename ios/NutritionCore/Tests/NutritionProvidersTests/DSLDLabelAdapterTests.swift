@@ -122,14 +122,29 @@ final class DSLDLabelAdapterTests: XCTestCase {
         XCTAssertEqual(b12.amount, .known(dec("5000"), .mcg))
     }
 
-    func testCitrateFormRowKeepsItsChemicalForm() throws {
+    func testCitrateFormRowKeepsItsChemicalFormAndItsActiveBasis() throws {
         let label = try adapter.parse(DSLDFixtures.label(204235))
         let magnesium = try XCTUnwrap(label.fact(named: "Magnesium"))
         XCTAssertEqual(magnesium.chemicalForm, "Magnesium Citrate")
         XCTAssertEqual(magnesium.amount, .known(dec("400"), .mg))
-        XCTAssertEqual(magnesium.kind, .compound)
-        XCTAssertEqual(magnesium.basis, .compoundMass)
-        XCTAssertEqual(magnesium.role, .compoundMeasurement)
+        // A listed form records where the nutrient comes from; the amount stays on the active nutrient
+        // basis and is never read as the mass of the whole salt.
+        XCTAssertEqual(magnesium.kind, .nutrient)
+        XCTAssertEqual(magnesium.basis, .activeNutrientMass)
+        XCTAssertEqual(magnesium.role, .contextOnly)
+        XCTAssertNil(magnesium.amountReported(as: .compoundMass))
+
+        // Calcium 1200 mg "as Calcium Carbonate" in the recorded vitamin label behaves the same way.
+        let calcium = try adapter.parse(DSLDFixtures.label(1225))
+        let calciumFact = try XCTUnwrap(calcium.fact(named: "Calcium"))
+        XCTAssertEqual(calciumFact.chemicalForm, "Calcium Carbonate")
+        XCTAssertEqual(calciumFact.basis, .activeNutrientMass)
+        let total = try SupplementTotals.total(
+            substance: "292683",
+            basis: .activeNutrientMass,
+            facts: calcium.facts
+        )
+        XCTAssertEqual(total.value, .known(dec("1200"), .mg), "an active-nutrient total counts this row")
     }
 
     // MARK: - Proprietary blends
@@ -146,14 +161,48 @@ final class DSLDLabelAdapterTests: XCTestCase {
         XCTAssertNotNil(label.fact(named: "Melatonin"))
     }
 
-    func testNestedRowsBecomeBlendMembersWithTheirOwnAmounts() throws {
-        let label = try adapter.parse(DSLDFixtures.label(202695))
-        let blend = try XCTUnwrap(label.blends.first { $0.labelName == "Folate" })
-        let member = try XCTUnwrap(blend.members.first)
-        XCTAssertEqual(member.labelName, "Folic Acid")
-        XCTAssertEqual(member.amount, .known(dec("360"), .mcg))
-        let probiotic = try XCTUnwrap(label.blends.first { $0.labelName == "Probiotic" })
+    func testNestedRowsUnderAnOrdinaryNutrientStayFacts() throws {
+        // Folate carries a nested row for presentation; it is not a proprietary blend.
+        let prenatal = try adapter.parse(DSLDFixtures.label(202695))
+        let folate = try XCTUnwrap(prenatal.fact(named: "Folate"))
+        XCTAssertEqual(folate.amount, .unknown, "\"mcg DFE\" is not a unit the adapter reads")
+        XCTAssertNil(prenatal.blends.first { $0.labelName == "Folate" })
+        let folicAcid = try XCTUnwrap(prenatal.fact(named: "Folic Acid"))
+        XCTAssertEqual(folicAcid.amount, .known(dec("360"), .mcg))
+        XCTAssertEqual(folicAcid.kind, .nutrient)
+        XCTAssertEqual(folicAcid.basis, .activeNutrientMass)
+
+        // Calories -> Calories from Fat in the fish oil label behaves the same way.
+        let fishOil = try adapter.parse(DSLDFixtures.label(64567))
+        XCTAssertNil(fishOil.blends.first { $0.labelName == "Calories" })
+        XCTAssertNotNil(fishOil.fact(named: "Calories"))
+        XCTAssertNotNil(fishOil.fact(named: "Calories from Fat"))
+
+        // DSLD marks the probiotic row itself as a blend, and it stays a blend.
+        let probiotic = try XCTUnwrap(prenatal.blends.first { $0.labelName == "Probiotic" })
         XCTAssertEqual(probiotic.total, .unknown, "a stated zero of an unlisted unit is unknown, not zero")
+        XCTAssertEqual(probiotic.members.map(\.labelName), ["Lactobacillus plantarum 299v"])
+    }
+
+    func testNestedFactKeepsItsOwnIdentifierAndOrder() throws {
+        let prenatal = try adapter.parse(DSLDFixtures.label(202695))
+        let folicAcid = try XCTUnwrap(prenatal.fact(named: "Folic Acid"))
+        XCTAssertEqual(folicAcid.substanceIdentifier, "279040", "a numeric DSLD identifier is kept as its text")
+        XCTAssertEqual(prenatal.fact(named: "Folate")?.substanceIdentifier, "278757")
+    }
+
+    func testNumericIdentifiersAndRowOrderAreKept() throws {
+        let label = try adapter.parse(DSLDFixtures.label(204235))
+        let magnesium = try XCTUnwrap(label.fact(named: "Magnesium"))
+        XCTAssertEqual(magnesium.substanceIdentifier, "6520", "the identifier is the DSLD id, not the display name")
+        XCTAssertEqual(magnesium.provenance, "NIH DSLD label 204235, ingredient row 1")
+
+        let blend = try adapter.parse(DSLDFixtures.label(216782))
+            .blends.first { $0.labelName == "Proprietary Blend" }
+        let proprietaryBlend = try XCTUnwrap(blend)
+        XCTAssertEqual(proprietaryBlend.identifier, "dsld-216782-284535")
+        XCTAssertEqual(proprietaryBlend.members.first?.substanceIdentifier, "231239", "a nested member keeps its numeric id")
+        XCTAssertEqual(proprietaryBlend.totalFact.provenance, "NIH DSLD label 216782, proprietary blend row 1")
     }
 
     // MARK: - Flags and serving sizes
@@ -251,6 +300,21 @@ final class DSLDLabelAdapterTests: XCTestCase {
         XCTAssertEqual(label.facts.first?.amount, .unknown)
     }
 
+    func testALessThanQuantityWithAnUnsupportedUnitIsUnknown() throws {
+        let label = try parseInline(
+            """
+            {"id":7,"fullName":"Unlisted bound","brandName":"Test","offMarket":0,
+             "ingredientRows":[
+              {"order":1,"name":"Folate","forms":[],"nestedRows":[],
+               "quantity":[{"servingSizeOrder":1,"operator":"<","quantity":400,"unit":"mcg DFE"}]},
+              {"order":2,"name":"Vitamin C","forms":[],"nestedRows":[],
+               "quantity":[{"servingSizeOrder":1,"operator":"<","quantity":40,"unit":"mg"}]}]}
+            """
+        )
+        XCTAssertEqual(label.facts[0].amount, .unknown, "a bound in an unlisted unit carries no usable dimension")
+        XCTAssertEqual(label.facts[1].amount, .belowReportingThreshold(MeasureUnit.mg))
+    }
+
     // MARK: - Decimal exactness
 
     func testDecimalAmountsAreParsedExactlyFromTheirJsonText() throws {
@@ -296,5 +360,45 @@ final class DSLDLabelAdapterTests: XCTestCase {
         XCTAssertThrowsError(try parseInline("{\"id\":6,\"fullName\":\"No rows\"}")) { error in
             XCTAssertEqual(error as? DSLDAdapterError, .missingIngredientRows)
         }
+    }
+
+    func testLeadingZeroNumbersAreRejected() {
+        XCTAssertThrowsError(try parseInline("{\"id\":01,\"fullName\":\"Zero\",\"ingredientRows\":[]}")) { error in
+            guard case DSLDAdapterError.malformedJSON = error else {
+                return XCTFail("expected malformedJSON for a leading zero, got \(error)")
+            }
+        }
+        XCTAssertThrowsError(
+            try parseInline("{\"id\":8,\"ingredientRows\":[{\"order\":01,\"name\":\"X\"}]}")
+        ) { error in
+            guard case DSLDAdapterError.malformedJSON = error else {
+                return XCTFail("expected malformedJSON for a leading zero, got \(error)")
+            }
+        }
+        // A plain zero and a zero after a decimal point stay valid.
+        XCTAssertNoThrow(try parseInline("{\"id\":9,\"fullName\":\"Zero\",\"ingredientRows\":[{\"order\":1,\"name\":\"X\",\"forms\":[],\"nestedRows\":[],\"quantity\":[{\"operator\":\"=\",\"quantity\":0.10,\"unit\":\"mg\"}]}]}"))
+    }
+
+    func testInvalidBytesAndControlCharactersInStringsAreRejected() {
+        // A literal newline inside a quoted name has to be escaped.
+        let withNewline = Data("{\"id\":10,\"fullName\":\"Two\nLines\",\"ingredientRows\":[]}".utf8)
+        XCTAssertThrowsError(try adapter.parse(withNewline)) { error in
+            guard case DSLDAdapterError.malformedJSON = error else {
+                return XCTFail("expected malformedJSON for an unescaped control character, got \(error)")
+            }
+        }
+
+        // An invalid UTF-8 byte inside a quoted name.
+        var broken: [UInt8] = Array("{\"id\":11,\"fullName\":\"".utf8)
+        broken.append(0xC3)  // a lead byte with no continuation
+        broken.append(contentsOf: Array("\",\"ingredientRows\":[]}".utf8))
+        XCTAssertThrowsError(try adapter.parse(Data(broken))) { error in
+            guard case DSLDAdapterError.malformedJSON = error else {
+                return XCTFail("expected malformedJSON for invalid UTF-8, got \(error)")
+            }
+        }
+
+        // A well-formed label with an escaped newline still parses.
+        XCTAssertNoThrow(try parseInline("{\"id\":12,\"fullName\":\"Two\\nLines\",\"ingredientRows\":[]}"))
     }
 }

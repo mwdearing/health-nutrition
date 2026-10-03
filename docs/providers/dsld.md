@@ -22,12 +22,14 @@ and the adapter keeps that basis; it does not normalise to 100 g and it does not
 | `offMarket` | `offMarket` (`Bool`) | `1` is true, `0` is false. Absent or unreadable is false. |
 | `servingSizes[]` | `servingSizes` (`DSLDServingSize`, wrapping `Quantity`) | `minQuantity`/`maxQuantity` with the registry unit of `unit` when the registry knows it, otherwise a count of `.serving`; the original text stays in `unitText`. `inSFB` becomes `isFactsPanelServing`. |
 | `ingredientRows[]` | `facts` (`CompoundFact`) | One fact per row that is not a blend, on the per-serving basis the row states. |
-| `ingredientRows[].ingredientId` | `substanceIdentifier` | The DSLD ingredient id as text; the row name is the fallback. |
+| `ingredientRows[].ingredientId` | `substanceIdentifier` | The DSLD ingredient id, kept as text whether the source writes it as a JSON number or a string; the row name is the fallback. |
+| `ingredientRows[].order` | provenance only | Kept in the provenance text so the row stays traceable. |
 | `ingredientRows[].name` | `labelName` | A row with no name is skipped, because a fact without a name cannot be shown. |
 | `ingredientRows[].forms[].name` | `chemicalForm` | The first form name the row states, for example "Magnesium Citrate". |
 | `ingredientRows[].quantity[]` | `amount` (`NutrientValue`) | The entry for the first serving size; see the amount rules below. |
-| rows named "Proprietary Blend" or rows with `nestedRows` | `blends` (`ProprietaryBlend`) | The row amount is the blend total and the nested rows are the members. A blend total is not repeated in `facts`. |
-| `ingredientRows[].nestedRows[]` | `blends[].members` (`BlendMember`) | A nested row that states an amount keeps it; a nested row with no amount is `.unknown`. |
+| `category` is `blend`, or the name or ingredient group says "Proprietary Blend" | `blends` (`ProprietaryBlend`) | The row amount is the blend total and the nested rows are the members. A blend total is not repeated in `facts`. |
+| `ingredientRows[].nestedRows[]` of an ordinary nutrient | further `facts` | Nesting alone is not blend metadata: DSLD also nests a nutrient under its own breakdown (Folate with Folic Acid, Calories with Calories from Fat). The parent stays a fact and the child becomes a fact of its own, with its own identifier and amount. |
+| `ingredientRows[].nestedRows[]` of a blend | `blends[].members` (`BlendMember`) | A nested row that states an amount keeps it; a nested row with no amount is `.unknown`. |
 | `ingredientRows[].category`, `notes` | not mapped | Free text kept by DSLD for display; the app does not read them. |
 
 ## Amount rules
@@ -38,11 +40,27 @@ and the adapter keeps that basis; it does not normalise to 100 g and it does not
 - **Unknown is never zero.** A missing entry, a missing number, a stated zero, a missing operator and a
   unit outside the table all read as `.unknown`. A label that does not state an amount does not state
   that the amount is nil.
-- **Only `=` states an exact amount.** A `<` row becomes `.belowReportingThreshold` and keeps its unit,
-  because the label states a bound and not an amount. Any other operator, including `>` and a missing
-  operator, becomes `.unknown`. A bound never becomes a known exact amount.
+- **Only `=` states an exact amount.** A `<` row with a unit the table covers becomes
+  `.belowReportingThreshold` and keeps that unit, because the label states a bound and not an amount. A
+  `<` row whose unit is not in the table becomes `.unknown`, because a bound without a unit carries no
+  dimension to interpret it with. Any other operator, including `>` and a missing operator, becomes
+  `.unknown`. A bound never becomes a known exact amount.
 - Blend members are usually undisclosed and read as `.unknown`. A member amount is never inferred from
   the blend total, and the total is never divided among the members.
+
+## Basis rules
+
+- Every listed ingredient row becomes a `.nutrient` fact on the `.activeNutrientMass` basis with role
+  `.contextOnly`, including international-unit rows, which keep their own basis as an amount and never
+  a mass.
+- `forms` records the source form only. A row such as Magnesium 400 mg "as Magnesium Citrate" or Calcium
+  1200 mg "as Calcium Carbonate" states the amount of the listed nutrient; the adapter keeps
+  `chemicalForm` but does **not** infer a `.compoundMass` basis from the presence of a form, so
+  active-nutrient totals include ordinary vitamins and minerals instead of demanding an equivalence
+  factor the label does not provide.
+- A blend total is `.compoundMass`, because that is what a proprietary blend total states.
+- A row never becomes a `.compound` fact from this source: DSLD does not distinguish a compound mass from
+  an active-nutrient mass on the Supplement Facts panel.
 
 ### Units
 
@@ -66,7 +84,12 @@ Every amount is read from the literal text of its JSON number and turned into a 
 `Decimal(string:)`. `JSONSerialization` and `JSONDecoder` are not used for numbers: `JSONSerialization`
 hands numbers over as `NSNumber`, which routes them through a binary floating point type, and
 `JSONDecoder` does the same for `Decimal`. A tiny JSON reader (`DSLDJSONReader`) keeps number literals
-as text instead, so `0.1` stays `0.1` and `2.5` stays `2.5`.
+as text instead, so `0.1` stays `0.1` and `2.5` stays `2.5`. The same literal text is what
+`ingredientId` and `order` are read from, so a numeric identifier stays the DSLD identifier.
+
+The reader only accepts well-formed JSON. It rejects a number with a leading zero (`01`), a string that
+contains an unescaped control character below U+0020, and bytes that are not well-formed UTF-8, rather
+than passing them on with a substituted character.
 
 ## Malformed input
 

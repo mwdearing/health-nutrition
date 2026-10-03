@@ -204,9 +204,68 @@ struct DSLDJSONReader {
             while let current = peek(), current != UInt8(ascii: "\""), current != UInt8(ascii: "\\") {
                 index += 1
             }
-            units.append(contentsOf: Array(String(decoding: bytes[start..<index], as: UTF8.self).utf16))
+            try appendLiteralRun(Array(bytes[start..<index]), to: &units)
         }
         throw DSLDAdapterError.malformedJSON(reason: "a string is not closed", offset: index)
+    }
+
+    /// Appends a run of unescaped bytes to the string being read.
+    ///
+    /// The bytes must be well-formed UTF-8, and JSON requires every control character below U+0020 to
+    /// be escaped, so a literal one is rejected instead of being carried into the value or replaced by
+    /// a substitution character.
+    private func appendLiteralRun(_ run: [UInt8], to units: inout [UInt16]) throws {
+        var position = 0
+        while position < run.count {
+            let start = position
+            let scalar = try readScalar(from: run, at: &position)
+            guard scalar.value >= 0x20 else {
+                throw DSLDAdapterError.malformedJSON(
+                    reason: "a control character in a string is not escaped",
+                    offset: start
+                )
+            }
+            units.append(contentsOf: Array(String(scalar).utf16))
+        }
+    }
+
+    /// Reads one UTF-8 scalar at `position`, rejecting overlong forms, surrogates and out-of-range values.
+    private func readScalar(from bytes: [UInt8], at position: inout Int) throws -> Unicode.Scalar {
+        let start = position
+        let first = bytes[start]
+        let length: Int
+        switch first {
+        case 0x00...0x7F: length = 1
+        case 0xC2...0xDF: length = 2
+        case 0xE0...0xEF: length = 3
+        case 0xF0...0xF4: length = 4
+        default:
+            throw DSLDAdapterError.malformedJSON(reason: "a byte is not valid UTF-8", offset: start)
+        }
+        guard start + length <= bytes.count else {
+            throw DSLDAdapterError.malformedJSON(reason: "a UTF-8 sequence is truncated", offset: start)
+        }
+        for offset in 1..<length {
+            let continuation = bytes[start + offset]
+            guard (continuation & 0xC0) == 0x80 else {
+                throw DSLDAdapterError.malformedJSON(reason: "a byte is not valid UTF-8", offset: start + offset)
+            }
+        }
+        if length > 1 {
+            let second = bytes[start + 1]
+            if length == 3, (first == 0xE0 && second < 0xA0) || (first == 0xED && second > 0x9F) {
+                throw DSLDAdapterError.malformedJSON(reason: "a UTF-8 sequence is not a scalar value", offset: start)
+            }
+            if length == 4, (first == 0xF0 && second < 0x90) || (first == 0xF4 && second > 0x8F) {
+                throw DSLDAdapterError.malformedJSON(reason: "a UTF-8 sequence is not a scalar value", offset: start)
+            }
+        }
+        let text = String(decoding: bytes[start..<(start + length)], as: UTF8.self)
+        guard let scalar = text.unicodeScalars.first, text.unicodeScalars.count == 1 else {
+            throw DSLDAdapterError.malformedJSON(reason: "a byte is not valid UTF-8", offset: start)
+        }
+        position = start + length
+        return scalar
     }
 
     private mutating func readUnicodeEscape() throws -> UInt16 {
@@ -240,7 +299,7 @@ struct DSLDJSONReader {
         if peek() == UInt8(ascii: "-") {
             index += 1
         }
-        try readDigits(atLeastOne: true)
+        try readIntegerPart()
         if peek() == UInt8(ascii: ".") {
             index += 1
             try readDigits(atLeastOne: true)
@@ -257,6 +316,25 @@ struct DSLDJSONReader {
             throw DSLDAdapterError.malformedJSON(reason: "a number is not decimal", offset: start)
         }
         return .number(text)
+    }
+
+    /// Reads the integer part of a number. JSON allows a single leading zero and nothing more, so a zero
+/// followed by another integer digit is not a number.
+private mutating func readIntegerPart() throws {
+        guard let first = peek() else {
+            throw DSLDAdapterError.malformedJSON(reason: "a number needs a digit", offset: index)
+        }
+        guard first >= UInt8(ascii: "0"), first <= UInt8(ascii: "9") else {
+            throw DSLDAdapterError.malformedJSON(reason: "a number needs a digit", offset: index)
+        }
+        index += 1
+        guard first == UInt8(ascii: "0") else {
+            try readDigits(atLeastOne: false)
+            return
+        }
+        if let next = peek(), next >= UInt8(ascii: "0"), next <= UInt8(ascii: "9") {
+            throw DSLDAdapterError.malformedJSON(reason: "a number must not have a leading zero", offset: index)
+        }
     }
 
     private mutating func readDigits(atLeastOne: Bool) throws {

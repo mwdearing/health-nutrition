@@ -40,11 +40,11 @@ public struct DSLDLabelAdapter: Sendable {
         for row in rows {
             guard let object = row.objectValue else { continue }
             guard let name = Self.text(in: object, "name"), !name.isEmpty else { continue }
-            let substanceIdentifier = Self.text(in: object, "ingredientId") ?? name
+            let substanceIdentifier = Self.literalText(in: object, "ingredientId") ?? name
             let quantity = Self.servingQuantity(in: object)
             let amount = Self.amount(from: quantity)
             let formName = Self.formName(in: object)
-            let rowOrder = Self.text(in: object, "order") ?? "?"
+            let rowOrder = Self.literalText(in: object, "order") ?? "?"
 
             if let blend = try Self.blend(
                 object: object,
@@ -58,20 +58,32 @@ public struct DSLDLabelAdapter: Sendable {
                 continue
             }
 
-            // A row that states a form and a mass measures the compound itself; anything else reads as
-            // the active nutrient. International units are never treated as a compound mass.
-            let isMass = Self.unitSymbol(in: quantity).flatMap { Self.unit(for: $0) }?.dimension == .mass
-            let fact = try CompoundFact(
-                kind: isMass && formName != nil ? .compound : .nutrient,
-                substanceIdentifier: substanceIdentifier,
-                labelName: name,
-                chemicalForm: formName,
-                amount: amount,
-                basis: isMass && formName != nil ? .compoundMass : .activeNutrientMass,
-                role: isMass && formName != nil ? .compoundMeasurement : .contextOnly,
-                provenance: "NIH DSLD label \(identifier), ingredient row \(rowOrder)"
+            facts.append(
+                try Self.fact(
+                    name: name,
+                    substanceIdentifier: substanceIdentifier,
+                    formName: formName,
+                    amount: amount,
+                    provenance: "NIH DSLD label \(identifier), ingredient row \(rowOrder)"
+                )
             )
-            facts.append(fact)
+
+            // A nested row of an ordinary nutrient is a row of its own: the parent stays a fact and the
+            // child becomes a fact as well, so no nutrient is lost to blend semantics.
+            for nested in object["nestedRows"]?.arrayValue ?? [] {
+                guard let member = nested.objectValue else { continue }
+                guard let memberName = Self.text(in: member, "name") else { continue }
+                facts.append(
+                    try Self.fact(
+                        name: memberName,
+                        substanceIdentifier: Self.literalText(in: member, "ingredientId") ?? memberName,
+                        formName: Self.formName(in: member),
+                        amount: Self.amount(from: Self.servingQuantity(in: member)),
+                        provenance: "NIH DSLD label \(identifier), ingredient row \(rowOrder), nested row "
+                            + (Self.literalText(in: member, "order") ?? "?")
+                    )
+                )
+            }
         }
 
         return DSLDSupplementLabel(
@@ -103,6 +115,39 @@ public struct DSLDLabelAdapter: Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// The text of a field DSLD writes as a JSON number or as a string, for example `ingredientId` and
+    /// `order`. A numeric literal keeps its own text, so the identifier stays the DSLD identifier
+    /// instead of falling back to a display name.
+    private static func literalText(in object: [String: DSLDJSON], _ key: String) -> String? {
+        if let text = text(in: object, key) {
+            return text
+        }
+        guard let number = object[key]?.numberText else { return nil }
+        return number.isEmpty ? nil : number
+    }
+
+    /// A listed ingredient row. DSLD states the amount of the nutrient on the Supplement Facts panel and
+    /// gives the source form in `forms`; the form is kept as `chemicalForm` and does not turn the amount
+    /// into a compound mass, so active-nutrient totals include ordinary vitamins and minerals.
+    private static func fact(
+        name: String,
+        substanceIdentifier: String,
+        formName: String?,
+        amount: NutrientValue,
+        provenance: String
+    ) throws -> CompoundFact {
+        try CompoundFact(
+            kind: .nutrient,
+            substanceIdentifier: substanceIdentifier,
+            labelName: name,
+            chemicalForm: formName,
+            amount: amount,
+            basis: .activeNutrientMass,
+            role: .contextOnly,
+            provenance: provenance
+        )
+    }
+
     private static func formName(in object: [String: DSLDJSON]) -> String? {
         guard let forms = object["forms"]?.arrayValue else { return nil }
         for form in forms {
@@ -123,8 +168,13 @@ public struct DSLDLabelAdapter: Sendable {
                   let minimum = Decimal(string: minimumText, locale: Locale(identifier: "en_US_POSIX")),
                   minimum > 0
             else { continue }
-            let maximumText = object["maxQuantity"]?.numberText
-            let maximum = maximumText.flatMap { Decimal(string: $0, locale: Locale(identifier: "en_US_POSIX")) } ?? minimum
+            let maximum: Decimal
+            if let maximumText = object["maxQuantity"]?.numberText,
+               let value = Decimal(string: maximumText, locale: Locale(identifier: "en_US_POSIX")) {
+                maximum = value
+            } else {
+                maximum = minimum
+            }
             let unitText = object["unit"]?.stringValue ?? ""
             let unit: MeasureUnit = (try? UnitRegistry.unit(for: unitText)) ?? .serving
             sizes.append(
@@ -157,6 +207,10 @@ public struct DSLDLabelAdapter: Sendable {
         return first
     }
 
+    /// A proprietary blend is a row DSLD marks as a blend: `category` is "blend" or the row is named as a
+    /// proprietary blend. Nesting alone is not blend metadata: DSLD also uses `nestedRows` to present a
+    /// nutrient with its own breakdown, such as Folate with Folic Acid or Calories with Calories from Fat,
+    /// and those rows stay facts.
     private static func blend(
         object: [String: DSLDJSON],
         name: String,
@@ -165,17 +219,20 @@ public struct DSLDLabelAdapter: Sendable {
         labelIdentifier: Int,
         amount: NutrientValue
     ) throws -> ProprietaryBlend? {
-        let nested = object["nestedRows"]?.arrayValue ?? []
-        let isNamedBlend = name.lowercased().contains("proprietary blend")
-        guard isNamedBlend || !nested.isEmpty else { return nil }
+        let category = text(in: object, "category")?.lowercased()
+        let group = text(in: object, "ingredientGroup")?.lowercased()
+        let isBlend = category == "blend"
+            || name.lowercased().contains("proprietary blend")
+            || (group?.contains("proprietary blend") ?? false)
+        guard isBlend else { return nil }
         var members: [BlendMember] = []
-        for entry in nested {
+        for entry in object["nestedRows"]?.arrayValue ?? [] {
             guard let member = entry.objectValue else { continue }
             guard let memberName = text(in: member, "name") else { continue }
             members.append(
                 BlendMember(
                     labelName: memberName,
-                    substanceIdentifier: text(in: member, "ingredientId"),
+                    substanceIdentifier: literalText(in: member, "ingredientId"),
                     amount: Self.amount(from: Self.servingQuantity(in: member))
                 )
             )
@@ -204,8 +261,9 @@ public struct DSLDLabelAdapter: Sendable {
     ///   all `.unknown`. Unknown is never zero: a label that states no amount does not state that the
     ///   amount is nil.
     /// - Only the `=` operator states an exact amount. "less than" becomes
-    ///   `.belowReportingThreshold` and any other operator becomes `.unknown`, so a bound never becomes a
-    ///   known exact amount. A missing operator is unknown too; it is never assumed to be "=".
+    ///   `.belowReportingThreshold` when its unit is one the table covers and `.unknown` otherwise, and any
+    ///   other operator becomes `.unknown`, so a bound never becomes a known exact amount. A missing
+    ///   operator is unknown too; it is never assumed to be "=".
     private static func amount(from quantity: [String: DSLDJSON]?) -> NutrientValue {
         guard let quantity else { return .unknown }
         let operatorSymbol = quantity["operator"]?.stringValue
@@ -219,7 +277,9 @@ public struct DSLDLabelAdapter: Sendable {
             return .known(value, unit)
         }
         if operatorSymbol == "<" {
-            let thresholdUnit: MeasureUnit? = symbol.flatMap { unit(for: $0) }
+            // A bound only carries meaning with a unit the app can interpret; without one it is unknown,
+            // because a threshold with no dimension states nothing.
+            guard let symbol, let thresholdUnit = unit(for: symbol) else { return .unknown }
             return .belowReportingThreshold(thresholdUnit)
         }
         return .unknown
