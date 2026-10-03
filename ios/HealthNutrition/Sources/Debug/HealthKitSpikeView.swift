@@ -233,11 +233,13 @@ final class HealthKitSpikeRunner {
             // Each field is bound to its own `let` and the line is one interpolation: a long chain
             // of concatenations here is slow for the type checker to resolve.
             let id = sample.uuid.uuidString
-            let version = syncVersion(of: sample)
+            let sync = syncVersion(of: sample)
             let source = sample.sourceRevision.source.bundleIdentifier
-            let product = sample.sourceRevision.product
+            // `sourceRevision.version` is the source's own revision counter; `productType` is
+            // optional and nil for samples HealthKit itself wrote, so it is not what to log here.
+            let sourceVersion = sample.sourceRevision.version
             let own = sample.sourceRevision.source == HKSource.default()
-            record("  \(sample.type.identifier) \(sample.quantity) uuid=\(id) syncVersion=\(version) start=\(stamp(sample.startDate)) end=\(stamp(sample.endDate)) source=\(source) product=\(product) own=\(own)")
+            record("  \(sample.sampleType.identifier) \(sample.quantity) uuid=\(id) syncVersion=\(sync) start=\(stamp(sample.startDate)) end=\(stamp(sample.endDate)) source=\(source) sourceVersion=\(sourceVersion) own=\(own)")
         }
     }
 
