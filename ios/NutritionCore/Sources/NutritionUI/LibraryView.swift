@@ -4,15 +4,27 @@ public struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
     private let now: () -> Date
     private let onAdded: () -> Void
+    private let onOpenRecipes: (() -> Void)?
 
-    public init(model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void) {
+    public init(
+        model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void,
+        onOpenRecipes: (() -> Void)? = nil
+    ) {
         self.model = model
         self.now = now
         self.onAdded = onAdded
+        self.onOpenRecipes = onOpenRecipes
     }
 
     public var body: some View {
         List {
+            if let onOpenRecipes {
+                Button("Recipes") { onOpenRecipes() }
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.accent)
+                    .accessibilityLabel(RecipeLabels.recipesRow)
+                    .accessibilityHint("Opens your personal recipes")
+            }
             ForEach(model.sections) { section in
                 Section(section.title) {
                     if section.items.isEmpty {
