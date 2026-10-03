@@ -45,7 +45,7 @@ struct RootView: View {
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
-            LibraryView(model: services.library, onAdded: reload)
+            LibraryView(model: services.library, onAdded: { reload() })
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
         }

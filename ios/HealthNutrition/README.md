@@ -49,8 +49,34 @@ The team is a local setting in Xcode and is deliberately not committed: `project
 `DEVELOPMENT_TEAM`, so every developer signs with their own account. If you do add a team id to
 the generated project, keep it there and do not copy it into `project.yml` or any committed file.
 
+## Getting an unsigned build to install
+
+Builds are unsigned until App Store release time. Nothing in this repository holds signing
+material, and CI never signs anything.
+
+To get a device build, run the workflow by hand: **Actions > ios > Run workflow**. Inputs:
+
+- `bundle_id` (default `com.mwdearing.HealthNutrition`)
+- `configuration` (default `Release`)
+- `marketing_version` (default empty, which uses `0.1.<run number>`)
+
+That runs the `unsigned-ipa` job, which only ever runs on `workflow_dispatch`. It generates the
+project with XcodeGen, builds for `iphoneos` with `CODE_SIGNING_ALLOWED=NO`, and uploads two
+artifacts:
+
+- `HealthNutrition-unsigned.ipa`
+- `HealthNutrition-unsigned.ipa.sha256` (the checksum of the ipa)
+
+The ipa is **unsigned**, so it will not install as it is. Sign it yourself (AltStore, SideStore,
+a free or paid Apple developer certificate, your own provisioning profile) and then sideload it
+on your iPhone. Do not commit any certificate, profile or team id while doing so.
+
+The other two jobs (`swift-test` and `app-build`) run on pull requests and pushes to `main`, and
+`app-build` produces a simulator build only, which needs no signing at all.
+
 ## Checks
 
-CI has two jobs: `swift-test` runs the package tests in `ios/NutritionCore`, and `app-build`
+CI has three jobs. `swift-test` runs the package tests in `ios/NutritionCore`, `app-build`
 installs XcodeGen, generates this project and runs an unsigned
-`xcodebuild ... -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`.
+`xcodebuild ... -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`, and
+`unsigned-ipa` is the manual device build described above.
