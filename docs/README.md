@@ -18,3 +18,4 @@ Public architecture decisions and design notes for this project live here.
 - [Intake context: encoding and canonical digests](intake-context.md)
 - [ADR 0001: persistence](adr/0001-persistence.md)
 - [Relay delivery: batches, ordering and outcome mapping](relay-delivery.md)
+- [MVP-GAPS traceability: remaining daily-workflow requirements](mvp-gaps-traceability.md)
