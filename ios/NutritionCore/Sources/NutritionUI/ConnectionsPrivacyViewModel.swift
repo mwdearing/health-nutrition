@@ -61,6 +61,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportButtonTitle = "Export journal"
     public static let shareButtonTitle = "Share the export"
     public static let exportFailedMessage = "Could not export the journal."
+    public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
     /// What the importer refused and why, in the words a person can act on.
     public static let importUnsupportedVersionMessage =
