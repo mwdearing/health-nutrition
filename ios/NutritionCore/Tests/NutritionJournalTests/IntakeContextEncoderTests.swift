@@ -626,62 +626,67 @@ final class IntakeContextEncoderTests: XCTestCase {
     /// A link projection is checked against the revision it names, exactly as an upsert's links are, so it
     /// cannot link a compound, a component that is not there, or the wrong quantity type.
     func testLinkProjectionValidatesItsLinksAgainstTheRevision() throws {
-        let projection = { (links: [IntakeContextLink]) in
+        // The cases are built as data and encoded in this scope, rather than inside a closure, so nothing
+        // escapes and captures self.
+        let sample = "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396"
+        let refused: [(what: String, links: [IntakeContextLink], expected: IntakeContextEncoderError)] = [
+            // A compound has no HealthKit quantity type, so a link to it would never join.
+            (
+                "a compound",
+                [link(
+                    componentID: "creatine-monohydrate",
+                    nutrientKey: "creatine-monohydrate",
+                    sampleUUID: sample,
+                    syncVersion: 3,
+                    disposition: .active)],
+                .linkComponentIsNotAFact("creatine-monohydrate")
+            ),
+            // Neither can a component the revision does not have.
+            (
+                "a component that is not there",
+                [link(
+                    componentID: "caffeine",
+                    nutrientKey: "caffeine",
+                    sampleUUID: sample,
+                    syncVersion: 3,
+                    disposition: .active)],
+                .linkComponentIsNotAFact("caffeine")
+            ),
+            // And a nutrient of this revision still has to name the type its code lands in.
+            (
+                "the wrong quantity type",
+                [waterLink(
+                    disposition: .active,
+                    sampleUUID: sample,
+                    syncVersion: 3,
+                    typeIdentifier: "HKQuantityTypeIdentifierDietarySodium")],
+                .linkTypeMismatch(
+                    component: "water",
+                    expected: "HKQuantityTypeIdentifierDietaryWater",
+                    found: "HKQuantityTypeIdentifierDietarySodium")
+            ),
+        ]
+        for testCase in refused {
+            XCTAssertThrowsError(
+                try encoder.linkProjection(
+                    intake: intake,
+                    revision: waterAndCreatineRevision,
+                    sequence: 2,
+                    operation: outboxOperation(
+                        id: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587", kind: .upsert, revision: 2),
+                    links: testCase.links),
+                testCase.what
+            ) { error in
+                XCTAssertEqual(error as? IntakeContextEncoderError, testCase.expected, testCase.what)
+            }
+        }
+        XCTAssertNoThrow(
             try encoder.linkProjection(
                 intake: intake,
                 revision: waterAndCreatineRevision,
                 sequence: 2,
                 operation: outboxOperation(id: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587", kind: .upsert, revision: 2),
-                links: links)
-        }
-        // A compound has no HealthKit quantity type, so a link to it would never join.
-        XCTAssertThrowsError(
-            try projection([
-                link(
-                    componentID: "creatine-monohydrate",
-                    nutrientKey: "creatine-monohydrate",
-                    sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
-                    syncVersion: 3,
-                    disposition: .active),
-            ])
-        ) { error in
-            XCTAssertEqual(
-                error as? IntakeContextEncoderError, .linkComponentIsNotAFact("creatine-monohydrate"))
-        }
-        // Neither can a component the revision does not have.
-        XCTAssertThrowsError(
-            try projection([
-                link(
-                    componentID: "caffeine",
-                    nutrientKey: "caffeine",
-                    sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
-                    syncVersion: 3,
-                    disposition: .active),
-            ])
-        ) { error in
-            XCTAssertEqual(error as? IntakeContextEncoderError, .linkComponentIsNotAFact("caffeine"))
-        }
-        // And a nutrient of this revision still has to name the type its code lands in.
-        XCTAssertThrowsError(
-            try projection([
-                waterLink(
-                    disposition: .active,
-                    sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
-                    syncVersion: 3,
-                    typeIdentifier: "HKQuantityTypeIdentifierDietarySodium"),
-            ])
-        ) { error in
-            XCTAssertEqual(
-                error as? IntakeContextEncoderError,
-                .linkTypeMismatch(
-                    component: "water",
-                    expected: "HKQuantityTypeIdentifierDietaryWater",
-                    found: "HKQuantityTypeIdentifierDietarySodium"))
-        }
-        XCTAssertNoThrow(
-            try projection([
-                waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
-            ]))
+                links: [waterLink(disposition: .active, sampleUUID: sample, syncVersion: 3)]))
     }
 
     /// One sync identity names one object: its versions are unique, only one sample of it is active, and an
