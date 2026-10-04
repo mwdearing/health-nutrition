@@ -68,46 +68,54 @@ final class IntakeContextEncoderTests: XCTestCase {
             timeZoneIdentifier: intake.timeZoneIdentifier,
             lifecycle: .deleted,
             currentRevision: 3)
+        let deletion = try encoder.delete(
+            intake: deleted,
+            revision: waterAndCreatineRevision(number: 3, components: nil),
+            operation: outboxOperation(id: "c1f4a7d2-93be-4e65-8d0a-2b6f1e7c9a35", kind: .delete, revision: 3),
+            deletedAt: Self.deletedAt)
+        // Read back through the reader the receiver's own document would go through, so the assertions are on
+        // the bytes that are sent rather than on the encoder's own view of them.
+        let encoded = try Self.read(deletion)
+        XCTAssertNotNil(encoded.member("deleted_at"))
+        XCTAssertNil(encoded.member("facts"), "a delete carries no food details")
+        XCTAssertNil(encoded.member("healthkit_links"), "a delete carries no links")
+        XCTAssertNil(encoded.member("display_name"))
         let value = try encoder.batch(
             batchID: "5f0e8a2c-6d41-4b0e-9c3a-7a1d2b9e4f10",
-            operations: [try encoder.delete(
-                intake: deleted,
-                revision: waterAndCreatineRevision(number: 3, components: nil),
-                operation: outboxOperation(id: "c1f4a7d2-93be-4e65-8d0a-2b6f1e7c9a35", kind: .delete, revision: 3),
-                deletedAt: Self.deletedAt)])
+            operations: [deletion])
         XCTAssertEqual(value.canonicalBytes, try Self.fixtureCanonicalBytes(named: "valid_delete.json"))
         let operation = try XCTUnwrap(value.operations.first)
         XCTAssertEqual(operation.kind, .delete)
         XCTAssertEqual(operation.revision, 3)
         XCTAssertNotNil(operation.domainFactsHash)
         XCTAssertNil(operation.projectionHash, "a delete has no links, so it has no projection digest")
-        XCTAssertNotNil(operation.member("deleted_at"))
-        XCTAssertNil(operation.member("facts"), "a delete carries no food details")
-        XCTAssertNil(operation.member("healthkit_links"), "a delete carries no links")
-        XCTAssertNil(operation.member("display_name"))
     }
 
     /// A link-only change after a later HealthKit save revealed a sample UUID is the third fixture, again byte
     /// for byte, with the complete snapshot rather than a delta and no facts at all.
     func testLinkProjectionCarriesTheCompleteSnapshotAndNoFacts() throws {
+        let projection = try encoder.linkProjection(
+            intake: intake,
+            revision: waterAndCreatineRevision,
+            sequence: 2,
+            operation: outboxOperation(id: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587", kind: .upsert, revision: 2),
+            links: [
+                waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
+                waterLink(disposition: .superseded, sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429", syncVersion: 2),
+            ])
+        let encoded = try Self.read(projection)
+        XCTAssertNil(encoded.member("facts"), "a link projection carries no facts at all")
+        XCTAssertNil(encoded.member("domain_facts_hash"), "and so no domain digest")
+        XCTAssertEqual(try XCTUnwrap(encoded.array("healthkit_links")).count, 2, "the complete snapshot, not a delta")
         let value = try encoder.batch(
             batchID: "a3c9d1e7-4b25-4f8a-b6d0-18e5c7f2a940",
-            operations: [try encoder.linkProjection(
-                intake: intake,
-                revision: waterAndCreatineRevision,
-                sequence: 2,
-                operation: outboxOperation(id: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587", kind: .upsert, revision: 2),
-                links: [
-                    waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
-                    waterLink(disposition: .superseded, sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429", syncVersion: 2),
-                ])])
+            operations: [projection])
         XCTAssertEqual(value.canonicalBytes, try Self.fixtureCanonicalBytes(named: "valid_link_projection_seq2.json"))
         let operation = try XCTUnwrap(value.operations.first)
         XCTAssertEqual(operation.kind, .linkProjection)
         XCTAssertEqual(operation.projectionSequence, 2)
         XCTAssertNil(operation.domainFactsHash, "a link projection carries no facts, so no domain digest")
         XCTAssertNotNil(operation.projectionHash)
-        XCTAssertNil(operation.member("facts"), "a link projection carries no facts at all")
     }
 
     // MARK: - Facts
@@ -465,6 +473,12 @@ final class IntakeContextEncoderTests: XCTestCase {
             syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
             syncVersion: syncVersion,
             disposition: disposition)
+    }
+
+    /// A single operation's canonical bytes read back as a payload, so a test can assert on the members of the
+    /// operation that is sent rather than on the encoder's own view of it.
+    private static func read(_ value: IntakeContextValue) throws -> IntakeContextJSONValue {
+        try IntakeContextJSONReader.read(value.canonicalBytes)
     }
 
     /// The amounts of a value's facts, in fact order.
