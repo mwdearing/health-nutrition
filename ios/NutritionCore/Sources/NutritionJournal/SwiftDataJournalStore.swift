@@ -304,7 +304,9 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
-public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource,
+    JournalRestoreTarget, @unchecked Sendable
+{
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -462,6 +464,53 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
             try Self.supersedeProjections(of: intakeID, in: context)
             let revision = record.currentRevision
             queueWork(intakeID: intakeID, revision: revision, kind: .delete, payload: "delete:\(intakeID):\(revision)", context: context)
+        }
+    }
+
+    // MARK: Restore
+
+    /// True only when the store holds no intakes at all. A tombstone counts: it is an intake row too, and
+    /// a journal that has one already knows about the entry it retracts, so an import must not join it.
+    public func isEmptyForImport() throws -> Bool {
+        let context = ModelContext(try openContainer())
+        return try context.fetchCount(FetchDescriptor<IntakeRecord>()) == 0
+    }
+
+    /// Writes the whole plan in one save: the product snapshots, every intake with all of its revisions,
+    /// and the tombstones of deleted entries.
+    ///
+    /// No projection and no outbox operation is written. A restored entry is history the destinations
+    /// have already been sent once, so queueing it would deliver it a second time just because a phone
+    /// was replaced. That is also why this is separate from `create`: creating an entry means the person
+    /// just ate something and it must reach Health, and importing one means they ate it weeks ago.
+    public func restore(_ plan: JournalRestorePlan) throws {
+        try commit { context in
+            for product in plan.products {
+                try Self.insertSnapshot(product, in: context)
+            }
+            for entry in plan.entries {
+                let intake = entry.intake
+                context.insert(IntakeRecord(
+                    intakeID: intake.id, category: intake.category, occurredAt: intake.occurredAt,
+                    timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal, note: intake.note,
+                    lifecycleRaw: IntakeLifecycle.active.rawValue, currentRevision: intake.currentRevision))
+                for revision in entry.revisions {
+                    context.insert(RevisionRecord(
+                        intakeID: intake.id, number: revision.number,
+                        componentsJSON: try Self.encode(revision.components),
+                        productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
+                        createdAt: revision.createdAt))
+                }
+            }
+            for tombstone in plan.tombstones {
+                // A tombstone has no revision row: the export carries the revision number it was deleted
+                // at, not the amounts it held then, and a deleted entry is never shown or repeated.
+                context.insert(IntakeRecord(
+                    intakeID: tombstone.id, category: tombstone.category, occurredAt: tombstone.occurredAt,
+                    timeZoneIdentifier: tombstone.timeZoneIdentifier, meal: tombstone.meal,
+                    note: tombstone.note, lifecycleRaw: IntakeLifecycle.deleted.rawValue,
+                    currentRevision: tombstone.currentRevision))
+            }
         }
     }
 

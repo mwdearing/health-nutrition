@@ -49,6 +49,14 @@ public protocol FavoritesStore: AnyObject, Sendable {
     func close()
 }
 
+/// A favorites store the importer can write into in one save. Separate from `FavoritesStore` because a
+/// restore is not an add: it writes every favorite at once, or none of them.
+public protocol FavoritesRestoreTarget: AnyObject, Sendable {
+    /// Writes every favorite in one save, keeping the ids and decimal text the export carried. A failure
+    /// rolls the save back, so the store is left exactly as it was.
+    func restore(_ favorites: [FavoriteTemplate]) throws
+}
+
 public enum FavoritesError: Error, Sendable, Equatable {
     case closed
     case corruptRecord(String)
@@ -80,7 +88,7 @@ final class FavoriteRecord {
 }
 
 /// Favorites in their own store file, next to the journal file; the URL is injected.
-public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable {
+public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarget, @unchecked Sendable {
     private let lock = NSLock()
     /// Held across each whole write (fetch, delete, insert, save) so concurrent writers cannot interleave.
     private let writeLock = NSLock()
@@ -147,5 +155,32 @@ public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable 
         let rows = try context.fetch(FetchDescriptor<FavoriteRecord>(
             predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id }))
         return !rows.isEmpty
+    }
+
+    /// Writes every favorite in one save, replacing any row that already carries the same id. It is the
+    /// importer's path, not a new kind of add: `add` saves one favorite at a time, which is right for a
+    /// button and wrong for a restore, where a failure halfway would leave half a favorites list behind.
+    public func restore(_ favorites: [FavoriteTemplate]) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        context.autosaveEnabled = false
+        do {
+            for favorite in favorites {
+                let id = favorite.id
+                let existing = try context.fetch(FetchDescriptor<FavoriteRecord>(
+                    predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id }))
+                for row in existing { context.delete(row) }
+                let data = try JSONEncoder().encode(favorite.components)
+                context.insert(FavoriteRecord(
+                    favoriteID: favorite.id, displayName: favorite.displayName, category: favorite.category,
+                    componentsJSON: String(decoding: data, as: UTF8.self),
+                    productSnapshotID: favorite.productSnapshotID, addedAt: Date(), meal: favorite.meal))
+            }
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 }

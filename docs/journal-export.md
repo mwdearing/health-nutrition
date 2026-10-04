@@ -31,6 +31,62 @@ the backup.
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
 
+## Importing
+
+A file written by the export above can be read back into an empty journal:
+
+```swift
+let summary = try JournalImporter.importExport(data, into: store, favorites: favorites)
+```
+
+`JournalImporter.importExport(_:into:favorites:)` reads the whole file, checks it, and only then writes.
+It returns a `JournalImportSummary` counting the intakes, revisions, tombstones, favorites and product
+snapshots it wrote, and it throws `JournalImportError` instead of writing part of a file:
+
+| Case | Meaning |
+|---|---|
+| `unsupportedVersion` | The document declares a `schema_version` this build does not read. The version is read from the raw JSON before anything else, so a file from a newer build is refused as such even when its other fields would not decode. A file that spells the same version as `"1"` rather than `1` is accepted. |
+| `notEmpty` | The store already holds intakes, active or deleted. There is no merge in this version: one journal is restored into an empty one. A tombstone is an intake row too, so a journal that already has one is not empty either. |
+| `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
+| `corrupt` | The file is a version 1 export that cannot be restored as it stands. |
+
+What a restore writes:
+- **Every intake with every one of its revisions, in order.** Ids, `occurred_at`, `created_at`, the time
+  zone, the meal, the note, the revision numbers and the current revision are the file's, so an import
+  renumbers nothing and moves no entry onto another instant. An intake whose revisions are not `1` to
+  `current_revision` in order is `corrupt`: a history that reads as if time ran backwards is not one.
+- **Deleted intakes as tombstones.** A tombstone carries the id, the revision it was deleted at, when and
+  where, which is all a retraction needs. A deleted entry is never listed or repeated, so its category is
+  not in the file and the restored row carries an empty one rather than an invented value. It has no
+  revision row either, because the file does not carry the amounts it held when it was deleted.
+- **Product snapshots.** Every snapshot the entries and favorites refer to is written back, so a restored
+  entry needs no catalog lookup to be shown or repeated. A revision that names a snapshot nothing defines
+  is `corrupt`: the amounts would have to come from somewhere, and inventing them is what this refuses.
+- **Favorites**, as the templates they are, with their decimal text kept exactly as it was written.
+
+Amounts are read as exact decimal text and stored as `Decimal`, never as a binary float. A component whose
+`value_state` is `unknown` is **refused** with `corrupt`: the journal keeps a missing amount as a
+not-a-number decimal and refuses to write one, so restoring it as `0` would turn "not known" into "none".
+The export a real journal writes never holds one, so this only happens for a hand-edited file.
+
+**No delivery work is queued.** An import writes no projection and no outbox operation: a restored entry is
+history the destinations were already sent once, and re-sending yesterday's breakfast because a phone was
+replaced would be a delivery nobody asked for. `create`, `edit` and `delete` are untouched and still queue
+what they always did, so an edit made after a restore is delivered normally.
+
+**One transaction, two files.** The whole document is read and checked before the first row is written, so
+a file that is refused - malformed, from a newer version, or internally inconsistent - changes nothing at
+all. The journal and the favorites then live in two separate store files, so their two writes cannot be one
+transaction; the journal write is one `save()` covering every row and the favorites write is one `save()`
+covering every favorite. The favorites go **first**, because that is the order that keeps a retry possible:
+a journal write that fails leaves an empty journal and nothing to undo, while the other order would leave a
+restored journal that refuses the next attempt because it is no longer empty. Importing the same file twice
+therefore only ever writes the same rows again.
+
+The action on the Connections and privacy screen is a file picker (`fileImporter`, JSON only) that reads the
+bytes and hands them to the model, which shows the summary line or the reason the file was refused. Nothing
+is sent anywhere: the file was already on the device, or somewhere the person opened it from.
+
 ## Fields
 | Field | Meaning |
 |---|---|
@@ -94,7 +150,10 @@ The Library screen is the only way in: `LibraryView(connections:)` shows a "Conn
 that pushes `ConnectionsPrivacyView`. Today and Add intake have no entry to it, on purpose.
 
 ## Follow-ups
-- No import path yet. The tombstones and revision history are exported so an importer can be added later
-  without a format change.
+- No merge. An import restores into an empty journal only; a later version may add a merge, and the
+  revision history and tombstones in the document are what it would need.
+- A restored product snapshot states no nutrient values, because the document does not carry them. The
+  amounts a restored entry shows come from the snapshot's identity as before; the catalog supplies the
+  values again when something needs them.
 - The app target does not exist yet, so `ConnectionsPrivacyViewModel` injects a placeholder version string
   until the shell can pass the real one.

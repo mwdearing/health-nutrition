@@ -300,3 +300,55 @@ public protocol JournalStore: AnyObject, Sendable {
     /// Releases the store; a new instance can reopen the same file.
     func close()
 }
+
+/// One intake with the whole revision history an import writes, exactly as the export carried it: the
+/// ids, the timestamps, the revision numbers and the product snapshot ids are the file's, not new ones.
+/// A restore must not renumber anything or move an entry onto another instant.
+public struct JournalRestoreEntry: Sendable, Hashable {
+    public var intake: Intake
+    /// Every revision of the intake, numbered from 1 with no gaps, in order.
+    public var revisions: [IntakeRevision]
+
+    public init(intake: Intake, revisions: [IntakeRevision]) {
+        self.intake = intake
+        self.revisions = revisions
+    }
+}
+
+/// Everything one import writes to a journal store, already checked. The importer builds the whole plan
+/// before it writes any of it, so a file it refuses leaves the store untouched.
+public struct JournalRestorePlan: Sendable {
+    /// Active intakes with all their revisions.
+    public var entries: [JournalRestoreEntry]
+    /// Deleted intakes, written back as tombstones so a later export retracts them again.
+    public var tombstones: [Intake]
+    /// The product snapshots the entries and favorites refer to, so a restore needs no catalog lookup.
+    public var products: [ProductDefinition]
+    /// Favorites, which the importer writes through the favorites store rather than this one.
+    public var favorites: [FavoriteTemplate]
+
+    public init(
+        entries: [JournalRestoreEntry], tombstones: [Intake],
+        products: [ProductDefinition], favorites: [FavoriteTemplate]
+    ) {
+        self.entries = entries
+        self.tombstones = tombstones
+        self.products = products
+        self.favorites = favorites
+    }
+}
+
+/// A journal store the importer can write into in one save. This is deliberately not part of
+/// `JournalStore`: a restore is not a create, an edit or a delete, and it must not change what those do.
+///
+/// An import writes no projection and no outbox operation. A restored entry is history the destinations
+/// have already been sent once, so queueing it again would deliver yesterday's breakfast a second time
+/// just because a phone was replaced.
+public protocol JournalRestoreTarget: AnyObject, Sendable {
+    /// True when the store holds no intakes at all, neither active nor deleted. An import refuses
+    /// anything else rather than merging one journal into another.
+    func isEmptyForImport() throws -> Bool
+    /// Writes the whole plan in one save, keeping every id, timestamp and revision number. A failure rolls
+    /// the save back, so the store is left exactly as it was.
+    func restore(_ plan: JournalRestorePlan) throws
+}

@@ -30,6 +30,15 @@ public enum ConnectionsPrivacyExportState: Equatable {
     case failed
 }
 
+/// State of the import action on the screen.
+public enum ConnectionsPrivacyImportState: Equatable {
+    case idle
+    /// The file was restored; `importMessage` says what came back.
+    case imported
+    /// The file was refused or the restore failed; `importMessage` says so.
+    case failed
+}
+
 /// Backs the Connections and privacy screen. It reads the local stores and produces the export file; it never
 /// sends anything anywhere. Sharing happens only when the person taps the share control.
 @MainActor
@@ -46,6 +55,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportButtonTitle = "Export journal"
     public static let shareButtonTitle = "Share the export"
     public static let exportFailedMessage = "Could not export the journal."
+    public static let importButtonTitle = "Import a journal export"
+    public static let importFailedMessage = "Could not import that file."
+    /// What the importer refused and why, in the words a person can act on.
+    public static let importUnsupportedVersionMessage =
+        "That file was made by a newer version of the app, so this one cannot read it."
+    public static let importNotEmptyMessage =
+        "This phone already has journal entries. An import only works on a journal that is empty."
     public static let unavailableVersion = "unknown"
     /// Fixed until the app target exists and can inject its real version string.
     public static let defaultAppVersion = "0.0.0-development"
@@ -59,6 +75,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var exportFileName: String?
     @Published public private(set) var entryCount = 0
     @Published public private(set) var errorMessage: String?
+    @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
+    @Published public private(set) var importSummary: JournalImportSummary?
+    @Published public private(set) var importMessage: String?
     /// Switch positions of the two connections. They stay off because the toggles are disabled.
     @Published public var appleHealthEnabled = false
     @Published public var healthRelayEnabled = false
@@ -158,5 +177,59 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         try? FileManager.default.removeItem(at: url)
         exportFileURL = nil
         exportFileName = nil
+    }
+
+    /// Reads a file the person chose and restores it. Nothing is sent anywhere: the file was already on
+    /// this device or in a place they opened it from, and the restore only writes to the local stores.
+    ///
+    /// The importer refuses anything it cannot do whole - a file from a newer schema version, a journal
+    /// that already has entries, a file it cannot read - and says which, so the message can tell the
+    /// person whether to try another file or to delete something first.
+    @discardableResult
+    public func importJournal(data: Data) -> Bool {
+        do {
+            let summary = try JournalImporter.importExport(data, into: store, favorites: favorites)
+            importSummary = summary
+            importState = .imported
+            importMessage = Self.importSummaryText(summary)
+            return true
+        } catch let error as JournalImportError {
+            importSummary = nil
+            importState = .failed
+            importMessage = Self.importFailureText(for: error)
+            return false
+        } catch {
+            importSummary = nil
+            importState = .failed
+            importMessage = Self.importFailedMessage
+            return false
+        }
+    }
+
+    /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
+    public static func importSummaryText(_ summary: JournalImportSummary) -> String {
+        let entries = summary.intakes == 1 ? "1 entry" : "\(summary.intakes) entries"
+        let deleted = summary.tombstones == 0 ? "" : " and \(summary.tombstones) deleted"
+        let favorites = summary.favorites == 0 ? "" : ", \(summary.favorites) favorites"
+        return "Imported \(entries)\(deleted)\(favorites)."
+    }
+
+    public static func importFailureText(for error: JournalImportError) -> String {
+        switch error {
+        case .unsupportedVersion:
+            return importUnsupportedVersionMessage
+        case .notEmpty:
+            return importNotEmptyMessage
+        case .malformed, .corrupt:
+            return importFailedMessage
+        }
+    }
+
+    /// Returns the screen's import state to empty, so a later attempt does not read as part of an earlier
+    /// one.
+    public func clearImport() {
+        importState = .idle
+        importSummary = nil
+        importMessage = nil
     }
 }

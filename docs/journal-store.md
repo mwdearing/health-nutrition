@@ -35,6 +35,11 @@ has no nutrient payload reads back as a product that states nothing, and re-savi
 fills the values in rather than refusing the snapshot as a conflict; every other difference under the
 same snapshot id is still a conflict.
 
+The import path changed nothing here: a restore writes columns the existing rows already have, so V1 and V2
+stay exactly as they are and no migration stage was added. A restored tombstone carries an empty category,
+because the export records a deleted entry's id, revision, time and time zone but not its category, and
+inventing one would be data this build does not have.
+
 ## Transaction rule
 
 Every write (`create`, `edit`, `delete`) is one `ModelContext.save()` covering the
@@ -42,6 +47,15 @@ revision, the projections and the outbox operations. A failure rolls the context
 so none of them is left behind. Each operation uses a fresh context with autosave off.
 Writes are serialized by a store-wide write lock held through the save, so concurrent edits get consecutive revision numbers. `pendingOutbox()` returns operations by intake, revision, then upsert before delete, then destination.
 A disabled destination gets a `disabled` projection and no outbox operation.
+
+A restore (`restore(_:)`, see [Journal export](journal-export.md)) is one save too, covering the product
+snapshots, every intake with all of its revisions and every tombstone. It writes **no** projection and
+**no** outbox operation: a restored entry is history the destinations were already sent once, so it must
+not be delivered again. That is why it is a separate method and not a flag on `create` - creating an entry
+means the person just ate something and it has to reach Health. `JournalRestoreTarget` is a separate
+protocol from `JournalStore` for the same reason: the normal create/edit/delete behaviour cannot change.
+The restore only runs into a journal with no intake rows at all, active or deleted (`isEmptyForImport()`);
+there is no merge.
 
 ## Usage constraints
 
