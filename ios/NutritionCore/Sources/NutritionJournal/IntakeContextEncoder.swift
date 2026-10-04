@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NutritionDomain
 
@@ -15,6 +16,14 @@ public enum IntakeContextEncoderError: Error, Equatable, Sendable {
     case operationActionMismatch(OutboxKind)
     /// The outbox row is queued for another destination. This encoder only writes relay deliveries.
     case operationDestinationMismatch(JournalDestination)
+    /// A delivery identity that is not lowercase canonical UUID text, so no schema would accept it.
+    case invalidOperationID(String)
+    /// A tombstone that belongs to another intake, so encoding it would delete the wrong one.
+    case tombstoneIntakeMismatch(String)
+    /// The scope's `producer_id` is not a slug, which the schema requires of the registered producer's name.
+    case invalidProducerID(String)
+    /// The scope's `writer_bundle_id` does not match the contract's pattern for a bundle identifier.
+    case invalidWriterBundleID(String)
     /// The product is not the snapshot the revision names, or the revision names none and one was supplied.
     /// Both would hash another product's values as this revision's immutable facts.
     case productSnapshotMismatch(expected: String?, found: String?)
@@ -102,6 +111,22 @@ public struct IntakeContextProducerScope: Sendable, Hashable {
         self.producerID = producerID
         self.writerBundleID = writerBundleID
         self.installationID = IntakeContextIdentifier.canonicalUUIDText(installationID) ?? installationID
+    }
+}
+
+/// The durable record of a tombstone: the instant the intake was deleted.
+///
+/// `deleted_at` is hashed into both the domain and the client digest, so a delete rebuilt after a lost response
+/// has to carry the same instant: otherwise the payload changes under one `operation_id` and the receiver
+/// reports a conflict instead of an idempotent duplicate. This is the record a caller reads back from storage
+/// and passes in again, rather than reading the clock a second time.
+public struct IntakeContextTombstone: Sendable, Hashable {
+    public let intakeID: String
+    public let deletedAt: Date
+
+    public init(intakeID: String, deletedAt: Date) {
+        self.intakeID = intakeID
+        self.deletedAt = deletedAt
     }
 }
 
@@ -289,17 +314,21 @@ public struct IntakeContextEncoder: Sendable {
     /// It carries no food details, no facts and no links, and the receiver keeps it as a tombstone so that a
     /// delayed older upsert cannot resurrect the intake. The contract requires that revision to be higher than
     /// every accepted one, so the tombstone is written one above `revision`: `revision` is the last accepted
-    /// revision, not the revision the deletion claims to be. `deletedAt` is an instant, so it is written in UTC.
+    /// revision, not the revision the deletion claims to be. `tombstone` carries the deletion instant read back
+    /// from storage, and it is written in UTC because it is an instant rather than a wall clock.
     public func delete(
         intake: Intake,
         revision: IntakeRevision,
-        operation: OutboxOperation,
-        deletedAt: Date
+        tombstone: IntakeContextTombstone,
+        operation: OutboxOperation
     ) throws -> IntakeContextValue {
         try validateScope()
         try checked(operation, kind: .delete, intakeID: intake.id, revision: nil)
         guard revision.intakeID == intake.id else {
             throw IntakeContextEncoderError.revisionIntakeMismatch(intake.id)
+        }
+        guard tombstone.intakeID == intake.id else {
+            throw IntakeContextEncoderError.tombstoneIntakeMismatch(tombstone.intakeID)
         }
         let tombstone = revision.number + 1
         var members: [String: IntakeContextJSONValue] = [
@@ -307,7 +336,7 @@ public struct IntakeContextEncoder: Sendable {
             "operation": .string(IntakeContextOperationKind.delete.contractValue),
             "intake_id": .string(intake.id),
             "revision": .integer(String(tombstone)),
-            "deleted_at": .string(IntakeContextTimestamp.utc(deletedAt)),
+            "deleted_at": .string(IntakeContextTimestamp.utc(tombstone.deletedAt)),
         ]
         return try sealed(members: &members, kind: .delete, operationID: operation.operationID,
             intakeID: intake.id, revision: tombstone, sequence: 0)
@@ -319,33 +348,69 @@ public struct IntakeContextEncoder: Sendable {
     /// complete link snapshot, never a delta, and no facts and no domain digest, so every link is checked here
     /// against the components of `revision`: it has to name a nutrient of that revision and the type that
     /// nutrient's code lands in, exactly as an upsert's links are. Sequence 1 belongs to the revision's upsert,
-    /// so a link-only change starts at 2, and the delivery is made under that revision's relay upsert row.
+    /// so a link-only change starts at 2.
+    ///
+    /// It takes no outbox row, because it must not reuse one. Sequence 1 was already delivered under the
+    /// revision's relay upsert row, and a second delivery under that same `operation_id` with a different
+    /// `client_payload_hash` is a conflict at the receiver, not an update. So every sequence has an identity of
+    /// its own: the caller's `operationID` when it has queued a row for this delivery, and otherwise
+    /// `linkProjectionOperationID(intakeID:sequence:)`, which derives a stable one from the intake and the
+    /// sequence - the same id on every retry, and never the upsert row's.
     public func linkProjection(
         intake: Intake,
         revision: IntakeRevision,
         sequence: Int,
-        operation: OutboxOperation,
-        links: [IntakeContextLink]
+        links: [IntakeContextLink],
+        operationID: String? = nil
     ) throws -> IntakeContextValue {
         try validateScope()
-        try checked(operation, kind: .upsert, intakeID: intake.id, revision: revision.number)
         guard revision.intakeID == intake.id else {
             throw IntakeContextEncoderError.revisionIntakeMismatch(intake.id)
         }
         guard sequence >= 2 else {
             throw IntakeContextEncoderError.projectionSequenceMustBeAtLeastTwo(sequence)
         }
+        let deliveryID = try Self.deliveryID(operationID, intakeID: intake.id, sequence: sequence)
         let codes = try nutrientCodes(of: revision)
         var members: [String: IntakeContextJSONValue] = [
-            "operation_id": .string(operation.operationID),
+            "operation_id": .string(deliveryID),
             "operation": .string(IntakeContextOperationKind.linkProjection.contractValue),
             "intake_id": .string(intake.id),
             "revision": .integer(String(revision.number)),
             "projection_sequence": .integer(String(sequence)),
             "healthkit_links": .array(try linkValues(links, codes: codes)),
         ]
-        return try sealed(members: &members, kind: .linkProjection, operationID: operation.operationID,
+        return try sealed(members: &members, kind: .linkProjection, operationID: deliveryID,
             intakeID: intake.id, revision: revision.number, sequence: sequence)
+    }
+
+    /// The delivery identity this sequence is sent under: the caller's, or one derived from the intake and the
+    /// sequence so that a projection never rides on another delivery's identity.
+    private static func deliveryID(_ operationID: String?, intakeID: String, sequence: Int) throws -> String {
+        guard let operationID else { return linkProjectionOperationID(intakeID: intakeID, sequence: sequence) }
+        guard IntakeContextIdentifier.isCanonicalUUIDText(operationID) else {
+            throw IntakeContextEncoderError.invalidOperationID(operationID)
+        }
+        return operationID
+    }
+
+    /// The delivery identity for a link projection of `sequence` that has no queued row of its own.
+    ///
+    /// It is derived rather than random so that a retry sends the identical payload: the contract reads the
+    /// same `operation_id` with the same `client_payload_hash` as a duplicate and a different one as a
+    /// conflict, so the identity has to be reproducible. The intake and the sequence are hashed with SHA-256
+    /// and written as a name-based UUID, so it is canonical UUID text like every other id in the envelope.
+    public static func linkProjectionOperationID(intakeID: String, sequence: Int) -> String {
+        var bytes = Array(SHA256.hash(data: Data("intake-context:\(intakeID):\(sequence)".utf8)).prefix(16))
+        // Version 5 and the RFC 4122 variant, so the derived text is a well-formed name-based UUID.
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        var text = ""
+        for (index, byte) in bytes.enumerated() {
+            if index == 4 || index == 6 || index == 8 || index == 10 { text += "-" }
+            text += String(format: "%02x", byte)
+        }
+        return text
     }
 
     /// One batch carrying the given operations in the order they are sent.
@@ -382,8 +447,16 @@ public struct IntakeContextEncoder: Sendable {
 
     // MARK: - What the encoder checks before it encodes
 
-    /// The scope's installation id has to be a UUID, or every payload built under it would fail the schema.
+    /// The scope's envelope fields have to satisfy the schema before anything is hashed: `producer_id` is the
+    /// registered producer's slug, `writer_bundle_id` is a bundle identifier, and `installation_id` is a UUID.
+    /// A configuration mistake is then a local refusal rather than a permanent failure after a delivery.
     private func validateScope() throws {
+        guard IntakeContextFactCatalog.isProducerID(scope.producerID) else {
+            throw IntakeContextEncoderError.invalidProducerID(scope.producerID)
+        }
+        guard IntakeContextFactCatalog.isWriterBundleID(scope.writerBundleID) else {
+            throw IntakeContextEncoderError.invalidWriterBundleID(scope.writerBundleID)
+        }
         guard IntakeContextIdentifier.isCanonicalUUIDText(scope.installationID) else {
             throw IntakeContextEncoderError.invalidInstallationID(scope.installationID)
         }
@@ -520,7 +593,8 @@ public struct IntakeContextEncoder: Sendable {
 
     // MARK: - Facts
 
-    /// The facts of one revision, in component order, which is part of the hashed content.
+    /// The facts of one revision, in component order, which is part of the hashed content, followed by the
+    /// nutrients a product snapshot states for it.
     private func encodedFacts(
         of revision: IntakeRevision,
         product: ProductDefinition?
@@ -529,12 +603,60 @@ public struct IntakeContextEncoder: Sendable {
             throw IntakeContextEncoderError.noComponents(revision.intakeID)
         }
         var seen = Set<String>()
-        return try revision.components.map { component in
+        var facts: [IntakeContextJSONValue] = []
+        for component in revision.components {
             guard seen.insert(component.componentID).inserted else {
                 throw IntakeContextEncoderError.duplicateComponent(component.componentID)
             }
-            return try encodedFact(for: component, product: product)
+            facts.append(try encodedFact(for: component, product: product))
         }
+        facts.append(contentsOf: try snapshotFacts(for: product, excluding: seen))
+        return facts
+    }
+
+    /// The nutrients a product snapshot states, as facts of their own.
+    ///
+    /// A barcode or recipe entry keeps one food component and puts its nutrition in the snapshot, so iterating
+    /// the revision's components alone would send an invented fact for the food and none of the values behind
+    /// it. Each stated nutrient becomes a fact under its own code, which is also what lets a link to it join;
+    /// a nutrient the label does not state stays unknown rather than becoming a zero. One whose component id
+    /// the revision already carries a fact for is left out, so `component_id` stays unique.
+    private func snapshotFacts(
+        for product: ProductDefinition?,
+        excluding covered: Set<String>
+    ) throws -> [IntakeContextJSONValue] {
+        guard let product else { return [] }
+        let provenance = IntakeContextFactCatalog.provenance(for: product)
+        var facts: [IntakeContextJSONValue] = []
+        // Sorted by the journal's key, so the same snapshot always produces the same fact order.
+        for key in product.nutrients.keys.sorted() {
+            guard let value = product.nutrients[key] else { continue }
+            let slug = IntakeContextFactCatalog.nutrientSlug(for: key)
+            guard IntakeContextFactCatalog.isSlug(slug), !covered.contains(slug) else { continue }
+            var members: [String: IntakeContextJSONValue] = [
+                "component_id": .string(slug),
+                "kind": .string(FactKind.nutrient.rawValue),
+                "code": .string(IntakeContextFactCatalog.dietaryCode(named: slug)),
+                "aggregation_role": .string(AggregationRole.contextOnly.intakeContextValue),
+                "provenance": .string(provenance),
+            ]
+            switch value {
+            case .known(let amount, let unit):
+                members["amount"] = .string(DecimalText.encode(amount))
+                members["unit"] = .string(unit.symbol)
+                members["value_state"] = .string("known")
+            case .belowReportingThreshold(let unit):
+                members["value_state"] = .string("below_reporting_threshold")
+                if let unit { members["unit"] = .string(unit.symbol) }
+            case .unknown:
+                // No amount and no unit: unknown is never a zero.
+                members["value_state"] = .string("unknown")
+            case .notApplicable:
+                members["value_state"] = .string("not_applicable")
+            }
+            facts.append(.object(members))
+        }
+        return facts
     }
 
     /// One fact for one journal component.
@@ -586,8 +708,9 @@ public struct IntakeContextEncoder: Sendable {
     /// rejects is refused. A component with no override is a nutrient, because a compound and a blend carry
     /// facts the journal's component does not: a declared basis, and members that the label prints. Its code
     /// follows what it measures, which is also what makes a link to it join: a volume is water, so it is
-    /// `hydration`, and anything else is `dietary_<its own name>`. A snapshot attached to the revision means
-    /// the value came from the catalog rather than from the user.
+    /// `hydration`, and anything else is `dietary_<its own name>`, kept inside the schema's slug limit. A
+    /// snapshot attached to the revision means the value came from that product rather than from the user, and
+    /// a snapshot a recipe built keeps its calculated provenance.
     private func descriptor(
         for component: IntakeComponent,
         product: ProductDefinition?
@@ -598,13 +721,14 @@ public struct IntakeContextEncoder: Sendable {
         if let known = IntakeContextFactCatalog.descriptor(for: component.componentID) { return known }
         let code = component.unit.dimension == .volume
             ? IntakeContextFactCatalog.hydrationCode
-            : "dietary_" + component.componentID.replacingOccurrences(of: "-", with: "_")
+            : IntakeContextFactCatalog.dietaryCode(
+                named: component.componentID.replacingOccurrences(of: "-", with: "_"))
         let nutrientKey = product?.nutrients[component.componentID] != nil ? component.componentID : nil
         return IntakeContextComponentDescriptor(
             kind: .nutrient,
             code: code,
             nutrientKey: nutrientKey,
-            provenance: product == nil ? "user_confirmed" : "catalog_reference")
+            provenance: IntakeContextFactCatalog.provenance(for: product))
     }
 
     /// Writes the value state, and with it the amount and unit the state allows.

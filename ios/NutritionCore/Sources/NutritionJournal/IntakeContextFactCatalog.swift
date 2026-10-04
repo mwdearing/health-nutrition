@@ -74,6 +74,17 @@ public struct IntakeContextComponentDescriptor: Sendable, Hashable {
 public enum IntakeContextFactCatalog {
     /// The code water is always written under, whatever the component that holds the water is called.
     public static let hydrationCode = "hydration"
+    /// The prefix every inferred nutrient code carries, so it names itself as a dietary nutrient.
+    public static let dietaryCodePrefix = "dietary_"
+    /// The catalog origin a recipe-built snapshot carries. Its values were calculated from the recipe's
+    /// ingredients rather than read off a label.
+    public static let recipeCalculatedOrigin = "recipe_calculated"
+    /// The provenance of a value the user recorded with no product behind it.
+    public static let userConfirmedProvenance = "user_confirmed"
+    /// The provenance of a value read from a product catalog.
+    public static let catalogReferenceProvenance = "catalog_reference"
+    /// The provenance of a value calculated from a recipe's ingredients.
+    public static let recipeCalculatedProvenance = "recipe_calculated"
 
     /// The components whose contract concept is not derivable from what they measure: a compound states a
     /// basis, a blend states members. Everything else is a nutrient under its own name, so a food or a recipe
@@ -119,6 +130,56 @@ public enum IntakeContextFactCatalog {
     /// The descriptor for a component id, or nil when the catalog has no row for it.
     public static func descriptor(for componentID: String) -> IntakeContextComponentDescriptor? {
         components[componentID]
+    }
+
+    /// The code for a component or a snapshot nutrient that names itself: `dietary_<its own name>`.
+    ///
+    /// The schema caps a slug at 64 characters and the journal will accept a component id that fills all of
+    /// them, so a longer name is shortened rather than sent: a code the schema rejects fails the whole
+    /// operation. The name is only a label for the value - the fact's identity is its `component_id`, which is
+    /// never touched - so the prefix is always kept and the truncation is deterministic.
+    public static func dietaryCode(named name: String) -> String {
+        let room = 64 - dietaryCodePrefix.count
+        let shortened = name.count > room ? String(name.prefix(room)) : name
+        return dietaryCodePrefix + shortened
+    }
+
+    /// The slug a journal nutrient key becomes: canonical first, then camel case split into lower-case words,
+    /// so `energyKcal` is the canonical `energy` and `vitaminD` is `vitamin-d`.
+    public static func nutrientSlug(for key: String) -> String {
+        let canonical = HealthKitWritePlanner.canonicalKey(for: key)
+        var slug = ""
+        for character in canonical {
+            if character.isUppercase, !slug.isEmpty { slug.append("-") }
+            slug.append(contentsOf: String(character).lowercased())
+        }
+        return slug
+    }
+
+    /// The provenance of a value taken from a product snapshot, or of one recorded with no product behind it.
+    ///
+    /// A snapshot a recipe built was calculated from that recipe's ingredients, and the contract records that
+    /// as `recipe_calculated`: a consumer must not read calculated values as catalog-sourced.
+    public static func provenance(for product: ProductDefinition?) -> String {
+        guard let product else { return userConfirmedProvenance }
+        return product.catalogOrigin == recipeCalculatedOrigin
+            ? recipeCalculatedProvenance
+            : catalogReferenceProvenance
+    }
+
+    /// Whether the text is one of the contract's slugs, which every code and every component id must be.
+    public static func isSlug(_ text: String) -> Bool {
+        text.range(of: "\\A[a-z0-9][a-z0-9._-]{0,63}\\z", options: .regularExpression) != nil
+    }
+
+    /// Whether the text is a `producer_id`: a slug, and the producer is registered under exactly this spelling.
+    public static func isProducerID(_ text: String) -> Bool {
+        isSlug(text)
+    }
+
+    /// Whether the text is a `writer_bundle_id`: the contract's own pattern for a bundle identifier.
+    public static func isWriterBundleID(_ text: String) -> Bool {
+        text.range(of: "\\A[A-Za-z0-9][A-Za-z0-9.-]{0,254}\\z", options: .regularExpression) != nil
     }
 
     /// The HealthKit quantity type identifier the contract pairs with a fact's `code`, or nil for a code that
