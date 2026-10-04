@@ -88,18 +88,18 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static func exportFilePatternMatches(_ name: String) -> Bool {
         guard name.hasPrefix(exportFileNamePrefix), name.hasSuffix(exportFileNameSuffix) else { return false }
         let stamp = name.dropFirst(exportFileNamePrefix.count).dropLast(exportFileNameSuffix.count)
-        let format = JournalExporter.fileNameDateFormat
-        guard stamp.count == format.count else { return false }
-        for offset in stamp.indices {
-            let expected = format[format.index(format.startIndex, offsetBy: offset)]
-            let character = stamp[offset]
-            if expected == "-" {
-                guard character == "-" else { return false }
-            } else {
-                guard character.isASCII, character.isNumber else { return false }
-            }
-        }
-        return true
+        // Parse the timestamp the way the exporter formats it, then format it back: only a real UTC time
+        // that the exporter would write again byte for byte counts (2024-99-99 does not).
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = JournalExporter.fileNameDateFormat
+        formatter.isLenient = false
+        guard let date = formatter.date(from: String(stamp)) else { return false }
+        return JournalExporter.fileName(exportedAt: date) == name
     }
     public static let unavailableVersion = "unknown"
     /// Fixed until the app target exists and can inject its real version string.

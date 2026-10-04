@@ -199,6 +199,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             "journal-export-2024-01-15T101500.json",
             "some-other-export-2024-01-15-101500.json",
             "journal-export-2024-01-15-101500.json.bak",
+            "journal-export-2024-99-99-999999.json",
+            "journal-export-2024-02-30-101500.json",
         ] {
             XCTAssertFalse(ConnectionsPrivacyViewModel.exportFilePatternMatches(rejected), rejected)
         }
