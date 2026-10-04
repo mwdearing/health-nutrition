@@ -201,7 +201,9 @@ public enum JournalImporter {
                 JournalRestoreEntry(
                     intake: Intake(
                         id: exported.id, category: exported.category, occurredAt: exported.occurredAt,
-                        timeZoneIdentifier: exported.timeZoneIdentifier, meal: exported.meal, note: exported.note),
+                        timeZoneIdentifier: exported.timeZoneIdentifier, meal: exported.meal,
+                        note: exported.note, lifecycle: .active,
+                        currentRevision: exported.currentRevision),
                     revisions: revisions))
         }
 

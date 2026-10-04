@@ -130,7 +130,54 @@ final class JournalImportTests: XCTestCase {
         let again = try JournalExporter.encode(
             try JournalExporter.makeExport(
                 store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
-        XCTAssertEqual(again, data, "an import that changed a single field would show up here")
+        // Named before the assertion, because an assertion message is built in a closure that may not
+        // throw, and reading the two documents back is a throwing call.
+        let changedField = try firstDifference(between: data, and: again)
+        XCTAssertEqual(
+            again, data,
+            "an import that changed a single field would show up here: "
+                + (changedField ?? "no field differs, only the encoding"))
+    }
+
+    /// The first field where two encoded documents disagree, named as a key path such as
+    /// `$.intakes[0].current_revision`. A round trip that is not byte-identical otherwise fails with two
+    /// long blobs and no idea which field moved, so the failure says which one it was.
+    private func firstDifference(between left: Data, and right: Data) throws -> String? {
+        let leftFields = try XCTUnwrap(try JSONSerialization.jsonObject(with: left) as? [String: Any])
+        let rightFields = try XCTUnwrap(try JSONSerialization.jsonObject(with: right) as? [String: Any])
+        return difference(leftFields, rightFields, path: "$")
+    }
+
+    private func difference(_ left: Any, _ right: Any, path: String) -> String? {
+        // The shape is compared before the value: a JSON object also casts to an array of any, so asking
+        // about arrays first would read an object as a list of its values.
+        if left is [String: Any] || right is [String: Any] {
+            guard let left = left as? [String: Any], let right = right as? [String: Any] else {
+                return "\(path) is an object in one document and not in the other"
+            }
+            for key in Set(left.keys).union(right.keys).sorted() {
+                guard let leftValue = left[key], let rightValue = right[key] else {
+                    return "\(path).\(key) is in only one of the two documents"
+                }
+                if let found = difference(leftValue, rightValue, path: "\(path).\(key)") { return found }
+            }
+            return nil
+        }
+        if left is [Any] || right is [Any] {
+            guard let left = left as? [Any], let right = right as? [Any] else {
+                return "\(path) is a list in one document and not in the other"
+            }
+            guard left.count == right.count else {
+                return "\(path) holds \(left.count) items and \(right.count) items"
+            }
+            for index in left.indices {
+                if let found = difference(left[index], right[index], path: "\(path)[\(index)]") { return found }
+            }
+            return nil
+        }
+        // Both sides are scalars, an explicit null included: it describes as "null" on either side.
+        guard String(describing: left) != String(describing: right) else { return nil }
+        return "\(path) is \(left) in one document and \(right) in the other"
     }
 
     func testEveryRevisionOfAnEntryIsRestoredInOrderWithItsOwnTimestamps() throws {
