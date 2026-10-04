@@ -104,6 +104,10 @@ struct RootView: View {
         // An erase on the Connections and privacy screen empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.
         .onChange(of: connections.eraseGeneration) { _, _ in
+            // A recipe detail or editor holds its own copy of the recipe, so close those routes too:
+            // otherwise an erased recipe stays on screen and can still be logged.
+            recipePath = []
+            showingRecipes = false
             reload()
             recipeList.load()
         }
