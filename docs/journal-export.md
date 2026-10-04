@@ -6,7 +6,10 @@ revisions, the tombstones of deleted intakes, and the favorite templates. The ap
 encodes it with `JSONEncoder` using sorted keys and ISO-8601 dates in UTC, so the same journal always encodes
 to the same bytes. Dates carry **six fractional digits**, so a timestamp survives the round trip exactly: a
 three-digit fraction would round a `Date` to the nearest millisecond and could move two entries onto the same
-instant. Millisecond and whole-second dates written by earlier builds still import.
+instant. Foundation's formatters only ever write three, so the module formats the whole seconds with one
+cached `DateFormatter` per run and writes the fraction itself, reading it back the same way. Millisecond and
+whole-second dates written by earlier builds still import. Favorites are written in id order, so two exports
+of the same favorites are the same document.
 
 The contract lives in the repository next to the code:
 - `contracts/journal-export/v1.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines.

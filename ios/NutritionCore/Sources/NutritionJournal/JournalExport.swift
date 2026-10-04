@@ -496,6 +496,8 @@ public enum JournalExporter {
             exportedAt: exportedAt, appVersion: appVersion,
             intakes: intakes.sorted { $0.id < $1.id },
             tombstones: deletedIntakes.map { JournalExportTombstone(intake: $0) }.sorted { $0.intakeID < $1.intakeID },
+            // Favorites are sorted by id so two runs over the same favorites produce the same bytes: the favorites
+            // store lists newest first, which would otherwise make the order depend on when things were added.
             favorites: favoriteList.sorted { $0.id < $1.id },
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID })
     }
@@ -505,13 +507,12 @@ public enum JournalExporter {
     public static func encode(_ export: JournalExport) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        // One formatter for the whole run: building a `DateFormatter` per date is the expensive part of
-        // encoding a long journal, and encoding is synchronous on the calling thread, so this one is only ever
-        // used here.
-        let formatter = microsecondFormatter()
+        // One formatter for the whole run: building a `DateFormatter` is the expensive part of formatting a
+        // date, and encoding is synchronous on the calling thread, so this one is only ever used here.
+        let formatter = dateFormatter()
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(formatter.string(from: date))
+            try container.encode(microsecondText(from: date, using: formatter))
         }
         return try encoder.encode(export)
     }
@@ -531,22 +532,13 @@ public enum JournalExporter {
     public static func decode(_ data: Data) throws -> JournalExport {
         let decoder = JSONDecoder()
         // One set of readers for the whole run; see `encode` for why they are not rebuilt per date.
-        let microseconds = microsecondFormatter()
-        let wholeSeconds = wholeSecondFormatter()
-        let legacy = legacyFormatters()
+        let formatter = dateFormatter()
+        let fallback = wholeSecondFormatter()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let text = try container.decode(String.self)
-            // Whole-second text goes to the plain ISO-8601 reader, and text with a fraction to the six-digit
-            // one, so a second is never put through a formatter that has to guess how many digits it has.
-            if text.contains(".") {
-                if let date = microseconds.date(from: text) { return date }
-            } else if let date = wholeSeconds.date(from: text) {
+            if let date = date(fromExportedText: text, using: formatter) ?? fallback.date(from: text) {
                 return date
-            }
-            // An older build wrote three fractional digits; those files must still import.
-            for formatter in legacy {
-                if let date = formatter.date(from: text) { return date }
             }
             throw DecodingError.dataCorruptedError(
                 in: container, debugDescription: "not an ISO-8601 date: \(text)")
@@ -558,32 +550,26 @@ public enum JournalExporter {
         return document
     }
 
-    /// The date text `encode` writes: ISO-8601 in UTC with **six** fractional digits, so a timestamp survives
-    /// the round trip exactly.
-    ///
-    /// `ISO8601DateFormatter` cannot do this: its `.withFractionalSeconds` option always writes three digits,
-    /// which silently rounds a `Date` to the nearest millisecond and can move two entries onto the same
-    /// instant. A `Date` is a floating-point count of seconds, and an epoch value near 1.7e9 seconds spends ten
-    /// of its sixteen significant decimal digits there, so six fractional digits is the finest text that still
-    /// parses back to the same instant. The schema describes the dates as `format: date-time`, which RFC 3339
-    /// allows at any fractional length.
-    public static let microsecondDateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
+    /// The whole-second part of an exported date, in UTC. The fractional part is written and read by this
+    /// module rather than by the formatter.
+    public static let secondsDateFormat = "yyyy-MM-dd'T'HH:mm:ss"
 
     /// Builds the one `DateFormatter` a run of `encode` or `decode` uses. Building a formatter is the expensive
     /// part of formatting a date, so a run builds one and reuses it; encoding and decoding are synchronous on
     /// the calling thread, so nothing else can reach it.
     ///
     /// This is a seam so a test can count the formatters a run builds. Production code never assigns it.
-    nonisolated(unsafe) public static var microsecondFormatter: () -> DateFormatter = {
+    nonisolated(unsafe) public static var dateFormatter: () -> DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = microsecondDateFormat
+        formatter.dateFormat = secondsDateFormat
         return formatter
     }
 
-    /// Whole-second ISO-8601 in UTC, the shape a date with no fraction takes.
+    /// Whole-second ISO-8601 in UTC, used as a fallback for text that carries a zone offset rather than a `Z`,
+    /// which this module never writes but another writer might.
     static func wholeSecondFormatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
@@ -591,18 +577,50 @@ public enum JournalExporter {
         return formatter
     }
 
-    /// Millisecond ISO-8601, the shape an earlier build of this app wrote. Nothing produces it any more, but
-    /// an existing backup must still import.
-    static func legacyFormatters() -> [ISO8601DateFormatter] {
-        [
-            {
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                formatter.timeZone = TimeZone(secondsFromGMT: 0)
-                return formatter
-            }(),
-            wholeSecondFormatter(),
-        ]
+    /// An exported date as ISO-8601 in UTC with exactly six fractional digits, for example
+    /// `2024-01-14T20:30:00.123400Z`.
+    ///
+    /// The six digits are computed here rather than asked of the formatter. `DateFormatter` only ever writes
+    /// three fractional digits, no matter how many `S` the format string has, and `ISO8601DateFormatter`'s
+    /// `.withFractionalSeconds` does the same, so both would round a timestamp to the nearest millisecond and
+    /// could move two entries onto the same instant. A `Date` is a floating-point count of seconds, and an
+    /// epoch value near 1.7e9 spends ten of its sixteen significant decimal digits on the whole seconds, so six
+    /// fractional digits is the finest text that still parses back to the same instant. The schema describes the
+    /// dates as `format: date-time`, which RFC 3339 allows at any fractional length.
+    static func microsecondText(from date: Date, using formatter: DateFormatter) -> String {
+        let whole = date.timeIntervalSince1970.rounded(.down)
+        var microseconds = Int(((date.timeIntervalSince1970 - whole) * 1_000_000).rounded())
+        var seconds = whole
+        if microseconds >= 1_000_000 {
+            // Rounding up out of the fraction carries into the next second.
+            microseconds -= 1_000_000
+            seconds += 1
+        }
+        let digits = String(format: "%06d", microseconds)
+        return "\(formatter.string(from: Date(timeIntervalSince1970: seconds))).\(digits)Z"
+    }
+
+    /// Reads back what `microsecondText(from:using:)` writes. Any number of fractional digits is accepted, so
+    /// the three-digit dates an earlier build wrote still import.
+    static func date(fromExportedText text: String, using formatter: DateFormatter) -> Date? {
+        guard let dot = text.firstIndex(of: ".") else {
+            return formatter.date(from: text)
+        }
+        let secondsText = String(text[text.startIndex..<dot])
+        guard let seconds = formatter.date(from: secondsText) else { return nil }
+        var digits = text[text.index(after: dot)...]
+        if digits.hasSuffix("Z") { digits = digits.dropLast() }
+        guard !digits.isEmpty else { return nil }
+        // The fraction is scaled digit by digit rather than by a format string, so more than three digits
+        // survive the round trip.
+        var scaled: TimeInterval = 0
+        var divisor: TimeInterval = 1
+        for character in digits {
+            guard character.isNumber, let digit = character.wholeNumberValue else { return nil }
+            scaled = scaled * 10 + TimeInterval(digit)
+            divisor *= 10
+        }
+        return seconds.addingTimeInterval(scaled / divisor)
     }
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.

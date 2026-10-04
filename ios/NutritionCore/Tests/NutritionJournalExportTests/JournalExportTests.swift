@@ -288,10 +288,10 @@ final class JournalExportTests: XCTestCase {
     func testOneDateFormatterIsBuiltPerRunNotPerDate() throws {
         // Building a DateFormatter is the expensive part of formatting a date, and an export has one date per
         // intake, revision and header. This test counts the formatters a run builds.
-        let original = JournalExporter.microsecondFormatter
-        addTeardownBlock { JournalExporter.microsecondFormatter = original }
+        let original = JournalExporter.dateFormatter
+        addTeardownBlock { JournalExporter.dateFormatter = original }
         var builds = 0
-        JournalExporter.microsecondFormatter = {
+        JournalExporter.dateFormatter = {
             builds += 1
             return original()
         }
@@ -471,7 +471,15 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         ]
         let document = try JournalExporter.makeExport(
             store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
-        XCTAssertEqual(document.favorites.map(\.components.first?.amount), ["0.5", "250"])
+        // Sorted by id, not by the order the store happens to list them in, so two exports of the same
+        // favorites are the same document.
+        XCTAssertEqual(document.favorites.map(\.id), ["fav-a-1", "fav-b-1"])
+        XCTAssertEqual(document.favorites.map(\.components.first?.amount), ["250", "0.5"])
+        let reversed = StubFavoritesStore()
+        reversed.items = favoritesStore.items.reversed()
+        let other = try JournalExporter.makeExport(
+            store: StubJournalStore(), favorites: reversed, appVersion: "0.1.0", exportedAt: now)
+        XCTAssertEqual(try JournalExporter.encode(other), try JournalExporter.encode(document))
     }
 
     func testOneProductSnapshotIsResolvedOnceEvenWhenManyRevisionsUseIt() throws {

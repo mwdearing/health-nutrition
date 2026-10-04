@@ -179,18 +179,36 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 
-    func testTheExportedFileIsWrittenCompleteOnly() throws {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites(), appVersion: "0.1.0")
+    func testTheExportedFileIsWrittenCompleteOnlyAndInOneStep() throws {
+        // The file holds the whole journal, so it must be written complete-only and atomically. Reading the
+        // file afterwards cannot prove that: on macOS the protection attribute comes back as
+        // complete-until-first-authentication whatever was asked for, so the options themselves are checked.
+        var seen: (url: URL, options: Data.WritingOptions)?
+        var written: Data?
+        let model = ConnectionsPrivacyViewModel(
+            store: filledStore(), favorites: favorites(), appVersion: "0.1.0",
+            writer: { data, url, options in
+                seen = (url, options)
+                written = data
+            })
+        XCTAssertTrue(model.export(now: now))
+        let recorded = try XCTUnwrap(seen)
+        XCTAssertEqual(recorded.url, model.exportFileURL)
+        XCTAssertTrue(recorded.options.contains(.completeFileProtection), "\(recorded.options)")
+        XCTAssertTrue(recorded.options.contains(.atomic), "\(recorded.options)")
+        let document = try JournalExporter.decode(try XCTUnwrap(written))
+        XCTAssertEqual(document.schemaVersion, 1)
+        XCTAssertEqual(document.intakes.count, 1)
+        XCTAssertEqual(ConnectionsPrivacyViewModel.exportWriteOptions, [.atomic, .completeFileProtection])
+    }
+
+func testTheRealWriterLeavesADecodableFileBehind() throws {
+        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let url = try XCTUnwrap(model.exportFileURL)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-        // The file holds the whole journal, so it must be unreadable while the device is locked. macOS does not
-        // record file protection, so the check only runs where the attribute exists.
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard let protection = attributes[.protectionKey] as? FileProtectionType else {
-            throw XCTSkip("this platform does not record a file protection attribute")
-        }
-        XCTAssertEqual(protection, .complete)
+        let document = try JournalExporter.decode(try Data(contentsOf: url))
+        XCTAssertEqual(document.schemaVersion, 1)
     }
 
 func testClearingTheExportWhenTheScreenGoesAwayLeavesNothingOnDisk() throws {

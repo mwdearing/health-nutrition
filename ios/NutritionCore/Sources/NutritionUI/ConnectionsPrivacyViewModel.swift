@@ -14,6 +14,13 @@ public struct ConnectionsPrivacyConnection: Equatable, Identifiable {
     public var arrivingNote: String
 }
 
+/// How the export is written to disk. Injected so a test can see the options that were asked for, which it
+/// cannot learn from the file afterwards: the write options decide how the file is protected, and the
+/// resulting attribute on a given platform does not say what was requested.
+public typealias ConnectionsPrivacyExportWriter = (
+    _ data: Data, _ url: URL, _ options: Data.WritingOptions
+) throws -> Void
+
 /// State of the export action on the screen.
 public enum ConnectionsPrivacyExportState: Equatable {
     case idle
@@ -59,14 +66,26 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let store: JournalStore
     private let favorites: FavoritesStore?
     private let appVersion: String
+    private let writer: ConnectionsPrivacyExportWriter
+
+    /// The write options the export always asks for: complete-only, so the journal is unreadable while the
+    /// device is locked, and atomic, so no half-written copy can be shared.
+    public static let exportWriteOptions: Data.WritingOptions = [.atomic, .completeFileProtection]
+
+    /// The real write. Replacing it is only for tests.
+    public static func writeExport(_ data: Data, to url: URL, options: Data.WritingOptions) throws {
+        try data.write(to: url, options: options)
+    }
 
     public init(
         store: JournalStore, favorites: FavoritesStore? = nil,
-        appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion
+        appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
+        writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport
     ) {
         self.store = store
         self.favorites = favorites
         self.appVersion = appVersion
+        self.writer = writer
     }
 
     public var privacyText: String { Self.privacySummary }
@@ -99,9 +118,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-            // The export is the whole health history in one file, so it is written complete-only: unreadable
-            // while the phone is locked, and written in one step so no half-written copy is ever shared.
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            // The export is the whole health history in one file, so it is written complete-only.
+            try writer(data, url, Self.exportWriteOptions)
             // A second export in another second gets a different file name, so the copy this screen was
             // holding would be left behind with nothing able to remove it. It holds the same journal, so it
             // goes before the new URL replaces it.
