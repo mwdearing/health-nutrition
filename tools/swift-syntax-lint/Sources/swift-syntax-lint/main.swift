@@ -21,7 +21,7 @@ else {
     exit(2)
 }
 
-let findings = Lint.findings(overRoots: Lint.rootsToLint(root: root))
+let findings = Lint.findings(overRoots: [root])
 for finding in findings {
     print(finding.formatted)
 }

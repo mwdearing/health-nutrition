@@ -54,10 +54,38 @@ enum Chain {
 
     /// One step of a chain: the modifier applied to `node`, and the node that
     /// takes its place.
+    ///
+    /// A modifier written as a call, as in `.accessibilityHidden(true)`, is one
+    /// step covering the member access and its argument list together. The member
+    /// access is the parent of the expression being modified, so the step has to
+    /// look one level further to find that argument list rather than record the
+    /// bare access and lose it.
     private static func step(from node: Syntax) -> (modifier: AppliedModifier, node: Syntax)? {
         guard let parent = node.parent else { return nil }
-        // A modifier written as a call is one step, member access and argument
-        // list together, so the call is recognised before the bare member access.
+        if let member = parent.as(MemberAccessExprSyntax.self), member.base?.id == node.id {
+            // `expression.modifier(...)`: the call wraps this member access, so
+            // the two are the same step and the arguments belong to it.
+            if let call = member.parent?.as(FunctionCallExprSyntax.self),
+               call.calledExpression.id == member.id {
+                return (
+                    AppliedModifier(
+                        node: Syntax(call),
+                        name: member.declName.baseName.text,
+                        hidesFromAccessibility: passesTrue(call)
+                    ),
+                    Syntax(call)
+                )
+            }
+            // `expression.modifier` on its own, with no argument list.
+            return (
+                AppliedModifier(
+                    node: Syntax(member),
+                    name: member.declName.baseName.text,
+                    hidesFromAccessibility: false
+                ),
+                Syntax(member)
+            )
+        }
         if let call = parent.as(FunctionCallExprSyntax.self),
            let member = call.calledExpression.as(MemberAccessExprSyntax.self),
            member.base?.id == node.id {
@@ -68,16 +96,6 @@ enum Chain {
                     hidesFromAccessibility: passesTrue(call)
                 ),
                 Syntax(call)
-            )
-        }
-        if let member = parent.as(MemberAccessExprSyntax.self), member.base?.id == node.id {
-            return (
-                AppliedModifier(
-                    node: Syntax(member),
-                    name: member.declName.baseName.text,
-                    hidesFromAccessibility: false
-                ),
-                Syntax(member)
             )
         }
         return nil
@@ -128,9 +146,20 @@ enum Chain {
 
     /// The statements of one arm, which is where a modifier continuing the chain
     /// is written.
+    ///
+    /// A conditional written inside an expression rather than inside a body holds
+    /// one postfix expression instead of a list of statements, so that form is
+    /// read as a single item: the arm still says what the expression is modified
+    /// by, and reading it as a list of statements would say nothing.
     static func items(of clause: IfConfigClauseSyntax) -> [CodeBlockItemSyntax] {
-        guard let list = clause.elements?.as(CodeBlockItemListSyntax.self) else { return [] }
-        return Array(list)
+        guard let elements = clause.elements else { return [] }
+        if let list = elements.as(CodeBlockItemListSyntax.self) {
+            return Array(list)
+        }
+        if let expression = elements.as(ExprSyntax.self) {
+            return [CodeBlockItemSyntax(item: .expr(expression))]
+        }
+        return []
     }
 
     /// The chain the statements of an arm offer: a leading run of modifiers

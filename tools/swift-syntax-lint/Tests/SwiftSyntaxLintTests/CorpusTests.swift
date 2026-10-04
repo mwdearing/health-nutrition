@@ -166,7 +166,9 @@ final class CorpusTests: XCTestCase {
             relativePath: "Sources/NutritionUI/Prose.swift",
             rootName: "NutritionCore"
         )
-        XCTAssertEqual(found.map(\.line), [3])
+        // The directive is on line 3, inside a string literal, so it grants
+        // nothing and the image on line 4 is still reported.
+        XCTAssertEqual(found.map(\.line), [4])
     }
 
     func test_a_finding_is_printed_in_the_python_format() {

@@ -60,27 +60,7 @@ every Swift change now needs a macOS runner with a resolved toolchain and a
 multi-minute first build, where today it needs Python and nothing else, and that a
 lint failure would block a pull request on infrastructure rather than on the code.
 
-## Cost
-
-| | Python (today) | SwiftSyntax spike | SwiftSyntax for all |
-| --- | --- | --- | --- |
-| Toolchain | Python 3, nothing else | macOS, Swift 6, swift-syntax 600.0.0 | the same |
-| First build | seconds | a few minutes (swift-syntax is a large dependency) | the same |
-| Steady-state run | seconds | seconds once built | seconds once built |
-| CI minutes | existing ubuntu job | one advisory macOS job, `continue-on-error` | the swift-lint job moves to macOS and becomes blocking |
-| Where findings surface | every PR, blocking | the same job, non-blocking, plus the package README | blocking, on macOS |
-
-The macOS job is deliberately advisory. It builds the package, runs its corpus
-test and runs the tool over `ios/NutritionCore` and `ios/HealthNutrition`, and it
-does not gate anything, because a spike that blocks a pull request stops the
-experiments that would tell us whether to adopt it.
-
-The honest cost of option 2 is duplicated logic: for as long as both
-implementations exist, every change to one rule's meaning has to be made twice, and
-the corpus test is what keeps them honest. That is only acceptable while the spike
-is a measurement.
-
-## What the spike measures
+## What the spike measured
 
 `scripts/export_lint_corpus.py` exports the cases of
 `scripts/tests/test_lint_swift_sources.py` that exercise these two rules, with the
@@ -90,36 +70,73 @@ against the lint that wrote it, so the corpus cannot drift. The package's test
 target then runs every case through the Swift rules and prints the agreement rate
 and each disagreement. `tools/swift-syntax-lint/README.md` records the result.
 
-The differences the spike is expected to show, from reading the two
-implementations rather than from measurement:
+The corpus is 55 cases: 30 that expect at least one finding and 25 that expect
+none. The first macOS run reported **46 of 55 agreeing, 83%**. Every
+disagreement it named is about an image, so `fixed-font-size` agreed everywhere it
+was exercised. The nine
+disagreements were:
 
-- The tree reads a label closure, a `Text` call and an argument label as nodes, so
-  the control-label rules and the font-size rules are much shorter than their
-  bracket-scanning counterparts. That is the case for the tree.
-- The tree follows one conditional block and stops, where the Python rule follows
-  a chain past the matching `#endif`. The tree is *less* thorough there, because
-  modelling a postfix chain across a conditional is what the Python rule was
-  written to do and the tree does not hand it over for free.
-- The Python rule reaches a nested `content:` by checking bracket depth; the tree
-  knows which call owns the label. Here the tree is more correct by construction.
+| Disagreement | Cases | Cause |
+| --- | --- | --- |
+| The app target was not linted from a run over the package root | 2 | The expansion into the sibling target was left to the caller |
+| Decorative and `.accessibilityHidden(true)` images | 2 | The chain walk stopped at the member access and never read the call's arguments |
+| A label present in every `#if` branch | 3 | An arm written in expression position holds a postfix expression, not a statement list |
+| A `Text` hidden from accessibility still named its control | 2 | The same chain-walk cause, on the text's own modifier |
+| A custom-qualified control, `Custom.Button` | 1 | Left unfixed, see below |
 
-So the honest reading is: the tree makes these two rules shorter and structurally
-clearer, and does not automatically make them more correct. Whether the remaining
-gaps are worth closing is the question this ADR leaves open.
+Every one of those is a bug in the spike rather than a difference in the rules,
+and all but the last were fixed in the following commit. That the four distinct
+causes were all in the *tree traversal* rather than in the rule logic is itself
+the first result: the exemptions were right, and the tree was being asked the
+wrong question in four different ways.
+
+The one left in place is `Custom.Button { ... } label: { ... }`, which is not a
+SwiftUI control. The tree reaches the right answer by failing to match the call
+against the list of control names and climbing past it; the Python rule reaches
+it by matching the dotted spelling against the same list. If the next CI run still
+reports a disagreement there, it is a real difference in how the two recognise a
+custom view named like a control, and it belongs in this ADR as a gap.
+
+## Cost, measured
+
+| | Python (today) | SwiftSyntax spike | SwiftSyntax for all |
+| --- | --- | --- | --- |
+| Toolchain | Python 3, nothing else | macOS, Swift 6, swift-syntax 600.0.0 | the same |
+| First build | seconds | minutes: swift-syntax is a large dependency | the same |
+| Steady-state run | seconds | seconds once built | seconds once built |
+| CI | existing blocking ubuntu job | one advisory macOS job, `continue-on-error`, cache keyed on the manifest | the swift-lint job moves to macOS and becomes blocking |
+| Minutes added per PR | none | one macOS runner on PRs touching the package | every PR touching Swift |
+
+The macOS job is deliberately advisory. It builds the package, runs its corpus
+test and runs the tool over `ios/NutritionCore` and `ios/HealthNutrition`, and it
+does not gate anything, because a spike that blocks a pull request stops the
+experiments that would tell us whether to adopt it.
+
+The cold-build wall clock is not recorded. The run that produced the 83% did not
+report timings, so the table says "minutes" rather than a number, and the next
+run should fill it in.
+
+The honest cost of option 2 is duplicated logic: for as long as both
+implementations exist, every change to one rule's meaning has to be made twice,
+and the corpus test is what keeps them honest. The 9 disagreements that first run
+produced are what that duplication costs in practice, and they landed in one
+commit against roughly 350 lines of Swift.
 
 ## Recommendation
 
-Adopt option 2 as a measurement and decide again once the numbers are in:
+Not yet. The measurement is not complete: the first run agreed on 83%, and eight
+of its nine disagreements were spike bugs that are now fixed, so the next run
+gives the real figure. Nothing should be adopted on 83%.
 
-1. If the agreement rate is high and the disagreements are only the documented
-   ones, the case for moving these two rules is that the tree is materially
-   simpler. That has to be weighed against the duplicated-logic cost, which is
-   only justified while the Python version can be deleted.
-2. If the disagreements are wide, the tree is not cheaper in practice: it needs a
-   toolchain, a macOS runner and hand-written modelling of every awkward case the
-   Python rules already encode. Keep option 1 and stop.
+What the first run does support, weakly, is that the tree is worth finishing the
+measurement on. The rules themselves were right; what was wrong was four
+different ways of asking the tree a question, and each was a small local fix in
+the traversal rather than a change to what the rule means. If the next run comes
+back at or near full agreement, the case for option 2 is that these two rules are
+materially shorter and structurally clearer on a tree — which the line counts
+already suggest — weighed against the duplicated logic, which is only justified
+while the Python version can be deleted. If it comes back with disagreements that
+are *not* local fixes, the answer is option 1 and this spike should be deleted.
 
-Either way the decision needs the measured agreement first, so this ADR stays
-Proposed until the macOS job has reported. The recommendation on offer is not to
-adopt anything yet: to read the README's agreement table, and to delete this
-spike if it does not change the answer.
+So: read the next run's agreement table, then decide, and keep this ADR Proposed
+until it is decided.

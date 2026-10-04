@@ -59,6 +59,20 @@ public enum Rules {
     )
 
     public static let all: [Rule] = [unlabeledImage, fixedFontSize]
+
+    /// Where a rule sits in the Python lint's own rule order, so findings come
+    /// out in the same sequence it prints them.
+    public static func order(of name: String) -> Int {
+        let pythonOrder = [
+            "colour-literal",
+            "fixed-font",
+            "fixed-font-size",
+            "forbidden-import",
+            "binary-float",
+            "unlabeled-image",
+        ]
+        return pythonOrder.firstIndex(of: name) ?? pythonOrder.count
+    }
 }
 
 /// The layer a path belongs to, which decides whether the view rules apply.
@@ -139,8 +153,12 @@ public enum Lint {
                 )
             )
         }
+        // The Python lint orders findings by line and then by the order its rules
+        // are declared in, so the same tree produces the same sequence of lines.
         return found.sorted { left, right in
-            left.rule == right.rule ? left.line < right.line : left.rule < right.rule
+            left.line == right.line
+                ? Rules.order(of: left.rule) < Rules.order(of: right.rule)
+                : left.line < right.line
         }
     }
 
@@ -167,10 +185,18 @@ public enum Lint {
     /// The findings over a directory of Swift sources.
     ///
     /// A run over the package root also lints the app target beside it, which is
-    /// what the CI invocation that names only the package root relies on.
+    /// what the CI invocation that names only the package root relies on: without
+    /// it an unlabeled image under `ios/HealthNutrition/Sources` would only ever
+    /// be reported locally.
     public static func findings(overRoots roots: [URL]) -> [Finding] {
-        var found: [Finding] = []
+        var covered: [URL] = []
         for root in roots {
+            for one in rootsToLint(root: root) where !covered.contains(one) {
+                covered.append(one)
+            }
+        }
+        var found: [Finding] = []
+        for root in covered {
             for file in swiftFiles(in: root) {
                 found.append(contentsOf: findings(atFile: file, relativeTo: root))
             }
@@ -233,16 +259,31 @@ struct Allowances {
     private var byLine: [Int: Set<String>] = [:]
 
     init(tree: SourceFileSyntax, converter: SourceLocationConverter) {
+        // A comment on a line of its own, or after code on that line, is trivia on
+        // whichever token follows it, so the line a piece belongs to is walked from
+        // the start of the token and then forward over the piece itself. Keying on
+        // the token's own line would file a comment under the next line instead.
         for token in tree.tokens(viewMode: .sourceAccurate) {
-            let line = converter.location(for: token.positionAfterSkippingLeadingTrivia).line
+            var line = converter.location(for: token.position).line
             for piece in token.leadingTrivia + token.trailingTrivia {
-                // Only a developer comment is a directive; the documentation
-                // forms are prose and are not consulted.
-                guard case .lineComment(let text) = piece else { continue }
+                // Only a developer comment is a directive; the documentation forms
+                // are prose and are not consulted.
+                guard case .lineComment(let text) = piece else {
+                    line += Allowances.written(piece).filter(\.isNewline).count
+                    continue
+                }
                 guard let rules = Allowances.rules(in: text) else { continue }
                 byLine[line, default: []].formUnion(rules)
             }
         }
+    }
+
+    /// The text of a trivia piece, however many characters it stands for: a run of
+    /// newlines is one piece with a count rather than one piece per newline.
+    private static func written(_ piece: TriviaPiece) -> String {
+        var text = ""
+        text.write(piece)
+        return text
     }
 
     /// The rule names a comment allows, or `nil` when it is not a directive.

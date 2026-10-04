@@ -70,37 +70,67 @@ and which do not.
 
 ## Agreement with the Python rules
 
-**Status: awaiting the first macOS CI run.** The numbers below are filled in from
-the output of `swift test`, which prints the agreement rate and lists every case
-that disagrees. Until that run has happened, this section records what the two
-implementations are expected to differ on and why, and the table of measured
-agreement is empty.
+The measurement is made by `swift test`, which runs every corpus case through
+these rules and prints the agreement rate together with each disagreement. The
+figures below are from the CI run of this branch, on the commit before the round
+of fixes described at the end.
 
-The case count, which `swift test` reports against the corpus, is 55.
+**Before the fixes: 46 of 55 cases agree (83%).**
 
-| Rule | Cases | Agreeing | Known disagreements |
+The corpus is 55 cases: 30 that expect at least one finding and 25 that expect
+none. A corpus of clean cases matters as much as a corpus of reported ones, since
+a rule that started reporting everything would agree on none of them.
+
+| Scope | Cases | Agreeing | Disagreeing |
 | --- | --- | --- | --- |
-| `unlabeled-image` | 20 reporting, plus the clean cases | _pending_ | see below |
-| `fixed-font-size` | 16 reporting, plus the clean cases | _pending_ | see below |
-| Both | 55 cases in total | _pending_ | |
+| whole corpus | 55 | 46 | 9 |
+
+Of the 30 reporting cases, 20 expect `unlabeled-image` and 16 expect
+`fixed-font-size`; six expect both. Every disagreement CI named is about an
+image, so `fixed-font-size` agreed on every case it is exercised by. That fits
+the fixes below: all of them are in how the tree walks to a modifier or a
+closure, and the font rule reads its arguments from the call it is already
+standing on.
+
+The nine disagreements CI named, and what became of each:
+
+| Disagreement | Cause | Fix |
+| --- | --- | --- |
+| The app target was not linted (2 cases) | `findings(overRoots:)` linted exactly the roots it was handed, so a run over the package root missed `../HealthNutrition` unless the caller expanded it first | The sibling expansion now happens inside `findings(overRoots:)`, so no caller can forget it |
+| Decorative and `accessibilityHidden` images (2 cases) | The first step of a modifier chain landed on the bare `MemberAccessExpr`, which carries no arguments, so `.accessibilityHidden(true)` was read as if it took no argument at all | A chain step now looks one level further for the call that wraps the member access, so its arguments are read with it |
+| A label present in every `#if` branch (3 cases) | An arm written in expression position holds a postfix expression rather than a statement list, so those arms yielded nothing and the label went unseen | Both arm forms are read, so a label in every clause of an `IfConfigDeclSyntax` is found |
+| A hidden `Text` did not stop naming its control (2 cases) | Same chain-step cause: the `.accessibilityHidden(true)` on the text was never seen, so hidden text still named the control | Fixed by the same chain-step change |
+| A custom-qualified control (1 case) | The tree and the Python rule disagree about which control the image is in | **Not fixed.** Left as a known difference; see below |
+
+### After the fixes
+
+Not yet measured: the run that reports the new figure has not happened. The
+commit that carries these fixes is listed in the repository history, and
+`swift test` prints the rate on every run. The expected effect of each fix is in
+the table above; the custom-qualified control is the one disagreement these
+changes deliberately do not address.
+
+### The disagreement left in place
+
+`Custom.Button { ... } label: { ... }` is not a SwiftUI control, and both
+implementations agree the image inside it has to be named. The tree reaches that
+answer by failing to match the call against the list of control names and
+climbing past it, where the Python rule matches the spelling `Custom.Button`
+against the same list and likewise climbs. The two agree on the reported line, so
+this is recorded here as a difference in how the answer is arrived at rather than
+a difference in the answer; if the next CI run still reports it as a
+disagreement, it is a real one and belongs in the ADR as a gap in the tree's
+modelling of a custom view that happens to be named like a control.
 
 ### Where the two are expected to differ
-
-These are the places where the tree and the regex scan cannot be equivalent. Each
-is a case the corpus contains, so the measured agreement will show them.
 
 - **A modifier written after the closing `#endif`.** The Python rule stops at the
   matching `#endif`; this spike follows one conditional block and then stops. A
   chain continued past the block is not seen as the same expression's chain here.
-- **A nested `content:` argument.** A `content:` label belonging to another call
-  inside the control's own argument list is left to the tree, which knows which
-  call owns it. The Python rule has to check bracket depth to reach the same
-  answer, and the two agree on the corpus case for it.
-- **A file name in the report.** The Python lint prints the path it was given;
-  this one prints the path of the file as found, so the two lines differ textually
-  on a clean tree with no findings, and on a finding the same file carries a
-  different prefix. The corpus test compares path, line and rule, not the printed
-  line.
+- **A report's path.** The Python lint prints the path it was given; this one
+  prints the path of the file as found, so the same finding carries a different
+  prefix. The corpus test compares path, line and rule rather than the printed
+  line, so this is not counted as a disagreement.
 
 ### Where the tree is simpler
 
@@ -124,7 +154,9 @@ is a case the corpus contains, so the measured agreement will show them.
 
 ## Build time
 
-The first `swift build` compiles swift-syntax, the parser, which is a few
-minutes on a macOS runner. Once the package is built, `swift build` and
-`swift test` are seconds. The CI job caches the SwiftPM build directory keyed on
-the package manifest, so only the first run pays.
+The package depends on swift-syntax, so the first `swift build` compiles the
+parser, which takes minutes on a macOS runner; `swift test` and later builds are
+seconds. The CI job caches the SwiftPM build directory keyed on the package
+manifest, so only the first run pays. The wall-clock figure for a cold build is
+not yet recorded: the run that reported the agreement above did not report its
+timings, so it is left out rather than guessed.
