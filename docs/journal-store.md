@@ -69,7 +69,9 @@ invent it. `SwiftDataJournalStore` is the implementation.
   revision must stay suspended after its projection goes noncurrent, or every run retries the denied
   write and blocks the newer revision forever.
 - `rearmDelivery(operationID:)` clears the suspension and makes the operation due again. Re-arming is a
-  separate call on purpose: it is a person's decision that a denial has been resolved.
+  separate call on purpose: it is a person's decision that a denial has been resolved. It clears the
+  projection **including a superseded one**, because that projection is where the suspension is recorded;
+  every other projection update touches current projections only.
 
 Both writes are single saves through the same `commit` path as every other write, so a failure rolls
 back and the injected-failure test flag covers them. `pendingOutbox()` excludes acknowledged operations,

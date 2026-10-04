@@ -558,7 +558,12 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             }
             guard row.acknowledgedAt == nil else { return }
             row.nextAttemptAt = nil
-            try Self.setProjectionState(.pending, of: row, in: context)
+            // `includingSuperseded: true`: the suspension is recorded on the projection belonging to
+            // this operation, and a later edit may have made that projection noncurrent. Clearing only
+            // current projections would leave the state at `needsAttention`, and since suspension is
+            // matched by state whatever the projection's currency, the operation would stay suspended
+            // and never be delivered again — re-arming would silently do nothing.
+            try Self.setProjectionState(.pending, of: row, in: context, includingSuperseded: true)
         }
     }
 
@@ -572,15 +577,18 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     ///
     /// A superseded projection is left as it is: what a later revision is doing matters more than what
     /// an old operation did.
+    /// `includingSuperseded` is for clearing a suspension, where the projection that records it may
+    /// already have been superseded by a later edit. Every other caller wants current projections only.
     private static func setProjectionState(
-        _ state: DestinationState, of row: OutboxRecord, in context: ModelContext
+        _ state: DestinationState, of row: OutboxRecord, in context: ModelContext,
+        includingSuperseded: Bool = false
     ) throws {
         // Copied out of the outbox row first: a #Predicate may compare a key path of the iterated
         // model only against plain values, not against a key path read from a different model object.
         let intakeID = row.intakeID
         let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
             predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
-        for projection in rows where projection.isCurrent
+        for projection in rows where (includingSuperseded || projection.isCurrent)
             && projection.revision == row.revision
             && projection.destinationRaw == row.destinationRaw
             && projection.actionRaw == row.kindRaw {

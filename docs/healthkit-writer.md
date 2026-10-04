@@ -245,6 +245,11 @@ gone noncurrent is still an undelivered, suspended operation. `suspendedOperatio
 each `needsAttention` projection to its operation whatever its currency; filtering on `isCurrent` would
 drop the suspension, retry the denied write forever and block the newer revision indefinitely.
 
+Re-arming has to reach the projection that actually **records** the suspension, superseded or not, for
+the same reason: clearing only current projections would leave the state at `needsAttention`, and since
+suspension is matched by state the operation would stay suspended and the re-arm would silently do
+nothing. Every other projection update deliberately touches current projections only.
+
 The backoff is **1, 5 and 30 minutes, then every 2 hours**
 (`HealthKitDeliveryWorker.backoffSeconds(afterAttempt:)`). Backoff rather than a fixed interval: one
 failure is usually a store error, while a failure that never clears is a device that is asleep or out of

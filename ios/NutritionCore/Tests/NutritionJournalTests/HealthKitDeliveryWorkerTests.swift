@@ -25,10 +25,19 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         private var deletedIdentifiers: [String] = []
         private var saveCallCount = 0
         private var order: [String] = []
+        private var attemptedVersions: [Int] = []
 
         /// The samples written so far, in the order they were passed in.
         var saved: [HealthKitSampleSpec] {
             lock.withLock { savedSpecs }
+        }
+        /// The sync version of every save that was **attempted**, successful or not.
+        ///
+        /// This distinguishes "revision 2 was never offered to the writer at all" from "revision 2 was
+        /// offered and the write failed". `saved` only records successes, so a writer that fails
+        /// everything makes the two look identical.
+        var attemptedSyncVersions: [Int] {
+            lock.withLock { attemptedVersions }
         }
         /// Every sync identifier passed to a delete, in call order.
         var deleted: [String] {
@@ -59,12 +68,15 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             lock.withLock { deleteError = error }
         }
 
+        /// Clears what has been recorded. The armed failure is left alone on purpose: a test that wants
+        /// the next write to succeed says so with `failSaves(with: nil)`.
         func reset() {
             lock.withLock {
                 savedSpecs = []
                 deletedIdentifiers = []
                 saveCallCount = 0
                 order = []
+                attemptedVersions = []
             }
         }
 
@@ -77,6 +89,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             let error = lock.withLock { () -> HealthSampleWriterError? in
                 saveCallCount += 1
                 order.append("save")
+                attemptedVersions.append(contentsOf: specs.map(\.syncVersion))
                 guard saveError == nil else { return saveError }
                 savedSpecs.append(contentsOf: specs)
                 return nil
@@ -563,7 +576,12 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(blockedBy, first.operationID)
     }
 
-    /// The same rule when the earlier operation failed outright and is waiting on its backoff.
+    /// The same rule when the earlier operation failed outright and is on its backoff.
+    ///
+    /// The writer stays armed across this run, so revision 1 is retried and fails again. What must not
+    /// happen is revision 2 reaching the writer at all — the assertion is on the sync versions the
+    /// writer was **offered**, not on the save-call count, because revision 1's own retry is a
+    /// legitimate write attempt and counting it would only obscure which revision was offered what.
     func testANewerRevisionIsNotDeliveredWhileAnEarlierOneFailedAndIsRetrying() async throws {
         let (store, writer, _, worker) = try makeWorker()
 
@@ -577,8 +595,14 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
         _ = await worker.runOnce(now: when.addingTimeInterval(120))
 
-        XCTAssertEqual(writer.saveCalls, 0, "revision 1 failed and is on its backoff, so revision 2 waits")
-        XCTAssertEqual(try store.pendingOutbox().count, 4, "both HealthKit operations stay queued")
+        XCTAssertEqual(
+            writer.attemptedSyncVersions, [1],
+            "revision 1 is due again and may be retried; revision 2 must never be offered to the writer")
+        XCTAssertEqual(writer.saved, [], "nothing was written: the armed failure rejects every save")
+        XCTAssertEqual(
+            try store.pendingOutbox().filter { $0.destination == .healthKit }.count, 2,
+            "both HealthKit operations stay queued")
+        XCTAssertEqual(try healthKitOperation(store, kind: .upsert)?.revision, 1)
     }
 
     /// Once the earlier revision is delivered, the later one follows in the same run.
@@ -818,6 +842,32 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             deleteProjection.state, .pending,
             "the retraction is not delivered, so its projection must not claim it was")
         XCTAssertTrue(deleteProjection.isCurrent)
+    }
+
+    /// Re-arming has to reach the projection that actually records the suspension, even when a later
+    /// edit has made it noncurrent. Otherwise the state stays `needsAttention`, suspension survives the
+    /// re-arm, and the operation is never delivered again.
+    func testReArmingClearsTheSuspensionRecordedOnASupersededProjection() throws {
+        let store = try makeStore(try makeDirectory())
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let operationID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        try store.recordFailure(operationID: operationID, retryAt: nil, needsAttention: true)
+        XCTAssertTrue(try store.suspendedOperationIDs().contains(operationID))
+
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "second try", now: when)
+        XCTAssertTrue(
+            try store.suspendedOperationIDs().contains(operationID),
+            "the suspension belongs to the operation, not to the projection having gone noncurrent")
+
+        try store.rearmDelivery(operationID: operationID)
+
+        XCTAssertFalse(
+            try store.suspendedOperationIDs().contains(operationID),
+            "re-arming must clear the suspension even though the projection is superseded")
+        let operation = try XCTUnwrap(try store.pendingOutbox().first { $0.operationID == operationID })
+        XCTAssertNil(operation.nextAttemptAt, "and the operation is due again")
     }
 
     /// The same separation the other way round: acknowledging the delete must not mark the upsert.
