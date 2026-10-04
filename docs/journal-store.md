@@ -13,7 +13,11 @@ HealthKit, network or worker code.
   snapshot id and a change reason. Revisions are never rewritten.
 - `ProductDefinition`: an immutable snapshot. Editing a product creates a new snapshot
   id; old revisions keep the snapshot they used. Re-using an id with different content
-  is refused.
+  is refused. It also carries the nutrient values the product states, on the basis
+  `labelBasis` names, as JSON decimal text (every state is spelled out: `known`, `unknown`,
+  `notApplicable`, `belowThreshold`). A nutrient the product does not state is absent, which
+  reads as unknown and never as zero. A snapshot written before this column existed reads
+  back as a product that states nothing.
 - `DestinationProjection`: per revision and destination, the desired action and its
   state: `pending`, `inProgress`, `succeeded`, `needsAttention`, `disabled`.
   A later revision or a delete marks older projections as not current.

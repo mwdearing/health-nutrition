@@ -258,6 +258,47 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.coverage.first?.text, "1 of 1 foods lack potassium")
     }
 
+    /// Today's lookup reads the values the entry's product snapshot carries, so a logged recipe counts
+    /// as one food that states its nutrients instead of one food per nutrient.
+    func testSnapshotLookupResolvesTheNutrientsALoggedRecipeCarries() throws {
+        let store = try makeStore()
+        let version = RecipeVersion(
+            recipeID: "recipe-1", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour", quantity: Quantity(value: 200, unit: .g),
+                    perUnit: [
+                        "energy": .known(Decimal(360), .kcal), "protein": .known(Decimal(13), .g),
+                        "sodium": .known(Decimal(2), .mg), "potassium": .known(Decimal(300), .mg),
+                        "fiber": .known(Decimal(10), .g),
+                    ])
+            ],
+            yield: .servings(4), createdAt: now)
+        try RecipeLogger.logPortion(
+            store: store, version: version, portion: 1, now: now, id: UUID().uuidString.lowercased(),
+            timeZoneIdentifier: "UTC", meal: nil)
+
+        let model = TodayViewModel(
+            store: store, lookup: SnapshotNutrientFacts(), timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertEqual(model.rows.count, 1)
+        XCTAssertEqual(model.rows.first?.title, "Oat bake")
+        for line in model.coverage {
+            XCTAssertEqual(line.text, "0 of 1 foods lack \(line.nutrient)", line.text)
+        }
+    }
+
+    /// An entry typed by hand has no snapshot, so its nutrients stay unknown rather than becoming zero.
+    func testSnapshotLookupLeavesAnEntryWithoutASnapshotUnknown() throws {
+        let store = try makeStore()
+        _ = try addFood(store, name: "Banana", id: "banana", at: now)
+        let model = TodayViewModel(
+            store: store, lookup: SnapshotNutrientFacts(), trackedNutrients: ["potassium"],
+            timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertEqual(model.coverage.first?.text, "1 of 1 foods lack potassium")
+    }
+
     func testKnownZeroIsKnownNotMissingAndNotApplicableIsLeftOut() throws {
         let store = try makeStore()
         _ = try addFood(store, name: "Salt free", id: "zero", at: now)

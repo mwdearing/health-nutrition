@@ -24,13 +24,31 @@ Saving always writes the next version number (1 for a new recipe, else latest pl
 
 ## Logging and provenance
 
-Logging a portion makes one journal intake in category `recipe`, with one component per nutrient whose per-portion value is known. Unknown nutrients are omitted, never written as zero. If no nutrient is known, nothing is logged.
+Logging a portion makes one journal intake in category `recipe` with ONE component, named after the
+recipe and holding the portion in the yield's own unit: servings for a yield counted in servings, the
+yield's unit (converted exactly through the unit registry) for a total yield. So a journal row reads as
+the recipe the user chose, not as a list of nutrients, and repeating or favouriting the entry copies
+one amount rather than one amount per nutrient.
 
-The intake references a product snapshot with id `recipe:<recipeID>:v<N>`, origin `recipe_calculated` and catalog version `N`. Later edits create a new snapshot id, so older entries keep the version they used. The frozen version itself stays in the recipe store.
+The intake references a product snapshot with id `recipe:<recipeID>:v<N>`, origin `recipe_calculated`,
+catalog version `N` and a label basis that says what the values are per. The snapshot carries the
+per-serving nutrient values, so Today resolves a logged recipe from its product the same way it
+resolves a barcode-looked-up product, through `SnapshotNutrientFacts`. A nutrient that is unknown for
+this version is stored as `.unknown` in the snapshot, never as zero; a known zero stays a zero in the
+snapshot and never becomes a component of its own. If no nutrient is known at all, nothing is logged.
+
+Later edits create a new snapshot id, so older entries keep the version they used. The frozen version
+itself stays in the recipe store. The export contract carries the snapshot's identity and basis but
+not its nutrient values, so an export says which version an entry used rather than restating the
+numbers.
 
 ## Invalid records
 
-Stored recipe rows that cannot be decoded or fail validation are skipped when listing and counted; the list screen says how many could not be read. Reading one such version directly reports a corrupt record.
+Every stored version row is decoded, not only the newest one of each recipe, so a row that cannot be
+read is skipped and counted wherever it sits in a recipe's history. A recipe whose newest version is
+damaged stays visible on the newest version that can be read. Reading one such version directly
+reports a corrupt record; reading a recipe's versions skips the damaged rows, so one of them never
+stops the next version from being saved.
 
 ## Deleting
 
@@ -51,6 +69,13 @@ files already opened and names the one that failed on the startup failure screen
 ## What the editor can change
 
 The editor asks for every nutrient the Today screen tracks by default: energy, protein, sodium,
-potassium and fiber. A nutrient left blank is unknown, never zero. The unit an ingredient's
-per-unit values are stated in is not entered in the editor: an existing value is carried through an
-edit unchanged, so a recipe stated per 100 g stays stated per 100 g.
+potassium and fiber. A nutrient left blank is unknown, never zero.
+
+A value that was stored in another unit of the same kind (protein in milligrams, say) is converted
+into the field's unit exactly, so an edit that only touches the title cannot turn 1000 mg into 1000 g.
+A value in a unit that cannot be converted at all keeps both its number and its own unit, and the
+field says which unit that is.
+
+The unit an ingredient's per-unit values are stated in is not entered in the editor: an existing value
+is carried through an edit unchanged, and the prompt above the nutrient fields names that basis unit
+rather than the ingredient's own unit.

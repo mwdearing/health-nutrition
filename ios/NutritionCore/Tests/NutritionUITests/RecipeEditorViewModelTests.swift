@@ -1,7 +1,7 @@
 import Foundation
 import NutritionDomain
-import NutritionJournal
 import XCTest
+@testable import NutritionJournal
 @testable import NutritionUI
 
 @MainActor
@@ -121,6 +121,88 @@ final class RecipeEditorViewModelTests: XCTestCase {
         XCTAssertNil(model.ingredients[0].basisUnit)
         XCTAssertTrue(model.save(now: when))
         XCTAssertNil(try store.version(recipeID: "recipe-new", number: 1)?.ingredients.first?.basisUnit)
+    }
+
+    /// A value stored in another unit of the same kind is converted into the field's unit, so a
+    /// title-only edit never turns 1000 mg of protein into 1000 g.
+    func testLoadedNutrientInAnotherUnitIsConvertedExactly() throws {
+        let store = try makeStore()
+        let version = RecipeVersion(
+            recipeID: "recipe-units", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour", quantity: Quantity(value: 200, unit: .g),
+                    perUnit: ["protein": .known(1000, .mg)])
+            ],
+            yield: .servings(4), createdAt: when)
+        try store.saveNewVersion(version)
+
+        let edit = RecipeEditorViewModel(store: store, editing: version)
+        XCTAssertEqual(edit.ingredients[0].nutrientTexts["protein"], "1")
+        XCTAssertNil(edit.ingredients[0].nutrientUnits["protein"])
+        XCTAssertTrue(edit.save(now: when), "\(edit.messages)")
+
+        let v2 = try XCTUnwrap(try store.version(recipeID: "recipe-units", number: 2))
+        XCTAssertEqual(v2.ingredients.first?.perUnit["protein"], .known(1, .g))
+    }
+
+    /// A unit that cannot be converted (a mass against an energy value) keeps both the number and the
+    /// unit it was stored in, rather than being written under the field's unit.
+    func testLoadedNutrientThatCannotBeConvertedKeepsItsOwnUnit() throws {
+        let store = try makeStore()
+        let version = RecipeVersion(
+            recipeID: "recipe-odd", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour", quantity: Quantity(value: 200, unit: .g),
+                    perUnit: ["protein": .known(1000, .iu)])
+            ],
+            yield: .servings(4), createdAt: when)
+        try store.saveNewVersion(version)
+
+        let edit = RecipeEditorViewModel(store: store, editing: version)
+        XCTAssertEqual(edit.ingredients[0].nutrientTexts["protein"], "1000")
+        XCTAssertEqual(edit.ingredients[0].nutrientUnits["protein"], .iu)
+        XCTAssertTrue(edit.save(now: when), "\(edit.messages)")
+
+        let v2 = try XCTUnwrap(try store.version(recipeID: "recipe-odd", number: 2))
+        XCTAssertEqual(v2.ingredients.first?.perUnit["protein"], .known(1000, .iu))
+    }
+
+    /// A damaged stored row still holds its version number, so saving takes the number the store expects
+/// rather than refusing the edit.
+    func testEditingSucceedsAfterADamagedStoredVersion() throws {
+        let store = try makeStore()
+        let first = filledModel(store)
+        XCTAssertTrue(first.save(now: when))
+        try store.insertRawRowForTesting(
+            recipeID: "recipe-new", number: 2, title: "Oat bake", payloadJSON: "{not json",
+            createdAt: when)
+
+        let edit = RecipeEditorViewModel(store: store, editing: try XCTUnwrap(store.version(recipeID: "recipe-new", number: 1)))
+        edit.title = "Oat bake, richer"
+        XCTAssertTrue(edit.save(now: when), "\(edit.messages)")
+        XCTAssertEqual(try store.version(recipeID: "recipe-new", number: 3)?.title, "Oat bake, richer")
+    }
+
+    /// The prompt above the nutrient fields names the unit the values are actually stated in.
+    func testBasisSymbolNamesTheExplicitBasisUnit() throws {
+        let store = try makeStore()
+        let version = RecipeVersion(
+            recipeID: "recipe-basis-label", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "milk", name: "Milk", quantity: Quantity(value: 250, unit: .mL),
+                    perUnit: ["protein": .known(3, .g)], basisUnit: .g)
+            ],
+            yield: .servings(2), createdAt: when)
+        try store.saveNewVersion(version)
+
+        let edit = RecipeEditorViewModel(store: store, editing: version)
+        XCTAssertEqual(edit.ingredients[0].unitSymbol, "mL")
+        XCTAssertEqual(edit.ingredients[0].basisSymbol, "g")
+        let fresh = RecipeEditorViewModel(store: store)
+        XCTAssertEqual(fresh.ingredients[0].basisSymbol, "g")
     }
 
     /// Every nutrient the Today screen tracks by default must be enterable in the recipe editor,

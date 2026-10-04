@@ -24,7 +24,8 @@ public protocol RecipeStore: AnyObject, Sendable {
     func saveNewVersion(_ version: RecipeVersion) throws
     func list() throws -> RecipeListResult
     func version(recipeID: String, number: Int) throws -> RecipeVersion?
-    /// All versions, oldest first. Still available after the recipe is deleted.
+    /// Every readable version, oldest first. Still available after the recipe is deleted; a stored
+    /// row that cannot be read is skipped and counted by `list()`.
     func versions(of recipeID: String) throws -> [RecipeVersion]
     /// Hides the recipe from `list()`. Every stored version is kept.
     func deleteRecipe(id: String) throws

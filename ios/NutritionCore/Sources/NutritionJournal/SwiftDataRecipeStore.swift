@@ -110,25 +110,25 @@ public final class SwiftDataRecipeStore: RecipeStore, @unchecked Sendable {
         try context.save()
     }
 
+    /// Every stored version is decoded, not only the newest one of each recipe: a row that cannot be
+    /// read is skipped and counted wherever it sits in a recipe's history, because editing a recipe
+    /// reads every version. The recipe stays visible on its newest version that can be read.
     public func list() throws -> RecipeListResult {
         let context = ModelContext(try openContainer())
         let tombstones = try context.fetch(FetchDescriptor<RecipeTombstoneRecord>())
         let hidden = Set(tombstones.map { $0.recipeID })
         let rows = try context.fetch(FetchDescriptor<RecipeVersionRecord>())
-        var latestByRecipe: [String: RecipeVersionRecord] = [:]
-        for row in rows where !hidden.contains(row.recipeID) {
-            if let current = latestByRecipe[row.recipeID], current.number >= row.number { continue }
-            latestByRecipe[row.recipeID] = row
-        }
-        var recipes: [RecipeVersion] = []
+        var latestByRecipe: [String: RecipeVersion] = [:]
         var skipped = 0
-        for row in latestByRecipe.values {
-            if let decoded = try? Self.decode(row) {
-                recipes.append(decoded)
-            } else {
+        for row in rows where !hidden.contains(row.recipeID) {
+            guard let decoded = try? Self.decode(row) else {
                 skipped += 1
+                continue
             }
+            if let current = latestByRecipe[decoded.recipeID], current.number >= decoded.number { continue }
+            latestByRecipe[decoded.recipeID] = decoded
         }
+        var recipes = Array(latestByRecipe.values)
         recipes.sort {
             if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
             return $0.recipeID < $1.recipeID
@@ -144,12 +144,15 @@ public final class SwiftDataRecipeStore: RecipeStore, @unchecked Sendable {
         return try Self.decode(row)
     }
 
+    /// Every readable version, oldest first. A row that cannot be decoded is skipped like everywhere
+    /// else, so one damaged version in a recipe's history does not stop the next one from being
+    /// written; `list()` counts the rows it skips.
     public func versions(of recipeID: String) throws -> [RecipeVersion] {
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<RecipeVersionRecord>(
             predicate: #Predicate<RecipeVersionRecord> { $0.recipeID == recipeID },
             sortBy: [SortDescriptor(\.number)]))
-        return try rows.map { try Self.decode($0) }
+        return rows.compactMap { try? Self.decode($0) }
     }
 
     public func deleteRecipe(id: String) throws {

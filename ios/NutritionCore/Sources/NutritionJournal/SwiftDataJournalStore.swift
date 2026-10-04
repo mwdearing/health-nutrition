@@ -67,10 +67,13 @@ enum JournalSchemaV1: VersionedSchema {
         var labelBasis: String
         var catalogOrigin: String
         var catalogVersion: String
+        /// JSON of the nutrient values the product states. Optional so a snapshot written before this
+        /// column existed still reads back, as a product that states nothing.
+        var nutrientsJSON: String?
 
         init(
             snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
-            labelBasis: String, catalogOrigin: String, catalogVersion: String
+            labelBasis: String, catalogOrigin: String, catalogVersion: String, nutrientsJSON: String?
         ) {
             self.snapshotID = snapshotID
             self.productID = productID
@@ -80,6 +83,7 @@ enum JournalSchemaV1: VersionedSchema {
             self.labelBasis = labelBasis
             self.catalogOrigin = catalogOrigin
             self.catalogVersion = catalogVersion
+            self.nutrientsJSON = nutrientsJSON
         }
     }
 
@@ -151,6 +155,16 @@ private struct StoredComponent: Codable {
     var name: String
     var amountText: String
     var unitSymbol: String
+}
+
+/// One stored nutrient value: the state, plus the amount and unit of a known value. Every decimal is
+/// POSIX text, so a value survives a round trip exactly. A state this build does not know is stored
+/// as written and reads back as unknown, never as zero.
+private struct StoredNutrient: Codable {
+    var id: String
+    var state: String
+    var valueText: String?
+    var unitSymbol: String?
 }
 
 public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
@@ -329,7 +343,8 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
         context.insert(ProductRecord(
             snapshotID: product.snapshotID, productID: product.productID, name: product.name,
             brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
-            catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion))
+            catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
+            nutrientsJSON: Self.encodeNutrients(product.nutrients)))
     }
 
     // MARK: Reads
@@ -491,7 +506,62 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
         ProductDefinition(
             snapshotID: row.snapshotID, productID: row.productID, name: row.name, brand: row.brand,
             barcode: row.barcode, labelBasis: row.labelBasis, catalogOrigin: row.catalogOrigin,
-            catalogVersion: row.catalogVersion)
+            catalogVersion: row.catalogVersion, nutrients: Self.decodeNutrients(row.nutrientsJSON))
+    }
+
+    /// The nutrient values a product states, sorted by id so the same values always write the same
+    /// text. Values that cannot be encoded are left out rather than stored as something else.
+    static func encodeNutrients(_ values: [String: NutrientValue]) -> String {
+        let stored = values.keys.sorted().compactMap { id -> StoredNutrient? in
+            guard let value = values[id] else { return nil }
+            switch value {
+            case .known(let amount, let unit):
+                return StoredNutrient(
+                    id: id, state: "known", valueText: DecimalText.encode(amount), unitSymbol: unit.symbol)
+            case .unknown:
+                return StoredNutrient(id: id, state: "unknown", valueText: nil, unitSymbol: nil)
+            case .notApplicable:
+                return StoredNutrient(id: id, state: "notApplicable", valueText: nil, unitSymbol: nil)
+            case .belowReportingThreshold(let unit):
+                return StoredNutrient(
+                    id: id, state: "belowThreshold", valueText: nil, unitSymbol: unit?.symbol)
+            }
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(stored) else { return "[]" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Reads the stored values. An entry that cannot be read is left out, so it reads as unknown
+    /// rather than as a number this build invented.
+    static func decodeNutrients(_ json: String?) -> [String: NutrientValue] {
+        guard let json, let data = json.data(using: .utf8),
+            let stored = try? JSONDecoder().decode([StoredNutrient].self, from: data)
+        else { return [:] }
+        var values: [String: NutrientValue] = [:]
+        for item in stored {
+            switch item.state {
+            case "known":
+                guard let text = item.valueText, let amount = DecimalText.decode(text),
+                    let symbol = item.unitSymbol, let unit = try? UnitRegistry.unit(for: symbol)
+                else { continue }
+                values[item.id] = .known(amount, unit)
+            case "unknown":
+                values[item.id] = .unknown
+            case "notApplicable":
+                values[item.id] = .notApplicable
+            case "belowThreshold":
+                if let symbol = item.unitSymbol, let unit = try? UnitRegistry.unit(for: symbol) {
+                    values[item.id] = .belowReportingThreshold(unit)
+                } else {
+                    values[item.id] = .belowReportingThreshold(nil)
+                }
+            default:
+                continue
+            }
+        }
+        return values
     }
 
     private static func encode(_ components: [IntakeComponent]) throws -> String {

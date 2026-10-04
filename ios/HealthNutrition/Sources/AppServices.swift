@@ -29,7 +29,10 @@ final class AppServices {
         self.journalStore = journalStore
         self.favoritesStore = favoritesStore
         self.recipeStore = recipeStore
-        today = TodayViewModel(store: journalStore)
+        // Today's coverage reads the nutrient values each entry's product snapshot carries, so a
+        // logged recipe or a looked-up product contributes what it states. An entry typed by hand has
+        // no snapshot and stays unknown, never zero.
+        today = TodayViewModel(store: journalStore, lookup: SnapshotNutrientFacts())
         journal = JournalViewModel(store: journalStore)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
         barcodeLookup = OpenFoodFactsProductLookup(

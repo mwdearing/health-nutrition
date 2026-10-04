@@ -85,7 +85,8 @@ public struct RecipeEditorView: View {
                 }
                 .accessibilityLabel(RecipeLabels.ingredientUnit(position))
             }
-            Text("Nutrients per 1 \(draft.unitSymbol); leave blank if unknown")
+            // The values are per the ingredient's basis unit, which is not always its own unit.
+            Text("Nutrients per 1 \(draft.basisSymbol); leave blank if unknown")
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)
             ForEach(model.nutrientFields) { field in
@@ -93,7 +94,9 @@ public struct RecipeEditorView: View {
                     TextField(field.label, text: nutrientBinding(draft.id, field.id))
                         .font(.body)
                         .accessibilityLabel(RecipeLabels.nutrientField(field.label, position: position))
-                    Text(field.unit.symbol).font(.body).foregroundStyle(TokenColors.textSecondary)
+                    // A value kept in its own unit says so, rather than sitting under the default one.
+                    Text(draft.nutrientUnits[field.id]?.symbol ?? field.unit.symbol)
+                        .font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
             }
             TextField("Density in g per mL (only to convert between mass and volume)", text: textBinding(draft.id, \.densityText))

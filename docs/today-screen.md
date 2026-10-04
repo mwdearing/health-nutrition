@@ -37,6 +37,12 @@ because there is no catalog yet. An unknown value counts as missing. A known zer
 Not-applicable values are left out of both numbers. Below-reporting-threshold values count in the total but are not
 missing.
 
+The app injects `SnapshotNutrientFacts`, which answers from the nutrient values the entry's product snapshot carries.
+A snapshot is read at most once per load however many components and nutrients refer to it, and one that cannot be read
+is treated as absent, which reads as unknown rather than as zero. The values are the product's own, on the basis its
+snapshot names: coverage asks only whether a value is known, and the stored value is never scaled to the component's
+amount. An entry typed by hand has no snapshot, so it stays unknown until a product or a calculated recipe is attached.
+
 ## Boundaries
 `NutritionUI` imports no HealthKit and no networking. Colours come only from the design tokens through
 `TokenColors.swift`; text uses Dynamic Type styles; every button and image has an accessibility label.

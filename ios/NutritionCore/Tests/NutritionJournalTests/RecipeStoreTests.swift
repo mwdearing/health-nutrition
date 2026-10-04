@@ -62,6 +62,32 @@ final class RecipeStoreTests: XCTestCase {
         }
     }
 
+    /// A damaged version in the middle of a recipe's history is counted like any other, and the
+    /// recipe stays on the newest version that can be read.
+    func testCorruptOlderVersionIsCountedAndTheRecipeStaysOnItsNewestReadableVersion() throws {
+        let store = try SwiftDataRecipeStore(url: try makeRecipeStoreURL(self))
+        try store.insertRawRowForTesting(
+            recipeID: "recipe-1", number: 1, title: "Oat bake", payloadJSON: "{not json",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000))
+        try store.saveNewVersion(sampleVersion(number: 2))
+        let result = try store.list()
+        XCTAssertEqual(result.skippedCount, 1)
+        XCTAssertEqual(result.recipes.map { $0.number }, [2])
+    }
+
+    /// Editing reads every version, so a damaged one must not stop the next version being written.
+    func testACorruptVersionDoesNotStopTheNextOneBeingSaved() throws {
+        let store = try SwiftDataRecipeStore(url: try makeRecipeStoreURL(self))
+        try store.saveNewVersion(sampleVersion())
+        try store.insertRawRowForTesting(
+            recipeID: "recipe-1", number: 2, title: "Oat bake", payloadJSON: "{not json",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_100))
+        XCTAssertEqual(try store.versions(of: "recipe-1").map { $0.number }, [1])
+        try store.saveNewVersion(sampleVersion(number: 3))
+        XCTAssertEqual(try store.versions(of: "recipe-1").map { $0.number }, [1, 3])
+        XCTAssertEqual(try store.list().recipes.map { $0.number }, [3])
+    }
+
     func testDeleteHidesRecipeButKeepsVersions() throws {
         let store = try SwiftDataRecipeStore(url: try makeRecipeStoreURL(self))
         try store.saveNewVersion(sampleVersion())

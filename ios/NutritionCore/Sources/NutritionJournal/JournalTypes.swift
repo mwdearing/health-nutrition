@@ -167,6 +167,14 @@ public struct ProductDefinition: Sendable, Hashable {
     public var labelBasis: String
     public var catalogOrigin: String
     public var catalogVersion: String
+    /// The nutrient values this product states, on the basis `labelBasis` names. A nutrient the
+    /// product does not state is absent, which reads as unknown and never as zero; a known zero is
+    /// stored as zero. Empty when the product carries no values.
+    ///
+    /// The values are the product's own, not the component's: they are not scaled to how much of the
+    /// product an intake records. A reader that needs the amount for one component scales them with
+    /// `labelBasis` itself.
+    public var nutrients: [String: NutrientValue]
 
     public init(
         snapshotID: String,
@@ -176,7 +184,8 @@ public struct ProductDefinition: Sendable, Hashable {
         barcode: String? = nil,
         labelBasis: String,
         catalogOrigin: String,
-        catalogVersion: String
+        catalogVersion: String,
+        nutrients: [String: NutrientValue] = [:]
     ) {
         self.snapshotID = snapshotID
         self.productID = productID
@@ -186,6 +195,12 @@ public struct ProductDefinition: Sendable, Hashable {
         self.labelBasis = labelBasis
         self.catalogOrigin = catalogOrigin
         self.catalogVersion = catalogVersion
+        self.nutrients = nutrients
+    }
+
+    /// The value for one nutrient; a nutrient this product does not state is unknown, never zero.
+    public func value(for nutrient: String) -> NutrientValue {
+        nutrients[nutrient] ?? .unknown
     }
 }
 

@@ -32,9 +32,17 @@ public struct RecipeIngredientDraft: Identifiable, Equatable {
     public var densityText: String = ""
     /// Per-unit values by nutrient id; blank means unknown.
     public var nutrientTexts: [String: String] = [:]
+    /// The unit a loaded value is stated in, when it differs from its editor field's unit and cannot
+    /// be converted to it exactly. The field still shows the number, so saving writes the value back
+    /// in the unit it was stored in rather than relabelling it.
+    public var nutrientUnits: [String: MeasureUnit] = [:]
     /// The unit the per-unit values are stated in, when it differs from `unitSymbol`. The editor has
     /// no field for it, so an existing value is carried through untouched.
     public var basisUnit: MeasureUnit?
+
+    /// The symbol the nutrient values are stated per: the explicit basis when there is one, else the
+    /// ingredient's own unit.
+    public var basisSymbol: String { basisUnit?.symbol ?? unitSymbol }
     /// Values the editor has no field for, carried over unchanged.
     var preserved: [String: NutrientValue] = [:]
     var sourceNote: String?
@@ -111,10 +119,20 @@ public final class RecipeEditorViewModel: ObservableObject {
             draft.basisUnit = ingredient.basisUnit
             draft.sourceNote = ingredient.sourceNote
             for (key, value) in ingredient.perUnit {
-                if nutrientFields.contains(where: { $0.id == key }), case .known(let amount, _) = value {
-                    draft.nutrientTexts[key] = DecimalFormatting.text(amount)
-                } else if !nutrientFields.contains(where: { $0.id == key }) {
+                guard let field = nutrientFields.first(where: { $0.id == key }) else {
                     draft.preserved[key] = value
+                    continue
+                }
+                guard case .known(let amount, let storedUnit) = value else { continue }
+                // The field shows a number, so a value stored in another unit of the same kind is
+                // converted into the field's unit exactly. A unit that cannot be converted (a mass
+                // against a volume with no density, say) keeps the number and its own unit, so saving
+                // never relabels 1000 mg as 1000 g.
+                if let converted = try? Quantity(value: amount, unit: storedUnit).converted(to: field.unit) {
+                    draft.nutrientTexts[key] = DecimalFormatting.text(converted.value)
+                } else {
+                    draft.nutrientTexts[key] = DecimalFormatting.text(amount)
+                    draft.nutrientUnits[key] = storedUnit
                 }
             }
             ingredients.append(draft)
@@ -176,7 +194,9 @@ public final class RecipeEditorViewModel: ObservableObject {
                 if text.isEmpty {
                     perUnit[field.id] = .unknown
                 } else if let value = Self.parseNonNegative(text) {
-                    perUnit[field.id] = .known(value, field.unit)
+                    // A value the editor could not express in this field's unit keeps the unit it was
+                    // loaded with; every other value is written in the field's own unit.
+                    perUnit[field.id] = .known(value, draft.nutrientUnits[field.id] ?? field.unit)
                 } else {
                     problems.append("Ingredient \(position): \(field.label) must be a number using digits and a point, or blank.")
                 }
@@ -217,13 +237,22 @@ public final class RecipeEditorViewModel: ObservableObject {
         do {
             var latest = 0
             if isEdit {
-                latest = try store.versions(of: recipeID).last?.number ?? 0
+                // A version that cannot be read is left out of this list but still holds its number,
+                // so the store, not this list, has the last word on which number comes next.
+                latest = (try? store.versions(of: recipeID))?.last?.number ?? 0
             }
-            let version = RecipeVersion(
+            var version = RecipeVersion(
                 recipeID: recipeID, number: latest + 1, title: trimmedTitle, ingredients: built,
                 yield: yieldValue, notes: notes, createdAt: now)
             try version.validate()
-            try store.saveNewVersion(version)
+            do {
+                try store.saveNewVersion(version)
+            } catch RecipeStoreError.versionConflict(let expected, _) {
+                version = RecipeVersion(
+                    recipeID: recipeID, number: expected, title: trimmedTitle, ingredients: built,
+                    yield: yieldValue, notes: notes, createdAt: now)
+                try store.saveNewVersion(version)
+            }
             savedVersion = version
             messages = []
             return true

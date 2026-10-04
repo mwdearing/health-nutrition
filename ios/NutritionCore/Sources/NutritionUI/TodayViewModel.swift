@@ -67,10 +67,13 @@ public final class TodayViewModel: ObservableObject {
             var newRows: [TodayRow] = []
             var waterTotal = Decimal(0)
             var skipped = 0
-            var foodComponents: [IntakeComponent] = []
+            var foodComponents: [(component: IntakeComponent, snapshot: ProductDefinition?)] = []
+            // One snapshot is read once per load, however many components and nutrients refer to it.
+            var snapshots: [String: ProductDefinition?] = [:]
             for intake in intakes.sorted(by: { $0.occurredAt > $1.occurredAt }) {
                 let revisions = try store.revisions(of: intake.id)
-                let components = revisions.first { $0.number == intake.currentRevision }?.components ?? []
+                let current = revisions.first { $0.number == intake.currentRevision }
+                let components = current?.components ?? []
                 if intake.category == "water" {
                     for component in components {
                         if component.unit.dimension == .volume,
@@ -84,7 +87,8 @@ public final class TodayViewModel: ObservableObject {
                         }
                     }
                 } else {
-                    foodComponents.append(contentsOf: components)
+                    let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                    for component in components { foodComponents.append((component, snapshot)) }
                 }
                 newRows.append(
                     TodayRow(
@@ -98,9 +102,9 @@ public final class TodayViewModel: ObservableObject {
             waterSkippedCount = skipped
             skippedIntakeCount = skippedIntakes
             coverage = trackedNutrients.map { nutrient in
-                CoverageLine.make(
-                    nutrient: nutrient,
-                    values: foodComponents.map { lookup.value(for: $0, nutrient: nutrient) })
+                CoverageLine.make(nutrient: nutrient, values: foodComponents.map {
+                    lookup.value(for: $0.component, snapshot: $0.snapshot, nutrient: nutrient)
+                })
             }
             errorMessage = nil
         } catch {
@@ -160,6 +164,18 @@ public final class TodayViewModel: ObservableObject {
 
     private static func isPositive(_ value: Decimal) -> Bool {
         !value.isNaN && value > 0
+    }
+
+    /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that
+    /// cannot be read is nil, which the lookup answers as unknown rather than as zero.
+    private static func snapshot(
+        of revision: IntakeRevision?, in cache: inout [String: ProductDefinition?], using store: JournalStore
+    ) -> ProductDefinition? {
+        guard let id = revision?.productSnapshotID else { return nil }
+        if let cached = cache[id] { return cached }
+        let found = try? store.product(snapshotID: id)
+        cache[id] = found
+        return found
     }
 
     /// Nil when the intake's stored time zone identifier is not a valid time zone (no fallback).
