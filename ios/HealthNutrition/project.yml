@@ -29,6 +29,8 @@ targets:
       - path: Resources
     dependencies:
       - package: NutritionCore
+        product: NutritionCore
+      - package: NutritionCore
         product: NutritionUI
       - package: NutritionCore
         product: NutritionJournal
