@@ -8,6 +8,9 @@ ROOT defaults to ``ios/NutritionCore``. Each finding is reported as
 ``path:line: rule: message``. The script exits 1 when there is at least one
 finding, 0 when the tree is clean and 2 on a usage error.
 
+A run over the package root also lints the app target beside it, so the CI
+invocation that names only ``ios/NutritionCore`` covers both SwiftUI surfaces.
+
 Rules
 -----
 colour-literal
@@ -23,6 +26,24 @@ forbidden-import
     attributed and access-level forms such as ``import class HealthKit.HKHealthStore``,
     ``@_implementationOnly import Network``, ``private import HealthKit`` and
     ``@preconcurrency public import HealthKit`` count too.
+unlabeled-image
+    In the SwiftUI layers: every ``Image(...)`` in a view has to be named for
+    VoiceOver. An image is fine when it is built as ``Image(decorative:)``, when
+    its own modifier chain carries ``.accessibilityLabel(...)`` or
+    ``.accessibilityHidden(true)``, when the control whose label it is carries
+    either of those, when it shares a control label with a ``Text`` that names
+    it, or when it is a ``Label(title, systemImage:)``, which speaks its own
+    title. The package module's scope is ``Sources/NutritionUI/`` only, and the
+    app target's is everything under its own ``Sources/``; an enclosing layout is
+    not a control, so text beside the image in an ``HStack`` names nothing.
+    A modifier written on a nested view belongs to that view, so a label inside
+    ``Image("photo").overlay { ... }`` leaves the outer image unnamed. A
+    ``Picker``, ``Menu`` or ``ControlGroup`` closure without a ``label:`` of its
+    own holds content rather than a label, so an image among its options needs a
+    name of its own. Text hidden with ``.accessibilityHidden(true)`` reads
+    nothing aloud and names nothing either. A modifier written inside an ``#if``
+    branch only counts when every configuration that compiles the image compiles
+    a name as well.
 binary-float
     In ``Sources/NutritionDomain/**`` and ``Sources/NutritionJournal/**``: no
     ``Double`` or ``Float``, and no untyped floating-point literal such as
@@ -40,7 +61,9 @@ string literals and the contents of regex literals are never inspected. Extended
 literals delimited with hashes are handled, and the expressions inside ``\\(``
 interpolations count as code, because they are. In a hash-delimited literal the
 interpolation needs the same number of hashes as the literal, so ``\\#(`` inside
-``#"..."#`` is code while a plain ``\\(`` there is text.
+``#"..."#`` is code while a plain ``\\(`` there is text. Both parentheses of an
+interpolation are blanked, so the brackets around a literal's contents stay
+balanced for the structural scanning the ``unlabeled-image`` rule does.
 
 A regex literal is ``/.../`` or ``#/.../#`` (and more hashes). To keep division
 out of it, a bare ``/`` only opens a regex where an expression may begin, and the
@@ -65,11 +88,17 @@ repository uses this mechanism today.
 """
 from __future__ import annotations
 
+import itertools
 import re
 import sys
 from pathlib import Path
 
 DEFAULT_ROOT = Path("ios") / "NutritionCore"
+
+# The SwiftUI surfaces of this repository. A run over the package root also
+# covers the app target beside it, so the CI invocation that names only
+# `ios/NutritionCore` still lints both.
+APP_ROOTS = ("HealthNutrition",)
 
 SKIPPED_DIRS = {".build", ".git", "DerivedData", "node_modules"}
 
@@ -103,11 +132,14 @@ BINARY_FLOAT_LITERAL = re.compile(
 
 ALLOW_COMMENT = re.compile(r"//\s*lint-allow:\s*(?P<rules>[A-Za-z0-9_,\s-]+?)\s*$")
 
+IMAGE_CALL = re.compile(r"\bImage\s*\(")
+
 RULES = (
     "colour-literal",
     "fixed-font",
     "forbidden-import",
     "binary-float",
+    "unlabeled-image",
 )
 
 MESSAGES = {
@@ -115,6 +147,10 @@ MESSAGES = {
     "fixed-font": "fixed font size; use a Dynamic Type text style",
     "forbidden-import": "forbidden framework use in this layer",
     "binary-float": "binary floating point; use Decimal",
+    "unlabeled-image": (
+        "image without an accessibility label; add .accessibilityLabel(...) "
+        "or mark it decorative with .accessibilityHidden(true)"
+    ),
 }
 
 
@@ -209,7 +245,8 @@ def _mask_regex(source: str, i: int, hashes: int, out: list[str]) -> int | None:
                 j += len(interpolator)
                 j = _mask_code(source, j, parts, stop_on_close_paren=True)
                 if j < n and source[j] == ")":
-                    parts.append(")")
+                    # Blanked for the same reason as in a string literal.
+                    parts.append(" ")
                     j += 1
                 emitted = j
                 continue
@@ -255,7 +292,10 @@ def _mask_string(
                 i += len(interpolator)
                 i = _mask_code(source, i, out, stop_on_close_paren=True, keep_comments=keep_comments)
                 if i < n and source[i] == ")":
-                    out.append(")")
+                    # The opening parenthesis was blanked above, so the closing
+                    # one is blanked too: a masked interpolation stays balanced,
+                    # and structural scanning of the surroundings stays correct.
+                    out.append(" ")
                     i += 1
                 continue
             nxt = source[i + 1]
@@ -409,6 +449,501 @@ def mask_code(source: str, keep_comments: bool = False) -> str:
     return "".join(out)
 
 
+OPENERS = "({["
+CLOSERS = ")}]"
+TRAILING_LABELS = re.compile(r"(?:label|title|icon|badge)\s*:\s*$")
+CHAIN_MEMBER = re.compile(r"\.[A-Za-z_][A-Za-z0-9_]*")
+ACCESSIBILITY_LABEL = re.compile(r"\.accessibilityLabel\s*\(")
+HIDDEN_TRUE = re.compile(r"\.accessibilityHidden\s*\(\s*true\s*\)")
+TEXT_CALL = re.compile(r"\bText\s*\(")
+# `Image(decorative:)` declares its own emptiness, so it needs no name.
+DECORATIVE_CALL = re.compile(r"\bImage\s*\(\s*decorative\s*:")
+# A view whose label closure names what VoiceOver reads. An image inside one of
+# these takes the control's accessible name; an image in a plain layout does not,
+# because the layout is not something a VoiceOver user operates.
+CONTROL_NAMES = frozenset({
+    "Button", "Menu", "Toggle", "Label", "Link", "NavigationLink", "Picker",
+    "Stepper", "Slider", "DisclosureGroup", "ControlGroup", "EditButton",
+})
+# Controls whose unlabelled closure holds content rather than a label: the actions
+# of a `Menu`, the options of a `Picker`, the views of a `ControlGroup`. A name
+# written on such a control names the control, not the items inside it, so an
+# image among the items has to be named in its own right. Their `label:` closure
+# is a label as usual.
+CONTENT_CONTROLS = frozenset({"Menu", "Picker", "ControlGroup"})
+# `#if`/`#elseif`/`#else`/`#endif`, one per line, indented or not.
+DIRECTIVE = re.compile(r"^[ \t]*#(if|elseif|else|endif)\b", re.MULTILINE)
+# The line that ends a branch of conditional compilation.
+BRANCH_END = re.compile(r"^[ \t]*#(?:elseif|else|endif)\b", re.MULTILINE)
+
+
+def _match_forward(masked: str, opening: int) -> int:
+    """Index of the bracket closing the one at ``opening``, or the end of text."""
+    depth = 0
+    for index in range(opening, len(masked)):
+        char = masked[index]
+        if char in OPENERS:
+            depth += 1
+        elif char in CLOSERS:
+            depth -= 1
+            if depth == 0:
+                return index
+    return len(masked)
+
+
+def _match_backward(masked: str, closing: int) -> int:
+    """Index of the bracket opening the one closed at ``closing``."""
+    depth = 0
+    for index in range(closing, -1, -1):
+        char = masked[index]
+        if char in CLOSERS:
+            depth += 1
+        elif char in OPENERS:
+            depth -= 1
+            if depth == 0:
+                return index
+    return 0
+
+
+def _chain_end(masked: str, start: int, bodies: list[tuple[int, int]] | None = None) -> int:
+    """End of the member-access chain that begins just after ``start``.
+
+    Each step consumes `.name` plus an optional argument list or trailing
+    closure, so modifiers applied to an expression are followed as far as they
+    reach. When ``bodies`` is given, the span of each trailing closure consumed
+    on the way is collected in it: a modifier written inside one belongs to the
+    view it is applied to, not to the expression the chain started from.
+    """
+    end = start
+    while True:
+        index = end
+        while index < len(masked) and masked[index].isspace():
+            index += 1
+        if index >= len(masked) or masked[index] != ".":
+            return end
+        member = CHAIN_MEMBER.match(masked, index)
+        if member is None:
+            return end
+        index = member.end()
+        while index < len(masked) and masked[index].isspace():
+            index += 1
+        if index < len(masked) and masked[index] in OPENERS:
+            closing = _match_forward(masked, index)
+            if bodies is not None and masked[index] == "{":
+                # A trailing closure holds the view a modifier is applied to; an
+                # argument list holds its arguments, which are part of this chain.
+                bodies.append((index, closing))
+            end = closing + 1
+        else:
+            end = index
+
+
+def _without_bodies(text: str, base: int, bodies: list[tuple[int, int]]) -> str:
+    """``text`` with every span in ``bodies`` blanked, keeping offsets intact.
+
+    The bodies of nested views are blanked so a modifier inside one of them is not
+    read as a modifier of the view around it.
+    """
+    if not bodies:
+        return text
+    chars = list(text)
+    for start, end in bodies:
+        for index in range(max(start - base, 0), min(end - base, len(chars))):
+            chars[index] = "\n" if chars[index] == "\n" else " "
+    return "".join(chars)
+
+
+def _enclosing_group(masked: str, position: int) -> tuple[int, int] | None:
+    """The innermost bracket pair surrounding ``position``, as a span."""
+    stack: list[tuple[int, str]] = []
+    for index in range(position):
+        char = masked[index]
+        if char in OPENERS:
+            stack.append((index, char))
+        elif char in CLOSERS and stack:
+            stack.pop()
+    if not stack:
+        return None
+    opening = stack[-1][0]
+    return opening, _match_forward(masked, opening)
+
+
+def _name_start(masked: str, end: int) -> int | None:
+    """Start of the identifier ending just before ``end``, or ``None``.
+
+    A qualified name counts as one identifier, so the scan walks over the dots in
+    ``SwiftUI.Button`` as well.
+    """
+    start = end
+    while start > 0 and (masked[start - 1].isalnum() or masked[start - 1] in "._"):
+        start -= 1
+    return None if start == end else start
+
+
+def _call_start(masked: str, opening: int) -> int:
+    """Start of the call whose argument list or trailing closure opens at ``opening``.
+
+    ``Button(action: {}) { ... }`` reaches the name through the argument list the
+    closure follows, while ``Menu { ... }`` and ``Button { ... } label: { ... }``
+    read it straight in front of the brace.
+    """
+    i = opening
+    while i > 0 and masked[i - 1].isspace():
+        i -= 1
+    if i > 0 and masked[i - 1] in CLOSERS:
+        argument_list = _match_backward(masked, i - 1)
+        start = _name_start(masked, argument_list)
+        if start is not None:
+            return start
+        i = argument_list
+        while i > 0 and masked[i - 1].isspace():
+            i -= 1
+    start = _name_start(masked, i)
+    return opening if start is None else start
+
+
+def _control_of(masked: str, opening: int) -> tuple[int, str] | None:
+    """The control whose label closure opens at ``opening``, as ``(start, name)``.
+
+    The label of a control is spelled in several ways, and the search steps back
+    over each of them in turn: `Button { ... } label: { ... }` labels its second
+    trailing closure, `Button(action: {}, label: { ... })` passes it as an
+    argument, and `Button(role: .destructive) { ... } label: { ... }` combines an
+    argument list with trailing closures, where the step over the separator
+    reaches the action closure and through it the call. ``None`` means the
+    closure labels nothing.
+    """
+    position = opening
+    while True:
+        end = position
+        while end > 0 and masked[end - 1].isspace():
+            end -= 1
+        marker = TRAILING_LABELS.search(masked[:end])
+        if marker is not None:
+            position = marker.start()
+            continue
+        if end > 0 and masked[end - 1] == ",":
+            # The label was passed as an argument: the argument list it sits in
+            # belongs to the control, so read the name off that list.
+            separator = end - 1
+            group = _enclosing_group(masked, separator)
+            if group is not None:
+                name = _call_name(masked, group[0])
+                if name in CONTROL_NAMES:
+                    return _call_start(masked, group[0]), name
+            position = separator
+            continue
+        if end < len(masked) and masked[end] in OPENERS:
+            call_open = end
+        elif end > 0 and masked[end - 1] in CLOSERS:
+            # The tail of an argument list or of an earlier closure of the same
+            # control, as in `Button(action: {}) { ... }`.
+            call_open = _match_backward(masked, end - 1)
+        else:
+            return None
+        name = _call_name(masked, call_open)
+        if name in CONTROL_NAMES:
+            return _call_start(masked, call_open), name
+        return None
+
+
+def _closure_label(masked: str, opening: int) -> str:
+    """The argument label a trailing closure at ``opening`` is written with."""
+    end = opening
+    while end > 0 and masked[end - 1].isspace():
+        end -= 1
+    marker = TRAILING_LABELS.search(masked[:end])
+    if marker is None:
+        return ""
+    return marker.group(0).split(":")[0].strip()
+
+
+def _call_name(masked: str, opening: int) -> str:
+    """Name of the call whose argument list or trailing closure opens at ``opening``.
+
+    ``Button(action: {}) { ... }`` reaches the name through the argument list,
+    ``Button { ... } label: { ... }`` reads it straight before the brace.
+    """
+    start = _call_start(masked, opening)
+    end = start
+    while end < len(masked) and (masked[end].isalnum() or masked[end] in "._"):
+        end += 1
+    return masked[start:end]
+
+
+def _conditional_blocks(masked: str) -> list[list[tuple[int, int] | None]]:
+    """The branches of every conditional-compilation block in the masked source.
+
+    A branch is one ``#if``, ``#elseif`` or ``#else`` arm. A block whose condition
+    is false leaves none of its branches compiled, which is the ``None`` entry a
+    block without an ``#else`` ends with, so a compiled configuration is exactly
+    one entry of every block.
+    """
+    blocks: list[list[tuple[int, int] | None]] = []
+    # Each open block is its branches plus whether an `#else` makes them total.
+    stack: list[list] = []
+    for match in DIRECTIVE.finditer(masked):
+        kind = match.group(1)
+        if kind == "if":
+            stack.append([[(match.start(), len(masked))], False])
+        elif kind in ("elseif", "else"):
+            if stack:
+                branches = stack[-1][0]
+                branches[-1] = (branches[-1][0], match.start())
+                branches.append((match.start(), len(masked)))
+                stack[-1][1] = stack[-1][1] or kind == "else"
+        elif stack:
+            branches, exhaustive = stack.pop()
+            branches[-1] = (branches[-1][0], match.start())
+            if not exhaustive:
+                branches.append(None)
+            blocks.append(branches)
+    # An unterminated block still delimits its branches up to the end of the file.
+    for branches, exhaustive in stack:
+        if not exhaustive:
+            branches.append(None)
+        blocks.append(branches)
+    return blocks
+
+
+def _within(span: tuple[int, int], position: int) -> bool:
+    return span[0] <= position < span[1]
+
+
+# Beyond this many branch combinations a set of exemptions cannot be checked
+# exactly, so the rule keeps its conservative answer instead of guessing.
+CONFIGURATION_LIMIT = 256
+
+
+def _holds_in_every_build(
+    text: str,
+    pattern: re.Pattern[str],
+    blocks: list[list[tuple[int, int] | None]],
+    image: int,
+    base: int = 0,
+) -> bool:
+    """Whether an exemption written in ``text`` survives every build configuration.
+
+    A modifier inside an ``#if` branch only counts when every configuration that
+    compiles the image also compiles one, so a label written in debug builds alone
+    names nothing in a release build and cannot exempt the image there.
+    """
+    return _exempts_in_every_build(
+        [base + match.start() for match in pattern.finditer(text)], blocks, image
+    )
+
+
+def _exempts_in_every_build(
+    offsets: list[int],
+    blocks: list[list[tuple[int, int] | None]],
+    image: int,
+) -> bool:
+    """Whether the exemptions written at ``offsets`` hold in every configuration.
+
+    Each offset is one way of naming the image, and the offsets are alternatives:
+    a configuration in which none of them is compiled leaves the image unnamed,
+    so it cannot be exempted.
+    """
+    if not offsets:
+        return False
+    choices = [
+        block
+        for block in blocks
+        if any(
+            span is not None and _within(span, offset)
+            for offset in [*offsets, image]
+            for span in block
+        )
+    ]
+    total = 1
+    for block in choices:
+        total *= len(block)
+    if total > CONFIGURATION_LIMIT:
+        return False
+
+    def branches_of(offset: int) -> set[tuple[int, int]]:
+        """The compiled entry of every relevant block, were `offset` compiled."""
+        return {
+            (position, branch)
+            for position, block in enumerate(choices)
+            for branch, span in enumerate(block)
+            if span is not None and _within(span, offset)
+        }
+
+    image_branches = branches_of(image)
+    candidates = [branches_of(offset) for offset in offsets]
+    for combination in itertools.product(*(range(len(block)) for block in choices)):
+        chosen = {(position, branch) for position, branch in enumerate(combination)}
+        if not image_branches <= chosen:
+            # This configuration does not compile the image at all.
+            continue
+        if not any(candidate <= chosen for candidate in candidates):
+            return False
+    return True
+
+
+def _modifier_chain_end(
+    masked: str, position: int, bodies: list[tuple[int, int]] | None = None
+) -> int:
+    """End of a modifier chain, following branches of conditional compilation.
+
+    A control's own modifiers can sit inside an ``#if`` around them, so every
+    branch between here and the end of the enclosing block is followed as far as
+    its own chain reaches. ``bodies`` collects the closures consumed on the way,
+    as in ``_chain_end``.
+    """
+    end = _chain_end(masked, position, bodies)
+    while True:
+        line = end
+        while line < len(masked) and masked[line].isspace():
+            line += 1
+        directive = DIRECTIVE.match(masked, line)
+        if directive is None:
+            return end
+        body = directive.end()
+        following = BRANCH_END.search(masked, body)
+        branch_end = following.start() if following is not None else len(masked)
+        end = max(
+            end,
+            _chain_end(masked, body, bodies),
+            _chain_end(masked, branch_end, bodies),
+        )
+
+
+def _call_expression_end(masked: str, start: int, position: int) -> int:
+    """Index just past the delimiters of the call written at ``start``.
+
+    ``position`` sits inside that call, so the brackets still open there are the
+    control's own: in `Button(action: {}, label: { ... })` the argument list
+    outlives the label closure, and the control's modifiers follow it.
+    """
+    depth = 0
+    for index in range(start, position):
+        if masked[index] in OPENERS:
+            depth += 1
+        elif masked[index] in CLOSERS:
+            depth -= 1
+    while depth > 0:
+        end = position
+        while end < len(masked) and masked[end].isspace():
+            end += 1
+        if end >= len(masked) or masked[end] not in CLOSERS:
+            break
+        depth -= 1
+        position = end + 1
+    return position
+
+
+def _first_closure(masked: str, start: int, end: int) -> tuple[int, int] | None:
+    """The first trailing closure of the call written in ``masked[start:end]``."""
+    depth = 0
+    for index in range(start, end):
+        char = masked[index]
+        if char in OPENERS:
+            if depth == 0 and char == "{":
+                return index, _match_forward(masked, index) + 1
+            depth += 1
+        elif char in CLOSERS:
+            depth -= 1
+    return None
+
+
+def _label_window(masked: str, start: int) -> tuple[int, str, list[tuple[int, int]]] | None:
+    """The control an ``Image`` is the label of, as ``(start, text, labels)``.
+
+    Nested layouts are climbed through, so an image inside an ``HStack`` inside
+    a button label still reaches the button. The text is the control expression,
+    which reaches its own modifiers but not the bodies of the views nested in it,
+    and the labels are the spans whose text names the control.
+    """
+    position = start
+    while True:
+        group = _enclosing_group(masked, position)
+        if group is None:
+            return None
+        opening, closing = group
+        control = _control_of(masked, opening)
+        if control is None:
+            # A plain layout: it names nothing itself, but the control it sits in
+            # still may, so keep climbing outwards.
+            position = opening
+            continue
+        control_start, name = control
+        if name in CONTENT_CONTROLS and not _closure_label(masked, opening):
+            # The closure holds the actions or options of the control rather than
+            # its label, so it names nothing and the climb goes on outwards.
+            position = opening
+            continue
+        bodies: list[tuple[int, int]] = []
+        control_end = _modifier_chain_end(
+            masked, _call_expression_end(masked, control_start, closing + 1), bodies
+        )
+        labels = [(opening, closing + 1)]
+        if name == "Label":
+            title = _first_closure(masked, control_start, control_end)
+            if title is not None and title != labels[0]:
+                # A `Label` speaks its title, so the title names the image in its
+                # icon closure.
+                labels.append(title)
+        text = _without_bodies(
+            masked[control_start:control_end], control_start, [*bodies, *labels]
+        )
+        return control_start, text, labels
+
+
+def _visible_texts(masked: str, span: tuple[int, int]) -> list[int]:
+    """Offsets of the ``Text`` calls in ``span`` that VoiceOver still reads.
+
+    Text hidden from the accessibility tree reads nothing aloud, so it does not
+    name a control either.
+    """
+    offsets = []
+    for match in TEXT_CALL.finditer(masked, span[0], span[1]):
+        position = match.start()
+        bodies: list[tuple[int, int]] = []
+        end = _chain_end(masked, _match_forward(masked, match.end() - 1) + 1, bodies)
+        chain = _without_bodies(masked[position:end], position, bodies)
+        if HIDDEN_TRUE.search(chain):
+            continue
+        offsets.append(position)
+    return offsets
+
+
+def unlabeled_images(masked: str) -> list[int]:
+    """Offsets of every ``Image(...)`` VoiceOver would meet without a name."""
+    blocks = _conditional_blocks(masked)
+    found = []
+    for match in IMAGE_CALL.finditer(masked):
+        start = match.start()
+        if DECORATIVE_CALL.match(masked, start):
+            # `Image(decorative:)` says so itself.
+            continue
+        bodies: list[tuple[int, int]] = []
+        own_end = _modifier_chain_end(masked, _match_forward(masked, match.end() - 1) + 1, bodies)
+        own_chain = _without_bodies(masked[start:own_end], start, bodies)
+        if _holds_in_every_build(own_chain, ACCESSIBILITY_LABEL, blocks, start, start):
+            continue
+        if _holds_in_every_build(own_chain, HIDDEN_TRUE, blocks, start, start):
+            # The image declares itself decorative.
+            continue
+        window = _label_window(masked, start)
+        if window is not None:
+            control_start, control, labels = window
+            if _holds_in_every_build(control, ACCESSIBILITY_LABEL, blocks, start, control_start):
+                continue
+            if _holds_in_every_build(control, HIDDEN_TRUE, blocks, start, control_start):
+                continue
+            # Text in the same control label names the control; text in an
+            # enclosing layout names something else entirely.
+            if any(
+                _exempts_in_every_build(_visible_texts(masked, span), blocks, start)
+                for span in labels
+            ):
+                continue
+        found.append(start)
+    return found
+
+
 def allowed_rules(line: str) -> set[str]:
     """Rule names allowed on this line by a trailing ``lint-allow`` comment."""
     match = ALLOW_COMMENT.search(line.rstrip())
@@ -421,6 +956,21 @@ def allowed_rules(line: str) -> set[str]:
 def applies(rel: str, prefixes: tuple[str, ...]) -> bool:
     posix = rel.replace("\\", "/")
     return any(posix.startswith(prefix) for prefix in prefixes)
+
+
+def is_view_scope(rel: str, root: Path) -> bool:
+    """Whether `rel` is SwiftUI view code the accessibility rules apply to.
+
+    The package module keeps its views under `Sources/NutritionUI/`, and its
+    other modules are domain and provider code that never imports SwiftUI, so
+    they are out of scope even though they sit under `Sources/` too. The app
+    target keeps its own views directly under `Sources/`, which makes every
+    file there a view surface.
+    """
+    posix = rel.replace("\\", "/")
+    if root.name in APP_ROOTS:
+        return posix.startswith("Sources/")
+    return posix.startswith("Sources/NutritionUI/")
 
 
 def check_file(path: Path, root: Path) -> list[tuple[int, str, str]]:
@@ -477,6 +1027,16 @@ def check_file(path: Path, root: Path) -> list[tuple[int, str, str]]:
                 continue
             found[(number, rule)] = None
 
+    # `unlabeled-image` is not a per-module matter: it covers NutritionUI and
+    # whatever the app target keeps under its own Sources directory, since both
+    # are the SwiftUI surfaces VoiceOver reads.
+    if is_view_scope(rel, root):
+        for position in unlabeled_images(masked):
+            number = line_of(position)
+            if number - 1 >= len(allows) or "unlabeled-image" in allows[number - 1]:
+                continue
+            found[(number, "unlabeled-image")] = None
+
     order = {name: index for index, name in enumerate(RULES)}
     return [(number, rule, MESSAGES[rule]) for number, rule in sorted(found, key=lambda k: (k[0], order[k[1]]))]
 
@@ -498,12 +1058,28 @@ def lint(root: Path) -> list[str]:
     return lines
 
 
+def roots_to_lint(root: Path) -> list[Path]:
+    """The roots one run covers: the given one, and the app target beside it.
+
+    CI invokes the linter with the package root, so a rule that applies to the
+    app target too has to be enforced from that same invocation; otherwise an
+    unlabeled image under `ios/HealthNutrition/Sources` would only ever be
+    reported locally.
+    """
+    roots = [root]
+    if root.name not in APP_ROOTS:
+        roots.extend(root.parent / name for name in APP_ROOTS if (root.parent / name).is_dir())
+    return roots
+
+
 def main(argv: list[str]) -> int:
     root = Path(argv[1]) if len(argv) > 1 else DEFAULT_ROOT
     if not root.is_dir():
         print(f"error: not a directory: {root}", file=sys.stderr)
         return 2
-    findings = lint(root)
+    findings: list[str] = []
+    for covered in roots_to_lint(root):
+        findings.extend(lint(covered))
     for line in findings:
         print(line)
     if findings:
