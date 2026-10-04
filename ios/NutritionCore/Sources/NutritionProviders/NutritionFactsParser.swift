@@ -59,7 +59,7 @@ public enum NutritionFactsParser {
     /// The pattern is built where it is used rather than kept in a static property, because a `Regex`
     /// value is not `Sendable` and this type is used from any context.
     private static func percentDailyValue() -> Regex<Substring> {
-        #/(\d+(?:\.\d+)?)\s*%/#
+        #/(?:\d+(?:\.\d+)?)\s*%/#
     }
 
     private static let posix = Locale(identifier: "en_US_POSIX")
