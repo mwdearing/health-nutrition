@@ -69,6 +69,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let importNotEmptyMessage =
         "This phone already has journal entries. An import only works on a journal that is empty."
 
+    public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
     public static let eraseConfirmationMessage =
         "Every entry, favorite and recipe this app stores on this device is deleted, along with any export "
