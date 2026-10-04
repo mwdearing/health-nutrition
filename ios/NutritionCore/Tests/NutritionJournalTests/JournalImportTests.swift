@@ -195,7 +195,7 @@ final class JournalImportTests: XCTestCase {
 
         let restored = try favoritesStore.list().sorted { $0.id < $1.id }
         XCTAssertEqual(restored.map(\.id), ["fav-oats-1", "fav-tea-1"])
-        XCTAssertEqual(restored.map(\.components.map(\.amountText)), [["0.5"], ["250"]])
+        XCTAssertEqual(restored.map { $0.components.map(\.amountText) }, [["0.5"], ["250"]])
         XCTAssertEqual(restored.map(\.productSnapshotID), ["snap-oats-1", nil])
         XCTAssertEqual(restored.first?.displayName, "Sample oats")
         XCTAssertEqual(restored.first?.meal, "breakfast")
