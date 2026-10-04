@@ -21,6 +21,10 @@ public typealias ConnectionsPrivacyExportWriter = (
     _ data: Data, _ url: URL, _ options: Data.WritingOptions
 ) throws -> Void
 
+/// Deletes one exported file. Injected so a test can stand in for a file the system will not delete;
+/// the erase has to hear about that rather than report a deletion it did not make.
+public typealias ConnectionsPrivacyExportRemover = (_ url: URL) throws -> Void
+
 /// State of the export action on the screen.
 public enum ConnectionsPrivacyExportState: Equatable {
     case idle
@@ -37,30 +41,48 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let appleHealthTitle = "Apple Health"
     public static let healthRelayTitle = "HealthRelay"
     public static let arrivingNote = "This connection arrives in a later release. It cannot be switched on yet."
-    public static let privacySummary = """
-        Your journal stays on this device. Nothing is uploaded and nothing is sent to Apple or to a server \
-        unless you ask for it. The export below is the only way data leaves this screen, and only because you \
-        tap it: it writes a JSON copy into a temporary file that the system share sheet can hand to an app you \
-        choose.
-        """
+    // Written as concatenated literals rather than one multi-line literal: the lint scripts and the
+    // acceptance mask string literals with a pattern that pairs quotes naively, and a run of three
+    // quotes shifts every pairing after it far enough to swallow real code.
+    public static let privacySummary =
+        "Your journal stays on this device. Nothing is uploaded and nothing is sent to Apple or to a server "
+        + "unless you ask for it. The export below is the only way data leaves this screen, and only because "
+        + "you tap it: it writes a JSON copy into a temporary file that the system share sheet can hand to "
+        + "an app you choose."
     public static let exportButtonTitle = "Export journal"
     public static let shareButtonTitle = "Share the export"
     public static let exportFailedMessage = "Could not export the journal."
     public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
-    public static let eraseConfirmationMessage = """
-        Every entry, favorite and recipe this app stores on this device is deleted, along with any copy \
-        it has exported. This cannot be undone.
-        """
+    public static let eraseConfirmationMessage =
+        "Every entry, favorite and recipe this app stores on this device is deleted, along with any export "
+        + "file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
+        + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
+        + "it there yourself."
     public static let eraseConfirmationTitle = "Erase all data?"
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
     /// only in the dialog that follows.
-    public static let eraseFooterMessage = """
-        Erases the journal, favorites and recipes this app stores on this device. Nothing has been sent \
-        anywhere, so nothing has to be deleted anywhere else.
-        """
+    public static let eraseFooterMessage =
+        "Erases the journal, favorites and recipes this app stores on this device, plus any export file "
+        + "it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
+        + "or in another app — is not erased: delete it there yourself."
     public static let eraseFailedMessage =
         "Some stored data could not be erased. Quit and reopen the app, then try again."
+    /// The names the exporter writes, as `fileName(exportedAt:)` builds them. The erase sweeps the
+    /// temporary directory for these, so an export left behind by a session that ended without the
+    /// screen tidying up is still removed.
+    public static let exportFileNamePrefix = "journal-export-"
+    public static let exportFileNameSuffix = ".json"
+    /// The name the exporter would write for `exportedAt`, so a test can place a strayed file without
+    /// duplicating the format.
+    public static func exportFileName(for exportedAt: Date) -> String {
+        JournalExporter.fileName(exportedAt: exportedAt)
+    }
+    /// Whether one name in the temporary directory is this app's export. A file the app did not write
+    /// is never touched, whatever it is called.
+    public static func exportFilePatternMatches(_ name: String) -> Bool {
+        name.hasPrefix(exportFileNamePrefix) && name.hasSuffix(exportFileNameSuffix)
+    }
     public static let unavailableVersion = "unknown"
     /// Fixed until the app target exists and can inject its real version string.
     public static let defaultAppVersion = "0.0.0-development"
@@ -86,6 +108,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let favorites: FavoritesStore?
     private let appVersion: String
     private let writer: ConnectionsPrivacyExportWriter
+    private let remover: ConnectionsPrivacyExportRemover
     /// One entry per store file this app keeps. `eraseAllData()` runs them all; the app injects the real
     /// stores, and a test injects recorders or a store that refuses.
     private let erasers: [JournalErasing]
@@ -99,17 +122,24 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         try data.write(to: url, options: options)
     }
 
+    /// The real delete. Replacing it is only for tests.
+    public static func removeExport(at url: URL) throws {
+        try FileManager.default.removeItem(at: url)
+    }
+
     public init(
         store: JournalStore, favorites: FavoritesStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
-        erasers: [JournalErasing] = []
+        erasers: [JournalErasing] = [],
+        remover: @escaping ConnectionsPrivacyExportRemover = ConnectionsPrivacyViewModel.removeExport
     ) {
         self.store = store
         self.favorites = favorites
         self.appVersion = appVersion
         self.writer = writer
         self.erasers = erasers
+        self.remover = remover
     }
 
     public var privacyText: String { Self.privacySummary }
@@ -194,9 +224,12 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                 failed = true
             }
         }
-        // The exported copy holds the same history as the stores just emptied, so it goes with them
-        // rather than sitting in the temporary directory with nothing able to remove it.
-        removeExportFile()
+        // Every export file this app wrote goes, not only the one this model remembers: the app can be
+        // killed after an export, and the next session's model starts with no URL to delete.
+        if !removeEveryExportFile() { failed = true }
+        // The handle this screen was holding is one of those files, or is already gone. Clearing it
+        // cannot fail: the sweep above has removed whatever was still there.
+        forgetExportFile()
         entryCount = 0
         exportState = .idle
         errorMessage = failed ? Self.eraseFailedMessage : nil
@@ -204,13 +237,37 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         return !failed
     }
 
-    /// Deletes the file while its URL is still known. A file that is already gone is not an error.
-    private func removeExportFile() {
-        guard let url = exportFileURL else {
-            exportFileName = nil
-            return
+    /// Removes every `journal-export-*.json` in the temporary directory and reports whether all of them
+    /// are gone.
+    ///
+    /// A file that cannot be deleted, or a directory that cannot be read, makes this return false: the
+    /// erase promised to remove exported copies, and a copy it left behind is worse than a reported
+    /// failure, because the person would stop looking for it. Every other file is still attempted, so
+    /// one stubborn file does not keep the rest.
+    private func removeEveryExportFile() -> Bool {
+        let manager = FileManager.default
+        let directory = manager.temporaryDirectory
+        guard let names = try? manager.contentsOfDirectory(atPath: directory.path) else { return false }
+        var removed = true
+        for name in names where Self.exportFilePatternMatches(name) {
+            do {
+                try remover(directory.appendingPathComponent(name))
+            } catch {
+                removed = false
+            }
         }
-        try? FileManager.default.removeItem(at: url)
+        return removed
+    }
+
+    /// Deletes the file while its URL is still known. A file that is already gone is not an error: this is
+    /// the screen's own tidying up on the way out, where there is nobody left to tell.
+    private func removeExportFile() {
+        if let url = exportFileURL { try? remover(url) }
+        forgetExportFile()
+    }
+
+    /// Drops the remembered copy without touching the disk.
+    private func forgetExportFile() {
         exportFileURL = nil
         exportFileName = nil
     }

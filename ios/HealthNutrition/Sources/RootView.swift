@@ -7,6 +7,10 @@ import NutritionUI
 @MainActor
 struct RootView: View {
     let services: AppServices
+    /// Observed rather than reached through `services`, so publishing a change on it re-evaluates this
+    /// shell. Reading it through the plain property left the erase handler below waiting for some
+    /// unrelated change before it ran, with erased entries still on screen.
+    @ObservedObject var connections: ConnectionsPrivacyViewModel
 
     @State private var selection: AppTab = .today
     @State private var addingIntake = false
@@ -33,6 +37,7 @@ struct RootView: View {
 
     init(services: AppServices) {
         self.services = services
+        _connections = ObservedObject(wrappedValue: services.connections)
         _recipeList = State(initialValue: RecipeListViewModel(store: services.recipeStore))
     }
 
@@ -76,7 +81,7 @@ struct RootView: View {
 
             LibraryView(
                 model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
-                connections: services.connections
+                connections: connections
             )
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
@@ -98,7 +103,7 @@ struct RootView: View {
         }
         // An erase on the Connections and privacy screen empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.
-        .onChange(of: services.connections.eraseGeneration) { _, _ in
+        .onChange(of: connections.eraseGeneration) { _, _ in
             reload()
             recipeList.load()
         }
