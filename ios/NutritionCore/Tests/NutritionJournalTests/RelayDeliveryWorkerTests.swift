@@ -176,7 +176,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
                 if let detail { members.append("\"detail\": \"\(detail)\"") }
                 entries.append("{" + members.joined(separator: ", ") + "}")
             }
-            return Data("{\"results\": [" + entries.joined(separator: ", ") + "]}".utf8)
+            let document = "{\"results\": [" + entries.joined(separator: ", ") + "]}"
+            return Data(document.utf8)
         }
 
         static func errorBody(_ error: String?) -> Data {
@@ -655,8 +656,12 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     func testTheRevisionsOfOneIntakeAreSentInOrder() async throws {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "more water", now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "even more", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more water",
+            now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "even more",
+            now: when)
         // Read the queue's own order before the run: it is oldest revision first, which is what has to be
         // preserved on the wire.
         let queuedInOrder = try pendingRelay(store, intakeID: intakeID).map(\.operationID)
@@ -675,7 +680,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     func testTheRevisionsOfOneIntakeTravelInOneBatchInRevisionOrder() async throws {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "more", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
         transport.answerEverythingAccepted()
 
         _ = await worker.runOnce(now: when)
@@ -691,8 +697,11 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     func testARefusedOperationIsParkedWhileTheRestOfItsBatchIsDelivered() async throws {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "more", now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "even more", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "even more",
+            now: when)
         let queuedInOrder = try pendingRelay(store, intakeID: intakeID).map(\.operationID)
         transport.answer(.init(resultsByOperation: [queuedInOrder[0]: .permanentFailure]))
 
@@ -717,7 +726,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     func testASuspendedOperationHoldsBackTheLaterRevisionsOfTheSameIntake() async throws {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "more", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
         let first = try XCTUnwrap(relayOperation(store, intakeID: intakeID)?.operationID)
         try store.recordFailure(
             operationID: first, retryAt: nil, needsAttention: true, reason: "a domain conflict")
@@ -739,7 +749,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     func testAnOperationThatIsNotDueYetIsReportedAndBlocksWhatIsBehindIt() async throws {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "more", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
         let first = try XCTUnwrap(relayOperation(store, intakeID: intakeID)?.operationID)
         try store.recordFailure(
             operationID: first, retryAt: when.addingTimeInterval(600), needsAttention: false, reason: nil)
@@ -778,7 +789,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     func testNothingIsSentWhenTheRelayDestinationIsDisabled() async throws {
         let (store, transport, worker) = try makeWorker(enabled: [.healthKit])
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
-        try store.edit(intakeID: intakeID, components: components(), changeReason: "more", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
 
         let outcomes = await worker.runOnce(now: when)
 

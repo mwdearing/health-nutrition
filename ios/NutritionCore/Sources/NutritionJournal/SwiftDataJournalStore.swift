@@ -507,8 +507,13 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
+/// `RelayDeliveryStore` is named rather than left implied: the relay worker reads the queue, its
+/// suspensions and the tombstones a delete is encoded from, and every one of those requirements is
+/// already met by the two conformances above. Declaring the refinement says so at the type, so a caller
+/// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
+/// initializer.
 public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnapshotSource,
-    JournalTombstoneSource, JournalRestoreTarget, JournalErasing, @unchecked Sendable
+    JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalErasing, @unchecked Sendable
 {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
