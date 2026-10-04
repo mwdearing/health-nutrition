@@ -339,6 +339,7 @@ final class HealthKitWritePlanTests: XCTestCase {
             [
                 "intake:\(intakeID):carbohydrate",
                 "intake:\(intakeID):energy",
+                "intake:\(intakeID):fat",
                 "intake:\(intakeID):fiber",
                 "intake:\(intakeID):protein",
                 "intake:\(intakeID):sodium",
