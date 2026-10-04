@@ -216,6 +216,22 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.servingsPerContainer, dec("3.5"))
     }
 
+    func testGroupedThousandsAreKeptWholeAndAmbiguousGroupsStayUnknown() throws {
+        let panel = parse([
+            "Calories 1,000",
+            "Sodium 12,500mg",
+            "Iron 1,8mg",
+            "Potassium 1,00mg",
+        ])
+
+        XCTAssertEqual(try amount(.calories, panel), dec("1000"))
+        XCTAssertEqual(try unit(.calories, panel), .kcal)
+        XCTAssertEqual(try amount(.sodium, panel), dec("12500"))
+        XCTAssertEqual(try unit(.sodium, panel), .mg)
+        XCTAssertEqual(value(.iron, panel), .unknown, "a group that is not three digits is never read")
+        XCTAssertEqual(value(.potassium, panel), .unknown)
+    }
+
     func testGarbageAndUnrelatedLinesAreIgnored() {
         let panel = parse([
             "",

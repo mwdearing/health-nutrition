@@ -309,7 +309,8 @@ public enum NutritionFactsParser {
         }
 
         // The number itself. A letter O that touches a digit, or that is the whole number with a unit
-        // after it, is the zero OCR read as a letter.
+        // after it, is the zero OCR read as a letter. A comma is read as part of the token and is only
+        // kept when it groups thousands, so "1,000" is one thousand and not one.
         var digits = ""
         var index = 0
         var reasons: Set<ParsedValueReview.Reason> = []
@@ -321,6 +322,11 @@ public enum NutritionFactsParser {
                 continue
             }
             if character == ".", !digits.isEmpty {
+                digits.append(character)
+                index += 1
+                continue
+            }
+            if character == ",", !digits.isEmpty {
                 digits.append(character)
                 index += 1
                 continue
@@ -431,11 +437,28 @@ public enum NutritionFactsParser {
     }
 
     /// One value read exactly from its own text, or nil when the text states no number.
+    ///
+    /// A comma is only a thousands separator: the first group is one to three digits and every group
+    /// after it is exactly three, as in `1,000` and `12,500`. Anything else is ambiguous, so the row keeps
+    /// no amount at all rather than the smaller number the digits before the comma spell.
     private static func decimal(_ digits: String) -> Decimal? {
         var text = digits
         while text.hasSuffix(".") { text.removeLast() }
         guard text.contains(where: { isDigit($0) }) else { return nil }
-        return Decimal(string: text, locale: posix)
+        guard isGroupedThousands(text) else { return nil }
+        return Decimal(string: text.replacingOccurrences(of: ",", with: ""), locale: posix)
+    }
+
+    /// Whether the commas in a numeric token only group thousands.
+    private static func isGroupedThousands(_ text: String) -> Bool {
+        guard text.contains(",") else { return true }
+        let groups = text.split(separator: ",", omittingEmptySubsequences: false)
+        guard let first = groups.first else { return false }
+        guard (1...3).contains(first.count), first.allSatisfy({ isDigit($0) }) else { return false }
+        for group in groups.dropFirst() {
+            guard group.count == 3, group.allSatisfy({ isDigit($0) }) else { return false }
+        }
+        return true
     }
 
     /// The first number anywhere in a piece of text, for a count the label states in words around it.
