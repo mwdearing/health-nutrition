@@ -15,5 +15,6 @@ Public architecture decisions and design notes for this project live here.
 - [HealthKit writer: planning, delivery and lifecycle](healthkit-writer.md)
 - [Label capture: scan, parse, confirm, save](label-capture.md)
 - [Journal export and import](journal-export.md)
-- [Intake-context encoding and canonical digests](intake-context.md)
+- [Intake context: encoding and canonical digests](intake-context.md)
 - [ADR 0001: persistence](adr/0001-persistence.md)
+- [Relay delivery: batches, ordering and outcome mapping](relay-delivery.md)

@@ -1,4 +1,4 @@
-# HealthKit writer: the plan and the delivery worker
+# HealthKit writer: planning, delivery and lifecycle
 
 Two halves, in two layers. The **plan** (`HealthKitWritePlanner`) is pure data: which samples a
 revision would write. The **delivery worker** (`HealthKitDeliveryWorker`) walks the journal's queue,
