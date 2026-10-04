@@ -276,4 +276,25 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(Set(current.map(\.destination)).count, JournalDestination.allCases.count)
         XCTAssertTrue(current.allSatisfy { $0.revision == 9 })
     }
+
+    func testSnapshotReadReturnsActiveIntakesWithRevisionsAndDeletedTombstones() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(
+            sampleIntake(), components: [oats(40)], product: product("snap-1", name: "Sample oats"), now: when)
+        try store.edit(intakeID: intakeID, components: [oats(55)], product: nil, changeReason: "bigger bowl", now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        let snapshot = try store.readJournalSnapshot()
+        XCTAssertTrue(snapshot.activeIntakes.isEmpty)
+        XCTAssertEqual(snapshot.deletedIntakes.map(\.id), [intakeID])
+        XCTAssertEqual(snapshot.deletedIntakes.first?.currentRevision, 2)
+    }
+
+    func testUnknownLifecycleValueIsRejectedRatherThanReadAsActive() throws {
+        // A snapshot read must not resurrect a deleted entry just because its stored lifecycle is corrupt.
+        XCTAssertEqual(try SwiftDataJournalStore.lifecycle(rawValue: "active"), .active)
+        XCTAssertEqual(try SwiftDataJournalStore.lifecycle(rawValue: "deleted"), .deleted)
+        XCTAssertThrowsError(try SwiftDataJournalStore.lifecycle(rawValue: "archived")) { error in
+            XCTAssertEqual(error as? JournalError, .corruptRecord("lifecycle:archived"))
+        }
+    }
 }

@@ -64,6 +64,12 @@ public enum JournalValidation {
 
 /// Exact decimal text, independent of the device locale.
 enum DecimalText {
+    /// True when `text` is the exact form the export schema allows: an optional minus sign, digits, and at
+    /// most one fractional part. `Decimal(string:)` alone is too permissive for the contract, because it
+    /// accepts forms such as `"1.2.3"` in some locales.
+    static func isValidDecimalText(_ text: String) -> Bool {
+        text.range(of: #"^-?[0-9]+(\.[0-9]+)?$"#, options: .regularExpression) != nil
+    }
     static let locale = Locale(identifier: "en_US_POSIX")
 
     static func encode(_ value: Decimal) -> String {

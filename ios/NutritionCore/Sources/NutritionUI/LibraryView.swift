@@ -4,11 +4,17 @@ public struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
     private let now: () -> Date
     private let onAdded: () -> Void
+    /// When given, the Library screen offers the way in to Connections and privacy. It is the only entry point.
+    private let connections: ConnectionsPrivacyViewModel?
 
-    public init(model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void) {
+    public init(
+        model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void,
+        connections: ConnectionsPrivacyViewModel? = nil
+    ) {
         self.model = model
         self.now = now
         self.onAdded = onAdded
+        self.connections = connections
     }
 
     public var body: some View {
@@ -47,6 +53,19 @@ public struct LibraryView: View {
             }
             if let message = model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
+            }
+            if let connections {
+                Section("Connections") {
+                    NavigationLink {
+                        ConnectionsPrivacyView(model: connections, now: now)
+                    } label: {
+                        Text("Connections and privacy")
+                            .font(.body)
+                            .foregroundStyle(TokenColors.textPrimary)
+                    }
+                    .accessibilityLabel("Connections and privacy")
+                    .accessibilityHint("Export your journal and read what data leaves this device")
+                }
             }
         }
         .scrollContentBackground(.hidden)

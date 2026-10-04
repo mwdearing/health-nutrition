@@ -25,7 +25,9 @@ let package = Package(
         .testTarget(name: "JournalStoreSpikeTests", dependencies: ["JournalStoreSpike"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "NutritionJournal", dependencies: ["NutritionDomain"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "NutritionJournalTests", dependencies: ["NutritionJournal"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "NutritionJournalExportTests", dependencies: ["NutritionJournal", "NutritionDomain"], resources: [.copy("Contracts")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "NutritionUI", dependencies: ["NutritionCore", "NutritionDomain", "NutritionJournal"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "NutritionUITests", dependencies: ["NutritionUI", "NutritionJournal"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "ConnectionsPrivacyTests", dependencies: ["NutritionUI", "NutritionJournal", "NutritionDomain"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

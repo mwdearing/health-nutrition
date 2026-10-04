@@ -15,7 +15,7 @@ Repeat makes one `create` call for a NEW intake: new lowercase UUID, `occurredAt
 - **Favorites** are stored templates (display name, category, components as exact decimal text plus unit symbol, optional product snapshot id) in their own store file next to the journal file. A favorite is a copy, not a link, so deleting an entry never removes a favorite.
 
 ## Entry points
-Today has Journal and Library links, and Add intake has "From library". These are navigation callbacks only; the Today and Add view models are unchanged.
+Today has Journal and Library links, and Add intake has "From library". The Library screen also carries the only way in to the Connections and privacy screen, where the journal can be exported as versioned JSON: see [Journal export](journal-export.md). These are navigation callbacks only; the Today and Add view models are unchanged.
 
 ## Deferred
 Recipes (ingredient lines, yield and per-serving math) are deferred to NC-04b.
