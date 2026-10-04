@@ -35,6 +35,7 @@ the line where the construct starts.
 | --- | --- | --- |
 | `colour-literal` | `Sources/NutritionUI/**` | `Color(red:`, `UIColor(red:`, `NSColor(red:`, `Color(hex:` and `#RRGGBB` literals. `TokenColors.swift` is exempt: it is the one place that turns design-token values into colours. |
 | `fixed-font` | `Sources/NutritionUI/**` | `.font(.system(size: ...))` and `Font.system(size: ...)`. Text uses Dynamic Type styles only, so it scales with the reader's settings. |
+| `fixed-font-size` | `Sources/NutritionUI/**` and the app target's `Sources/**` | Any font built around a literal point size: `.font(.system(size: ...))`, `Font.system(size: ...)` and `.custom(name, size: ...)`. A point size that is not related to a text style does not move when the reader changes their Dynamic Type setting, so the call has to pass `relativeTo:` (`.custom("Inter", size: 14, relativeTo: .body)`) or be a text style instead: `.headline`, `.system(.body, design: .rounded)`, `Font.custom("Inter", size: 14, relativeTo: .largeTitle)`. The size and the `relativeTo:` are read from the call's own argument list, so a font wrapped over several lines is judged whole, and the finding lands on the line the font call starts on. A `.font(.system(size:))` call is reported by both `fixed-font` and `fixed-font-size`. |
 | `forbidden-import` | `Sources/NutritionUI/**`, `Sources/NutritionJournal/**` | `import HealthKit`, `import Network` and any use of `URLSession`. Declaration-kind and attributed forms count too, so `import class HealthKit.HKHealthStore` and `@_implementationOnly import Network` are rejected as well. These layers stay offline and free of HealthKit; providers own both. |
 | `binary-float` | `Sources/NutritionDomain/**`, `Sources/NutritionJournal/**` | The `Double` and `Float` types, and untyped floating-point literals such as `0.1` or `1e-3`, which Swift would infer as `Double`. Quantities use `Decimal` so serving arithmetic does not drift. |
 
@@ -64,7 +65,10 @@ line, that comments and string contents stay silent, that `TokenColors.swift` is
 exempt, that `lint-allow` works, and that a clean tree exits 0. It also covers
 the trickier masking cases: prohibited calls split across lines, declaration-kind
 imports, code inside string interpolations, nested block comments, extended
-string delimiters and inferred floating-point literals.
+string delimiters and inferred floating-point literals. The font rules have their
+own cases: a `.custom` font with and without `relativeTo:`, text styles that name
+no size at all, a font call wrapped over several lines, and a `lint-allow` naming
+one font rule without silencing the other.
 
 ```sh
 python3 -m pytest scripts/tests/test_lint_swift_sources.py

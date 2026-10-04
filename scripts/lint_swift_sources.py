@@ -20,6 +20,14 @@ colour-literal
 fixed-font
     In ``Sources/NutritionUI/**``: no ``.font(.system(size:`` or
     ``Font.system(size:``. Text must use Dynamic Type styles.
+fixed-font-size
+    In the SwiftUI layers: no font built around a literal point size, so
+    ``.font(.system(size:``), ``Font.system(size:`` and ``.custom(name, size:)``
+    are reported unless the call passes ``relativeTo:``. A call that names a
+    point size without relating it to a text style does not move when the reader
+    changes their Dynamic Type setting; a text style such as ``.headline`` or
+    ``.system(.body, design: .rounded)`` does, and so does
+    ``.custom(name, size:, relativeTo:)``.
 forbidden-import
     In ``Sources/NutritionUI/**`` and ``Sources/NutritionJournal/**``: no
     ``import HealthKit``, ``import Network`` or ``URLSession``. Declaration-kind,
@@ -123,6 +131,16 @@ FIXED_FONT = re.compile(
     r"\bFont\s*\.\s*system\s*\(\s*size\s*:"
     r"|\.font\s*\(\s*\.system\s*\(\s*size\s*:"
 )
+# The calls a literal font size can be written in: the two spellings of a system
+# font and the custom-font factory. Whether the call names a point size at all,
+# and whether it relates that size to a text style, is read from the arguments.
+FONT_SIZE_CALL = re.compile(
+    r"\bFont\s*\.\s*system\s*\("
+    r"|\.\s*system\s*\("
+    r"|\.\s*custom\s*\("
+)
+FONT_SIZE_LABEL = re.compile(r"\bsize\s*:")
+RELATIVE_TO_LABEL = re.compile(r"\brelativeTo\s*:")
 IMPORT_KINDS = r"(?:class|struct|enum|protocol|typealias|func|var|let|actor|associatedtype|operator|precedencegroup)"
 # An access-level modifier may sit between the attributes and the `import`.
 ACCESS_LEVELS = r"(?:private|fileprivate|internal|package|public|open)"
@@ -152,6 +170,7 @@ IMAGE_CALL = re.compile(r"\bImage\s*\(")
 RULES = (
     "colour-literal",
     "fixed-font",
+    "fixed-font-size",
     "forbidden-import",
     "binary-float",
     "unlabeled-image",
@@ -160,6 +179,10 @@ RULES = (
 MESSAGES = {
     "colour-literal": "hard-coded colour; use the design tokens via TokenColors",
     "fixed-font": "fixed font size; use a Dynamic Type text style",
+    "fixed-font-size": (
+        "font size in points, which Dynamic Type cannot scale; pass "
+        ".custom(..., relativeTo:) or use a text style such as .body"
+    ),
     "forbidden-import": "forbidden framework use in this layer",
     "binary-float": "binary floating point; use Decimal",
     "unlabeled-image": (
@@ -1181,6 +1204,27 @@ def unlabeled_images(masked: str) -> list[int]:
     return found
 
 
+def fixed_font_sizes(masked: str) -> list[int]:
+    """Offsets of every font built around a literal point size.
+
+    A font factory only counts when its own argument list names a ``size:`` and
+    no ``relativeTo:``, so ``.system(.body, design: .rounded)`` and
+    ``.custom("Inter", size: 14, relativeTo: .body)`` scale with Dynamic Type
+    while ``.system(size: 14)`` does not. The arguments are read from the
+    brackets of the call, so a font written over several lines is judged whole.
+    """
+    found = []
+    for match in FONT_SIZE_CALL.finditer(masked):
+        opening = match.end() - 1
+        arguments = masked[opening + 1:_match_forward(masked, opening)]
+        if FONT_SIZE_LABEL.search(arguments) is None:
+            continue
+        if RELATIVE_TO_LABEL.search(arguments) is not None:
+            continue
+        found.append(match.start())
+    return found
+
+
 def allowed_rules(line: str) -> set[str]:
     """Rule names allowed on this line by a trailing ``lint-allow`` comment."""
     match = ALLOW_COMMENT.search(line.rstrip())
@@ -1264,15 +1308,21 @@ def check_file(path: Path, root: Path) -> list[tuple[int, str, str]]:
                 continue
             found[(number, rule)] = None
 
-    # `unlabeled-image` is not a per-module matter: it covers NutritionUI and
-    # whatever the app target keeps under its own Sources directory, since both
-    # are the SwiftUI surfaces VoiceOver reads.
+    # `unlabeled-image` and `fixed-font-size` are not per-module matters: they
+    # cover NutritionUI and whatever the app target keeps under its own Sources
+    # directory, since both are the SwiftUI surfaces VoiceOver reads and both
+    # carry text the reader's font settings have to reach.
     if is_view_scope(rel, root):
         for position in unlabeled_images(masked):
             number = line_of(position)
             if number - 1 >= len(allows) or "unlabeled-image" in allows[number - 1]:
                 continue
             found[(number, "unlabeled-image")] = None
+        for position in fixed_font_sizes(masked):
+            number = line_of(position)
+            if number - 1 >= len(allows) or "fixed-font-size" in allows[number - 1]:
+                continue
+            found[(number, "fixed-font-size")] = None
 
     order = {name: index for index, name in enumerate(RULES)}
     return [(number, rule, MESSAGES[rule]) for number, rule in sorted(found, key=lambda k: (k[0], order[k[1]]))]
