@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "exported_at": "2024-01-15T09:15:00Z",
+  "app_version": "0.1.0",
+  "intakes": [
+    {
+      "id": "1f0c9d2a-6b3e-4a7f-9c5d-0e2b6f8a1d33",
+      "category": "food",
+      "occurred_at": "2024-01-15T07:30:00Z",
+      "time_zone": "Europe/Berlin",
+      "meal": "breakfast",
+      "note": null,
+      "current_revision": 2,
+      "revisions": [
+        {
+          "number": 1,
+          "created_at": "2024-01-15T07:31:00Z",
+          "change_reason": "created",
+          "product_snapshot_id": "snap-oats-1",
+          "provenance": {
+            "snapshot_id": "snap-oats-1",
+            "product_id": "product-oats",
+            "name": "Sample rolled oats",
+            "brand": "Sample Brand",
+            "barcode": "0000000000017",
+            "label_basis": "per100g",
+            "catalog_origin": "sample-catalog",
+            "catalog_version": "1"
+          },
+          "components": [
+            {
+              "component_id": "oats",
+              "name": "Sample rolled oats",
+              "amount": "40",
+              "unit": "g",
+              "value_state": "known"
+            },
+            {
+              "component_id": "milk",
+              "name": "Sample milk",
+              "amount": null,
+              "unit": "mL",
+              "value_state": "unknown"
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "created_at": "2024-01-15T07:40:00Z",
+          "change_reason": "bigger bowl",
+          "product_snapshot_id": "snap-oats-1",
+          "provenance": {
+            "snapshot_id": "snap-oats-1",
+            "product_id": "product-oats",
+            "name": "Sample rolled oats",
+            "brand": "Sample Brand",
+            "barcode": "0000000000017",
+            "label_basis": "per100g",
+            "catalog_origin": "sample-catalog",
+            "catalog_version": "1"
+          },
+          "components": [
+            {
+              "component_id": "oats",
+              "name": "Sample rolled oats",
+              "amount": "55.5",
+              "unit": "g",
+              "value_state": "known"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tombstones": [
+    {
+      "intake_id": "7d4a1c55-9e2b-4f60-8a3d-5c1b0f7e2a94",
+      "revision": 1,
+      "occurred_at": "2024-01-14T18:05:00Z",
+      "time_zone": "Europe/Berlin"
+    }
+  ],
+  "favorites": [
+    {
+      "id": "fav-tea-1",
+      "display_name": "Sample tea",
+      "category": "drink",
+      "meal": null,
+      "product_snapshot_id": null,
+      "components": [
+        {
+          "component_id": "tea",
+          "name": "Sample tea",
+          "amount": "250",
+          "unit": "mL",
+          "value_state": "known"
+        }
+      ]
+    }
+  ],
+  "products": [
+    {
+      "snapshot_id": "snap-oats-1",
+      "product_id": "product-oats",
+      "name": "Sample rolled oats",
+      "brand": "Sample Brand",
+      "barcode": "0000000000017",
+      "label_basis": "per100g",
+      "catalog_origin": "sample-catalog",
+      "catalog_version": "1"
+    }
+  ]
+}

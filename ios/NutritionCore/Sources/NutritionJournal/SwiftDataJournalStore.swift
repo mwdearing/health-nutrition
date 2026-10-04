@@ -153,7 +153,7 @@ private struct StoredComponent: Codable {
     var unitSymbol: String
 }
 
-public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -413,15 +413,77 @@ public final class SwiftDataJournalStore: JournalStore, @unchecked Sendable {
     }
 
     private static func readActiveIntakes(container: ModelContainer) throws -> [Intake] {
+        try readIntakes(container: container, lifecycle: .active)
+    }
+
+    /// Deleted intakes, kept as tombstones so an export can retract them later.
+    public func deletedIntakes() throws -> [Intake] {
+        try Self.readIntakes(container: try openContainer(), lifecycle: .deleted)
+    }
+
+    /// One consistent read of the journal for the exporter: active intakes with every revision, and deleted
+    /// intakes, all from a single model context. The write lock is held for the read, so an export cannot
+    /// observe an entry that was deleted after the active list was read but before the tombstones were, which
+    /// would leave it in neither list.
+    public func readJournalSnapshot() throws -> JournalSnapshot {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<IntakeRecord>())
+        let revisionRows = try context.fetch(FetchDescriptor<RevisionRecord>())
+        let revisionsByIntake = Dictionary(grouping: revisionRows, by: \.intakeID)
+
+        var active: [JournalExportIntakeSnapshot] = []
+        var deleted: [Intake] = []
+        for row in rows {
+            let lifecycle = try Self.lifecycle(rawValue: row.lifecycleRaw)
+            let intake = Intake(
+                id: row.intakeID, category: row.category, occurredAt: row.occurredAt,
+                timeZoneIdentifier: row.timeZoneIdentifier, meal: row.meal, note: row.note,
+                lifecycle: lifecycle, currentRevision: row.currentRevision)
+            if intake.lifecycle == .deleted {
+                deleted.append(intake)
+                continue
+            }
+            var revisions: [IntakeRevision] = []
+            for revision in (revisionsByIntake[row.intakeID] ?? []).sorted(by: { $0.number < $1.number }) {
+                // A stored row whose components cannot be read is corrupt; the caller must hear about it
+                // rather than get an intake with no amounts.
+                let components = try Self.decode(revision.componentsJSON)
+                revisions.append(
+                    IntakeRevision(
+                        intakeID: revision.intakeID, number: revision.number, components: components,
+                        productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
+                        createdAt: revision.createdAt))
+            }
+            active.append(JournalExportIntakeSnapshot(intake: intake, revisions: revisions))
+        }
+        return JournalSnapshot(
+            activeIntakes: active.sorted { ($0.intake.occurredAt, $0.intake.id) < ($1.intake.occurredAt, $1.intake.id) },
+            deletedIntakes: deleted.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) })
+    }
+
+    /// Maps a stored lifecycle string to its value. An unrecognised value means the row is corrupt or was
+    /// written by a build this one does not understand: the ordinary active read leaves such a row out
+    /// because it predicates on the exact `active` value, so defaulting it to `active` here would put a
+    /// deleted entry back into an export as live data. Refuse it instead.
+    static func lifecycle(rawValue: String) throws -> IntakeLifecycle {
+        guard let lifecycle = IntakeLifecycle(rawValue: rawValue) else {
+            throw JournalError.corruptRecord("lifecycle:\(rawValue)")
+        }
+        return lifecycle
+    }
+
+    private static func readIntakes(container: ModelContainer, lifecycle: IntakeLifecycle) throws -> [Intake] {
         let context = ModelContext(container)
-        let active = IntakeLifecycle.active.rawValue
+        let raw = lifecycle.rawValue
         let rows = try context.fetch(FetchDescriptor<IntakeRecord>(
-            predicate: #Predicate<IntakeRecord> { $0.lifecycleRaw == active }))
+            predicate: #Predicate<IntakeRecord> { $0.lifecycleRaw == raw }))
         return rows.map {
             Intake(
                 id: $0.intakeID, category: $0.category, occurredAt: $0.occurredAt,
                 timeZoneIdentifier: $0.timeZoneIdentifier, meal: $0.meal, note: $0.note,
-                lifecycle: .active, currentRevision: $0.currentRevision)
+                lifecycle: lifecycle, currentRevision: $0.currentRevision)
         }.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) }
     }
 
