@@ -52,7 +52,9 @@ struct ConditionalWorld {
             var clauses: [Clause] = []
             var exhaustive = false
             for clause in declaration.clauses {
-                if clause.poundElseifOrElse?.text == "#else" {
+                // A clause written `#else` carries no condition; anything else is
+                // `#if` or `#elseif`, so the block may compile none of its arms.
+                if clause.condition == nil {
                     exhaustive = true
                 }
                 guard let elements = clause.elements else { continue }

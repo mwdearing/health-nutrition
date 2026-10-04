@@ -236,7 +236,9 @@ struct Allowances {
         for token in tree.tokens(viewMode: .sourceAccurate) {
             let line = converter.location(for: token.positionAfterSkippingLeadingTrivia).line
             for piece in token.leadingTrivia + token.trailingTrivia {
-                guard case .comment(let text) = piece else { continue }
+                // Only a developer comment is a directive; the documentation
+                // forms are prose and are not consulted.
+                guard case .lineComment(let text) = piece else { continue }
                 guard let rules = Allowances.rules(in: text) else { continue }
                 byLine[line, default: []].formUnion(rules)
             }
@@ -245,7 +247,9 @@ struct Allowances {
 
     /// The rule names a comment allows, or `nil` when it is not a directive.
     static func rules(in comment: String) -> Set<String>? {
-        // A documentation comment is prose, not a directive.
+        // A documentation comment is prose, not a directive. The parser hands
+        // those over as their own trivia pieces, but the text is checked too so
+        // that a `///` written where a comment was expected stays inert.
         guard comment.hasPrefix("//"), !comment.hasPrefix("///") else { return nil }
         guard let marker = comment.range(of: "lint-allow:") else { return nil }
         let names = comment[marker.upperBound...].trimmingCharacters(in: .whitespaces)

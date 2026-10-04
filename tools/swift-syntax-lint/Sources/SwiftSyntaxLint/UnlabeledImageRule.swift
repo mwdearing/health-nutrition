@@ -187,7 +187,9 @@ enum UnlabeledImageRule {
             if let element = closure.parent?.as(MultipleTrailingClosureElementSyntax.self),
                let list = element.parent?.as(MultipleTrailingClosureElementListSyntax.self),
                let call = list.parent?.as(FunctionCallExprSyntax.self) {
-                return (call, element.label?.text)
+                // The label of a trailing closure is a missing token rather than an
+                // absent one when the closure carries no label of its own.
+                return (call, UnlabeledImageRule.label(of: element.label))
             }
             if let argument = closure.parent?.as(LabeledExprSyntax.self),
                let list = argument.parent?.as(LabeledExprListSyntax.self),
@@ -195,6 +197,12 @@ enum UnlabeledImageRule {
                 return (call, argument.label?.text)
             }
             return nil
+        }
+
+        /// The label a trailing-closure element carries, or `nil` when the token is
+        /// missing because the closure was written without one.
+        static func label(of token: TokenSyntax) -> String? {
+            token.presence == .present ? token.text : nil
         }
 
         /// Whether the control's content has already been passed as an argument,
@@ -210,10 +218,9 @@ enum UnlabeledImageRule {
                let closure = argument.expression.as(ClosureExprSyntax.self) {
                 return closure
             }
-            if let element = call.additionalTrailingClosures?.first,
-               element.label?.text == "title",
-               let closure = element.closure.as(ClosureExprSyntax.self) {
-                return closure
+            for element in call.additionalTrailingClosures
+            where UnlabeledImageRule.label(of: element.label) == "title" {
+                return element.closure
             }
             // `Label { ... } icon: { ... }` puts the title in the first trailing
             // closure, which carries no label of its own.
