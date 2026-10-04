@@ -164,7 +164,7 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
 
         func dataScanner(
             _ dataScanner: DataScannerViewController,
-            becameUnavailableWithError error: DataScannerViewController.Error
+            becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
         ) {
             guard !hasDelivered else { return }
             report("Scanning stopped, so the barcode was not read. Type the digits instead.")
