@@ -52,7 +52,7 @@ struct HealthKitSampleWriter: HealthSampleWriter {
         do {
             try await healthStore.save(samples)
         } catch {
-            throw Self.classify(error)
+            throw Self.classifySaveFailure(error)
         }
     }
 
@@ -182,26 +182,35 @@ struct HealthKitSampleWriter: HealthSampleWriter {
             .filter { $0.sourceRevision.source == HKSource.default() }
     }
 
-    /// ADR 0002: an authorization denial and an invalid sample both mean "retrying cannot help", and
-    /// both are raised so the worker parks the operation for a person instead of backing off. Every
-    /// other error — a restriction, a store error — is a delivery error worth another attempt.
-    ///
-    /// `errorInvalidArgument` is the deterministic one: Apple's save contract counts an invalid
-    /// argument as a save failure, and a retry rebuilds the same specs from the same immutable journal
-    /// revision, so the identical sample is rejected identically every time. Classifying it as transient
-    /// meant an unfixable entry backed off on a timer forever, which is the retry storm ADR 0002's
-    /// suspension exists to prevent.
-    private static func classify(_ error: Error) -> Error {
+    /// ADR 0002: an authorization denial means "not allowed in Health" on every path. Every other error
+    /// is a delivery error worth another attempt, so the worker backs off instead of parking the entry
+    /// for a person.
+    private static func classify(_ error: Error) -> HealthSampleWriterError {
         guard let healthError = error as? HKError else {
-            return HealthSampleWriterError.transient(error.localizedDescription)
+            return .transient(error.localizedDescription)
         }
-        switch healthError.code {
-        case .errorAuthorizationDenied:
-            return HealthSampleWriterError.authorizationDenied
-        case .errorInvalidArgument:
-            return HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid")
-        default:
-            return HealthSampleWriterError.transient(error.localizedDescription)
+        if healthError.code == .errorAuthorizationDenied {
+            return .authorizationDenied
         }
+        return .transient(error.localizedDescription)
+    }
+
+    /// A save additionally distinguishes a sample HealthKit will never accept.
+    ///
+    /// Apple's save contract counts an invalid argument as a save failure, and a retry rebuilds the same
+    /// specs from the same immutable journal revision, so the identical sample is rejected identically
+    /// every time. Classifying it as transient meant an unfixable entry backed off on a timer forever,
+    /// which is the retry storm ADR 0002's suspension exists to prevent.
+    ///
+    /// **Only on the save path.** Apple defines `errorInvalidArgument` as the app passing an invalid
+    /// argument to a HealthKit API, not as a rejected sample, so a query or a deletion reporting it is
+    /// not about a sample anybody can correct: there is no immutable plan behind it to edit, and an app
+    /// update may well fix the call that made it. Those stay transient, which is the direction a later
+    /// fix can recover from — the operation is still queued, unlike one parked behind `needsAttention`.
+    private static func classifySaveFailure(_ error: Error) -> Error {
+        guard let healthError = error as? HKError, healthError.code == .errorInvalidArgument else {
+            return classify(error)
+        }
+        return HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid")
     }
 }

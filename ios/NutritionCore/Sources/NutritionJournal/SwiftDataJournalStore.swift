@@ -272,20 +272,164 @@ enum JournalSchemaV2: VersionedSchema {
     }
 }
 
-/// The store is written with V2. The stage is lightweight because the only change is one optional column,
-/// so an existing file is migrated in place and its rows keep their values.
-enum JournalMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [JournalSchemaV1.self, JournalSchemaV2.self] }
-    static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: JournalSchemaV1.self, toVersion: JournalSchemaV2.self)]
+/// The suspended-reason column, added as one optional string. V1 and V2 above are kept exactly as the
+/// builds that wrote them did, so a file either of them created still has a schema SwiftData can
+/// migrate from; an outbox row with no stored reason reads back as suspended for an unnamed reason.
+enum JournalSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [IntakeRecord.self, RevisionRecord.self, ProductRecord.self, ProjectionRecord.self, OutboxRecord.self]
+    }
+
+    @Model
+    final class IntakeRecord {
+        var intakeID: String
+        var category: String
+        var occurredAt: Date
+        var timeZoneIdentifier: String
+        var meal: String?
+        var note: String?
+        var lifecycleRaw: String
+        var currentRevision: Int
+
+        init(
+            intakeID: String, category: String, occurredAt: Date, timeZoneIdentifier: String,
+            meal: String?, note: String?, lifecycleRaw: String, currentRevision: Int
+        ) {
+            self.intakeID = intakeID
+            self.category = category
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+            self.meal = meal
+            self.note = note
+            self.lifecycleRaw = lifecycleRaw
+            self.currentRevision = currentRevision
+        }
+    }
+
+    @Model
+    final class RevisionRecord {
+        var intakeID: String
+        var number: Int
+        /// JSON array of components; amounts are decimal text.
+        var componentsJSON: String
+        var productSnapshotID: String?
+        var changeReason: String
+        var createdAt: Date
+
+        init(
+            intakeID: String, number: Int, componentsJSON: String,
+            productSnapshotID: String?, changeReason: String, createdAt: Date
+        ) {
+            self.intakeID = intakeID
+            self.number = number
+            self.componentsJSON = componentsJSON
+            self.productSnapshotID = productSnapshotID
+            self.changeReason = changeReason
+            self.createdAt = createdAt
+        }
+    }
+
+    @Model
+    final class ProductRecord {
+        var snapshotID: String
+        var productID: String
+        var name: String
+        var brand: String?
+        var barcode: String?
+        var labelBasis: String
+        var catalogOrigin: String
+        var catalogVersion: String
+
+        init(
+            snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
+            labelBasis: String, catalogOrigin: String, catalogVersion: String
+        ) {
+            self.snapshotID = snapshotID
+            self.productID = productID
+            self.name = name
+            self.brand = brand
+            self.barcode = barcode
+            self.labelBasis = labelBasis
+            self.catalogOrigin = catalogOrigin
+            self.catalogVersion = catalogVersion
+        }
+    }
+
+    @Model
+    final class ProjectionRecord {
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var actionRaw: String
+        var stateRaw: String
+        var isCurrent: Bool
+
+        init(
+            intakeID: String, revision: Int, destinationRaw: String,
+            actionRaw: String, stateRaw: String, isCurrent: Bool
+        ) {
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.actionRaw = actionRaw
+            self.stateRaw = stateRaw
+            self.isCurrent = isCurrent
+        }
+    }
+
+    @Model
+    final class OutboxRecord {
+        var operationID: String
+        var kindRaw: String
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var payloadHash: String
+        var attempts: Int
+        var nextAttemptAt: Date?
+        var acknowledgedAt: Date?
+        /// Why the operation was suspended, kept so a later run and the next launch report the same
+        /// reason rather than guessing from the state. Nil while the operation has never been suspended.
+        var suspensionReason: String?
+
+        init(
+            operationID: String, kindRaw: String, intakeID: String, revision: Int,
+            destinationRaw: String, payloadHash: String
+        ) {
+            self.operationID = operationID
+            self.kindRaw = kindRaw
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.payloadHash = payloadHash
+            self.attempts = 0
+            self.nextAttemptAt = nil
+            self.acknowledgedAt = nil
+            self.suspensionReason = nil
+        }
     }
 }
 
-typealias IntakeRecord = JournalSchemaV2.IntakeRecord
-typealias RevisionRecord = JournalSchemaV2.RevisionRecord
-typealias ProductRecord = JournalSchemaV2.ProductRecord
-typealias ProjectionRecord = JournalSchemaV2.ProjectionRecord
-typealias OutboxRecord = JournalSchemaV2.OutboxRecord
+/// The store is written with V3. Both stages are lightweight because each only adds optional columns,
+/// so an existing file is migrated in place and its rows keep their values.
+enum JournalMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self]
+    }
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: JournalSchemaV1.self, toVersion: JournalSchemaV2.self),
+            .lightweight(fromVersion: JournalSchemaV2.self, toVersion: JournalSchemaV3.self),
+        ]
+    }
+}
+
+typealias IntakeRecord = JournalSchemaV3.IntakeRecord
+typealias RevisionRecord = JournalSchemaV3.RevisionRecord
+typealias ProductRecord = JournalSchemaV3.ProductRecord
+typealias ProjectionRecord = JournalSchemaV3.ProjectionRecord
+typealias OutboxRecord = JournalSchemaV3.OutboxRecord
 
 private struct StoredComponent: Codable {
     var componentID: String
@@ -304,7 +448,7 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
-public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -321,7 +465,7 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV2.self)
+        let schema = Schema(versionedSchema: JournalSchemaV3.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -480,6 +624,9 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             guard row.acknowledgedAt == nil else { return }
             row.acknowledgedAt = date
             row.nextAttemptAt = nil
+            // A superseded or delivered operation is no longer suspended, and a stale reason left on the
+            // row would report it as parked after it has left the queue.
+            row.suspensionReason = nil
             try Self.setProjectionState(
                 .succeeded, of: row, in: context)
         }
@@ -503,7 +650,7 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     ///
     /// A transient failure still touches current projections only: it is scheduled to be tried again,
     /// and what a later revision is doing matters more than what an old operation did.
-    public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+    public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool, reason: String? = nil) throws {
         try commit { context in
             guard let row = try Self.outboxRecord(operationID, in: context) else {
                 throw JournalError.unknownOperation(operationID)
@@ -511,10 +658,28 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             guard row.acknowledgedAt == nil else { return }
             row.attempts += 1
             row.nextAttemptAt = retryAt
+            // The reason is stored, not recomputed: a later run and the next launch have to report the
+            // same one, and a rejected sample must not come back worded as a denial.
+            row.suspensionReason = needsAttention ? (reason ?? Self.unrecordedSuspensionReason) : nil
             try Self.setProjectionState(
                 needsAttention ? .needsAttention : .pending, of: row, in: context,
                 includingSuperseded: needsAttention)
+            if needsAttention {
+                try Self.markCurrentProjectionNeedsAttention(of: row, in: context)
+            }
         }
+    }
+
+    /// The reason one suspended operation was parked, or nil when it is not suspended.
+    ///
+    /// Read back rather than reconstructed from the state, because `needsAttention` on its own says
+    /// only that a person is needed, not whether Health access was refused or a sample was rejected.
+    public func suspensionReason(operationID: String) throws -> String? {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.outboxRecord(operationID, in: context), row.acknowledgedAt == nil else {
+            return nil
+        }
+        return row.suspensionReason
     }
 
     private static func outboxRecord(_ operationID: String, in context: ModelContext) throws -> OutboxRecord? {
@@ -522,42 +687,47 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             predicate: #Predicate<OutboxRecord> { $0.operationID == operationID })).first
     }
 
+    /// What a suspension reads as when the caller recorded no reason of its own.
+    ///
+    /// Neutral on purpose: it must not claim the failure was an authorization problem, because the
+    /// state that reports it is the same one a rejected sample is parked in.
+    static let unrecordedSuspensionReason = "waiting to be re-armed after a failed delivery"
+
+    /// Also marks the **current** projection for this destination `needsAttention`.
+    ///
+    /// A suspension on a superseded projection is invisible in the app: `EntryDetailViewModel` reads
+    /// only current projections, so the entry would show a pending destination while its queue was
+    /// parked and every later operation blocked. Propagating the state is what puts the condition in
+    /// front of a person.
+    ///
+    /// It says nothing about the newer operation, and `suspendedOperationIDs()` deliberately does not
+    /// read this state: suspension follows an attempt, and the current projection's revision is
+    /// normally one whose operation has not been tried at all.
+    private static func markCurrentProjectionNeedsAttention(
+        of row: OutboxRecord, in context: ModelContext
+    ) throws {
+        let intakeID = row.intakeID
+        let destination = row.destinationRaw
+        let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
+            predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+        for projection in rows where projection.isCurrent && projection.destinationRaw == destination {
+            projection.stateRaw = DestinationState.needsAttention.rawValue
+        }
+    }
+
     /// The pending operations a worker must not retry on its own.
     ///
-    /// Read through the projections rather than inferred from the operations, because `nil` on
-    /// `nextAttemptAt` means both "do not retry" (suspended) and "due now" (first attempt). Only the
-    /// projection records which one it is.
-    ///
-    /// **A suspension outlives the projection becoming noncurrent.** An edit supersedes the previous
-    /// projections but leaves their outbox operations pending, so a denied revision 1 whose projection
-    /// has just been marked noncurrent is still an undelivered, suspended operation. Filtering on
-    /// `isCurrent` here would drop it, and every later run would retry the denied write, grow its
-    /// attempt count and block the newer revision indefinitely. Each `needsAttention` projection is
-    /// therefore matched to its operation whatever its currency, because the projection still names
-    /// the one operation it belongs to.
+    /// Read off the **operations** rather than inferred from `nextAttemptAt`, because `nil` on that date
+    /// means both "do not retry" (suspended) and "due now" (first attempt), and read off the stored
+    /// reason rather than a projection's state, because a suspension belongs to the operation that
+    /// failed: an edit supersedes its projection while leaving the operation pending, and propagating
+    /// `needsAttention` to the current projection for the app to display must not park an operation that
+    /// has never been attempted.
     public func suspendedOperationIDs() throws -> Set<String> {
         let context = ModelContext(try openContainer())
-        let state = DestinationState.needsAttention.rawValue
-        let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
-            predicate: #Predicate<ProjectionRecord> { $0.stateRaw == state }))
-        var suspended: Set<String> = []
-        for projection in projections {
-            // Copied out of the model first: a #Predicate may compare a key path of the iterated model
-            // only against plain values, never against a key path read from a different model object.
-            let intakeID = projection.intakeID
-            let revision = projection.revision
-            let destination = projection.destinationRaw
-            let action = projection.actionRaw
-            let operations = try context.fetch(FetchDescriptor<OutboxRecord>(
-                predicate: #Predicate<OutboxRecord> { $0.intakeID == intakeID }))
-            for operation in operations where operation.acknowledgedAt == nil
-                && operation.revision == revision
-                && operation.destinationRaw == destination
-                && operation.kindRaw == action {
-                suspended.insert(operation.operationID)
-            }
-        }
-        return suspended
+        let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil && $0.suspensionReason != nil }))
+        return Set(rows.map(\.operationID))
     }
 
     /// Clears the suspension on one operation, so an automatic run may pick it up again.
@@ -572,12 +742,35 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             }
             guard row.acknowledgedAt == nil else { return }
             row.nextAttemptAt = nil
+            // The reason goes with the suspension: a re-armed operation is due again, so a stored reason
+            // would report a state the operation is no longer in.
+            row.suspensionReason = nil
             // `includingSuperseded: true`: the suspension is recorded on the projection belonging to
             // this operation, and a later edit may have made that projection noncurrent. Clearing only
-            // current projections would leave the state at `needsAttention`, and since suspension is
-            // matched by state whatever the projection's currency, the operation would stay suspended
-            // and never be delivered again — re-arming would silently do nothing.
+            // current projections would leave the state at `needsAttention` on the projection that
+            // actually records it, and the operation would never be delivered again — re-arming would
+            // silently do nothing.
             try Self.setProjectionState(.pending, of: row, in: context, includingSuperseded: true)
+            // The current projection may be carrying the propagated state as well, so the entry would
+            // go on showing a condition that no longer exists. Only cleared when this was the intake's
+            // last suspension, so a second parked operation behind it keeps its own state visible.
+            let intakeID = row.intakeID
+            let destination = row.destinationRaw
+            let stillSuspended = try context.fetch(FetchDescriptor<OutboxRecord>(
+                predicate: #Predicate<OutboxRecord> {
+                    $0.intakeID == intakeID && $0.destinationRaw == destination
+                        && $0.acknowledgedAt == nil && $0.suspensionReason != nil
+                }))
+            if stillSuspended.isEmpty {
+                let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
+                    predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+                let state = DestinationState.needsAttention.rawValue
+                let pending = DestinationState.pending.rawValue
+                for projection in projections where projection.isCurrent
+                    && projection.destinationRaw == destination && projection.stateRaw == state {
+                    projection.stateRaw = pending
+                }
+            }
         }
     }
 

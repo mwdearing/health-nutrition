@@ -1,13 +1,20 @@
 import Foundation
 import NutritionDomain
 
-/// A sample the writer built that HealthKit will never accept, raised for `HKError.errorInvalidArgument`.
+/// A sample the writer built that HealthKit will never accept, raised for `HKError.errorInvalidArgument`
+/// on a **save**.
 ///
 /// **Permanent, not transient.** Apple's save contract counts an invalid argument as a save failure,
 /// and a retry rebuilds the same specs from the same immutable journal revision, so the same save
 /// fails the same way every time. The app target's writer raises this instead of a transient error so
 /// the worker parks the operation with the reason HealthKit gave, rather than backing off against
 /// something no amount of waiting will fix.
+///
+/// **A rejected save only.** Apple defines this code as the app passing an invalid argument to a
+/// HealthKit API, not specifically as a rejected sample, so a conformer must raise it only where an
+/// immutable sample it built is what was refused. On a query or a deletion there is no sample to
+/// correct, an app update may well fix the call, and nothing can be retracted by editing the entry —
+/// those stay transient, on the backoff, because that is the direction a later fix can recover from.
 ///
 /// It is a separate type rather than a third case of `HealthSampleWriterError` because that enum is
 /// the writer's protocol-level "denied or worth another attempt" pair: a rejected sample is neither,
@@ -19,6 +26,32 @@ public struct HealthSampleRejectedError: Error, Sendable, Equatable {
     public init(reason: String) {
         self.reason = reason
     }
+}
+
+/// The delivery bookkeeping that has to carry **which** failure needs a person.
+///
+/// A refinement of `JournalOutboxDelivery` rather than part of it: recording that an operation is
+/// suspended is something any store can do, but recording *why* — and reading that reason back on a
+/// later run — is what lets a rejected sample stop being reported as a refused authorization. A store
+/// that cannot persist a reason still satisfies `JournalOutboxDelivery`, and the worker falls back to
+/// naming the state rather than the cause.
+///
+/// **The reason is stored, never recomputed.** It is written once, when the suspension is recorded, and
+/// read back on every subsequent run and after every relaunch. Recomputing it from the state would
+/// report the same generic phrase for both permanent failures, which are parked identically and need
+/// opposite corrections: one needs a person to grant Health access, the other needs the plan or the
+/// entry to change.
+public protocol JournalDeliverySuspension: JournalOutboxDelivery {
+    /// Records one failed attempt that needs a person, with the reason to report from now on.
+    ///
+    /// The projection becomes `needsAttention`, including the one belonging to this operation when a
+    /// later edit has already superseded it, and so does the current projection for the destination, so
+    /// the app shows the condition.
+    func recordFailure(
+        operationID: String, retryAt: Date?, needsAttention: Bool, reason: String?
+    ) throws
+    /// Why an operation is suspended, or nil when it is not suspended.
+    func suspensionReason(operationID: String) throws -> String?
 }
 
 /// Supplies the nutrient totals one revision contributes, keyed by intake id and revision number.
@@ -173,7 +206,8 @@ public enum HealthKitDeliveryOutcome: Sendable, Equatable {
 /// identically by every retry. A scheduler that retried either would fail forever and hide the real
 /// problem behind a queue that never drains. Every other error is transient and is retried on the
 /// backoff below. Either way the operation stays pending, because a delivery that was not recorded as
-/// successful must not be forgotten.
+/// successful must not be forgotten. The reason is **stored** with the suspension and read back on
+/// every later run, so a rejected sample is never reported as a refused authorization.
 public struct HealthKitDeliveryWorker: Sendable {
     /// The retry schedule after a transient failure: 1, 5 and 30 minutes, then every 2 hours.
     ///
@@ -194,12 +228,14 @@ public struct HealthKitDeliveryWorker: Sendable {
         return backoffSchedule[index]
     }
 
-    private let store: any JournalOutboxDelivery
+    /// `JournalDeliverySuspension` rather than `JournalOutboxDelivery`: the worker reports **why** an
+    /// operation is parked, so a store that cannot persist that reason cannot back this worker.
+    private let store: any JournalDeliverySuspension
     private let writer: any HealthSampleWriter
     private let totals: NutrientTotalsProvider
 
     public init(
-        store: any JournalOutboxDelivery, writer: any HealthSampleWriter,
+        store: any JournalDeliverySuspension, writer: any HealthSampleWriter,
         totals: @escaping NutrientTotalsProvider
     ) {
         self.store = store
@@ -235,10 +271,30 @@ public struct HealthKitDeliveryWorker: Sendable {
                 continue
             }
             if suspended.contains(operation.operationID) {
+                // **A correction takes over from a suspension.** Blocking every later operation for this
+                // intake made both of a person's remedies useless: an edit queues a revision nothing
+                // would deliver, and a retraction strands the samples a deletion is meant to remove.
+                // Re-arming is for retrying this same revision, which is the other half — so when the
+                // queue already holds the work that replaces this one, it goes ahead and this operation
+                // is acknowledged as superseded rather than retried or left to hold the intake.
+                if let replacement = replacement(for: operation, in: operations) {
+                    let outcome = acknowledge(
+                        operation, now: now, outcome: .superseded(operationID: operation.operationID))
+                    outcomes.append(outcome)
+                    if !outcome.isResolved {
+                        blocking[operation.intakeID] = operation.operationID
+                    }
+                    continue
+                }
                 // Parked for a person: no automatic run retries it, and nothing later for this intake
                 // may go past it either, since it was never delivered.
+                //
+                // The reason comes from the store rather than from a phrase rebuilt here: this branch runs
+                // on every later pass and after every relaunch, and a refused authorization and a
+                // rejected sample are parked in the same state while needing opposite corrections.
                 let outcome = HealthKitDeliveryOutcome.needsAttention(
-                    operationID: operation.operationID, reason: "waiting to be re-armed after a denial")
+                    operationID: operation.operationID,
+                    reason: (try? store.suspensionReason(operationID: operation.operationID)) ?? "waiting to be re-armed")
                 outcomes.append(outcome)
                 blocking[operation.intakeID] = operation.operationID
                 continue
@@ -265,7 +321,30 @@ public struct HealthKitDeliveryWorker: Sendable {
         return outcomes
     }
 
-    private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome {
+    /// The queued operation that replaces a suspended one, or nil when nothing has.
+    ///
+    /// **A newer revision, or a retraction of the same intake.** Both are a person's correction of the
+    /// entry the suspension is about, and both deliver the state the suspended operation could not: the
+    /// corrected revision writes what the entry now says, and the retraction removes what was written
+    /// for an entry that no longer exists. A retraction counts at the *same* revision, because deleting
+    /// an intake does not bump it.
+    ///
+    /// Only operations the store still offers count, so an already-delivered retraction does not
+    /// release anything. An earlier operation of the same intake does not either: it is the one being
+    /// delivered before this one, and letting it out of order is the stale-sample failure the ordering
+    /// rule exists to prevent.
+    private func replacement(
+        for operation: OutboxOperation, in operations: [OutboxOperation]
+    ) -> OutboxOperation? {
+        operations.first { candidate in
+            candidate.operationID != operation.operationID
+                && candidate.destination == operation.destination
+                && candidate.intakeID == operation.intakeID
+                && (candidate.revision > operation.revision || candidate.kind == .delete)
+        }
+    }
+
+private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome {
         switch operation.kind {
         case .upsert: return await upsert(operation, now: now)
         case .delete: return await retract(operation, now: now)
@@ -369,7 +448,9 @@ public struct HealthKitDeliveryWorker: Sendable {
                     operation, now: now, outcome: .retracted(operationID: operation.operationID, samples: deleted))
             }
             do {
-                try store.recordFailure(operationID: operation.operationID, retryAt: nil, needsAttention: true)
+                try store.recordFailure(
+                    operationID: operation.operationID, retryAt: nil, needsAttention: true,
+                    reason: "HealthKit access is not granted for \(denied.sorted().joined(separator: ", "))")
             } catch {
                 // Not recorded, so the operation stays due and the next run tries the retraction again.
                 // It is idempotent, and re-delivering it is better than dropping the stranded samples.
@@ -424,7 +505,8 @@ public struct HealthKitDeliveryWorker: Sendable {
     ) -> HealthKitDeliveryOutcome {
         switch error {
         case .authorizationDenied:
-            return needsAttention(operation, now: now, reason: "HealthKit access is not granted")
+            return needsAttention(
+                operation, now: now, reason: "HealthKit access is not granted, so it cannot be written")
         case .transient(let message):
             return transient(operation, now: now, reason: message)
         }
@@ -453,7 +535,8 @@ public struct HealthKitDeliveryWorker: Sendable {
     /// the operation waits in the queue instead of failing on a timer forever.
     private func needsAttention(_ operation: OutboxOperation, now: Date, reason: String) -> HealthKitDeliveryOutcome {
         do {
-            try store.recordFailure(operationID: operation.operationID, retryAt: nil, needsAttention: true)
+            try store.recordFailure(
+                operationID: operation.operationID, retryAt: nil, needsAttention: true, reason: reason)
             return .needsAttention(operationID: operation.operationID, reason: reason)
         } catch {
             // The queue could not record the failure. The operation stays pending and due, so the next
@@ -469,7 +552,8 @@ public struct HealthKitDeliveryWorker: Sendable {
         let outcome = HealthKitDeliveryOutcome.retryScheduled(
             operationID: operation.operationID, nextAttemptAt: nextAttemptAt, reason: reason)
         do {
-            try store.recordFailure(operationID: operation.operationID, retryAt: nextAttemptAt, needsAttention: false)
+            try store.recordFailure(
+                operationID: operation.operationID, retryAt: nextAttemptAt, needsAttention: false, reason: nil)
             return outcome
         } catch {
             // The schedule could not be recorded, so nothing was deferred: the operation stays due and
