@@ -7,15 +7,19 @@ public struct AddIntakeView: View {
     private let now: () -> Date
     private let onSaved: () -> Void
     private let onFromLibrary: (() -> Void)?
+    /// Opens the camera scanner. The app target injects this, so this package stays free of any
+    /// camera framework; nil hides the button and the field is typed instead.
+    private let onScanBarcode: (() -> Void)?
 
     public init(
         model: AddIntakeViewModel, now: @escaping () -> Date = { Date() }, onSaved: @escaping () -> Void,
-        onFromLibrary: (() -> Void)? = nil
+        onFromLibrary: (() -> Void)? = nil, onScanBarcode: (() -> Void)? = nil
     ) {
         self.model = model
         self.now = now
         self.onSaved = onSaved
         self.onFromLibrary = onFromLibrary
+        self.onScanBarcode = onScanBarcode
     }
 
     public var body: some View {
@@ -38,9 +42,26 @@ public struct AddIntakeView: View {
                             .accessibilityLabel("Barcode")
                             .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
                             .onSubmit { Task { await model.lookUpBarcode() } }
+                        if let onScanBarcode {
+                            // Scanning only fills the field. The lookup still waits for Look up,
+                            // so nothing is requested while the camera is open.
+                            Button {
+                                onScanBarcode()
+                            } label: {
+                                Image(systemName: "barcode.viewfinder")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Scan barcode")
+                            .accessibilityHint("Points the camera at the barcode on the package and fills in the field")
+                        }
                         Button("Look up") {
                             Task { await model.lookUpBarcode() }
                         }
+                        // Two buttons in one form row are both row actions under the automatic style,
+                        // and tapping either can then fire both. Their hit areas have to stay apart,
+                        // otherwise looking up would open the camera, and scanning would send a
+                        // request the form promises not to send.
+                        .buttonStyle(.borderless)
                         .disabled(model.lookupState.isLoading)
                         .accessibilityLabel("Look up barcode")
                         .accessibilityHint("Fills in the name, brand and nutrients for this barcode")

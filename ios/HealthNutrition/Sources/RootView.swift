@@ -10,6 +10,10 @@ struct RootView: View {
 
     @State private var selection: AppTab = .today
     @State private var addingIntake = false
+    /// Held rather than built inside the sheet, so a scanned barcode can be written into the same
+    /// form that will be saved.
+    @State private var addIntakeModel: AddIntakeViewModel?
+    @State private var scanningBarcode = false
     @State private var selectedIntakeID: String?
     @State private var showingRecipes = false
     @State private var recipePath: [RecipeRoute] = []
@@ -46,7 +50,7 @@ struct RootView: View {
             NavigationStack {
                 TodayView(
                     model: services.today,
-                    onAddIntake: { addingIntake = true },
+                    onAddIntake: { startAddingIntake() },
                     onOpenJournal: { selection = .journal },
                     onOpenLibrary: { selection = .library }
                 )
@@ -90,21 +94,49 @@ struct RootView: View {
             if phase == .active { reload() }
         }
         .sheet(isPresented: $addingIntake) {
-            AddIntakeView(
-                model: AddIntakeViewModel(
-                    store: services.journalStore, now: Date(), lookup: services.barcodeLookup
-                ),
-                now: { Date() },
-                onSaved: {
-                    addingIntake = false
-                    reload()
-                },
-                onFromLibrary: {
-                    addingIntake = false
-                    selection = .library
+            if let model = addIntakeModel {
+                AddIntakeView(
+                    model: model,
+                    now: { Date() },
+                    onSaved: {
+                        addingIntake = false
+                        addIntakeModel = nil
+                        reload()
+                    },
+                    onFromLibrary: {
+                        addingIntake = false
+                        addIntakeModel = nil
+                        selection = .library
+                    },
+                    // nil hides the button, so the form only offers scanning where the device has a
+                    // camera that can read barcodes.
+                    onScanBarcode: scanBarcode
+                )
+                // The scanner fills the field and closes itself. The lookup still runs only when
+                // the user taps Look up.
+                .sheet(isPresented: $scanningBarcode) {
+                    BarcodeScannerSheet { barcode in
+                        // Through the model, so a scan drops whatever an earlier lookup filled in.
+                        model.setScannedBarcode(barcode)
+                    }
                 }
-            )
+            }
         }
+    }
+
+    /// Opens the intake form with a fresh model, so a scan and the save that follows share one form.
+    private func startAddingIntake() {
+        addIntakeModel = AddIntakeViewModel(
+            store: services.journalStore, now: Date(), lookup: services.barcodeLookup
+        )
+        addingIntake = true
+    }
+
+    /// The action the intake form's Scan button runs. nil where the device cannot scan barcodes,
+    /// which hides the button instead of offering something that would not work.
+    private var scanBarcode: (() -> Void)? {
+        guard BarcodeScanner.isAvailable else { return nil }
+        return { scanningBarcode = true }
     }
 
     /// The recipes screen, in its own navigation stack so the recipe screens push over each other
