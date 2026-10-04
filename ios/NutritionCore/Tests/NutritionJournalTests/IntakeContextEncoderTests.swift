@@ -1067,15 +1067,27 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertNoThrow(try IntakeContextEncoder(scope: Self.scope).upsert(
             intake: intake, revision: waterAndCreatineRevision, product: product, operation: upsertOperation))
         let installation = "507b8fbb-78d3-450c-a88f-487e90df92e6"
+        // The schema's producer slug is `[a-z0-9][a-z0-9._-]{0,63}`, so an underscore, a dot and a hyphen are
+        // all part of a producer's name and are accepted; only an upper-case letter, a space, a leading
+        // character that is not lower-case or a digit, and the empty name are refused.
+        for accepted in ["nutrition_app", "nutrition.app", "nutrition-app-v2"] {
+            XCTAssertNoThrow(
+                try IntakeContextEncoder(scope: IntakeContextProducerScope(
+                    producerID: accepted,
+                    writerBundleID: "com.example.healthrelay.nutrition",
+                    installationID: installation)).upsert(
+                    intake: intake,
+                    revision: waterAndCreatineRevision,
+                    product: product,
+                    operation: upsertOperation),
+                accepted)
+        }
         for scope in [
             IntakeContextProducerScope(
                 producerID: "Nutrition-App", writerBundleID: "com.example.healthrelay.nutrition",
                 installationID: installation),
             IntakeContextProducerScope(
                 producerID: "9 nutrition-app", writerBundleID: "com.example.healthrelay.nutrition",
-                installationID: installation),
-            IntakeContextProducerScope(
-                producerID: "nutrition_app", writerBundleID: "com.example.healthrelay.nutrition",
                 installationID: installation),
             IntakeContextProducerScope(
                 producerID: "", writerBundleID: "com.example.healthrelay.nutrition",
