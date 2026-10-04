@@ -302,6 +302,8 @@ final class LabelCaptureViewModelTests: XCTestCase {
         let intake = try makeIntakeModel(lookup)
         intake.applyLabelProduct(try XCTUnwrap(model.makeProduct()))
         intake.name = "Synthetic Soup"
+        // A valid code is needed, or the lookup stops at the shape check and never starts.
+        intake.barcode = try XCTUnwrap(barcodeProduct.barcode)
         XCTAssertNotNil(intake.labelValues)
 
         let task = Task { await intake.lookUpBarcode() }
