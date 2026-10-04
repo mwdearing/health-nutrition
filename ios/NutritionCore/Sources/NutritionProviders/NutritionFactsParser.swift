@@ -77,7 +77,7 @@ public enum NutritionFactsParser {
         while index < cleaned.count {
             // A capture can flatten the serving metadata and a nutrient row onto one line, so the
             // metadata is taken off first and whatever text is left behind it is still read.
-            var residual = withoutDailyValueHeading(cleaned[index])
+            var residual = withoutDailyValueHeading(in: cleaned[index])
             if let read = servingSize(in: residual) {
                 if size == nil { size = read }
                 residual = withoutServingSize(in: residual)
