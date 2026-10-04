@@ -706,6 +706,181 @@ def test_lint_allow_comment_skips_an_unlabeled_image(tmp_path: Path) -> None:
     assert findings(result) == [("NotAllowed.swift", 2, "unlabeled-image")]
 
 
+def test_text_beside_an_image_outside_a_control_label_does_not_name_it(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/CaptionRow.swift": (
+            "import SwiftUI\n"
+            "struct CaptionRow: View {\n"
+            "    var body: some View {\n"
+            "        VStack {\n"
+            '            Text("Caption")\n'
+            '            Image(systemName: "person")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The text sits in the enclosing layout, not in a control label, so it names
+    # nothing and the image still has to be labelled.
+    assert findings(result) == [("CaptionRow.swift", 6, "unlabeled-image")]
+
+
+def test_image_in_a_layout_inside_a_labelled_control_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedLabel.swift": (
+            "import SwiftUI\n"
+            "struct NestedLabel: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            toggle()\n"
+            "        } label: {\n"
+            "            HStack {\n"
+            '                Image(systemName: "star")\n'
+            "            }\n"
+            "        }\n"
+            '        .accessibilityLabel("Favorite")\n'
+            "    }\n"
+            "    private func toggle() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_image_constructor_outside_the_ui_module_is_not_a_finding(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Snapshot.swift": (
+            "import Foundation\n"
+            "struct Snapshot {\n"
+            '    let source = Image("avatar")\n'
+            "}\n"
+        ),
+        f"{JOURNAL}/Snapshot.swift": (
+            "import Foundation\n"
+            'let receipt = Image("receipt")\n'
+        ),
+        f"{PROVIDERS}/Snapshot.swift": (
+            "import Foundation\n"
+            'let thumbnail = Image(systemName: "photo")\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_interpolated_image_argument_keeps_the_control_window(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Avatar.swift": (
+            "import SwiftUI\n"
+            "struct Avatar: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            open()\n"
+            "        } label: {\n"
+            '            Image("avatar-\\(name)")\n'
+            "        }\n"
+            '        .accessibilityLabel("Avatar")\n'
+            "    }\n"
+            "    private func open() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_preceding_label_does_not_exempt_a_later_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Receipt.swift": (
+            "import SwiftUI\n"
+            "struct Receipt: View {\n"
+            "    var body: some View {\n"
+            "        VStack {\n"
+            '            Label("Water", systemImage: "drop")\n'
+            '            Image("receipt")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("Receipt.swift", 6, "unlabeled-image")]
+
+
+def test_accessibility_label_in_only_one_build_branch_does_not_exempt(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/DebugOnly.swift": (
+            "import SwiftUI\n"
+            "struct DebugOnly: View {\n"
+            "    var body: some View {\n"
+            "        Button(action: {}) {\n"
+            '            Image(systemName: "plus")\n'
+            "        }\n"
+            "#if DEBUG\n"
+            '        .accessibilityLabel("Add water")\n'
+            "#endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A label that only exists in one configuration leaves release builds with an
+    # unnamed image, so it cannot exempt the image.
+    assert findings(result) == [("DebugOnly.swift", 5, "unlabeled-image")]
+
+
+def test_accessibility_label_in_every_build_branch_exempts(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Labelled.swift": (
+            "import SwiftUI\n"
+            "struct Labelled: View {\n"
+            "    var body: some View {\n"
+            "        Button(action: {}) {\n"
+            '            Image(systemName: "plus")\n'
+            "        }\n"
+            "#if DEBUG\n"
+            '        .accessibilityLabel("Add water")\n'
+            "#else\n"
+            '        .accessibilityLabel("Add a glass of water")\n'
+            "#endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_run_over_the_package_root_also_lints_the_app_target(tmp_path: Path) -> None:
+    write_tree(tmp_path, {f"{UI}/Fine.swift": 'import SwiftUI\nText("hi").font(.body)\n'})
+    app = tmp_path / "ios" / "HealthNutrition" / "Sources"
+    app.mkdir(parents=True)
+    (app / "RootView.swift").write_text(
+        "import SwiftUI\n"
+        "struct RootView: View {\n"
+        "    var body: some View {\n"
+        '        Button(action: {}) { Image(systemName: "plus") }\n'
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    result = run(tmp_path / "ios" / "NutritionCore")
+    assert result.returncode == 1
+    # CI only names the package root, so that run has to cover the app target too.
+    assert findings(result) == [("RootView.swift", 4, "unlabeled-image")]
+
+
+def test_the_repository_app_target_is_clean() -> None:
+    root = SCRIPT.parents[1] / "ios" / "HealthNutrition"
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_missing_root_is_reported_as_an_error(tmp_path: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(SCRIPT), str(tmp_path / "nope")],
