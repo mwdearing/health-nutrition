@@ -15,7 +15,7 @@ journal stays testable on macOS — so the quantity type is named by its identif
 (`"HKQuantityTypeIdentifierDietaryWater"`) and the app target looks the type up and builds the
 `HKQuantitySample` later. Nothing in this module authorizes, saves, queries or deletes anything.
 
-The behaviour follows [ADR 0002](../adr/0002-healthkit-sync.md), which records what HealthKit actually
+The behaviour follows [ADR 0002](adr/0002-healthkit-sync.md), which records what HealthKit actually
 did on a device rather than what its documentation says. The three consequences that shape this
 plan:
 

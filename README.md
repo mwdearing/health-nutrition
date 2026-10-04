@@ -1,10 +1,27 @@
 # Health Nutrition
 
-A planned native iOS app for food, supplement, and hydration tracking, with a community catalog and HealthRelay integration.
+A native iOS app for a local food, supplement and hydration journal. This repository also contains the foundations for a shared catalog and optional HealthRelay intake-context integration.
 
-This repository is at the project initialization stage. App implementation, integration details, and deployment are not yet established.
+## Implemented
 
-Use synthetic examples in public discussions and contributions. Do not publish personal health data, credentials, or private deployment details.
+- Today, quick-add water, Add intake, Journal, entry detail and Library screens
+- Local SwiftData persistence with immutable revisions, product snapshots and destination outbox operations
+- Favorites, recents, repeat entries and versioned personal recipes
+- Versioned journal export and import, plus local data deletion
+- On-demand barcode lookup, Nutrition Facts label capture and confirmation, and NIH DSLD provider components
+- HealthKit write planning and a delivery worker, with a debug-only device spike
+- Intake-context canonical JSON, digest calculation and journal-revision encoding
+- Swift package and app-target tests, source lint, privacy checks and unsigned build workflows
+
+See the [documentation index](docs/README.md) for behavior, limitations and architecture decisions, and the [app target guide](ios/HealthNutrition/README.md) for builds and installation.
+
+## Integration and release status
+
+The app keeps both HealthKit and HealthRelay destinations disabled. Implemented planners, workers and encoders do not establish enabled end-to-end delivery or device acceptance. The debug-only HealthKit spike is separate from normal journal delivery. See the [writer lifecycle](docs/healthkit-writer.md) and [intake-context contract](docs/intake-context.md).
+
+The shared catalog service and community publishing remain planned work. Provider clients and fixtures do not establish a deployed shared service. CI builds are unsigned; device installation and public distribution require separate signing, privacy, compatibility and release verification.
+
+Use synthetic examples in public discussions and contributions. Do not publish personal health data, credentials or private deployment details.
 
 ## License
 

@@ -10,9 +10,12 @@ reads a single product from Open Food Facts and nothing is sent back; see
 [docs/providers/open-food-facts.md](../../docs/providers/open-food-facts.md) for the fields read, the
 rate limits honoured and the attribution the licence requires.
 
-HealthKit arrives as a debug-only spike first
-(`Sources/Debug/HealthKitSpikeView.swift`, see [ADR 0002](../../docs/adr/0002-healthkit-sync.md)): the target
-declares the capability and the usage strings, but nothing in a release build reads or writes health data.
+The target includes the journal's HealthKit planner and delivery worker, but `AppServices` keeps
+both HealthKit and HealthRelay destinations disabled. Normal journal saves therefore queue no external
+delivery. See the [writer lifecycle](../../docs/healthkit-writer.md) for retry and deletion behavior.
+The separate debug-only spike (`Sources/Debug/HealthKitSpikeView.swift`) records the device observations
+in [ADR 0002](../../docs/adr/0002-healthkit-sync.md). Release builds do not expose that spike; implemented
+worker code does not mean delivery has been enabled or accepted on a device.
 
 ## What the target contains
 
