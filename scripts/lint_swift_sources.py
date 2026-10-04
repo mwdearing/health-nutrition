@@ -23,6 +23,13 @@ forbidden-import
     attributed and access-level forms such as ``import class HealthKit.HKHealthStore``,
     ``@_implementationOnly import Network``, ``private import HealthKit`` and
     ``@preconcurrency public import HealthKit`` count too.
+unlabeled-image
+    In the SwiftUI layers: every ``Image(...)`` in a view has to be named for
+    VoiceOver. An image is fine when the same expression carries
+    ``.accessibilityLabel(...)``, when the image or the control it sits in is
+    marked ``.accessibilityHidden(true)`` as decorative, when it shares a button
+    label with a ``Text`` that names it, or when it is a ``Label(title,
+    systemImage:)``, which speaks its own title.
 binary-float
     In ``Sources/NutritionDomain/**`` and ``Sources/NutritionJournal/**``: no
     ``Double`` or ``Float``, and no untyped floating-point literal such as
@@ -103,11 +110,14 @@ BINARY_FLOAT_LITERAL = re.compile(
 
 ALLOW_COMMENT = re.compile(r"//\s*lint-allow:\s*(?P<rules>[A-Za-z0-9_,\s-]+?)\s*$")
 
+IMAGE_CALL = re.compile(r"\bImage\s*\(")
+
 RULES = (
     "colour-literal",
     "fixed-font",
     "forbidden-import",
     "binary-float",
+    "unlabeled-image",
 )
 
 MESSAGES = {
@@ -115,6 +125,10 @@ MESSAGES = {
     "fixed-font": "fixed font size; use a Dynamic Type text style",
     "forbidden-import": "forbidden framework use in this layer",
     "binary-float": "binary floating point; use Decimal",
+    "unlabeled-image": (
+        "image without an accessibility label; add .accessibilityLabel(...) "
+        "or mark it decorative with .accessibilityHidden(true)"
+    ),
 }
 
 
@@ -409,6 +423,146 @@ def mask_code(source: str, keep_comments: bool = False) -> str:
     return "".join(out)
 
 
+OPENERS = "({["
+CLOSERS = ")}]"
+TRAILING_LABELS = re.compile(r"(?:label|title|icon|badge)\s*:\s*$")
+CHAIN_MEMBER = re.compile(r"\.[A-Za-z_][A-Za-z0-9_]*")
+HIDDEN_TRUE = re.compile(r"\.accessibilityHidden\s*\(\s*true\s*\)")
+TEXT_CALL = re.compile(r"\bText\s*\(")
+
+
+def _match_forward(masked: str, opening: int) -> int:
+    """Index of the bracket closing the one at ``opening``, or the end of text."""
+    depth = 0
+    for index in range(opening, len(masked)):
+        char = masked[index]
+        if char in OPENERS:
+            depth += 1
+        elif char in CLOSERS:
+            depth -= 1
+            if depth == 0:
+                return index
+    return len(masked)
+
+
+def _match_backward(masked: str, closing: int) -> int:
+    """Index of the bracket opening the one closed at ``closing``."""
+    depth = 0
+    for index in range(closing, -1, -1):
+        char = masked[index]
+        if char in CLOSERS:
+            depth += 1
+        elif char in OPENERS:
+            depth -= 1
+            if depth == 0:
+                return index
+    return 0
+
+
+def _chain_end(masked: str, start: int) -> int:
+    """End of the member-access chain that begins just after ``start``.
+
+    Each step consumes `.name` plus an optional argument list or trailing
+    closure, so modifiers applied to an expression are followed as far as they
+    reach.
+    """
+    end = start
+    while True:
+        index = end
+        while index < len(masked) and masked[index].isspace():
+            index += 1
+        if index >= len(masked) or masked[index] != ".":
+            return end
+        member = CHAIN_MEMBER.match(masked, index)
+        if member is None:
+            return end
+        index = member.end()
+        while index < len(masked) and masked[index].isspace():
+            index += 1
+        if index < len(masked) and masked[index] in OPENERS:
+            index = _match_forward(masked, index) + 1
+        end = index
+
+
+def _enclosing_group(masked: str, position: int) -> tuple[int, int] | None:
+    """The innermost bracket pair surrounding ``position``, as a span."""
+    stack: list[tuple[int, str]] = []
+    for index in range(position):
+        char = masked[index]
+        if char in OPENERS:
+            stack.append((index, char))
+        elif char in CLOSERS and stack:
+            stack.pop()
+    if not stack:
+        return None
+    opening = stack[-1][0]
+    return opening, _match_forward(masked, opening)
+
+
+def _label_expression_start(masked: str, opening: int) -> int:
+    """Start of the expression a closure at ``opening`` belongs to.
+
+    `Button { ... } label: { ... }` labels its second closure, so the search
+    steps back over the trailing `label:` and keeps looking for the control
+    itself.
+    """
+    position = opening
+    while True:
+        end = position
+        while end > 0 and masked[end - 1].isspace():
+            end -= 1
+        marker = TRAILING_LABELS.search(masked[:end])
+        if marker is None:
+            return end
+        position = marker.start()
+
+
+def _image_window(masked: str, start: int) -> str:
+    """The text a reviewer reads for one ``Image``: its label expression.
+
+    That is the image's own modifier chain, extended outwards to the control
+    whose label it is (`Button`, `Menu`, `Toggle`, ...) and to any modifiers
+    applied to that control, so a label written after the closing brace counts.
+    """
+    end = _chain_end(masked, start)
+    group = _enclosing_group(masked, start)
+    if group is None:
+        return masked[start:end]
+    opening, closing = group
+    outer_end = max(end, _chain_end(masked, closing + 1))
+    while True:
+        marker = _label_expression_start(masked, opening)
+        if marker > 0 and masked[marker - 1] in CLOSERS:
+            previous_open = _match_backward(masked, marker - 1)
+            previous_close = _match_forward(masked, previous_open)
+            outer_end = max(outer_end, _chain_end(masked, previous_close + 1))
+            opening = _label_expression_start(masked, previous_open)
+            continue
+        break
+    return masked[opening:outer_end]
+
+
+def unlabeled_images(masked: str) -> list[int]:
+    """Offsets of every ``Image(...)`` VoiceOver would meet without a name."""
+    found = []
+    for match in IMAGE_CALL.finditer(masked):
+        start = match.start()
+        window = _image_window(masked, start)
+        image_end = _match_forward(masked, match.end() - 1)
+        own_chain = masked[start:_chain_end(masked, image_end + 1)]
+        if ".accessibilityLabel" in own_chain or HIDDEN_TRUE.search(own_chain):
+            continue
+        if ".accessibilityLabel" in window:
+            continue
+        if HIDDEN_TRUE.search(window) or TEXT_CALL.search(window):
+            # Text beside the image names it; a hidden image is decorative.
+            continue
+        if re.search(r"\bLabel\s*\([^()]*systemImage\s*:", masked[max(0, start - 200):image_end]):
+            continue
+        found.append(start)
+    return found
+
+
 def allowed_rules(line: str) -> set[str]:
     """Rule names allowed on this line by a trailing ``lint-allow`` comment."""
     match = ALLOW_COMMENT.search(line.rstrip())
@@ -421,6 +575,17 @@ def allowed_rules(line: str) -> set[str]:
 def applies(rel: str, prefixes: tuple[str, ...]) -> bool:
     posix = rel.replace("\\", "/")
     return any(posix.startswith(prefix) for prefix in prefixes)
+
+
+def is_view_scope(rel: str) -> bool:
+    """Whether `rel` is SwiftUI view code the accessibility rules apply to.
+
+    The package module keeps its views under `Sources/NutritionUI/`, and the app
+    target keeps its own views directly under `Sources/`, so the scope is every
+    `Sources/**` file that actually imports SwiftUI.
+    """
+    posix = rel.replace("\\", "/")
+    return posix.startswith("Sources/")
 
 
 def check_file(path: Path, root: Path) -> list[tuple[int, str, str]]:
@@ -476,6 +641,16 @@ def check_file(path: Path, root: Path) -> list[tuple[int, str, str]]:
             if number - 1 >= len(allows) or rule in allows[number - 1]:
                 continue
             found[(number, rule)] = None
+
+    # `unlabeled-image` is not a per-module matter: it covers NutritionUI and
+    # whatever the app target keeps under its own Sources directory, since both
+    # are the SwiftUI surfaces VoiceOver reads.
+    if is_view_scope(rel):
+        for position in unlabeled_images(masked):
+            number = line_of(position)
+            if number - 1 >= len(allows) or "unlabeled-image" in allows[number - 1]:
+                continue
+            found[(number, "unlabeled-image")] = None
 
     order = {name: index for index, name in enumerate(RULES)}
     return [(number, rule, MESSAGES[rule]) for number, rule in sorted(found, key=lambda k: (k[0], order[k[1]]))]

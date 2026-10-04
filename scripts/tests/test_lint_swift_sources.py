@@ -552,6 +552,160 @@ def test_lint_allow_text_inside_a_string_does_not_allow(tmp_path: Path) -> None:
     assert findings(result) == [("Doc.swift", 2, "binary-float")]
 
 
+def test_unlabeled_image_in_an_icon_only_button_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/IconButton.swift": (
+            "import SwiftUI\n"
+            "struct IconButton: View {\n"
+            "    var body: some View {\n"
+            '        Button(action: {}) { Image(systemName: "plus") }\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("IconButton.swift", 4, "unlabeled-image")]
+
+
+def test_labelled_icon_only_button_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/LabelledImage.swift": (
+            "import SwiftUI\n"
+            "struct LabelledImage: View {\n"
+            "    var body: some View {\n"
+            '        Image(systemName: "plus")\n'
+            '            .accessibilityLabel("Add water")\n'
+            "    }\n"
+            "}\n"
+        ),
+        f"{UI}/LabelledButton.swift": (
+            "import SwiftUI\n"
+            "struct LabelledButton: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            add()\n"
+            '        } label: {\n'
+            '            Image(systemName: "plus")\n'
+            "        }\n"
+            '        .accessibilityLabel("Add water")\n'
+            "    }\n"
+            "    private func add() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_decorative_image_hidden_from_accessibility_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Decorative.swift": (
+            "import SwiftUI\n"
+            "struct Decorative: View {\n"
+            "    var body: some View {\n"
+            "        HStack {\n"
+            '            Image(systemName: "drop").accessibilityHidden(true)\n'
+            '            Text("Water")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_label_with_a_system_image_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Labelled.swift": (
+            "import SwiftUI\n"
+            "struct Labelled: View {\n"
+            "    var body: some View {\n"
+            '        Label("Water", systemImage: "drop")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_image_beside_text_in_the_same_button_label_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/IconWithText.swift": (
+            "import SwiftUI\n"
+            "struct IconWithText: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            toggle()\n"
+            "        } label: {\n"
+            "            HStack {\n"
+            '                Image(systemName: "star")\n'
+            '                Text("Favorite")\n'
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    private func toggle() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_unlabeled_image_outside_a_button_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Row.swift": (
+            "import SwiftUI\n"
+            "struct Row: View {\n"
+            "    var body: some View {\n"
+            "        HStack {\n"
+            '            Image(systemName: "drop")\n'
+            "            Spacer()\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("Row.swift", 5, "unlabeled-image")]
+
+
+def test_unlabeled_image_in_the_app_target_sources_is_reported(tmp_path: Path) -> None:
+    root = tmp_path / "ios" / "HealthNutrition"
+    (root / "Sources").mkdir(parents=True)
+    (root / "Sources" / "RootView.swift").write_text(
+        "import SwiftUI\n"
+        "struct RootView: View {\n"
+        "    var body: some View {\n"
+        '        Button(action: {}) { Image(systemName: "plus") }\n'
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("RootView.swift", 4, "unlabeled-image")]
+
+
+def test_lint_allow_comment_skips_an_unlabeled_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Allowed.swift": (
+            "import SwiftUI\n"
+            'let badge = Image(systemName: "dot") // lint-allow: unlabeled-image\n'
+        ),
+        f"{UI}/NotAllowed.swift": (
+            "import SwiftUI\n"
+            'let badge = Image(systemName: "dot")\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("NotAllowed.swift", 2, "unlabeled-image")]
+
+
 def test_missing_root_is_reported_as_an_error(tmp_path: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(SCRIPT), str(tmp_path / "nope")],
