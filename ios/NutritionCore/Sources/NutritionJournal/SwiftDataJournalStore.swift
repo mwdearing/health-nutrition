@@ -513,21 +513,33 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     /// Read through the projections rather than inferred from the operations, because `nil` on
     /// `nextAttemptAt` means both "do not retry" (suspended) and "due now" (first attempt). Only the
     /// projection records which one it is.
+    ///
+    /// **A suspension outlives the projection becoming noncurrent.** An edit supersedes the previous
+    /// projections but leaves their outbox operations pending, so a denied revision 1 whose projection
+    /// has just been marked noncurrent is still an undelivered, suspended operation. Filtering on
+    /// `isCurrent` here would drop it, and every later run would retry the denied write, grow its
+    /// attempt count and block the newer revision indefinitely. Each `needsAttention` projection is
+    /// therefore matched to its operation whatever its currency, because the projection still names
+    /// the one operation it belongs to.
     public func suspendedOperationIDs() throws -> Set<String> {
         let context = ModelContext(try openContainer())
         let state = DestinationState.needsAttention.rawValue
         let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
             predicate: #Predicate<ProjectionRecord> { $0.stateRaw == state }))
         var suspended: Set<String> = []
-        for projection in projections where projection.isCurrent {
-            // Matched in Swift rather than in one long predicate: the queue is small, and this keeps
-            // the same rule readable in one place as `setProjectionState`.
+        for projection in projections {
+            // Copied out of the model first: a #Predicate may compare a key path of the iterated model
+            // only against plain values, never against a key path read from a different model object.
+            let intakeID = projection.intakeID
+            let revision = projection.revision
+            let destination = projection.destinationRaw
+            let action = projection.actionRaw
             let operations = try context.fetch(FetchDescriptor<OutboxRecord>(
-                predicate: #Predicate<OutboxRecord> { $0.intakeID == projection.intakeID }))
+                predicate: #Predicate<OutboxRecord> { $0.intakeID == intakeID }))
             for operation in operations where operation.acknowledgedAt == nil
-                && operation.revision == projection.revision
-                && operation.destinationRaw == projection.destinationRaw
-                && operation.kindRaw == projection.actionRaw {
+                && operation.revision == revision
+                && operation.destinationRaw == destination
+                && operation.kindRaw == action {
                 suspended.insert(operation.operationID)
             }
         }
@@ -563,8 +575,11 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     private static func setProjectionState(
         _ state: DestinationState, of row: OutboxRecord, in context: ModelContext
     ) throws {
+        // Copied out of the outbox row first: a #Predicate may compare a key path of the iterated
+        // model only against plain values, not against a key path read from a different model object.
+        let intakeID = row.intakeID
         let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
-            predicate: #Predicate<ProjectionRecord> { $0.intakeID == row.intakeID }))
+            predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
         for projection in rows where projection.isCurrent
             && projection.revision == row.revision
             && projection.destinationRaw == row.destinationRaw
