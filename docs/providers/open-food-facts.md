@@ -83,7 +83,11 @@ they pass the EAN-8 check while naming a different number, and the payload is ex
 GTIN-12 first (`ScannedBarcode.expandUPCE`). A payload that does not expand is skipped rather than
 looked up as the eight digits it shows. The first payload that passes fills the barcode field and
 closes the scanner; no request is sent while the camera is open, and the lookup still runs only on
-the explicit Look up action. The Scan button is shown only where the device can scan at all, the
+the explicit Look up action. Scanning a different code also clears the form the way a lookup that
+finds nothing does, so the name, nutrients and attribution of the product looked up before are never
+left standing under a code the source has not been asked about. The Scan and Look up buttons are
+separate controls with independent hit areas, so one tap cannot do both. The Scan button is shown
+only where the device can scan at all, the
 camera lives in the app target so the UI package stays free of any camera framework, and the
 scanner never sees anything but the code: no image is stored. If the camera becomes unavailable
 while the sheet is open, for instance when permission is denied, the sheet shows the reason and a

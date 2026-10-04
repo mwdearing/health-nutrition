@@ -174,8 +174,8 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
                 // A UPC-E payload is compressed: its eight digits would pass the EAN-8 check while
                 // standing for a different number, so it is expanded to its GTIN-12 first. Every
                 // other symbology is used as printed.
-                let expanded = barcode.observationBarcode.symbology == .upce
-                    ? ScannedBarcode.expandUPCE(payload) : nil
+                let isUPCE = barcode.observation.symbology == VNBarcodeSymbology.upce
+                let expanded = isUPCE ? ScannedBarcode.expandUPCE(payload) : nil
                 if let expanded {
                     deliver(expanded, from: dataScanner)
                     return
@@ -184,9 +184,7 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
                 // with a wrong check digit, is skipped and scanning goes on. A UPC-E payload that did
                 // not expand is skipped for the same reason: looking up its eight printed digits
                 // would ask about a GTIN-8 that was never on the package.
-                guard barcode.observationBarcode.symbology != .upce,
-                      let accepted = ScannedBarcode.normalize(payload)
-                else { continue }
+                guard !isUPCE, let accepted = ScannedBarcode.normalize(payload) else { continue }
                 deliver(accepted, from: dataScanner)
                 return
             }

@@ -50,12 +50,18 @@ public struct AddIntakeView: View {
                             } label: {
                                 Image(systemName: "barcode.viewfinder")
                             }
+                            .buttonStyle(.borderless)
                             .accessibilityLabel("Scan barcode")
                             .accessibilityHint("Points the camera at the barcode on the package and fills in the field")
                         }
                         Button("Look up") {
                             Task { await model.lookUpBarcode() }
                         }
+                        // Two buttons in one form row are both row actions under the automatic style,
+                        // and tapping either can then fire both. Their hit areas have to stay apart,
+                        // otherwise looking up would open the camera, and scanning would send a
+                        // request the form promises not to send.
+                        .buttonStyle(.borderless)
                         .disabled(model.lookupState.isLoading)
                         .accessibilityLabel("Look up barcode")
                         .accessibilityHint("Fills in the name, brand and nutrients for this barcode")

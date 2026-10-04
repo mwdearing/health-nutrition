@@ -116,7 +116,8 @@ struct RootView: View {
                 // the user taps Look up.
                 .sheet(isPresented: $scanningBarcode) {
                     BarcodeScannerSheet { barcode in
-                        model.barcode = barcode
+                        // Through the model, so a scan drops whatever an earlier lookup filled in.
+                        model.setScannedBarcode(barcode)
                     }
                 }
             }
