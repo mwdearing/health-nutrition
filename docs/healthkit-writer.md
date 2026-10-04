@@ -79,6 +79,14 @@ totals always plan the same order no matter how the totals dictionary was built.
 delete goes by sync identifier **and** this app's own source, so a sample another app wrote is never
 touched. `HealthKitSampleSpec` deliberately carries no UUID field for the same reason.
 
+**A delete covers every key the caller passes, not only the ones this revision writes.** A later
+revision can drop a nutrient: the plan then produces no sample for it (an unknown total is skipped,
+never written as zero), so nothing would replace the sample an earlier revision wrote and Health would
+keep showing a stale value. Deleting the stale sample and then writing the current revision is the
+only way to retract it, which is why the identifiers are a superset of the ones `plan` returns for the
+same keys. Which keys a delete covers is the caller's decision — the journal knows what a revision
+recorded — so the planner lists every key it is given.
+
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/HealthKitWritePlanTests.swift` covers the identifier
 and version shape, every skip case, the exact conversions, water, the deterministic order, the

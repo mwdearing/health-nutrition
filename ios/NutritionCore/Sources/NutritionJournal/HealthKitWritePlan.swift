@@ -148,6 +148,11 @@ public enum HealthKitWritePlanner {
 
     /// The sync identifiers a delete has to remove, by identifier and this app's own source (ADR 0002).
     /// Sorted and deduplicated, so a delete is the same request however the caller collected its keys.
+    ///
+    /// Every key passed is listed, including a key this revision does not write: an earlier revision
+    /// may have written it, and a nutrient that has since become unknown produces no sample to
+    /// replace it, so it has to be deleted rather than left behind. The result is therefore a superset
+    /// of what `plan` wrote for the same keys, and deciding which keys that is stays with the caller.
     public static func deletion(intakeID: String, keys: [String]) -> [String] {
         Array(Set(keys)).sorted().map { syncIdentifier(intakeID: intakeID, nutrientKey: $0) }
     }

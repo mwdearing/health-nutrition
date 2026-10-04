@@ -233,7 +233,9 @@ final class HealthKitWritePlanTests: XCTestCase {
         XCTAssertTrue(HealthKitWritePlanner.deletion(intakeID: intakeID, keys: []).isEmpty)
     }
 
-    func testDeletionRemovesExactlyWhatThePlanWroteForOneIntake() {
+    func testDeletionCoversEveryKeyTheCallerPassesNotOnlyTheOnesThisRevisionWrites() {
+        // An earlier revision may have written sodium; this revision knows it no more, so the
+        // sodium sample has to be removed rather than left behind.
         let totals: [String: NutrientValue] = [
             "water": .known(dec("250"), .mL),
             "protein": .known(dec("13"), .g),
@@ -242,6 +244,26 @@ final class HealthKitWritePlanTests: XCTestCase {
         let specs = plan(totals)
         let deletions = HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["water", "protein", "sodium"])
 
-        XCTAssertEqual(deletions, specs.map(\.syncIdentifier).sorted())
+        XCTAssertEqual(deletions, ["\(intakeID).protein", "\(intakeID).sodium", "\(intakeID).water"])
+        XCTAssertTrue(
+            deletions.count >= specs.count,
+            "a delete has to cover every sample this intake may have written, not only this revision's"
+        )
+        for written in specs {
+            XCTAssertTrue(deletions.contains(written.syncIdentifier), "missing \(written.syncIdentifier)")
+        }
+    }
+
+    func testANutrientThatBecomesUnknownIsStillDeleted() {
+        let first = plan(["water": .known(dec("250"), .mL), "sodium": .known(dec("900"), .mg)], revision: 1)
+        let edited = plan(["water": .known(dec("500"), .mL), "sodium": .unknown], revision: 2)
+
+        XCTAssertEqual(first.map(\.syncIdentifier), ["\(intakeID).sodium", "\(intakeID).water"])
+        XCTAssertEqual(edited.map(\.syncIdentifier), ["\(intakeID).water"], "the new revision writes no sodium sample")
+
+        let deletions = HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["water", "sodium"])
+
+        XCTAssertTrue(deletions.contains("\(intakeID).sodium"), "the stale sodium sample from revision 1 has to go")
+        XCTAssertEqual(deletions, ["\(intakeID).sodium", "\(intakeID).water"])
     }
 }
