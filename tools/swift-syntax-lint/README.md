@@ -75,7 +75,11 @@ these rules and prints the agreement rate together with each disagreement. The
 figures below are from the CI run of this branch, on the commit before the round
 of fixes described at the end.
 
-**Before the fixes: 46 of 55 cases agree (83%).**
+**Before the fixes: 46 of 55 cases agree (83%). After them: 50 of 55 (90%).** The advisory CI job takes about two minutes
+on macOS, most of it building swift-syntax.
+
+Still disagreeing after the fixes (5): four `#if` cases (a label in every build branch, labels in every nested arm, and text
+hidden in only one branch) and one custom-qualified control (`Custom.Button`) whose closure is treated as a control label.
 
 The corpus is 55 cases: 30 that expect at least one finding and 25 that expect
 none. A corpus of clean cases matters as much as a corpus of reported ones, since
