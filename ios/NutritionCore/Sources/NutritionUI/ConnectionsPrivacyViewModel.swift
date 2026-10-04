@@ -73,15 +73,33 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// screen tidying up is still removed.
     public static let exportFileNamePrefix = "journal-export-"
     public static let exportFileNameSuffix = ".json"
-    /// The name the exporter would write for `exportedAt`, so a test can place a strayed file without
-    /// duplicating the format.
-    public static func exportFileName(for exportedAt: Date) -> String {
-        JournalExporter.fileName(exportedAt: exportedAt)
+    /// Where the exporter would write for `exportedAt`, so a test can place a strayed export without
+    /// duplicating the name format.
+    public static func exportFileURL(for exportedAt: Date) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(
+            JournalExporter.fileName(exportedAt: exportedAt))
     }
-    /// Whether one name in the temporary directory is this app's export. A file the app did not write
-    /// is never touched, whatever it is called.
+    /// Whether one name in the temporary directory is exactly a name the exporter writes: the prefix, a
+    /// timestamp in the exporter's own format, and the suffix.
+    ///
+    /// The timestamp is checked, not just its length, because the erase deletes what it matches. A name
+    /// that only looks like an export belongs to something else, and deleting a file this app never
+    /// wrote would be a worse mistake than leaving a stray one behind.
     public static func exportFilePatternMatches(_ name: String) -> Bool {
-        name.hasPrefix(exportFileNamePrefix) && name.hasSuffix(exportFileNameSuffix)
+        guard name.hasPrefix(exportFileNamePrefix), name.hasSuffix(exportFileNameSuffix) else { return false }
+        let stamp = name.dropFirst(exportFileNamePrefix.count).dropLast(exportFileNameSuffix.count)
+        let format = JournalExporter.fileNameDateFormat
+        guard stamp.count == format.count else { return false }
+        for offset in stamp.indices {
+            let expected = format[format.index(format.startIndex, offsetBy: offset)]
+            let character = stamp[offset]
+            if expected == "-" {
+                guard character == "-" else { return false }
+            } else {
+                guard character.isASCII, character.isNumber else { return false }
+            }
+        }
+        return true
     }
     public static let unavailableVersion = "unknown"
     /// Fixed until the app target exists and can inject its real version string.

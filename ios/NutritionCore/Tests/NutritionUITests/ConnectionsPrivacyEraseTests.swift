@@ -128,9 +128,10 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     /// can be killed after an export and relaunched into a model that has forgotten the URL. The erase
     /// has to sweep the temporary directory, not only the one file this model remembers.
     func testEraseRemovesEveryExportFileEvenOneThisScreenNeverWrote() throws {
-        let writtenEarlier = ConnectionsPrivacyViewModel.exportFileName(for: now.addingTimeInterval(-86_400))
-        let stray = ConnectionsPrivacyViewModel.exportFileName(for: now.addingTimeInterval(-172_800))
-        let unrelated = FileManager.default.temporaryDirectory.appendingPathComponent("keep-\(UUID().uuidString).txt")
+        let writtenEarlier = ConnectionsPrivacyViewModel.exportFileURL(for: now.addingTimeInterval(-86_400))
+        let stray = ConnectionsPrivacyViewModel.exportFileURL(for: now.addingTimeInterval(-172_800))
+        let unrelated = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keep-\(UUID().uuidString).txt")
         for url in [writtenEarlier, stray, unrelated] {
             try Data("{}".utf8).write(to: url)
             addTeardownBlock { try? FileManager.default.removeItem(at: url) }
@@ -147,10 +148,29 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
     }
 
+    /// A name that only looks like an export is not this app's file, and an erase that deletes it would
+    /// be destroying something it never wrote.
+    func testEraseLeavesAMalformedExportNameAlone() throws {
+        let malformed = FileManager.default.temporaryDirectory
+            .appendingPathComponent("journal-export-.json")
+        let shortStamp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("journal-export-2024-1-15-101500.json")
+        for url in [malformed, shortStamp] {
+            try Data("{}".utf8).write(to: url)
+            addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        }
+        let model = makeModel([RecordingEraser()])
+
+        XCTAssertTrue(model.eraseAllData())
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: malformed.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: shortStamp.path))
+    }
+
     /// A file that cannot be removed is an erase that did not finish. Reporting success would promise a
     /// deletion that never happened, so the failure is reported like a store's.
     func testEraseReportsFailureWhenAnExportFileCannotBeRemoved() throws {
-        let stray = ConnectionsPrivacyViewModel.exportFileName(for: now.addingTimeInterval(-86_400))
+        let stray = ConnectionsPrivacyViewModel.exportFileURL(for: now.addingTimeInterval(-86_400))
         try Data("{}".utf8).write(to: stray)
         addTeardownBlock { try? FileManager.default.removeItem(at: stray) }
         let model = ConnectionsPrivacyViewModel(
@@ -164,14 +184,24 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     }
 
     /// The export names the sweep looks for have to be the names the exporter writes, or the sweep
-    /// matches nothing and every strayed export survives.
+    /// matches nothing and every strayed export survives. A name it matches wrongly is just as bad: it
+    /// deletes a file this app never wrote.
     func testTheSweepPatternMatchesTheNamesTheExporterWrites() throws {
         let model = makeModel([RecordingEraser()])
         XCTAssertTrue(model.export(now: now.addingTimeInterval(-86_400)))
         let url = try XCTUnwrap(model.exportFileURL)
-        XCTAssertTrue(model.exportFilePatternMatches(url.lastPathComponent), url.lastPathComponent)
-        XCTAssertFalse(model.exportFilePatternMatches("journal-export-.json"))
-        XCTAssertFalse(model.exportFilePatternMatches("some-other-export-2024-01-15-101500.json"))
+        let name = url.lastPathComponent
+        XCTAssertTrue(ConnectionsPrivacyViewModel.exportFilePatternMatches(name), name)
+        for rejected in [
+            "journal-export-.json",
+            "journal-export-2024-1-15-101500.json",
+            "journal-export-2024-01-15-101500.txt",
+            "journal-export-2024-01-15T101500.json",
+            "some-other-export-2024-01-15-101500.json",
+            "journal-export-2024-01-15-101500.json.bak",
+        ] {
+            XCTAssertFalse(ConnectionsPrivacyViewModel.exportFilePatternMatches(rejected), rejected)
+        }
         model.eraseAllData()
     }
 
