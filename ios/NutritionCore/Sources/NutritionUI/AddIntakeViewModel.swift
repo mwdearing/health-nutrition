@@ -1,6 +1,7 @@
 import Foundation
 import NutritionDomain
 import NutritionJournal
+import NutritionProviders
 
 /// Parses amount text with a fixed POSIX format: digits with at most one ".", no locale, no sign.
 public enum AmountParser {
@@ -70,6 +71,10 @@ public final class AddIntakeViewModel: ObservableObject {
     /// succeeds, so an entry typed by hand stays exactly as it was, and nil again as soon as a later
     /// lookup finds nothing.
     @Published public private(set) var lookedUp: LookedUpProduct?
+    /// The product the values came from when the user captured a Nutrition Facts panel instead of
+    /// looking a barcode up. It is written as the snapshot on save, with `catalogOrigin` naming the
+    /// capture, and it is nil again as soon as anything else puts values into the form.
+    @Published public private(set) var labelValues: ProductDefinition?
     /// The name and brand the last successful lookup filled in, so a later lookup can tell an edited
     /// field from one it filled itself.
     private var filledName: String?
@@ -119,6 +124,12 @@ public final class AddIntakeViewModel: ObservableObject {
         case .failed:
             return "The lookup did not finish. Try again in a moment."
         }
+    }
+
+    /// One line explaining the values a captured panel filled in, or nil when there are none.
+    public var labelMessage: String? {
+        guard let product = labelValues else { return nil }
+        return "Filled in from the Nutrition Facts panel (\(product.labelBasis)). Enter the name, check the amount, then save."
     }
 
     /// Tells the user how long the source asked them to wait, rather than always one minute: a
@@ -191,11 +202,54 @@ public final class AddIntakeViewModel: ObservableObject {
         barcode = trimmed
     }
 
-    /// Drops everything an earlier lookup put into the form, so a failed or empty lookup for a second
-    /// barcode cannot leave the first product's values, or its snapshot, attached to the next entry.
+    /// Fills the form from a panel the user captured and confirmed, the way a barcode lookup fills it.
     ///
-    /// A field the user has since edited is left alone: only what the lookup itself filled in is
-    /// cleared, so typing over a looked-up name and then getting a rate limit does not lose the typing.
+    /// The name is left for the user: a panel states nutrients, not what the food is called. The values
+    /// and the product snapshot are attached, so saving writes the values with the origin the capture
+    /// recorded. A later lookup or another capture replaces them through the same invalidation as a
+    /// failed lookup, because a value from one product must never be stored under another.
+    public func applyLabelProduct(_ product: ProductDefinition) {
+        lookupGeneration += 1
+        invalidateLookup()
+        lookupState = .idle
+        labelValues = product
+        // Every panel row is filled in, so a nutrient the panel did not state reads as unknown on the
+        // form rather than missing from it. A known zero is never written for a missing row.
+        var filled: [String: NutrientValue] = [:]
+        for fact in NutritionFactKey.allCases {
+            filled[fact.rawValue] = product.nutrients[fact.rawValue] ?? .unknown
+        }
+        prefilledNutrients = filled.merging(product.nutrients) { given, _ in given }
+        serving = Self.capturedServing(of: product)
+    }
+
+    /// What one serving is, read back out of the basis a captured product stored. A panel states its
+    /// serving as text ("1 large biscuit") as often as as a measure, so the text is kept either way
+    /// and the measure is filled in when the stored basis spells one out.
+    static func capturedServing(of product: ProductDefinition) -> ServingDefinition? {
+        let prefix = BarcodeLookupBasis.perServing.label
+        guard product.labelBasis.hasPrefix(prefix) else { return nil }
+        let open = prefix + " ("
+        // A basis with no serving spelled out carries nothing to show, so no row is shown either: the
+        // section heading already says the values are per serving.
+        guard product.labelBasis.hasPrefix(open), product.labelBasis.hasSuffix(")") else { return nil }
+        let text = String(product.labelBasis.dropFirst(open.count).dropLast())
+        let parts = text.split(separator: " ", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let amount = AmountParser.parse(parts[0]),
+              let unit = try? MeasureUnit(symbol: parts[1])
+        else {
+            return ServingDefinition(quantity: nil, unit: nil, text: text)
+        }
+        return ServingDefinition(quantity: amount, unit: unit, text: text)
+    }
+
+    /// Drops everything an earlier lookup or capture put into the form, so a failed or empty lookup for
+    /// a second barcode cannot leave the first product's values, or its snapshot, attached to the next
+    /// entry.
+    ///
+    /// A field the user has since edited is left alone: only what the lookup or the capture itself
+    /// filled in is cleared, so typing over a looked-up name and then getting a rate limit does not
+    /// lose the typing.
     func invalidateLookup() {
         if let filledName, name == filledName { name = "" }
         if let filledBrand, brand == filledBrand { brand = "" }
@@ -206,11 +260,13 @@ public final class AddIntakeViewModel: ObservableObject {
         serving = nil
         attribution = nil
         lookedUp = nil
+        labelValues = nil
     }
 
     /// Fills the form from a looked-up product. The amount is left alone: the user confirms how much
     /// they actually ate.
     private func apply(_ product: LookedUpProduct) {
+        labelValues = nil
         if let productName = product.name?.trimmingCharacters(in: .whitespacesAndNewlines),
            !productName.isEmpty
         {
@@ -263,7 +319,32 @@ public final class AddIntakeViewModel: ObservableObject {
     /// source's own version and the nutrient values the lookup gave, so a later reader can resolve
     /// the values for this entry without asking the source again. The values are the source's own,
     /// on the basis `labelBasis` names; a nutrient the source did not give stays `.unknown`.
+    ///
+    /// A captured panel is stored the same way: the values and the origin the capture recorded, with
+    /// the name and brand the user settled on. The snapshot id is rebuilt from those, so two captures
+    /// of the same panel under two names stay two different records.
     func productSnapshot() -> ProductDefinition? {
+        if let captured = labelValues {
+            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            var signature = captured.labelBasis + "|origin=" + captured.catalogOrigin
+            signature += "|name=" + trimmedName
+            signature += "|brand=" + (trimmedBrand ?? "")
+            for key in captured.nutrients.keys.sorted() {
+                signature += "|" + key + "=" + LookedUpProduct.describe(captured.nutrients[key] ?? .unknown)
+            }
+            return ProductDefinition(
+                snapshotID: "label-" + Self.slug(signature) + "-" + LookedUpProduct.checksum(signature),
+                productID: captured.productID,
+                name: trimmedName,
+                brand: trimmedBrand,
+                barcode: captured.barcode,
+                labelBasis: captured.labelBasis,
+                catalogOrigin: captured.catalogOrigin,
+                catalogVersion: captured.catalogVersion,
+                nutrients: captured.nutrients
+            )
+        }
         guard let lookedUp else { return nil }
         // The name and brand are the ones in the form, not the source's: the user may have corrected
         // or cleared them, and the snapshot has to say what was actually recorded.

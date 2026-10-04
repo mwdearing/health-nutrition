@@ -1,11 +1,11 @@
 # Label capture: scan, parse, confirm, save
 
-Status: the parser is in place. The camera and the screen are not. Terms review date: 2027-10-04.
+Status: the parser, the review screen and the capture sheet are in place. Terms review date: 2027-10-04.
 
-Label capture (issue #39) reads a US Nutrition Facts panel from a photo and turns it into an intake the
-user confirms. This note describes the whole flow and what the parser that sits in the middle of it
-does and does not do. The parser is built and tested; the capture session and the confirmation screen
-are later work.
+Label capture (issue #39, review screen in #61) reads a US Nutrition Facts panel from a photo and turns
+it into an intake the user confirms. This note describes the whole flow and what the parser in the
+middle of it does and does not do, and what the review screen asks the user about before anything is
+filled in.
 
 ## The flow
 
@@ -18,13 +18,20 @@ are later work.
    `carbohydrates`, `fiber`, `sugars`, `addedSugars`, `protein`, `vitaminD`, `calcium`, `iron`,
    `potassium`). Every amount is read exactly with `Decimal(string:)` and keeps the unit the label
    printed (`kcal`, `g`, `mg`, `mcg`).
-3. **Confirm.** The screen shows the panel as it was read, marks every value the parser read with less
-   than full confidence, and lets the user correct or drop any row.
+3. **Confirm.** The review screen shows the panel as it was read, marks every value the parser read
+   with less than full confidence, and lets the user confirm or correct any row. Nothing is filled into
+   the intake form while a marked value is still unanswered.
 4. **Save.** Only what the user confirmed is written to the journal. A value the parser could not read,
    and a value the user did not agree with, is never saved on the parser's word.
 
 Nothing in this flow saves anything by itself. The parser is a pure function over text, so the only way
 a scanned number reaches the journal is through a confirmation the user gave.
+
+The camera lives in the app target (`LabelCaptureSheet.swift`), never in the UI package: it uses
+VisionKit's `DataScannerViewController` with `recognizedDataTypes: [.text()]`, checks `isSupported` and
+`isAvailable` before offering the entry, and a Capture button collects the recognized lines in reading
+order — top to bottom, and left to right within one line of print, so a two-column panel reads as the
+rows it printed. `NutritionUI` sees only `[String]`.
 
 ## What the parser handles
 
@@ -90,10 +97,59 @@ as corrected rather than being quietly scaled by a number the parser fixed up.
 A row with no reason was read exactly as printed. The reasons are a prompt to ask, never a correction
 the parser applies on its own: the user confirms the value, corrects it, or drops the row.
 
+## The review screen
+
+`LabelCaptureViewModel` sits between the parser and the intake form. It holds one row per nutrient,
+the value the parser read, and what the user has done about it. `LabelCaptureView` shows those rows;
+`LabelCaptureSheet` in the app target owns the camera and hands the scanner's lines over.
+
+The rules the screen keeps are short:
+
+- **A row the parser flagged has to be answered.** `canApply` is false while any flagged row is still
+  `.needsConfirmation`, and so is `makeProduct()`. The user either taps Confirm, which accepts the
+  value as printed, or taps Correct and types their own. There is no third way to get a flagged value
+  saved on the parser's word.
+- **A flagged serving size blocks the same way.** The serving size scales every nutrient below it, so
+  a `Serving size 1 cup (24O mL)` the parser corrected is confirmed separately, exactly like a row.
+- **A correction is checked with the same amount parser the intake form uses.** `AmountParser.parse`
+  accepts digits and at most one point; anything else is refused, changes nothing and says why. A
+  correction keeps the unit the panel printed, so it never moves a value between units: a row printed
+  in mg stays in mg, and a row the panel printed no unit for is corrected in the unit that row usually
+  carries.
+- **A nutrient the panel does not state stays `.unknown`.** It is shown as "not on the panel" and is
+  left out of the product rather than stored as zero, so `ProductDefinition.value(for:)` reads it back
+  as unknown.
+- **A panel with no readable amount is not turned into a product.** `isUnreadable` is true, the screen
+  says the panel could not be read, nothing is filled in, and the only thing offered is another look at
+  the panel.
+
+The product the review screen hands on records `catalogOrigin` as `label_capture` and its basis as
+`per serving`, with the serving spelled out when the panel stated a measure (`per serving (240 mL)`) and
+as printed when it stated only a household word (`per serving (1 large biscuit)`). The snapshot carries
+only the known, answered values.
+
+`AddIntakeViewModel.applyLabelProduct(_:)` then fills the form the way a barcode lookup fills it: the
+nutrients and the serving are attached, the product is written as the snapshot on save, and the name is
+left for the user, because a panel states nutrients rather than what the food is called. A captured
+product is invalidated by exactly the same things a looked-up one is: a later barcode, a later lookup
+or another capture clears the values and the snapshot together.
+
+## Privacy: no image is stored or sent
+
+Text recognition runs on the device and nothing leaves it:
+
+- **No image is stored, and none is sent anywhere.** The scanner reads text; the camera's frames and
+  any crop of one are never written down and never uploaded. `LabelCaptureSession` keeps the
+  transcripts of the items the camera currently recognizes, and each frame replaces the last.
+- **Nothing goes over the network.** Label capture makes no request. The `catalogOrigin` recorded with
+  the entry says where the values came from, and that is a panel the user read on their own device.
+- **Only the panel's text enters the app.** What is stored with the entry is the nutrient values and
+  the serving, which is what the user chose to record.
+- **The camera is used only for this.** The existing camera usage description already covers it, so no
+  new Info.plist key is needed.
+
 ## What is not here yet
 
-- The capture session that produces the lines. `NutritionFactsParser` takes text and has no image, camera
-  or framework dependency, so that part can change without touching it.
-- The confirmation screen, and the write into the journal.
-- Panels that are not US Nutrition Facts panels: a supplement facts panel, a menu item or a
-  non-US label is out of scope for this parser.
+- Panels that are not US Nutrition Facts panels: a supplement facts panel, a menu item or a non-US
+  label is out of scope for this parser.
+- Reading more than one panel in one capture: the sheet reads what is in the frame.

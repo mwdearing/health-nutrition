@@ -18,6 +18,10 @@ struct RootView: View {
     /// form that will be saved.
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var scanningBarcode = false
+    @State private var capturingLabel = false
+    /// Held so the review screen's values go into the same form the entry is saved from, and so a
+    /// retake starts from a clean panel.
+    @State private var labelCapture: LabelCaptureViewModel?
     @State private var selectedIntakeID: String?
     /// Held rather than kept as plain view state, so the erase below closes the recipe sheet and drops
     /// its routes through one method a test can call.
@@ -121,7 +125,10 @@ struct RootView: View {
                     },
                     // nil hides the button, so the form only offers scanning where the device has a
                     // camera that can read barcodes.
-                    onScanBarcode: scanBarcode
+                    onScanBarcode: scanBarcode,
+                    // Label capture is offered on its own terms: it asks the camera for text rather
+                    // than for a code, and it needs no lookup source to be available.
+                    onScanLabel: scanLabel
                 )
                 // The scanner fills the field and closes itself. The lookup still runs only when
                 // the user taps Look up.
@@ -129,6 +136,18 @@ struct RootView: View {
                     BarcodeScannerSheet { barcode in
                         // Through the model, so a scan drops whatever an earlier lookup filled in.
                         model.setScannedBarcode(barcode)
+                    }
+                }
+                // The capture sheet owns the camera and the review screen. The values are handed to
+                // the form only after the user has confirmed every value the parser was unsure about.
+                .sheet(isPresented: $capturingLabel) {
+                    if let capture = labelCapture {
+                        LabelCaptureSheet(model: capture) { product in
+                            // Through the model, so captured values are invalidated by a later barcode
+                            // or edit the same way looked-up values are.
+                            model.applyLabelProduct(product)
+                            labelCapture = nil
+                        }
                     }
                 }
             }
@@ -148,6 +167,17 @@ struct RootView: View {
     private var scanBarcode: (() -> Void)? {
         guard BarcodeScanner.isAvailable else { return nil }
         return { scanningBarcode = true }
+    }
+
+    /// The action the intake form's Scan label entry runs. nil where the device cannot read text with
+    /// the camera, which hides the entry rather than offering something that would not work.
+    private var scanLabel: (() -> Void)? {
+        guard LabelTextScanner.isAvailable else { return nil }
+        return {
+            // A fresh view model per capture, so a previous panel is never on screen behind this one.
+            labelCapture = LabelCaptureViewModel()
+            capturingLabel = true
+        }
     }
 
     /// The recipes screen, in its own navigation stack so the recipe screens push over each other
