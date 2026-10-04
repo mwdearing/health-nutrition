@@ -676,7 +676,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
             transport.sendCallCount, 5,
             "the batch, its first half, that half's two singles, and the second half: five requests")
         XCTAssertEqual(
-            transport.sentBatches.dropFirst().flatMap { FakeIntakeContextTransport.operationIDs(in: $0) },
+            // The first two requests were refused for size; the three accepted ones carry each operation once.
+            transport.sentBatches.dropFirst(2).flatMap { FakeIntakeContextTransport.operationIDs(in: $0) },
             ordered, "the splits keep the queue's order")
         XCTAssertEqual(
             outcomes.count, 4, "one outcome per operation")
@@ -695,9 +696,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         }
         let ordered = try pendingRelay(store).map(\.operationID)
         let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
-        // Both halves are refused, so each operation is finally asked on its own. One of them is refused
-        // again; the other is accepted.
-        transport.answer(.init(statusCode: 413, error: "body too large"))
+        // The pair is refused, so each operation is asked on its own: the first is refused again, the second
+        // is accepted.
         transport.answer(.init(statusCode: 413, error: "body too large"))
         transport.answer(.init(statusCode: 413, error: "body too large"))
         transport.answerEverythingAccepted()
@@ -1123,9 +1123,11 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             },
             [laterRevision],
             "the later revision of the unresolved intake is kept out of the tail")
+        // The refused first request carried it (one intake's revisions travel together); no request after it may.
         XCTAssertFalse(
-            transport.sentOperationIDs.contains(laterRevision),
-            "and it is genuinely not sent, not merely reported as blocked")
+            transport.sentBatches.dropFirst().flatMap { FakeIntakeContextTransport.operationIDs(in: $0) }
+                .contains(laterRevision),
+            "and it is genuinely not sent again, not merely reported as blocked")
         XCTAssertTrue(transport.sentOperationIDs.contains(otherIntake), "other intakes still go out")
     }
 
