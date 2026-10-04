@@ -1,4 +1,4 @@
-# HealthKit writer: the plan and the delivery worker
+# HealthKit writer: planning, delivery and lifecycle
 
 Two halves, in two layers. The **plan** (`HealthKitWritePlanner`) is pure data: which samples a
 revision would write. The **delivery worker** (`HealthKitDeliveryWorker`) walks the journal's queue,
@@ -15,7 +15,7 @@ journal stays testable on macOS — so the quantity type is named by its identif
 (`"HKQuantityTypeIdentifierDietaryWater"`) and the app target looks the type up and builds the
 `HKQuantitySample` later. Nothing in this module authorizes, saves, queries or deletes anything.
 
-The behaviour follows [ADR 0002](../adr/0002-healthkit-sync.md), which records what HealthKit actually
+The behaviour follows [ADR 0002](adr/0002-healthkit-sync.md), which records what HealthKit actually
 did on a device rather than what its documentation says. The three consequences that shape this
 plan:
 
