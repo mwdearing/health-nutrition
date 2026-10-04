@@ -120,7 +120,11 @@ final class AppServices {
     }
 
     /// Application Support/HealthNutrition, created on first use.
-    static var defaultDirectory: URL {
+    ///
+    /// Nonisolated because it is the default argument of `make(directory:)` below, and a default
+    /// argument is evaluated in a nonisolated context. It touches nothing but `FileManager`, so it has
+    /// no reason to be on the main actor anyway.
+    nonisolated static var defaultDirectory: URL {
         let directory = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("HealthNutrition", isDirectory: true)
