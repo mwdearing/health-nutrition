@@ -1231,19 +1231,25 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// Records the link snapshot an operation is about to be sent under, keeping the first one it is given.
     ///
     /// Recording is first-write-wins: a later attempt cannot replace what an earlier one was sent with,
-    /// which is the whole point of keeping it. A snapshot already recorded is left alone even when it
-    /// differs from the one offered now.
-    public func recordLinks(_ links: [IntakeContextLink], operationID: String) throws {
+    /// which is the whole point of keeping it. When a snapshot is already recorded it is returned and the
+    /// one offered now is ignored, so the caller sends the stored one and two overlapping runs cannot send
+    /// different snapshots under one operation id.
+    @discardableResult
+    public func recordLinks(_ links: [IntakeContextLink], operationID: String) throws -> [IntakeContextLink] {
         // Encoded before the commit, so a snapshot that cannot be written leaves the row as it was instead
         // of failing a transaction that would have rolled back anyway.
         let text = try RelayDeliveryLinkSnapshot.encode(links)
-        try commit { context in
+        let existing: String? = try commit { context -> String? in
             guard let row = try Self.outboxRecord(operationID, in: context) else {
                 throw JournalError.unknownOperation(operationID)
             }
-            guard row.acknowledgedAt == nil, row.linksJSON == nil else { return }
+            if let winner = row.linksJSON { return winner }
+            guard row.acknowledgedAt == nil else { return nil }
             row.linksJSON = text
+            return nil
         }
+        guard let existing else { return links }
+        return try RelayDeliveryLinkSnapshot.decode(existing)
     }
 
     /// Clears the suspension on one operation, so an automatic run may pick it up again.
