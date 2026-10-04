@@ -47,10 +47,16 @@ already holds. So order is not tidiness here, it is the delivery succeeding:
 
 - operations are read in queue order and packed in that order, so one intake's revisions travel oldest
   first, in one array when they fit;
-- an operation that is **suspended** or **not due yet** holds back every later operation for the same
-  intake, because it was never delivered;
+- an operation that is **suspended**, **not due yet**, or **unencodable** holds back the operations *behind
+  it* for the same intake, because they were never delivered;
 - once a batch comes back, an operation whose outcome is unresolved holds back the later operations for
   its intake in the batches after it.
+
+**A blocker only ever holds back what comes after it.** The receiver's rule is one-directional: it
+refuses going forwards, so revision 3 delivered before revision 2 is refused while revision 2 delivered
+before revision 3 is fine. A parked revision 3 is therefore no reason to withhold a due revision 1 — that
+would leave the queue permanently stuck behind a problem the earlier revision does not share. Each blocker
+records where it sits in the queue, and only an operation further along is held back by it.
 
 A queued upsert whose intake has since been deleted is acknowledged as **superseded**, not sent: the
 delete queued beside it is what decides what the receiver holds, and sending the upsert would put back
@@ -84,9 +90,9 @@ HealthRelay connection that will read them back.
 |---|---|
 | 200 | the per-operation results above |
 | 400, 403 | permanent for the operations of that batch: the payload or the producer binding is refused, so the same bytes are refused again. The receiver's `error` code is the stored reason |
-| 401 | **the run stops.** Retrying cannot mint a new token and every later batch would be refused the same way, so one cause is reported instead of one refusal per batch. The operations sent so far are parked with a token reason and no retry until re-armed; the operations the run never reached are reported as `notAttempted` |
+| 401 | **the run stops.** Retrying cannot mint a new token and every later batch would be refused the same way, so one cause is reported instead of one refusal per batch. The operations sent so far are parked with a token reason and no retry until re-armed; the operations the run never reached are reported as `notAttempted`. A 401 on the **head of a split** stops the split there too: the tail shares the refused credential, so sending it would be one more refusal for the same reason and would park those operations against a token already known to be bad |
 | 413 | the batch is **split once** and each half is retried, keeping the order the operations were read in. An operation too large on its own cannot be split, so it is parked as permanently refused |
-| 429 | retried at `Retry-After` when the receiver sent one — a rate limit answered with its own interval is the receiver telling this producer exactly how long to stop — and on the backoff when it did not |
+| 429 | retried at `Retry-After` when the receiver sent one — a rate limit answered with its own interval is the receiver telling this producer exactly how long to stop — and on the **per-operation backoff ladder** when it did not, so a repeatedly throttled producer waits longer each time rather than holding at one minute |
 | 5xx, and transport errors | retried on the backoff. A thrown transport error means nothing arrived, so there is no status to read and the same bytes are worth sending again |
 
 The backoff is 1, 5 and 30 minutes, then every 2 hours, indexed by the attempt count **including** the
@@ -111,20 +117,50 @@ which would look like a permanent failure of every operation rather than of the 
 | Injected | Why |
 |---|---|
 | `IntakeContextTransport` | the journal module holds no networking, and the delivery rules are tested against a fake rather than a receiver |
-| the intake token, per call | rotating it is the connection's decision, and two batches in one run may carry different tokens |
+| the intake token, **asked once per batch** | a token is a credential the connection refreshes. Capturing one at initialization would leave every batch after a mid-run rotation carrying a value that had already expired, each refused 401 and each parking its work against a stale reason. A provider that cannot mint one reschedules the batch: nothing was sent, so nothing is parked |
 | `IntakeContextEncoder` | the digests and the canonical bytes are the contract's, and the encoder is the only thing that computes them |
 | `RelayLinkProjectionQueue` | a link projection has no outbox row, so the queue that offered it is told what became of it and owns where it waits |
 | the link snapshot | the journal does not know which samples exist; that is the writer's knowledge. The default is no links, which the contract reads as "nothing linked yet" |
-| the tombstone's `deleted_at` | it is hashed into two digests, so a rebuilt delete has to carry the same instant or the receiver reports a conflict instead of the duplicate it is. The journal records no deletion instant, so the default anchors it to the `createdAt` of the revision the delete retracts: durable, immutable and identical on every rebuild |
+| the tombstone's `deleted_at` | the worker reads the instant the queued delete row recorded — what `delete(intakeID:now:)` was given, and the truthful answer to when the person deleted the entry |
+
+## Two records the journal keeps so a retry is a retry
+`deleted_at` and `healthkit_links` both sit inside the digests, and an operation's delivery identity never
+changes, so **a retry is not a fresh encode**. The receiver reads the same `operation_id` with the same
+`client_payload_hash` as a duplicate and with a different one as a conflict, which means anything that
+varies between two attempts turns a lost response into a permanent disagreement:
+
+- **The deletion instant** is written on the outbox delete row when that row is queued, and read back for
+  every attempt. A row queued before the column existed carries none and falls back to the last revision's
+  own instant, so an upgraded store does not strand a deletion it could otherwise deliver.
+- **The sequence-1 link snapshot** is recorded with an upsert's first attempt, keeping the first one it is
+  given, and reused on every retry. Links that arrived in between — a HealthKit save revealing a sample
+  UUID — would move the projection and client digests, so a store that cannot record the snapshot cannot
+  back this worker: it would have no way to make a retry the duplicate it needs to be.
+
+Both are optional columns added by a lightweight migration, so no existing row is rewritten and nothing
+already in a store is wrong after the upgrade.
+
+## Link projections carry their own retry date
+A projection has no outbox row, so `RelayLinkProjectionQueue` is told `retryAfter(_:reason:)` whenever one
+is rescheduled, and is expected to honour that date when it offers projections again. Without it the queue
+would hand the same projection back on the next run whatever the receiver said, and a run triggered for
+unrelated work would retry it immediately — against a receiver that had just asked this producer to stop.
+A projection that cannot be encoded at all is told `needsAttention` **and holds back the later projections
+of the same intake**, which are later sequences of the same revision and would otherwise ask the receiver to
+reconcile a state the earlier one could not be sent in.
 
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/RelayDeliveryWorkerTests.swift` runs against a real
 `SwiftDataJournalStore` on disk and a fake transport that reads the `operation_id`s out of the bytes it was
 handed, so an assertion is about what was actually encoded rather than about what the test expected. It
-covers every row of the outcome table, 429 with and without `Retry-After`, 401 stopping the run and the
-next run not retrying, 400, 403, 5xx and transport errors, the 413 split and a 413 that cannot be split,
-both batch limits, the order of one intake's revisions, a suspended operation holding back what is behind
-it, a delete sent as a tombstone, and delivery off — a store with no enabled relay destination sends
-nothing at all, and does not even ask the receiver for its capabilities.
+covers every row of the outcome table, 429 with and without `Retry-After` and the ladder a headerless one
+walks, 401 stopping the run and the next run not retrying, 401 on the head of a split, 400, 403, 5xx and
+transport errors, a token that cannot be read and one fetched per batch, the 413 split and a 413 that
+cannot be split, both batch limits, the order of one intake's revisions, a parked *later* revision not
+stranding an earlier due one, a suspended operation holding back what is behind it, a delete sent as a
+tombstone with the instant the journal recorded, an upsert retry reusing its first link snapshot, a
+projection's retry date reaching its queue, an unencodable projection holding back the later ones, and
+delivery off — a store with no enabled relay destination sends nothing at all, and does not even ask the
+receiver for its capabilities.
 
 Swift tests run in macOS CI; the acceptance for this package is static.

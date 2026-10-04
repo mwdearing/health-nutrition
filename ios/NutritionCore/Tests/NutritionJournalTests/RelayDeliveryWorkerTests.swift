@@ -219,11 +219,13 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     private func makeWorker(
         store: SwiftDataJournalStore,
         transport: FakeIntakeContextTransport,
-        projections: (any RelayLinkProjectionQueue)? = nil
+        projections: (any RelayLinkProjectionQueue)? = nil,
+        token: @escaping RelayTokenProvider = { "synthetic-test-token" },
+        links: @escaping RelayLinkProvider = { _, _ in [] }
     ) -> RelayDeliveryWorker {
         RelayDeliveryWorker(
-            store: store, transport: transport, encoder: encoder, token: "synthetic-test-token",
-            projections: projections ?? RelayLinkProjectionQueueNone())
+            store: store, transport: transport, encoder: encoder, token: token,
+            projections: projections ?? RelayLinkProjectionQueueNone(), links: links)
     }
 
     /// A store, a fake transport and a worker over them.
@@ -782,6 +784,367 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(
             try store.pendingOutbox().filter { $0.destination == .healthKit }.count, 1,
             "the HealthKit operation is still queued: it is not this worker's delivery")
+    }
+
+    // MARK: - A projection queue that keeps what it was told
+
+    /// A queue that holds projections in memory and records every resolution, so a test can see what the
+    /// worker told it and when it would next offer each projection.
+    final class RecordingProjectionQueue: RelayLinkProjectionQueue, @unchecked Sendable {
+        private let lock = NSLock()
+        private var offered: [RelayLinkProjection] = []
+        private var resolutions: [(projection: RelayLinkProjection, resolution: RelayLinkProjectionResolution)] = []
+        private var attempts: [String: Date] = [:]
+
+        /// The projections a run is offered, in order.
+        var pending: [RelayLinkProjection] {
+            lock.withLock { offered.filter { attempts[$0.operationID] == nil } }
+        }
+
+        /// Every resolution recorded, oldest first.
+        var recorded: [RelayLinkProjectionResolution] {
+            lock.withLock { resolutions.map(\.resolution) }
+        }
+
+        /// When each projection was last told to wait, by delivery identity.
+        var retryDates: [String: Date] {
+            lock.withLock { attempts }
+        }
+
+        func offer(_ projections: [RelayLinkProjection]) {
+            lock.withLock { offered = projections }
+        }
+
+        func pendingLinkProjections() async throws -> [RelayLinkProjection] {
+            pending
+        }
+
+        func resolve(_ projection: RelayLinkProjection, with resolution: RelayLinkProjectionResolution) async {
+            lock.withLock {
+                resolutions.append((projection, resolution))
+                if case .retryAfter(let date, _) = resolution {
+                    attempts[projection.operationID] = date
+                }
+            }
+        }
+    }
+
+    /// Hands out a distinct token per call, so a test can see that each batch asked for a fresh one rather
+    /// than reusing one captured when the worker was built.
+    final class TokenRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var issued = 0
+        /// Every token handed out, in order.
+        private(set) var recorded: [String] = []
+
+        func next() async -> String {
+            lock.withLock {
+                issued += 1
+                let token = "token-\(issued)"
+                recorded.append(token)
+                return token
+            }
+        }
+    }
+
+    /// A link provider whose snapshot the test changes between runs, so a retry can be shown rebuilding
+    /// against different links than the first attempt used.
+    final class LinkProvider: @unchecked Sendable {
+        private let lock = NSLock()
+        private var snapshot: [IntakeContextLink]
+
+        init(snapshot: [IntakeContextLink]) {
+            self.snapshot = snapshot
+        }
+
+        var current: [IntakeContextLink] { lock.withLock { snapshot } }
+
+        func set(_ links: [IntakeContextLink]) {
+            lock.withLock { snapshot = links }
+        }
+    }
+
+    /// A link projection that names a component of no revision, so the encoder refuses it whatever the
+    /// journal holds. Used to exercise what an unencodable projection does to the ones behind it.
+    private func unencodableProjection(sequence: Int) -> RelayLinkProjection {
+        RelayLinkProjection(
+            intakeID: intakeID, revision: 1, sequence: sequence,
+            links: [IntakeContextLink(
+                componentID: "not-a-fact",
+                sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+                healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+                syncIdentifier: "intake:\(intakeID):water", syncVersion: sequence,
+                disposition: .active)])
+    }
+
+    private func projection(sequence: Int, syncVersion: Int? = nil) -> RelayLinkProjection {
+        RelayLinkProjection(
+            intakeID: intakeID, revision: 1, sequence: sequence,
+            links: [IntakeContextLink(
+                componentID: "water",
+                sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+                healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+                syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+                syncVersion: syncVersion ?? sequence,
+                disposition: .active)])
+    }
+
+    // MARK: - Review round 1
+
+    /// A parked **later** revision must not strand an earlier due one. The receiver only refuses going
+    /// forwards, so revision 1 is deliverable whatever happened to revision 3, and withholding it would
+    /// leave the queue permanently stuck behind a problem it cannot fix on its own.
+    func testAParkedLaterRevisionDoesNotStrandTheEarlierDueRevision() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "two", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "three", now: when)
+        let queuedInOrder = try pendingRelay(store, intakeID: intakeID).map(\.operationID)
+        let third = queuedInOrder[2]
+        try store.recordFailure(
+            operationID: third, retryAt: nil, needsAttention: true, reason: "a domain conflict")
+        transport.answerEverythingAccepted()
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            transport.sentOperationIDs, Array(queuedInOrder.prefix(2)),
+            "the two earlier revisions go out; only the parked one holds back what is behind it")
+        XCTAssertEqual(
+            outcomes.compactMap { outcome -> String? in
+                guard case .needsAttention(let id, _) = outcome else { return nil }
+                return id
+            },
+            [third])
+        XCTAssertEqual(
+            try pendingRelay(store, intakeID: intakeID).map(\.operationID), [third],
+            "only the parked revision is left queued")
+    }
+
+    /// A rejected token on the head of a split stops there. Every batch carries the same credential, so
+    /// sending the tail is one more request the receiver refuses for the same reason, and it would park
+    /// those operations against a token already known to be bad.
+    func testA401OnTheHeadOfASplitBatchStopsBeforeTheTailIsSent() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: thirdIntakeID), components: components(), product: nil, now: when)
+        let ordered = try pendingRelay(store).map(\.operationID)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        // One oversized batch, refused for size; then the head of the split is refused for the token.
+        transport.answer(.init(statusCode: 413, error: "too_many_operations"))
+        transport.answer(.init(statusCode: 401))
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(store: store, transport: transport).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 2, "the tail of the split is never sent")
+        XCTAssertEqual(
+            outcomes.filter { if case .notAttempted = $0 { return true } else { return false } }.count, 2,
+            "the tail is reported as unattempted: \(outcomes)")
+        let parked = try pendingRelay(store).filter { $0.operationID != ordered[0] }
+        XCTAssertEqual(
+            parked.filter { $0.attempts == 0 }.count, 2,
+            "an operation that was never sent is not recorded as a failed attempt")
+    }
+
+    /// A 429 with no `Retry-After` steps along the same ladder as any other transient failure. Holding a
+    /// repeatedly throttled producer at one minute is the opposite of what a receiver asking for less
+    /// traffic wants.
+    func testA429WithoutARetryAfterUsesTheAttemptBackoffNotAFixedMinute() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        transport.answer(.init(statusCode: 429))
+        _ = await worker.runOnce(now: when)
+        transport.reset()
+        transport.answer(.init(statusCode: 429))
+
+        // The second failure must wait longer than the first: five minutes, not another minute.
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(3600))
+
+        guard case .retryScheduled(_, let next, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a rate limit is a retry, got \(outcomes)")
+        }
+        XCTAssertEqual(next, when.addingTimeInterval(3600).addingTimeInterval(300))
+    }
+
+    /// The tombstone carries when the person deleted the entry, not when the last revision was written.
+    /// `delete(intakeID:now:)` knows, the journal records it, and it is hashed — so an approximation could
+    /// never be corrected afterwards without turning the retry into a conflict.
+    func testADeleteCarriesThePersistedDeletionInstantRatherThanTheRevisionsCreationTime() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let deletedAt = when.addingTimeInterval(3600)
+        try store.delete(intakeID: intakeID, now: deletedAt)
+        let deleteRow = try XCTUnwrap(relayOperation(store, kind: .delete))
+        transport.answerEverythingAccepted()
+
+        _ = await worker.runOnce(now: deletedAt)
+        XCTAssertEqual(
+            try store.deletionInstant(operationID: deleteRow.operationID), deletedAt,
+            "the journal recorded the instant it was given")
+        let batch = try IntakeContextJSONReader.read(try XCTUnwrap(transport.sentBatches.first))
+        let tombstone = try XCTUnwrap(batch.array("operations")).last
+        XCTAssertEqual(tombstone?.string("operation"), "delete")
+        XCTAssertEqual(
+            tombstone?.string("deleted_at"), IntakeContextTimestamp.utc(deletedAt),
+            "the tombstone states the real deletion instant")
+        XCTAssertNotEqual(
+            tombstone?.string("deleted_at"), IntakeContextTimestamp.utc(when),
+            "and not the instant the last revision happened to be written")
+    }
+
+    /// The token is asked for once per batch, so a credential that rotates partway through a run is not
+    /// stale for the batches after the rotation — each of which would come back 401 and park its work.
+    func testTheTokenIsAskedForOnceForEachBatch() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: thirdIntakeID), components: components(), product: nil, now: when)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities(maxOperations: 1))
+        transport.answerEverythingAccepted()
+        let tokens = TokenRecorder()
+
+        _ = await makeWorker(store: store, transport: transport, token: { await tokens.next() }).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 3, "three batches")
+        XCTAssertEqual(tokens.recorded.count, 3, "the token is asked for once per batch, not once per run")
+        XCTAssertEqual(
+            transport.sentTokens, ["token-1", "token-2", "token-3"],
+            "each batch carries the token that was current for it")
+    }
+
+    /// A token that cannot be read is not a rejected token: nothing was sent, so nothing is parked. The
+    /// operations are rescheduled instead, since a connection that cannot mint a credential yet may manage
+    /// it on the next run.
+    func testATokenThatCannotBeReadReschedulesRatherThanParks() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let worker = makeWorker(
+            store: store, transport: transport,
+            token: { throw URLError(.userAuthenticationRequired) })
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 0)
+        guard case .retryScheduled(_, let next, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("an unreadable token is not a refusal, got \(outcomes)")
+        }
+        XCTAssertTrue(reason.contains("token"), reason)
+        XCTAssertEqual(next, when.addingTimeInterval(60))
+        XCTAssertEqual(try pendingRelay(store).count, 1, "the operation is still queued, not parked")
+    }
+
+    /// A projection that was told to wait is not offered again until its date. Without this the queue hands
+    /// it back on the next run whatever the receiver said, and a run triggered for unrelated work retries it
+    /// immediately against a receiver that had asked this producer to stop.
+    func testAProjectionRetryIsRecordedWithItsQueueSoRunsRespectTheWait() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let queue = RecordingProjectionQueue()
+        let queued = projection(sequence: 2)
+        queue.offer([queued])
+        transport.answer(.init(statusCode: 500))
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(queue.recorded.count, 1)
+        guard case .retryAfter(let date, _) = try XCTUnwrap(queue.recorded.first) else {
+            return XCTFail("a transient failure tells the queue when to come back, got \(queue.recorded)")
+        }
+        XCTAssertEqual(date, when.addingTimeInterval(60))
+        XCTAssertEqual(
+            queue.retryDates[queued.operationID], date, "the queue can honour it on the next run")
+        guard case .retryScheduled(_, let reported, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the run reports the same date, got \(outcomes)")
+        }
+        XCTAssertEqual(reported, date)
+        XCTAssertEqual(queue.pending, [], "a projection told to wait is not offered again yet")
+    }
+
+    /// A 429's stated `Retry-After` reaches the projection queue too, so the wait the receiver asked for is
+    /// the wait it gets rather than the backoff standing in for it.
+    func testAProjectionsRetryAfterHeaderReachesItsQueue() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let queue = RecordingProjectionQueue()
+        queue.offer([projection(sequence: 2)])
+        transport.answer(.init(statusCode: 429, retryAfterSeconds: 120))
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            queue.retryDates.values.first, when.addingTimeInterval(120),
+            "the receiver's own interval is what the queue waits")
+    }
+
+    /// An upsert's links are recorded with its first attempt and reused on the retry. The delivery identity
+    /// is the outbox row's, so links that arrived in between would move the digests and turn a lost
+    /// response's retry into a conflict at the receiver.
+    func testAnUpsertRetryReusesTheLinkSnapshotOfItsFirstAttempt() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let operation = try XCTUnwrap(relayOperation(store, kind: .upsert))
+        let first = projection(sequence: 2)
+        let provider = LinkProvider(snapshot: first.links)
+        // The response is lost, so the operation stays pending and is attempted again.
+        transport.failSends(with: URLError(.timedOut))
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current }
+        ).runOnce(now: when)
+        provider.set(
+            [IntakeContextLink(
+                componentID: "water",
+                sampleUUID: "6f1c9d20-84ab-4e77-9a3b-5c0e2d84f611",
+                healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+                syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+                syncVersion: 7,
+                disposition: .active)])
+        transport.reset()
+        let retrying = makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current })
+        transport.answerEverythingAccepted()
+
+        _ = await retrying.runOnce(now: when.addingTimeInterval(3600))
+
+        XCTAssertEqual(
+            try store.recordedLinks(operationID: operation.operationID), first.links,
+            "the snapshot sent first is the one a retry reuses")
+        let sent = try IntakeContextJSONReader.read(try XCTUnwrap(transport.sentBatches.first))
+        let links = try XCTUnwrap(sent.array("operations")).first?.array("healthkit_links")
+        XCTAssertEqual(
+            links?.first?.string("healthkit_sample_uuid"), first.links.first?.sampleUUID,
+            "the retry carries the first attempt's sample, not the one that arrived since")
+    }
+
+    /// An unencodable projection holds back the projections behind it, and only those: they are later
+    /// sequences of the same revision, and the receiver refuses a projection whose predecessor it has not
+    /// accepted, so letting them through would ask it to reconcile a state the earlier one could not be
+    /// sent in at all.
+    func testAnUnencodableProjectionHoldsBackTheLaterProjectionsOfItsIntake() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let queue = RecordingProjectionQueue()
+        let bad = unencodableProjection(sequence: 2)
+        let later = projection(sequence: 3)
+        queue.offer([bad, later])
+        transport.answerEverythingAccepted()
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 0, "the later sequence is not sent past the one that failed")
+        XCTAssertEqual(
+            outcomes.filter { if case .blocked(_, let by) = $0 { return by == bad.operationID } else { return false } }
+                .map(\.operationID),
+            [later.operationID])
+        XCTAssertEqual(
+            queue.recorded.filter { $0 != .delivered(acceptedRevision: nil, serverCursor: nil) }.count, 1,
+            "only the unencodable projection is reported, and as needing a person")
     }
 
     // MARK: - Delivery is off

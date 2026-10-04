@@ -415,7 +415,172 @@ enum JournalSchemaV3: VersionedSchema {
     }
 }
 
-/// The store is written with V3.
+/// The deletion instant and the sent link snapshot, added as two optional columns. V3 above is kept
+/// exactly as the build that wrote it did, so a store that build created still has a schema SwiftData
+/// can migrate from.
+///
+/// Both columns exist because a hashed payload cannot be corrected under the same delivery identity: a
+/// delete whose `deleted_at` was rebuilt from a different instant, or an upsert whose links changed
+/// between two attempts, arrives at the receiver under one `operation_id` with a different
+/// `client_payload_hash` and is a conflict rather than the duplicate it is. A row written before these
+/// columns carries neither, and is delivered from the durable record the journal already keeps.
+enum JournalSchemaV4: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [IntakeRecord.self, RevisionRecord.self, ProductRecord.self, ProjectionRecord.self, OutboxRecord.self]
+    }
+
+    @Model
+    final class IntakeRecord {
+        var intakeID: String
+        var category: String
+        var occurredAt: Date
+        var timeZoneIdentifier: String
+        var meal: String?
+        var note: String?
+        var lifecycleRaw: String
+        var currentRevision: Int
+
+        init(
+            intakeID: String, category: String, occurredAt: Date, timeZoneIdentifier: String,
+            meal: String?, note: String?, lifecycleRaw: String, currentRevision: Int
+        ) {
+            self.intakeID = intakeID
+            self.category = category
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+            self.meal = meal
+            self.note = note
+            self.lifecycleRaw = lifecycleRaw
+            self.currentRevision = currentRevision
+        }
+    }
+
+    @Model
+    final class RevisionRecord {
+        var intakeID: String
+        var number: Int
+        /// JSON array of components; amounts are decimal text.
+        var componentsJSON: String
+        var productSnapshotID: String?
+        var changeReason: String
+        var createdAt: Date
+
+        init(
+            intakeID: String, number: Int, componentsJSON: String,
+            productSnapshotID: String?, changeReason: String, createdAt: Date
+        ) {
+            self.intakeID = intakeID
+            self.number = number
+            self.componentsJSON = componentsJSON
+            self.productSnapshotID = productSnapshotID
+            self.changeReason = changeReason
+            self.createdAt = createdAt
+        }
+    }
+
+    @Model
+    final class ProductRecord {
+        var snapshotID: String
+        var productID: String
+        var name: String
+        var brand: String?
+        var barcode: String?
+        var labelBasis: String
+        var catalogOrigin: String
+        var catalogVersion: String
+        /// JSON of the nutrient values the product states, sorted by id.
+        var nutrientsJSON: String?
+
+        init(
+            snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
+            labelBasis: String, catalogOrigin: String, catalogVersion: String, nutrientsJSON: String? = nil
+        ) {
+            self.snapshotID = snapshotID
+            self.productID = productID
+            self.name = name
+            self.brand = brand
+            self.barcode = barcode
+            self.labelBasis = labelBasis
+            self.catalogOrigin = catalogOrigin
+            self.catalogVersion = catalogVersion
+            self.nutrientsJSON = nutrientsJSON
+        }
+    }
+
+    @Model
+    final class ProjectionRecord {
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var actionRaw: String
+        var stateRaw: String
+        var isCurrent: Bool
+
+        init(
+            intakeID: String, revision: Int, destinationRaw: String,
+            actionRaw: String, stateRaw: String, isCurrent: Bool
+        ) {
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.actionRaw = actionRaw
+            self.stateRaw = stateRaw
+            self.isCurrent = isCurrent
+        }
+    }
+
+    @Model
+    final class OutboxRecord {
+        var operationID: String
+        var kindRaw: String
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var payloadHash: String
+        var attempts: Int
+        var nextAttemptAt: Date?
+        var acknowledgedAt: Date?
+        /// Why the operation was suspended, kept so a later run and the next launch report the same
+        /// reason rather than guessing from the state.
+        var suspensionReason: String?
+        /// The instant this intake was deleted, written when the delete row is queued.
+        ///
+        /// Nil for an upsert, which has no tombstone, and for a row queued by a build that predates the
+        /// column. `deleted_at` is hashed into the delete's domain and client digests, so this has to be
+        /// the real instant the journal was given, durable: a rebuild that named a different one would
+        /// arrive under the same `operation_id` as a conflict instead of a duplicate.
+        var deletedAt: Date?
+        /// The link snapshot this operation was first encoded with, as the contract writes it.
+        ///
+        /// Nil until the operation's first attempt records it, and never changed afterwards: the retry
+        /// of an upsert has to carry the same links under the same identity or the receiver reads it as a
+        /// conflict rather than the duplicate it is. An upsert with no links records an empty snapshot, so
+        /// "recorded with no links" is distinguishable from "never attempted".
+        var linksJSON: String?
+
+        init(
+            operationID: String, kindRaw: String, intakeID: String, revision: Int,
+            destinationRaw: String, payloadHash: String, suspensionReason: String? = nil,
+            deletedAt: Date? = nil, linksJSON: String? = nil
+        ) {
+            self.operationID = operationID
+            self.kindRaw = kindRaw
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.payloadHash = payloadHash
+            self.attempts = 0
+            self.nextAttemptAt = nil
+            self.acknowledgedAt = nil
+            self.suspensionReason = suspensionReason
+            self.deletedAt = deletedAt
+            self.linksJSON = linksJSON
+        }
+    }
+}
+
+/// The store is written with V4.
 ///
 /// The V1→V2 stage is lightweight: the only change is one optional column, so an existing file is
 /// migrated in place and its rows keep their values.
@@ -434,9 +599,15 @@ enum JournalSchemaV3: VersionedSchema {
 /// means the container never finishes opening and an existing journal does not open at all. After the
 /// migration the context is V3, so the new column can be read and written, and the store's own save
 /// commits it with the migration.
+///
+/// **The V3→V4 stage is lightweight, and needs no backfill.** Both new columns are optional and describe
+/// something only a delivery can supply: a row queued before this build has no `deletedAt` to carry, and
+/// a tombstone for it is encoded from the journal's own last-revision record instead. Nothing already in
+/// the file is wrong after the upgrade, so nothing has to be rewritten — and a custom stage here would
+/// have to reach the same conclusion in more code.
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self]
+        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -448,6 +619,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
                     try backfillSuspensionReasons(context: context)
                     try context.save()
                 }),
+            .lightweight(fromVersion: JournalSchemaV3.self, toVersion: JournalSchemaV4.self),
         ]
     }
 
@@ -484,11 +656,11 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
     }
 }
 
-typealias IntakeRecord = JournalSchemaV3.IntakeRecord
-typealias RevisionRecord = JournalSchemaV3.RevisionRecord
-typealias ProductRecord = JournalSchemaV3.ProductRecord
-typealias ProjectionRecord = JournalSchemaV3.ProjectionRecord
-typealias OutboxRecord = JournalSchemaV3.OutboxRecord
+typealias IntakeRecord = JournalSchemaV4.IntakeRecord
+typealias RevisionRecord = JournalSchemaV4.RevisionRecord
+typealias ProductRecord = JournalSchemaV4.ProductRecord
+typealias ProjectionRecord = JournalSchemaV4.ProjectionRecord
+typealias OutboxRecord = JournalSchemaV4.OutboxRecord
 
 private struct StoredComponent: Codable {
     var componentID: String
@@ -531,7 +703,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV3.self)
+        let schema = Schema(versionedSchema: JournalSchemaV4.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -708,7 +880,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             record.lifecycleRaw = IntakeLifecycle.deleted.rawValue
             try Self.supersedeProjections(of: intakeID, in: context)
             let revision = record.currentRevision
-            queueWork(intakeID: intakeID, revision: revision, kind: .delete, payload: "delete:\(intakeID):\(revision)", context: context)
+            queueWork(
+                intakeID: intakeID, revision: revision, kind: .delete,
+                payload: "delete:\(intakeID):\(revision)", deletedAt: now, context: context)
         }
     }
 
@@ -1033,6 +1207,45 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         return Set(rows.map(\.operationID))
     }
 
+    /// The deletion instant a queued delete row carries, or nil when it carries none.
+    ///
+    /// Nil for an upsert, which has no tombstone, and for a row queued before the column existed. A
+    /// delete without it is still deliverable: the worker falls back to the durable record the journal
+    /// already keeps, so an upgraded store does not strand its queued deletions.
+    public func deletionInstant(operationID: String) throws -> Date? {
+        let context = ModelContext(try openContainer())
+        return try Self.outboxRecord(operationID, in: context)?.deletedAt
+    }
+
+    /// The link snapshot this operation was first encoded with, or nil when nothing has been recorded.
+    ///
+    /// Read back rather than rebuilt, because the retry of an upsert has to carry the same links under the
+    /// same delivery identity: links that changed in between would give the same `operation_id` a
+    /// different `client_payload_hash`, which the receiver reads as a conflict rather than a duplicate.
+    public func recordedLinks(operationID: String) throws -> [IntakeContextLink]? {
+        let context = ModelContext(try openContainer())
+        guard let text = try Self.outboxRecord(operationID, in: context)?.linksJSON else { return nil }
+        return try RelayDeliveryLinkSnapshot.decode(text)
+    }
+
+    /// Records the link snapshot an operation is about to be sent under, keeping the first one it is given.
+    ///
+    /// Recording is first-write-wins: a later attempt cannot replace what an earlier one was sent with,
+    /// which is the whole point of keeping it. A snapshot already recorded is left alone even when it
+    /// differs from the one offered now.
+    public func recordLinks(_ links: [IntakeContextLink], operationID: String) throws {
+        // Encoded before the commit, so a snapshot that cannot be written leaves the row as it was instead
+        // of failing a transaction that would have rolled back anyway.
+        let text = try RelayDeliveryLinkSnapshot.encode(links)
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil, row.linksJSON == nil else { return }
+            row.linksJSON = text
+        }
+    }
+
     /// Clears the suspension on one operation, so an automatic run may pick it up again.
     ///
     /// This is the only way a `needsAttention` operation becomes due again, and it is deliberately a
@@ -1125,7 +1338,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     }
 
     /// One projection per destination; an enabled one also gets one outbox operation.
-    private func queueWork(intakeID: String, revision: Int, kind: OutboxKind, payload: String, context: ModelContext) {
+    ///
+    /// `deletedAt` is written on a delete row and only on that one. It is the instant the journal was
+    /// given, kept rather than reconstructed: a delete's `deleted_at` is hashed into two digests, so a
+    /// rebuild naming a different instant arrives under the same delivery identity as a conflict instead of
+    /// the duplicate it is.
+    private func queueWork(
+        intakeID: String, revision: Int, kind: OutboxKind, payload: String,
+        deletedAt: Date? = nil, context: ModelContext
+    ) {
         let hash = Self.fingerprint(payload)
         for destination in JournalDestination.allCases {
             let enabled = enabledDestinations.contains(destination)
@@ -1137,7 +1358,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             if enabled {
                 context.insert(OutboxRecord(
                     operationID: UUID().uuidString.lowercased(), kindRaw: kind.rawValue, intakeID: intakeID,
-                    revision: revision, destinationRaw: destination.rawValue, payloadHash: hash))
+                    revision: revision, destinationRaw: destination.rawValue, payloadHash: hash,
+                    deletedAt: deletedAt))
             }
         }
     }

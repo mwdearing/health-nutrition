@@ -13,19 +13,13 @@ import NutritionDomain
 /// that could fix it.
 public typealias RelayLinkProvider = @Sendable (_ intake: Intake, _ revision: IntakeRevision) -> [IntakeContextLink]
 
-/// Supplies the tombstone a queued delete is encoded with.
+/// Supplies the tombstone a queued delete is encoded with, given the deletion instant the journal recorded.
 ///
 /// `deleted_at` is hashed into both the domain and the client digest, so the same delete rebuilt on a
 /// later attempt has to carry the same instant or the receiver reports a conflict instead of the
-/// duplicate it actually is. It therefore cannot be a fresh reading of the clock.
-///
-/// **The journal records no deletion instant.** `delete(intakeID:now:)` marks the lifecycle and queues
-/// the row, and nothing persists the instant it was given, so the default anchors the tombstone to the
-/// `createdAt` of the revision the delete retracts: durable, immutable, and identical on every rebuild.
-/// This is also where a store that does persist the instant plugs in — the worker never reads a clock
-/// itself, so the substitution is one closure.
-public typealias RelayTombstoneProvider =
-    @Sendable (_ intake: Intake, _ retractedRevision: IntakeRevision) -> IntakeContextTombstone
+/// duplicate it actually is. It therefore cannot be a fresh reading of the clock, and it cannot be derived
+/// from the revision: `delete(intakeID:now:)` knows when the person deleted the entry, and that is what the
+/// receiver should hold. The worker reads the instant the delete row recorded and passes it here.
 
 /// One link-only change to a revision whose facts the receiver already holds.
 ///
@@ -66,6 +60,13 @@ public enum RelayLinkProjectionResolution: Sendable, Equatable {
     case superseded
     /// Parked until a person re-arms it; retrying cannot settle what the receiver disagreed with.
     case needsAttention(String)
+    /// Worth another attempt, but not before `Date`.
+    ///
+    /// **A projection needs this as much as an outbox row needs `nextAttemptAt`.** Without it a queue
+    /// offers the same projection on the next run whatever the receiver said, so a run triggered for
+    /// unrelated work would retry it immediately and defeat both the backoff and a stated `Retry-After` —
+    /// against a receiver that had just asked this producer to stop.
+    case retryAfter(Date, reason: String)
 }
 
 /// Where pending link-only changes are read from and their outcomes recorded.
@@ -97,14 +98,42 @@ public struct RelayLinkProjectionQueueNone: RelayLinkProjectionQueue {
     ) async {}
 }
 
-/// The journal a relay delivery reads: the queue and its suspensions, plus the tombstones a delete is
-/// encoded from.
+/// Supplies the intake token for one batch.
+///
+/// **Called once per batch, not once per run.** A token is a credential the connection refreshes, and a run
+/// that captured one at initialization would keep sending a value that expired partway through — every
+/// later batch refused with a 401, and its operations parked for a reason that was already stale. Asking
+/// per batch costs nothing and is what lets one run straddle a rotation.
+///
+/// Throwing is part of the contract: a connection that cannot mint a token has not sent anything, so the
+/// batch was not attempted and the worker reschedules it rather than parking operations against a
+/// credential problem that may pass.
+public typealias RelayTokenProvider = @Sendable () async throws -> String
+
+/// The journal a relay delivery reads: the queue and its suspensions, the tombstones a delete is encoded
+/// from, and the two durable records a hashed payload cannot be rebuilt without.
 ///
 /// `JournalTombstoneSource` is named here rather than a new method of its own because the SwiftData store
 /// already keeps tombstones for the exporter; asking for them under a second name would be two ways of
 /// reading one thing. A store that cannot list tombstones cannot back this worker, which is honest: without
 /// a tombstone there is no durable instant to encode a delete with.
-public protocol RelayDeliveryStore: JournalDeliverySuspension, JournalTombstoneSource {}
+///
+/// `deletionInstant(operationID:)` and `recordedLinks(operationID:)`/`recordLinks(_:operationID:)` are the
+/// same idea from the other side. `deleted_at` and `healthkit_links` are both inside the digests, so a
+/// rebuild that named different values would arrive under the same `operation_id` with a different
+/// `client_payload_hash` — a conflict at the receiver, where a duplicate is what it should be. A store that
+/// cannot keep either cannot deliver a retry correctly, so it cannot back this worker either.
+public protocol RelayDeliveryStore: JournalDeliverySuspension, JournalTombstoneSource {
+    /// The instant the intake was deleted, as the queued delete row recorded it, or nil when it recorded
+    /// none. A nil delete is delivered from the journal's own last-revision record rather than stranded.
+    func deletionInstant(operationID: String) throws -> Date?
+
+    /// The link snapshot this operation was first encoded with, or nil when nothing has been recorded.
+    func recordedLinks(operationID: String) throws -> [IntakeContextLink]?
+
+    /// Records the snapshot an operation is about to be sent under, keeping the first one it is given.
+    func recordLinks(_ links: [IntakeContextLink], operationID: String) throws
+}
 
 /// Delivers queued journal operations to the HealthRelay receiver as intake-context batches (NC-09C).
 ///
@@ -150,19 +179,25 @@ public struct RelayDeliveryWorker: Sendable {
     /// Where pending link-only changes come from, and who records what became of them.
     private let projections: any RelayLinkProjectionQueue
     private let links: RelayLinkProvider
-    private let tombstones: RelayTombstoneProvider
-    /// The intake token, passed per call so rotating it is the caller's decision.
-    private let token: String
+    /// The tombstone for one queued delete, given the instant the journal recorded when the intake was
+    /// deleted.
+    ///
+    /// Three arguments rather than two because the deletion instant is the journal's to know: it is what
+    /// `delete(intakeID:now:)` was given, and the worker reads it back rather than deriving one from a
+    /// revision. A caller that wanted to override the record could, which is the point of injecting it.
+    private let tombstones: @Sendable (Intake, IntakeRevision, Date) -> IntakeContextTombstone
+    /// The intake token, asked for once per batch so a rotation mid-run is not a stale credential.
+    private let token: RelayTokenProvider
 
     public init(
         store: any RelayDeliveryStore,
         transport: any IntakeContextTransport,
         encoder: IntakeContextEncoder,
-        token: String,
+        token: @escaping RelayTokenProvider,
         projections: any RelayLinkProjectionQueue = RelayLinkProjectionQueueNone(),
         links: @escaping RelayLinkProvider = { _, _ in [] },
-        tombstones: @escaping RelayTombstoneProvider = { intake, revision in
-            IntakeContextTombstone(intakeID: intake.id, deletedAt: revision.createdAt)
+        tombstones: @escaping @Sendable (Intake, IntakeRevision, Date) -> IntakeContextTombstone = {
+            intake, _, deletedAt in IntakeContextTombstone(intakeID: intake.id, deletedAt: deletedAt)
         }
     ) {
         self.store = store
@@ -192,14 +227,20 @@ public struct RelayDeliveryWorker: Sendable {
             return []
         }
         var outcomes: [RelayDeliveryOutcome] = []
-        // The intake each unresolved operation is holding up. Revisions are sent oldest first, so the
-        // first operation seen for an intake is the one everything later depends on.
-        var blocking: [String: String] = [:]
+        // Each intake's blocker: the operation that stopped it, and how far through the queue that
+        // operation sits.
+        //
+        // **A blocker holds back only what comes after it.** The receiver refuses an operation whose
+        // revision is below one it already holds, so ordering is a one-way constraint: revision 3 must not
+        // go before revision 2, but revision 2 is perfectly deliverable on its own and parked revision 3 is
+        // no reason to strand it. Recording the position is what lets the later check tell the two apart —
+        // an earlier operation is never held back by a later one, however the later one came to be parked.
+        var blocking: [String: RelayBlocker] = [:]
         var due: [OutboxOperation] = []
-        for operation in operations {
+        for (position, operation) in operations.enumerated() {
             guard operation.destination == .relay else { continue }
             if let blocker = blocking[operation.intakeID] {
-                outcomes.append(.blocked(operationID: operation.operationID, blockedBy: blocker))
+                outcomes.append(.blocked(operationID: operation.operationID, blockedBy: blocker.operationID))
                 continue
             }
             if suspended.contains(operation.operationID) {
@@ -213,44 +254,59 @@ public struct RelayDeliveryWorker: Sendable {
                     operationID: operation.operationID,
                     reason: (try? store.suspensionReason(operationID: operation.operationID))
                         ?? "waiting to be re-armed"))
-                blocking[operation.intakeID] = operation.operationID
+                blocking[operation.intakeID] = RelayBlocker(operationID: operation.operationID, position: position)
                 continue
             }
             if let attemptAt = operation.nextAttemptAt, attemptAt > now {
                 outcomes.append(.notDue(operationID: operation.operationID, nextAttemptAt: attemptAt))
-                blocking[operation.intakeID] = operation.operationID
+                blocking[operation.intakeID] = RelayBlocker(operationID: operation.operationID, position: position)
                 continue
             }
-            due.append(operation)
+            due.append((position, operation))
         }
         var pending: [RelayEncodedOperation] = []
-        for operation in due {
-            switch encode(operation) {
+        for (position, operation) in due {
+            switch encode(operation, position: position) {
             case .superseded(let detail):
                 outcomes.append(acknowledge(
                     operation, now: now, outcome: .superseded(
                         operationID: operation.operationID, detail: detail)))
             case .failed(let reason):
                 outcomes.append(park(operation, reason: reason, now: now))
-                blocking[operation.intakeID] = operation.operationID
+                blocking[operation.intakeID] = RelayBlocker(operationID: operation.operationID, position: position)
             case .encoded(let item):
                 pending.append(item)
             }
         }
+        // Projections come after the queue in the same order the queue offered them, so their positions
+        // continue past it: an intake's queued operations are always earlier than any of its projections.
+        var nextPosition = operations.count
         for projection in (try? await projections.pendingLinkProjections()) ?? [] {
             if let blocker = blocking[projection.intakeID] {
-                outcomes.append(.blocked(operationID: projection.operationID, blockedBy: blocker))
+                outcomes.append(.blocked(operationID: projection.operationID, blockedBy: blocker.operationID))
+                nextPosition += 1
                 continue
             }
-            switch encode(projection) {
+            let position = nextPosition
+            nextPosition += 1
+            switch encode(projection, position: position) {
             case .superseded:
                 await projections.resolve(projection, with: .superseded)
             case .failed:
-                // A projection that cannot be encoded is the queue's problem: it offered a payload this
-                // module refuses, and parking it here would be recording a failure with nowhere to keep it.
+                // A projection that cannot be encoded is the queue's problem to hear about: it offered a
+                // payload this module refuses, and parking it here would be recording a failure with
+                // nowhere to keep it.
+                //
+                // It also **blocks the projections behind it**. They are later sequences of the same
+                // revision, and the receiver refuses a projection whose predecessor it has not accepted, so
+                // letting them through would ask it to reconcile a state the earlier one could not even be
+                // sent in. The block is only on what follows: an earlier sequence of the same intake is
+                // still deliverable.
                 await projections.resolve(
                     projection,
                     with: .needsAttention("the link projection could not be encoded for delivery"))
+                blocking[projection.intakeID] = RelayBlocker(
+                    operationID: projection.operationID, position: position)
             case .encoded(let item):
                 pending.append(item)
             }
@@ -263,7 +319,8 @@ public struct RelayDeliveryWorker: Sendable {
             // The batch limits are the receiver's own numbers. Guessing them would produce the very 413
             // this run exists to avoid, so nothing is sent and every operation is rescheduled instead.
             for item in pending {
-                outcomes.append(retry(item, reason: "the receiver's capabilities could not be read", now: now))
+                outcomes.append(await retry(
+                    item, reason: "the receiver's capabilities could not be read", now: now))
             }
             return outcomes
         }
@@ -284,10 +341,13 @@ public struct RelayDeliveryWorker: Sendable {
             // receiver applies in array order: sending the later revision now would have it refused as
             // stale. Those operations are held back and reported, exactly as an earlier suspended operation
             // holds back the revisions behind it.
+            //
+            // The blocker's own position decides it, so an operation earlier in the queue than its
+            // intake's blocker still goes: a parked revision 3 does not strand a due revision 1.
             var sendable: [RelayEncodedOperation] = []
             for item in batch {
-                if let blocker = blocking[item.intakeID] {
-                    outcomes.append(.blocked(operationID: item.operationID, blockedBy: blocker))
+                if let blocker = blocking[item.intakeID], blocker.position < item.position {
+                    outcomes.append(.blocked(operationID: item.operationID, blockedBy: blocker.operationID))
                     continue
                 }
                 sendable.append(item)
@@ -296,7 +356,8 @@ public struct RelayDeliveryWorker: Sendable {
             let sent = await send(sendable, now: now, canSplit: true)
             outcomes.append(contentsOf: sent.deliveries.map(\.outcome))
             for delivery in sent.deliveries where !delivery.outcome.isResolved {
-                blocking[delivery.intakeID] = delivery.outcome.operationID
+                blocking[delivery.intakeID] = RelayBlocker(
+                    operationID: delivery.outcome.operationID, position: delivery.position)
             }
             if sent.stopsTheRun {
                 stopped = true
@@ -319,6 +380,18 @@ public struct RelayDeliveryWorker: Sendable {
 
     // MARK: - What one encoded operation came from
 
+    /// The operation holding up one intake, and where it sits in the queue.
+    ///
+    /// The position is what makes the block one-directional. Operations are read oldest revision first, so
+    /// a blocker is at or before everything it holds back, and the check is `<` rather than an
+    /// unconditional lookup precisely so that nothing *earlier* is suppressed by a later problem. A parked
+    /// revision 3 must not stop revision 1 from being delivered: the receiver only refuses going forwards,
+    /// so delivering revision 1 is always safe and is progress.
+    private struct RelayBlocker {
+        let operationID: String
+        let position: Int
+    }
+
     /// Where an encoded operation came from, because only one of the two has a row to record anything in.
     private enum RelayOrigin {
         /// A queued outbox row, with the attempt count that indexes the backoff.
@@ -328,9 +401,13 @@ public struct RelayDeliveryWorker: Sendable {
     }
 
     /// One operation, encoded and ready to be packed into a batch.
+    ///
+    /// `position` is where the operation sat in the queue, carried through encoding so the batch loop can
+    /// still tell an operation from an earlier one than its intake's blocker.
     private struct RelayEncodedOperation {
         let origin: RelayOrigin
         let intakeID: String
+        let position: Int
         let value: IntakeContextValue
 
         var operationID: String { value.operations.first?.operationID ?? "" }
@@ -352,14 +429,14 @@ public struct RelayDeliveryWorker: Sendable {
     ///
     /// A row whose intake is gone is **superseded, not sent**: the delete queued in the same run is what
     /// decides what the receiver holds, and sending the upsert would put back exactly what it retracts.
-    private func encode(_ operation: OutboxOperation) -> RelayEncoding {
+    private func encode(_ operation: OutboxOperation, position: Int) -> RelayEncoding {
         switch operation.kind {
-        case .upsert: return encodeUpsert(operation)
-        case .delete: return encodeDelete(operation)
+        case .upsert: return encodeUpsert(operation, position: position)
+        case .delete: return encodeDelete(operation, position: position)
         }
     }
 
-    private func encodeUpsert(_ operation: OutboxOperation) -> RelayEncoding {
+    private func encodeUpsert(_ operation: OutboxOperation, position: Int) -> RelayEncoding {
         let intake: Intake?
         let revisions: [IntakeRevision]
         do {
@@ -378,19 +455,36 @@ public struct RelayDeliveryWorker: Sendable {
         } catch {
             return .failed(reason: "the product snapshot could not be read")
         }
+        // The links are read back, not rebuilt. An upsert's `operation_id` is its delivery identity, so a
+        // retry has to carry the same snapshot under it: links that arrived in between would move the
+        // projection and client digests, and the receiver would read the retry as a conflict rather than
+        // the duplicate it is. The first attempt records what it sent; a store that cannot is a failure
+        // here, because an unrecorded snapshot cannot be retried correctly.
+        let snapshot: [IntakeContextLink]
+        do {
+            if let recorded = try store.recordedLinks(operationID: operation.operationID) {
+                snapshot = recorded
+            } else {
+                snapshot = links(intake, revision)
+                try store.recordLinks(snapshot, operationID: operation.operationID)
+            }
+        } catch {
+            return .failed(reason: "the link snapshot for this operation could not be recorded")
+        }
         do {
             return .encoded(RelayEncodedOperation(
                 origin: .outbox(operation),
                 intakeID: operation.intakeID,
+                position: position,
                 value: try encoder.upsert(
                     intake: intake, revision: revision, product: product, operation: operation,
-                    links: links(intake, revision))))
+                    links: snapshot)))
         } catch {
             return .failed(reason: "the revision does not encode as an intake-context upsert")
         }
     }
 
-    private func encodeDelete(_ operation: OutboxOperation) -> RelayEncoding {
+    private func encodeDelete(_ operation: OutboxOperation, position: Int) -> RelayEncoding {
         let intake: Intake?
         let revisions: [IntakeRevision]
         do {
@@ -403,12 +497,23 @@ public struct RelayDeliveryWorker: Sendable {
         guard let revision = revisions.first(where: { $0.number == operation.revision }) else {
             return .failed(reason: "the journal no longer holds revision \(operation.revision)")
         }
+        // The deletion instant the row recorded, never the clock: it is hashed into the tombstone, so a
+        // different reading would make this retry a conflict rather than a duplicate. A row queued before
+        // the column existed carries none, and falls back to the revision's own instant rather than
+        // stranding a deletion that is otherwise perfectly deliverable.
+        let deletedAt: Date
+        do {
+            deletedAt = try store.deletionInstant(operationID: operation.operationID) ?? revision.createdAt
+        } catch {
+            return .failed(reason: "the deletion instant could not be read")
+        }
         do {
             return .encoded(RelayEncodedOperation(
                 origin: .outbox(operation),
                 intakeID: operation.intakeID,
+                position: position,
                 value: try encoder.delete(
-                    intake: intake, revision: revision, tombstone: tombstones(intake, revision),
+                    intake: intake, revision: revision, tombstone: tombstones(intake, revision, deletedAt),
                     operation: operation)))
         } catch {
             return .failed(reason: "the deletion does not encode as an intake-context tombstone")
@@ -416,7 +521,7 @@ public struct RelayDeliveryWorker: Sendable {
     }
 
     /// Encodes a link-only change as the contract's `link_projection`, which takes no outbox row.
-    private func encode(_ projection: RelayLinkProjection) -> RelayEncoding {
+    private func encode(_ projection: RelayLinkProjection, position: Int) -> RelayEncoding {
         let intake: Intake?
         let revisions: [IntakeRevision]
         do {
@@ -437,6 +542,7 @@ public struct RelayDeliveryWorker: Sendable {
             return .encoded(RelayEncodedOperation(
                 origin: .projection(projection),
                 intakeID: projection.intakeID,
+                position: position,
                 value: try encoder.linkProjection(
                     intake: intake, revision: revision, product: product, sequence: projection.sequence,
                     links: projection.links, operationID: projection.operationID)))
@@ -517,6 +623,7 @@ public struct RelayDeliveryWorker: Sendable {
     /// One outcome, with the intake it belongs to, so a later operation for that intake can be held back.
     private struct RelayDelivery {
         let intakeID: String
+        let position: Int
         let outcome: RelayDeliveryOutcome
     }
 
@@ -543,9 +650,21 @@ public struct RelayDeliveryWorker: Sendable {
             return await result(
                 of: items, now: now, stopsTheRun: false, refused: "the batch could not be encoded for delivery")
         }
+        let credential: String
+        do {
+            credential = try await token()
+        } catch {
+            // Nothing was sent, so this is not a refusal: a connection that cannot mint a token has not
+            // had one rejected. Rescheduling rather than parking keeps a credential problem from parking
+            // operations, and the attempt count moves them along the same backoff as any other transient
+            // failure.
+            return await result(
+                of: items, now: now, stopsTheRun: false, refused: nil,
+                failed: "the intake token could not be read")
+        }
         let response: IntakeContextTransportResponse
         do {
-            response = try await transport.send(batch: bytes, token: token)
+            response = try await transport.send(batch: bytes, token: credential)
         } catch {
             // Nothing arrived, so there is no status to read. Transient by definition: the same bytes are
             // worth sending again.
@@ -564,21 +683,34 @@ public struct RelayDeliveryWorker: Sendable {
                 of: items, now: now, stopsTheRun: true,
                 refused: "the receiver rejected the intake token, so nothing was delivered")
         case 429:
-            // The receiver stated the wait, so it is used rather than the backoff: a rate limit answered
-            // with its own interval is the receiver telling this producer exactly how long to stop.
-            let wait = response.retryAfterSeconds ?? Self.backoffSeconds(afterAttempt: 1)
+            // A stated wait is the receiver telling this producer exactly how long to stop, so it is used
+            // as given. Without one, the per-operation backoff ladder decides — the same one every other
+            // transient failure uses, indexed by that operation's own attempt count. Hard-coding the first
+            // step here would hold a repeatedly throttled producer at one minute forever, which is the
+            // opposite of what a receiver asking for less traffic wants.
+            if let wait = response.retryAfterSeconds {
+                return await result(
+                    of: items, now: now, stopsTheRun: false, refused: nil,
+                    failed: "the receiver asked this producer to wait \(wait) seconds",
+                    failedAt: now.addingTimeInterval(TimeInterval(wait)))
+            }
             return await result(
                 of: items, now: now, stopsTheRun: false, refused: nil,
-                failed: "the receiver asked this producer to wait \(wait) seconds",
-                failedAt: now.addingTimeInterval(TimeInterval(wait)))
+                failed: "the receiver rate limited this producer without stating a wait")
         case 413:
             if canSplit, items.count > 1 {
                 let half = items.count / 2
                 let head = await send(Array(items[..<half]), now: now, canSplit: false)
+                // **A refused token on the head stops the split there.** Every batch in this run carries
+                // the same token, so sending the tail would be one more request the receiver refuses for the
+                // same reason — and its operations would be parked against a credential that is already
+                // known bad, rather than left untouched for a run that has a working one. They are reported
+                // as unattempted, which is what happened.
+                guard !head.stopsTheRun else { return head }
                 let tail = await send(Array(items[half...]), now: now, canSplit: false)
                 return RelayBatchResult(
                     deliveries: head.deliveries + tail.deliveries,
-                    stopsTheRun: head.stopsTheRun || tail.stopsTheRun)
+                    stopsTheRun: tail.stopsTheRun)
             }
             // One operation, or one split already spent: the payload itself is what the receiver refuses,
             // and no further halving makes it smaller.
@@ -619,11 +751,12 @@ public struct RelayDeliveryWorker: Sendable {
             if let refused {
                 outcome = await park(item, reason: refused, now: now)
             } else if let failed {
-                outcome = retry(item, reason: failed, now: now, due: failedAt)
+                outcome = await retry(item, reason: failed, now: now, due: failedAt)
             } else {
                 outcome = .notAttempted(operationID: item.operationID, reason: "the batch was not attempted")
             }
-            deliveries.append(RelayDelivery(intakeID: item.intakeID, outcome: outcome))
+            deliveries.append(RelayDelivery(
+                intakeID: item.intakeID, position: item.position, outcome: outcome))
         }
         return RelayBatchResult(deliveries: deliveries, stopsTheRun: stopsTheRun)
     }
@@ -651,7 +784,8 @@ public struct RelayDeliveryWorker: Sendable {
                 continue
             }
             deliveries.append(RelayDelivery(
-                intakeID: item.intakeID, outcome: await resolve(item, answer, now: now)))
+                intakeID: item.intakeID, position: item.position,
+                outcome: await resolve(item, answer, now: now)))
         }
         return deliveries
     }
@@ -692,7 +826,7 @@ public struct RelayDeliveryWorker: Sendable {
                     + (response.detail ?? "no detail"),
                 now: now)
         case .retryableFailure:
-            return retry(
+            return await retry(
                 item, reason: "the receiver reported a retryable failure: "
                     + (response.detail ?? "no detail"),
                 now: now)
@@ -795,16 +929,18 @@ public struct RelayDeliveryWorker: Sendable {
     /// regardless.
     private func retry(
         _ item: RelayEncodedOperation, reason: String, now: Date, due: Date? = nil
-    ) -> RelayDeliveryOutcome {
+    ) async -> RelayDeliveryOutcome {
         switch item.origin {
         case .outbox(let operation):
             return retry(operation, reason: reason, now: now, due: due)
-        case .projection:
-            return .retryScheduled(
-                operationID: item.operationID,
-                nextAttemptAt: due
-                    ?? now.addingTimeInterval(TimeInterval(Self.backoffSeconds(afterAttempt: 1))),
-                reason: reason)
+        case .projection(let projection):
+            let next = due ?? now.addingTimeInterval(TimeInterval(Self.backoffSeconds(afterAttempt: 1)))
+            // The queue is told, because otherwise it offers the projection again on the next run whatever
+            // the receiver said — and a run triggered for unrelated work would retry it immediately,
+            // against a receiver that had just asked this producer to stop. Reporting the date without
+            // recording it would be the same as not reporting it.
+            await projections.resolve(projection, with: .retryAfter(next, reason: reason))
+            return .retryScheduled(operationID: item.operationID, nextAttemptAt: next, reason: reason)
         }
     }
 }
