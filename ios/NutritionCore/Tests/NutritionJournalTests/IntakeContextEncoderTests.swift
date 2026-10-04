@@ -1204,7 +1204,7 @@ final class IntakeContextEncoderTests: XCTestCase {
                 catalogVersion: "1",
                 nutrients: ["protein": .known(13, .g)]),
             operation: outboxOperation(
-                id: "8e5a3b4c-9f6d-4e1a-8b3c-4d5e6f708192", kind: .upsert, revision: 1))
+                id: "8e5a3b4c-9f6d-4e1a-8b3c-4d5e6f708192", kind: .upsert, revision: 2))
         XCTAssertEqual(provenance(ofComponent: "oats", in: catalogued), "catalog_reference")
         XCTAssertEqual(provenance(ofComponent: "protein", in: catalogued), "catalog_reference")
         // An entry with no snapshot is the user's own, and a compound keeps the label-confirmed provenance its
