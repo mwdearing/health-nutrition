@@ -225,7 +225,9 @@ public enum NutritionFactsParser {
                 let start = lower.distance(from: lower.startIndex, to: found.lowerBound)
                 let length = alias.count
                 if let current = best {
-                    if start < current.start || (start == current.start && length <= current.length) { continue }
+                    // Keep the earliest name on the line; at the same start keep the longer one, so
+                    // "Saturated Fat" wins over the "fat" inside it and "Added Sugars" over "sugars".
+                    if start > current.start || (start == current.start && length <= current.length) { continue }
                 }
                 best = (start, length, row)
             }
