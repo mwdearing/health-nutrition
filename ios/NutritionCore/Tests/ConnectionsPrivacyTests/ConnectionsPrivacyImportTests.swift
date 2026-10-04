@@ -138,7 +138,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertTrue(model.export(now: now))
         let exportedURL = try XCTUnwrap(model.exportFileURL)
         XCTAssertEqual(written, [exportedURL])
-        XCTAssertEqual(model.entryCount, 1)
+        // The journal is empty (an import only restores into an empty one), so the export holds no entries.
+        XCTAssertEqual(model.entryCount, 0)
         XCTAssertTrue(removed.isEmpty, "the export is there to be shared, not removed, before the import")
 
         await importAndSettle(model, data: try export())
