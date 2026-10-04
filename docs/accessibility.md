@@ -116,6 +116,35 @@ Text("x")      // a sibling view, not a modifier of the first image
 Image("two").accessibilityLabel("Two")
 ```
 
+An arm that begins with another `#if` is descended into rather than read as a
+view, because its nested arms are what the image is modified by in that
+configuration. So the image below is named in every build, while the one after
+it is not: the nested `#else` compiles `.padding()`, which names nothing.
+
+```swift
+Image("x")
+#if os(iOS)
+#if DEBUG
+.accessibilityLabel("Debug")
+#else
+.accessibilityLabel("Release")
+#endif
+#else
+.accessibilityLabel("Other")
+#endif
+
+Image("x")   // unlabeled-image
+#if os(iOS)
+#if DEBUG
+.accessibilityLabel("Debug")
+#else
+.padding()
+#endif
+#else
+.accessibilityLabel("Other")
+#endif
+```
+
 Text hidden from VoiceOver reads nothing aloud, so it names nothing in the builds
 that compile the hiding. It does still name the control in the builds where it
 is visible, so the control below is named either way — a debug build reads

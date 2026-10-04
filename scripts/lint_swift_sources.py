@@ -20,6 +20,18 @@ colour-literal
 fixed-font
     In ``Sources/NutritionUI/**``: no ``.font(.system(size:`` or
     ``Font.system(size:``. Text must use Dynamic Type styles.
+fixed-font-size
+    In the SwiftUI layers: no font pinned to a literal point size, so
+    ``.font(.system(size: 14))``, ``Font.system(size: 14)``,
+    ``.custom("Inter", fixedSize: 14)`` and ``Font.body.pointSize(14)`` are
+    reported. A literal point size does not move when the reader changes their
+    Dynamic Type setting, while a text style such as ``.headline`` or
+    ``.system(.body, design: .rounded)`` does, and so do
+    ``.custom("Inter", size: 14)``, which SwiftUI scales with the body text
+    style, and ``.custom("Inter", size: 14, relativeTo: .body)``. A size that is
+    not a literal, such as one read from a ``@ScaledMetric`` property, tracks the
+    reader's settings already. Only a custom-font factory counts, so a
+    ``.custom(`` on another type is that type's own.
 forbidden-import
     In ``Sources/NutritionUI/**`` and ``Sources/NutritionJournal/**``: no
     ``import HealthKit``, ``import Network`` or ``URLSession``. Declaration-kind,
@@ -55,7 +67,10 @@ unlabeled-image
     configuration that compiles the image compiles a name as well, and only the
     arms of a conditional written directly after the expression are followed: an
     arm that starts with a view rather than a modifier ends the chain, and the
-    traversal stops at the matching ``#endif``.
+    traversal stops at the matching ``#endif``. An arm that begins with another
+    ``#if`` is descended into instead of read as a view, because its nested arms
+    say what the expression is modified by in that configuration, and the same
+    rule applies at every depth.
 binary-float
     In ``Sources/NutritionDomain/**`` and ``Sources/NutritionJournal/**``: no
     ``Double`` or ``Float``, and no untyped floating-point literal such as
@@ -120,6 +135,29 @@ FIXED_FONT = re.compile(
     r"\bFont\s*\.\s*system\s*\(\s*size\s*:"
     r"|\.font\s*\(\s*\.system\s*\(\s*size\s*:"
 )
+# The calls a literal font size can be written in: the two spellings of a system
+# font, the custom-font factory and the pointSize modifier. Whether the call
+# names a point size at all, and whether it relates that size to a text style,
+# is read from the arguments.
+FONT_SIZE_CALL = re.compile(
+    r"(?P<system>\bFont\s*\.\s*system\s*\(|\.\s*system\s*\()"
+    r"|(?P<custom>\.\s*custom\s*\()"
+    r"|(?P<point>\bFont\s*\.\s*[A-Za-z_][A-Za-z0-9_]*\s*\.\s*pointSize\s*\("
+    r"|\.\s*pointSize\s*\()"
+)
+# The argument that carries the point size in each of those calls. `custom(_:size:)`
+# is left out on purpose: SwiftUI scales it with the body text style, so only
+# `custom(_:fixedSize:)` pins a size. `pointSize(_:)` takes the size on its own.
+FONT_SIZE_LABEL = re.compile(r"\bsize\s*:")
+FONT_FIXED_SIZE_LABEL = re.compile(r"\bfixedSize\s*:")
+# A call spelled on the Font type is that type's own, as in `Font.custom(`.
+FONT_TYPE_BEFORE = re.compile(r"\bFont\s*$")
+# A font written as an argument of the `.font(` modifier is passed to it as one.
+FONT_MODIFIER_CALL = re.compile(r"\.\s*font\s*\(")
+RELATIVE_TO_LABEL = re.compile(r"\brelativeTo\s*:")
+# A point size written as a numeric literal. A size read from a property, such
+# as a @ScaledMetric, already tracks the reader's Dynamic Type setting.
+LITERAL_POINT_SIZE = re.compile(r"[0-9][0-9_]*(?:\.[0-9][0-9_]*)?")
 IMPORT_KINDS = r"(?:class|struct|enum|protocol|typealias|func|var|let|actor|associatedtype|operator|precedencegroup)"
 # An access-level modifier may sit between the attributes and the `import`.
 ACCESS_LEVELS = r"(?:private|fileprivate|internal|package|public|open)"
@@ -149,6 +187,7 @@ IMAGE_CALL = re.compile(r"\bImage\s*\(")
 RULES = (
     "colour-literal",
     "fixed-font",
+    "fixed-font-size",
     "forbidden-import",
     "binary-float",
     "unlabeled-image",
@@ -157,6 +196,10 @@ RULES = (
 MESSAGES = {
     "colour-literal": "hard-coded colour; use the design tokens via TokenColors",
     "fixed-font": "fixed font size; use a Dynamic Type text style",
+    "fixed-font-size": (
+        "literal point size, which Dynamic Type cannot scale; use a text "
+        "style, or Font.custom(_:size:), which scales with the body style"
+    ),
     "forbidden-import": "forbidden framework use in this layer",
     "binary-float": "binary floating point; use Decimal",
     "unlabeled-image": (
@@ -929,10 +972,22 @@ def _modifier_chain_end(
     directive = BRANCH_DIRECTIVE.match(masked, line)
     if directive is None or directive.group(1) != "if":
         return end
+    if bodies is None:
+        bodies = []
+    return _conditional_chain_end(masked, directive, end, bodies, len(masked))
+
+
+def _conditional_arms(masked: str, directive: re.Match[str]) -> tuple[list[int], int]:
+    """The arm starts of the block ``directive`` opens, and where that block ends.
+
+    The first arm starts on the line after the ``#if``; each ``#elseif`` and
+    ``#else`` at this level opens another. Branches nested inside the block belong
+    to their own arm, so only a directive outside them ends an arm or closes the
+    conditional, and the line after its ``#endif`` is where the code following the
+    whole block starts.
+    """
     arms = [_after_directive_line(masked, directive.end())]
     closed = len(masked)
-    # Branches nested inside the conditional belong to their own arm, so only a
-    # directive at this level opens another arm or closes the conditional.
     depth = 0
     for match in DIRECTIVE.finditer(masked, directive.end()):
         kind = match.group(1)
@@ -940,20 +995,82 @@ def _modifier_chain_end(
             depth += 1
         elif kind == "endif":
             if depth == 0:
-                closed = _after_directive_line(masked, match.end())
-                break
+                return arms, _after_directive_line(masked, match.end())
             depth -= 1
         elif depth == 0:
             arms.append(_after_directive_line(masked, match.end()))
+    return arms, closed
+
+
+def _conditional_chain_end(
+    masked: str,
+    directive: re.Match[str],
+    end: int,
+    bodies: list[tuple[int, int]],
+    limit: int,
+) -> int:
+    """The chain extended through the conditional block ``directive`` opens.
+
+    ``end`` is where the chain stood before the block, so it is what an arm that
+    holds a sibling view falls back to, and ``limit`` bounds the enclosing arm,
+    which keeps a continuation past a nested ``#endif`` from reaching into code
+    written after this block.
+    """
+    arms, closed = _conditional_arms(masked, directive)
     for arm in arms:
-        if not _starts_with_modifier(masked, arm):
-            # The arm holds a sibling view rather than modifiers of this
-            # expression, so the chain ends here.
+        following = _arm_chain_end(masked, arm, bodies, limit)
+        if following is None:
             return end
-        following = BRANCH_END.search(masked, arm)
-        limit = following.start() if following is not None else len(masked)
-        end = max(end, min(_chain_end(masked, arm, bodies), limit))
-    return max(end, _chain_end(masked, closed, bodies))
+        end = max(end, following)
+    return max(end, min(_chain_end(masked, closed, bodies), limit))
+
+
+def _arm_chain_end(
+    masked: str, arm: int, bodies: list[tuple[int, int]], limit: int
+) -> int | None:
+    """How far one arm of a conditional extends the chain, or ``None``.
+
+    ``None`` means the arm holds a sibling view rather than modifiers of the
+    expression the chain started from, which ends the chain there.
+
+    An arm that begins with another ``#if`` is descended into rather than read
+    as a view: the nested arms are what the expression is modified by in that
+    configuration, and they say so in the same way arms at this level do. What
+    follows the nested block still belongs to this arm, so a sibling view written
+    after it ends the chain just as one written before it does.
+    """
+    index = arm
+    while index < limit and masked[index].isspace():
+        index += 1
+    nested = BRANCH_DIRECTIVE.match(masked, index)
+    if nested is not None and nested.group(1) == "if":
+        end = _conditional_chain_end(masked, nested, index, bodies, limit)
+        _, closed = _conditional_arms(masked, nested)
+        return _arm_tail_end(masked, closed, end, bodies, limit)
+    if not _starts_with_modifier(masked, arm):
+        return None
+    following = BRANCH_END.search(masked, arm)
+    boundary = following.start() if following is not None else len(masked)
+    return min(_chain_end(masked, arm, bodies), boundary, limit)
+
+
+def _arm_tail_end(
+    masked: str, position: int, end: int, bodies: list[tuple[int, int]], limit: int
+) -> int | None:
+    """How far the arm reaches past a nested conditional ending at ``position``.
+
+    ``end`` is how far the nested block carried the chain. Modifiers written after
+    it continue the chain, an arm with nothing else after the block stops there,
+    and a sibling view ends the chain instead, as elsewhere in an arm.
+    """
+    following = BRANCH_END.search(masked, position)
+    boundary = following.start() if following is not None else len(masked)
+    boundary = min(boundary, limit)
+    if not masked[position:boundary].strip():
+        return end
+    if not _starts_with_modifier(masked, position):
+        return None
+    return max(end, min(_chain_end(masked, position, bodies), boundary, limit))
 
 
 def _call_expression_end(masked: str, start: int, position: int) -> int:
@@ -1104,6 +1221,92 @@ def unlabeled_images(masked: str) -> list[int]:
     return found
 
 
+def _at_call_depth(text: str) -> str:
+    """Blank every bracket pair nested in ``text``, keeping its own text."""
+    out: list[str] = []
+    depth = 0
+    for char in text:
+        if depth:
+            out.append("\n" if char == "\n" else " ")
+            if char in OPENERS:
+                depth += 1
+            elif char in CLOSERS:
+                depth -= 1
+            continue
+        out.append(char)
+        if char in OPENERS:
+            depth = 1
+    return "".join(out)
+
+
+def _font_arguments(masked: str) -> list[tuple[int, int]]:
+    """The argument lists of every ``.font(`` call in ``masked``."""
+    spans = []
+    for match in FONT_MODIFIER_CALL.finditer(masked):
+        opening = match.end() - 1
+        spans.append((opening + 1, _match_forward(masked, opening)))
+    return spans
+
+
+def _builds_a_font(masked: str, match: re.Match[str], font_arguments: list[tuple[int, int]]) -> bool:
+    """Whether the call behind ``match`` is one of SwiftUI's font APIs.
+
+    A call spelled on ``Font`` is that type's own, as in ``Font.custom(`` or
+    ``Font.title.pointSize(``, and a call written inside a ``.font(`` argument
+    list is handed to that modifier as a font. ``custom`` and ``pointSize`` are
+    names other types answer to as well, as in
+    ``Widget.custom(name:size:)``, so without that context they stay silent.
+    """
+    if match.lastgroup == "system":
+        return True
+    before = masked[max(0, match.start() - 8):match.start()]
+    if match.group().startswith("Font") or FONT_TYPE_BEFORE.search(before):
+        return True
+    return any(_within(span, match.start()) for span in font_arguments)
+
+
+def _literal_size(arguments: str, label: re.Pattern[str] | None) -> bool:
+    """Whether a font call's point size is a numeric literal.
+
+    ``label`` names the argument to read, as in ``size:``; a call that takes the
+    size on its own, as ``pointSize(14)`` does, reads its first argument.
+    """
+    shallow = _at_call_depth(arguments)
+    if label is not None:
+        match = label.search(shallow)
+        if match is None:
+            return False
+        shallow = shallow[match.end():]
+    return LITERAL_POINT_SIZE.fullmatch(shallow.split(",", 1)[0].strip()) is not None
+
+
+def fixed_font_sizes(masked: str) -> list[int]:
+    """Offsets of every font pinned to a literal point size.
+
+    A font factory or modifier counts when the size it takes is a numeric
+    literal, which Dynamic Type cannot move. ``.system(.body, design: .rounded)``
+    names a text style and stays silent, ``.custom("Inter", size: 14)`` scales
+    with the body style, and a size read from a property tracks the reader's
+    settings, so a ``relativeTo:`` argument of the font call itself is the
+    documented way to relate a literal size to a text style. The arguments are
+    read from the brackets of the call, so a font written over several lines is
+    judged whole.
+    """
+    found = []
+    font_arguments = _font_arguments(masked)
+    for match in FONT_SIZE_CALL.finditer(masked):
+        if not _builds_a_font(masked, match, font_arguments):
+            continue
+        opening = match.end() - 1
+        arguments = masked[opening + 1:_match_forward(masked, opening)]
+        if RELATIVE_TO_LABEL.search(_at_call_depth(arguments)) is not None:
+            continue
+        label = {"system": FONT_SIZE_LABEL, "custom": FONT_FIXED_SIZE_LABEL}.get(match.lastgroup)
+        if _literal_size(arguments, label):
+            found.append(match.start())
+    return found
+
+
 def allowed_rules(line: str) -> set[str]:
     """Rule names allowed on this line by a trailing ``lint-allow`` comment."""
     match = ALLOW_COMMENT.search(line.rstrip())
@@ -1187,15 +1390,21 @@ def check_file(path: Path, root: Path) -> list[tuple[int, str, str]]:
                 continue
             found[(number, rule)] = None
 
-    # `unlabeled-image` is not a per-module matter: it covers NutritionUI and
-    # whatever the app target keeps under its own Sources directory, since both
-    # are the SwiftUI surfaces VoiceOver reads.
+    # `unlabeled-image` and `fixed-font-size` are not per-module matters: they
+    # cover NutritionUI and whatever the app target keeps under its own Sources
+    # directory, since both are the SwiftUI surfaces VoiceOver reads and both
+    # carry text the reader's font settings have to reach.
     if is_view_scope(rel, root):
         for position in unlabeled_images(masked):
             number = line_of(position)
             if number - 1 >= len(allows) or "unlabeled-image" in allows[number - 1]:
                 continue
             found[(number, "unlabeled-image")] = None
+        for position in fixed_font_sizes(masked):
+            number = line_of(position)
+            if number - 1 >= len(allows) or "fixed-font-size" in allows[number - 1]:
+                continue
+            found[(number, "fixed-font-size")] = None
 
     order = {name: index for index, name in enumerate(RULES)}
     return [(number, rule, MESSAGES[rule]) for number, rule in sorted(found, key=lambda k: (k[0], order[k[1]]))]
