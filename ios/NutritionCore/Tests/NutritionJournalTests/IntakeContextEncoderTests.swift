@@ -99,6 +99,7 @@ final class IntakeContextEncoderTests: XCTestCase {
             intake: intake,
             revision: waterAndCreatineRevision,
             sequence: 2,
+            product: nil,
             operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
             links: [
                 waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
@@ -674,6 +675,7 @@ final class IntakeContextEncoderTests: XCTestCase {
                     intake: intake,
                     revision: waterAndCreatineRevision,
                     sequence: 2,
+                    product: nil,
                     operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
                     links: testCase.links),
                 testCase.what
@@ -686,6 +688,7 @@ final class IntakeContextEncoderTests: XCTestCase {
                 intake: intake,
                 revision: waterAndCreatineRevision,
                 sequence: 2,
+                product: nil,
                 operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
                 links: [waterLink(disposition: .active, sampleUUID: sample, syncVersion: 3)]))
     }
@@ -752,6 +755,7 @@ final class IntakeContextEncoderTests: XCTestCase {
             intake: intake,
             revision: waterAndCreatineRevision,
             sequence: 2,
+            product: nil,
             operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
             links: [
                 waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
@@ -888,6 +892,7 @@ final class IntakeContextEncoderTests: XCTestCase {
                 intake: intake,
                 revision: waterAndCreatineRevision,
                 sequence: 2,
+                product: nil,
                 operationID: "not-a-uuid",
                 links: [
                     waterLink(
@@ -911,11 +916,11 @@ final class IntakeContextEncoderTests: XCTestCase {
             waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
         ]
         let first = try encoder.linkProjection(
-            intake: intake, revision: waterAndCreatineRevision, sequence: 2, links: links)
+            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 2, links: links)
         let retry = try encoder.linkProjection(
-            intake: intake, revision: waterAndCreatineRevision, sequence: 2, links: links)
+            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 2, links: links)
         let later = try encoder.linkProjection(
-            intake: intake, revision: waterAndCreatineRevision, sequence: 3, links: [
+            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 3, links: [
                 waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 4),
             ])
         let delivered = try XCTUnwrap(first.member("operation_id")?.stringValue)
@@ -970,11 +975,14 @@ final class IntakeContextEncoderTests: XCTestCase {
         // The food itself first, then the snapshot's own nutrients by their own codes.
         XCTAssertEqual(
             facts.map { $0.string("component_id") }, ["protein-bar", "energy", "protein", "sugar"])
+        // The label states these per 100 g and 60 g were logged, so the facts are scaled: 210 kcal per 100 g
+        // is 126 kcal here, and 20 g of protein is 12 g. Sending the label's own numbers would state the whole
+        // package, not the amount eaten.
         XCTAssertEqual(facts[1].string("code"), "dietary_energy")
-        XCTAssertEqual(facts[1].string("amount"), "210")
+        XCTAssertEqual(facts[1].string("amount"), "126")
         XCTAssertEqual(facts[1].string("unit"), "kcal")
         XCTAssertEqual(facts[2].string("code"), "dietary_protein")
-        XCTAssertEqual(facts[2].string("amount"), "20")
+        XCTAssertEqual(facts[2].string("amount"), "12")
         XCTAssertEqual(facts[2].string("unit"), "g")
         XCTAssertEqual(facts[2].string("aggregation_role"), "context_only")
         // A nutrient the label does not state is unknown, and unknown is never a zero.
@@ -1145,6 +1153,214 @@ final class IntakeContextEncoderTests: XCTestCase {
             try XCTUnwrap(try XCTUnwrap(try XCTUnwrap(byHand.member("facts"))?.arrayValue?.first)
                 .string("provenance")),
             "user_confirmed")
+    }
+
+    /// A snapshot states its values on a basis, and the facts are the amount actually logged. A basis that
+    /// cannot be resolved against the logged quantity sends nothing at all, because an unscaled value would be
+    /// the whole package rather than the portion eaten - the same reason `JournalSnapshotTotals` carries none.
+    func testSnapshotNutrientsAreScaledToTheLoggedAmountOrOmitted() throws {
+        let component = IntakeComponent(
+            componentID: "protein-bar",
+            name: "Protein bar",
+            amount: try XCTUnwrap(DecimalText.decode("40")),
+            unit: .g)
+        func encode(basis: String) throws -> [IntakeContextJSONValue] {
+            let value = try encoder.upsert(
+                intake: intake,
+                revision: IntakeRevision(
+                    intakeID: intakeID,
+                    number: 1,
+                    components: [component],
+                    productSnapshotID: "snapshot-bar",
+                    changeReason: "Scanned from the shelf",
+                    createdAt: Self.recordedAt),
+                product: ProductDefinition(
+                    snapshotID: "snapshot-bar",
+                    productID: "product-protein-bar",
+                    name: "Synthetic protein bar",
+                    labelBasis: basis,
+                    catalogOrigin: "synthetic-catalog",
+                    catalogVersion: "1",
+                    nutrients: ["protein": .known(13, .g)]),
+                operation: outboxOperation(
+                    id: "4a1c9d0e-5b6f-4a8c-9d2e-3f4a5b6c7d8e", kind: .upsert, revision: 1))
+            return try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue)
+        }
+        // Per 100 g, 40 g logged: 13 g per 100 g is 5.2 g, never 13 g.
+        let per100g = try encode(basis: "per 100 g")
+        XCTAssertEqual(per100g.map { $0.string("component_id") }, ["protein-bar", "protein"])
+        XCTAssertEqual(per100g[1].string("amount"), "5.2")
+        // The same basis without a space, as a stored lookup states it.
+        XCTAssertEqual(try encode(basis: "per100g")[1].string("amount"), "5.2")
+        // A source that did not resolve per 100 g or per 100 mL cannot be scaled to a mass or a volume.
+        for unresolved in ["per 100 g or mL", "per serving (30 g)", "per 100 kcal", "unknown"] {
+            let facts = try encode(basis: unresolved)
+            XCTAssertEqual(
+                facts.map { $0.string("component_id") }, ["protein-bar"], unresolved)
+        }
+        // Per serving, two servings logged: the label's one serving becomes two.
+        let servings = try encoder.upsert(
+            intake: intake,
+            revision: IntakeRevision(
+                intakeID: intakeID,
+                number: 1,
+                components: [
+                    IntakeComponent(
+                        componentID: "recipe-oats-whey",
+                        name: "Oats and whey",
+                        amount: try XCTUnwrap(DecimalText.decode("2")),
+                        unit: .serving),
+                ],
+                productSnapshotID: "snapshot-recipe",
+                changeReason: "Logged from the recipe",
+                createdAt: Self.recordedAt),
+            product: ProductDefinition(
+                snapshotID: "snapshot-recipe",
+                productID: "recipe-synthetic",
+                name: "Synthetic oats and whey",
+                labelBasis: "Per serving; yield 4 servings",
+                catalogOrigin: "recipe_calculated",
+                catalogVersion: "1",
+                nutrients: ["protein": .known(24, .g)]),
+            operation: outboxOperation(id: "5b2d0e1f-6c7a-4b9d-8e3f-4a5b6c7d8e9f", kind: .upsert, revision: 1))
+        let served = try XCTUnwrap(try XCTUnwrap(servings.member("facts"))?.arrayValue)
+        XCTAssertEqual(served.map { $0.string("component_id") }, ["recipe-oats-whey", "protein"])
+        XCTAssertEqual(served[1].string("amount"), "48")
+    }
+
+    /// A canonical key and an accepted alias name one nutrient, so they become one fact: the contract requires
+    /// `component_id` to be unique, and two facts under one id fail the whole operation.
+    func testAliasAndCanonicalKeysProduceOneFact() throws {
+        let value = try encoder.upsert(
+            intake: intake,
+            revision: IntakeRevision(
+                intakeID: intakeID,
+                number: 1,
+                components: [
+                    IntakeComponent(
+                        componentID: "protein-bar",
+                        name: "Protein bar",
+                        amount: try XCTUnwrap(DecimalText.decode("40")),
+                        unit: .g),
+                ],
+                productSnapshotID: "snapshot-aliases",
+                changeReason: "Scanned from the shelf",
+                createdAt: Self.recordedAt),
+            product: ProductDefinition(
+                snapshotID: "snapshot-aliases",
+                productID: "product-protein-bar",
+                name: "Synthetic protein bar",
+                labelBasis: "per 100 g",
+                catalogOrigin: "synthetic-catalog",
+                catalogVersion: "1",
+                nutrients: [
+                    "energy": .known(400, .kcal),
+                    "energyKcal": .known(410, .kcal),
+                    "sugars": .known(10, .g),
+                    "sugar": .known(11, .g),
+                ]),
+            operation: outboxOperation(id: "6c3e1f2a-7d8b-4c0e-9f1a-2b3c4d5e6f70", kind: .upsert, revision: 1))
+        let facts = try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue)
+        let ids = facts.map { $0.string("component_id") }
+        XCTAssertEqual(ids, ["protein-bar", "energy", "sugar"], "one fact per nutrient, not one per key")
+        XCTAssertEqual(Set(ids).count, ids.count, "component ids are unique")
+        XCTAssertEqual(facts[1].string("amount"), "160", "40 g of 400 kcal per 100 g")
+    }
+
+    /// A fact the upsert derived from a product snapshot is a fact of that revision, so a later projection may
+    /// link it even though the revision's own components never named it.
+    func testLinkProjectionAcceptsSnapshotDerivedFacts() throws {
+        let revision = IntakeRevision(
+            intakeID: intakeID,
+            number: 1,
+            components: [
+                IntakeComponent(
+                    componentID: "protein-bar",
+                    name: "Protein bar",
+                    amount: try XCTUnwrap(DecimalText.decode("40")),
+                    unit: .g),
+            ],
+            productSnapshotID: "snapshot-bar",
+            changeReason: "Scanned from the shelf",
+            createdAt: Self.recordedAt)
+        let snapshot = ProductDefinition(
+            snapshotID: "snapshot-bar",
+            productID: "product-protein-bar",
+            name: "Synthetic protein bar",
+            labelBasis: "per 100 g",
+            catalogOrigin: "synthetic-catalog",
+            catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g)])
+        let row = outboxOperation(id: "7d4f2a3b-8e9c-4d1f-8a2b-3c4d5e6f7081", kind: .upsert, revision: 1)
+        let upsert = try encoder.upsert(intake: intake, revision: revision, product: snapshot, operation: row)
+        XCTAssertEqual(
+            try XCTUnwrap(try XCTUnwrap(upsert.member("facts"))?.arrayValue?.last?.string("component_id")),
+            "protein")
+        // The projection links that stored fact, which no component of the revision names.
+        let projection = try encoder.linkProjection(
+            intake: intake,
+            revision: revision,
+            product: snapshot,
+            sequence: 2,
+            links: [
+                IntakeContextLink(
+                    componentID: "protein",
+                    sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
+                    healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryProtein",
+                    syncIdentifier: HealthKitWritePlanner.syncIdentifier(
+                        intakeID: intakeID, nutrientKey: "protein"),
+                    syncVersion: 2,
+                    disposition: .active),
+            ])
+        XCTAssertEqual(
+            try XCTUnwrap(try XCTUnwrap(projection.member("healthkit_links"))?.arrayValue?.count), 1)
+        // The wrong type for that same fact is still refused, so the snapshot facts are checked, not skipped.
+        XCTAssertThrowsError(
+            try encoder.linkProjection(
+                intake: intake,
+                revision: revision,
+                product: snapshot,
+                sequence: 3,
+                links: [
+                    IntakeContextLink(
+                        componentID: "protein",
+                        sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
+                        healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietarySodium",
+                        syncIdentifier: HealthKitWritePlanner.syncIdentifier(
+                            intakeID: intakeID, nutrientKey: "protein"),
+                        syncVersion: 3,
+                        disposition: .active),
+                ])
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError,
+                .linkTypeMismatch(
+                    component: "protein",
+                    expected: "HKQuantityTypeIdentifierDietaryProtein",
+                    found: "HKQuantityTypeIdentifierDietarySodium"))
+        }
+        // And a projection whose product is not this revision's snapshot is refused like an upsert's.
+        XCTAssertThrowsError(
+            try encoder.linkProjection(
+                intake: intake,
+                revision: revision,
+                product: nil,
+                sequence: 2,
+                links: [
+                    IntakeContextLink(
+                        componentID: "protein",
+                        sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
+                        healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryProtein",
+                        syncIdentifier: HealthKitWritePlanner.syncIdentifier(
+                            intakeID: intakeID, nutrientKey: "protein"),
+                        syncVersion: 2,
+                        disposition: .active),
+                ])
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError,
+                .productSnapshotMismatch(expected: "snapshot-bar", found: nil))
+        }
     }
 
     // MARK: - The journal types the fixtures are rebuilt from
