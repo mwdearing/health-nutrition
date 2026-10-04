@@ -1,0 +1,871 @@
+{
+  "cases": [
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/BadFontCall.swift",
+          "rule": "fixed-font-size"
+        },
+        {
+          "line": 3,
+          "path": "NutritionCore/Sources/NutritionUI/BadFont.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/BadFont.swift",
+          "source": "import SwiftUI\nstruct BadFont {\n    let font = Font.system(size: 14)\n}\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/BadFontCall.swift",
+          "source": "import SwiftUI\nText(\"x\").font(.system(size: 14))\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_in_ui_reports_file_and_line"
+    },
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/BadSize.swift",
+          "rule": "fixed-font-size"
+        },
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/BadSizeSpelledOut.swift",
+          "rule": "fixed-font-size"
+        },
+        {
+          "line": 3,
+          "path": "NutritionCore/Sources/NutritionUI/BadSize.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/BadSize.swift",
+          "source": "import SwiftUI\nText(\"a\").font(.system(size: 14))\nText(\"b\").font(.system(size: 14, weight: .bold))\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/BadSizeSpelledOut.swift",
+          "source": "import SwiftUI\nText(\"c\").font(Font.system(size: 12))\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_reports_system_size_in_ui"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/ScalingCustomFont.swift",
+          "source": "import SwiftUI\nlet font = Font.custom(\"Inter\", size: 14)\nText(\"a\").font(.custom(\"Inter\", size: 14))\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_allows_the_custom_size_overload_that_scales"
+    },
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/FixedCustomFont.swift",
+          "rule": "fixed-font-size"
+        },
+        {
+          "line": 3,
+          "path": "NutritionCore/Sources/NutritionUI/FixedCustomFont.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/FixedCustomFont.swift",
+          "source": "import SwiftUI\nlet font = Font.custom(\"Inter\", fixedSize: 14)\nText(\"a\").font(.custom(\"Inter\", fixedSize: 13, weight: .bold))\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_reports_a_custom_font_with_a_fixed_size"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/WidgetFactory.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/WidgetFactory.swift",
+          "source": "import SwiftUI\nlet widget = Widget.custom(name: \"compact\", size: 14)\nlet tile = Tile.custom(size: 14, fixedSize: 2)\nText(\"a\").font(.custom(\"Inter\", fixedSize: 14))\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_ignores_custom_calls_that_build_no_font"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/ScaledMetric.swift",
+          "source": "import SwiftUI\nText(\"a\").font(.system(size: scaledSize))\nlet font = Font.custom(\"Inter\", size: scaledSize)\nlet other = Font.custom(\"Inter\", fixedSize: scaledSize)\nlet pinned = Font.body.pointSize(scaledSize)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_allows_a_size_that_is_not_a_literal"
+    },
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/NestedRelativeTo.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NestedRelativeTo.swift",
+          "source": "import SwiftUI\nlet font = Font.custom(resolveName(relativeTo: locale), fixedSize: 14)\nlet scaled = Font.custom(\"Inter\", size: 14, relativeTo: .body)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_reads_relative_to_at_the_font_call_depth"
+    },
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/PointSize.swift",
+          "rule": "fixed-font-size"
+        },
+        {
+          "line": 3,
+          "path": "NutritionCore/Sources/NutritionUI/PointSize.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/PointSize.swift",
+          "source": "import SwiftUI\nText(\"a\").font(Font.body.pointSize(14))\nlet font = Font.title.pointSize(12)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_reports_a_point_size_modifier_on_a_font"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/RelativeFont.swift",
+          "source": "import SwiftUI\nlet font = Font.custom(\"Inter\", size: 14, relativeTo: .body)\nText(\"a\").font(.custom(\"Inter\", size: 14, relativeTo: .largeTitle))\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_allows_a_custom_font_relative_to_a_text_style"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/TextStyles.swift",
+          "source": "import SwiftUI\nText(\"a\").font(.headline)\nText(\"b\").font(.system(.body, design: .rounded))\nlet font = Font.system(.title3)\nlet other = Font.system(.largeTitle, design: .serif)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_allows_text_styles"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Prose.swift",
+          "source": "import SwiftUI\n// .font(.system(size: 14))\n/* .custom(\"Inter\", size: 14) */\nlet sample = \".font(Font.system(size: 12))\"\nText(\"a\").font(.body)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_ignores_comments_and_string_literals"
+    },
+    {
+      "expected": [
+        {
+          "line": 3,
+          "path": "NutritionCore/Sources/NutritionUI/Allowed.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Allowed.swift",
+          "source": "import SwiftUI\nlet caption = Font.custom(\"Inter\", fixedSize: 11) // lint-allow: fixed-font-size\nlet other = Font.custom(\"Inter\", fixedSize: 11)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_is_skipped_by_its_own_lint_allow"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/OnlyOneName.swift",
+          "source": "import SwiftUI\nlet font = Font.system(size: 14) // lint-allow: fixed-font-size\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_allows_the_other_font_rules_to_still_fire"
+    },
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/WrappedSize.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/WrappedSize.swift",
+          "source": "import SwiftUI\nlet font = Font.custom(\n    \"Inter\",\n    fixedSize: 14\n)\nlet scaled = Font.custom(\n    \"Inter\",\n    fixedSize: 14,\n    relativeTo: .body\n)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_reports_a_call_wrapped_over_lines"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "HealthNutrition/Sources/RootView.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "HealthNutrition/Sources/RootView.swift",
+          "source": "import SwiftUI\nstruct RootView: View {\n    var body: some View {\n        Text(\"hi\").font(.system(size: 17))\n    }\n}\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Fine.swift",
+          "source": "import SwiftUI\nText(\"hi\").font(.body)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_fixed_font_size_covers_the_app_target"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionDomain/Fine.swift",
+          "source": "// Double is forbidden in prose only\nlet value = 3\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Fine.swift",
+          "source": "import SwiftUI\n// Color(red: 1, green: 0, blue: 0) in a line comment\n/* Font.system(size: 14) in a block comment */\nlet sample = \"#FF0000 stays text\"\nlet label = \"\"\"\nColor(hex: \"#00FF00\")\nDouble\n\"\"\"\nText(\"x\").font(.body)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_comments_and_string_literals_do_not_trigger"
+    },
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/WrappedFont.swift",
+          "rule": "fixed-font-size"
+        },
+        {
+          "line": 6,
+          "path": "NutritionCore/Sources/NutritionUI/WrappedFont.swift",
+          "rule": "fixed-font-size"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Wrapped.swift",
+          "source": "import SwiftUI\nlet tint = Color(\n    red: 1,\n    green: 0,\n    blue: 0\n)\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/WrappedFont.swift",
+          "source": "import SwiftUI\nlet font = Font.system(\n    size: 14\n)\nText(\"x\").font(\n    .system(\n        size: 14\n    )\n)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_colour_call_split_across_lines_is_reported"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionDomain/Nested.swift",
+          "source": "import Foundation\n/* outer comment\n   /* inner comment mentioning Double and URLSession */\n   still prose: Color(red: 1, green: 0, blue: 0)\n*/\nlet value: Decimal\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Nested.swift",
+          "source": "import SwiftUI\n/* outer\n   /* inner with Font.system(size: 9) */\n   #FF0000 and import HealthKit\n*/\nText(\"x\").font(.body)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_nested_block_comments_are_ignored"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/IconButton.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/IconButton.swift",
+          "source": "import SwiftUI\nstruct IconButton: View {\n    var body: some View {\n        Button(action: {}) { Image(systemName: \"plus\") }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_unlabeled_image_in_an_icon_only_button_is_reported"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/LabelledButton.swift",
+          "source": "import SwiftUI\nstruct LabelledButton: View {\n    var body: some View {\n        Button {\n            add()\n        } label: {\n            Image(systemName: \"plus\")\n        }\n        .accessibilityLabel(\"Add water\")\n    }\n    private func add() {}\n}\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/LabelledImage.swift",
+          "source": "import SwiftUI\nstruct LabelledImage: View {\n    var body: some View {\n        Image(systemName: \"plus\")\n            .accessibilityLabel(\"Add water\")\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_labelled_icon_only_button_is_clean"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Decorative.swift",
+          "source": "import SwiftUI\nstruct Decorative: View {\n    var body: some View {\n        HStack {\n            Image(systemName: \"drop\").accessibilityHidden(true)\n            Text(\"Water\")\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_decorative_image_hidden_from_accessibility_is_clean"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/IconWithText.swift",
+          "source": "import SwiftUI\nstruct IconWithText: View {\n    var body: some View {\n        Button {\n            toggle()\n        } label: {\n            HStack {\n                Image(systemName: \"star\")\n                Text(\"Favorite\")\n            }\n        }\n    }\n    private func toggle() {}\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_image_beside_text_in_the_same_button_label_is_clean"
+    },
+    {
+      "expected": [
+        {
+          "line": 5,
+          "path": "NutritionCore/Sources/NutritionUI/Row.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Row.swift",
+          "source": "import SwiftUI\nstruct Row: View {\n    var body: some View {\n        HStack {\n            Image(systemName: \"drop\")\n            Spacer()\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_unlabeled_image_outside_a_button_is_reported"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "HealthNutrition/Sources/RootView.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "HealthNutrition/Sources/RootView.swift",
+          "source": "import SwiftUI\nstruct RootView: View {\n    var body: some View {\n        Button(action: {}) { Image(systemName: \"plus\") }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "HealthNutrition",
+      "name": "test_unlabeled_image_in_the_app_target_sources_is_reported"
+    },
+    {
+      "expected": [
+        {
+          "line": 2,
+          "path": "NutritionCore/Sources/NutritionUI/NotAllowed.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Allowed.swift",
+          "source": "import SwiftUI\nlet badge = Image(systemName: \"dot\") // lint-allow: unlabeled-image\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NotAllowed.swift",
+          "source": "import SwiftUI\nlet badge = Image(systemName: \"dot\")\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_lint_allow_comment_skips_an_unlabeled_image"
+    },
+    {
+      "expected": [
+        {
+          "line": 6,
+          "path": "NutritionCore/Sources/NutritionUI/CaptionRow.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/CaptionRow.swift",
+          "source": "import SwiftUI\nstruct CaptionRow: View {\n    var body: some View {\n        VStack {\n            Text(\"Caption\")\n            Image(systemName: \"person\")\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_text_beside_an_image_outside_a_control_label_does_not_name_it"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NestedLabel.swift",
+          "source": "import SwiftUI\nstruct NestedLabel: View {\n    var body: some View {\n        Button {\n            toggle()\n        } label: {\n            HStack {\n                Image(systemName: \"star\")\n            }\n        }\n        .accessibilityLabel(\"Favorite\")\n    }\n    private func toggle() {}\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_image_in_a_layout_inside_a_labelled_control_is_clean"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionDomain/Snapshot.swift",
+          "source": "import Foundation\nstruct Snapshot {\n    let source = Image(\"avatar\")\n}\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionJournal/Snapshot.swift",
+          "source": "import Foundation\nlet receipt = Image(\"receipt\")\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionProviders/Snapshot.swift",
+          "source": "import Foundation\nlet thumbnail = Image(systemName: \"photo\")\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_image_constructor_outside_the_ui_module_is_not_a_finding"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Avatar.swift",
+          "source": "import SwiftUI\nstruct Avatar: View {\n    var body: some View {\n        Button {\n            open()\n        } label: {\n            Image(\"avatar-\\(name)\")\n        }\n        .accessibilityLabel(\"Avatar\")\n    }\n    private func open() {}\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_interpolated_image_argument_keeps_the_control_window"
+    },
+    {
+      "expected": [
+        {
+          "line": 6,
+          "path": "NutritionCore/Sources/NutritionUI/Receipt.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Receipt.swift",
+          "source": "import SwiftUI\nstruct Receipt: View {\n    var body: some View {\n        VStack {\n            Label(\"Water\", systemImage: \"drop\")\n            Image(\"receipt\")\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_preceding_label_does_not_exempt_a_later_image"
+    },
+    {
+      "expected": [
+        {
+          "line": 5,
+          "path": "NutritionCore/Sources/NutritionUI/DebugOnly.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/DebugOnly.swift",
+          "source": "import SwiftUI\nstruct DebugOnly: View {\n    var body: some View {\n        Button(action: {}) {\n            Image(systemName: \"plus\")\n        }\n#if DEBUG\n        .accessibilityLabel(\"Add water\")\n#endif\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_accessibility_label_in_only_one_build_branch_does_not_exempt"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Labelled.swift",
+          "source": "import SwiftUI\nstruct Labelled: View {\n    var body: some View {\n        Button(action: {}) {\n            Image(systemName: \"plus\")\n        }\n#if DEBUG\n        .accessibilityLabel(\"Add water\")\n#else\n        .accessibilityLabel(\"Add a glass of water\")\n#endif\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_accessibility_label_in_every_build_branch_exempts"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/AddButton.swift",
+          "source": "import SwiftUI\nstruct AddButton: View {\n    var body: some View {\n        Button(action: {}, label: {\n            Image(systemName: \"plus\")\n        })\n        .accessibilityLabel(\"Add water\")\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_label_passed_as_an_argument_names_the_image_in_it"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Conditional.swift",
+          "source": "import SwiftUI\nstruct Conditional: View {\n    var body: some View {\n        Image(systemName: \"drop\")\n#if DEBUG\n        .accessibilityLabel(\"Water, debug build\")\n#else\n        .accessibilityLabel(\"Water\")\n#endif\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_label_in_every_branch_of_a_standalone_image_exempts"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Decorative.swift",
+          "source": "import SwiftUI\nstruct DecorativeBackground: View {\n    var body: some View {\n        Image(decorative: \"watermark\", bundle: .module)\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_image_built_as_decorative_is_clean"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Titled.swift",
+          "source": "import SwiftUI\nstruct Titled: View {\n    var body: some View {\n        Label {\n            Text(\"Water\")\n        } icon: {\n            Image(systemName: \"drop\")\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_label_title_closure_names_its_icon_closure"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/Overlay.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Overlay.swift",
+          "source": "import SwiftUI\nstruct Overlay: View {\n    var body: some View {\n        Image(\"photo\").overlay {\n            Image(systemName: \"star\").accessibilityLabel(\"New\")\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_nested_labelled_image_does_not_exempt_the_outer_one"
+    },
+    {
+      "expected": [
+        {
+          "line": 7,
+          "path": "NutritionCore/Sources/NutritionUI/HiddenCaption.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/HiddenCaption.swift",
+          "source": "import SwiftUI\nstruct HiddenCaption: View {\n    var body: some View {\n        Button {\n            remove()\n        } label: {\n            Image(systemName: \"trash\")\n            Text(\"Delete\").accessibilityHidden(true)\n        }\n    }\n    private func remove() {}\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_text_hidden_from_accessibility_does_not_name_a_control"
+    },
+    {
+      "expected": [
+        {
+          "line": 5,
+          "path": "NutritionCore/Sources/NutritionUI/Choice.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Choice.swift",
+          "source": "import SwiftUI\nstruct Choice: View {\n    var body: some View {\n        Picker(\"Choose\", selection: .constant(1)) {\n            Image(systemName: \"a\").tag(1)\n        }\n        .accessibilityLabel(\"Choice\")\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_picker_options_are_not_the_picker_label"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Destructive.swift",
+          "source": "import SwiftUI\nstruct Destructive: View {\n    var body: some View {\n        Button(role: .destructive) {\n            remove()\n        } label: {\n            Image(systemName: \"trash\")\n        }\n        .accessibilityLabel(\"Remove\")\n    }\n    private func remove() {}\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_action_and_label_closures_with_an_argument_list_are_clean"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Qualified.swift",
+          "source": "import SwiftUI\nstruct Qualified: View {\n    var body: some View {\n        SwiftUI.Button {} label: {\n            Image(systemName: \"trash\")\n            Text(\"Delete\")\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_module_qualified_control_label_names_the_image"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/ArgumentLabel.swift",
+          "source": "import SwiftUI\nstruct ArgumentLabel: View {\n    var body: some View {\n        Label(title: { Text(\"Water\") }, icon: { Image(systemName: \"drop\") })\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_label_title_argument_names_the_image_in_its_icon_argument"
+    },
+    {
+      "expected": [
+        {
+          "line": 5,
+          "path": "NutritionCore/Sources/NutritionUI/DebugCaption.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/DebugCaption.swift",
+          "source": "import SwiftUI\nstruct DebugCaption: View {\n    var body: some View {\n        Button {} label: {\n            Image(systemName: \"trash\")\n            Text(\"Delete\")\n            #if DEBUG\n            .accessibilityHidden(true)\n            #endif\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_text_hidden_in_one_branch_does_not_name_the_control"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/OverlayArgument.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/OverlayArgument.swift",
+          "source": "import SwiftUI\nstruct OverlayArgument: View {\n    var body: some View {\n        Image(\"photo\").overlay(content: {\n            Image(systemName: \"star\").accessibilityLabel(\"New\")\n        })\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_nested_labelled_image_in_a_content_argument_does_not_exempt_the_outer_one"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Overflow.swift",
+          "source": "import SwiftUI\nstruct Overflow: View {\n    var body: some View {\n        Menu(content: {\n            Button(\"Action\") {}\n        }) {\n            Image(systemName: \"ellipsis\")\n        }.accessibilityLabel(\"More\")\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_trailing_closure_after_a_content_argument_is_the_control_label"
+    },
+    {
+      "expected": [
+        {
+          "line": 5,
+          "path": "NutritionCore/Sources/NutritionUI/SiblingBranch.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/SiblingBranch.swift",
+          "source": "import SwiftUI\nstruct SiblingBranch: View {\n    var body: some View {\n        VStack {\n            Image(\"one\")\n            #if DEBUG\n            Text(\"x\")\n            #endif\n            Image(\"two\").accessibilityLabel(\"Two\")\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_branch_of_a_sibling_view_ends_the_modifier_chain"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NestedArms.swift",
+          "source": "import SwiftUI\nstruct NestedArms: View {\n    var body: some View {\n        Image(\"x\")\n        #if os(iOS)\n        #if DEBUG\n        .accessibilityLabel(\"Debug\")\n        #else\n        .accessibilityLabel(\"Release\")\n        #endif\n        #else\n        .accessibilityLabel(\"Other\")\n        #endif\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_nested_arms_that_all_name_the_image_exempt_it"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/NestedUnnamed.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NestedUnnamed.swift",
+          "source": "import SwiftUI\nstruct NestedUnnamed: View {\n    var body: some View {\n        Image(\"x\")\n        #if os(iOS)\n        #if DEBUG\n        .accessibilityLabel(\"Debug\")\n        #else\n        .padding()\n        #endif\n        #else\n        .accessibilityLabel(\"Other\")\n        #endif\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_nested_arm_without_a_name_leaves_the_image_unlabeled"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/NestedSibling.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NestedSibling.swift",
+          "source": "import SwiftUI\nstruct NestedSibling: View {\n    var body: some View {\n        Image(\"x\")\n        #if os(iOS)\n        #if DEBUG\n        Text(\"y\")\n        #endif\n        #endif\n        Image(\"z\").accessibilityLabel(\"Z\")\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_nested_arm_holding_a_sibling_view_ends_the_chain"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/ConditionalOverlay.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/ConditionalOverlay.swift",
+          "source": "import SwiftUI\nstruct ConditionalOverlay: View {\n    var body: some View {\n        Image(\"photo\")\n        #if DEBUG\n        .overlay { Image(\"badge\").accessibilityLabel(\"New\") }\n        #else\n        .accessibilityLabel(\"Photo\")\n        #endif\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_closure_in_a_conditional_modifier_does_not_name_the_image"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "NutritionCore/Sources/NutritionUI/NestedThenSibling.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NestedThenSibling.swift",
+          "source": "import SwiftUI\nstruct NestedThenSibling: View {\n    var body: some View {\n        Image(\"x\")\n        #if os(iOS)\n        #if DEBUG\n        .padding()\n        #else\n        .padding()\n        #endif\n        Text(\"sibling\").accessibilityLabel(\"Sibling\")\n        #else\n        .accessibilityLabel(\"Other\")\n        #endif\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_sibling_after_a_nested_conditional_ends_the_outer_arm"
+    },
+    {
+      "expected": [],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/HiddenInDebug.swift",
+          "source": "import SwiftUI\nstruct HiddenInDebug: View {\n    var body: some View {\n        Button {} label: {\n            Image(systemName: \"trash\")\n            Text(\"Delete\")\n            #if DEBUG\n            .accessibilityHidden(true)\n            Text(\"Remove\")\n            #endif\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows"
+    },
+    {
+      "expected": [
+        {
+          "line": 5,
+          "path": "NutritionCore/Sources/NutritionUI/NestedContent.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/NestedContent.swift",
+          "source": "import SwiftUI\nstruct NestedContent: View {\n    var body: some View {\n        Picker(\"Choose\", selection: binding(content: value)) {\n            Image(systemName: \"one\").tag(1)\n        }.accessibilityLabel(\"Choice\")\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_nested_content_argument_is_not_the_control_content"
+    },
+    {
+      "expected": [
+        {
+          "line": 6,
+          "path": "NutritionCore/Sources/NutritionUI/CustomControl.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "NutritionCore/Sources/NutritionUI/CustomControl.swift",
+          "source": "import SwiftUI\nstruct CustomControl: View {\n    var body: some View {\n        Custom.Button(action: {}) label: {\n            VStack {\n                Image(systemName: \"star\")\n                Text(\"Favourite\")\n            }\n        }\n    }\n}\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_custom_qualified_control_does_not_name_the_image"
+    },
+    {
+      "expected": [
+        {
+          "line": 4,
+          "path": "HealthNutrition/Sources/RootView.swift",
+          "rule": "unlabeled-image"
+        }
+      ],
+      "files": [
+        {
+          "path": "HealthNutrition/Sources/RootView.swift",
+          "source": "import SwiftUI\nstruct RootView: View {\n    var body: some View {\n        Button(action: {}) { Image(systemName: \"plus\") }\n    }\n}\n"
+        },
+        {
+          "path": "NutritionCore/Sources/NutritionUI/Fine.swift",
+          "source": "import SwiftUI\nText(\"hi\").font(.body)\n"
+        }
+      ],
+      "lintRoot": "NutritionCore",
+      "name": "test_a_run_over_the_package_root_also_lints_the_app_target"
+    }
+  ],
+  "messages": {
+    "fixed-font-size": "literal point size, which Dynamic Type cannot scale; use a text style, or Font.custom(_:size:), which scales with the body style",
+    "unlabeled-image": "image without an accessibility label; add .accessibilityLabel(...) or mark it decorative with .accessibilityHidden(true)"
+  },
+  "rules": [
+    "unlabeled-image",
+    "fixed-font-size"
+  ]
+}
