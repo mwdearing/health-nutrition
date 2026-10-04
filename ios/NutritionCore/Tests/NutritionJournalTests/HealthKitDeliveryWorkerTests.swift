@@ -388,7 +388,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("HealthKit store unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("HealthKit store unavailable"))
         let outcomes = await worker.runOnce(now: when)
 
         guard case .retryScheduled(let operationID, let nextAttemptAt, _) = try XCTUnwrap(outcomes.first) else {
@@ -413,7 +413,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         try store.delete(intakeID: intakeID, now: when)
-        writer.failDeletes(with: .transient("query failed"))
+        writer.failDeletes(with: HealthSampleWriterError.transient("query failed"))
         let outcomes = await worker.runOnce(now: when)
 
         XCTAssertTrue(outcomes.contains { if case .retryScheduled = $0 { return true } else { return false } })
@@ -425,7 +425,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         writer.failSaves(with: nil)
         writer.reset()
@@ -444,7 +444,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker(enabled: [.healthKit, .relay])
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
 
         let relay = try XCTUnwrap(try store.pendingOutbox().first { $0.destination == .relay })
@@ -475,7 +475,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         writer.failSaves(with: nil)
         writer.reset()
@@ -557,7 +557,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         writer.failSaves(with: nil)
         // Revision 2 drops the nutrient, which is what makes the ordering observable.
@@ -588,7 +588,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         try store.edit(
             intakeID: intakeID, components: [component("water", amount: 250, unit: .mL)], product: nil,
@@ -732,7 +732,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         var now = when
         var waits: [TimeInterval] = []
         for _ in 1...3 {
