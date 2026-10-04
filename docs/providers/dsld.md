@@ -4,10 +4,10 @@ Status: Accepted for reading a recorded label. Terms review date: 2027-10-02.
 
 ## What this adapter is
 
-`DSLDLabelAdapter` turns one recorded NIH Dietary Supplement Label Database (DSLD) label response into
+`DSLDLabelAdapter` turns one NIH Dietary Supplement Label Database (DSLD) label response into
 `NutritionDomain` values: `Data` in, a `DSLDSupplementLabel` out. It is pure parsing. It sends no
-requests, opens no sessions and caches nothing; a live DSLD client is a separate piece of work and will
-feed this adapter the same bytes.
+requests, opens no sessions and caches nothing. `DSLDClient` (see [Live client](#live-client)) fetches
+responses and feeds this adapter the same bytes, live or recorded, so both take one code path.
 
 The adapter reads a label for its own serving size. DSLD states each ingredient row for one serving size
 and the adapter keeps that basis; it does not normalise to 100 g and it does not rescale.
@@ -119,6 +119,85 @@ Malformed input throws `DSLDAdapterError`:
 
 A label that is well formed but incomplete is not an error: a missing name, unit or amount is `unknown`.
 
+## Live client
+
+`DSLDClient` reads the live API over a single seam, `DSLDTransport`, and feeds every response to the
+adapter described above. `URLSessionDSLDTransport` uses an ephemeral `URLSession`, so no cookie, cache or
+credential is shared with anything else on the device; tests inject a fake and never touch the network.
+
+`DSLDEnvironment.production` is `https://api.ods.od.nih.gov/dsld`. The API is public and asks for no
+credentials, so an environment carries a base URL and nothing else.
+
+### Endpoints
+
+| Call | Request | Returns |
+| --- | --- | --- |
+| `label(id:)` | `GET /dsld/v9/label/<id>` | `DSLDOutcome` |
+| `search(term:limit:)` | `GET /dsld/v9/search-filter?q=<term>&size=<n>` | `DSLDSearchOutcome` |
+
+`label(id:)` hands the response body to `DSLDLabelAdapter.parse(_:)`, so a live label and a recorded one
+parse through the same code path and the amount rules above hold for both. `search(term:limit:)` returns
+identifiers and names only — `DSLDSearchHit` carries `id`, `fullName`, `brandName` and `offMarket` — plus
+the `total` the database reports for the term. No amount ever comes from a search hit; a caller that
+wants facts fetches the label by identifier. A hit with no usable identifier is skipped rather than
+guessed at, so a result can never point at a label that does not exist.
+
+The size is clamped to between 1 and `DSLDClient.maximumSearchSize` (100) however large a limit the
+caller passes.
+
+### Search is an explicit user action
+
+There is deliberately no type-ahead. `search` answers a search the user asked for; it is not called while
+a term is being typed. A blank or whitespace-only term is `.failed` and sends no request at all. The
+database counts every search as a request, so a per-keystroke lookup would spend its request budget on
+answers nobody asked for.
+
+### Outcomes
+
+Both calls return one of four outcomes, and none of them is a guess:
+
+- `found` — the body arrived and was read. For a lookup, `DSLDLabelAdapter.parse(_:)` produced a
+  `DSLDSupplementLabel`; for a search, the hits and the total.
+- `notFound` — HTTP 404. A `label(id:)` with an identifier the database could never hold (`0` or
+  negative) never reaches the network and is `.failed` instead, because there is nothing to ask about.
+- `rateLimited(retryAfter:)` — HTTP 429 or 503. The wait comes from `Retry-After`, read as delay-seconds
+  or as an HTTP-date; when the header is absent or unreadable the client waits
+  `DSLDClient.defaultRetryAfter`, 60 seconds. An unreadable header is never a reason to retry at once.
+- `failed(reason:)` — a transport error (the request never completed) or a body that is not usable: bytes
+  that are not well-formed JSON, a document that is not an object, a label with no identifier or no
+  `ingredientRows`, or a search body with no `hits` array (`DSLDSearchError.notAnObject` and
+  `.missingHits`). The reason is text for a log or an error message; the client never turns a failure into
+  a label, an empty result or a zero.
+
+### User-Agent
+
+Every request carries a `User-Agent` that names the app, its version and where a wrong label is reported:
+
+```
+User-Agent: HealthNutrition/<version> (+https://github.com/mwdearing/health-nutrition/issues)
+Accept: application/json
+```
+
+The header value is assembled from `DSLDAttribution.issueURL` rather than written as one literal, so no
+source URL string in the client contains a pair of adjacent slashes; see `DSLDEnvironment.swift`.
+Requests are `GET`, with a 15 second timeout, and no `Authorization` header, because the API needs none.
+
+### Rate limiting
+
+The client does not add its own request budget: DSLD publishes no numeric limit, and a limit invented
+here would be a guess. What it does guarantee is that a refusal is passed through rather than hidden —
+429 and 503 become `rateLimited` with the wait the database asked for — and that the one operation which
+could generate requests without being asked for, search on a term the user has not submitted, sends
+nothing. Callers should back off for the stated wait and must not retry on their own schedule.
+
+### Licence
+
+DSLD data is public domain under the
+[CC0 1.0 Universal licence](https://creativecommons.org/publicdomain/zero/1.0/), so live responses carry
+no share-alike or attribution obligation. `DSLDAttribution` names the source anyway, because a label
+shown to a user should say where it came from. Product images and PDF documents are deliberately not
+fetched: the client only asks the two endpoints above, neither of which is used for images.
+
 ## Licences
 
 - The NIH Dietary Supplement Label Database is released under the
@@ -136,6 +215,11 @@ The recorded labels live in `contracts/providers/dsld`, with `MANIFEST.json` lis
 SHA-256 and its coverage metadata. `DSLDLabelAdapterTests` reads the manifest from the repository root,
 found relative to `#filePath`, and parses every recorded label; no fixture is copied into the test
 bundle and no test touches the network.
+
+`DSLDClientTests` reads the same recorded directory the same way, through a `FakeDSLDTransport` that
+answers from memory and records the requests it was given. A live response and a recorded one therefore
+reach the client as identical bytes, and the URL, the User-Agent, a 404, a 429 with `Retry-After`, a
+malformed body and a search query are all covered without a network request.
 
 ## Review
 
