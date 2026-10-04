@@ -1,6 +1,26 @@
 import Foundation
 import NutritionDomain
 
+/// A sample the writer built that HealthKit will never accept, raised for `HKError.errorInvalidArgument`.
+///
+/// **Permanent, not transient.** Apple's save contract counts an invalid argument as a save failure,
+/// and a retry rebuilds the same specs from the same immutable journal revision, so the same save
+/// fails the same way every time. The app target's writer raises this instead of a transient error so
+/// the worker parks the operation with the reason HealthKit gave, rather than backing off against
+/// something no amount of waiting will fix.
+///
+/// It is a separate type rather than a third case of `HealthSampleWriterError` because that enum is
+/// the writer's protocol-level "denied or worth another attempt" pair: a rejected sample is neither,
+/// and naming it as its own type keeps the retry decision readable at the `catch`.
+public struct HealthSampleRejectedError: Error, Sendable, Equatable {
+    /// What HealthKit refused, kept for the reason a person is shown.
+    public let reason: String
+
+    public init(reason: String) {
+        self.reason = reason
+    }
+}
+
 /// Supplies the nutrient totals one revision contributes, keyed by intake id and revision number.
 ///
 /// The worker does not compute totals: how much protein an entry carries is the journal's business,
@@ -147,9 +167,11 @@ public enum HealthKitDeliveryOutcome: Sendable, Equatable {
 /// revision ever wrote it, because an earlier revision may have. The journal keys nothing off a
 /// HealthKit UUID (ADR 0002), so this is a deletion by sync identifier.
 ///
-/// **Failure handling.** `HealthSampleWriterError.authorizationDenied` needs a person, so the
-/// operation is marked `needsAttention` with no retry scheduled: a scheduler that retried it would
-/// fail forever and hide the real problem. Every other error is transient and is retried on the
+/// **Failure handling.** Two failures need a person and are marked `needsAttention` with no retry
+/// scheduled: `HealthSampleWriterError.authorizationDenied`, because retrying cannot grant Health
+/// access, and `HealthSampleRejectedError`, because a sample HealthKit will never accept is rebuilt
+/// identically by every retry. A scheduler that retried either would fail forever and hide the real
+/// problem behind a queue that never drains. Every other error is transient and is retried on the
 /// backoff below. Either way the operation stays pending, because a delivery that was not recorded as
 /// successful must not be forgotten.
 public struct HealthKitDeliveryWorker: Sendable {
@@ -284,6 +306,8 @@ public struct HealthKitDeliveryWorker: Sendable {
             try await writer.save(plan)
         } catch let error as HealthSampleWriterError {
             return handle(error, for: operation, now: now)
+        } catch let error as HealthSampleRejectedError {
+            return rejectedSample(error, for: operation, now: now)
         } catch {
             // An error the writer did not type is still a delivery failure. Treating it as transient
             // is the safe direction: it retries, and a typed denial arrives as the typed error.
@@ -354,6 +378,8 @@ public struct HealthKitDeliveryWorker: Sendable {
                 operationID: operation.operationID, samples: deleted, denied: denied.sorted())
         } catch let error as HealthSampleWriterError {
             return handle(error, for: operation, now: now)
+        } catch let error as HealthSampleRejectedError {
+            return rejectedSample(error, for: operation, now: now)
         } catch {
             return transient(operation, now: now, reason: "the samples could not be deleted")
         }
@@ -402,6 +428,15 @@ public struct HealthKitDeliveryWorker: Sendable {
         case .transient(let message):
             return transient(operation, now: now, reason: message)
         }
+    }
+
+    /// A rejected sample needs a person too, for the same reason a denial does: the plan is rebuilt
+    /// from the stored revision on every attempt, so retrying writes the identical sample and fails
+    /// the identical way. Parking it says what has to change, where backing off would only hide it.
+    private func rejectedSample(
+        _ error: HealthSampleRejectedError, for operation: OutboxOperation, now: Date
+    ) -> HealthKitDeliveryOutcome {
+        needsAttention(operation, now: now, reason: error.reason)
     }
 
     /// Schedules the next attempt on the backoff and leaves the operation pending.

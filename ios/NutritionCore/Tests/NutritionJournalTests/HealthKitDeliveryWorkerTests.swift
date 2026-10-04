@@ -19,8 +19,10 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     private final class FakeHealthSampleWriter: HealthSampleWriter, @unchecked Sendable {
         private let lock = NSLock()
         private var allowed: Set<String> = []
-        private var saveError: HealthSampleWriterError?
-        private var deleteError: HealthSampleWriterError?
+        // Typed as `Error`, not `HealthSampleWriterError`: the writer reports permanent failures with
+        // their own type, and the worker is supposed to tell them apart by what was thrown.
+        private var saveError: (any Error)?
+        private var deleteError: (any Error)?
         private var savedSpecs: [HealthKitSampleSpec] = []
         private var deletedIdentifiers: [String] = []
         private var saveCallCount = 0
@@ -60,11 +62,11 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         /// nil clears the failure, so a test can let a retry through.
-        func failSaves(with error: HealthSampleWriterError?) {
+        func failSaves(with error: (any Error)?) {
             lock.withLock { saveError = error }
         }
 
-        func failDeletes(with error: HealthSampleWriterError?) {
+        func failDeletes(with error: (any Error)?) {
             lock.withLock { deleteError = error }
         }
 
@@ -86,7 +88,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         func save(_ specs: [HealthKitSampleSpec]) async throws {
-            let error = lock.withLock { () -> HealthSampleWriterError? in
+            let error = lock.withLock { () -> (any Error)? in
                 saveCallCount += 1
                 order.append("save")
                 attemptedVersions.append(contentsOf: specs.map(\.syncVersion))
@@ -98,7 +100,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         func deleteSamples(syncIdentifiers: [String]) async throws -> Int {
-            let outcome = lock.withLock { () -> (HealthSampleWriterError?, Int) in
+            let outcome = lock.withLock { () -> ((any Error)?, Int) in
                 order.append("delete")
                 guard deleteError == nil else { return (deleteError, 0) }
                 deletedIdentifiers.append(contentsOf: syncIdentifiers)
@@ -994,5 +996,75 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             writer.saved.map(\.syncVersion), [1, 2],
             "re-arming releases the older revision, and the newer one follows it")
         XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.destination == .relay })
+    }
+
+    /// An edit queued before revision 1's first attempt has already made revision 1's projection
+    /// noncurrent. The denial still has to suspend the **operation**: recording it on current
+    /// projections alone would leave nothing in `needsAttention`, so `suspendedOperationIDs()` would
+    /// not report the operation and every later run would retry a denial forever.
+    func testADenialOnASupersededRevisionSuspendsTheOperationRatherThanRetryingIt() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component(amount: 55)], product: nil,
+            changeReason: "bigger bowl", now: when)
+        let denied = try XCTUnwrap(try store.pendingOutbox().first {
+            $0.destination == .healthKit && $0.revision == 1
+        })
+        writer.deny("HKQuantityTypeIdentifierDietaryWater")
+
+        _ = await worker.runOnce(now: when)
+
+        let deniedProjection = try XCTUnwrap(try store.projections(of: intakeID).first {
+            $0.destination == .healthKit && $0.revision == 1 && $0.desiredAction == .upsert
+        })
+        XCTAssertFalse(
+            deniedProjection.isCurrent,
+            "the edit superseded this projection before the first delivery attempt")
+        XCTAssertEqual(
+            deniedProjection.state, .needsAttention,
+            "a denial is recorded on the projection belonging to the operation, superseded or not")
+        XCTAssertTrue(
+            try store.suspendedOperationIDs().contains(denied.operationID),
+            "otherwise the denied revision looks due and every automatic run retries it")
+
+        writer.reset()
+        _ = await worker.runOnce(now: when.addingTimeInterval(3600))
+
+        XCTAssertEqual(
+            try store.pendingOutbox().first { $0.operationID == denied.operationID }?.attempts, 1,
+            "a denial is not retried, whether or not its projection is still current")
+        XCTAssertEqual(writer.saveCalls, 0)
+    }
+
+    /// A sample HealthKit will never accept is not a delivery hiccup. A retry rebuilds the same
+    /// immutable revision, so the same save fails identically every time; the operation is parked for
+    /// a person instead of backing off forever against something waiting cannot fix.
+    func testARejectedSampleNeedsAttentionAndIsNotRetried() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid"))
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .needsAttention(let operationID, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a sample that can never be saved must ask for a person, got \(outcomes)")
+        }
+        XCTAssertTrue(
+            reason.contains("invalid"), "the reason has to say what HealthKit refused: \(reason)")
+        let operation = try XCTUnwrap(try store.pendingOutbox().first { $0.operationID == operationID })
+        XCTAssertEqual(operation.attempts, 1)
+        XCTAssertNil(operation.nextAttemptAt, "a rejected sample is not retried on a timer")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
+
+        writer.reset()
+        _ = await worker.runOnce(now: when.addingTimeInterval(7200))
+
+        XCTAssertEqual(
+            try store.pendingOutbox().first { $0.operationID == operationID }?.attempts, 1,
+            "the permanent failure is not attempted again")
+        XCTAssertEqual(writer.saveCalls, 0)
     }
 }

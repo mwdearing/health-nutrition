@@ -23,8 +23,10 @@ import NutritionJournal
 ///   accepted save mints a new one).
 ///
 /// Authorization is read per type with `authorizationStatus(for:)`, not inferred from the permission
-/// sheet, which ADR 0002 recorded as under-reporting what it granted. A save that fails with
-/// `errorAuthorizationDenied` is the one failure that is not retried; anything else is transient.
+/// sheet, which ADR 0002 recorded as under-reporting what it granted. Two save failures are not
+/// retried, because no retry can succeed: `errorAuthorizationDenied`, which only a person can grant,
+/// and `errorInvalidArgument`, which rejects a sample that is rebuilt identically every attempt.
+/// Anything else is transient.
 struct HealthKitSampleWriter: HealthSampleWriter {
     private let healthStore = HKHealthStore()
 
@@ -180,16 +182,26 @@ struct HealthKitSampleWriter: HealthSampleWriter {
             .filter { $0.sourceRevision.source == HKSource.default() }
     }
 
-    /// ADR 0002: only an authorization denial means "not allowed in Health". Every other error — an
-    /// invalid sample, a restriction, a store error — is a delivery error worth another attempt, so
-    /// the worker backs off instead of parking the entry for a person.
-    private static func classify(_ error: Error) -> HealthSampleWriterError {
+    /// ADR 0002: an authorization denial and an invalid sample both mean "retrying cannot help", and
+    /// both are raised so the worker parks the operation for a person instead of backing off. Every
+    /// other error — a restriction, a store error — is a delivery error worth another attempt.
+    ///
+    /// `errorInvalidArgument` is the deterministic one: Apple's save contract counts an invalid
+    /// argument as a save failure, and a retry rebuilds the same specs from the same immutable journal
+    /// revision, so the identical sample is rejected identically every time. Classifying it as transient
+    /// meant an unfixable entry backed off on a timer forever, which is the retry storm ADR 0002's
+    /// suspension exists to prevent.
+    private static func classify(_ error: Error) -> Error {
         guard let healthError = error as? HKError else {
-            return .transient(error.localizedDescription)
+            return HealthSampleWriterError.transient(error.localizedDescription)
         }
-        if healthError.code == .errorAuthorizationDenied {
-            return .authorizationDenied
+        switch healthError.code {
+        case .errorAuthorizationDenied:
+            return HealthSampleWriterError.authorizationDenied
+        case .errorInvalidArgument:
+            return HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid")
+        default:
+            return HealthSampleWriterError.transient(error.localizedDescription)
         }
-        return .transient(error.localizedDescription)
     }
 }

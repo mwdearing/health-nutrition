@@ -491,6 +491,18 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     ///
     /// An acknowledged operation is left alone: it was delivered, so a failure recorded afterwards
     /// belongs to a different attempt and must not reopen it.
+    ///
+    /// **A suspension is recorded on the projection belonging to the operation, superseded or not.** A
+    /// worker can record the denial after an edit has already superseded that projection — the edit was
+    /// queued before the revision's first attempt — and marking only current projections would leave
+    /// nothing in `needsAttention`. `suspendedOperationIDs()` matches by state whatever the
+    /// projection's currency, so nothing would report the operation, it would look due (`nil` retry
+    /// date), and every automatic run would retry a denial forever while growing its attempt count.
+    /// `rearmDelivery(operationID:)` clears this same state from this same projection, so both halves
+    /// of the suspension have to reach it.
+    ///
+    /// A transient failure still touches current projections only: it is scheduled to be tried again,
+    /// and what a later revision is doing matters more than what an old operation did.
     public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
         try commit { context in
             guard let row = try Self.outboxRecord(operationID, in: context) else {
@@ -499,7 +511,9 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             guard row.acknowledgedAt == nil else { return }
             row.attempts += 1
             row.nextAttemptAt = retryAt
-            try Self.setProjectionState(needsAttention ? .needsAttention : .pending, of: row, in: context)
+            try Self.setProjectionState(
+                needsAttention ? .needsAttention : .pending, of: row, in: context,
+                includingSuperseded: needsAttention)
         }
     }
 
@@ -577,8 +591,9 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     ///
     /// A superseded projection is left as it is: what a later revision is doing matters more than what
     /// an old operation did.
-    /// `includingSuperseded` is for clearing a suspension, where the projection that records it may
-    /// already have been superseded by a later edit. Every other caller wants current projections only.
+    /// `includingSuperseded` is for the two halves of a suspension — recording it and clearing it —
+    /// which both travel with the operation rather than with the current projection and so may have to
+    /// reach one a later edit has already superseded. Every other caller wants current projections only.
     private static func setProjectionState(
         _ state: DestinationState, of row: OutboxRecord, in context: ModelContext,
         includingSuperseded: Bool = false

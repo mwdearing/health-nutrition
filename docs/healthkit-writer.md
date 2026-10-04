@@ -223,6 +223,7 @@ so both routes end in the same place.
 | Failure | What happens |
 |---|---|
 | `authorizationDenied` | Projection becomes `needsAttention`, the operation is **suspended**, no retry is scheduled. |
+| `HealthSampleRejectedError` (an invalid sample) | Same: the operation is **suspended** with HealthKit's reason. |
 | `HealthSampleWriterError.transient` | `attempts` grows by one, `nextAttemptAt` moves out along the backoff. |
 | Any other error, including a failed totals read | Treated as transient: retrying is the safe direction. |
 | The store's acknowledgement throws after a successful write | Reported as `.notAcknowledged`, which is **unresolved**. |
@@ -230,6 +231,22 @@ so both routes end in the same place.
 A denial is never retried because **retrying cannot grant Health access**. A worker that retried it
 would fail on a timer forever and hide the real problem behind a queue that never drains; leaving the
 projection in `needsAttention` puts it in front of a person instead.
+
+### An invalid sample is permanent, not transient
+
+`HKError.errorInvalidArgument` is the other failure waiting cannot fix, and it used to fall through to
+the transient branch, so it backed off on the 1/5/30-minute-then-2-hours schedule **forever**. Apple's
+[save contract](https://developer.apple.com/documentation/healthkit/hkhealthstore/save%28_%3Awithcompletion%3A%29-47iwb)
+counts an invalid argument as a save failure, and the app target cannot argue with it: a retry rebuilds
+the same `HKQuantitySample` from the same immutable journal revision, down to the sync version, so the
+identical sample is rejected identically every time. The writer therefore raises
+`HealthSampleRejectedError` for that code alone, and the worker marks the operation `needsAttention`
+with HealthKit's reason rather than scheduling a retry that cannot succeed — the entry, or the plan
+built from it, has to change first, and that is a person's decision.
+
+This is deliberately narrow. A **unit symbol the writer does not recognise** is still transient, because
+it means the writer's table and the planner's disagree, which a later build may well fix; only an
+invalid argument from HealthKit itself, about a sample this app built itself, is permanent.
 
 Suspension has to be **explicit state**, not the absence of a retry date. A denied operation records
 `nextAttemptAt == nil`, which reads identically to "due now" — the very first attempt also has no date
@@ -245,10 +262,14 @@ gone noncurrent is still an undelivered, suspended operation. `suspendedOperatio
 each `needsAttention` projection to its operation whatever its currency; filtering on `isCurrent` would
 drop the suspension, retry the denied write forever and block the newer revision indefinitely.
 
-Re-arming has to reach the projection that actually **records** the suspension, superseded or not, for
-the same reason: clearing only current projections would leave the state at `needsAttention`, and since
-suspension is matched by state the operation would stay suspended and the re-arm would silently do
-nothing. Every other projection update deliberately touches current projections only.
+Both halves of a suspension have to reach that projection, superseded or not, and this includes the
+moment the suspension is **recorded**. An edit queued *before* the revision's first delivery attempt
+has already superseded its projection, so a denial arriving afterwards found only current projections to
+mark: nothing became `needsAttention`, the operation looked due, and every automatic run retried it
+and grew its attempt count. `recordFailure` therefore writes `needsAttention` to the operation's own
+projection whatever its currency, and `rearmDelivery` clears it from the same place. Every other
+projection update — an acknowledgement, a transient failure — deliberately touches current projections
+only.
 
 The backoff is **1, 5 and 30 minutes, then every 2 hours**
 (`HealthKitDeliveryWorker.backoffSeconds(afterAttempt:)`). Backoff rather than a fixed interval: one
@@ -293,4 +314,6 @@ instead of writing an empty revision, unscaled snapshot nutrients are omitted, a
 is skipped by later runs and returns after being re-armed, repeated failures follow 1/5/30 minutes, a
 retraction removes the authorized types while naming the denied ones, volume only counts as water for
 a water-category intake, and acknowledging a stale upsert does not mark the delete projection
-`succeeded`. `swift test` runs on macOS in CI; the values are synthetic.
+`succeeded`. It also covers the two retry edge cases: a denial recorded on a projection an earlier edit
+had already superseded still suspends the operation, and a sample HealthKit rejects as invalid goes to
+`needsAttention` instead of being retried. `swift test` runs on macOS in CI; the values are synthetic.
