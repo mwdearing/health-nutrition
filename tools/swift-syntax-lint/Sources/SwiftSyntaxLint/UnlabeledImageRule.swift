@@ -226,7 +226,7 @@ enum UnlabeledImageRule {
 final class TextVisitor: SyntaxVisitor {
     private(set) var texts: [FunctionCallExprSyntax] = []
 
-    override init(viewMode: SourceSelectionMode) {
+    override init(viewMode: SyntaxTreeViewMode) {
         super.init(viewMode: viewMode)
     }
 
@@ -242,7 +242,7 @@ final class TextVisitor: SyntaxVisitor {
 final class ImageVisitor: SyntaxVisitor {
     private(set) var images: [FunctionCallExprSyntax] = []
 
-    override init(viewMode: SourceSelectionMode) {
+    override init(viewMode: SyntaxTreeViewMode) {
         super.init(viewMode: viewMode)
     }
 

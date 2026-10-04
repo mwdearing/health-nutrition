@@ -11,7 +11,7 @@ import SwiftSyntax
 final class ConditionalBlockVisitor: SyntaxVisitor {
     private(set) var blocks: [IfConfigDeclSyntax] = []
 
-    override init(viewMode: SourceSelectionMode) {
+    override init(viewMode: SyntaxTreeViewMode) {
         super.init(viewMode: viewMode)
     }
 

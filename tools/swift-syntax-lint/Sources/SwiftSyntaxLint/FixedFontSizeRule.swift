@@ -133,7 +133,7 @@ enum FixedFontSizeRule {
 final class FontVisitor: SyntaxVisitor {
     private(set) var fonts: [FunctionCallExprSyntax] = []
 
-    override init(viewMode: SourceSelectionMode) {
+    override init(viewMode: SyntaxTreeViewMode) {
         super.init(viewMode: viewMode)
     }
 

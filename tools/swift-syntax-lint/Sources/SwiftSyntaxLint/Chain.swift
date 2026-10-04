@@ -147,7 +147,7 @@ enum Chain {
             // A sibling view ends the chain rather than extending it.
             return [[]]
         }
-        return combine([[leading]], chains(in: rest))
+        return combine([leading], chains(in: rest))
     }
 
     /// Every combination of pairs of chains.
