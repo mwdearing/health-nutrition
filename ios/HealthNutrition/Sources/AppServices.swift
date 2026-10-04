@@ -64,9 +64,12 @@ final class AppServices {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// Opens all three store files in `directory`, creating them if needed.
-    static func make() throws -> AppServices {
-        let directory = defaultDirectory
+    /// Opens all three store files in `directory`, creating the directory and the files if needed.
+    ///
+    /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
+    /// real Application Support ones. The default is the app's own directory, unchanged.
+    static func make(directory: URL = defaultDirectory) throws -> AppServices {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // HealthKit delivery stays off: `enabledDestinations` is empty, so nothing is queued for it and
         // `healthKitDelivery` has no work. Enabling it writes real intake data into Health, which is a
         // deliberate decision rather than a consequence of the worker existing (docs/healthkit-writer.md).
