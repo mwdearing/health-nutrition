@@ -111,7 +111,8 @@ public enum NutritionFactsParser {
         }
         text = trimmed(text)
         guard !text.isEmpty else { return nil }
-        return ParsedServingSize(text: text, quantity: servingMeasure(in: text))
+        let measure = servingMeasure(in: text)
+        return ParsedServingSize(text: text, quantity: measure.quantity, review: measure.review)
     }
 
     /// The count a "servings per container" line states. The number may stand before the phrase
@@ -131,20 +132,33 @@ public enum NutritionFactsParser {
 
     /// The measure a serving size states: the one in parentheses when the label writes one, otherwise the
     /// first amount the text carries. A household word on its own stays no amount at all.
-    private static func servingMeasure(in text: String) -> Quantity? {
+    ///
+    /// The corrections the measure needed come back with it, because the serving size scales every
+    /// nutrient saved from this panel.
+    private static func servingMeasure(in text: String) -> (quantity: Quantity?, review: ParsedValueReview?) {
         if let open = text.firstIndex(of: "("),
            let close = text[open...].firstIndex(of: ")"),
            close > open
         {
             let inner = String(text[text.index(after: open)..<close])
             if let scan = scanAmount(in: inner), let unit = scan.unit, !scan.isBound {
-                return Quantity(value: scan.amount, unit: unit)
+                return measure(from: scan, unit: unit)
             }
         }
         if let scan = scanAmount(in: text), let unit = scan.unit, !scan.isBound {
-            return Quantity(value: scan.amount, unit: unit)
+            return measure(from: scan, unit: unit)
         }
-        return nil
+        return (nil, nil)
+    }
+
+    /// The measure one scan read, with the reasons it needed a correction, or none when it was read
+    /// exactly as printed.
+    private static func measure(
+        from scan: ScannedAmount,
+        unit: MeasureUnit
+    ) -> (quantity: Quantity, review: ParsedValueReview?) {
+        let review = scan.reasons.isEmpty ? nil : ParsedValueReview(reasons: scan.reasons)
+        return (Quantity(value: scan.amount, unit: unit), review)
     }
 
     // MARK: - Nutrient rows
@@ -164,7 +178,7 @@ public enum NutritionFactsParser {
 
         while let match = firstRow(in: cursor) {
             let row = match.row
-            if isBreakdownLine(cursor, for: row) { break }
+            if isBreakdownLine(cursor, context: rowContext(around: match, in: cursor), for: row) { break }
             let remainder = trimmed(String(cursor[match.end...]))
             if let scan = scanAmount(in: remainder), statesAmount(scan, for: row) {
                 record(scan, for: row, amounts: &amounts, reviews: &reviews)
@@ -172,19 +186,42 @@ public enum NutritionFactsParser {
                 continue
             }
             // A panel states some rows with the amount in front of the name: "Includes 5g Added Sugars".
-            if let scan = leadingAmount(before: String(cursor[..<match.nameStart])) {
+            // It states its unit like any other amount, and a number in front of a percent sign belongs
+            // to the Daily Value column rather than to this row.
+            if let scan = leadingAmount(before: String(cursor[..<match.nameStart])), statesAmount(scan, for: row) {
                 record(scan, for: row, amounts: &amounts, reviews: &reviews)
-            } else if remainder.isEmpty, let nextLine, let scan = scanAmount(in: trimmed(nextLine)),
-                      statesAmount(scan, for: row)
+                break
+            }
+            if remainder.isEmpty, let nextLine, let scan = scanAmount(in: trimmed(nextLine)),
+               statesAmount(scan, for: row)
             {
                 // A name and its amount can also land on separate lines when the panel was read column by
                 // column.
                 record(scan, for: row, amounts: &amounts, reviews: &reviews)
                 usedNextLine = true
+                break
+            }
+            // The row states no amount the parser can read, so it keeps none. The rest of the line is
+            // still read: one damaged row does not cost the rows that follow it. The cursor is always
+            // shorter here, because this row's own name is behind us.
+            let after = String(cursor[match.end...])
+            if let next = firstRow(in: after) {
+                cursor = String(after[next.nameStart...])
+                continue
             }
             break
         }
         return usedNextLine
+    }
+
+    /// The text that qualifies a row: what stands around its name, up to the nutrient names on either
+    /// side of it. A word further along a flattened line belongs to its own row, not to this one.
+    private static func rowContext(around match: RowMatch, in cursor: String) -> String {
+        let head = String(cursor[..<match.nameStart])
+        let before = firstRow(in: head).map { String(head[$0.end...]) } ?? head
+        let tail = String(cursor[match.end...])
+        let after = firstRow(in: tail).map { String(tail[..<$0.nameStart]) } ?? tail
+        return before + " " + after
     }
 
     /// Whether a scanned number is the row's amount rather than a number the row did not print a unit for.
@@ -197,11 +234,13 @@ public enum NutritionFactsParser {
     }
 
     /// An amount written in front of its nutrient name. Only the words and the number immediately in
-    /// front of the name are read, so an earlier row's amount is never pulled onto this row.
+    /// front of the name are read, so an earlier row's amount is never pulled onto this row. A token in
+    /// front of a percent sign is a Daily Value of another row and is never an amount here.
     private static func leadingAmount(before text: String) -> ScannedAmount? {
         let tokens = text.split(separator: " ")
         for count in [2, 1] {
             let tail = tokens.suffix(count).joined(separator: " ")
+            guard !tail.contains("%") else { continue }
             if let scan = scanAmount(in: tail) { return scan }
         }
         return nil
@@ -243,13 +282,15 @@ public enum NutritionFactsParser {
     ///
     /// - "Calories from Fat" is the fat inside the calories, not the calories themselves.
     /// - "Saturated Fat ... Includes 2g Trans Fat" states the trans fat inside the saturated fat, which
-    ///   is a breakdown of another row and not a row of its own.
+    ///   is a breakdown of another row and not a row of its own. Only an `Includes` in the text that
+    ///   qualifies this occurrence marks it: on a flattened panel the `Includes` of a later added-sugars
+    ///   row belongs to that row and must not reject the trans fat in front of it.
     /// - A Daily Value heading names the column and no amount.
-    private static func isBreakdownLine(_ line: String, for row: PanelRow) -> Bool {
+    private static func isBreakdownLine(_ line: String, context: String, for row: PanelRow) -> Bool {
         let lower = line.lowercased()
         if lower.contains("daily value") { return true }
         if row.key == .calories, lower.contains("from fat") { return true }
-        if row.key == .transFat, lower.contains("includes") { return true }
+        if row.key == .transFat, context.lowercased().contains("includes") { return true }
         return false
     }
 
@@ -399,20 +440,29 @@ public enum NutritionFactsParser {
         return (false, 0)
     }
 
-    /// The text after an amount, with the % Daily Value column stepped over.
+    /// The text after an amount, with the % Daily Value column of this row stepped over.
+    ///
+    /// The search stops at the next nutrient name on the line, because a Daily Value belongs to the row
+    /// that printed it. A flattened line that runs a row without a Daily Value into one that has it must
+    /// not lose the second row's amount to the first row's removal.
     private static func remaining(after index: Int, in characters: [Character]) -> String {
         let tail = String(characters[min(index, characters.count)...])
+        let scopeEnd = firstRow(in: tail)?.nameStart ?? tail.endIndex
+        let scope = String(tail[..<scopeEnd])
         let column = percentDailyValue()
-        guard let match = try? column.firstMatch(in: tail) else { return tail }
-        let offset = tail.distance(from: tail.startIndex, to: match.range.upperBound)
-        guard let start = tail.index(tail.startIndex, offsetBy: offset, limitedBy: tail.endIndex) else { return tail }
-        return String(tail[start...])
+        guard let match = try? column.firstMatch(in: scope) else { return tail }
+        let offset = scope.distance(from: scope.startIndex, to: match.range.upperBound)
+        let start = scope.index(scope.startIndex, offsetBy: offset)
+        return String(scope[start...]) + String(tail[scopeEnd...])
     }
 
-    /// Whether the letter `O` stands where a zero belongs: it touches a digit, or it is the whole number
-    /// and a unit follows it, as in "O g".
+    /// Whether the letter `O` stands where a zero belongs: it touches a digit, it is the whole number
+    /// and a unit follows it as in "O g", or it opens a decimal number as in "O.5g".
     private static func isZeroLetter(_ characters: [Character], at index: Int) -> Bool {
         if index > 0, isDigit(characters[index - 1]) { return true }
+        if index + 2 < characters.count, characters[index + 1] == ".", isDigit(characters[index + 2]) {
+            return true
+        }
         var look = index + 1
         while look < characters.count, characters[look] == " " || characters[look] == "\t" { look += 1 }
         guard look < characters.count, characters[look].isLetter else { return false }

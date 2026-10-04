@@ -36,12 +36,17 @@ a scanned number reaches the journal is through a confirmation the user gave.
 - **The fifteen nutrient rows** the journal names, in the order a panel states them, including the
   indented breakdown rows: saturated fat and trans fat under total fat, dietary fiber and total sugars
   under total carbohydrate, added sugars under total sugars.
-- **Amounts stated in front of the name**, as `Includes 5g Added Sugars` states them.
+- **Amounts stated in front of the name**, as `Includes 5g Added Sugars` states them. A leading amount
+  states its own unit like any other amount, and a number in front of a percent sign belongs to a Daily
+  Value column rather than to the row.
 - **Amounts split across lines**, as a column-by-column capture produces them, and several rows flattened
-  onto one line.
+  onto one line. On a flattened line a row the parser cannot read stays unknown and the rows after it are
+  still read, a Daily Value is only removed from the row that printed it, and an `Includes` belongs to the
+  row it qualifies.
+- **Grouped thousands**: `1,000` is one thousand and `12,500` is twelve thousand five hundred.
 - **Unit spelling noise**: `140mg` and `140 mg` read the same, and `µg`, `μg` and `mcg` are one mass and
   become `mcg`.
-- **A letter `O` where a zero belongs** — `1O mg`, `O g` — which is read as the zero it is.
+- **A letter `O` where a zero belongs** — `1O mg`, `O g`, `O.5g` — which is read as the zero it is.
 - **Bounds.** `Less than 1g` and `<1g` become `.belowReportingThreshold`, keeping their unit.
 
 ## What the parser never guesses
@@ -53,6 +58,10 @@ a scanned number reaches the journal is through a confirmation the user gave.
   printed it, becomes a value. A bare number on a row that prints no unit of its own — the Calories row
   is the only one — is read there and nowhere else, because everywhere else a bare number is a Daily
   Value column or a row that lost its unit.
+- **An ambiguous thousands separator is never a smaller number.** A comma is only read as grouping
+  thousands when the first group is one to three digits and every group after it is exactly three, as in
+  `1,000` and `12,500`. `1,8` and `1,00` are ambiguous, so the row keeps no amount at all rather than
+  the number the digits before the comma spell.
 - **A bound is never an amount.** `Less than 2g` is not 2 g of anything.
 - **A unit outside the registry is never resolved into one inside it.** A row the parser cannot read
   stays `.unknown` instead of being pulled towards the unit that nutrient usually carries.
@@ -73,6 +82,10 @@ screen can highlight exactly those rows instead of asking the user to check the 
 | `correctedLetterO` | A letter `O` stood where a zero belongs, so the printed text was corrected. |
 | `unexpectedUnit` | The row carries a unit this nutrient does not usually carry; the amount is kept as printed. |
 | `normalisedMicrogramSymbol` | A microgram symbol was written `µg`, `μg` or `ug` and became `mcg`. |
+
+The serving size carries its own reasons in `ParsedServingSize.review`, because the serving size scales
+every nutrient saved from the panel: a `Serving size 1 cup (24O mL)` reads as `240 mL` and is highlighted
+as corrected rather than being quietly scaled by a number the parser fixed up.
 
 A row with no reason was read exactly as printed. The reasons are a prompt to ask, never a correction
 the parser applies on its own: the user confirms the value, corrects it, or drops the row.

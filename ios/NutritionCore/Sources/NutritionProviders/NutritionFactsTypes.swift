@@ -31,10 +31,15 @@ public struct ParsedServingSize: Sendable, Hashable {
     /// `240 mL`. `nil` when the text states no measure the registry carries, because a household word on
     /// its own ("1 large biscuit") is never turned into an amount.
     public let quantity: Quantity?
+    /// Why the measure needed a correction, or `nil` when it was read exactly as printed. The serving
+    /// size scales every nutrient saved from this panel, so a correction here is shown to the user before
+    /// anything is saved.
+    public let review: ParsedValueReview?
 
-    public init(text: String, quantity: Quantity?) {
+    public init(text: String, quantity: Quantity?, review: ParsedValueReview? = nil) {
         self.text = text
         self.quantity = quantity
+        self.review = review
     }
 }
 
