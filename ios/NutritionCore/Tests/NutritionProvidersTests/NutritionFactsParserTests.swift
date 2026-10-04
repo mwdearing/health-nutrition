@@ -412,6 +412,99 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.nutrients.count, NutritionFactKey.allCases.count)
     }
 
+    /// A flattened panel runs the rows that follow a leading amount onto the same line, so the rows
+    /// behind "Includes 5g Added Sugars" are still read.
+    func testRowsAfterALeadingAmountAreStillRead() throws {
+        let panel = parse([
+            "Total Sugars 12g",
+            "Includes 5g Added Sugars 10% Protein 6g",
+        ])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("5"))
+        XCTAssertEqual(try amount(.protein, panel), dec("6"), "the row behind the leading amount is not lost")
+        XCTAssertEqual(try amount(.sugars, panel), dec("12"))
+    }
+
+    /// A name and its amount can land on separate lines, and the row behind that amount shares the line
+    /// it was read from.
+    func testASplitAmountKeepsReadingTheLineItCameFrom() throws {
+        let panel = parse([
+            "Total Fat",
+            "9g 12% Sodium 210mg 9%",
+        ])
+
+        XCTAssertEqual(try amount(.fat, panel), dec("9"))
+        XCTAssertEqual(try amount(.sodium, panel), dec("210"), "the unconsumed suffix is still parsed")
+    }
+
+    /// A bare number beside a percent sign is a Daily Value the capture flattened onto the row, not a
+    /// calorie count.
+    func testAPercentageBesideCaloriesIsNotACalorieCount() {
+        let panel = parse(["Calories 10%"])
+
+        XCTAssertEqual(value(.calories, panel), .unknown)
+    }
+
+    /// A heading merged with a nutrient row skips only its own text.
+    func testFlattenedDailyValueHeadingOnlySkipsItsOwnText() throws {
+        let panel = parse([
+            "% Daily Value Total Fat 7g 9%",
+            "Sodium 180mg 8%",
+        ])
+
+        XCTAssertEqual(try amount(.fat, panel), dec("7"))
+        XCTAssertEqual(try amount(.sodium, panel), dec("180"))
+    }
+
+    /// Serving metadata flattened onto one line with another recognized field keeps both.
+    func testFlattenedServingMetadataKeepsReadingTheRestOfTheLine() throws {
+        let both = parse(["8 servings per container Serving size 1 cup (240mL)"])
+        XCTAssertEqual(both.servingsPerContainer, dec("8"))
+        XCTAssertEqual(both.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+
+        let withCalories = parse(["Serving size 1 cup (240mL) Calories 100"])
+        XCTAssertEqual(try amount(.calories, withCalories), dec("100"), "the row behind the size is read")
+        XCTAssertEqual(withCalories.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+    }
+
+    /// The count is the number next to the marker, not an earlier number from the rest of the line.
+    func testTheServingsCountIsTheNumberNextToTheMarker() {
+        XCTAssertEqual(parse(["Net wt 12 oz About 6 servings per container"]).servingsPerContainer, dec("6"))
+    }
+
+    /// A count whose digits run straight into a letter is never read as the smaller number they spell.
+    func testATruncatedServingsCountIsNotReadAsACompleteNumber() {
+        XCTAssertNil(parse(["1O servings per container"]).servingsPerContainer)
+    }
+
+    /// An amount is only read in front of a name when the panel prints it there; a number that belongs to
+    /// unrecognised text, or to the standard footnote, is left alone.
+    func testLeadingAmountsAreOnlyReadFromARowThatPrintsOne() throws {
+        XCTAssertEqual(value(.calcium, parse(["Magnesium 50mg Calcium"])), .unknown)
+        XCTAssertEqual(
+            value(.calories, parse(["2,000 calories a day is used for general nutrition advice"])),
+            .unknown,
+            "the standard footnote is not a calorie count"
+        )
+        XCTAssertEqual(
+            try amount(.addedSugars, parse(["Total Sugars 12g", "Includes 5g Added Sugars"])),
+            dec("5"),
+            "a row that does print its amount in front of the name keeps it"
+        )
+    }
+
+    /// A single-serving package states the singular wording.
+    func testSingularServingPerContainerIsRecognised() {
+        XCTAssertEqual(parse(["1 serving per container"]).servingsPerContainer, dec("1"))
+    }
+
+    /// An alias inside another word does not stop the search for a later whole-word occurrence.
+    func testTheSearchContinuesPastAnAliasInsideAnotherWord() throws {
+        let panel = parse(["Monosodium glutamate Sodium 180mg 8%"])
+
+        XCTAssertEqual(try amount(.sodium, panel), dec("180"))
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false
