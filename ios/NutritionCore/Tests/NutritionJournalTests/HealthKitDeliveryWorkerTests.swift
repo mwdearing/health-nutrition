@@ -97,9 +97,14 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     }
 
     /// A totals provider that answers from a dictionary and records the arguments it was called with.
+    ///
+    /// It can also fail, because a totals source that cannot read the revision has to be able to say
+    /// so: a provider that answers "nothing" instead of failing is the bug the store-backed provider
+    /// had, and the tests below need to reproduce it.
     private final class RecordingTotals: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [String: NutrientValue]
+        private var failure: Error?
         private var calls: [(intakeID: String, revision: Int)] = []
 
         init(_ values: [String: NutrientValue]) {
@@ -111,12 +116,25 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         func set(_ values: [String: NutrientValue]) {
-            lock.withLock { self.values = values }
+            lock.withLock {
+                self.values = values
+                self.failure = nil
+            }
         }
 
-        func totals(intakeID: String, revision: Int) async -> [String: NutrientValue] {
-            lock.withLock {
+        /// Every later read throws until `set(_:)` or `stopFailing()` clears it.
+        func fail(with error: Error) {
+            lock.withLock { failure = error }
+        }
+
+        func stopFailing() {
+            lock.withLock { failure = nil }
+        }
+
+        func totals(intakeID: String, revision: Int) async throws -> [String: NutrientValue] {
+            try lock.withLock {
                 calls.append((intakeID, revision))
+                if let failure { throw failure }
                 return values
             }
         }
@@ -175,7 +193,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let recording = RecordingTotals(totals)
         let worker = HealthKitDeliveryWorker(
             store: store, writer: writer,
-            totals: { intakeID, revision in await recording.totals(intakeID: intakeID, revision: revision) }
+            totals: { intakeID, revision in try await recording.totals(intakeID: intakeID, revision: revision) }
         )
         return (store, writer, recording, worker)
     }
@@ -328,7 +346,9 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(writer.saveCalls, 0)
     }
 
-    func testADeniedDeleteIsAlsoLeftForAPersonRatherThanRetried() async throws {
+    /// A retraction is per type: the 16 types still authorized are removed, and only the denied one
+    /// keeps the operation queued. Aborting the whole retraction is what used to strand them.
+    func testADeniedDeleteStillRemovesTheAuthorizedTypesAndIsLeftForAPerson() async throws {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
@@ -336,10 +356,14 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         writer.deny("HKQuantityTypeIdentifierDietaryWater")
         let outcomes = await worker.runOnce(now: when)
 
-        XCTAssertTrue(outcomes.contains { if case .needsAttention = $0 { return true } else { return false } })
-        XCTAssertEqual(writer.deleted, [])
+        XCTAssertFalse(writer.deleted.contains(waterIdentifier(intakeID)), "the denied type is left alone")
+        XCTAssertEqual(
+            writer.deleted.count, HealthKitWritePlanner.mappings.count - 1,
+            "every other mapped type is still removed")
+        XCTAssertTrue(
+            outcomes.contains { if case .partlyRetracted = $0 { return true } else { return false } })
         let delete = try XCTUnwrap(try healthKitOperation(store, kind: .delete))
-        XCTAssertNil(delete.nextAttemptAt)
+        XCTAssertNil(delete.nextAttemptAt, "a partial retraction is not retried on a timer")
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
     }
 
@@ -364,7 +388,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     }
 
     func testTheBackoffGrowsAcrossAttemptsAndThenStaysAtTwoHours() {
-        let waits = (1...6).map { HealthKitDeliveryWorker.backoffSeconds(afterAttempts: $0) }
+        let waits = (1...6).map { HealthKitDeliveryWorker.backoffSeconds(afterAttempt: $0) }
 
         XCTAssertEqual(waits, [60, 300, 1800, 7200, 7200, 7200])
     }
@@ -458,40 +482,44 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
     // MARK: - The totals the app wires in
 
-    /// The default totals source reads the revision's own snapshot rather than deciding what an entry
-    /// adds up to, and treats a hand-typed entry as stating nothing.
-    func testTheSnapshotTotalsReportWhatTheRevisionStatesAndWaterAsRecorded() async throws {
+    /// A water-category drink reports its volume. The snapshot's own nutrients are deliberately absent:
+    /// they are stated per 100 g, not for the amount recorded, so writing them unscaled would state
+    /// 13 g of protein for a 40 g portion of a product whose label says 13 g per 100 g.
+    func testTheSnapshotTotalsCarryAWaterDrinkAndNoUnscaledLabelValues() async throws {
         let store = try makeStore(try makeDirectory())
         let oats = ProductDefinition(
             snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
             labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
             nutrients: ["protein": .known(dec("13"), .g), "sodium": .unknown])
+        let drink = Intake(
+            id: intakeID, category: "water", occurredAt: when, timeZoneIdentifier: "UTC", meal: "snack")
         try store.create(
-            sampleIntake(),
+            drink,
             components: [component("oats", amount: 40, unit: .g), component("water", amount: 1, unit: .L)],
             product: oats, now: when)
         let totals = JournalSnapshotTotals(store: store)
 
-        let recorded = await totals.totals(intakeID: intakeID, revision: 1)
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
 
-        XCTAssertEqual(recorded["protein"], .known(dec("13"), .g))
-        XCTAssertEqual(recorded["sodium"], .unknown, "a nutrient the product does not state is unknown, never zero")
-        XCTAssertEqual(recorded["water"], .known(dec("1000"), .mL), "water is the recorded volume, converted to mL")
-        XCTAssertNil(recorded["fibre"], "a key nothing states is absent rather than zero")
+        XCTAssertEqual(recorded, ["water": .known(dec("1000"), .mL)])
+        XCTAssertNil(recorded["protein"], "an unscaled label value is not an intake total")
+        XCTAssertNil(recorded["sodium"])
     }
 
-    func testTheSnapshotTotalsOfAHandTypedRevisionStateNothingButItsVolume() async throws {
+    /// A revision that cannot be read throws, so the delivery is retried. Answering "nothing" instead
+    /// would let the worker delete every written nutrient as stale and acknowledge an empty revision.
+    func testTheSnapshotTotalsThrowForARevisionThatCannotBeRead() async throws {
         let store = try makeStore(try makeDirectory())
         try store.create(
             sampleIntake(), components: [component("water", amount: 250, unit: .mL)], product: nil, now: when)
         let totals = JournalSnapshotTotals(store: store)
 
-        let recorded = await totals.totals(intakeID: intakeID, revision: 1)
-
-        XCTAssertEqual(recorded, ["water": .known(dec("250"), .mL)])
-        // Hoisted out of the assertion: XCTAssert takes an autoclosure, which cannot be async.
-        let missing = await totals.totals(intakeID: intakeID, revision: 9)
-        XCTAssertEqual(missing, [:], "an unknown revision states nothing")
+        do {
+            _ = try await totals.totals(intakeID: intakeID, revision: 9)
+            XCTFail("an unknown revision must throw rather than state nothing")
+        } catch {
+            // Any error is acceptable; what matters is that one is raised.
+        }
     }
 
     func testAcknowledgingAnUnknownOperationIsRefused() throws {
@@ -503,5 +531,300 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertThrowsError(try store.recordFailure(operationID: "no-such-operation", retryAt: nil, needsAttention: false)) {
             XCTAssertEqual($0 as? JournalError, .unknownOperation("no-such-operation"))
         }
+    }
+
+    // MARK: - Revision 1: an unresolved earlier operation blocks the later ones
+
+    /// A newer revision must not be written while an older one is still unresolved. Writing revision 2
+    /// first and revision 1 later would let HealthKit accept the obsolete sample: no higher-version
+    /// sample protects a nutrient revision 2 dropped, so the stale value comes back.
+    func testANewerRevisionIsNotDeliveredWhileAnEarlierOneIsNotDue() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: .transient("unavailable"))
+        _ = await worker.runOnce(now: when)
+        writer.failSaves(with: nil)
+        // Revision 2 drops the nutrient, which is what makes the ordering observable.
+        try store.edit(
+            intakeID: intakeID, components: [component("water", amount: 250, unit: .mL)], product: nil,
+            changeReason: "water only", now: when)
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(30))
+
+        XCTAssertEqual(writer.saveCalls, 0, "revision 1 is not due yet, so revision 2 must wait behind it")
+        XCTAssertEqual(writer.deleted, [], "no stale deletion either: nothing new may be written")
+        XCTAssertEqual(outcomes.count, 2, "both operations report, and the later one reports being blocked")
+        guard case .blocked(_, let blockedBy) = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("the later revision must say it is blocked, got \(outcomes)")
+        }
+        let first = try XCTUnwrap(try store.pendingOutbox().first { $0.revision == 1 })
+        XCTAssertEqual(blockedBy, first.operationID)
+    }
+
+    /// The same rule when the earlier operation failed outright and is waiting on its backoff.
+    func testANewerRevisionIsNotDeliveredWhileAnEarlierOneFailedAndIsRetrying() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: .transient("unavailable"))
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component("water", amount: 250, unit: .mL)], product: nil,
+            changeReason: "water only", now: when)
+        writer.reset()
+
+        _ = await worker.runOnce(now: when.addingTimeInterval(120))
+
+        XCTAssertEqual(writer.saveCalls, 0, "revision 1 failed and is on its backoff, so revision 2 waits")
+        XCTAssertEqual(try store.pendingOutbox().count, 4, "both HealthKit operations stay queued")
+    }
+
+    /// Once the earlier revision is delivered, the later one follows in the same run.
+    func testTheBlockedRevisionIsDeliveredOnceTheEarlierOneSucceeds() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component("water", amount: 250, unit: .mL)], product: nil,
+            changeReason: "water only", now: when)
+        writer.reset()
+
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saved.map(\.syncVersion), [1, 2], "revisions are delivered in order")
+        XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.destination == .relay })
+    }
+
+    // MARK: - Revision 2: a totals read failure must not write an empty revision
+
+    /// A totals source that cannot read the revision has to fail the delivery. Turning that failure
+    /// into empty totals would delete every previously written nutrient as stale, save nothing and
+    /// acknowledge the operation — a failed read permanently recorded as a successful empty revision.
+    func testAFailedTotalsReadLeavesTheOperationPendingAndWritesNothing() async throws {
+        let (store, writer, totals, worker) = try makeWorker(
+            totals: ["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        writer.reset()
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "e", now: when)
+        totals.fail(with: JournalError.corruptRecord("revision 2"))
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.deleted, [], "nothing is deleted when the totals could not be read")
+        XCTAssertEqual(writer.saveCalls, 0)
+        let edit = try XCTUnwrap(try store.pendingOutbox().first { $0.revision == 2 })
+        XCTAssertNil(edit.acknowledgedAt, "the operation stays queued: it was not delivered")
+        XCTAssertEqual(edit.attempts, 1)
+        XCTAssertNotNil(edit.nextAttemptAt, "it is retried, not abandoned")
+        XCTAssertTrue(outcomes.contains { if case .retryScheduled = $0 { return true } else { return false } })
+    }
+
+    func testAFailedTotalsReadOnTheFirstRevisionIsAlsoRetriedRatherThanAcknowledged() async throws {
+        let (store, writer, totals, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        totals.fail(with: JournalError.corruptRecord("revision 1"))
+
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saveCalls, 0)
+        XCTAssertNotNil(try healthKitOperation(store, kind: .upsert), "the operation is still queued")
+    }
+
+    // MARK: - Revision 3: unscaled snapshot nutrients are omitted
+
+    /// `ProductDefinition.nutrients` is stated on `labelBasis` (typically per 100 g), not for the
+    /// amount the component records, so copying it straight into totals writes the label's number as
+    /// the intake's. Nothing is written until the basis can be scaled exactly.
+    func testUnscaledSnapshotNutrientsAreOmittedRatherThanWrittenAsTotals() async throws {
+        let store = try makeStore(try makeDirectory())
+        let oats = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
+            labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["protein": .known(dec("13"), .g)])
+        try store.create(sampleIntake(), components: [component("oats", amount: 40, unit: .g)], product: oats, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertNil(
+            recorded["protein"],
+            "40 g of a per-100 g product is 5.2 g of protein, not the 13 g the label states")
+        XCTAssertEqual(recorded, [:], "nothing is stated until the label basis can be applied exactly")
+    }
+
+    // MARK: - Revision 4: a needs-attention operation is not retried automatically
+
+    /// A denial is recorded with no retry date, which left it looking immediately due. Every later run
+    /// then retried it and grew its attempt count, which is the retry storm `needsAttention` exists to
+    /// prevent.
+    func testANeedsAttentionOperationIsExcludedFromLaterAutomaticRuns() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryWater")
+        _ = await worker.runOnce(now: when)
+        let attemptsAfterDenial = try XCTUnwrap(try healthKitOperation(store, kind: .upsert)).attempts
+        XCTAssertEqual(attemptsAfterDenial, 1)
+
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(3600))
+
+        XCTAssertEqual(try healthKitOperation(store, kind: .upsert)?.attempts, 1, "a denial is not retried")
+        XCTAssertEqual(writer.saveCalls, 0)
+        guard case .needsAttention(_, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the operation must report that it is waiting for a person, got \(outcomes)")
+        }
+    }
+
+    /// Being re-armed is a deliberate act: clearing the suspension makes the operation due again.
+    func testReArmingANeedsAttentionOperationMakesItDueAgain() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryWater")
+        _ = await worker.runOnce(now: when)
+        writer.allow("HKQuantityTypeIdentifierDietaryWater")
+        try store.rearmDelivery(operationID: try XCTUnwrap(healthKitOperation(store, kind: .upsert)).operationID)
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [waterIdentifier(intakeID)])
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertNil(try healthKitOperation(store, kind: .upsert))
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    // MARK: - Revision 5: the backoff counts the failure being handled
+
+    func testRepeatedFailuresFollowTheOneFiveThirtyMinuteBackoff() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: .transient("unavailable"))
+        var now = when
+        var waits: [TimeInterval] = []
+        for _ in 1...3 {
+            _ = await worker.runOnce(now: now)
+            let operation = try XCTUnwrap(try healthKitOperation(store, kind: .upsert))
+            let next = try XCTUnwrap(operation.nextAttemptAt)
+            waits.append(next.timeIntervalSince(now))
+            now = next
+        }
+
+        XCTAssertEqual(waits, [60, 300, 1800], "the 5 minute step starts at the second failure")
+    }
+
+    // MARK: - Revision 6: a retraction deletes what it may and reports the rest
+
+    /// Denying one type must not strand the samples this app is authorized to delete: the authorized
+    /// water sample would otherwise stay in Health after the journal entry was deleted.
+    func testRetractionDeletesAuthorizedTypesEvenWhenAnotherMappedTypeIsDenied() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryProtein")
+        let deleteID = try XCTUnwrap(healthKitOperation(store, kind: .delete)?.operationID)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertTrue(
+            writer.deleted.contains(waterIdentifier(intakeID)),
+            "the water sample this app may delete has to go")
+        XCTAssertFalse(writer.deleted.contains(proteinIdentifier(intakeID)), "the denied type is left alone")
+        guard case .partlyRetracted(let operationID, _, let denied) = try XCTUnwrap(
+            outcomes.first { if case .partlyRetracted = $0 { return true } else { return false } }
+        ) else {
+            return XCTFail("a partial retraction must be reported, got \(outcomes)")
+        }
+        XCTAssertEqual(operationID, deleteID)
+        XCTAssertEqual(denied, ["HKQuantityTypeIdentifierDietaryProtein"], "the denied type is named")
+        XCTAssertNotNil(
+            try healthKitOperation(store, kind: .delete),
+            "the delete stays queued until the denied samples can be removed too")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
+    }
+
+    // MARK: - Revision 7: only water-category intakes contribute water
+
+    /// Volume is water only when the entry is a drink. 250 mL of milk, juice or oil is not dietary
+    /// water, and writing it as such would put a wrong number into Health.
+    func testVolumeFromANonWaterIntakeIsNotCountedAsWater() async throws {
+        let store = try makeStore(try makeDirectory())
+        let juice = Intake(
+            id: intakeID, category: "food", occurredAt: when, timeZoneIdentifier: "UTC", meal: "lunch")
+        try store.create(
+            juice, components: [component("milk", amount: 250, unit: .mL)], product: nil, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertNil(recorded["water"], "a food measured in millilitres is not dietary water")
+        XCTAssertEqual(recorded, [:])
+    }
+
+    func testVolumeFromAWaterIntakeIsCountedAsWater() async throws {
+        let store = try makeStore(try makeDirectory())
+        let drink = Intake(
+            id: intakeID, category: "water", occurredAt: when, timeZoneIdentifier: "UTC", meal: "snack")
+        try store.create(
+            drink, components: [component("water", amount: 1, unit: .L)], product: nil, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded, ["water": .known(dec("1000"), .mL)])
+    }
+
+    // MARK: - Revision 8: a projection update matches the operation's action
+
+    /// Deleting an intake does not bump its revision, so the queued upsert and delete share an intake,
+    /// a revision and a destination and differ only by action. Matching without the action marks the
+    /// delete `succeeded` while its samples are still in Health.
+    func testAcknowledgingAStaleUpsertLeavesTheDeleteProjectionPending() throws {
+        let store = try makeStore(try makeDirectory())
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+
+        try store.acknowledge(operationID: upsertID, at: when)
+
+        let projections = try store.projections(of: intakeID)
+        let upsertProjection = try XCTUnwrap(projections.first {
+            $0.destination == .healthKit && $0.desiredAction == .upsert
+        })
+        let deleteProjection = try XCTUnwrap(projections.first {
+            $0.destination == .healthKit && $0.desiredAction == .delete
+        })
+        XCTAssertEqual(upsertProjection.state, .succeeded)
+        XCTAssertEqual(
+            deleteProjection.state, .pending,
+            "the retraction is not delivered, so its projection must not claim it was")
+    }
+
+    /// The same separation the other way round: acknowledging the delete must not mark the upsert.
+    func testAcknowledgingTheDeleteLeavesTheUpsertProjectionPending() throws {
+        let store = try makeStore(try makeDirectory())
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        let deleteID = try XCTUnwrap(healthKitOperation(store, kind: .delete)?.operationID)
+
+        try store.acknowledge(operationID: deleteID, at: when)
+
+        let projections = try store.projections(of: intakeID)
+        XCTAssertEqual(
+            try XCTUnwrap(projections.first { $0.destination == .healthKit && $0.desiredAction == .delete }).state,
+            .succeeded)
+        XCTAssertEqual(
+            try XCTUnwrap(projections.first { $0.destination == .healthKit && $0.desiredAction == .upsert }).state,
+            .pending)
     }
 }

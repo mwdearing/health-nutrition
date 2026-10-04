@@ -323,4 +323,14 @@ public protocol JournalOutboxDelivery: JournalStore {
     /// failure only a person can fix is recorded with `needsAttention`, which puts the projection in
     /// `needsAttention` so the app can show it instead of the worker retrying it forever.
     func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws
+    /// The pending operations whose current projection is `needsAttention`, which a delivery worker
+    /// must leave alone: they are suspended until someone calls `rearmDelivery(operationID:)`.
+    ///
+    /// A suspension is not visible from the operation alone — its `nextAttemptAt` is nil, which is
+    /// exactly what "do not retry" looks like and exactly what "due now" also looks like — so the
+    /// worker has to ask.
+    func suspendedOperationIDs() throws -> Set<String>
+    /// Clears the suspension, making the operation due again. Deliberately explicit: re-arming after a
+    /// person has resolved the denial is their decision, not a scheduled run's.
+    func rearmDelivery(operationID: String) throws
 }

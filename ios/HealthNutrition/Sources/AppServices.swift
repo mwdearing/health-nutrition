@@ -48,7 +48,7 @@ final class AppServices {
         healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,
             writer: HealthKitSampleWriter(),
-            totals: { intakeID, revision in await totals.totals(intakeID: intakeID, revision: revision) }
+            totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
         )
     }
 

@@ -508,19 +508,67 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             predicate: #Predicate<OutboxRecord> { $0.operationID == operationID })).first
     }
 
-    /// Moves the projection for this operation's revision and destination. A superseded projection is
-    /// left as it is: what a later revision is doing matters more than what an old operation did.
+    /// The pending operations a worker must not retry on its own.
+    ///
+    /// Read through the projections rather than inferred from the operations, because `nil` on
+    /// `nextAttemptAt` means both "do not retry" (suspended) and "due now" (first attempt). Only the
+    /// projection records which one it is.
+    public func suspendedOperationIDs() throws -> Set<String> {
+        let context = ModelContext(try openContainer())
+        let state = DestinationState.needsAttention.rawValue
+        let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
+            predicate: #Predicate<ProjectionRecord> { $0.stateRaw == state }))
+        var suspended: Set<String> = []
+        for projection in projections where projection.isCurrent {
+            // Matched in Swift rather than in one long predicate: the queue is small, and this keeps
+            // the same rule readable in one place as `setProjectionState`.
+            let operations = try context.fetch(FetchDescriptor<OutboxRecord>(
+                predicate: #Predicate<OutboxRecord> { $0.intakeID == projection.intakeID }))
+            for operation in operations where operation.acknowledgedAt == nil
+                && operation.revision == projection.revision
+                && operation.destinationRaw == projection.destinationRaw
+                && operation.kindRaw == projection.actionRaw {
+                suspended.insert(operation.operationID)
+            }
+        }
+        return suspended
+    }
+
+    /// Clears the suspension on one operation, so an automatic run may pick it up again.
+    ///
+    /// This is the only way a `needsAttention` operation becomes due again, and it is deliberately a
+    /// separate call: re-arming after a person has granted or withdrawn Health access is their
+    /// decision, not something a scheduled run may decide on its own.
+    public func rearmDelivery(operationID: String) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.nextAttemptAt = nil
+            try Self.setProjectionState(.pending, of: row, in: context)
+        }
+    }
+
+    /// Moves the projection for this operation's revision, destination **and action**.
+    ///
+    /// The action is part of the match because deleting an intake does not bump its revision: the
+    /// queued upsert and the queued delete share an intake id, a revision number and a destination, and
+    /// differ only in what they are for. Matching without it would let acknowledging the stale upsert
+    /// mark the delete `succeeded`, and the app would then report a finished retraction while the
+    /// samples are still in Health.
+    ///
+    /// A superseded projection is left as it is: what a later revision is doing matters more than what
+    /// an old operation did.
     private static func setProjectionState(
         _ state: DestinationState, of row: OutboxRecord, in context: ModelContext
     ) throws {
-        let destination = row.destinationRaw
-        let revision = row.revision
-        let intakeID = row.intakeID
         let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
-            predicate: #Predicate<ProjectionRecord> {
-                $0.intakeID == intakeID && $0.revision == revision && $0.destinationRaw == destination
-            }))
-        for projection in rows where projection.isCurrent {
+            predicate: #Predicate<ProjectionRecord> { $0.intakeID == row.intakeID }))
+        for projection in rows where projection.isCurrent
+            && projection.revision == row.revision
+            && projection.destinationRaw == row.destinationRaw
+            && projection.actionRaw == row.kindRaw {
             projection.stateRaw = state.rawValue
         }
     }

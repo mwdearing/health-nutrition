@@ -6,54 +6,65 @@ import NutritionDomain
 /// The worker does not compute totals: how much protein an entry carries is the journal's business,
 /// and the planner only maps whatever it is handed. Injected, so the worker can be tested without a
 /// store and so a future totals source does not change the delivery rules.
-public typealias NutrientTotalsProvider = @Sendable (_ intakeID: String, _ revision: Int) async -> [String: NutrientValue]
+///
+/// **Throwing is part of the contract.** A source that cannot read the revision must throw rather than
+/// answer with nothing: the worker treats empty totals as "this revision states no nutrient", deletes
+/// everything the earlier revisions wrote as stale, saves an empty plan and acknowledges the
+/// operation. A failed read must never become a successful empty revision, so the failure has to reach
+/// the worker, which then leaves the operation pending.
+public typealias NutrientTotalsProvider = @Sendable (_ intakeID: String, _ revision: Int) async throws -> [String: NutrientValue]
 
 /// The nutrient totals one journal revision contributes, read from what the revision itself recorded.
 ///
-/// This is the default answer `AppServices` wires in, and it is deliberately narrow:
+/// This is the default answer `AppServices` wires in, and it states **very little on purpose**:
 ///
-/// - A revision recorded from a looked-up product or a recipe carries a product snapshot, and the
-///   values that snapshot **states** are what is reported. The snapshot states them for a whole basis
-///   (`labelBasis`, typically 100 g) and applying the amount a component records is arithmetic that
-///   needs to know the basis exactly. Reporting the stated values unscaled would put a wrong number
-///   into Health, so scaling arrives with the totals source that can do it exactly; until then this
-///   provider is the honest one and says so.
-/// - A hand-typed revision has no snapshot and therefore states nothing, which reads as unknown and
-///   never as zero. `HealthKitWritePlanner` skips an unknown total, so no sample is written for it.
-/// - **Water is the exception**: it is not a label value but the volume the components record, so it
-///   is summed from them. A component measured in another unit contributes nothing rather than a
-///   guess, because mass to volume needs a density the journal does not record.
-///
-/// A revision that cannot be read yields no totals rather than an error: the caller is a delivery
-/// worker, and an empty plan is a safe thing to write.
+/// - **Snapshot nutrients are omitted.** `ProductDefinition.nutrients` is stated on `labelBasis`
+///   (typically per 100 g), not for the amount the component records. A 40 g component of a product
+///   whose label states 13 g of protein per 100 g carries 5.2 g, and writing 13 g would put a wrong
+///   number into Health. Scaling needs to know the basis exactly — a serving, a yield and a count all
+///   scale differently — so until that arithmetic exists this provider contributes no snapshot nutrient
+///   at all rather than an unscaled one. The planner then plans no sample for it, which is the honest
+///   outcome. See `docs/healthkit-writer.md`.
+/// - **Water comes from the components, and only for a water-category intake.** Volume is dietary
+///   water when the entry is a drink; 250 mL of milk, juice or oil is not. A component measured in
+///   another unit contributes nothing rather than a guess, because mass to volume needs a density the
+///   journal does not record.
+/// - A revision that cannot be read **throws**, so the delivery is retried rather than acknowledged as
+///   an empty revision.
 public struct JournalSnapshotTotals: Sendable {
+    /// The intake category whose volume components count as dietary water.
+    static let waterCategory = "water"
+
     private let store: any JournalStore
 
     public init(store: any JournalStore) {
         self.store = store
     }
 
-    public func totals(intakeID: String, revision: Int) async -> [String: NutrientValue] {
-        (try? totalsNow(intakeID: intakeID, revision: revision)) ?? [:]
+    public func totals(intakeID: String, revision: Int) async throws -> [String: NutrientValue] {
+        try totalsNow(intakeID: intakeID, revision: revision)
     }
 
     private func totalsNow(intakeID: String, revision: Int) throws -> [String: NutrientValue] {
+        guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
+            throw JournalError.unknownIntake(intakeID)
+        }
         guard let entry = try store.revisions(of: intakeID).first(where: { $0.number == revision }) else {
-            return [:]
+            throw JournalError.unknownIntake("\(intakeID)@\(revision)")
         }
         var totals: [String: NutrientValue] = [:]
-        if let snapshotID = entry.productSnapshotID, let snapshot = try store.product(snapshotID: snapshotID) {
-            for (nutrient, value) in snapshot.nutrients {
-                totals[nutrient] = value
-            }
-        }
-        if let water = Self.recordedWater(in: entry.components) {
+        // No snapshot nutrient is carried here on purpose: see the type's documentation. The snapshot
+        // is not read at all rather than read and discarded, so a reader cannot mistake this for an
+        // oversight.
+        if let water = Self.recordedWater(in: entry.components, category: intake.category) {
             totals["water"] = water
         }
         return totals
     }
 
-    private static func recordedWater(in components: [IntakeComponent]) -> NutrientValue? {
+    /// The millilitres the revision's components record, summed, and only for a drink.
+    private static func recordedWater(in components: [IntakeComponent], category: String) -> NutrientValue? {
+        guard category == waterCategory else { return nil }
         var millilitres = Decimal(0)
         var found = false
         for component in components {
@@ -74,15 +85,38 @@ public enum HealthKitDeliveryOutcome: Sendable, Equatable {
     case delivered(operationID: String, samples: Int)
     /// A delete removed every sample this app wrote for the intake; the count is what went.
     case retracted(operationID: String, samples: Int)
+    /// A delete removed the samples it was authorized to remove, but some quantity types were denied,
+    /// so their samples are still in Health. The operation stays queued and the projection is left for
+    /// a person; `denied` names the type identifiers that could not be written.
+    case partlyRetracted(operationID: String, samples: Int, denied: [String])
     /// The upsert is stale: a delete for the same intake has already been delivered, so its samples
     /// are gone. The operation is acknowledged rather than written.
     case superseded(operationID: String)
     /// The operation is not due yet; `nextAttemptAt` says when it becomes due.
     case notDue(operationID: String, nextAttemptAt: Date)
-    /// Access is denied, so no retry is scheduled and the projection is left for a person.
+    /// An earlier operation for the same intake is unresolved, so this one was not attempted. Delivering
+    /// it out of order would let an obsolete sample overwrite a newer revision, because the nutrient it
+    /// dropped has no higher-version sample protecting it. `blockedBy` is that earlier operation.
+    case blocked(operationID: String, blockedBy: String)
+    /// Access is denied and the operation is suspended until someone re-arms it. No automatic run will
+    /// retry it, because retrying cannot grant Health access.
     case needsAttention(operationID: String, reason: String)
     /// A retryable failure; the operation is due again at `nextAttemptAt`.
     case retryScheduled(operationID: String, nextAttemptAt: Date, reason: String)
+
+    /// True when this operation is finished with and must not hold up the next one for its intake.
+    ///
+    /// Only a resolved outcome releases the intake. An operation that is deferred, blocked or waiting
+    /// for a person keeps every later operation for the same intake waiting behind it, because the
+    /// samples they would write depend on what it was going to write.
+    var isResolved: Bool {
+        switch self {
+        case .delivered, .retracted, .superseded:
+            return true
+        case .partlyRetracted, .notDue, .blocked, .needsAttention, .retryScheduled:
+            return false
+        }
+    }
 }
 
 /// Delivers queued journal operations to HealthKit (NC-07B).
@@ -119,14 +153,18 @@ public struct HealthKitDeliveryWorker: Sendable {
     ///
     /// Backoff, not a fixed interval: HealthKit failing once is usually a store error, while a
     /// failure that never clears is a device that is asleep, out of coverage or out of battery, and
-    /// an hourly retry costs nothing then. The list is indexed by the attempts already made, so it
+    /// an hourly retry costs nothing then. The list is indexed by the failure being handled, so it
     /// never grows and never retries more often than a minute.
     public static let backoffSchedule: [Int] = [60, 300, 1800, 7200]
 
-    /// How long to wait after `attempts` failed attempts. Attempts beyond the schedule reuse its last
-    /// step, so the wait never shrinks again.
-    public static func backoffSeconds(afterAttempts attempts: Int) -> Int {
-        let index = min(max(attempts - 1, 0), backoffSchedule.count - 1)
+    /// How long to wait after the `attemptNumber`th failure, counting from 1.
+    ///
+    /// The number is the count **including** the failure being handled, not the count already stored:
+    /// `recordFailure` has not run yet when this is chosen, so indexing by the stored count made the
+    /// first and second failures both wait a minute and pushed the documented 5 minute step to the
+    /// third. Failures past the end of the schedule reuse its last step, so the wait never shrinks.
+    public static func backoffSeconds(afterAttempt attemptNumber: Int) -> Int {
+        let index = min(max(attemptNumber - 1, 0), backoffSchedule.count - 1)
         return backoffSchedule[index]
     }
 
@@ -151,22 +189,46 @@ public struct HealthKitDeliveryWorker: Sendable {
     @discardableResult
     public func runOnce(now: Date) async -> [HealthKitDeliveryOutcome] {
         let operations: [OutboxOperation]
+        let suspended: Set<String>
         do {
             operations = try store.pendingOutbox()
+            suspended = try store.suspendedOperationIDs()
         } catch {
             // A store that cannot be read delivers nothing. The operations stay pending, so the next
             // run picks them up; reporting an error here would say less than the store already knows.
             return []
         }
         var outcomes: [HealthKitDeliveryOutcome] = []
+        // The intake each unresolved operation is holding up. Revisions are delivered oldest first, so
+        // the first operation seen for an intake is the one everything later depends on.
+        var blocking: [String: String] = [:]
         for operation in operations {
             guard operation.destination == .healthKit else { continue }
+            if let blocker = blocking[operation.intakeID] {
+                outcomes.append(.blocked(operationID: operation.operationID, blockedBy: blocker))
+                continue
+            }
+            if suspended.contains(operation.operationID) {
+                // Parked for a person: no automatic run retries it, and nothing later for this intake
+                // may go past it either, since it was never delivered.
+                let outcome = HealthKitDeliveryOutcome.needsAttention(
+                    operationID: operation.operationID, reason: "waiting to be re-armed after a denial")
+                outcomes.append(outcome)
+                blocking[operation.intakeID] = operation.operationID
+                continue
+            }
             if let due = operation.nextAttemptAt, due > now {
-                outcomes.append(.notDue(operationID: operation.operationID, nextAttemptAt: due))
+                let outcome = HealthKitDeliveryOutcome.notDue(
+                    operationID: operation.operationID, nextAttemptAt: due)
+                outcomes.append(outcome)
+                blocking[operation.intakeID] = operation.operationID
                 continue
             }
             let outcome = await deliver(operation, now: now)
             outcomes.append(outcome)
+            if !outcome.isResolved {
+                blocking[operation.intakeID] = operation.operationID
+            }
             // A delete that succeeded stops later upserts for the same intake: the samples are gone,
             // so writing them again would put back what was just retracted. Stale upserts are
             // acknowledged rather than written, and the store keeps them out of `pendingOutbox()`.
@@ -197,12 +259,21 @@ public struct HealthKitDeliveryWorker: Sendable {
             // what the delete removes.
             return acknowledge(operation, now: now, outcome: .superseded(operationID: operation.operationID))
         }
-        let plan = HealthKitWritePlanner.plan(
-            intakeID: operation.intakeID,
-            revision: operation.revision,
-            occurredAt: intake.occurredAt,
-            totals: await totals(operation.intakeID, operation.revision)
-        )
+        // The totals are read before anything is written, and a failure here aborts the delivery. An
+        // empty plan is not a fallback: it would mean deleting every previously written nutrient as
+        // stale, saving nothing and acknowledging the operation, which records a failed read as a
+        // successful empty revision.
+        let plan: [HealthKitSampleSpec]
+        do {
+            plan = HealthKitWritePlanner.plan(
+                intakeID: operation.intakeID,
+                revision: operation.revision,
+                occurredAt: intake.occurredAt,
+                totals: try await totals(operation.intakeID, operation.revision)
+            )
+        } catch {
+            return transient(operation, now: now, reason: "the totals for this revision could not be read")
+        }
         do {
             try await requireAccess(for: plan.map(\.quantityTypeIdentifier))
             try await deleteStaleSamples(for: operation, plan: plan)
@@ -249,19 +320,49 @@ public struct HealthKitDeliveryWorker: Sendable {
         _ = try await writer.deleteSamples(syncIdentifiers: stale)
     }
 
+    /// Removes the samples this app may remove, and reports the types it may not.
+    ///
+    /// A denial on one type must not strand the others. Someone can authorize water and refuse
+    /// protein, and aborting the whole retraction would leave the authorized water sample in Health
+    /// after the journal entry is gone — a sample nobody can remove from the app, attached to an entry
+    /// that no longer exists. So the retraction is per type: everything authorized goes, and only the
+    /// denied types keep the operation queued, with the projection left for a person and the denied
+    /// identifiers named so the app can say which ones are stranded.
     private func retract(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome {
         let identifiers = HealthKitWritePlanner.deletion(intakeID: operation.intakeID, keys: Self.mappedKeys)
         let types = HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier)
+        let allowed = await writer.canWrite(identifiers: types)
+        let denied = Set(types.filter { allowed[$0] != true })
+        let removable = identifiers.filter { !denied.contains(Self.typeIdentifier(for: $0)) }
         do {
-            try await requireAccess(for: types)
-            let deleted = try await writer.deleteSamples(syncIdentifiers: identifiers)
-            return acknowledge(
-                operation, now: now, outcome: .retracted(operationID: operation.operationID, samples: deleted))
+            let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
+            if denied.isEmpty {
+                return acknowledge(
+                    operation, now: now, outcome: .retracted(operationID: operation.operationID, samples: deleted))
+            }
+            do {
+                try store.recordFailure(operationID: operation.operationID, retryAt: nil, needsAttention: true)
+            } catch {
+                // Not recorded, so the operation stays due and the next run tries the retraction again.
+                // It is idempotent, and re-delivering it is better than dropping the stranded samples.
+            }
+            return .partlyRetracted(
+                operationID: operation.operationID, samples: deleted, denied: denied.sorted())
         } catch let error as HealthSampleWriterError {
             return handle(error, for: operation, now: now)
         } catch {
             return transient(operation, now: now, reason: "the samples could not be deleted")
         }
+    }
+
+    /// The quantity type a sync identifier belongs to, through the planner's own mapping.
+    ///
+    /// The writer resolves the same way; this is the journal half, used to decide which identifiers a
+    /// denial covers.
+    private static func typeIdentifier(for syncIdentifier: String) -> String {
+        let key = syncIdentifier.split(separator: ":").last.map(String.init) ?? ""
+        let canonical = HealthKitWritePlanner.canonicalKey(for: key)
+        return HealthKitWritePlanner.mappings.first { $0.nutrientKey == canonical }?.quantityTypeIdentifier ?? ""
     }
 
     /// Every key the mapping table names, so a delete covers every sample this app could have written
@@ -300,8 +401,12 @@ public struct HealthKitDeliveryWorker: Sendable {
     }
 
     /// Schedules the next attempt on the backoff and leaves the operation pending.
+    ///
+    /// The schedule is indexed by `attempts + 1`, the count this failure will leave behind once
+    /// `recordFailure` has run, so the first failure waits a minute and the second waits five.
     private func transient(_ operation: OutboxOperation, now: Date, reason: String) -> HealthKitDeliveryOutcome {
-        let next = now.addingTimeInterval(TimeInterval(Self.backoffSeconds(afterAttempts: operation.attempts)))
+        let attempt = operation.attempts + 1
+        let next = now.addingTimeInterval(TimeInterval(Self.backoffSeconds(afterAttempt: attempt)))
         return retry(operation, nextAttemptAt: next, reason: reason)
     }
 

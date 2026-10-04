@@ -62,10 +62,21 @@ invent it. `SwiftDataJournalStore` is the implementation.
 - `recordFailure(operationID:retryAt:needsAttention:)` grows `attempts` by one, sets `nextAttemptAt`,
   and puts the projection in `pending` or, with `needsAttention`, in `needsAttention`. An acknowledged
   operation is left alone.
+- `suspendedOperationIDs()` returns the pending operations whose current projection is `needsAttention`.
+  A suspension cannot be read off the operation: `nextAttemptAt == nil` means both "do not retry" and
+  "due now", so only the projection distinguishes them.
+- `rearmDelivery(operationID:)` clears the suspension and makes the operation due again. Re-arming is a
+  separate call on purpose: it is a person's decision that a denial has been resolved.
 
-Both are single saves through the same `commit` path as every other write, so a failure rolls back and
-the injected-failure test flag covers them. `pendingOutbox()` excludes acknowledged operations, so a
-delivered operation is never offered again.
+Both writes are single saves through the same `commit` path as every other write, so a failure rolls
+back and the injected-failure test flag covers them. `pendingOutbox()` excludes acknowledged operations,
+so a delivered operation is never offered again.
+
+**A projection update matches the operation's action as well as its intake, revision and destination.**
+Deleting an intake does not increment its revision, so the queued upsert and the queued delete share all
+three and differ only by action. Matching without the action would let acknowledging the stale upsert
+mark the delete `succeeded`, and the app would then report a finished retraction while the samples are
+still in Health.
 
 No schema change was needed: the three columns already existed.
 
