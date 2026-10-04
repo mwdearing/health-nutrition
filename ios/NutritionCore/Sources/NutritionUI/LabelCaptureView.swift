@@ -171,6 +171,9 @@ public struct LabelCaptureView: View {
             HStack {
                 Button("Confirm") { model.confirm(row.key) }
                     .font(.body)
+                    // Two buttons in one form row are both row actions under the automatic style, and
+                    // tapping either can then fire both, so their hit areas have to stay apart.
+                    .buttonStyle(.borderless)
                     .accessibilityLabel("Confirm \(row.name)")
                     .accessibilityHint("Keeps the value as the label was read")
                 correctButton(row)
@@ -183,6 +186,7 @@ public struct LabelCaptureView: View {
     private func correctButton(_ row: LabelCaptureRow) -> some View {
         Button("Correct") { beginCorrection(for: row) }
             .font(.body)
+            .buttonStyle(.borderless)
             .accessibilityLabel("Correct \(row.name)")
             .accessibilityHint("Types a different amount for this row, zero included")
     }
@@ -211,17 +215,24 @@ public struct LabelCaptureView: View {
                     .foregroundStyle(TokenColors.error)
                     .accessibilityLabel(message)
             }
+            // Borderless for the same reason as the row's own actions: under the automatic style both
+            // of these become actions for the row, so tapping Cancel could save the draft as well.
             HStack {
                 Button("Save") {
                     if model.correct(key: row.key, text: draft) { editing = nil }
                 }
                 .font(.body)
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Save the corrected \(row.name)")
                 Button("Cancel") {
                     editing = nil
                     draft = ""
+                    // The refused correction is over, so its message goes with it rather than waiting
+                    // under the next row's field.
+                    model.clearCorrectionError()
                 }
                 .font(.body)
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Stop correcting \(row.name)")
             }
         }
@@ -232,7 +243,10 @@ public struct LabelCaptureView: View {
         LabelCaptureViewModel.unit(of: row.value, for: row.key).symbol
     }
 
+    /// Opens the amount field for one row. The previous row's refused correction is forgotten on the
+    /// way, so the new field never greets the user with another row's validation failure.
     private func beginCorrection(for row: LabelCaptureRow) {
+        model.clearCorrectionError()
         editing = row.key
         if case .known(let amount, _) = row.value {
             draft = NSDecimalNumber(decimal: amount).stringValue

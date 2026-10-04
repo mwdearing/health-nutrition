@@ -290,16 +290,93 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertNil(intake.productSnapshot())
     }
 
+    /// Starting a lookup says the user is replacing whatever this form already had, so the captured
+    /// panel goes before the request is even sent. Otherwise Save is still enabled while the request is
+    /// in flight and would store the panel the user has just decided to replace.
+    func testStartingABarcodeLookupInvalidatesTheCapturedValuesBeforeTheReply() async throws {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+
+        let lookup = GatedBarcodeLookup(result: .found(barcodeProduct))
+        let intake = try makeIntakeModel(lookup)
+        intake.applyLabelProduct(try XCTUnwrap(model.makeProduct()))
+        intake.name = "Synthetic Soup"
+        XCTAssertNotNil(intake.labelValues)
+
+        let task = Task { await intake.lookUpBarcode() }
+        for _ in 0..<1000 where lookup.requestedBarcodes.isEmpty { await Task.yield() }
+        XCTAssertEqual(lookup.requestedBarcodes.count, 1, "the lookup was started")
+
+        // The reply has not arrived and the captured values are already gone, so Save cannot store them.
+        XCTAssertNil(intake.labelValues)
+        XCTAssertTrue(intake.prefilledNutrients.isEmpty)
+        XCTAssertNil(intake.serving)
+        XCTAssertNil(intake.productSnapshot())
+
+        lookup.answer()
+        await task.value
+        XCTAssertNotNil(intake.lookedUp)
+    }
+
+    /// An error from one row must not follow the user to the next: the message belongs to the correction
+    /// that was refused, so cancelling it or starting another one puts it away.
+    func testCancellingACorrectionClearsTheStaleError() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        XCTAssertFalse(model.correct(key: .sodium, text: "18O"))
+        XCTAssertNotNil(model.correctionError)
+
+        model.clearCorrectionError()
+        XCTAssertNil(model.correctionError)
+        // Putting the error away says nothing about the value, which still waits for the user.
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(180), .mg))
+        XCTAssertFalse(model.canApply)
+    }
+
     // MARK: Support
 
-    private func makeIntakeModel() throws -> AddIntakeViewModel {
+    /// A barcode product with values of its own, so a lookup that answers can be told apart from a
+    /// captured panel.
+    private var barcodeProduct: LookedUpProduct {
+        LookedUpProduct(
+            barcode: "4006381333931", name: nil, brand: nil, basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(400), .kcal)])
+    }
+
+    private func makeIntakeModel(_ lookup: BarcodeProductLookup? = nil) throws -> AddIntakeViewModel {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return AddIntakeViewModel(
             store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
             now: Date(timeIntervalSince1970: 1_700_000_000),
-            timeZoneIdentifier: "UTC"
+            timeZoneIdentifier: "UTC",
+            lookup: lookup
         )
+    }
+}
+
+/// Holds a reply until the test answers it, so a test can look at the form while a request is in flight.
+private final class GatedBarcodeLookup: BarcodeProductLookup, @unchecked Sendable {
+    private let result: BarcodeLookupResult
+    private var continuation: CheckedContinuation<BarcodeLookupResult, Never>?
+    private(set) var requestedBarcodes: [String] = []
+
+    init(result: BarcodeLookupResult) {
+        self.result = result
+    }
+
+    func lookUp(barcode: String) async -> BarcodeLookupResult {
+        requestedBarcodes.append(barcode)
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func answer() {
+        continuation?.resume(returning: result)
+        continuation = nil
     }
 }

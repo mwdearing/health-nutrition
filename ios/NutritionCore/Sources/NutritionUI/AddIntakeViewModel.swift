@@ -161,6 +161,11 @@ public final class AddIntakeViewModel: ObservableObject {
         barcode = trimmed
         lookupGeneration += 1
         let generation = lookupGeneration
+        // Starting the lookup is the user saying this form is about to describe a different product, so
+        // whatever was on it goes now rather than when the reply lands. Leaving it until then would keep
+        // Save enabled for the whole request, and on a slow one the user could tap Look up and then Save
+        // and store the previous product's values, or its captured panel, under the new barcode.
+        invalidateLookup()
         lookupState = .loading
         let result = await lookup.lookUp(barcode: trimmed)
         guard generation == lookupGeneration, barcode == trimmed else { return }

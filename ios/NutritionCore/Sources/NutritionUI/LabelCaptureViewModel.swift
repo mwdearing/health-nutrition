@@ -291,6 +291,15 @@ public final class LabelCaptureViewModel: ObservableObject {
         correctionError = nil
     }
 
+    /// Puts away the message from a correction that was refused.
+    ///
+    /// The error belongs to the correction the user just cancelled or moved away from, so it is not left
+    /// standing under the next row's amount field: a validation failure that belongs to one row must not
+    /// greet the user in another one before they have typed anything there.
+    public func clearCorrectionError() {
+        correctionError = nil
+    }
+
     /// The user accepts the serving size the parser corrected.
     ///
     /// Confirming resolves the flag as well as recording the answer, so the serving size stops counting

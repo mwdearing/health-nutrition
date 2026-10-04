@@ -141,8 +141,9 @@ only the known, answered values.
 `AddIntakeViewModel.applyLabelProduct(_:)` then fills the form the way a barcode lookup fills it: the
 nutrients and the serving are attached, the product is written as the snapshot on save, and the name is
 left for the user, because a panel states nutrients rather than what the food is called. A captured
-product is invalidated by exactly the same things a looked-up one is: a later barcode, a later lookup
-or another capture clears the values and the snapshot together.
+product is invalidated by exactly the same things a looked-up one is: a later barcode, another capture,
+or a later lookup — and a lookup invalidates from the moment it starts, not when its reply arrives, so
+Save cannot store a panel the user has already begun to replace on a slow request.
 
 ## Privacy: no image is stored or sent
 
