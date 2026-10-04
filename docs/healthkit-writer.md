@@ -223,6 +223,7 @@ so both routes end in the same place.
 | Failure | What happens |
 |---|---|
 | `authorizationDenied` | Projection becomes `needsAttention`, the operation is **suspended**, no retry is scheduled. |
+| `HealthSampleRejectedError` (a rejected **save**) | Same: the operation is **suspended** with the reason stored alongside it. |
 | `HealthSampleWriterError.transient` | `attempts` grows by one, `nextAttemptAt` moves out along the backoff. |
 | Any other error, including a failed totals read | Treated as transient: retrying is the safe direction. |
 | The store's acknowledgement throws after a successful write | Reported as `.notAcknowledged`, which is **unresolved**. |
@@ -231,24 +232,108 @@ A denial is never retried because **retrying cannot grant Health access**. A wor
 would fail on a timer forever and hide the real problem behind a queue that never drains; leaving the
 projection in `needsAttention` puts it in front of a person instead.
 
+### A rejected save is permanent, and only a rejected save
+
+`HKError.errorInvalidArgument` on a **save** is the other failure waiting cannot fix, and it used to
+fall through to the transient branch, so it backed off on the 1/5/30-minute-then-2-hours schedule
+**forever**. Apple's
+[save contract](https://developer.apple.com/documentation/healthkit/hkhealthstore/save%28_%3Awithcompletion%3A%29-47iwb)
+counts an invalid argument as a save failure, and the app target cannot argue with it: a retry rebuilds
+the same `HKQuantitySample` from the same immutable journal revision, down to the sync version, so the
+identical sample is rejected identically every time. `classifySaveFailure(_:)` therefore raises
+`HealthSampleRejectedError` for that code alone, and the worker marks the operation `needsAttention`
+rather than scheduling a retry that cannot succeed — the entry, or the plan built from it, has to
+change first, and that is a person's decision.
+
+**Only the save path.** Apple defines `errorInvalidArgument` as the app passing an invalid argument to a
+HealthKit API, not as a rejected sample, so the same code from `ownSamples(type:syncIdentifier:)` or
+`healthStore.delete(_:)` stays **transient** on the ordinary `classify(_:)` path. There is no immutable
+sample behind those calls for a person to correct, an app update may well fix the call that made them,
+and the operation is still queued rather than parked. A unit symbol the writer does not recognise is
+transient for the same reason: it means the writer's table and the planner's disagree, which a later
+build may fix.
+
+### The three failure classes, and which is which
+
+`HealthSampleWriterError` remains the pair a conformer can always answer — refused authorization, or
+worth another attempt — and `HealthSampleRejectedError` is the third class, deliberately a separate type
+so the `catch` that parks an operation reads as the decision it is. **A conformer must raise
+`HealthSampleRejectedError` for a rejected save rather than folding it into `.transient`**; a different
+implementation following the two-case wording alone would resume the endless backoff this exists to
+prevent. The three, and what each needs:
+
+| Class | Raised when | Needs |
+|---|---|---|
+| `authorizationDenied` | Write access to a type is refused, or a save reports it. | A person to grant access. |
+| `HealthSampleRejectedError` | A **save** reports `errorInvalidArgument`. | The plan or the entry to change. |
+| `.transient` | Everything else, including an invalid argument on a query or deletion. | Another attempt, or a later build. |
+
+### The reason is stored, not recomputed
+
+A denial and a rejected sample are parked in the **same** state, and only the reason tells them apart —
+so the reason is persisted on the outbox operation (`suspensionReason`) and read back on every later run
+and after every relaunch. Recomputing it from the state gave every suspended operation the same
+"waiting to be re-armed after a denial" phrasing, which presented a rejected sample as an
+authorization problem and discarded the diagnostic needed to resolve it: the entry looked like it needed
+Health permission rather than a corrected plan. `JournalDeliverySuspension` is the refinement that carries
+it, and a store that cannot persist a reason still satisfies `JournalOutboxDelivery`.
+
 Suspension has to be **explicit state**, not the absence of a retry date. A denied operation records
 `nextAttemptAt == nil`, which reads identically to "due now" — the very first attempt also has no date
 — so a run that inferred it from the operation would retry the denied write on every pass and grow its
 attempt count forever. The worker therefore asks the store which operations are suspended
-(`suspendedOperationIDs()`), which reads the projections, and leaves those alone. **Re-arming is a
-deliberate act**: `rearmDelivery(operationID:)` clears the suspension and makes the operation due
-again, and only a person decides when a denial has actually been resolved.
+(`suspendedOperationIDs()`) and leaves those alone. **Re-arming is a deliberate act**:
+`rearmDelivery(operationID:)` clears the suspension and makes the operation due again, and only a person
+decides when a denial has actually been resolved.
 
-**A suspension belongs to the operation, not to the current projection.** An edit supersedes the earlier
+**A suspension belongs to the operation, not to a projection.** An edit supersedes the earlier
 projections while leaving their operations pending, so a denied revision 1 whose projection has just
-gone noncurrent is still an undelivered, suspended operation. `suspendedOperationIDs()` therefore matches
-each `needsAttention` projection to its operation whatever its currency; filtering on `isCurrent` would
-drop the suspension, retry the denied write forever and block the newer revision indefinitely.
+gone noncurrent is still an undelivered, suspended operation. `suspendedOperationIDs()` therefore reads
+the stored reason off the outbox rows themselves rather than matching `needsAttention` projections;
+filtering on `isCurrent` would drop the suspension, retry the denied write forever and block the newer
+revision indefinitely.
 
-Re-arming has to reach the projection that actually **records** the suspension, superseded or not, for
-the same reason: clearing only current projections would leave the state at `needsAttention`, and since
-suspension is matched by state the operation would stay suspended and the re-arm would silently do
-nothing. Every other projection update deliberately touches current projections only.
+Both halves of a suspension have to reach the operation, superseded or not, and that includes the
+moment the suspension is **recorded**. An edit queued *before* the revision's first delivery attempt has
+already superseded its projection, so a denial arriving afterwards found only current projections to
+mark: nothing became `needsAttention`, the operation looked due, and every automatic run retried it and
+grew its attempt count. `recordFailure` therefore writes `needsAttention` to the operation's own
+projection whatever its currency, and `rearmDelivery` clears it from the same place. Every other
+projection update — an acknowledgement, a transient failure — deliberately touches current projections
+only.
+
+### A suspension is also shown on the current projection
+
+A state nobody can see is not something a person can act on. `EntryDetailViewModel` reads only current
+projections, so a suspension recorded on a superseded projection left the entry screen showing a plain
+**pending** destination while its queue was parked and every later operation blocked behind it.
+`recordFailure` therefore also marks the current projection for that destination `needsAttention`.
+
+That propagation is **display only**, and deliberately does not feed back into suspension:
+`suspendedOperationIDs()` reads the stored reasons off the outbox rows, so the newer operation — whose
+revision the current projection now names, and which has never been attempted — is not parked by an
+older operation's state. Suspension follows an attempt; nothing else does.
+
+Re-arming clears the propagated state too, and only when the intake has no other suspended operation,
+so the entry stops showing a condition that no longer exists while a second parked operation behind it
+keeps its own visible.
+
+### A correction supersedes a suspension; re-arming retries it
+
+Parking an operation and then blocking everything behind it made both of a person's remedies useless.
+An **edit** queued a newer revision that nothing would ever deliver, and a **deletion** queued a
+retraction that never ran, leaving the samples the entry had written stranded in Health — while
+re-arming merely rebuilt and retried the same rejected revision, which fails identically because the
+plan comes from the same immutable journal revision.
+
+So a suspended operation is **superseded** rather than retried when the queue already holds the work
+that replaces it: a newer revision, or a retraction of the same intake. A retraction counts at the same
+revision, because deleting an intake does not bump it. The suspended operation is acknowledged as
+`.superseded` — skipped, never offered to the writer — and the newer one is delivered in the same run.
+
+**Re-arming keeps its own, narrower job:** clearing the suspension so the *same* revision is attempted
+again. That is the repair for a denial a person has since resolved in Health, and it is deliberately not
+a way to retry a rejected sample, which needs the entry changed instead.
 
 The backoff is **1, 5 and 30 minutes, then every 2 hours**
 (`HealthKitDeliveryWorker.backoffSeconds(afterAttempt:)`). Backoff rather than a fixed interval: one
@@ -293,4 +378,9 @@ instead of writing an empty revision, unscaled snapshot nutrients are omitted, a
 is skipped by later runs and returns after being re-armed, repeated failures follow 1/5/30 minutes, a
 retraction removes the authorized types while naming the denied ones, volume only counts as water for
 a water-category intake, and acknowledging a stale upsert does not mark the delete projection
-`succeeded`. `swift test` runs on macOS in CI; the values are synthetic.
+`succeeded`. It also covers the retry edge cases: a denial recorded on a projection an earlier edit had
+already superseded still suspends the operation and is shown on the current projection, a sample
+HealthKit rejects goes to `needsAttention` instead of being retried, the stored reason is reported again
+on every later run for both a rejection and a denial, and a correction or a retraction supersedes a
+suspended operation while re-arming still retries the revision it names. `swift test` runs on macOS in
+CI; the values are synthetic.
