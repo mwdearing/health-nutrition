@@ -168,18 +168,20 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
 
     // MARK: Erasing
 
-    /// Removes every recipe version and every tombstone in one save. Both are personal data: a version
+    /// Removes every recipe version and every tombstone. Both are personal data: a version
     /// is the recipe as typed, and a tombstone names a recipe the person deleted, which is still their
     /// business and is never sent anywhere.
     ///
-    /// The store stays open, and with the tombstones gone a recipe id can start again at version one.
-    /// A closed store throws `RecipeStoreError.closed`.
+    /// The fetched rows are deleted one at a time rather than with the batch delete, which runs against
+    /// the persistent store immediately and so cannot be rolled back with the save. The store stays
+    /// open, and with the tombstones gone a recipe id can start again at version one. A closed store
+    /// throws `RecipeStoreError.closed`.
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
-        try context.delete(model: RecipeVersionRecord.self)
-        try context.delete(model: RecipeTombstoneRecord.self)
+        for row in try context.fetch(FetchDescriptor<RecipeTombstoneRecord>()) { context.delete(row) }
+        for row in try context.fetch(FetchDescriptor<RecipeVersionRecord>()) { context.delete(row) }
         try context.save()
     }
 

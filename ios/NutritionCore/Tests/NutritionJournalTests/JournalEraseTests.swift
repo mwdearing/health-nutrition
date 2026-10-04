@@ -7,6 +7,10 @@ import XCTest
 /// and usable afterwards, so an erase is a new start rather than a broken store.
 final class JournalEraseTests: XCTestCase {
     private let intakeID = "3f5a1c72-8d64-4b19-9e0a-2c7f6b4d8e51"
+    /// A second entry, so the precondition can hold a deleted entry and a live one at the same time and
+    /// prove that both lists, the revisions, the projections and the outbox are really non-empty before
+    /// the erase runs.
+    private let otherIntakeID = "9c2d4e15-6b70-4a83-bf59-71d0a3e6c842"
     private let when = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func makeDirectory() throws -> URL {
@@ -18,6 +22,12 @@ final class JournalEraseTests: XCTestCase {
 
     private func sampleIntake() -> Intake {
         Intake(id: intakeID, category: "food", occurredAt: when, timeZoneIdentifier: "UTC", meal: "breakfast")
+    }
+
+    private func otherIntake() -> Intake {
+        Intake(
+            id: otherIntakeID, category: "drink", occurredAt: when.addingTimeInterval(60),
+            timeZoneIdentifier: "UTC", meal: "lunch")
     }
 
     private func oats() -> IntakeComponent {
@@ -44,9 +54,16 @@ final class JournalEraseTests: XCTestCase {
         try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
         try store.edit(
             intakeID: intakeID, components: [oats()], product: nil, changeReason: "bigger bowl", now: when)
+        // The second entry stays active, so the precondition holds rows of every kind: an active entry,
+        // a deleted one with its tombstone, two revisions, a snapshot, projections and outbox work.
+        try store.create(otherIntake(), components: [oats()], product: product(), now: when)
         try store.delete(intakeID: intakeID, now: when)
-        XCTAssertFalse(try store.activeIntakes().isEmpty)
-        XCTAssertFalse(try store.deletedIntakes().isEmpty)
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [otherIntakeID])
+        XCTAssertEqual(try store.deletedIntakes().map(\.id), [intakeID])
+        XCTAssertEqual(try store.revisions(of: intakeID).count, 2)
+        XCTAssertEqual(try store.revisions(of: otherIntakeID).count, 1)
+        XCTAssertEqual(try store.projections(of: intakeID).count, 4)
+        XCTAssertNotNil(try store.product(snapshotID: "snap-erase-1"))
         XCTAssertFalse(try store.pendingOutbox().isEmpty)
 
         try store.eraseAll()
@@ -54,7 +71,9 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertTrue(try store.activeIntakes().isEmpty)
         XCTAssertTrue(try store.deletedIntakes().isEmpty)
         XCTAssertTrue(try store.revisions(of: intakeID).isEmpty)
+        XCTAssertTrue(try store.revisions(of: otherIntakeID).isEmpty)
         XCTAssertTrue(try store.projections(of: intakeID).isEmpty)
+        XCTAssertTrue(try store.projections(of: otherIntakeID).isEmpty)
         XCTAssertTrue(try store.pendingOutbox().isEmpty)
         XCTAssertNil(try store.product(snapshotID: "snap-erase-1"))
         let snapshot = try store.readJournalSnapshot()

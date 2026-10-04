@@ -151,16 +151,18 @@ public final class SwiftDataFavoritesStore: FavoritesStore, JournalErasing, @unc
 
     // MARK: Erasing
 
-    /// Removes every favorite in one save. A favorite is a template copied from what was eaten, and it
-    /// carries that entry's amounts, so it is part of what the erase action removes.
+    /// Removes every favorite. A favorite is a template copied from what was eaten, and it carries that
+    /// entry's amounts, so it is part of what the erase action removes.
     ///
-    /// The store stays open, so a favorite can be added again afterwards. A closed store throws
-    /// `FavoritesError.closed`, the same error every other call on it throws.
+    /// The fetched rows are deleted one at a time rather than with the batch delete, which runs against
+    /// the persistent store immediately and so cannot be rolled back with the save. The store stays
+    /// open, so a favorite can be added again afterwards. A closed store throws `FavoritesError.closed`,
+    /// the same error every other call on it throws.
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
-        try context.delete(model: FavoriteRecord.self)
+        for row in try context.fetch(FetchDescriptor<FavoriteRecord>()) { context.delete(row) }
         try context.save()
     }
 }
