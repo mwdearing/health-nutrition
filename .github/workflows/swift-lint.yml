@@ -30,5 +30,7 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install pytest
       - name: Lint Swift sources
         run: python scripts/lint_swift_sources.py ios/NutritionCore
+      - name: Lint the app target (ios/HealthNutrition)
+        run: python scripts/lint_swift_sources.py ios/HealthNutrition
       - name: Test the lint
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_lint_swift_sources.py
