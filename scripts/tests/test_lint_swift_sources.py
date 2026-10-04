@@ -438,6 +438,40 @@ def test_postfix_force_unwrap_before_a_slash_is_not_a_regex_opener(tmp_path: Pat
     ]
 
 
+def test_ternary_question_mark_opens_a_regex_literal(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Ternary.swift": (
+            "let r = flag ? /Double/ : /Float/\n"
+            "let s = ok ? /Double/ : /Float/\n"
+            "let z: Double = 1\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The ternary `?` is infix and takes whitespace on both sides, so the slash
+    # after it opens a pattern rather than dividing. Line 3 is still code.
+    assert findings(result) == [("Ternary.swift", 3, "binary-float")]
+
+
+def test_postfix_question_mark_before_a_slash_is_not_a_regex_opener(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/OptionalChain.swift": (
+            "let v = a?.b / Double(c) / d\n"
+            "let w = a!.b / Double(c)\n"
+            "let z: Double = 1\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A `?` attached to the previous token is postfix, so the operand ended and
+    # the slash divides. The `Double` on both lines is real code.
+    assert findings(result) == [
+        ("OptionalChain.swift", 1, "binary-float"),
+        ("OptionalChain.swift", 2, "binary-float"),
+        ("OptionalChain.swift", 3, "binary-float"),
+    ]
+
+
 def test_interpolation_inside_an_extended_regex_is_still_code(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{DOMAIN}/RegexInterpolation.swift": (
