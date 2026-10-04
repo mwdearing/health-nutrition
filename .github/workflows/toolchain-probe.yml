@@ -1,0 +1,77 @@
+name: toolchain-probe
+
+# Temporary probe for the P0.5 release-toolchain gate. It answers one question with
+# evidence instead of assumption: does any available runner image ship the stable
+# Xcode 27 / iOS 27 SDK on the exact candidate? Xcode 27 requires macOS Tahoe 26.6
+# or later, so an image can be ruled out by its macOS version alone.
+#
+# Do not merge. Close the PR once the run has been read; the evidence belongs in the
+# P0.5 gate record, not in the repository.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/toolchain-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [macos-27, macos-26, macos-latest, macos-15]
+    runs-on: ${{ matrix.image }}
+    steps:
+      - name: Probe toolchain
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "=== runner image requested: ${{ matrix.image }} ==="
+          echo "=== sw_vers ==="
+          sw_vers
+          echo "=== Installed Xcode apps ==="
+          ls -d /Applications/Xcode*.app || true
+          echo "=== Version of each Xcode app ==="
+          for app in /Applications/Xcode*.app; do
+            [ -e "$app" ] || continue
+            echo "--- $app"
+            "$app/Contents/Developer/usr/bin/xcodebuild" -version || true
+          done
+          echo "=== xcode-select -p ==="
+          xcode-select -p
+          echo "=== xcodebuild -version ==="
+          xcodebuild -version
+          echo "=== xcodebuild -showsdks ==="
+          xcodebuild -showsdks
+          echo "=== swift --version ==="
+          swift --version
+
+      - name: Report the P0.5 answer explicitly
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "=== P0.5 VERDICT FOR ${{ matrix.image }} ==="
+          if xcodebuild -showsdks 2>/dev/null | grep -qE 'iOS 27|iOS Simulator 27'; then
+            echo "XCODE27_SDK_PRESENT=yes"
+            xcodebuild -showsdks | grep -E 'iOS|Simulator' || true
+          else
+            echo "XCODE27_SDK_PRESENT=no"
+          fi
+          if xcodebuild -version 2>/dev/null | grep -qE '^Xcode 27'; then
+            echo "DEFAULT_XCODE_27=yes"
+          else
+            echo "DEFAULT_XCODE_27=no"
+          fi
+          # Any Xcode 27 anywhere on the image, not just the selected one.
+          found=no
+          for app in /Applications/Xcode*.app; do
+            [ -e "$app" ] || continue
+            if "$app/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | grep -qE '^Xcode 27'; then
+              found="$app"
+            fi
+          done
+          echo "ANY_XCODE_27_INSTALLED=$found"
+          echo "=== END P0.5 VERDICT ==="
