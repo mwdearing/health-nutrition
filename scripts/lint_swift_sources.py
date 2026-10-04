@@ -35,15 +35,21 @@ unlabeled-image
     it, or when it is a ``Label(title, systemImage:)``, which speaks its own
     title. The package module's scope is ``Sources/NutritionUI/`` only, and the
     app target's is everything under its own ``Sources/``; an enclosing layout is
-    not a control, so text beside the image in an ``HStack`` names nothing.
+    not a control, so text beside the image in an ``HStack`` names nothing. A
+    control spelled out as ``SwiftUI.Button`` is the same control as ``Button``,
+    and a ``Label`` passed both closures as arguments speaks its title just as a
+    trailing one does.
     A modifier written on a nested view belongs to that view, so a label inside
-    ``Image("photo").overlay { ... }`` leaves the outer image unnamed. A
-    ``Picker``, ``Menu`` or ``ControlGroup`` closure without a ``label:`` of its
+    ``Image("photo").overlay { ... }`` or
+    ``Image("photo").overlay(content: { ... })`` leaves the outer image unnamed.
+    A ``Picker``, ``Menu`` or ``ControlGroup`` closure without a ``label:`` of its
     own holds content rather than a label, so an image among its options needs a
-    name of its own. Text hidden with ``.accessibilityHidden(true)`` reads
-    nothing aloud and names nothing either. A modifier written inside an ``#if``
-    branch only counts when every configuration that compiles the image compiles
-    a name as well.
+    name of its own; once the content has been passed as ``content:``, though, a
+    trailing closure is the control's label. Text hidden with
+    ``.accessibilityHidden(true)`` reads nothing aloud and names nothing either,
+    even when the hiding is written for one build only. A modifier written inside
+    an ``#if`` branch only counts when every configuration that compiles the image
+    compiles a name as well.
 binary-float
     In ``Sources/NutritionDomain/**`` and ``Sources/NutritionJournal/**``: no
     ``Double`` or ``Float``, and no untyped floating-point literal such as
@@ -471,8 +477,14 @@ CONTROL_NAMES = frozenset({
 # image among the items has to be named in its own right. Their `label:` closure
 # is a label as usual.
 CONTENT_CONTROLS = frozenset({"Menu", "Picker", "ControlGroup"})
+# The `content:` argument of such a control, which leaves the trailing closure
+# that follows it free to be the label.
+CONTENT_ARGUMENT = re.compile(r"\bcontent\s*:")
 # `#if`/`#elseif`/`#else`/`#endif`, one per line, indented or not.
 DIRECTIVE = re.compile(r"^[ \t]*#(if|elseif|else|endif)\b", re.MULTILINE)
+# The same directive read at an offset inside a line, so an indented branch is
+# seen as well as one that starts in the first column.
+BRANCH_DIRECTIVE = re.compile(r"[ \t]*#(if|elseif|else|endif)\b")
 # The line that ends a branch of conditional compilation.
 BRANCH_END = re.compile(r"^[ \t]*#(?:elseif|else|endif)\b", re.MULTILINE)
 
@@ -511,8 +523,10 @@ def _chain_end(masked: str, start: int, bodies: list[tuple[int, int]] | None = N
     Each step consumes `.name` plus an optional argument list or trailing
     closure, so modifiers applied to an expression are followed as far as they
     reach. When ``bodies`` is given, the span of each trailing closure consumed
-    on the way is collected in it: a modifier written inside one belongs to the
-    view it is applied to, not to the expression the chain started from.
+    on the way is collected in it, together with every closure passed as an
+    argument: a modifier written inside one of those belongs to the view it is
+    applied to, not to the expression the chain started from. That holds for a
+    trailing ``.overlay { ... }`` and for ``.overlay(content: { ... })`` alike.
     """
     end = start
     while True:
@@ -529,13 +543,35 @@ def _chain_end(masked: str, start: int, bodies: list[tuple[int, int]] | None = N
             index += 1
         if index < len(masked) and masked[index] in OPENERS:
             closing = _match_forward(masked, index)
-            if bodies is not None and masked[index] == "{":
-                # A trailing closure holds the view a modifier is applied to; an
-                # argument list holds its arguments, which are part of this chain.
-                bodies.append((index, closing))
+            if bodies is not None:
+                if masked[index] == "{":
+                    # A trailing closure holds the view a modifier is applied to;
+                    # an argument list holds its arguments, which are part of this
+                    # chain.
+                    bodies.append((index, closing))
+                else:
+                    # A closure passed as an argument, as in `.overlay(content:
+                    # { ... })`, holds the nested view just as a trailing closure
+                    # does, so a modifier written inside it names that view and not
+                    # the expression the chain started from.
+                    bodies.extend(_closures_inside(masked, index, closing))
             end = closing + 1
         else:
             end = index
+
+
+def _closures_inside(masked: str, opening: int, closing: int) -> list[tuple[int, int]]:
+    """Spans of the closures written inside the brackets opened at ``opening``."""
+    spans: list[tuple[int, int]] = []
+    index = opening + 1
+    while index < closing:
+        if masked[index] == "{":
+            end = _match_forward(masked, index)
+            spans.append((index, end))
+            index = end + 1
+            continue
+        index += 1
+    return spans
 
 
 def _without_bodies(text: str, base: int, bodies: list[tuple[int, int]]) -> str:
@@ -658,17 +694,49 @@ def _closure_label(masked: str, opening: int) -> str:
     return marker.group(0).split(":")[0].strip()
 
 
+def _is_trailing_closure(masked: str, opening: int) -> bool:
+    """Whether the brace at ``opening`` is a trailing closure rather than an argument.
+
+    ``Menu { ... }`` trails its closure, while ``Menu(content: { ... })`` passes
+    it as an argument. Both look the same at the brace itself, so the brackets
+    around it decide: inside a call's own argument list it is an argument, even
+    though a preceding argument closed with ``)``.
+    """
+    depth = 0
+    for index in range(opening - 1, -1, -1):
+        char = masked[index]
+        if char in CLOSERS:
+            depth += 1
+        elif char in OPENERS:
+            if depth == 0:
+                return char != "("
+            depth -= 1
+    return True
+
+
+def _content_argument(masked: str, start: int, end: int) -> bool:
+    """Whether a ``content:`` argument is written between ``start`` and ``end``.
+
+    The actions of a ``Menu``, the options of a ``Picker`` and the views of a
+    ``ControlGroup`` are usually passed as ``content:``, and then the trailing
+    closure that follows is the control's label rather than more content.
+    """
+    return _is_trailing_closure(masked, end) and CONTENT_ARGUMENT.search(masked, start, end) is not None
+
+
 def _call_name(masked: str, opening: int) -> str:
     """Name of the call whose argument list or trailing closure opens at ``opening``.
 
     ``Button(action: {}) { ... }`` reaches the name through the argument list,
-    ``Button { ... } label: { ... }`` reads it straight before the brace.
+    ``Button { ... } label: { ... }`` reads it straight before the brace. A
+    module-qualified name is spelled out as written, so ``SwiftUI.Button`` and
+    ``Button`` come back as one and the same control.
     """
     start = _call_start(masked, opening)
     end = start
     while end < len(masked) and (masked[end].isalnum() or masked[end] in "._"):
         end += 1
-    return masked[start:end]
+    return masked[start:end].split(".")[-1]
 
 
 def _conditional_blocks(masked: str) -> list[list[tuple[int, int] | None]]:
@@ -797,7 +865,7 @@ def _modifier_chain_end(
         line = end
         while line < len(masked) and masked[line].isspace():
             line += 1
-        directive = DIRECTIVE.match(masked, line)
+        directive = BRANCH_DIRECTIVE.match(masked, line)
         if directive is None:
             return end
         body = directive.end()
@@ -835,15 +903,21 @@ def _call_expression_end(masked: str, start: int, position: int) -> int:
 
 
 def _first_closure(masked: str, start: int, end: int) -> tuple[int, int] | None:
-    """The first trailing closure of the call written in ``masked[start:end]``."""
+    """The first closure of the call written in ``masked[start:end]``.
+
+    Braces are counted rather than brackets, so a closure passed as an argument
+    counts too: ``Label(title: { ... }, icon: { ... })`` puts the title inside
+    the argument list, while ``Label { ... } icon: { ... }`` puts it in a trailing
+    closure.
+    """
     depth = 0
     for index in range(start, end):
         char = masked[index]
-        if char in OPENERS:
-            if depth == 0 and char == "{":
+        if char == "{":
+            if depth == 0:
                 return index, _match_forward(masked, index) + 1
             depth += 1
-        elif char in CLOSERS:
+        elif char == "}":
             depth -= 1
     return None
 
@@ -869,9 +943,15 @@ def _label_window(masked: str, start: int) -> tuple[int, str, list[tuple[int, in
             position = opening
             continue
         control_start, name = control
-        if name in CONTENT_CONTROLS and not _closure_label(masked, opening):
+        if (
+            name in CONTENT_CONTROLS
+            and not _closure_label(masked, opening)
+            and not _content_argument(masked, control_start, opening)
+        ):
             # The closure holds the actions or options of the control rather than
-            # its label, so it names nothing and the climb goes on outwards.
+            # its label, so it names nothing and the climb goes on outwards. A
+            # trailing closure that follows a `content:` argument is the label all
+            # the same, because the content has already been passed.
             position = opening
             continue
         bodies: list[tuple[int, int]] = []
@@ -895,13 +975,15 @@ def _visible_texts(masked: str, span: tuple[int, int]) -> list[int]:
     """Offsets of the ``Text`` calls in ``span`` that VoiceOver still reads.
 
     Text hidden from the accessibility tree reads nothing aloud, so it does not
-    name a control either.
+    name a control either. The modifiers of the text are followed into the
+    branches of conditional compilation as well, since a text hidden in one
+    branch is still hidden in the builds that compile it.
     """
     offsets = []
     for match in TEXT_CALL.finditer(masked, span[0], span[1]):
         position = match.start()
         bodies: list[tuple[int, int]] = []
-        end = _chain_end(masked, _match_forward(masked, match.end() - 1) + 1, bodies)
+        end = _modifier_chain_end(masked, _match_forward(masked, match.end() - 1) + 1, bodies)
         chain = _without_bodies(masked[position:end], position, bodies)
         if HIDDEN_TRUE.search(chain):
             continue

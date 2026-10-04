@@ -1011,6 +1011,102 @@ def test_action_and_label_closures_with_an_argument_list_are_clean(tmp_path: Pat
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_a_module_qualified_control_label_names_the_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Qualified.swift": (
+            "import SwiftUI\n"
+            "struct Qualified: View {\n"
+            "    var body: some View {\n"
+            "        SwiftUI.Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_label_title_argument_names_the_image_in_its_icon_argument(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ArgumentLabel.swift": (
+            "import SwiftUI\n"
+            "struct ArgumentLabel: View {\n"
+            "    var body: some View {\n"
+            '        Label(title: { Text("Water") }, icon: { Image(systemName: "drop") })\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_text_hidden_in_one_branch_does_not_name_the_control(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/DebugCaption.swift": (
+            "import SwiftUI\n"
+            "struct DebugCaption: View {\n"
+            "    var body: some View {\n"
+            "        Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "            #if DEBUG\n"
+            "            .accessibilityHidden(true)\n"
+            "            #endif\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # In a release build the text is hidden and names nothing, so the image is
+    # still unnamed there.
+    assert findings(result) == [("DebugCaption.swift", 5, "unlabeled-image")]
+
+
+def test_a_nested_labelled_image_in_a_content_argument_does_not_exempt_the_outer_one(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/OverlayArgument.swift": (
+            "import SwiftUI\n"
+            "struct OverlayArgument: View {\n"
+            "    var body: some View {\n"
+            '        Image("photo").overlay(content: {\n'
+            '            Image(systemName: "star").accessibilityLabel("New")\n'
+            "        })\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("OverlayArgument.swift", 4, "unlabeled-image")]
+
+
+def test_a_trailing_closure_after_a_content_argument_is_the_control_label(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Overflow.swift": (
+            "import SwiftUI\n"
+            "struct Overflow: View {\n"
+            "    var body: some View {\n"
+            "        Menu(content: {\n"
+            '            Button("Action") {}\n'
+            "        }) {\n"
+            '            Image(systemName: "ellipsis")\n'
+            '        }.accessibilityLabel("More")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_a_run_over_the_package_root_also_lints_the_app_target(tmp_path: Path) -> None:
     write_tree(tmp_path, {f"{UI}/Fine.swift": 'import SwiftUI\nText("hi").font(.body)\n'})
     app = tmp_path / "ios" / "HealthNutrition" / "Sources"
