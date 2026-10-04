@@ -216,8 +216,8 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// The parser had to correct the serving size, so the user is asked about it like any other value.
     @Published public private(set) var servingNeedsReview = false
     @Published public private(set) var isServingConfirmed = false
-    /// The panel stated no serving size, or stated one with no amount in it, so the values are per
-    /// something the user has to name before they can be used.
+    /// The panel stated no serving size at all, so the values are per something the user has to name
+    /// before they can be used. A serving the panel printed as words is shown as printed instead.
     @Published public private(set) var servingIsMissing = false
     /// Why a serving size the user typed was refused, or nil when the last one was accepted.
     @Published public private(set) var servingSizeError: String?
