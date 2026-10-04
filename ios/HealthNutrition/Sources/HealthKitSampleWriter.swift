@@ -45,7 +45,7 @@ struct HealthKitSampleWriter: HealthSampleWriter {
 
     /// Saves the whole plan in one call, so a batch either reaches HealthKit or reports why not.
     func save(_ specs: [HealthKitSampleSpec]) async throws {
-        let samples = specs.compactMap(Self.sample(from:))
+        let samples = try specs.map { try Self.sample(from: $0) }.compactMap { $0 }
         guard !samples.isEmpty else { return }
         do {
             try await healthStore.save(samples)
@@ -80,15 +80,21 @@ struct HealthKitSampleWriter: HealthSampleWriter {
 
     // MARK: - Samples
 
-    /// One spec as an `HKQuantitySample`, or nil when its type or unit does not resolve.
+    /// One spec as an `HKQuantitySample`, or nil when its type does not resolve. Throws when its unit
+    /// does not resolve, which is a different thing and cannot be handled by leaving the sample out.
     ///
-    /// A spec that cannot become a sample is left out rather than written as zero: the journal reads
+    /// A spec whose *type* does not resolve is left out rather than written as zero: the journal reads
     /// an absent nutrient as unknown, and a zero would turn "not stated" into "none" in Health. The
     /// worker plans from the same table, so this is a guard against a table HealthKit disagrees with.
-    private static func sample(from spec: HealthKitSampleSpec) -> HKQuantitySample? {
-        guard let type = quantityType(for: spec.quantityTypeIdentifier),
-              let unit = HKUnit(from: spec.unitSymbol)
-        else { return nil }
+    ///
+    /// A spec whose *unit* does not resolve is a different thing and **throws**: `HKUnit(from:)` traps
+    /// on a string it does not know rather than returning nil, so the symbol is resolved through
+    /// `unit(for:)` first. Dropping such a spec would silently write a plan that is missing a nutrient
+    /// and then acknowledge the delivery, which is exactly the stale-data failure the planner exists to
+    /// prevent — so it is reported as a delivery failure and retried instead.
+    private static func sample(from spec: HealthKitSampleSpec) throws -> HKQuantitySample? {
+        guard let type = quantityType(for: spec.quantityTypeIdentifier) else { return nil }
+        let unit = try unit(for: spec.unitSymbol)
         return HKQuantitySample(
             type: type,
             // HealthKit quantities are Double; the decimal is converted once, at the boundary, and
@@ -101,6 +107,29 @@ struct HealthKitSampleWriter: HealthSampleWriter {
                 HKMetadataKeySyncVersion: NSNumber(value: spec.syncVersion),
             ]
         )
+    }
+
+    /// The HealthKit unit for a symbol the plan produces, or a delivery failure for anything else.
+    ///
+    /// `HKUnit(from:)` looks like the obvious way to do this and is not: it is **not** optional and it
+    /// traps on a string it does not recognise, so an unknown symbol would take the app down rather
+    /// than fail one delivery. The plan's `unitSymbol` is a `MeasureUnit` symbol from a fixed table, so
+    /// the five units it can produce are mapped here by hand and anything else is refused.
+    ///
+    /// Refusing is transient rather than a denial: a symbol this writer does not know means the two
+    /// tables disagree, which a later build may well fix, and no amount of retrying here will guess the
+    /// right unit. The message names the symbol so the mismatch is visible in the log.
+    private static func unit(for symbol: String) throws -> HKUnit {
+        switch symbol {
+        case "mL": return .literUnit(with: .milli)
+        case "g": return .gram()
+        case "mg": return .gramUnit(with: .milli)
+        case "mcg": return .gramUnit(with: .micro)
+        case "kcal": return .kilocalorie()
+        default:
+            throw HealthSampleWriterError.transient(
+                "no HealthKit unit for the symbol the plan produced: \(symbol)")
+        }
     }
 
     /// The quantity type for an identifier string, or nil when HealthKit does not know it.
