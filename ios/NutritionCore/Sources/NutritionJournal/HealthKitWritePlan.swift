@@ -41,6 +41,11 @@ public struct HealthKitSampleSpec: Sendable, Hashable {
 
 /// The HealthKit type identifiers, as strings.
 ///
+/// HealthKit names every dietary quantity type with the same `Dietary` prefix, the minerals and
+/// vitamins included: `HKQuantityTypeIdentifierDietarySodium`, `HKQuantityTypeIdentifierDietaryIron`,
+/// `HKQuantityTypeIdentifierDietaryVitaminD`. These are the identifiers Apple's
+/// `HKQuantityTypeIdentifier` list defines.
+///
 /// Each constant is named with a leading underscore so the identifier is legible right where it is
 /// declared. A bare `HK…` name would read as a HealthKit type to anything scanning this module,
 /// and nothing here is a HealthKit type: it is the string an `HKObjectType` is looked up by in the
@@ -53,27 +58,39 @@ private enum HealthKitTypeIdentifier {
     static let _HKQuantityTypeIdentifierDietaryFatTotal = "HKQuantityTypeIdentifierDietaryFatTotal"
     static let _HKQuantityTypeIdentifierDietaryFiber = "HKQuantityTypeIdentifierDietaryFiber"
     static let _HKQuantityTypeIdentifierDietarySugar = "HKQuantityTypeIdentifierDietarySugar"
-    static let _HKQuantityTypeIdentifierSodium = "HKQuantityTypeIdentifierSodium"
-    static let _HKQuantityTypeIdentifierPotassium = "HKQuantityTypeIdentifierPotassium"
-    static let _HKQuantityTypeIdentifierCalcium = "HKQuantityTypeIdentifierCalcium"
-    static let _HKQuantityTypeIdentifierMagnesium = "HKQuantityTypeIdentifierMagnesium"
-    static let _HKQuantityTypeIdentifierIron = "HKQuantityTypeIdentifierIron"
-    static let _HKQuantityTypeIdentifierZinc = "HKQuantityTypeIdentifierZinc"
+    static let _HKQuantityTypeIdentifierDietarySodium = "HKQuantityTypeIdentifierDietarySodium"
+    static let _HKQuantityTypeIdentifierDietaryPotassium = "HKQuantityTypeIdentifierDietaryPotassium"
+    static let _HKQuantityTypeIdentifierDietaryCalcium = "HKQuantityTypeIdentifierDietaryCalcium"
+    static let _HKQuantityTypeIdentifierDietaryMagnesium = "HKQuantityTypeIdentifierDietaryMagnesium"
+    static let _HKQuantityTypeIdentifierDietaryIron = "HKQuantityTypeIdentifierDietaryIron"
+    static let _HKQuantityTypeIdentifierDietaryZinc = "HKQuantityTypeIdentifierDietaryZinc"
     static let _HKQuantityTypeIdentifierDietaryCaffeine = "HKQuantityTypeIdentifierDietaryCaffeine"
-    static let _HKQuantityTypeIdentifierVitaminD = "HKQuantityTypeIdentifierVitaminD"
-    static let _HKQuantityTypeIdentifierVitaminB12 = "HKQuantityTypeIdentifierVitaminB12"
+    static let _HKQuantityTypeIdentifierDietaryVitaminD = "HKQuantityTypeIdentifierDietaryVitaminD"
+    static let _HKQuantityTypeIdentifierDietaryVitaminB12 = "HKQuantityTypeIdentifierDietaryVitaminB12"
     static let _HKQuantityTypeIdentifierDietaryFolate = "HKQuantityTypeIdentifierDietaryFolate"
 }
 
-/// One row of the nutrient mapping table: a journal nutrient key, the HealthKit type it lands in,
-/// and the unit HealthKit wants it in.
+/// One row of the nutrient mapping table: the canonical journal nutrient key, the other keys the
+/// journal is known to store that nutrient under, the HealthKit type it lands in, and the unit
+/// HealthKit wants it in.
 public struct HealthKitNutrientMapping: Sendable {
+    /// The canonical key. It names the row in `plan`'s output order and in the sync identifier, so
+    /// the same nutrient keeps the same sample whether the journal recorded it under its own key or
+    /// under one of the aliases.
     public let nutrientKey: String
+    /// Other keys that mean this same nutrient in stored totals. A barcode snapshot keeps the keys
+    /// `LookedUpProduct.standardKeys` names (`energyKcal`, `carbohydrates`, `sugars`, …) verbatim,
+    /// so the planner has to read them or the values they carry would never reach HealthKit.
+    public let aliases: [String]
     public let quantityTypeIdentifier: String
     public let unit: MeasureUnit
 
-    public init(nutrientKey: String, quantityTypeIdentifier: String, unit: MeasureUnit) {
+    /// The canonical key first, then the aliases, which is the order a total is resolved in.
+    public var acceptedKeys: [String] { [nutrientKey] + aliases }
+
+    public init(nutrientKey: String, aliases: [String] = [], quantityTypeIdentifier: String, unit: MeasureUnit) {
         self.nutrientKey = nutrientKey
+        self.aliases = aliases
         self.quantityTypeIdentifier = quantityTypeIdentifier
         self.unit = unit
     }
@@ -82,28 +99,30 @@ public struct HealthKitNutrientMapping: Sendable {
 /// Builds the HealthKit write plan for one journal revision (NC-07). Nothing here touches
 /// HealthKit: it is the pure decision of *what* would be written and under which sync metadata.
 public enum HealthKitWritePlanner {
-    /// Nutrient key to (identifier, unit), in nutrient-key order.
+    /// Nutrient key to (aliases, identifier, unit).
     ///
-    /// The units are the ones HealthKit accepts for the dietary types; everything else is converted
-    /// into them with `MeasureUnit` before a spec is built. Vitamin D, B12 and folate stay in
-    /// micrograms because that is how HealthKit states them.
+    /// Every identifier is one of HealthKit's dietary quantity types, prefix included. The units are
+    /// the ones HealthKit accepts for them; everything else is converted into them with
+    /// `MeasureUnit` before a spec is built. Vitamin D, B12 and folate stay in micrograms because
+    /// that is how HealthKit states them. An alias is another key the journal is known to store that
+    /// same nutrient under; it resolves to this row, never to a second one.
     public static let mappings: [HealthKitNutrientMapping] = [
         HealthKitNutrientMapping(nutrientKey: "water", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryWater, unit: .mL),
-        HealthKitNutrientMapping(nutrientKey: "energy", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryEnergyConsumed, unit: .kcal),
+        HealthKitNutrientMapping(nutrientKey: "energy", aliases: ["energyKcal"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryEnergyConsumed, unit: .kcal),
         HealthKitNutrientMapping(nutrientKey: "protein", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryProtein, unit: .g),
-        HealthKitNutrientMapping(nutrientKey: "carbohydrate", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCarbohydrates, unit: .g),
+        HealthKitNutrientMapping(nutrientKey: "carbohydrate", aliases: ["carbohydrates"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCarbohydrates, unit: .g),
         HealthKitNutrientMapping(nutrientKey: "fat", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFatTotal, unit: .g),
         HealthKitNutrientMapping(nutrientKey: "fiber", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFiber, unit: .g),
-        HealthKitNutrientMapping(nutrientKey: "sugar", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietarySugar, unit: .g),
-        HealthKitNutrientMapping(nutrientKey: "sodium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierSodium, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "potassium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierPotassium, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "calcium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierCalcium, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "magnesium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierMagnesium, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "iron", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierIron, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "zinc", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierZinc, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "sugar", aliases: ["sugars"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietarySugar, unit: .g),
+        HealthKitNutrientMapping(nutrientKey: "sodium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietarySodium, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "potassium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryPotassium, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "calcium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCalcium, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "magnesium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryMagnesium, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "iron", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryIron, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "zinc", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryZinc, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "caffeine", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCaffeine, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "vitaminD", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierVitaminD, unit: .mcg),
-        HealthKitNutrientMapping(nutrientKey: "vitaminB12", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierVitaminB12, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminD", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminD, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminB12", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminB12, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "folate", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFolate, unit: .mcg),
     ]
 
@@ -125,16 +144,13 @@ public enum HealthKitWritePlanner {
     ) -> [HealthKitSampleSpec] {
         var specs: [HealthKitSampleSpec] = []
         for mapping in mappings.sorted(by: { $0.nutrientKey < $1.nutrientKey }) {
-            guard let total = totals[mapping.nutrientKey], case .known(let amount, let unit) = total else {
-                continue
-            }
-            guard let converted = try? Quantity(value: amount, unit: unit).converted(to: mapping.unit) else {
+            guard let amount = resolvedAmount(for: mapping, in: totals) else {
                 continue
             }
             specs.append(
                 HealthKitSampleSpec(
                     quantityTypeIdentifier: mapping.quantityTypeIdentifier,
-                    amount: converted.value,
+                    amount: amount,
                     unitSymbol: mapping.unit.symbol,
                     start: occurredAt,
                     end: occurredAt,
@@ -146,6 +162,22 @@ public enum HealthKitWritePlanner {
         return specs
     }
 
+    /// The amount one row plans, converted into its HealthKit unit, or nil when there is nothing to
+    /// write. The keys are read in order — the canonical key first, then the aliases — and the first
+    /// one that is `.known` and converts exactly wins, so a canonical key and the alias for the same nutrient can never
+    /// produce two samples, and an alias can stand in for a canonical key that is not known.
+    private static func resolvedAmount(for mapping: HealthKitNutrientMapping, in totals: [String: NutrientValue]) -> Decimal? {
+        for key in mapping.acceptedKeys {
+            guard let total = totals[key], case .known(let amount, let unit) = total else {
+                continue
+            }
+            if let converted = try? Quantity(value: amount, unit: unit).converted(to: mapping.unit) {
+                return converted.value
+            }
+        }
+        return nil
+    }
+
     /// The sync identifiers a delete has to remove, by identifier and this app's own source (ADR 0002).
     /// Sorted and deduplicated, so a delete is the same request however the caller collected its keys.
     ///
@@ -153,8 +185,17 @@ public enum HealthKitWritePlanner {
     /// may have written it, and a nutrient that has since become unknown produces no sample to
     /// replace it, so it has to be deleted rather than left behind. The result is therefore a superset
     /// of what `plan` wrote for the same keys, and deciding which keys that is stays with the caller.
+    ///
+    /// An alias is resolved to its canonical key first, so a caller that names a nutrient the way a
+    /// barcode snapshot stored it deletes the sample that was actually written.
     public static func deletion(intakeID: String, keys: [String]) -> [String] {
-        Array(Set(keys)).sorted().map { syncIdentifier(intakeID: intakeID, nutrientKey: $0) }
+        Array(Set(keys.map { canonicalKey(for: $0) })).sorted().map { syncIdentifier(intakeID: intakeID, nutrientKey: $0) }
+    }
+
+    /// The canonical key for a nutrient, whether it was given as the canonical key or as one of its
+    /// aliases. A key no row maps is returned unchanged, so an unmapped key never loses its identity.
+    public static func canonicalKey(for key: String) -> String {
+        mappings.first { $0.acceptedKeys.contains(key) }?.nutrientKey ?? key
     }
 
     /// ADR 0002: one sync identifier per (intake, nutrient), `"intake:<intakeID>:<nutrientKey>"`. The

@@ -34,25 +34,58 @@ plan:
 these types, and every total is converted into them with `MeasureUnit` before a spec is built, so
 the planner never does arithmetic of its own: `Decimal` throughout, exact powers of ten only.
 
-| Nutrient key | HealthKit identifier | HealthKit unit |
-|---|---|---|
-| `water` | `HKQuantityTypeIdentifierDietaryWater` | `mL` |
-| `energy` | `HKQuantityTypeIdentifierDietaryEnergyConsumed` | `kcal` |
-| `protein` | `HKQuantityTypeIdentifierDietaryProtein` | `g` |
-| `carbohydrate` | `HKQuantityTypeIdentifierDietaryCarbohydrates` | `g` |
-| `fat` | `HKQuantityTypeIdentifierDietaryFatTotal` | `g` |
-| `fiber` | `HKQuantityTypeIdentifierDietaryFiber` | `g` |
-| `sugar` | `HKQuantityTypeIdentifierDietarySugar` | `g` |
-| `sodium` | `HKQuantityTypeIdentifierSodium` | `mg` |
-| `potassium` | `HKQuantityTypeIdentifierPotassium` | `mg` |
-| `calcium` | `HKQuantityTypeIdentifierCalcium` | `mg` |
-| `magnesium` | `HKQuantityTypeIdentifierMagnesium` | `mg` |
-| `iron` | `HKQuantityTypeIdentifierIron` | `mg` |
-| `zinc` | `HKQuantityTypeIdentifierZinc` | `mg` |
-| `caffeine` | `HKQuantityTypeIdentifierDietaryCaffeine` | `mg` |
-| `vitaminD` | `HKQuantityTypeIdentifierVitaminD` | `mcg` |
-| `vitaminB12` | `HKQuantityTypeIdentifierVitaminB12` | `mcg` |
-| `folate` | `HKQuantityTypeIdentifierDietaryFolate` | `mcg` |
+Every identifier is one of HealthKit's dietary quantity types, **prefix included**: HealthKit spells
+the minerals and the vitamins with the same `Dietary` prefix as the macronutrients
+(`HKQuantityTypeIdentifierDietarySodium`, `HKQuantityTypeIdentifierDietaryIron`,
+`HKQuantityTypeIdentifierDietaryVitaminD`), so an identifier without it would not resolve to a type
+and the app target could neither authorize nor build a sample for it. A test asserts that every
+identifier in the table starts with `HKQuantityTypeIdentifierDietary`.
+
+| Nutrient key | Also stored as | HealthKit identifier | HealthKit unit |
+|---|---|---|---|
+| `water` | | `HKQuantityTypeIdentifierDietaryWater` | `mL` |
+| `energy` | `energyKcal` | `HKQuantityTypeIdentifierDietaryEnergyConsumed` | `kcal` |
+| `protein` | | `HKQuantityTypeIdentifierDietaryProtein` | `g` |
+| `carbohydrate` | `carbohydrates` | `HKQuantityTypeIdentifierDietaryCarbohydrates` | `g` |
+| `fat` | | `HKQuantityTypeIdentifierDietaryFatTotal` | `g` |
+| `fiber` | | `HKQuantityTypeIdentifierDietaryFiber` | `g` |
+| `sugar` | `sugars` | `HKQuantityTypeIdentifierDietarySugar` | `g` |
+| `sodium` | | `HKQuantityTypeIdentifierDietarySodium` | `mg` |
+| `potassium` | | `HKQuantityTypeIdentifierDietaryPotassium` | `mg` |
+| `calcium` | | `HKQuantityTypeIdentifierDietaryCalcium` | `mg` |
+| `magnesium` | | `HKQuantityTypeIdentifierDietaryMagnesium` | `mg` |
+| `iron` | | `HKQuantityTypeIdentifierDietaryIron` | `mg` |
+| `zinc` | | `HKQuantityTypeIdentifierDietaryZinc` | `mg` |
+| `caffeine` | | `HKQuantityTypeIdentifierDietaryCaffeine` | `mg` |
+| `vitaminD` | | `HKQuantityTypeIdentifierDietaryVitaminD` | `mcg` |
+| `vitaminB12` | | `HKQuantityTypeIdentifierDietaryVitaminB12` | `mcg` |
+| `folate` | | `HKQuantityTypeIdentifierDietaryFolate` | `mcg` |
+
+### The keys the journal really stores
+The leftmost key is the **canonical** one: it names the row in `plan`'s output order and it is what
+goes into the sync identifier, so a nutrient keeps the same HealthKit sample however the journal
+spelled it. The "also stored as" column holds the **aliases**.
+
+The journal does not store one vocabulary. A barcode-backed entry keeps the keys its source uses
+verbatim — `LookedUpProduct.standardKeys` and `AddIntakeViewModel.productSnapshot()` write
+`energyKcal`, `carbohydrates` and `sugars`, alongside `protein`, `fat`, `fiber`, `sodium`,
+`saturatedFat` and `salt` — while hand-entered and recipe totals use the singular canonical names.
+Reading only the canonical names meant an entry's energy, carbohydrate and sugar values were treated
+as unmapped and never reached HealthKit, so each row also accepts its aliases.
+
+A row resolves its keys in order and takes the first one that is `.known` and converts exactly into
+the row's unit:
+
+- a canonical key and its alias both present produce **one** sample, under the canonical key, with
+  the canonical value. Two samples for one nutrient would both write to the same HealthKit type and
+  the same sync identifier, and which one survives would depend on save order.
+- an alias stands in when the canonical key is `.unknown`, `.notApplicable` or
+  `.belowReportingThreshold`, which is what a snapshot that recorded only `energyKcal` looks like.
+
+`saturatedFat` and `salt` have no row: HealthKit has no plain "total sugars"-style counterpart that
+this table promises, and saturated fat is not part of what the journal totals today, so both are
+skipped as unmapped. A key no row maps keeps its own identity in a deletion, so it is never silently
+folded into another nutrient.
 
 Conversion is exact: 1500 mg of protein plans as 1.5 g, 1500 mcg of sodium as 1.5 mg, 1 mg of
 vitamin D as 1000 mcg, 0.25 L of water as 250 mL. Kilojoules are not a `MeasureUnit` in this
@@ -89,9 +122,12 @@ never written as zero), so nothing would replace the sample an earlier revision 
 keep showing a stale value. Deleting the stale sample and then writing the current revision is the
 only way to retract it, which is why the identifiers are a superset of the ones `plan` returns for the
 same keys. Which keys a delete covers is the caller's decision — the journal knows what a revision
-recorded — so the planner lists every key it is given.
+recorded — so the planner lists every key it is given. An alias is resolved to its canonical key
+first, so a caller that names a nutrient the way a snapshot stored it still deletes the sample that
+was written.
 
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/HealthKitWritePlanTests.swift` covers the identifier
-and version shape, every skip case, the exact conversions, water, the deterministic order, the
-timestamps and the deletion identifiers. `swift test` runs on macOS in CI; the values are synthetic.
+and version shape, the dietary prefix on every identifier, the journal's stored vocabulary and its
+aliases, every skip case, the exact conversions, water, the deterministic order, the timestamps and
+the deletion identifiers. `swift test` runs on macOS in CI; the values are synthetic.

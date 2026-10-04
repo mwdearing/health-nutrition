@@ -266,4 +266,148 @@ final class HealthKitWritePlanTests: XCTestCase {
         XCTAssertTrue(deletions.contains("intake:\(intakeID):sodium"), "the stale sodium sample from revision 1 has to go")
         XCTAssertEqual(deletions, ["intake:\(intakeID):sodium", "intake:\(intakeID):water"])
     }
+
+    // MARK: - HealthKit type identifiers
+
+    func testEveryMappedIdentifierIsADietaryTypeIdentifier() {
+        let identifiers = HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier)
+
+        XCTAssertEqual(identifiers.count, 17)
+        XCTAssertEqual(Set(identifiers).count, identifiers.count, "no two nutrients share a HealthKit type")
+        for identifier in identifiers {
+            XCTAssertTrue(
+                identifier.hasPrefix("HKQuantityTypeIdentifierDietary"),
+                "\(identifier) is not one of HealthKit's dietary quantity types"
+            )
+        }
+    }
+
+    func testMineralsAndVitaminsUseThePrefixedIdentifiersHealthKitKnows() {
+        let identifiers = Dictionary(
+            uniqueKeysWithValues: HealthKitWritePlanner.mappings.map { ($0.nutrientKey, $0.quantityTypeIdentifier) }
+        )
+
+        XCTAssertEqual(identifiers["water"], "HKQuantityTypeIdentifierDietaryWater")
+        XCTAssertEqual(identifiers["energy"], "HKQuantityTypeIdentifierDietaryEnergyConsumed")
+        XCTAssertEqual(identifiers["protein"], "HKQuantityTypeIdentifierDietaryProtein")
+        XCTAssertEqual(identifiers["carbohydrate"], "HKQuantityTypeIdentifierDietaryCarbohydrates")
+        XCTAssertEqual(identifiers["fat"], "HKQuantityTypeIdentifierDietaryFatTotal")
+        XCTAssertEqual(identifiers["fiber"], "HKQuantityTypeIdentifierDietaryFiber")
+        XCTAssertEqual(identifiers["sugar"], "HKQuantityTypeIdentifierDietarySugar")
+        XCTAssertEqual(identifiers["sodium"], "HKQuantityTypeIdentifierDietarySodium")
+        XCTAssertEqual(identifiers["potassium"], "HKQuantityTypeIdentifierDietaryPotassium")
+        XCTAssertEqual(identifiers["calcium"], "HKQuantityTypeIdentifierDietaryCalcium")
+        XCTAssertEqual(identifiers["magnesium"], "HKQuantityTypeIdentifierDietaryMagnesium")
+        XCTAssertEqual(identifiers["iron"], "HKQuantityTypeIdentifierDietaryIron")
+        XCTAssertEqual(identifiers["zinc"], "HKQuantityTypeIdentifierDietaryZinc")
+        XCTAssertEqual(identifiers["caffeine"], "HKQuantityTypeIdentifierDietaryCaffeine")
+        XCTAssertEqual(identifiers["vitaminD"], "HKQuantityTypeIdentifierDietaryVitaminD")
+        XCTAssertEqual(identifiers["vitaminB12"], "HKQuantityTypeIdentifierDietaryVitaminB12")
+        XCTAssertEqual(identifiers["folate"], "HKQuantityTypeIdentifierDietaryFolate")
+    }
+
+    func testPlannedSamplesCarryTheDietaryIdentifiers() {
+        let specs = plan(["sodium": .known(dec("900"), .mg), "iron": .known(dec("9"), .mg), "caffeine": .known(dec("80"), .mg)])
+
+        XCTAssertEqual(
+            specs.map(\.quantityTypeIdentifier),
+            [
+                "HKQuantityTypeIdentifierDietaryCaffeine",
+                "HKQuantityTypeIdentifierDietaryIron",
+                "HKQuantityTypeIdentifierDietarySodium",
+            ]
+        )
+    }
+
+    // MARK: - The journal's own nutrient vocabulary
+
+    func testTheKeysABarcodeSnapshotStoresAreMapped() throws {
+        let specs = plan([
+            "energyKcal": .known(dec("250"), .kcal),
+            "protein": .known(dec("13"), .g),
+            "carbohydrates": .known(dec("30"), .g),
+            "sugars": .known(dec("9"), .g),
+            "fat": .known(dec("7"), .g),
+            "fiber": .known(dec("2"), .g),
+            "sodium": .known(dec("900"), .mg),
+            "saturatedFat": .known(dec("3"), .g),
+            "salt": .known(dec("2"), .g),
+        ])
+
+        XCTAssertEqual(
+            specs.map(\.syncIdentifier),
+            [
+                "intake:\(intakeID):carbohydrate",
+                "intake:\(intakeID):energy",
+                "intake:\(intakeID):fiber",
+                "intake:\(intakeID):protein",
+                "intake:\(intakeID):sodium",
+                "intake:\(intakeID):sugar",
+            ],
+            "an alias writes the canonical sync identifier, and an unmapped key is skipped"
+        )
+        let carbohydrate = try spec("carbohydrate", in: specs)
+        XCTAssertEqual(carbohydrate.amount, dec("30"))
+        XCTAssertEqual(carbohydrate.quantityTypeIdentifier, "HKQuantityTypeIdentifierDietaryCarbohydrates")
+        XCTAssertEqual(try spec("energy", in: specs).amount, dec("250"))
+        XCTAssertEqual(try spec("sugar", in: specs).amount, dec("9"))
+    }
+
+    func testACanonicalKeyAndItsAliasProduceOneSampleNotTwo() throws {
+        let specs = plan([
+            "energy": .known(dec("240"), .kcal),
+            "energyKcal": .known(dec("250"), .kcal),
+            "carbohydrate": .known(dec("30"), .g),
+            "carbohydrates": .known(dec("31"), .g),
+        ])
+
+        XCTAssertEqual(specs.count, 2)
+        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):carbohydrate", "intake:\(intakeID):energy"])
+        XCTAssertEqual(try spec("energy", in: specs).amount, dec("240"), "the canonical key wins over its alias")
+    }
+
+    func testAnAliasStandsInWhenTheCanonicalKeyIsNotKnown() throws {
+        let specs = plan([
+            "energy": .unknown,
+            "energyKcal": .known(dec("250"), .kcal),
+            "sugar": .notApplicable,
+            "sugars": .known(dec("9"), .g),
+        ])
+
+        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):energy", "intake:\(intakeID):sugar"])
+        XCTAssertEqual(try spec("energy", in: specs).amount, dec("250"))
+        XCTAssertEqual(try spec("sugar", in: specs).amount, dec("9"))
+    }
+
+    func testEveryAliasResolvesToAKeyThePlannerAlreadyMaps() {
+        let canonical = Set(HealthKitWritePlanner.mappings.map(\.nutrientKey))
+        let aliases = HealthKitWritePlanner.mappings.flatMap { $0.aliases }
+
+        XCTAssertFalse(aliases.isEmpty)
+        for mapping in HealthKitWritePlanner.mappings {
+            XCTAssertTrue(canonical.contains(mapping.nutrientKey))
+            for alias in mapping.aliases {
+                XCTAssertFalse(canonical.contains(alias), "\(alias) is both an alias and a canonical key")
+                XCTAssertTrue(HealthKitWritePlanner.mappings.contains { $0.aliases.contains(alias) })
+            }
+        }
+    }
+
+    func testDeletionResolvesAnAliasToTheSampleThatWasWritten() {
+        let specs = plan(["energyKcal": .known(dec("250"), .kcal)], revision: 1)
+
+        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):energy"])
+        XCTAssertEqual(
+            HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["energyKcal"]),
+            ["intake:\(intakeID):energy"]
+        )
+    }
+
+    func testAnUnmappedKeyKeepsItsIdentityInADeletion() {
+        XCTAssertEqual(HealthKitWritePlanner.canonicalKey(for: "salt"), "salt")
+        XCTAssertEqual(
+            HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["salt"]),
+            ["intake:\(intakeID):salt"]
+        )
+    }
 }
