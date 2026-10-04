@@ -189,7 +189,7 @@ final class HealthKitWritePlanTests: XCTestCase {
 
         XCTAssertEqual(first, second)
         XCTAssertEqual(
-            first.map { String($0.syncIdentifier.split(separator: ".").last ?? "") },
+            first.map { String($0.syncIdentifier.split(separator: ":").last ?? "") },
             ["energy", "protein", "sodium", "water", "zinc"],
             "specs come out sorted by nutrient key, whatever order the totals dictionary iterates in"
         )
