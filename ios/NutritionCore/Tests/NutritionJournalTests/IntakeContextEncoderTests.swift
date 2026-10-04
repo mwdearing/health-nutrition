@@ -98,8 +98,8 @@ final class IntakeContextEncoderTests: XCTestCase {
         let projection = try encoder.linkProjection(
             intake: intake,
             revision: waterAndCreatineRevision,
-            sequence: 2,
             product: nil,
+            sequence: 2,
             operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
             links: [
                 waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
@@ -387,8 +387,8 @@ final class IntakeContextEncoderTests: XCTestCase {
             try encoder.linkProjection(
                 intake: intake,
                 revision: waterAndCreatineRevision,
+                product: nil,
                 sequence: 1,
-                operation: upsertOperation,
                 links: [waterLink(disposition: .active, sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429", syncVersion: 2)])
         ) { error in
             XCTAssertEqual(error as? IntakeContextEncoderError, .projectionSequenceMustBeAtLeastTwo(1))
@@ -674,8 +674,8 @@ final class IntakeContextEncoderTests: XCTestCase {
                 try encoder.linkProjection(
                     intake: intake,
                     revision: waterAndCreatineRevision,
-                    sequence: 2,
                     product: nil,
+                    sequence: 2,
                     operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
                     links: testCase.links),
                 testCase.what
@@ -687,8 +687,8 @@ final class IntakeContextEncoderTests: XCTestCase {
             try encoder.linkProjection(
                 intake: intake,
                 revision: waterAndCreatineRevision,
-                sequence: 2,
                 product: nil,
+                sequence: 2,
                 operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
                 links: [waterLink(disposition: .active, sampleUUID: sample, syncVersion: 3)]))
     }
@@ -754,8 +754,8 @@ final class IntakeContextEncoderTests: XCTestCase {
         let legal = try encoder.linkProjection(
             intake: intake,
             revision: waterAndCreatineRevision,
-            sequence: 2,
             product: nil,
+            sequence: 2,
             operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
             links: [
                 waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
@@ -891,8 +891,8 @@ final class IntakeContextEncoderTests: XCTestCase {
             try encoder.linkProjection(
                 intake: intake,
                 revision: waterAndCreatineRevision,
-                sequence: 2,
                 product: nil,
+                sequence: 2,
                 operationID: "not-a-uuid",
                 links: [
                     waterLink(
@@ -931,12 +931,44 @@ final class IntakeContextEncoderTests: XCTestCase {
         // Never the revision's own upsert row, and always canonical UUID text.
         XCTAssertNotEqual(delivered, upsertOperation.operationID)
         XCTAssertTrue(IntakeContextIdentifier.isCanonicalUUIDText(delivered), delivered)
-        XCTAssertEqual(IntakeContextEncoder.linkProjectionOperationID(intakeID: intakeID, sequence: 2), delivered)
-        // Two intakes at the same sequence never share an identity either.
+        XCTAssertEqual(
+            IntakeContextEncoder.linkProjectionOperationID(
+                intakeID: intakeID, revision: 2, sequence: 2),
+            delivered)
+        // Two intakes at the same revision and sequence never share an identity either.
         XCTAssertNotEqual(
             IntakeContextEncoder.linkProjectionOperationID(
-                intakeID: "7d2e9b40-1c85-4a3f-9e67-f0a8b5c3d214", sequence: 2),
+                intakeID: "7d2e9b40-1c85-4a3f-9e67-f0a8b5c3d214", revision: 2, sequence: 2),
             delivered)
+    }
+
+    /// A projection sequence restarts at 2 for every revision, so the derived identity carries the revision as
+    /// well: sequence 2 of revision 3 and sequence 2 of revision 4 are different deliveries, and a shared id
+    /// would make the second one a conflict at the receiver instead of an update.
+    func testDerivedProjectionIdentityIsScopedToTheRevision() throws {
+        let links = [
+            waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 2),
+        ]
+        let second = waterAndCreatineRevision(number: 3)
+        let atTwo = try encoder.linkProjection(
+            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 2, links: links)
+        let atThree = try encoder.linkProjection(
+            intake: intake, revision: second, product: nil, sequence: 2, links: links)
+        let revision2 = try XCTUnwrap(atTwo.member("operation_id")?.stringValue)
+        let revision3 = try XCTUnwrap(atThree.member("operation_id")?.stringValue)
+        XCTAssertNotEqual(revision2, revision3)
+        XCTAssertNotEqual(revision2, upsertOperation.operationID)
+        XCTAssertTrue(IntakeContextIdentifier.isCanonicalUUIDText(revision3), revision3)
+        // The payload's own revision differs too, so nothing else about the two deliveries collides either.
+        XCTAssertEqual(atTwo.member("revision"), .integer("2"))
+        XCTAssertEqual(atThree.member("revision"), .integer("3"))
+        // Each is still stable for its own revision.
+        XCTAssertEqual(
+            IntakeContextEncoder.linkProjectionOperationID(intakeID: intakeID, revision: 2, sequence: 2),
+            revision2)
+        XCTAssertEqual(
+            IntakeContextEncoder.linkProjectionOperationID(intakeID: intakeID, revision: 3, sequence: 2),
+            revision3)
     }
 
     /// A barcode or recipe entry keeps one food component and puts its nutrition in the product snapshot, so

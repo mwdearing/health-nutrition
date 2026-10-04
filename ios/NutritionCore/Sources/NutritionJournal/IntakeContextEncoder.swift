@@ -356,8 +356,9 @@ public struct IntakeContextEncoder: Sendable {
     /// revision's relay upsert row, and a second delivery under that same `operation_id` with a different
     /// `client_payload_hash` is a conflict at the receiver, not an update. So every sequence has an identity of
     /// its own: the caller's `operationID` when it has queued a row for this delivery, and otherwise
-    /// `linkProjectionOperationID(intakeID:sequence:)`, which derives a stable one from the intake and the
-    /// sequence - the same id on every retry, and never the upsert row's.
+    /// `linkProjectionOperationID(intakeID:revision:sequence:)`, which derives a stable one from those three -
+    /// the same id on every retry, and never the upsert row's. The revision is part of that seed because a
+    /// sequence restarts at 2 for every revision.
     public func linkProjection(
         intake: Intake,
         revision: IntakeRevision,
@@ -374,7 +375,8 @@ public struct IntakeContextEncoder: Sendable {
             throw IntakeContextEncoderError.projectionSequenceMustBeAtLeastTwo(sequence)
         }
         let snapshot = try checkedProduct(product, for: revision)
-        let deliveryID = try Self.deliveryID(operationID, intakeID: intake.id, sequence: sequence)
+        let deliveryID = try Self.deliveryID(
+            operationID, intakeID: intake.id, revision: revision.number, sequence: sequence)
         let codes = try nutrientCodes(of: revision, product: snapshot)
         var members: [String: IntakeContextJSONValue] = [
             "operation_id": .string(deliveryID),
@@ -388,24 +390,35 @@ public struct IntakeContextEncoder: Sendable {
             intakeID: intake.id, revision: revision.number, sequence: sequence)
     }
 
-    /// The delivery identity this sequence is sent under: the caller's, or one derived from the intake and the
-    /// sequence so that a projection never rides on another delivery's identity.
-    private static func deliveryID(_ operationID: String?, intakeID: String, sequence: Int) throws -> String {
-        guard let operationID else { return linkProjectionOperationID(intakeID: intakeID, sequence: sequence) }
+    /// The delivery identity this sequence is sent under: the caller's, or one derived from the intake, the
+    /// revision and the sequence so that a projection never rides on another delivery's identity.
+    private static func deliveryID(
+        _ operationID: String?,
+        intakeID: String,
+        revision: Int,
+        sequence: Int
+    ) throws -> String {
+        guard let operationID else {
+            return linkProjectionOperationID(intakeID: intakeID, revision: revision, sequence: sequence)
+        }
         guard IntakeContextIdentifier.isCanonicalUUIDText(operationID) else {
             throw IntakeContextEncoderError.invalidOperationID(operationID)
         }
         return operationID
     }
 
-    /// The delivery identity for a link projection of `sequence` that has no queued row of its own.
+    /// The delivery identity for a link projection of `sequence` on `revision` that has no queued row of its own.
     ///
     /// It is derived rather than random so that a retry sends the identical payload: the contract reads the
     /// same `operation_id` with the same `client_payload_hash` as a duplicate and a different one as a
-    /// conflict, so the identity has to be reproducible. The intake and the sequence are hashed with SHA-256
-    /// and written as a name-based UUID, so it is canonical UUID text like every other id in the envelope.
-    public static func linkProjectionOperationID(intakeID: String, sequence: Int) -> String {
-        var bytes = Array(SHA256.hash(data: Data("intake-context:\(intakeID):\(sequence)".utf8)).prefix(16))
+    /// conflict, so the identity has to be reproducible. The revision is part of the seed as well as the
+    /// sequence, because a projection sequence restarts at 2 for every revision: sequence 2 of revision 3 and
+    /// sequence 2 of revision 4 are different deliveries, and a shared identity would make the second one a
+    /// conflict instead of an update. The three are hashed with SHA-256 and written as a name-based UUID, so it
+    /// is canonical UUID text like every other id in the envelope.
+    public static func linkProjectionOperationID(intakeID: String, revision: Int, sequence: Int) -> String {
+        let seed = "intake-context:\(intakeID):\(revision):\(sequence)"
+        var bytes = Array(SHA256.hash(data: Data(seed.utf8)).prefix(16))
         // Version 5 and the RFC 4122 variant, so the derived text is a well-formed name-based UUID.
         bytes[6] = (bytes[6] & 0x0F) | 0x50
         bytes[8] = (bytes[8] & 0x3F) | 0x80
