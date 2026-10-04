@@ -829,7 +829,38 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         }
     }
 
-    /// Hands out a distinct token per call, so a test can see that each batch asked for a fresh one rather
+    /// Answers links per call in queue order, alternating between a sound snapshot and one the encoder refuses.
+///
+/// That alternation is what puts the failures at revisions 1 and 3 with revision 2 sound between them: the
+/// provider is asked once per operation, in the order the queue offers them. It is also what makes the test
+/// about *two* failures rather than one, which is the case a single blocker per intake has to get right.
+final class AlternatingLinkProvider: @unchecked Sendable {
+    private let lock = NSLock()
+    private let sound: [IntakeContextLink]
+    private var calls = 0
+
+    init(sound: [IntakeContextLink]) {
+        self.sound = sound
+    }
+
+    func links(for revision: Int) -> [IntakeContextLink] {
+        lock.withLock {
+            calls += 1
+            guard calls % 2 == 1 else { return sound }
+            // A link naming no component of the revision, which the encoder refuses whatever else is right.
+            // The version rises each time so the two failures are not one repeated snapshot.
+            return [IntakeContextLink(
+                componentID: "not-a-fact",
+                sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+                healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+                syncIdentifier: "intake:unusable",
+                syncVersion: calls,
+                disposition: .active)]
+        }
+    }
+}
+
+/// Hands out a distinct token per call, so a test can see that each batch asked for a fresh one rather
     /// than reusing one captured when the worker was built.
     final class TokenRecorder: @unchecked Sendable {
         private let lock = NSLock()
@@ -887,6 +918,152 @@ final class RelayDeliveryWorkerTests: XCTestCase {
                 syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
                 syncVersion: syncVersion ?? sequence,
                 disposition: .active)])
+    }
+
+    /// Two of an intake's revisions failing to encode must not let the one between them through. The
+    /// earliest failure is the blocker: keeping the later one would clear revision 2, which sits after
+    /// revision 1's failure and before revision 3's, and it would go out past a revision that failed ahead
+    /// of it.
+    func testTheEarliestEncodingFailureBlocksEverythingAfterIt() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "two", now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "three", now: when)
+        let queuedInOrder = try pendingRelay(store, intakeID: intakeID).map(\.operationID)
+        let first = queuedInOrder[0]
+        let middle = queuedInOrder[1]
+        let last = queuedInOrder[2]
+        // Links alternate sound / unusable / sound, so revisions 1 and 3 fail to encode and revision 2 does
+        // not: the sound revision is exactly the one a later blocker would wrongly admit.
+        let provider = AlternatingLinkProvider(sound: [IntakeContextLink(
+            componentID: "water",
+            sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+            healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+            syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+            syncVersion: 2,
+            disposition: .active)])
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(
+            store: store, transport: transport, links: { _, revision in provider.links(for: revision.number) }
+        ).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 0, "nothing after the first failure is sent")
+        XCTAssertEqual(
+            outcomes.compactMap { outcome -> String? in
+                guard case .blocked(let id, let by) = outcome else { return nil }
+                XCTAssertEqual(by, first, "both held-back revisions name the earliest failure")
+                return id
+            }.sorted(),
+            [middle, last].sorted(),
+            "the sound revision in between is held back by the earlier failure too")
+    }
+
+    /// A first link snapshot the encoder refuses is never recorded. The store keeps the first snapshot it is
+    /// given for the life of the operation, so freezing an invalid one would make a snapshot that was merely
+    /// wrong once permanently undeliverable — every retry would read the same bad links back.
+    func testAnInvalidFirstLinkSnapshotIsNotRecordedSoALaterValidOneCanStillGo() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let operation = try XCTUnwrap(relayOperation(store, kind: .upsert))
+        let provider = LinkProvider(snapshot: [
+            IntakeContextLink(
+                componentID: "not-a-fact",
+                sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+                healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+                syncIdentifier: "intake:\(intakeID):water",
+                syncVersion: 2,
+                disposition: .active)
+        ])
+        transport.answerEverythingAccepted()
+        let firstAttempt = makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current })
+
+        _ = await firstAttempt.runOnce(now: when)
+
+        XCTAssertNil(
+            try store.recordedLinks(operationID: operation.operationID),
+            "a snapshot the encoder refused must not be frozen as the durable one")
+        XCTAssertEqual(transport.sendCallCount, 0, "and nothing was sent")
+
+        // The writer corrects the snapshot, so the next run has a valid one to record and deliver.
+        provider.set(projection(sequence: 2).links)
+        transport.reset()
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current }
+        ).runOnce(now: when.addingTimeInterval(3600))
+
+        XCTAssertEqual(
+            try store.recordedLinks(operationID: operation.operationID), provider.current,
+            "the corrected snapshot is recorded and delivered")
+        XCTAssertEqual(transport.sendCallCount, 1)
+    }
+
+    /// The capabilities document has to name this contract's `schema` as well as support its version. A
+    /// receiver of some other contract may well list a version this build also uses, and reading that as
+    /// agreement would send intake data somewhere it was never meant to go.
+    func testAReceiverOfAnotherSchemaIsReportedAsAnEndpointMismatchNotPerOperation() async throws {
+        let capabilities = IntakeContextCapabilities(
+            schema: "com.example.some-other-contract",
+            supportedVersions: [IntakeContextEncoder.schemaVersion],
+            maxBodyBytes: 262_144,
+            maxOperations: 32,
+            authentication: IntakeContextAuthentication(
+                scheme: "bearer", header: "Authorization", tokenType: "intake"))
+        let (store, transport, worker) = try makeWorker(capabilities: capabilities)
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 0, "nothing is sent to an endpoint of another contract")
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("an endpoint mismatch needs a person, not a retry, got \(outcomes)")
+        }
+        XCTAssertTrue(reason.contains("not an \(IntakeContextEncoder.schema) endpoint"), reason)
+        XCTAssertTrue(reason.contains("com.example.some-other-contract"), "it names what answered: \(reason)")
+    }
+
+    /// After a 413 split, an intake the head left unresolved has its later operations held back out of the
+    /// tail — the same rule the batches between runs obey, so splitting cannot weaken ordering. The
+    /// receiver applies in array order and never accepted the head's revision, so a newer one now would be
+    /// refused as stale.
+    func testASplitTailIsHeldBackForAnIntakeTheHeadLeftUnresolved() async throws {
+        let store = try makeStore(try makeDirectory())
+        // The queue is ordered by intake, so the head of a three-operation split is this intake's first
+        // revision and its second revision sits in the tail with the other intake's.
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        let queuedInOrder = try pendingRelay(store).map(\.operationID)
+        let headOperation = queuedInOrder[0]
+        let laterRevision = queuedInOrder[1]
+        let otherIntake = queuedInOrder[2]
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        transport.answer(.init(statusCode: 413, error: "too_many_operations"))
+        // The head is refused for its first operation and accepted for the other, so exactly one intake ends
+        // the head unresolved.
+        transport.answer(.init(resultsByOperation: [headOperation: .permanentFailure]))
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(store: store, transport: transport).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 3, "the oversized batch, the head, then the tail")
+        XCTAssertEqual(
+            outcomes.compactMap { outcome -> String? in
+                guard case .blocked(let id, let by) = outcome else { return nil }
+                XCTAssertEqual(by, headOperation, "the held-back operation names what holds it")
+                return id
+            },
+            [laterRevision],
+            "the later revision of the unresolved intake is kept out of the tail")
+        XCTAssertFalse(
+            transport.sentOperationIDs.contains(laterRevision),
+            "and it is genuinely not sent, not merely reported as blocked")
+        XCTAssertTrue(transport.sentOperationIDs.contains(otherIntake), "other intakes still go out")
     }
 
     // MARK: - Review round 1

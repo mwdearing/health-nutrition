@@ -58,6 +58,17 @@ before revision 3 is fine. A parked revision 3 is therefore no reason to withhol
 would leave the queue permanently stuck behind a problem the earlier revision does not share. Each blocker
 records where it sits in the queue, and only an operation further along is held back by it.
 
+**And only the earliest blocker counts.** An intake can hit more than one problem in a run — two of its
+revisions can both fail to encode — and the check is `blocker.position < item.position`, so keeping the
+*later* failure would clear everything between the two and let a sound revision go out past a revision that
+failed ahead of it. With revisions 1 and 3 both failing, revision 1 is the blocker and revision 2 is held
+back with revision 3.
+
+**A 413 split obeys the same rule inside itself.** Splitting a batch is a second request, not a second
+decision, so the tail is filtered through the head's results before it is sent: an intake the head left
+unresolved has its later operations held back there too. Otherwise the split would quietly weaken the
+ordering rule every other boundary enforces.
+
 A queued upsert whose intake has since been deleted is acknowledged as **superseded**, not sent: the
 delete queued beside it is what decides what the receiver holds, and sending the upsert would put back
 exactly what that delete retracts.
@@ -109,9 +120,14 @@ rather than against a local guess that the first 413 would correct. The capabili
 for once per run, never once per batch.
 
 A capabilities read that fails sends nothing and reschedules every operation: a guess at the limits would
-produce the very 413 this run exists to avoid. A receiver that does not list this build's schema version
-has its operations parked rather than sent, because such a receiver refuses the batch while parsing it,
-which would look like a permanent failure of every operation rather than of the version.
+produce the very 413 this run exists to avoid.
+
+**Both halves of the contract name have to match.** The `schema` must be `healthrelay.intake-context` *and*
+the version must be one it lists. A receiver of some other contract may well list a version this build also
+uses, and reading that as agreement would send intake data somewhere it was never meant to go. A mismatch is
+reported as an **endpoint mismatch** rather than as a permanent failure of each operation — nothing is wrong
+with the operations, and the difference is a configuration fact a person settles by pointing the app at the
+right receiver.
 
 ## What is injected, and why
 | Injected | Why |
@@ -136,6 +152,12 @@ varies between two attempts turns a lost response into a permanent disagreement:
   given, and reused on every retry. Links that arrived in between — a HealthKit save revealing a sample
   UUID — would move the projection and client digests, so a store that cannot record the snapshot cannot
   back this worker: it would have no way to make a retry the duplicate it needs to be.
+
+  The snapshot is **encoded before it is recorded**, never recorded and checked afterwards. The store keeps
+  the first snapshot it is given for the life of the operation, so an invalid one recorded eagerly would be
+  frozen: every later attempt would read the same bad links back, the encoder would refuse them again, and a
+  snapshot that was merely wrong once — a link to a component the revision does not state, say — could never
+  be replaced even after the writer had corrected it.
 
 Both are optional columns added by a lightweight migration, so no existing row is rewritten and nothing
 already in a store is wrong after the upgrade.
