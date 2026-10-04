@@ -11,11 +11,26 @@ struct RootView: View {
     @State private var selection: AppTab = .today
     @State private var addingIntake = false
     @State private var selectedIntakeID: String?
+    @State private var showingRecipes = false
+    @State private var recipePath: [RecipeRoute] = []
+    @State private var recipeList: RecipeListViewModel
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
     // One runner for the app's lifetime, so the transcript survives tab switches.
     @State private var healthKitSpike = HealthKitSpikeRunner()
     #endif
+
+    /// Where the recipe screens navigate to inside their own stack.
+    private enum RecipeRoute: Hashable {
+        case detail(RecipeVersion)
+        /// nil while creating a new recipe, a version while editing one.
+        case editor(RecipeVersion?)
+    }
+
+    init(services: AppServices) {
+        self.services = services
+        _recipeList = State(initialValue: RecipeListViewModel(store: services.recipeStore))
+    }
 
     private enum AppTab: Hashable {
         case today
@@ -55,9 +70,12 @@ struct RootView: View {
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
-            LibraryView(model: services.library, onAdded: { reload() })
+            LibraryView(model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() })
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
+                .sheet(isPresented: $showingRecipes) {
+                    recipesSheet
+                }
 
             #if DEBUG
             // Debug builds only: measures how HealthKit resolves a repeated sync identifier.
@@ -87,6 +105,51 @@ struct RootView: View {
                 }
             )
         }
+    }
+
+    /// The recipes screen, in its own navigation stack so the recipe screens push over each other
+    /// without adding a tab. Personal only: nothing here is shared or synced.
+    private var recipesSheet: some View {
+        NavigationStack(path: $recipePath) {
+            RecipeListView(
+                model: recipeList,
+                onNew: { recipePath.append(.editor(nil)) },
+                onOpen: { item in
+                    if let version = try? services.recipeStore.version(
+                        recipeID: item.id, number: item.versionNumber) {
+                        recipePath.append(.detail(version))
+                    }
+                }
+            )
+            .navigationDestination(for: RecipeRoute.self) { route in
+                switch route {
+                case .detail(let version):
+                    RecipeDetailView(
+                        model: RecipeDetailViewModel(version: version, journal: services.journalStore),
+                        now: { Date() },
+                        onEdit: { recipePath.append(.editor(version)) },
+                        onLogged: { reload() }
+                    )
+                case .editor(let version):
+                    RecipeEditorView(
+                        model: RecipeEditorViewModel(store: services.recipeStore, editing: version),
+                        now: { Date() },
+                        onSaved: {
+                            // Back to the list: a detail screen would still hold the version it
+                            // was opened with, and saving writes a new one.
+                            recipePath = []
+                            recipeList.load()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    /// Opens the recipes screen from a clean stack.
+    private func openRecipes() {
+        recipePath = []
+        showingRecipes = true
     }
 
     /// The journal row being edited, or nil when nothing is open.

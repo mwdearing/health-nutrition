@@ -4,21 +4,31 @@ public struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
     private let now: () -> Date
     private let onAdded: () -> Void
+/// When given, the Library screen offers the way in to personal recipes.
+    private let onOpenRecipes: (() -> Void)?
     /// When given, the Library screen offers the way in to Connections and privacy. It is the only entry point.
     private let connections: ConnectionsPrivacyViewModel?
 
     public init(
         model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void,
-        connections: ConnectionsPrivacyViewModel? = nil
+        onOpenRecipes: (() -> Void)? = nil, connections: ConnectionsPrivacyViewModel? = nil
     ) {
         self.model = model
         self.now = now
         self.onAdded = onAdded
+        self.onOpenRecipes = onOpenRecipes
         self.connections = connections
     }
 
     public var body: some View {
         List {
+            if let onOpenRecipes {
+                Button("Recipes") { onOpenRecipes() }
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.accent)
+                    .accessibilityLabel(RecipeLabels.recipesRow)
+                    .accessibilityHint("Opens your personal recipes")
+            }
             ForEach(model.sections) { section in
                 Section(section.title) {
                     if section.items.isEmpty {

@@ -134,23 +134,174 @@ enum JournalSchemaV1: VersionedSchema {
     }
 }
 
-/// One schema version so far. A later version adds a stage here before its first release.
-enum JournalMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [JournalSchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+/// The nutrient values a product snapshot carries, added as one optional column. V1 above is kept
+/// exactly as the first build wrote it, so a store that build created still has a schema SwiftData can
+/// migrate from; a row that has no nutrient payload reads back as a product that states none.
+enum JournalSchemaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [IntakeRecord.self, RevisionRecord.self, ProductRecord.self, ProjectionRecord.self, OutboxRecord.self]
+    }
+
+    @Model
+    final class IntakeRecord {
+        var intakeID: String
+        var category: String
+        var occurredAt: Date
+        var timeZoneIdentifier: String
+        var meal: String?
+        var note: String?
+        var lifecycleRaw: String
+        var currentRevision: Int
+
+        init(
+            intakeID: String, category: String, occurredAt: Date, timeZoneIdentifier: String,
+            meal: String?, note: String?, lifecycleRaw: String, currentRevision: Int
+        ) {
+            self.intakeID = intakeID
+            self.category = category
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+            self.meal = meal
+            self.note = note
+            self.lifecycleRaw = lifecycleRaw
+            self.currentRevision = currentRevision
+        }
+    }
+
+    @Model
+    final class RevisionRecord {
+        var intakeID: String
+        var number: Int
+        /// JSON array of components; amounts are decimal text.
+        var componentsJSON: String
+        var productSnapshotID: String?
+        var changeReason: String
+        var createdAt: Date
+
+        init(
+            intakeID: String, number: Int, componentsJSON: String,
+            productSnapshotID: String?, changeReason: String, createdAt: Date
+        ) {
+            self.intakeID = intakeID
+            self.number = number
+            self.componentsJSON = componentsJSON
+            self.productSnapshotID = productSnapshotID
+            self.changeReason = changeReason
+            self.createdAt = createdAt
+        }
+    }
+
+    @Model
+    final class ProductRecord {
+        var snapshotID: String
+        var productID: String
+        var name: String
+        var brand: String?
+        var barcode: String?
+        var labelBasis: String
+        var catalogOrigin: String
+        var catalogVersion: String
+        /// JSON of the nutrient values the product states, sorted by id.
+        var nutrientsJSON: String?
+
+        init(
+            snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
+            labelBasis: String, catalogOrigin: String, catalogVersion: String, nutrientsJSON: String? = nil
+        ) {
+            self.snapshotID = snapshotID
+            self.productID = productID
+            self.name = name
+            self.brand = brand
+            self.barcode = barcode
+            self.labelBasis = labelBasis
+            self.catalogOrigin = catalogOrigin
+            self.catalogVersion = catalogVersion
+            self.nutrientsJSON = nutrientsJSON
+        }
+    }
+
+    @Model
+    final class ProjectionRecord {
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var actionRaw: String
+        var stateRaw: String
+        var isCurrent: Bool
+
+        init(
+            intakeID: String, revision: Int, destinationRaw: String,
+            actionRaw: String, stateRaw: String, isCurrent: Bool
+        ) {
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.actionRaw = actionRaw
+            self.stateRaw = stateRaw
+            self.isCurrent = isCurrent
+        }
+    }
+
+    @Model
+    final class OutboxRecord {
+        var operationID: String
+        var kindRaw: String
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var payloadHash: String
+        var attempts: Int
+        var nextAttemptAt: Date?
+        var acknowledgedAt: Date?
+
+        init(
+            operationID: String, kindRaw: String, intakeID: String, revision: Int,
+            destinationRaw: String, payloadHash: String
+        ) {
+            self.operationID = operationID
+            self.kindRaw = kindRaw
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.payloadHash = payloadHash
+            self.attempts = 0
+            self.nextAttemptAt = nil
+            self.acknowledgedAt = nil
+        }
+    }
 }
 
-typealias IntakeRecord = JournalSchemaV1.IntakeRecord
-typealias RevisionRecord = JournalSchemaV1.RevisionRecord
-typealias ProductRecord = JournalSchemaV1.ProductRecord
-typealias ProjectionRecord = JournalSchemaV1.ProjectionRecord
-typealias OutboxRecord = JournalSchemaV1.OutboxRecord
+/// The store is written with V2. The stage is lightweight because the only change is one optional column,
+/// so an existing file is migrated in place and its rows keep their values.
+enum JournalMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [JournalSchemaV1.self, JournalSchemaV2.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: JournalSchemaV1.self, toVersion: JournalSchemaV2.self)]
+    }
+}
+
+typealias IntakeRecord = JournalSchemaV2.IntakeRecord
+typealias RevisionRecord = JournalSchemaV2.RevisionRecord
+typealias ProductRecord = JournalSchemaV2.ProductRecord
+typealias ProjectionRecord = JournalSchemaV2.ProjectionRecord
+typealias OutboxRecord = JournalSchemaV2.OutboxRecord
 
 private struct StoredComponent: Codable {
     var componentID: String
     var name: String
     var amountText: String
     var unitSymbol: String
+}
+
+/// One stored nutrient value: the state, plus the amount and unit of a known value. Every decimal is
+/// POSIX text, so a value survives a round trip exactly. A state this build does not know is stored
+/// as written and reads back as unknown, never as zero.
+private struct StoredNutrient: Codable {
+    var id: String
+    var state: String
+    var valueText: String?
+    var unitSymbol: String?
 }
 
 public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
@@ -170,7 +321,7 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV1.self)
+        let schema = Schema(versionedSchema: JournalSchemaV2.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -178,6 +329,48 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
 
     public func close() {
         lock.withLock { container = nil }
+    }
+
+    /// Opens a store with the first released schema, so a test can write a file the current one has to
+    /// migrate. Nothing in the app opens a store this way.
+    static func legacyStoreForTesting(url: URL) throws -> ModelContainer {
+        let schema = Schema(versionedSchema: JournalSchemaV1.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        return try ModelContainer(for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+    }
+
+    /// Writes one revision with the V1 model, exactly as the first build did, and commits it.
+    static func writeLegacyRevisionForTesting(
+        url: URL, intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws {
+        let context = ModelContext(try legacyStoreForTesting(url: url))
+        context.autosaveEnabled = false
+        let componentsJSON = try encode(components)
+        context.insert(JournalSchemaV1.IntakeRecord(
+            intakeID: intake.id, category: intake.category, occurredAt: intake.occurredAt,
+            timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal, note: intake.note,
+            lifecycleRaw: intake.lifecycle.rawValue, currentRevision: 1))
+        if let product {
+            context.insert(JournalSchemaV1.ProductRecord(
+                snapshotID: product.snapshotID, productID: product.productID, name: product.name,
+                brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
+                catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion))
+        }
+        context.insert(JournalSchemaV1.RevisionRecord(
+            intakeID: intake.id, number: 1, componentsJSON: componentsJSON,
+            productSnapshotID: product?.snapshotID, changeReason: "created", createdAt: now))
+        try context.save()
+    }
+
+    /// Drops a stored snapshot's nutrient values, leaving the row as a store written before the column
+    /// existed would have it.
+    func clearNutrientsOnSnapshotForTesting(snapshotID: String) throws {
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<ProductRecord>(
+            predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
+        guard let row = rows.first else { throw JournalError.corruptRecord(snapshotID) }
+        row.nutrientsJSON = nil
+        try context.save()
     }
 
     private func openContainer() throws -> ModelContainer {
@@ -316,20 +509,29 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
     }
 
     /// A snapshot id is written once. Re-using an id is fine only with identical content.
+    ///
+    /// A row written before the nutrient column existed carries no values at all. Such a row is the
+    /// same product with less recorded, so the values this build has are written into it rather than
+    /// refused: the snapshot id still names one product, and the values only ever fill in what the
+    /// product states. Any other difference is still a conflict.
     private static func insertSnapshot(_ product: ProductDefinition, in context: ModelContext) throws {
         let id = product.snapshotID
         let existing = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
         if let row = existing.first {
-            if snapshot(from: row) != product {
+            let stored = snapshot(from: row)
+            if stored == product { return }
+            guard stored.nutrients.isEmpty, stored.withNutrients(product.nutrients) == product else {
                 throw JournalError.snapshotConflict(id)
             }
+            row.nutrientsJSON = Self.encodeNutrients(product.nutrients)
             return
         }
         context.insert(ProductRecord(
             snapshotID: product.snapshotID, productID: product.productID, name: product.name,
             brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
-            catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion))
+            catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
+            nutrientsJSON: Self.encodeNutrients(product.nutrients)))
     }
 
     // MARK: Reads
@@ -491,7 +693,62 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
         ProductDefinition(
             snapshotID: row.snapshotID, productID: row.productID, name: row.name, brand: row.brand,
             barcode: row.barcode, labelBasis: row.labelBasis, catalogOrigin: row.catalogOrigin,
-            catalogVersion: row.catalogVersion)
+            catalogVersion: row.catalogVersion, nutrients: Self.decodeNutrients(row.nutrientsJSON))
+    }
+
+    /// The nutrient values a product states, sorted by id so the same values always write the same
+    /// text. Values that cannot be encoded are left out rather than stored as something else.
+    static func encodeNutrients(_ values: [String: NutrientValue]) -> String {
+        let stored = values.keys.sorted().compactMap { id -> StoredNutrient? in
+            guard let value = values[id] else { return nil }
+            switch value {
+            case .known(let amount, let unit):
+                return StoredNutrient(
+                    id: id, state: "known", valueText: DecimalText.encode(amount), unitSymbol: unit.symbol)
+            case .unknown:
+                return StoredNutrient(id: id, state: "unknown", valueText: nil, unitSymbol: nil)
+            case .notApplicable:
+                return StoredNutrient(id: id, state: "notApplicable", valueText: nil, unitSymbol: nil)
+            case .belowReportingThreshold(let unit):
+                return StoredNutrient(
+                    id: id, state: "belowThreshold", valueText: nil, unitSymbol: unit?.symbol)
+            }
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(stored) else { return "[]" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Reads the stored values. An entry that cannot be read is left out, so it reads as unknown
+    /// rather than as a number this build invented.
+    static func decodeNutrients(_ json: String?) -> [String: NutrientValue] {
+        guard let json, let data = json.data(using: .utf8),
+            let stored = try? JSONDecoder().decode([StoredNutrient].self, from: data)
+        else { return [:] }
+        var values: [String: NutrientValue] = [:]
+        for item in stored {
+            switch item.state {
+            case "known":
+                guard let text = item.valueText, let amount = DecimalText.decode(text),
+                    let symbol = item.unitSymbol, let unit = try? UnitRegistry.unit(for: symbol)
+                else { continue }
+                values[item.id] = .known(amount, unit)
+            case "unknown":
+                values[item.id] = .unknown
+            case "notApplicable":
+                values[item.id] = .notApplicable
+            case "belowThreshold":
+                if let symbol = item.unitSymbol, let unit = try? UnitRegistry.unit(for: symbol) {
+                    values[item.id] = .belowReportingThreshold(unit)
+                } else {
+                    values[item.id] = .belowReportingThreshold(nil)
+                }
+            default:
+                continue
+            }
+        }
+        return values
     }
 
     private static func encode(_ components: [IntakeComponent]) throws -> String {

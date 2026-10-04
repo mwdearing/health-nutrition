@@ -13,7 +13,11 @@ HealthKit, network or worker code.
   snapshot id and a change reason. Revisions are never rewritten.
 - `ProductDefinition`: an immutable snapshot. Editing a product creates a new snapshot
   id; old revisions keep the snapshot they used. Re-using an id with different content
-  is refused.
+  is refused. It also carries the nutrient values the product states, on the basis
+  `labelBasis` names, as JSON decimal text (every state is spelled out: `known`, `unknown`,
+  `notApplicable`, `belowThreshold`). A nutrient the product does not state is absent, which
+  reads as unknown and never as zero. A snapshot written before this column existed reads
+  back as a product that states nothing.
 - `DestinationProjection`: per revision and destination, the desired action and its
   state: `pending`, `inProgress`, `succeeded`, `needsAttention`, `disabled`.
   A later revision or a delete marks older projections as not current.
@@ -21,6 +25,15 @@ HealthKit, network or worker code.
   (lowercase UUID) is the idempotency key.
 
 Amounts are `Decimal` in memory and decimal text on disk, never binary floating point.
+
+## Schema versions
+
+`JournalSchemaV1` is the first released schema and is never changed again. `JournalSchemaV2` adds the
+optional nutrient column to the product record, and `JournalMigrationPlan` carries a lightweight stage
+from V1 to V2, so an existing `journal.store` is migrated in place when it is next opened. A row that
+has no nutrient payload reads back as a product that states nothing, and re-saving that same product
+fills the values in rather than refusing the snapshot as a conflict; every other difference under the
+same snapshot id is still a conflict.
 
 ## Transaction rule
 

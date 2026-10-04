@@ -145,6 +145,58 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: intakeID).count, 1)
     }
 
+    /// A store written before the nutrient column existed has to open with the current schema, keep its
+    /// rows, and read a snapshot back as a product that states nothing.
+    func testAStoreWrittenWithTheOldSchemaMigratesAndKeepsItsRows() throws {
+        let directory = try makeDirectory()
+        try SwiftDataJournalStore.writeLegacyRevisionForTesting(
+            url: storeURL(directory), intake: sampleIntake(), components: [oats()],
+            product: product("snap-1", name: "Oats"), now: when)
+
+        let store = try makeStore(directory)
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
+        XCTAssertEqual(try store.revisions(of: intakeID).count, 1)
+        let snapshot = try XCTUnwrap(try store.product(snapshotID: "snap-1"))
+        XCTAssertEqual(snapshot.name, "Oats")
+        XCTAssertTrue(snapshot.nutrients.isEmpty)
+        XCTAssertEqual(snapshot.value(for: "protein"), .unknown)
+    }
+
+    /// Saving the same product again after an upgrade must fill in the values rather than be refused as
+    /// a conflict: the row is the same product, only less recorded.
+    func testALegacySnapshotIsBackfilledInsteadOfConflicting() throws {
+        let store = try makeStore(try makeDirectory())
+        let legacyProduct = product("snap-1", name: "Oats")
+        try store.create(sampleIntake(), components: [oats()], product: legacyProduct, now: when)
+        // The row now stands for a product that states nothing, as a migrated one does.
+        try store.clearNutrientsOnSnapshotForTesting(snapshotID: "snap-1")
+        XCTAssertTrue(try store.product(snapshotID: "snap-1")?.nutrients.isEmpty ?? false)
+
+        let richer = product("snap-1", name: "Oats").withNutrients(
+            ["protein": .known(Decimal(13), .g), "sodium": .unknown])
+        XCTAssertNoThrow(try store.edit(
+            intakeID: intakeID, components: [oats()], product: richer, changeReason: "rescan", now: when))
+
+        let snapshot = try XCTUnwrap(try store.product(snapshotID: "snap-1"))
+        XCTAssertEqual(snapshot.value(for: "protein"), .known(Decimal(13), .g))
+        XCTAssertEqual(snapshot.value(for: "sodium"), .unknown)
+        XCTAssertEqual(try store.revisions(of: intakeID).count, 2)
+    }
+
+    /// A different product under the same id is still refused, even when the stored row states nothing.
+    func testALegacySnapshotStillRefusesADifferentProduct() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [oats()], product: product("snap-1", name: "A"), now: when)
+        try store.clearNutrientsOnSnapshotForTesting(snapshotID: "snap-1")
+        XCTAssertThrowsError(try store.edit(
+            intakeID: intakeID, components: [oats()],
+            product: product("snap-1", name: "B").withNutrients(["protein": .known(1, .g)]),
+            changeReason: "x", now: when)) {
+            XCTAssertEqual($0 as? JournalError, .snapshotConflict("snap-1"))
+        }
+        XCTAssertEqual(try store.product(snapshotID: "snap-1")?.name, "A")
+    }
+
     func testRevisionNumbersStartAtOneAndGrowByOne() throws {
         let store = try makeStore(try makeDirectory())
         try store.create(sampleIntake(), components: [oats(1)], product: nil, now: when)

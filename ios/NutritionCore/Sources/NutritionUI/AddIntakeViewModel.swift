@@ -240,10 +240,10 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// The product snapshot to store with the entry, or nil for an entry typed by hand.
     ///
-    /// The journal's `ProductDefinition` holds the barcode, brand and basis of a product but no
-    /// nutrient values, so the prefilled nutrients stay on the form; storing them would need a
-    /// change to the journal type. Everything the snapshot does carry is carried here, including the
-    /// attribution source and the source's own version, so the entry can be traced back later.
+    /// Everything the snapshot carries is carried here, including the attribution source, the
+    /// source's own version and the nutrient values the lookup gave, so a later reader can resolve
+    /// the values for this entry without asking the source again. The values are the source's own,
+    /// on the basis `labelBasis` names; a nutrient the source did not give stays `.unknown`.
     func productSnapshot() -> ProductDefinition? {
         guard let lookedUp else { return nil }
         // The name and brand are the ones in the form, not the source's: the user may have corrected
@@ -258,7 +258,8 @@ public final class AddIntakeViewModel: ObservableObject {
             barcode: lookedUp.barcode,
             labelBasis: lookedUp.labelBasis,
             catalogOrigin: lookedUp.attribution?.source ?? "unknown",
-            catalogVersion: lookedUp.version ?? "unknown"
+            catalogVersion: lookedUp.version ?? "unknown",
+            nutrients: lookedUp.nutrients
         )
     }
 
