@@ -1037,7 +1037,7 @@ final class IntakeContextEncoderTests: XCTestCase {
     func testInferredCodesStayWithinTheSlugLimit() throws {
         // The journal will accept a component id that fills the contract's whole 64-character slug, so the
         // derived code would be 72 characters without trimming and has to come back inside the limit.
-        let componentID = String("extremely-long-synthetic-food-name-for-the-slug-limit-check".prefix(64))
+        let componentID = String("extremely-long-synthetic-food-name-for-the-slug-limit-check-again".prefix(64))
         XCTAssertEqual(componentID.count, 64)
         XCTAssertEqual(componentID.count + "dietary_".count, 72)
         let value = try encoder.upsert(
