@@ -283,7 +283,7 @@ final class IntakeContextDigestTests: XCTestCase {
     /// `contracts/intake-context/fixtures` walked up from this file, the same way the export test finds its
     /// canonical contract, so the committed fixtures are the ones under test.
     private static func fixtureDirectory(file: StaticString = #filePath) -> URL? {
-        var directory = URL(fileURLWithPath: file).deletingLastPathComponent()
+        var directory = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
         for _ in 0..<5 {
             let candidate = directory.appendingPathComponent("contracts/intake-context/fixtures")
             if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
