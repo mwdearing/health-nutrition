@@ -540,6 +540,44 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.servingsPerContainer, dec("8"))
     }
 
+    /// A capture that runs the count against the marker colon, as in "Servings Per Container:12" or
+    /// "Servings Per Container:About 8", still states its count.
+    func testACountGluedToTheMarkerColonIsRead() {
+        XCTAssertEqual(parse(["Servings Per Container:12"]).servingsPerContainer, dec("12"))
+        XCTAssertEqual(parse(["Servings Per Container:About 8"]).servingsPerContainer, dec("8"))
+    }
+
+    /// A percent sign the capture spaced away from its number still belongs to that number, so
+    /// "Calories 10 % Daily Value" is a Daily Value rather than ten calories.
+    func testASpacedPercentSignStillBelongsToItsNumber() {
+        XCTAssertEqual(value(.calories, parse(["Calories 10 % Daily Value"])), .unknown)
+    }
+
+    /// A nutrient word inside a serving description is part of the description and not the start of a
+    /// row, so the whole measure and its 50 g are kept.
+    func testAServingDescriptionMayContainANutrientWord() throws {
+        let panel = parse(["Serving size 1 protein bar (50g)"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 protein bar (50g)")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("50"), unit: .g))
+        XCTAssertEqual(value(.protein, panel), .unknown, "a word inside the description is not a row")
+    }
+
+    /// A capture that drops the qualifier leaves the amount alone in front of the name, as in
+    /// "5g Added Sugars". A number in front of an unrecognised word is still that word's row.
+    func testALeadingAmountWithoutItsQualifierIsRead() throws {
+        let panel = parse(["Total Sugars 12g", "5g Added Sugars"])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("5"))
+        XCTAssertEqual(try unit(.addedSugars, panel), .g)
+        XCTAssertEqual(try amount(.sugars, panel), dec("12"))
+        XCTAssertEqual(
+            value(.calcium, parse(["Magnesium 50mg Calcium"])),
+            .unknown,
+            "a number behind an unrecognised word is not this row's amount"
+        )
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false

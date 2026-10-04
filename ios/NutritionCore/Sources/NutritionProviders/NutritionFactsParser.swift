@@ -161,15 +161,19 @@ public enum NutritionFactsParser {
         return start..<end
     }
 
-    /// Where the next piece of panel text begins in `text`: the next nutrient row, or the next piece of
-    /// serving metadata, whichever comes first.
+    /// Where the next piece of panel text begins in `text`: the next nutrient row that states an
+    /// amount, or the next piece of serving metadata, whichever comes first.
+    ///
+    /// A nutrient name only ends a serving size when an amount follows it as a row, because a serving
+    /// description can name a nutrient: "Serving size 1 protein bar (50g)" describes the bar, so the
+    /// name in it is part of the measure rather than the start of a row behind it.
     ///
     /// Flattened metadata puts the two fields next to each other in either order, as in
     /// "Serving size 1 cup (240mL) 8 servings per container", so each field stops where the other begins.
     /// When the next field is the servings count, the count itself belongs to that field rather than to
     /// this one, so the boundary steps back over it.
     private static func nextField(in text: String) -> String.Index {
-        let rowBoundary = firstRow(in: text)?.nameStart ?? text.endIndex
+        let rowBoundary = firstRowThatStatesAmount(in: text) ?? text.endIndex
         let lower = text.lowercased()
         guard let marker = servingsMarker(in: lower) else { return rowBoundary }
         let markerStart = index(marker.lowerBound, in: text, lowercased: lower)
@@ -181,6 +185,27 @@ public enum NutritionFactsParser {
         // Find the count in the original text rather than doing index arithmetic: OCR can drop the
         // spaces around it, and an offset computed from assumed separators can fall before the start.
         return head.range(of: last, options: .backwards)?.lowerBound ?? markerStart
+    }
+
+    /// Where the first nutrient row that states its own amount begins in `text`.
+    ///
+    /// A nutrient name is only the start of a row when an amount follows it, so a name inside a
+    /// serving description is skipped and the search carries on behind it: in
+    /// "1 protein bar (50g) Protein 6g" the first name describes the bar and the second one opens a row.
+    /// The name is stepped over rather than the text after it, so a later whole-word name still matches.
+    private static func firstRowThatStatesAmount(in text: String) -> String.Index? {
+        var offset = 0
+        while offset < text.count {
+            let tail = String(text.dropFirst(offset))
+            guard let match = firstRow(in: tail) else { return nil }
+            let start = offset + tail.distance(from: tail.startIndex, to: match.nameStart)
+            let remainder = String(tail[match.end...])
+            if let scan = scanAmount(in: remainder), statesAmount(scan, for: match.row) {
+                return text.index(text.startIndex, offsetBy: start)
+            }
+            offset = start + tail.distance(from: tail.startIndex, to: match.end)
+        }
+        return nil
     }
 
     /// The line with its serving size taken off, so whatever else it carries is still read.
@@ -201,6 +226,13 @@ public enum NutritionFactsParser {
         }
         var end = index(marker.upperBound, in: line, lowercased: lower)
         var tail = String(line[end...])
+        // A colon the capture wrote against the text behind the marker belongs to the marker and not to
+        // the count, as in "Servings Per Container:12" and "Servings Per Container:About 8". It is
+        // stepped over on its own, because the space that would separate it can be missing.
+        while let first = tail.first, first == ":" || first == " " || first == "\t" {
+            end = line.index(after: end)
+            tail = String(line[end...])
+        }
         // A colon and the qualifier words stand between the marker and the count, as in
         // "Servings Per Container: About 8", and are stepped over rather than read as one.
         while let first = tail.split(separator: " ").first,
@@ -221,7 +253,8 @@ public enum NutritionFactsParser {
     /// The heading names the column and states no amount of its own, so only its own text is skipped. A
     /// percent sign is dropped only when it is the heading's own, as in "% Daily Value Total Fat 7g": a
     /// sign attached to a number belongs to that row's Daily Value, so "Calories 10% Daily Value" keeps
-    /// its sign and stays a Daily Value rather than becoming a calorie count.
+    /// its sign and stays a Daily Value rather than becoming a calorie count. The capture can space the
+    /// sign away from the number, as in "Calories 10 % Daily Value", and the sign still belongs to it.
     private static func withoutDailyValueHeading(in line: String) -> String {
         var text = line
         while true {
@@ -236,12 +269,15 @@ public enum NutritionFactsParser {
         return trimmed(text)
     }
 
-    /// Whether the text ends in a percent sign that stands directly behind a number, as the ten of
-    /// "Calories 10%" does. A percent sign with no number in front of it belongs to a heading.
+    /// Whether the text ends in a percent sign that stands behind a number, as the ten of
+    /// "Calories 10%" does. A capture can write the space between them, as in "Calories 10 %", and the
+    /// sign still belongs to that number. A percent sign with no number in front of it is a heading's.
     private static func isAttachedToNumber(_ text: String) -> Bool {
         let characters = Array(text)
         guard characters.count >= 2, characters[characters.count - 1] == "%" else { return false }
-        return isDigit(characters[characters.count - 2])
+        var look = characters.count - 2
+        while look >= 0, characters[look] == " " || characters[look] == "\t" { look -= 1 }
+        return look >= 0 && isDigit(characters[look])
     }
 
     /// The first of the two wordings of a servings-per-container marker that a line carries.
@@ -258,7 +294,12 @@ public enum NutritionFactsParser {
     /// The count written directly behind a marker, past any colon and any qualifier word, as in
     /// "Servings Per Container: 12" and "Servings Per Container About 8".
     private static func firstCompleteDecimal(in rawText: String) -> Decimal? {
-        var tokens = trimmed(rawText).split(separator: " ").map(String.init)
+        var text = trimmed(rawText)
+        // The marker's colon is the label's own punctuation, so it is taken off before the text is
+        // split: the count can be written against it, as in "Servings Per Container:12", and the colon
+        // is then no longer a token of its own that the skip below can recognise.
+        while text.hasPrefix(":") { text = trimmed(String(text.dropFirst())) }
+        var tokens = text.split(separator: " ").map(String.init)
         while let first = tokens.first {
             if first == ":" || leadingWords.contains(first.lowercased()) {
                 tokens.removeFirst()
@@ -405,7 +446,9 @@ public enum NutritionFactsParser {
 
     /// An amount written in front of its nutrient name. Only the words and the number immediately in
     /// front of the name are read, so an earlier row's amount is never pulled onto this row. A token in
-    /// front of a percent sign is a Daily Value of another row and is never an amount here.
+    /// front of a percent sign is a Daily Value of another row and is never an amount here. The words
+    /// in between may be none at all, because a capture can drop the qualifier and leave the amount
+    /// alone in front of the name, as in "5g Added Sugars".
     private static func leadingAmount(before text: String) -> ScannedAmount? {
         let tokens = text.split(separator: " ")
         for count in [2, 1] {
@@ -415,8 +458,13 @@ public enum NutritionFactsParser {
             // so a number that belongs to unrecognised text before the name is never read as this
             // row's amount: the 50mg of "Magnesium 50mg Calcium" is magnesium, not calcium.
             let words = tokens.dropLast(count)
-            guard !words.isEmpty, words.allSatisfy({ leadingWords.contains($0.lowercased()) }) else { continue }
-            if let scan = scanAmount(in: tail) { return scan }
+            guard words.allSatisfy({ leadingWords.contains($0.lowercased()) }) else { continue }
+            guard let scan = scanAmount(in: tail) else { continue }
+            // An empty prefix is the capture having dropped the qualifier, as in "5g Added Sugars", and
+            // the amount then has to carry its own unit. A bare number in front of a name belongs to the
+            // text before it, as the "2,000" of the standard calorie footnote, and is never read here.
+            if words.isEmpty, scan.unit == nil { continue }
+            return scan
         }
         return nil
     }
