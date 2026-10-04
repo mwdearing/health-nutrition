@@ -26,8 +26,10 @@ let package = Package(
         .target(name: "NutritionJournal", dependencies: ["NutritionDomain"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "NutritionJournalTests", dependencies: ["NutritionJournal"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "NutritionJournalExportTests", dependencies: ["NutritionJournal", "NutritionDomain"], resources: [.copy("Contracts")], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "NutritionUI", dependencies: ["NutritionCore", "NutritionDomain", "NutritionJournal"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .testTarget(name: "NutritionUITests", dependencies: ["NutritionUI", "NutritionJournal"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        // The label capture screen parses a captured panel with NutritionFactsParser, so the UI module
+        // links the providers. It links nothing else from there: no camera, no networking.
+        .target(name: "NutritionUI", dependencies: ["NutritionCore", "NutritionDomain", "NutritionJournal", "NutritionProviders"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "NutritionUITests", dependencies: ["NutritionUI", "NutritionJournal", "NutritionProviders"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "ConnectionsPrivacyTests", dependencies: ["NutritionUI", "NutritionJournal", "NutritionDomain"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

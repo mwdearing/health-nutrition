@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import NutritionProviders
 import SwiftUI
 
 public struct AddIntakeView: View {
@@ -10,16 +11,21 @@ public struct AddIntakeView: View {
     /// Opens the camera scanner. The app target injects this, so this package stays free of any
     /// camera framework; nil hides the button and the field is typed instead.
     private let onScanBarcode: (() -> Void)?
+    /// Opens the label capture sheet, which reads a Nutrition Facts panel the user checks before
+    /// anything is filled in. Injected the same way, and nil hides the entry.
+    private let onScanLabel: (() -> Void)?
 
     public init(
         model: AddIntakeViewModel, now: @escaping () -> Date = { Date() }, onSaved: @escaping () -> Void,
-        onFromLibrary: (() -> Void)? = nil, onScanBarcode: (() -> Void)? = nil
+        onFromLibrary: (() -> Void)? = nil, onScanBarcode: (() -> Void)? = nil,
+        onScanLabel: (() -> Void)? = nil
     ) {
         self.model = model
         self.now = now
         self.onSaved = onSaved
         self.onFromLibrary = onFromLibrary
         self.onScanBarcode = onScanBarcode
+        self.onScanLabel = onScanLabel
     }
 
     public var body: some View {
@@ -77,6 +83,23 @@ public struct AddIntakeView: View {
                     }
                 }
             }
+            // Label capture sits next to the barcode scanner because it is the other way to get values
+            // into this form. It asks the camera for text rather than for a code, and nothing is filled
+            // in until the user has checked what was read, so it does not wait for a lookup to be
+            // available: a package with no barcode is exactly what it is for.
+            if let onScanLabel {
+                Section("Label") {
+                    Button {
+                        onScanLabel()
+                    } label: {
+                        Label("Scan label", systemImage: "text.viewfinder").font(.body)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Scan label")
+                    .accessibilityHint(
+                        "Points the camera at the Nutrition Facts panel, then shows you what was read before filling anything in")
+                }
+            }
             Section("Food or drink") {
                 TextField("Name", text: $model.name)
                     .font(.body)
@@ -128,6 +151,29 @@ public struct AddIntakeView: View {
                     }
                 }
             }
+            if let captured = model.labelValues {
+                // The values the user checked on the review screen, on the basis the panel states. A
+                // nutrient the panel did not state is shown as unknown, never as zero.
+                Section("From the label (\(captured.labelBasis))") {
+                    if let serving = model.serving {
+                        LabeledContent("One serving", value: serving.label)
+                            .font(.footnote)
+                    }
+                    ForEach(Self.capturedKeys, id: \.self) { key in
+                        LabeledContent(
+                            Self.displayName(forCaptured: key),
+                            value: Self.text(for: model.prefilledNutrients[key])
+                        )
+                        .font(.footnote)
+                    }
+                    if let message = model.labelMessage {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                            .accessibilityLabel(message)
+                    }
+                }
+            }
             if let message = model.saveError {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
             }
@@ -142,6 +188,19 @@ public struct AddIntakeView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Add intake")
+    }
+
+    /// The rows a captured panel is shown under, in panel order. Every row the parser knows is listed,
+    /// so a nutrient the panel did not state reads as "unknown" on the form instead of going missing.
+    static var capturedKeys: [String] {
+        NutritionFactKey.allCases.map(\.rawValue)
+    }
+
+    /// The name a captured panel row is shown under. The keys the parser uses are the journal's own,
+    /// so a reader who has seen one screen sees the same names on the other.
+    static func displayName(forCaptured key: String) -> String {
+        guard let fact = NutritionFactKey(rawValue: key) else { return key }
+        return LabelCaptureRow.displayNames[fact] ?? LookedUpProduct.displayNames[key] ?? key
     }
 
     /// A nutrient the source did not give reads as unknown, never as zero.

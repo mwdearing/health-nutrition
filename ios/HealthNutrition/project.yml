@@ -55,9 +55,11 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "The debug HealthKit spike writes a few test water and protein samples so their sync behaviour can be measured. You delete them again from the spike screen."
-        # Barcode scanning in Add intake. The camera is only used to read the barcode printed on the
-        # package; the picture is never stored and never sent anywhere.
-        INFOPLIST_KEY_NSCameraUsageDescription: "Add intake can scan the barcode on a package to fill in the barcode field. The camera is only used for that, and no image is stored or sent."
+        # The camera in Add intake. It is used for two things and nothing else: reading the barcode
+        # printed on a package, and reading the text of a Nutrition Facts panel so the values can be
+        # checked before they are filled in. Text recognition runs on the device; the picture is never
+        # stored and never sent anywhere.
+        INFOPLIST_KEY_NSCameraUsageDescription: "Add intake can scan the barcode on a package to fill in the barcode field, and can read the text of a Nutrition Facts panel so you can check the values before they are filled in. The camera is only used for those two things, everything is read on this device, and no image is stored or sent."
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         TARGETED_DEVICE_FAMILY: "1,2"
