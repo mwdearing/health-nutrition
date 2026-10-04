@@ -32,6 +32,50 @@ used to infer the basis.
 
 The product always carries all nine standard nutrient keys; a missing one is unknown.
 
+## In the app
+
+Add intake has a barcode field with a Look up button. The request is sent only when the user taps
+that button or submits the field; there is no search and nothing is sent while the user types. A
+lookup needs 8, 12 or 13 digits with a correct check digit, checked locally before the request, so a
+barcode the API would reject anyway is answered with a message and no request at all.
+
+The lookup runs through the `BarcodeProductLookup` protocol in the UI package, which knows only the
+shape of a product (barcode, name, brand, basis, nine nutrient values, the attribution and the
+serving definition). The app target injects the implementation that talks to the API and fills in the
+attribution from `OpenFoodFactsAttribution`, so the UI shows the required wording and link without
+ever naming the source. One client is built at startup, with the required User-Agent, and shared, so
+its rolling rate-limit window is not reset by reopening the form.
+
+Each outcome has its own message on the form:
+
+- found: the name and brand are filled in and the nutrients the source gives are shown per the basis
+  it states (per 100 g, per 100 mL or per serving, with the serving size spelled out for per-serving
+  values; the source may give that size as text only, such as "1 biscuit"). A nutrient the source
+  does not give stays unknown and is never shown or stored as zero. The attribution text and link sit
+  under the values.
+- not found: the form keeps whatever the user typed, so they can enter the details themselves.
+- rate limited or failed: nothing is filled in and the user is told how long to wait when the source
+  said so through Retry-After.
+- invalid barcode: the message names the accepted lengths and the check digit, and no request is sent.
+
+A reply is applied only if it is still the newest lookup and the field still holds the barcode that
+was asked for, so a slow answer can never fill the form with another product's values. Codes are
+compared with their leading zeros ignored, because a UPC-A is answered as a GTIN-13 with a leading
+zero; an answer for a genuinely different code is ignored.
+
+Not found, rate limited and failed all clear what the previous lookup put into the form, so a second
+barcode that finds nothing cannot leave the first product's values or its snapshot attached to the
+next entry. A field the user edited after the lookup is left as they typed it.
+
+Saving writes a product snapshot with the entry, carrying the barcode, brand and basis as they stand
+in the form, plus the attribution source and the source's last-modified time. The snapshot id covers
+every stored field, so saving one product twice under two different names gives two snapshots. The
+journal's product record holds no nutrient values, so the prefilled nutrients stay on the form;
+storing them needs a change to the journal type.
+
+The amount, unit and time are never taken from the source: the user confirms how much they ate.
+Camera scanning is not part of this; the user types the barcode.
+
 ## Licences
 
 - The database is available under the Open Database License (ODbL).

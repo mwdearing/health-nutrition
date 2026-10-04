@@ -1,0 +1,75 @@
+name: HealthNutrition
+
+options:
+  bundleIdPrefix: dev.example
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "18.0"
+  groupSortPosition: top
+  generateEmptyDirectories: false
+
+packages:
+  NutritionCore:
+    path: ../NutritionCore
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ALWAYS_SEARCH_USER_PATHS: NO
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  HealthNutrition:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Sources
+      - path: Resources
+    dependencies:
+      - package: NutritionCore
+        product: NutritionUI
+      - package: NutritionCore
+        product: NutritionJournal
+      # Barcode lookups in Add intake. The app target owns the network client and adapts it to the
+      # lookup protocol the UI depends on; NutritionUI itself never links a networking framework.
+      - package: NutritionCore
+        product: NutritionProviders
+    # HealthKit capability. Nothing in the app calls HealthKit outside #if DEBUG
+    # (see Sources/Debug/HealthKitSpikeView.swift), but the entitlement and the usage strings
+    # have to be in the target for the debug spike to run on a device.
+    entitlements:
+      path: HealthNutrition.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutrition
+        PRODUCT_NAME: HealthNutrition
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: HealthNutrition
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "The debug HealthKit spike writes a few test water and protein samples so their sync behaviour can be measured. You delete them again from the spike screen."
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        # No DEVELOPMENT_TEAM here: set your own team in Xcode, never commit it.
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+schemes:
+  HealthNutrition:
+    build:
+      targets:
+        HealthNutrition: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    archive:
+      config: Release

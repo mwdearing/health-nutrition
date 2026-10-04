@@ -10,6 +10,26 @@ on:
     paths:
       - "ios/**"
       - ".github/workflows/ios.yml"
+  # Manual runs only. Builds an unsigned device .ipa so it can be signed and sideloaded locally;
+  # no signing material ever lives in this repository.
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: "Bundle identifier to build with"
+        required: false
+        default: dev.example.HealthNutrition
+        type: string
+      configuration:
+        description: "Build configuration"
+        required: false
+        default: Release
+        type: choice
+        options: [Release, Debug]
+      marketing_version:
+        description: "Marketing version (empty uses 0.1.<run number>)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -24,3 +44,69 @@ jobs:
       - name: Test NutritionCore
         working-directory: ios/NutritionCore
         run: swift test
+
+  app-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: xcodegen generate
+      - name: Build the app for the iOS Simulator
+        working-directory: ios/HealthNutrition
+        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+
+  # Manual only: an unsigned device build, for whoever runs it to sign with their own identity and sideload.
+  unsigned-ipa:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: xcodegen generate
+      - name: Build the unsigned device app
+        working-directory: ios/HealthNutrition
+        env:
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+          CONFIGURATION: ${{ inputs.configuration }}
+          MARKETING_VERSION: ${{ inputs.marketing_version }}
+        run: |
+          xcodebuild -project HealthNutrition.xcodeproj -target HealthNutrition -sdk iphoneos -configuration "$CONFIGURATION" SYMROOT="$RUNNER_TEMP/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" MARKETING_VERSION="${MARKETING_VERSION:-0.1.$GITHUB_RUN_NUMBER}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
+      - name: Package the unsigned ipa
+        run: |
+          app=$(find "$RUNNER_TEMP/build" -type d -name HealthNutrition.app -path '*iphoneos*' -print -quit)
+          if [ -z "$app" ]; then
+            echo "No HealthNutrition.app found under $RUNNER_TEMP/build" >&2
+            find "$RUNNER_TEMP/build" -maxdepth 3 >&2
+            exit 1
+          fi
+          echo "Found $app"
+          mkdir -p "$RUNNER_TEMP/ipa"
+          cd "$RUNNER_TEMP/ipa"
+          mkdir -p Payload
+          cp -R "$app" Payload/
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "Payload/HealthNutrition.app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "Payload/HealthNutrition.app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "Payload/HealthNutrition.app/Info.plist"
+          zip -qry HealthNutrition-unsigned.ipa Payload
+          shasum -a 256 HealthNutrition-unsigned.ipa > HealthNutrition-unsigned.ipa.sha256
+          cat HealthNutrition-unsigned.ipa.sha256
+          ls -l HealthNutrition-unsigned.ipa HealthNutrition-unsigned.ipa.sha256
+      - name: Upload the unsigned ipa
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: HealthNutrition-unsigned-ipa
+          path: |
+            ${{ runner.temp }}/ipa/HealthNutrition-unsigned.ipa
+            ${{ runner.temp }}/ipa/HealthNutrition-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 14

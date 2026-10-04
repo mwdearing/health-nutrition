@@ -7,3 +7,4 @@ Public architecture decisions and design notes for this project live here.
 - [Today screen, quick water and Add intake](today-screen.md)
 - [Journal, entry detail, Library, favorites and repeat](journal-library.md)
 - [Personal recipes: versions, calculation and logging](recipes.md)
+- [ADR 0002: HealthKit sync identifier and sync version](adr/0002-healthkit-sync.md)
