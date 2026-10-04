@@ -338,6 +338,22 @@ public struct JournalRestorePlan: Sendable {
     }
 }
 
+/// What one restore actually inserted, so it can be taken back out when a later step of the same import
+/// fails. The journal held no intakes before the restore, which the store checks in the same transaction,
+/// so the rows named here are everything the restore added and undoing them leaves the store as it was.
+public struct JournalRestoreReceipt: Sendable, Equatable {
+    /// The intakes written, live and deleted alike.
+    public var intakeIDs: [String]
+    /// Product snapshots this restore created a row for. A snapshot the store already had is not listed:
+    /// undoing must leave it, and the nutrient values it holds, alone.
+    public var insertedProductSnapshotIDs: [String]
+
+    public init(intakeIDs: [String], insertedProductSnapshotIDs: [String]) {
+        self.intakeIDs = intakeIDs
+        self.insertedProductSnapshotIDs = insertedProductSnapshotIDs
+    }
+}
+
 /// A journal store the importer can write into in one save. This is deliberately not part of
 /// `JournalStore`: a restore is not a create, an edit or a delete, and it must not change what those do.
 ///
@@ -345,10 +361,15 @@ public struct JournalRestorePlan: Sendable {
 /// have already been sent once, so queueing it again would deliver yesterday's breakfast a second time
 /// just because a phone was replaced.
 public protocol JournalRestoreTarget: AnyObject, Sendable {
-    /// True when the store holds no intakes at all, neither active nor deleted. An import refuses
-    /// anything else rather than merging one journal into another.
-    func isEmptyForImport() throws -> Bool
-    /// Writes the whole plan in one save, keeping every id, timestamp and revision number. A failure rolls
-    /// the save back, so the store is left exactly as it was.
-    func restore(_ plan: JournalRestorePlan) throws
+    /// Writes the whole plan in one save, keeping every id, timestamp and revision number, and reports what
+    /// it inserted.
+    ///
+    /// A store that already holds an intake row, live or deleted, is refused with
+    /// `JournalImportError.notEmpty` from inside this same transaction: the check and the inserts share one
+    /// write lock, so a write that lands in between cannot turn an empty-only restore into a merge. Any
+    /// other failure rolls the save back, so the store is left exactly as it was.
+    func restore(_ plan: JournalRestorePlan) throws -> JournalRestoreReceipt
+    /// Removes what a restore inserted, for the case where the step after it failed. Rows the store held
+    /// before the restore are not touched.
+    func undoRestore(_ receipt: JournalRestoreReceipt) throws
 }

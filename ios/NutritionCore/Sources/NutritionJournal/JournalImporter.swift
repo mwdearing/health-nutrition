@@ -41,16 +41,44 @@ public struct JournalImportSummary: Sendable, Equatable {
 extension ProductDefinition {
     /// The product snapshot an export describes.
     ///
-    /// The document carries the identity of the product and where it came from, not the nutrient values
-    /// it states, so a restored snapshot states none. That is the same information the export held, so a
-    /// re-export of a restored journal is the same document; the values themselves still come from the
-    /// catalog when something needs them.
+    /// The document carries the identity of the product and where it came from, not the nutrient values it
+    /// states, so a snapshot built from one states none. Where the store already knows the snapshot, its
+    /// values are kept instead; see `SwiftDataJournalStore.restoreSnapshot`.
     init(provenance: JournalExportProvenance) {
         self.init(
             snapshotID: provenance.snapshotID, productID: provenance.productID, name: provenance.name,
             brand: provenance.brand, barcode: provenance.barcode, labelBasis: provenance.labelBasis,
             catalogOrigin: provenance.catalogOrigin, catalogVersion: provenance.catalogVersion)
     }
+}
+
+/// The keys each object in a version 1 export has, taken from `contracts/journal-export/v1.schema.json`.
+///
+/// Every object the v1 schema defines lists all of its properties in `required` and forbids any other
+/// through `additionalProperties: false`, so one set per object is both the required list and the allowed
+/// list. A test holds these sets to the committed schema, so they cannot drift from the contract.
+///
+/// The schema version is checked separately: `readDocument` has already turned a version spelled as text
+/// into the number the export writes, and the constant is compared there.
+enum JournalImportV1Keys {
+    static let root: Set<String> = [
+        "schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites", "products",
+    ]
+    static let intake: Set<String> = [
+        "id", "category", "occurred_at", "time_zone", "meal", "note", "current_revision", "revisions",
+    ]
+    static let revision: Set<String> = [
+        "number", "created_at", "change_reason", "product_snapshot_id", "provenance", "components",
+    ]
+    static let provenance: Set<String> = [
+        "snapshot_id", "product_id", "name", "brand", "barcode", "label_basis", "catalog_origin",
+        "catalog_version",
+    ]
+    static let component: Set<String> = ["component_id", "name", "amount", "unit", "value_state"]
+    static let tombstone: Set<String> = ["intake_id", "revision", "occurred_at", "time_zone"]
+    static let favorite: Set<String> = [
+        "id", "display_name", "category", "meal", "product_snapshot_id", "components",
+    ]
 }
 
 /// Restores a journal export into an empty journal: the entries with their whole revision history, the
@@ -61,11 +89,15 @@ extension ProductDefinition {
 /// be a delivery, and this is not one. The ids, the timestamps and the revision numbers are the ones the
 /// file carries, so a restore does not renumber anything or move an entry to a new instant.
 public enum JournalImporter {
-    /// Reads `data` and writes it into `store`, and into `favorites` when one is given.
+    /// Reads `data` and writes it into `store`, and into `favorites` when the document needs them.
     ///
-    /// The whole document is read and checked before the first row is written, so a file that is
-    /// malformed, from a version this build does not read, or internally inconsistent changes nothing.
-    /// The journal is then written in a single save that queues no delivery work.
+    /// The whole document is read and checked before the first row is written, so a file that is malformed,
+    /// from a version this build does not read, or internally inconsistent changes nothing.
+    ///
+    /// The journal is written first, in one save that queues no delivery work, and the favorites after it.
+    /// That order is what makes the import all-or-nothing: the journal is the larger write and the one that
+    /// can be put back, so when the favorites write fails afterwards the journal is emptied again and the
+    /// import reports a failure with both stores as it found them.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?
     ) throws -> JournalImportSummary {
@@ -74,19 +106,38 @@ public enum JournalImporter {
         guard let journal = store as? JournalRestoreTarget else {
             throw JournalImportError.corrupt("this journal store cannot be restored into")
         }
-        guard try journal.isEmptyForImport() else { throw JournalImportError.notEmpty }
-
-        // The journal and the favorites live in two files, so two writes cannot be one transaction. The
-        // favorites go first, because that is the order that keeps a retry possible: a journal write that
-        // fails leaves an empty journal and nothing to undo, while the other order would leave a restored
-        // journal that refuses the next attempt because it is no longer empty.
-        if let favorites, !plan.favorites.isEmpty {
-            guard let target = favorites as? FavoritesRestoreTarget else {
-                throw JournalImportError.corrupt("this favorites store cannot be restored into")
+        // A document that carries favorites needs somewhere to put them. The favorites store is optional and
+        // the screen can be built without one, so this is refused before anything is written rather than
+        // reported as a success that quietly dropped them.
+        let favoritesTarget: FavoritesRestoreTarget?
+        if plan.favorites.isEmpty {
+            favoritesTarget = nil
+        } else {
+            guard let favorites, let target = favorites as? FavoritesRestoreTarget else {
+                throw JournalImportError.corrupt(
+                    "the export carries \(plan.favorites.count) favorites and no favorites store was given")
             }
-            try target.restore(plan.favorites)
+            favoritesTarget = target
         }
-        try journal.restore(plan)
+
+        // The store refuses a journal that is not empty, and refuses it from inside this same transaction,
+        // so the check and the inserts cannot be pulled apart by another write.
+        let receipt = try journal.restore(plan)
+        if let favoritesTarget {
+            do {
+                try favoritesTarget.restore(plan.favorites)
+            } catch {
+                let failure = error
+                do {
+                    try journal.undoRestore(receipt)
+                } catch {
+                    throw JournalImportError.corrupt(
+                        "the favorites could not be restored (\(failure)) and the journal could not be put "
+                            + "back either (\(error))")
+                }
+                throw failure
+            }
+        }
         return JournalImportSummary(
             intakes: plan.entries.count,
             revisions: plan.entries.reduce(0) { $0 + $1.revisions.count },
@@ -123,12 +174,104 @@ public enum JournalImporter {
             }
             bytes = rewritten
         }
+        // The shape is checked before anything is decoded, because a decoder cannot see either kind of
+        // difference: it ignores a key the schema does not define, and it reads a required-but-nullable key
+        // that is absent the same as one written as an explicit null. A file that breaks the contract is a
+        // malformed file, refused here rather than half-understood below.
+        try validateV1Shape(root)
         do {
             return try JournalExporter.decode(bytes)
         } catch {
-            // The version is already known to be this build's, so whatever the decoder objected to is the
-            // file's shape rather than its version.
+            // The version and the shape are already known to be this build's, so whatever the decoder
+            // objected to now is a value rather than the document's structure.
             throw JournalImportError.malformed("\(error)")
+        }
+    }
+
+    /// Checks a document against the key rules the v1 schema states, at every level it defines.
+    ///
+    /// Every object must carry exactly the keys its shape defines: no unknown key, because a reader that
+    /// does not know what a field means drops it and the next export writes the file without it; and no
+    /// missing key, because a required-but-nullable one that is absent is a document the schema does not
+    /// describe, even though it decodes to the same value.
+    static func validateV1Shape(_ root: [String: Any]) throws {
+        try checkObject(root, keys: JournalImportV1Keys.root, path: "$")
+        for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
+            let path = "$.intakes[\(index)]"
+            let intake = try object(item, path: path)
+            try checkObject(intake, keys: JournalImportV1Keys.intake, path: path)
+            let revisionList = try objects(intake["revisions"], path: "\(path).revisions")
+            for (revisionIndex, revisionItem) in revisionList.enumerated() {
+                let revisionPath = "\(path).revisions[\(revisionIndex)]"
+                let revision = try object(revisionItem, path: revisionPath)
+                try checkObject(revision, keys: JournalImportV1Keys.revision, path: revisionPath)
+                if let provenance = revision["provenance"], !(provenance is NSNull) {
+                    let provenancePath = "\(revisionPath).provenance"
+                    try checkObject(
+                        try object(provenance, path: provenancePath),
+                        keys: JournalImportV1Keys.provenance, path: provenancePath)
+                }
+                try checkComponents(revision["components"], path: "\(revisionPath).components")
+            }
+        }
+        let tombstoneList = try objects(root["tombstones"], path: "$.tombstones")
+        for (index, item) in tombstoneList.enumerated() {
+            let path = "$.tombstones[\(index)]"
+            try checkObject(try object(item, path: path), keys: JournalImportV1Keys.tombstone, path: path)
+        }
+        let favoriteList = try objects(root["favorites"], path: "$.favorites")
+        for (index, item) in favoriteList.enumerated() {
+            let path = "$.favorites[\(index)]"
+            let favorite = try object(item, path: path)
+            try checkObject(favorite, keys: JournalImportV1Keys.favorite, path: path)
+            try checkComponents(favorite["components"], path: "\(path).components")
+        }
+        let productList = try objects(root["products"], path: "$.products")
+        for (index, item) in productList.enumerated() {
+            let path = "$.products[\(index)]"
+            try checkObject(
+                try object(item, path: path), keys: JournalImportV1Keys.provenance, path: path)
+        }
+    }
+
+    private static func checkComponents(_ value: Any?, path: String) throws {
+        let list = try objects(value, path: path)
+        for (index, item) in list.enumerated() {
+            let componentPath = "\(path)[\(index)]"
+            try checkObject(
+                try object(item, path: componentPath), keys: JournalImportV1Keys.component, path: componentPath)
+        }
+    }
+
+    /// One list, whose every item is an object. The items are checked here so that a list holding a string
+    /// or a number is refused as the wrong shape rather than read as an object with no keys.
+    private static func objects(_ value: Any?, path: String) throws -> [Any] {
+        guard let list = value as? [Any] else {
+            throw JournalImportError.malformed("\(path) is not a list")
+        }
+        for (index, item) in list.enumerated() where !(item is [String: Any]) {
+            throw JournalImportError.malformed("\(path)[\(index)] is not an object")
+        }
+        return list
+    }
+
+    private static func object(_ value: Any, path: String) throws -> [String: Any] {
+        guard let fields = value as? [String: Any] else {
+            throw JournalImportError.malformed("\(path) is not an object")
+        }
+        return fields
+    }
+
+    /// The keys of one object, against the keys its shape defines. They are walked in order, so the message
+    /// names the first one that is wrong rather than whichever the dictionary happened to hash to.
+    private static func checkObject(_ fields: [String: Any], keys: Set<String>, path: String) throws {
+        for key in fields.keys.sorted() where !keys.contains(key) {
+            throw JournalImportError.malformed("\(path) has \(key), which the version 1 schema does not define")
+        }
+        // An explicit null is a value, so a required-but-nullable key written as null is present. Only a key
+        // that is not there at all is refused.
+        for key in keys.sorted() where fields[key] == nil {
+            throw JournalImportError.malformed("\(path) is missing \(key), which the version 1 schema requires")
         }
     }
 
@@ -159,10 +302,18 @@ public enum JournalImporter {
                 throw JournalImportError.corrupt("the export lists \(exported.id) twice")
             }
             // A revision repeats the snapshot it used, so a file that carries one can be restored even if
-            // its products list was trimmed. A disagreement between the two is a corrupt file, not a
-            // preference: one snapshot id cannot name two products.
+            // its products list was trimmed. The provenance has to be the provenance of the snapshot the
+            // revision names: a file that points at snapshot A and describes snapshot B is saying two
+            // things at once, and honouring either of them alone would attach the wrong product to the
+            // entry and quietly drop the other on the next export.
             for revision in exported.revisions {
                 guard let provenance = revision.provenance else { continue }
+                guard provenance.snapshotID == revision.productSnapshotID else {
+                    throw JournalImportError.corrupt(
+                        "revision \(revision.number) of \(exported.id) uses the product snapshot "
+                            + "\(revision.productSnapshotID ?? "none") but carries the provenance of "
+                            + "\(provenance.snapshotID)")
+                }
                 try merge(ProductDefinition(provenance: provenance), into: &productsByID)
             }
 
@@ -245,6 +396,14 @@ public enum JournalImporter {
                       DecimalText.isValidDecimalText(text) else {
                     throw JournalImportError.corrupt(
                         "the favorite \(favorite.id) has no exact decimal amount for \(component.componentID)")
+                }
+                // The favorites store keeps a unit symbol as text and never parses it, so an unusable symbol
+                // would be stored happily and only fail later, when the person repeats the favorite and the
+                // amounts come back empty. A template that cannot be repeated is not worth restoring.
+                guard (try? MeasureUnit(symbol: component.unit)) != nil else {
+                    throw JournalImportError.corrupt(
+                        "the favorite \(favorite.id) uses the unit \(component.unit), "
+                            + "which this build does not know")
                 }
                 favoriteComponents.append(
                     FavoriteComponent(

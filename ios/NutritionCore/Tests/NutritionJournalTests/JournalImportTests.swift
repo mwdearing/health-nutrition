@@ -3,53 +3,63 @@ import NutritionDomain
 import XCTest
 @testable import NutritionJournal
 
-/// Restoring a journal export, on real on-disk stores in unique temporary directories.
-final class JournalImportTests: XCTestCase {
-    private let oatsID = "1f0c9d2a-6b3e-4a7f-9c5d-0e2b6f8a1d33"
-    private let waterID = "7d4a1c55-9e2b-4f60-8a3d-5c1b0f7e2a94"
-    private let goneID = "2b9e4c07-51d8-4a63-8f2e-6c3a9d05b7e1"
-    private let otherID = "5e2a7c18-4b93-4d2e-9f61-8c5d3a7e0b42"
+/// Fixtures for the import tests: real on-disk stores in unique temporary directories, and a filled
+/// journal to export. Shared by every import test file, so it is written once here rather than copied
+/// into each. It holds no tests of its own.
+class JournalImportTestCase: XCTestCase {
+    let oatsID = "1f0c9d2a-6b3e-4a7f-9c5d-0e2b6f8a1d33"
+    let waterID = "7d4a1c55-9e2b-4f60-8a3d-5c1b0f7e2a94"
+    let goneID = "2b9e4c07-51d8-4a63-8f2e-6c3a9d05b7e1"
+    let otherID = "5e2a7c18-4b93-4d2e-9f61-8c5d3a7e0b42"
     /// A whole second, so the exported text carries no fraction and the round trip is exact.
-    private let exportedAt = Date(timeIntervalSince1970: 1_705_310_100)
-    private let base = Date(timeIntervalSince1970: 1_705_264_200)
-    private let appVersion = "0.1.0"
+    let exportedAt = Date(timeIntervalSince1970: 1_705_310_100)
+    let base = Date(timeIntervalSince1970: 1_705_264_200)
+    let appVersion = "0.1.0"
 
     // MARK: Fixtures
 
-    private func directory() throws -> URL {
+    func directory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return directory
     }
 
-    private func store(_ directory: URL) throws -> SwiftDataJournalStore {
+    func store(_ directory: URL) throws -> SwiftDataJournalStore {
         try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
-    private func favorites(_ directory: URL) throws -> SwiftDataFavoritesStore {
+    func favorites(_ directory: URL) throws -> SwiftDataFavoritesStore {
         try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
     }
 
-    private func oats(_ grams: String) -> IntakeComponent {
+    func oats(_ grams: String) -> IntakeComponent {
         IntakeComponent(
             componentID: "oats", name: "Sample rolled oats", amount: Decimal(string: grams)!, unit: .g)
     }
 
-    private func water(_ millilitres: String) -> IntakeComponent {
+    func water(_ millilitres: String) -> IntakeComponent {
         IntakeComponent(
             componentID: "water", name: "Sample water", amount: Decimal(string: millilitres)!, unit: .mL)
     }
 
-    private func product() -> ProductDefinition {
+    /// The values the sample product states. They live with the snapshot, not in the document: an export
+    /// records which product a revision used and where it came from, not what that product states, so a
+    /// restore has to keep whatever values this store already holds rather than write empty ones over them.
+    let sampleNutrients: [String: NutrientValue] = [
+        "energy": .known(Decimal(string: "380")!, .kcal),
+        "fibre": .unknown,
+    ]
+
+    func product() -> ProductDefinition {
         ProductDefinition(
             snapshotID: "snap-oats-1", productID: "product-oats", name: "Sample rolled oats",
             brand: "Sample Brand", barcode: "0000000000017", labelBasis: "per100g",
-            catalogOrigin: "sample-catalog", catalogVersion: "1")
+            catalogOrigin: "sample-catalog", catalogVersion: "1", nutrients: sampleNutrients)
     }
 
     /// A journal with two live entries, one of them edited once, and one entry already deleted.
-    private func filledStore(_ directory: URL) throws -> SwiftDataJournalStore {
+    func filledStore(_ directory: URL) throws -> SwiftDataJournalStore {
         let store = try self.store(directory)
         try store.create(
             Intake(
@@ -73,7 +83,7 @@ final class JournalImportTests: XCTestCase {
         return store
     }
 
-    private func filledFavorites(_ directory: URL) throws -> SwiftDataFavoritesStore {
+    func filledFavorites(_ directory: URL) throws -> SwiftDataFavoritesStore {
         let favorites = try self.favorites(directory)
         try favorites.add(
             FavoriteTemplate(
@@ -95,7 +105,7 @@ final class JournalImportTests: XCTestCase {
 
     /// The bytes a filled journal exports. A source directory is made per call unless one is given, so
     /// every test gets its own store file.
-    private func exportData(from source: URL? = nil, favorites included: Bool = true) throws -> Data {
+    func exportData(from source: URL? = nil, favorites included: Bool = true) throws -> Data {
         let directory = try source ?? self.directory()
         let journal = try filledStore(directory)
         let favoritesStore: SwiftDataFavoritesStore?
@@ -110,45 +120,20 @@ final class JournalImportTests: XCTestCase {
     }
 
     /// A document read back as plain JSON, so a test can change one field without rebuilding a journal.
-    private func object(of data: Data) throws -> [String: Any] {
+    func object(of data: Data) throws -> [String: Any] {
         try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-    }
-
-    // MARK: The happy path
-
-    func testExportImportExportRoundTripsToTheSameBytes() throws {
-        let data = try exportData()
-        let target = try directory()
-        let journal = try store(target)
-        let favoritesStore = try favorites(target)
-        let summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
-        XCTAssertEqual(summary.intakes, 2)
-        XCTAssertEqual(summary.tombstones, 1)
-        XCTAssertEqual(summary.favorites, 2)
-        XCTAssertEqual(summary.products, 1)
-
-        let again = try JournalExporter.encode(
-            try JournalExporter.makeExport(
-                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
-        // Named before the assertion, because an assertion message is built in a closure that may not
-        // throw, and reading the two documents back is a throwing call.
-        let changedField = try firstDifference(between: data, and: again)
-        XCTAssertEqual(
-            again, data,
-            "an import that changed a single field would show up here: "
-                + (changedField ?? "no field differs, only the encoding"))
     }
 
     /// The first field where two encoded documents disagree, named as a key path such as
     /// `$.intakes[0].current_revision`. A round trip that is not byte-identical otherwise fails with two
     /// long blobs and no idea which field moved, so the failure says which one it was.
-    private func firstDifference(between left: Data, and right: Data) throws -> String? {
+    func firstDifference(between left: Data, and right: Data) throws -> String? {
         let leftFields = try XCTUnwrap(try JSONSerialization.jsonObject(with: left) as? [String: Any])
         let rightFields = try XCTUnwrap(try JSONSerialization.jsonObject(with: right) as? [String: Any])
         return difference(leftFields, rightFields, path: "$")
     }
 
-    private func difference(_ left: Any, _ right: Any, path: String) -> String? {
+    func difference(_ left: Any, _ right: Any, path: String) -> String? {
         // The shape is compared before the value: a JSON object also casts to an array of any, so asking
         // about arrays first would read an object as a list of its values.
         if left is [String: Any] || right is [String: Any] {
@@ -178,6 +163,34 @@ final class JournalImportTests: XCTestCase {
         // Both sides are scalars, an explicit null included: it describes as "null" on either side.
         guard String(describing: left) != String(describing: right) else { return nil }
         return "\(path) is \(left) in one document and \(right) in the other"
+    }
+}
+
+/// Restoring a journal export: the round trip, what comes back, and what is refused.
+final class JournalImportTests: JournalImportTestCase {
+    // MARK: The happy path
+
+    func testExportImportExportRoundTripsToTheSameBytes() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        let summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+        XCTAssertEqual(summary.intakes, 2)
+        XCTAssertEqual(summary.tombstones, 1)
+        XCTAssertEqual(summary.favorites, 2)
+        XCTAssertEqual(summary.products, 1)
+
+        let again = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
+        // Named before the assertion, because an assertion message is built in a closure that may not
+        // throw, and reading the two documents back is a throwing call.
+        let changedField = try firstDifference(between: data, and: again)
+        XCTAssertEqual(
+            again, data,
+            "an import that changed a single field would show up here: "
+                + (changedField ?? "no field differs, only the encoding"))
     }
 
     func testEveryRevisionOfAnEntryIsRestoredInOrderWithItsOwnTimestamps() throws {
@@ -409,7 +422,6 @@ final class JournalImportTests: XCTestCase {
         intakes[0] = first
         root["intakes"] = intakes
         root["products"] = []
-
         let target = try directory()
         let journal = try store(target)
         let favoritesStore = try favorites(target)
@@ -514,5 +526,77 @@ final class JournalImportTests: XCTestCase {
             now: base.addingTimeInterval(9000))
         XCTAssertEqual(try journal.revisions(of: waterID).map(\.number), [1, 2])
         XCTAssertEqual(try journal.pendingOutbox().count, 2)
+    }
+
+    // MARK: Inconsistent documents
+
+    func testProvenanceThatNamesADifferentSnapshotIsRejected() throws {
+        // A revision says it used snapshot A and carries the details of snapshot B. Accepting that would
+        // attach A to the revision and quietly throw B away on the next export, which is a file lying
+        // about where the amounts came from.
+        var root = try object(of: try exportData(favorites: false))
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        var first = intakes[0]
+        var revisions = try XCTUnwrap(first["revisions"] as? [[String: Any]])
+        var provenance = try XCTUnwrap(revisions[0]["provenance"] as? [String: Any])
+        provenance["snapshot_id"] = "snap-a-different-product"
+        revisions[0]["provenance"] = provenance
+        first["revisions"] = revisions
+        intakes[0] = first
+        root["intakes"] = intakes
+
+        let target = try directory()
+        let journal = try store(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+            XCTFail("provenance for a snapshot the revision does not use must be refused")
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertNil(try journal.product(snapshotID: "snap-a-different-product"))
+    }
+
+    func testProvenanceForARecordedEntryByHandIsStillAccepted() throws {
+        // The everyday case: no product at all, so no provenance, which is what the export writes and what
+        // an entry typed in by hand looks like after a round trip.
+        let target = try directory()
+        let journal = try store(target)
+        let summary = try JournalImporter.importExport(
+            try exportData(favorites: false), into: journal, favorites: nil)
+        XCTAssertEqual(summary.intakes, 2)
+        XCTAssertEqual(
+            try journal.revisions(of: waterID).first?.productSnapshotID, nil)
+    }
+
+    func testAFavoriteWithAUnitThisBuildDoesNotKnowIsRejected() throws {
+        // The favorites store keeps a unit symbol as text and never parses it, so an unusable symbol would
+        // be stored happily and only fail later, when the person tries to repeat the favorite and the
+        // amounts come back empty. A template that cannot be repeated is not worth restoring.
+        var root = try object(of: try exportData())
+        var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
+        let index = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-tea-1" })
+        var components = try XCTUnwrap(favoriteList[index]["components"] as? [[String: Any]])
+        components[0]["unit"] = "cupful"
+        favoriteList[index]["components"] = components
+        root["favorites"] = favoriteList
+
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
+            XCTFail("a favorite with an unknown unit must be refused")
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try favoritesStore.list().isEmpty)
     }
 }

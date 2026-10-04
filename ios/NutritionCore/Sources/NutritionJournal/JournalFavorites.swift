@@ -60,6 +60,9 @@ public protocol FavoritesRestoreTarget: AnyObject, Sendable {
 public enum FavoritesError: Error, Sendable, Equatable {
     case closed
     case corruptRecord(String)
+    /// The next restore inserted its rows and then failed before committing. Only the test flag asks for
+    /// it; it is the same seam the journal store has, so a test can see what a failed write leaves behind.
+    case injectedSaveFailure
 }
 
 @Model
@@ -93,6 +96,14 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
     /// Held across each whole write (fetch, delete, insert, save) so concurrent writers cannot interleave.
     private let writeLock = NSLock()
     private var container: ModelContainer?
+    private var failFlag = false
+
+    /// When true, the next `restore` inserts its rows and then fails before committing, so a test can see
+    /// what a failed write leaves behind. The journal store has the same seam for its writes.
+    public var failNextSaveForTesting: Bool {
+        get { lock.withLock { failFlag } }
+        set { lock.withLock { failFlag = newValue } }
+    }
 
     public init(url: URL) throws {
         let configuration = ModelConfiguration(schema: Schema([FavoriteRecord.self]), url: url, cloudKitDatabase: .none)
@@ -107,6 +118,14 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
         try lock.withLock {
             guard let container else { throw FavoritesError.closed }
             return container
+        }
+    }
+
+    private func takeInjectedFailure() -> Bool {
+        lock.withLock {
+            let flag = failFlag
+            failFlag = false
+            return flag
         }
     }
 
@@ -177,6 +196,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
                     componentsJSON: String(decoding: data, as: UTF8.self),
                     productSnapshotID: favorite.productSnapshotID, addedAt: Date(), meal: favorite.meal))
             }
+            if takeInjectedFailure() { throw FavoritesError.injectedSaveFailure }
             try context.save()
         } catch {
             context.rollback()

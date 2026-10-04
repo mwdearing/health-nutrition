@@ -50,6 +50,15 @@ snapshots it wrote, and it throws `JournalImportError` instead of writing part o
 | `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
 | `corrupt` | The file is a version 1 export that cannot be restored as it stands. |
 
+**Strict shape.** Before anything is decoded, the document is checked against the v1 contract key by key at
+every level it defines: no unknown key (`additionalProperties: false`) and no missing key, including the
+required-but-nullable ones such as `note`, `provenance`, `brand` and `amount`, which have to be written as an
+explicit `null` rather than left out. An ordinary `JSONDecoder` can see neither difference - it ignores an
+unknown key and reads an absent required-but-nullable key the same as a null one - so without this pass a
+file that breaks the contract would import, and whatever it carried that this build does not understand would
+quietly disappear on the next export. The key sets live in `JournalImportV1Keys`, and a test holds them to
+`contracts/journal-export/v1.schema.json` so they cannot drift from the committed contract.
+
 What a restore writes:
 - **Every intake with every one of its revisions, in order.** Ids, `occurred_at`, `created_at`, the time
   zone, the meal, the note, the revision numbers and the current revision are the file's, so an import
@@ -60,32 +69,60 @@ What a restore writes:
   not in the file and the restored row carries an empty one rather than an invented value. It has no
   revision row either, because the file does not carry the amounts it held when it was deleted.
 - **Product snapshots.** Every snapshot the entries and favorites refer to is written back, so a restored
-  entry needs no catalog lookup to be shown or repeated. A revision that names a snapshot nothing defines
-  is `corrupt`: the amounts would have to come from somewhere, and inventing them is what this refuses.
+  entry needs no catalog lookup to be shown or repeated. A revision that names a snapshot nothing defines is
+  `corrupt`: the amounts would have to come from somewhere, and inventing them is what this refuses. So is a
+  revision whose `provenance` describes a *different* snapshot than its `product_snapshot_id`: honouring
+  either half of such a file would attach the wrong product to the entry and drop the other on the next
+  export.
 - **Favorites**, as the templates they are, with their decimal text kept exactly as it was written.
 
 Amounts are read as exact decimal text and stored as `Decimal`, never as a binary float. A component whose
 `value_state` is `unknown` is **refused** with `corrupt`: the journal keeps a missing amount as a
 not-a-number decimal and refuses to write one, so restoring it as `0` would turn "not known" into "none".
-The export a real journal writes never holds one, so this only happens for a hand-edited file.
+The export a real journal writes never holds one, so this only happens for a hand-edited file. A favorite
+component's unit has to be one this build knows, the same as a revision component's: the favorites store
+keeps a unit symbol as text and never parses it, so an unusable symbol would be stored happily and only fail
+later, when the person repeats the favorite and the amounts come back empty.
+
+**Nutrients are kept, not restored.** A document records which product a revision used and where it came
+from, not what that product states, so a restored snapshot brings no nutrient values of its own - version 1
+has no field for them and adding one would need a new schema version. Where the store already knows that
+snapshot id, **its values are kept exactly**: they are what the journal was reading before the restore, so an
+import cannot quietly empty them. A snapshot the store does not know is written with no values, and the
+catalog supplies them again when something needs them. The product's identity still has to match, so a file
+that describes a different product under a snapshot id the store holds is refused with
+`JournalError.snapshotConflict`, as it is everywhere else.
 
 **No delivery work is queued.** An import writes no projection and no outbox operation: a restored entry is
 history the destinations were already sent once, and re-sending yesterday's breakfast because a phone was
 replaced would be a delivery nobody asked for. `create`, `edit` and `delete` are untouched and still queue
 what they always did, so an edit made after a restore is delivered normally.
 
-**One transaction, two files.** The whole document is read and checked before the first row is written, so
-a file that is refused - malformed, from a newer version, or internally inconsistent - changes nothing at
-all. The journal and the favorites then live in two separate store files, so their two writes cannot be one
-transaction; the journal write is one `save()` covering every row and the favorites write is one `save()`
-covering every favorite. The favorites go **first**, because that is the order that keeps a retry possible:
-a journal write that fails leaves an empty journal and nothing to undo, while the other order would leave a
-restored journal that refuses the next attempt because it is no longer empty. Importing the same file twice
-therefore only ever writes the same rows again.
+**All or nothing.** The whole document is read and checked before the first row is written, so a file that is
+refused - malformed, from a newer version, or internally inconsistent - changes nothing at all. A document
+that carries favorites also needs a favorites store to restore them into: that argument is optional and the
+screen can be built without one, so such a file is refused rather than reported as a success that quietly
+dropped them.
+
+The journal and the favorites then live in two separate store files, so their two writes cannot be one
+transaction. **The journal is written first**, in one `save()` covering every row, and the favorites in one
+`save()` after it. That order is what makes the import all-or-nothing: when the favorites write fails, the
+journal is emptied again - it held no intake rows before, which the store checks in its own transaction - and
+the failure is reported, so both stores are as they were found and the same file can simply be imported
+again. When the journal write itself fails, it rolls itself back and nothing was written at all.
+
+**The empty check is inside the transaction.** `SwiftDataJournalStore.restore(_:)` reads its own emptiness
+predicate inside the same `commit` closure as the inserts, under the same write lock, and throws
+`JournalImportError.notEmpty` from there. A separate check before the save would leave a window in which
+another write creates an entry and the restore joins it, which is the merge this refuses.
 
 The action on the Connections and privacy screen is a file picker (`fileImporter`, JSON only) that reads the
-bytes and hands them to the model, which shows the summary line or the reason the file was refused. Nothing
-is sent anywhere: the file was already on the device, or somewhere the person opened it from.
+bytes and hands them to the model, which shows the summary line or the reason the file was refused. A picker
+that was cancelled returns the screen to its empty import state, while a file that cannot be read at all is
+reported as a failed import: the person asked for it and nothing happened. A successful import also removes
+the exported file this screen was holding, because that copy was made from the journal as it was *before* the
+restore and sharing it would hand over the wrong journal. Nothing is sent anywhere: the file was already on
+the device, or somewhere the person opened it from.
 
 ## Fields
 | Field | Meaning |
@@ -152,8 +189,9 @@ that pushes `ConnectionsPrivacyView`. Today and Add intake have no entry to it, 
 ## Follow-ups
 - No merge. An import restores into an empty journal only; a later version may add a merge, and the
   revision history and tombstones in the document are what it would need.
-- A restored product snapshot states no nutrient values, because the document does not carry them. The
-  amounts a restored entry shows come from the snapshot's identity as before; the catalog supplies the
-  values again when something needs them.
+- A restored product snapshot states no nutrient values of its own, because version 1 has no field for
+  them. Where the store already knew the snapshot its values are kept exactly; a snapshot the store does not
+  know gets none until the catalog supplies them again. Carrying them in the document would need a version 2
+  schema, which is a change of contract rather than of this importer.
 - The app target does not exist yet, so `ConnectionsPrivacyViewModel` injects a placeholder version string
   until the shell can pass the real one.

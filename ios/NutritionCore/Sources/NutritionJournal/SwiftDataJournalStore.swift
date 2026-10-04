@@ -469,13 +469,6 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
 
     // MARK: Restore
 
-    /// True only when the store holds no intakes at all. A tombstone counts: it is an intake row too, and
-    /// a journal that has one already knows about the entry it retracts, so an import must not join it.
-    public func isEmptyForImport() throws -> Bool {
-        let context = ModelContext(try openContainer())
-        return try context.fetchCount(FetchDescriptor<IntakeRecord>()) == 0
-    }
-
     /// Writes the whole plan in one save: the product snapshots, every intake with all of its revisions,
     /// and the tombstones of deleted entries.
     ///
@@ -483,10 +476,20 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
     /// have already been sent once, so queueing it would deliver it a second time just because a phone
     /// was replaced. That is also why this is separate from `create`: creating an entry means the person
     /// just ate something and it must reach Health, and importing one means they ate it weeks ago.
-    public func restore(_ plan: JournalRestorePlan) throws {
+    ///
+    /// The emptiness check is inside this closure, so it is read and the rows are written under one write
+    /// lock. A separate check before the save would leave a window in which another write creates an entry
+    /// and the restore joins it, which is the merge this refuses.
+    public func restore(_ plan: JournalRestorePlan) throws -> JournalRestoreReceipt {
         try commit { context in
+            guard try context.fetchCount(FetchDescriptor<IntakeRecord>()) == 0 else {
+                throw JournalImportError.notEmpty
+            }
+            var insertedProducts: [String] = []
             for product in plan.products {
-                try Self.insertSnapshot(product, in: context)
+                if try Self.restoreSnapshot(product, in: context) {
+                    insertedProducts.append(product.snapshotID)
+                }
             }
             for entry in plan.entries {
                 let intake = entry.intake
@@ -511,7 +514,74 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
                     note: tombstone.note, lifecycleRaw: IntakeLifecycle.deleted.rawValue,
                     currentRevision: tombstone.currentRevision))
             }
+            return JournalRestoreReceipt(
+                intakeIDs: plan.entries.map(\.intake.id) + plan.tombstones.map(\.id),
+                insertedProductSnapshotIDs: insertedProducts)
         }
+    }
+
+    /// Removes what a restore inserted, so a later step of the same import can be undone. The journal held
+    /// no intake rows before the restore, which `restore` checked under its own write lock, so these are
+    /// all of them; a product snapshot that was already there is not in the receipt and stays.
+    public func undoRestore(_ receipt: JournalRestoreReceipt) throws {
+        try commit { context in
+            for snapshotID in receipt.insertedProductSnapshotIDs {
+                for row in try context.fetch(FetchDescriptor<ProductRecord>(
+                    predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID })) {
+                    context.delete(row)
+                }
+            }
+            for intakeID in receipt.intakeIDs {
+                for row in try context.fetch(FetchDescriptor<RevisionRecord>(
+                    predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID })) {
+                    context.delete(row)
+                }
+                for row in try context.fetch(FetchDescriptor<IntakeRecord>(
+                    predicate: #Predicate<IntakeRecord> { $0.intakeID == intakeID })) {
+                    context.delete(row)
+                }
+            }
+        }
+    }
+
+    /// Writes one product snapshot for a restore, and reports whether it created the row.
+    ///
+    /// A document records which product a revision used and where it came from, not the nutrient values
+    /// that product states, so a restored snapshot brings no values of its own. Where this store already
+    /// knows the snapshot, its values are the better ones: they are what the journal was reading before
+    /// the restore, so they are kept exactly and an import cannot quietly empty them. The identity of the
+    /// product still has to match, because one snapshot id cannot name two products, and only a row this
+    /// restore created is listed in the receipt for `undoRestore` to remove.
+    @discardableResult
+    private static func restoreSnapshot(_ product: ProductDefinition, in context: ModelContext) throws -> Bool {
+        let id = product.snapshotID
+        let existing = try context.fetch(FetchDescriptor<ProductRecord>(
+            predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
+        guard let row = existing.first else {
+            context.insert(ProductRecord(
+                snapshotID: product.snapshotID, productID: product.productID, name: product.name,
+                brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
+                catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
+                nutrientsJSON: Self.encodeNutrients(product.nutrients)))
+            return true
+        }
+        let stored = snapshot(from: row)
+        guard stored.withNutrients([:]) == product.withNutrients([:]) else {
+            throw JournalError.snapshotConflict(id)
+        }
+        if stored.nutrients.isEmpty, !product.nutrients.isEmpty {
+            row.nutrientsJSON = Self.encodeNutrients(product.nutrients)
+        }
+        return false
+    }
+
+    /// Writes one product snapshot with no intake, the way a store that already knew a product would hold
+    /// it. Only tests use this; nothing in the app writes a snapshot on its own.
+    func insertProductSnapshotForTesting(_ product: ProductDefinition) throws {
+        let context = ModelContext(try openContainer())
+        context.autosaveEnabled = false
+        try Self.insertSnapshot(product, in: context)
+        try context.save()
     }
 
     private func appendRevision(

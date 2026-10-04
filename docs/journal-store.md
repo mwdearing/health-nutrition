@@ -54,8 +54,17 @@ snapshots, every intake with all of its revisions and every tombstone. It writes
 not be delivered again. That is why it is a separate method and not a flag on `create` - creating an entry
 means the person just ate something and it has to reach Health. `JournalRestoreTarget` is a separate
 protocol from `JournalStore` for the same reason: the normal create/edit/delete behaviour cannot change.
-The restore only runs into a journal with no intake rows at all, active or deleted (`isEmptyForImport()`);
-there is no merge.
+The restore only runs into a journal with no intake rows at all, active or deleted, and it reads that
+predicate **inside** its own `commit` closure, under the same write lock as the inserts, throwing
+`JournalImportError.notEmpty` from there. A check before the save would leave a window in which another write
+creates an entry and the restore joins it, which is the merge the importer refuses; there is no merge.
+
+A restore returns a `JournalRestoreReceipt` naming what it inserted, and `undoRestore(_:)` removes exactly
+those rows, which is how a failed later step of the same import puts the journal back. A product snapshot the
+store already held is not in the receipt and is never touched. A snapshot the file describes is matched
+against what the store holds by identity alone, and its stored nutrient values are kept: the document
+carries no nutrient values, so an import must not empty the ones the journal was reading. A file that
+describes a *different* product under a snapshot id the store holds is still a `snapshotConflict`.
 
 ## Usage constraints
 
