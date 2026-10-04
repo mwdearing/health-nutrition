@@ -302,6 +302,106 @@ public protocol JournalStore: AnyObject, Sendable {
     func close()
 }
 
+/// One intake with the whole revision history an import writes, exactly as the export carried it: the
+/// ids, the timestamps, the revision numbers and the product snapshot ids are the file's, not new ones.
+/// A restore must not renumber anything or move an entry onto another instant.
+public struct JournalRestoreEntry: Sendable, Hashable {
+    public var intake: Intake
+    /// Every revision of the intake, numbered from 1 with no gaps, in order.
+    public var revisions: [IntakeRevision]
+
+    public init(intake: Intake, revisions: [IntakeRevision]) {
+        self.intake = intake
+        self.revisions = revisions
+    }
+}
+
+/// Everything one import writes to a journal store, already checked. The importer builds the whole plan
+/// before it writes any of it, so a file it refuses leaves the store untouched.
+public struct JournalRestorePlan: Sendable {
+    /// Active intakes with all their revisions.
+    public var entries: [JournalRestoreEntry]
+    /// Deleted intakes, written back as tombstones so a later export retracts them again.
+    public var tombstones: [Intake]
+    /// The product snapshots the entries and favorites refer to, so a restore needs no catalog lookup.
+    public var products: [ProductDefinition]
+    /// Favorites, which the importer writes through the favorites store rather than this one.
+    public var favorites: [FavoriteTemplate]
+
+    public init(
+        entries: [JournalRestoreEntry], tombstones: [Intake],
+        products: [ProductDefinition], favorites: [FavoriteTemplate]
+    ) {
+        self.entries = entries
+        self.tombstones = tombstones
+        self.products = products
+        self.favorites = favorites
+    }
+}
+
+/// What one restore wrote for one intake, so an undo can tell its own rows from a later one.
+///
+/// Between the restore and a step that follows it, another write may reach the same journal. The undo has to
+/// be able to tell, so the receipt says which entry, which lifecycle, how far along it was and exactly which
+/// revision numbers were written: enough to remove those rows, and to notice when an entry no longer looks
+/// the way the restore left it.
+public struct JournalRestoredIntake: Sendable, Equatable {
+    public var intakeID: String
+    /// `active` for a live entry, `deleted` for a tombstone: how the restore left it.
+    public var lifecycle: IntakeLifecycle
+    /// The revision number the intake's row was left at.
+    public var currentRevision: Int
+    /// Every revision number written for it. A tombstone has none.
+    public var revisionNumbers: [Int]
+
+    public init(intakeID: String, lifecycle: IntakeLifecycle, currentRevision: Int, revisionNumbers: [Int]) {
+        self.intakeID = intakeID
+        self.lifecycle = lifecycle
+        self.currentRevision = currentRevision
+        self.revisionNumbers = revisionNumbers
+    }
+}
+
+/// What one restore actually inserted, so it can be taken back out when a later step of the same import
+/// fails. The journal held no intakes before the restore, which the store checks in the same transaction,
+/// so the rows named here are everything the restore added and undoing them leaves the store as it was.
+public struct JournalRestoreReceipt: Sendable, Equatable {
+    /// The intakes written, live and deleted alike, with the rows each one owns.
+    public var intakes: [JournalRestoredIntake]
+    /// Product snapshots this restore created a row for. A snapshot the store already had is not listed:
+    /// undoing must leave it, and the nutrient values it holds, alone.
+    public var insertedProductSnapshotIDs: [String]
+
+    public init(intakes: [JournalRestoredIntake], insertedProductSnapshotIDs: [String]) {
+        self.intakes = intakes
+        self.insertedProductSnapshotIDs = insertedProductSnapshotIDs
+    }
+}
+
+/// A journal store the importer can write into in one save. This is deliberately not part of
+/// `JournalStore`: a restore is not a create, an edit or a delete, and it must not change what those do.
+///
+/// An import writes no projection and no outbox operation. A restored entry is history the destinations
+/// have already been sent once, so queueing it again would deliver yesterday's breakfast a second time
+/// just because a phone was replaced.
+public protocol JournalRestoreTarget: AnyObject, Sendable {
+    /// Writes the whole plan in one save, keeping every id, timestamp and revision number, and reports what
+    /// it inserted.
+    ///
+    /// A store that already holds an intake row, live or deleted, is refused with
+    /// `JournalImportError.notEmpty` from inside this same transaction: the check and the inserts share one
+    /// write lock, so a write that lands in between cannot turn an empty-only restore into a merge. Any
+    /// other failure rolls the save back, so the store is left exactly as it was.
+    func restore(_ plan: JournalRestorePlan) throws -> JournalRestoreReceipt
+    /// Removes the rows a restore inserted, for the case where the step after it failed.
+    ///
+    /// Rows the store held before the restore are not touched, and neither are rows written since: an intake
+    /// edited or deleted after the restore is left alone, and the undo throws `JournalImportError.corrupt`
+    /// rather than throw that work away to make the journal look empty. Product rows are removed only for the
+    /// snapshots this restore created, which nothing else writes.
+    func undoRestore(_ receipt: JournalRestoreReceipt) throws
+}
+
 /// What a delivery worker needs from the journal beyond recording: reading the queue and recording
 /// what happened to one operation.
 ///

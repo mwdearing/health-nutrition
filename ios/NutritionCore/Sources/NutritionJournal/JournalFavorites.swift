@@ -49,9 +49,20 @@ public protocol FavoritesStore: AnyObject, Sendable {
     func close()
 }
 
+/// A favorites store the importer can write into in one save. Separate from `FavoritesStore` because a
+/// restore is not an add: it writes every favorite at once, or none of them.
+public protocol FavoritesRestoreTarget: AnyObject, Sendable {
+    /// Writes every favorite in one save, keeping the ids and decimal text the export carried. A failure
+    /// rolls the save back, so the store is left exactly as it was.
+    func restore(_ favorites: [FavoriteTemplate]) throws
+}
+
 public enum FavoritesError: Error, Sendable, Equatable {
     case closed
     case corruptRecord(String)
+    /// The next restore inserted its rows and then failed before committing. Only the test flag asks for
+    /// it; it is the same seam the journal store has, so a test can see what a failed write leaves behind.
+    case injectedSaveFailure
 }
 
 @Model
@@ -80,11 +91,21 @@ final class FavoriteRecord {
 }
 
 /// Favorites in their own store file, next to the journal file; the URL is injected.
-public final class SwiftDataFavoritesStore: FavoritesStore, JournalErasing, @unchecked Sendable {
+public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarget, JournalErasing,
+    @unchecked Sendable
+{
     private let lock = NSLock()
     /// Held across each whole write (fetch, delete, insert, save) so concurrent writers cannot interleave.
     private let writeLock = NSLock()
     private var container: ModelContainer?
+    private var failFlag = false
+
+    /// When true, the next `restore` inserts its rows and then fails before committing, so a test can see
+    /// what a failed write leaves behind. The journal store has the same seam for its writes.
+    public var failNextSaveForTesting: Bool {
+        get { lock.withLock { failFlag } }
+        set { lock.withLock { failFlag = newValue } }
+    }
 
     public init(url: URL) throws {
         let configuration = ModelConfiguration(schema: Schema([FavoriteRecord.self]), url: url, cloudKitDatabase: .none)
@@ -99,6 +120,14 @@ public final class SwiftDataFavoritesStore: FavoritesStore, JournalErasing, @unc
         try lock.withLock {
             guard let container else { throw FavoritesError.closed }
             return container
+        }
+    }
+
+    private func takeInjectedFailure() -> Bool {
+        lock.withLock {
+            let flag = failFlag
+            failFlag = false
+            return flag
         }
     }
 
@@ -147,6 +176,34 @@ public final class SwiftDataFavoritesStore: FavoritesStore, JournalErasing, @unc
         let rows = try context.fetch(FetchDescriptor<FavoriteRecord>(
             predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id }))
         return !rows.isEmpty
+    }
+
+    /// Writes every favorite in one save, replacing any row that already carries the same id. It is the
+    /// importer's path, not a new kind of add: `add` saves one favorite at a time, which is right for a
+    /// button and wrong for a restore, where a failure halfway would leave half a favorites list behind.
+    public func restore(_ favorites: [FavoriteTemplate]) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        context.autosaveEnabled = false
+        do {
+            for favorite in favorites {
+                let id = favorite.id
+                let existing = try context.fetch(FetchDescriptor<FavoriteRecord>(
+                    predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id }))
+                for row in existing { context.delete(row) }
+                let data = try JSONEncoder().encode(favorite.components)
+                context.insert(FavoriteRecord(
+                    favoriteID: favorite.id, displayName: favorite.displayName, category: favorite.category,
+                    componentsJSON: String(decoding: data, as: UTF8.self),
+                    productSnapshotID: favorite.productSnapshotID, addedAt: Date(), meal: favorite.meal))
+            }
+            if takeInjectedFailure() { throw FavoritesError.injectedSaveFailure }
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
     // MARK: Erasing

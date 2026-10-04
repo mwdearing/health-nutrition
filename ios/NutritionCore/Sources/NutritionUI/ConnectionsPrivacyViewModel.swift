@@ -34,6 +34,60 @@ public enum ConnectionsPrivacyExportState: Equatable {
     case failed
 }
 
+/// State of the import action on the screen.
+public enum ConnectionsPrivacyImportState: Equatable {
+    case idle
+    /// The file was restored; `importMessage` says what came back.
+    case imported
+    /// The file was refused or the restore failed; `importMessage` says so.
+    case failed
+}
+
+/// How many journal restores are running, and how to wait for all of them to stop.
+///
+/// A lock and a condition rather than an actor, because the two sides are on different actors by design: the
+/// restores finish on background threads - that is the whole point of running them there - while the erase
+/// waits on the main actor. `begin` is called before a restore starts and `end` when it has finished, whether
+/// it succeeded or failed; `wait` reports whether every restore in flight had finished within the time it was
+/// given, so a caller never blocks forever on work that cannot arrive.
+private final class ImportGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    /// How many restores are in flight. A count rather than a flag: two imports can overlap, and the first
+    /// of them to finish must not report the gate idle while the second is still writing.
+    private var inFlight = 0
+
+    /// Marks a restore as started.
+    func begin() {
+        condition.lock()
+        inFlight += 1
+        condition.unlock()
+    }
+
+    /// Marks a restore as finished, and wakes anything waiting once the last one is gone.
+    func end() {
+        condition.lock()
+        if inFlight > 0 { inFlight -= 1 }
+        if inFlight == 0 { condition.broadcast() }
+        condition.unlock()
+    }
+
+    /// Blocks the caller until **every** restore in flight has finished. True when there was nothing running,
+    /// or when they all finished in time; false when one was still running after `timeout`, which is the
+    /// caller's cue to refuse rather than erase beside a restore that is still writing.
+    func wait(upTo timeout: TimeInterval) -> Bool {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        condition.lock()
+        defer { condition.unlock() }
+        while inFlight > 0 {
+            if !condition.wait(until: deadline) {
+                // Out of time. True only if the last restore happened to finish in the same breath.
+                return inFlight == 0
+            }
+        }
+        return true
+    }
+}
+
 /// Backs the Connections and privacy screen. It reads the local stores and produces the export file; it never
 /// sends anything anywhere. Sharing happens only when the person taps the share control.
 @MainActor
@@ -52,6 +106,21 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportButtonTitle = "Export journal"
     public static let shareButtonTitle = "Share the export"
     public static let exportFailedMessage = "Could not export the journal."
+    public static let importButtonTitle = "Import a journal export"
+    public static let importFailedMessage = "Could not import that file."
+    /// What the importer refused and why, in the words a person can act on.
+    public static let importUnsupportedVersionMessage =
+        "That file was made by a newer version of the app, so this one cannot read it."
+    public static let importNotEmptyMessage =
+        "This phone already has journal entries. An import only works on a journal that is empty."
+    /// An import asked for while an erase was running. It is refused rather than queued, because a restore
+    /// that landed afterwards would put back what the person had just deleted.
+    public static let importDuringEraseMessage =
+        "Data was being erased, so nothing was imported. Try again once that is finished."
+    /// An erase that found a restore still running and would not wait any longer.
+    public static let eraseWaitTimedOutMessage =
+        "An import was still running, so nothing was erased. Try again in a moment."
+
     public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
     public static let eraseConfirmationMessage =
@@ -102,7 +171,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         return JournalExporter.fileName(exportedAt: date) == name
     }
     public static let unavailableVersion = "unknown"
-    /// Fixed until the app target exists and can inject its real version string.
     public static let defaultAppVersion = "0.0.0-development"
 
     /// Both connections are listed but not usable in this release.
@@ -114,6 +182,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var exportFileName: String?
     @Published public private(set) var entryCount = 0
     @Published public private(set) var errorMessage: String?
+    @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
+    @Published public private(set) var importSummary: JournalImportSummary?
+    @Published public private(set) var importMessage: String?
     /// Counts how often data was erased, so a host holding this model can tell that the stores behind
     /// its other screens are empty now and reload them. The erase happens on this screen; the totals on
     /// Today and the rows in the Journal would otherwise still show what was just deleted.
@@ -130,6 +201,22 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// One entry per store file this app keeps. `eraseAllData()` runs them all; the app injects the real
     /// stores, and a test injects recorders or a store that refuses.
     private let erasers: [JournalErasing]
+
+    /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
+    private var importTask: Task<Void, Never>?
+    /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
+    /// because the two sides of that wait are on different actors: the restore finishes on a background
+    /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
+    private let importGate = ImportGate()
+    /// True while an erase is running, so an import started in that window is refused rather than racing it.
+    private var isErasing = false
+    /// Counts imports and erases. An import publishes only while its own number is still the current one,
+    /// which is how the outcome of an import an erase overtook is dropped rather than shown.
+    private var importGeneration = 0
+
+    /// How long an erase waits for a restore that is still running before it gives up and says so. A restore
+    /// of one file is milliseconds; this is only here so a wait that never ends cannot hold the screen.
+    public static let eraseWaitsForImportSeconds: TimeInterval = 2
 
     /// The write options the export always asks for: complete-only, so the journal is unreadable while the
     /// device is locked, and atomic, so no half-written copy can be shared.
@@ -234,6 +321,30 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// not. Returns whether every store erased itself.
     @discardableResult
     public func eraseAllData() -> Bool {
+        // An import writes the whole journal in one save and an erase writes it away in another. Run
+        // together they could land in either order, and the screen would end up claiming whichever came
+        // second. So the two never overlap: an import started while an erase runs is refused, and an erase
+        // that finds a restore in flight waits for it to finish before it touches a store. Waiting rather
+        // than queueing matters here, because the person asked for everything gone, not for the erase to
+        // happen first and then be undone.
+        guard !isErasing else { return false }
+        isErasing = true
+        // The import state from *before* the erase goes now, as the screen enters its erasing state: "Imported
+        // 3 entries" describes a journal that is about to stop existing. It is cleared here rather than at
+        // the end, because an import asked for during the erase is refused with a message of its own, and
+        // clearing afterwards would throw that away - and it is the only thing on the screen explaining why
+        // the file they chose did nothing.
+        clearImport()
+        // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
+        importGeneration += 1
+        importTask?.cancel()
+        guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
+            isErasing = false
+            errorMessage = Self.eraseWaitTimedOutMessage
+            return false
+        }
+        defer { isErasing = false }
+
         var failed = false
         for eraser in erasers {
             do {
@@ -288,5 +399,155 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private func forgetExportFile() {
         exportFileURL = nil
         exportFileName = nil
+    }
+
+    /// What an import produced, carried from the background back to the screen.
+    ///
+    /// Both cases are values the background can build on its own, and nothing that belongs to the main
+    /// actor crosses with them: the summary is a count, and a refusal names *which* refusal rather than
+    /// the sentence, because the words live on this actor with the rest of the screen's copy.
+    private enum ImportOutcome: Sendable {
+        case imported(JournalImportSummary)
+        case failed(ImportFailure)
+    }
+
+    /// Why an import did not happen.
+    private enum ImportFailure: Sendable {
+        /// The importer said why: a newer schema version, a journal that is not empty, a file it cannot
+        /// read. Carried typed so the screen can word each one.
+        case refused(JournalImportError)
+        /// A store or disk error with nothing to explain to the person.
+        case other
+        /// An erase was running, so the import was refused before it started.
+        case erasing
+    }
+
+    /// Reads a file the person chose and restores it. Nothing is sent anywhere: the file was already on
+    /// this device or in a place they opened it from, and the restore only writes to the local stores.
+    ///
+    /// The read and the restore run off the main actor, because they are the slow part: a journal with
+    /// thousands of revisions is parsed, checked and written in one go, and doing that here would freeze the
+    /// screen the person is looking at, on the one action that starts by reading a file of unknown size.
+    /// Only the outcome is published, and it is published on the main actor, because that is what updates
+    /// the screen. The stores are `Sendable` and each one serializes its own writes, so the restore is as
+    /// safe off this actor as it was on it.
+    ///
+    /// The task is kept, so an erase cannot pull the stores out from under a restore that is still running;
+    /// see `eraseAllData()`. An import started while an erase is running is refused rather than racing it.
+    public func importJournal(data: Data) {
+        guard !isErasing else {
+            // Refused here rather than queued: the person asked to erase everything, and a restore that
+            // landed afterwards would put back what they just deleted.
+            importSummary = nil
+            importState = .failed
+            importMessage = Self.importDuringEraseMessage
+            return
+        }
+        // Read out of the main actor's own state first, so the background task touches nothing here.
+        let store = store
+        let favorites = favorites
+        // Counted first, then read: this import's token is the number *after* its own increment, which is
+        // what `apply` compares against. Reading before incrementing hands out the previous import's number,
+        // so every outcome looks stale and none is ever published.
+        importGeneration += 1
+        let generation = importGeneration
+        let gate = importGate
+        gate.begin()
+        // Created here, on the main actor, and not inside the task below. The restore has to be *running*
+        // before this method returns, because an erase can block the main actor the moment it is called, and
+        // a task body that needs the main actor in order to start would never get to run: the erase would
+        // wait on a signal nothing was ever going to send. A detached task needs no actor to begin, and its
+        // `defer` opens the gate from a background thread as soon as the store writes are done.
+        let restore = Task.detached(priority: .userInitiated) { () -> ImportOutcome in
+            // The gate is opened from the background, and not from the task below: the erase waits on it from
+            // the main actor, so it has to be signalled by the work it is waiting for.
+            defer { gate.end() }
+            do {
+                return .imported(try JournalImporter.importExport(data, into: store, favorites: favorites))
+            } catch let error as JournalImportError {
+                return .failed(.refused(error))
+            } catch {
+                return .failed(.other)
+            }
+        }
+        importTask = Task { [weak self] in
+            let outcome = await restore.value
+            // Named rather than inherited: the task's own isolation decides where this would run, and the
+            // state it updates is main-actor state, so the hop is stated instead of assumed.
+            await MainActor.run { self?.apply(outcome, startedAt: generation) }
+        }
+    }
+
+    /// Publishes an import's outcome on the main actor, which is the only place that touches this state.
+    ///
+    /// An outcome from an import that an erase has overtaken is dropped: the stores it restored were deleted
+    /// a moment later, and the screen saying "Imported 3 entries" would be describing a journal that is gone.
+    private func apply(_ outcome: ImportOutcome, startedAt generation: Int) {
+        guard generation == importGeneration else { return }
+        switch outcome {
+        case .imported(let summary):
+            // The export this screen was holding was made from the journal as it was before the restore, so
+            // the share control would still offer the wrong journal. It goes, and the screen stops offering
+            // it, rather than leaving a file of the pre-import journal one tap away.
+            removeExportFile()
+            exportState = .idle
+            entryCount = 0
+            errorMessage = nil
+            importSummary = summary
+            importState = .imported
+            importMessage = Self.importSummaryText(summary)
+        case .failed(let failure):
+            importSummary = nil
+            importState = .failed
+            importMessage = Self.importFailureText(for: failure)
+        }
+    }
+
+    /// The sentence for a failure, chosen here because the words belong to this actor.
+    private static func importFailureText(for failure: ImportFailure) -> String {
+        switch failure {
+        case .refused(let error):
+            return importFailureText(for: error)
+        case .other:
+            return importFailedMessage
+        case .erasing:
+            return importDuringEraseMessage
+        }
+    }
+
+    /// The file the person chose could not be read at all. They asked for that file to be imported and
+    /// nothing happened, so this is a failed import and not a cancellation: it says so rather than leaving
+    /// the screen looking as if it were never asked.
+    public func importCouldNotReadFile() {
+        importSummary = nil
+        importState = .failed
+        importMessage = Self.importFailedMessage
+    }
+
+    /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
+    public static func importSummaryText(_ summary: JournalImportSummary) -> String {
+        let entries = summary.intakes == 1 ? "1 entry" : "\(summary.intakes) entries"
+        let deleted = summary.tombstones == 0 ? "" : " and \(summary.tombstones) deleted"
+        let favorites = summary.favorites == 0 ? "" : ", \(summary.favorites) favorites"
+        return "Imported \(entries)\(deleted)\(favorites)."
+    }
+
+    public static func importFailureText(for error: JournalImportError) -> String {
+        switch error {
+        case .unsupportedVersion:
+            return importUnsupportedVersionMessage
+        case .notEmpty:
+            return importNotEmptyMessage
+        case .malformed, .corrupt:
+            return importFailedMessage
+        }
+    }
+
+    /// Returns the screen's import state to empty, so a later attempt does not read as part of an earlier
+    /// one.
+    public func clearImport() {
+        importState = .idle
+        importSummary = nil
+        importMessage = nil
     }
 }

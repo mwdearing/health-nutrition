@@ -1,10 +1,14 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// The Connections and privacy screen: a plain statement of what stays on the device, an export action the
-/// person starts, and the two connections that are named but not yet usable.
+/// The Connections and privacy screen: a plain statement of what stays on the device, the export and
+/// import actions the person starts, and the two connections that are named but not yet usable.
 public struct ConnectionsPrivacyView: View {
     @ObservedObject var model: ConnectionsPrivacyViewModel
     private let now: () -> Date
+    /// Held here rather than in the model so the file picker is a view concern: the model never sees a
+    /// file, only the bytes the person chose.
+    @State private var isImporting = false
     /// Held so the erase button asks first, and the ask is a dialog with the erase action and a cancel
     /// side by side.
     @State private var confirmingErase = false
@@ -42,6 +46,23 @@ public struct ConnectionsPrivacyView: View {
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
                         .accessibilityLabel("Exported \(model.entryCount) entries")
+                }
+            }
+            Section("Import") {
+                Button {
+                    isImporting = true
+                } label: {
+                    Text(ConnectionsPrivacyViewModel.importButtonTitle).font(.headline)
+                }
+                .accessibilityLabel("Import a journal export from a file")
+                .accessibilityHint(
+                    "Restores a journal export you already made. It only works while this phone's journal is empty.")
+                if let message = model.importMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(
+                            model.importState == .failed ? TokenColors.error : TokenColors.textSecondary)
+                        .accessibilityLabel(message)
                 }
             }
             Section("Connections") {
@@ -103,12 +124,37 @@ public struct ConnectionsPrivacyView: View {
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
+        .fileImporter(
+            isPresented: $isImporting, allowedContentTypes: [.json], allowsMultipleSelection: false
+        ) { result in
+            importPickedFile(result)
+        }
         .navigationTitle("Connections and privacy")
         .onDisappear {
             // Leaving the screen deletes the exported copy. A journal export that outlives the screen would
             // sit in the temporary directory with nothing able to remove it.
             model.clearExport()
+            model.clearImport()
         }
+    }
+
+    /// Reads the file the person chose and hands the bytes to the model. A picker that was cancelled goes
+    /// back to the screen's empty import state; a file that cannot be read is a failed import, because the
+    /// person asked for it and nothing happened. Either way no rows were written.
+    private func importPickedFile(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else {
+            model.clearImport()
+            return
+        }
+        // A file the person picked in another app is outside this app's own directory until access to it
+        // is claimed, and the claim has to be given up again afterwards.
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer { if isSecurityScoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            model.importCouldNotReadFile()
+            return
+        }
+        model.importJournal(data: data)
     }
 
     private func connectionRow(title: String, detail: String) -> some View {
