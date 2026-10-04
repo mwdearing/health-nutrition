@@ -39,11 +39,25 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         .potassium: "Potassium",
     ]
 
+    /// The nutrient this row is, and why the parser asked about it. Both are read from the panel and
+    /// never change afterwards.
     public let key: NutritionFactKey
-    public let value: NutrientValue
     /// Why the parser asked about this value; empty when it read the row exactly as printed.
     public let reasons: Set<ParsedValueReview.Reason>
-    public let status: Status
+    /// The value and what the user has done about it. Both are mutable because a row is a value type
+    /// in the view model's array: confirming or correcting one writes through `rows[index]`, which is
+    /// also what republishes the array for the screen.
+    public var value: NutrientValue
+    public var status: Status
+
+    /// Written out rather than left as the memberwise initializer, so the order of the fields is not
+    /// the order of the arguments and adding a field later cannot silently reorder a call site.
+    public init(key: NutritionFactKey, value: NutrientValue, reasons: Set<ParsedValueReview.Reason>, status: Status) {
+        self.key = key
+        self.value = value
+        self.reasons = reasons
+        self.status = status
+    }
 
     public var id: String { key.rawValue }
     public var name: String { LabelCaptureRow.displayNames[key] ?? key.rawValue }
