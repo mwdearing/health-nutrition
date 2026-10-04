@@ -1324,6 +1324,68 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             "only the unencodable projection is reported, and as needing a person")
     }
 
+    /// The sequence-1 snapshot is written when the operation is about to be sent, not while it is being
+    /// encoded. Encoding does not promise a send — the blocker check runs after it — so an operation held
+    /// back behind an earlier revision must leave nothing on record.
+    func testALinkSnapshotIsRecordedOnlyForAnOperationThatIsActuallySent() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        let queuedInOrder = try pendingRelay(store, intakeID: intakeID).map(\.operationID)
+        let heldBack = queuedInOrder[1]
+        // The first revision is parked, so the second is held back and never sent.
+        try store.recordFailure(
+            operationID: queuedInOrder[0], retryAt: nil, needsAttention: true, reason: "a domain conflict")
+        let provider = LinkProvider(snapshot: projection(sequence: 2).links)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        transport.answerEverythingAccepted()
+
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current }
+        ).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 0, "nothing went out")
+        XCTAssertNil(
+            try store.recordedLinks(operationID: heldBack),
+            "an operation that never went on the wire must not freeze a snapshot on record")
+    }
+
+    /// A capabilities read that fails counts as an attempt only for the operations that were eligible to
+    /// send. An operation held back behind a blocker had no part in the failure, so advancing its backoff
+    /// would punish it for something it never tried.
+    func testAFailedCapabilitiesReadDoesNotCountAnAttemptForAnOperationHeldBack() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        let firstIntake = try pendingRelay(store, intakeID: intakeID).map(\.operationID)
+        let heldBack = firstIntake[1]
+        let eligible = try XCTUnwrap(relayOperation(store, intakeID: otherIntakeID)?.operationID)
+        // The first revision of one intake is parked, so its second revision is held back; the other
+        // intake's operation was eligible and does count.
+        try store.recordFailure(
+            operationID: firstIntake[0], retryAt: nil, needsAttention: true, reason: "a domain conflict")
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        transport.failCapabilities(with: URLError(.timedOut))
+        let worker = makeWorker(store: store, transport: transport)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 0)
+        let attempts = try pendingRelay(store).map { ($0.operationID, $0.attempts) }
+        XCTAssertEqual(
+            attempts.first { $0.0 == heldBack }?.1, 0,
+            "the held-back operation was never going out, so it failed no attempt")
+        XCTAssertEqual(
+            attempts.first { $0.0 == eligible }?.1, 1,
+            "the operation that was eligible to send does count")
+        XCTAssertTrue(
+            outcomes.contains { if case .blocked(let id, _) = $0 { return id == heldBack } else { return false } },
+            "and it is reported as blocked rather than retried")
+    }
+
     // MARK: - Delivery is off
 
     /// Nothing in the app enables the relay destination, so nothing is queued for this worker and every run

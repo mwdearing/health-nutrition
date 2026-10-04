@@ -153,11 +153,20 @@ varies between two attempts turns a lost response into a permanent disagreement:
   UUID — would move the projection and client digests, so a store that cannot record the snapshot cannot
   back this worker: it would have no way to make a retry the duplicate it needs to be.
 
-  The snapshot is **encoded before it is recorded**, never recorded and checked afterwards. The store keeps
-  the first snapshot it is given for the life of the operation, so an invalid one recorded eagerly would be
-  frozen: every later attempt would read the same bad links back, the encoder would refuse them again, and a
-  snapshot that was merely wrong once — a link to a component the revision does not state, say — could never
-  be replaced even after the writer had corrected it.
+  The snapshot is **encoded before it is recorded, and recorded only once the operation is actually going
+  out**. The store keeps the first snapshot it is given for the life of the operation, so an invalid one
+  recorded eagerly would be frozen: every later attempt would read the same bad links back, the encoder
+  would refuse them again, and a snapshot that was merely wrong once — a link to a component the revision
+  does not state, say — could never be replaced even after the writer had corrected it. And encoding does
+  not promise a send, since the blocker check runs after it: an operation held back behind an earlier
+  revision must leave nothing on record, or the first snapshot it *does* eventually go out with would not be
+  the one on file.
+
+## What counts as a failed attempt
+Only an operation that was eligible to send. When the capabilities read fails, an operation held back behind
+a blocker is reported as `blocked` and left untouched — it was never going out regardless of the receiver,
+so recording an attempt would advance its backoff for a failure it had no part in, and a queue that keeps
+being blocked would drift to the two-hour step without anything ever having been tried.
 
 Both are optional columns added by a lightweight migration, so no existing row is rewritten and nothing
 already in a store is wrong after the upgrade.

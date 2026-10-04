@@ -254,14 +254,14 @@ public struct RelayDeliveryWorker: Sendable {
                     operationID: operation.operationID,
                     reason: (try? store.suspensionReason(operationID: operation.operationID))
                         ?? "waiting to be re-armed"))
-                install(
+                Self.install(
                     RelayBlocker(operationID: operation.operationID, position: position),
                     of: operation.intakeID, in: &blocking)
                 continue
             }
             if let attemptAt = operation.nextAttemptAt, attemptAt > now {
                 outcomes.append(.notDue(operationID: operation.operationID, nextAttemptAt: attemptAt))
-                install(
+                Self.install(
                     RelayBlocker(operationID: operation.operationID, position: position),
                     of: operation.intakeID, in: &blocking)
                 continue
@@ -279,7 +279,7 @@ public struct RelayDeliveryWorker: Sendable {
                 outcomes.append(park(queued.operation, reason: reason, now: now))
                 // Earliest wins: a second failure further along must not replace the first, or an operation
                 // between the two would clear the bar and be sent past a revision that failed before it.
-                install(
+                Self.install(
                     RelayBlocker(operationID: queued.operation.operationID, position: queued.position),
                     of: queued.operation.intakeID, in: &blocking)
             case .encoded(let item):
@@ -313,7 +313,7 @@ public struct RelayDeliveryWorker: Sendable {
                 await projections.resolve(
                     projection,
                     with: .needsAttention("the link projection could not be encoded for delivery"))
-                install(
+                Self.install(
                     RelayBlocker(operationID: projection.operationID, position: position),
                     of: projection.intakeID, in: &blocking)
             case .encoded(let item):
@@ -327,7 +327,17 @@ public struct RelayDeliveryWorker: Sendable {
         } catch {
             // The batch limits are the receiver's own numbers. Guessing them would produce the very 413
             // this run exists to avoid, so nothing is sent and every operation is rescheduled instead.
+            //
+            // **Only the operations that were eligible to send count as a failed attempt.** One held back
+            // behind a blocker was never going out regardless of the capabilities read, so recording an
+            // attempt against it would advance its backoff for a failure it had no part in — and a queue that
+            // keeps being blocked would drift to the two-hour step without anything ever having been tried.
+            // The blocked ones are reported as blocked and left exactly as they were.
             for item in pending {
+                if let blocker = blocking[item.intakeID], blocker.position < item.position {
+                    outcomes.append(.blocked(operationID: item.operationID, blockedBy: blocker.operationID))
+                    continue
+                }
                 outcomes.append(await retry(
                     item, reason: "the receiver's capabilities could not be read", now: now))
             }
@@ -371,10 +381,28 @@ public struct RelayDeliveryWorker: Sendable {
                 sendable.append(item)
             }
             guard !sendable.isEmpty else { continue }
-            let sent = await send(sendable, now: now, canSplit: true)
+            // The snapshot is written here, once the operation is known to be going out: encoding alone does
+            // not promise a send, since the blocker check above may yet hold this one back. Recording earlier
+            // would freeze a snapshot for an operation that never went, and the first snapshot it *does* go
+            // out with would then not be the one on record.
+            var ready: [RelayEncodedOperation] = []
+            for item in sendable {
+                if let refused = record(item, now: now) {
+                    outcomes.append(refused)
+                    Self.install(
+                        RelayBlocker(operationID: item.operationID, position: item.position),
+                        of: item.intakeID, in: &blocking)
+                    continue
+                }
+                ready.append(item.withSnapshotRecorded())
+            }
+            guard !ready.isEmpty else { continue }
+            let sent = await send(ready, now: now, canSplit: true)
+            // `sent.deliveries` is `[RelayDelivery]`, so this maps to outcomes for the run's report while the
+            // deliveries themselves — which carry the position the blocker check needs — stay intact below.
             outcomes.append(contentsOf: sent.deliveries.map(\.outcome))
             for delivery in sent.deliveries where !delivery.outcome.isResolved {
-                install(
+                Self.install(
                     RelayBlocker(operationID: delivery.outcome.operationID, position: delivery.position),
                     of: delivery.intakeID, in: &blocking)
             }
@@ -419,7 +447,7 @@ public struct RelayDeliveryWorker: Sendable {
     /// through: with revisions 1 and 3 both failing, keeping revision 3 would admit revision 2 and send it
     /// past the revision that failed ahead of it. The earliest position is the only one that holds back the
     /// whole tail, which is what the receiver's ordering requires.
-    private func install(
+    private static func install(
         _ blocker: RelayBlocker, of intakeID: String, in blocking: inout [String: RelayBlocker]
     ) {
         if let current = blocking[intakeID], current.position <= blocker.position { return }
@@ -453,8 +481,36 @@ public struct RelayDeliveryWorker: Sendable {
         let intakeID: String
         let position: Int
         let value: IntakeContextValue
+        /// The sequence-1 link snapshot still to be recorded, set only on the first attempt of an upsert.
+        ///
+        /// Carried rather than written during encoding: an operation can be encoded and then never sent,
+        /// because its intake was blocked behind an earlier one, or because the capabilities read failed. The
+        /// snapshot is a durable record of what goes on the wire, so it is written when the operation is
+        /// actually about to be sent and not before.
+        let snapshotToRecord: [IntakeContextLink]?
+
+        init(
+            origin: RelayOrigin, intakeID: String, position: Int, value: IntakeContextValue,
+            snapshotToRecord: [IntakeContextLink]? = nil
+        ) {
+            self.origin = origin
+            self.intakeID = intakeID
+            self.position = position
+            self.value = value
+            self.snapshotToRecord = snapshotToRecord
+        }
 
         var operationID: String { value.operations.first?.operationID ?? "" }
+
+        /// The same operation with nothing left to record.
+        ///
+        /// A copy rather than a flag, so an item that has been recorded cannot be recorded twice by later
+        /// code reading the field, and so the recorded snapshot is written exactly once per operation.
+        func withSnapshotRecorded() -> RelayEncodedOperation {
+            guard snapshotToRecord != nil else { return self }
+            return RelayEncodedOperation(
+                origin: origin, intakeID: intakeID, position: position, value: value, snapshotToRecord: nil)
+        }
     }
 
     /// Why an operation could not join this run.
@@ -465,6 +521,26 @@ public struct RelayDeliveryWorker: Sendable {
         /// A refusal the receiver would make anyway, caught here before a batch was built.
         case failed(reason: String)
         case encoded(RelayEncodedOperation)
+    }
+
+    /// Writes an operation's first link snapshot, or reports the outcome if it cannot be written.
+    ///
+    /// Returns nil when there was nothing to do — a delete, a projection, or an operation whose snapshot is
+    /// already on record — so the caller can treat "recorded" and "nothing to record" alike. A failure is a
+    /// **permanent** outcome rather than a retry: a store that cannot keep the snapshot cannot make the next
+    /// attempt the duplicate this one should be, so every later attempt would conflict and the operation
+    /// would fail on a timer forever.
+    private func record(_ item: RelayEncodedOperation, now: Date) -> RelayDeliveryOutcome? {
+        guard let snapshot = item.snapshotToRecord, case .outbox(let operation) = item.origin else {
+            return nil
+        }
+        do {
+            try store.recordLinks(snapshot, operationID: operation.operationID)
+            return nil
+        } catch {
+            return park(
+                operation, reason: "the link snapshot for this operation could not be recorded", now: now)
+        }
     }
 
     // MARK: - Encoding
@@ -504,13 +580,11 @@ public struct RelayDeliveryWorker: Sendable {
         // projection and client digests, and the receiver would read the retry as a conflict rather than
         // the duplicate it is.
         //
-        // A snapshot nobody has recorded yet is read from the provider **and encoded before it is stored**.
-        // The store keeps the first snapshot it is given for the life of the operation, so recording an
-        // invalid one would freeze that failure permanently: every later attempt would read the same bad
-        // links back, the encoder would refuse them again, and a snapshot that was merely wrong once — a
-        // link to a component the revision does not state, say — could never be replaced even after the
-        // writer had corrected it. The encoder is the authority on whether a snapshot is sendable, so the
-        // encode decides and the recording follows it.
+        // A snapshot nobody has recorded yet is read from the provider and **carried, not written**. Encoding
+        // decides whether it is sendable at all — the encoder is the authority, and the store keeps the first
+        // snapshot it is given for the life of the operation, so an invalid one written here would be frozen
+        // permanently, with every later attempt reading the same bad links back. Recording waits for
+        // `record(_:)`, which runs once the operation is known to be going out.
         let recorded: [IntakeContextLink]?
         do {
             recorded = try store.recordedLinks(operationID: operation.operationID)
@@ -526,20 +600,9 @@ public struct RelayDeliveryWorker: Sendable {
         } catch {
             return .failed(reason: "the revision does not encode as an intake-context upsert")
         }
-        guard recorded == nil else {
-            return .encoded(RelayEncodedOperation(
-                origin: .outbox(operation), intakeID: operation.intakeID, position: position, value: value))
-        }
-        do {
-            try store.recordLinks(snapshot, operationID: operation.operationID)
-        } catch {
-            // A store that cannot keep the snapshot cannot back this worker: it has no way to make the next
-            // attempt the duplicate this one should be, so the operation is parked rather than sent into a
-            // retry that is guaranteed to conflict.
-            return .failed(reason: "the link snapshot for this operation could not be recorded")
-        }
         return .encoded(RelayEncodedOperation(
-            origin: .outbox(operation), intakeID: operation.intakeID, position: position, value: value))
+            origin: .outbox(operation), intakeID: operation.intakeID, position: position,
+            value: value, snapshotToRecord: recorded == nil ? snapshot : nil))
     }
 
     private func encodeDelete(_ operation: OutboxOperation, position: Int) -> RelayEncoding {
@@ -776,10 +839,10 @@ public struct RelayDeliveryWorker: Sendable {
                 let tail = Array(items[half...])
                 let (blocked, sendable) = Self.partitioning(tail, behind: head.deliveries)
                 var deliveries = head.deliveries
-                deliveries.append(contentsOf: blocked.map(\.outcome))
+                deliveries.append(contentsOf: blocked)
                 if !sendable.isEmpty {
                     let sent = await send(sendable, now: now, canSplit: false)
-                    deliveries.append(contentsOf: sent.deliveries.map(\.outcome))
+                    deliveries.append(contentsOf: sent.deliveries)
                     return RelayBatchResult(deliveries: deliveries, stopsTheRun: sent.stopsTheRun)
                 }
                 return RelayBatchResult(deliveries: deliveries, stopsTheRun: false)
@@ -877,7 +940,7 @@ public struct RelayDeliveryWorker: Sendable {
                 $0.operationID == item.operationID
             }) else {
                 deliveries.append(RelayDelivery(
-                    intakeID: item.intakeID,
+                    intakeID: item.intakeID, position: item.position,
                     outcome: .notAcknowledged(
                         operationID: item.operationID,
                         detail: "the receiver's answer carried no result for this operation")))
