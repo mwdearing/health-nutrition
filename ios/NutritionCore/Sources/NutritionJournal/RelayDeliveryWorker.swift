@@ -267,13 +267,13 @@ public struct RelayDeliveryWorker: Sendable {
             }
             return outcomes
         }
-        guard capabilities.supports(schemaVersion: encoder.schemaVersion) else {
+        guard capabilities.supports(schemaVersion: IntakeContextEncoder.schemaVersion) else {
             // A receiver that does not know this schema version refuses the batch while parsing it, which
             // would look like a permanent failure of every operation rather than of the version.
             for item in pending {
                 outcomes.append(await park(
                     item,
-                    reason: "the receiver does not accept \(encoder.schema) \(encoder.schemaVersion)",
+                    reason: "the receiver does not accept \(IntakeContextEncoder.schema) \(IntakeContextEncoder.schemaVersion)",
                     now: now))
             }
             return outcomes
