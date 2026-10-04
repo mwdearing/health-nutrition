@@ -396,7 +396,9 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertThrowsError(
             try encoder.upsert(
                 intake: intake,
-                revision: waterAndCreatineRevision(components: []),
+                // No components and no product snapshot, so this input exercises one rule only: the missing
+                // facts. A revision that named a snapshot and carried none would be refused for that instead.
+                revision: waterAndCreatineRevision(components: [], productSnapshotID: nil),
                 product: nil,
                 operation: upsertOperation)
         ) { error in
