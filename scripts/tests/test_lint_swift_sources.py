@@ -73,8 +73,242 @@ def test_fixed_font_in_ui_reports_file_and_line(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert findings(result) == [
         ("BadFont.swift", 3, "fixed-font"),
+        ("BadFont.swift", 3, "fixed-font-size"),
         ("BadFontCall.swift", 2, "fixed-font"),
+        ("BadFontCall.swift", 2, "fixed-font-size"),
     ]
+
+
+def test_fixed_font_size_reports_system_size_in_ui(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/BadSize.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(.system(size: 14))\n'
+            'Text("b").font(.system(size: 14, weight: .bold))\n'
+        ),
+        f"{UI}/BadSizeSpelledOut.swift": (
+            "import SwiftUI\n"
+            'Text("c").font(Font.system(size: 12))\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A system font written with a point size trips both font rules: the older
+    # `fixed-font` spells out the two forbidden spellings, and `fixed-font-size`
+    # reads the size out of any font call.
+    assert findings(result) == [
+        ("BadSize.swift", 2, "fixed-font"),
+        ("BadSize.swift", 2, "fixed-font-size"),
+        ("BadSize.swift", 3, "fixed-font"),
+        ("BadSize.swift", 3, "fixed-font-size"),
+        ("BadSizeSpelledOut.swift", 2, "fixed-font"),
+        ("BadSizeSpelledOut.swift", 2, "fixed-font-size"),
+    ]
+
+
+def test_fixed_font_size_allows_the_custom_size_overload_that_scales(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ScalingCustomFont.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom("Inter", size: 14)\n'
+            'Text("a").font(.custom("Inter", size: 14))\n'
+        ),
+    })
+    result = run(root)
+    # Apple documents `custom(_:size:)` as scaling with the body text style, so
+    # only the non-scaling `custom(_:fixedSize:)` overload is a finding here.
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_reports_a_custom_font_with_a_fixed_size(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/FixedCustomFont.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom("Inter", fixedSize: 14)\n'
+            'Text("a").font(.custom("Inter", fixedSize: 13, weight: .bold))\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("FixedCustomFont.swift", 2, "fixed-font-size"),
+        ("FixedCustomFont.swift", 3, "fixed-font-size"),
+    ]
+
+
+def test_fixed_font_size_ignores_custom_calls_that_build_no_font(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/WidgetFactory.swift": (
+            "import SwiftUI\n"
+            'let widget = Widget.custom(name: "compact", size: 14)\n'
+            "let tile = Tile.custom(size: 14, fixedSize: 2)\n"
+            'Text("a").font(.custom("Inter", fixedSize: 14))\n'
+        ),
+    })
+    result = run(root)
+    # Only a custom font factory carries the API's meaning: a `.custom(` call on
+    # another type is that type's own, even when it names a size.
+    assert result.returncode == 1
+    assert findings(result) == [("WidgetFactory.swift", 4, "fixed-font-size")]
+
+
+def test_fixed_font_size_allows_a_size_that_is_not_a_literal(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ScaledMetric.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(.system(size: scaledSize))\n'
+            'let font = Font.custom("Inter", size: scaledSize)\n'
+            'let other = Font.custom("Inter", fixedSize: scaledSize)\n'
+            'let pinned = Font.body.pointSize(scaledSize)\n'
+        ),
+    })
+    result = run(root)
+    # A size read from a @ScaledMetric property already tracks Dynamic Type, so
+    # this rule is about the literal point size that cannot move. The older
+    # `fixed-font` rule still names the `.font(.system(size:` spelling itself.
+    assert [f for f in findings(result) if f[2] == "fixed-font-size"] == []
+
+
+def test_fixed_font_size_reads_relative_to_at_the_font_call_depth(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedRelativeTo.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom(resolveName(relativeTo: locale), fixedSize: 14)\n'
+            'let scaled = Font.custom("Inter", size: 14, relativeTo: .body)\n'
+        ),
+    })
+    result = run(root)
+    # A `relativeTo:` belonging to a nested call is that call's own argument; the
+    # font factory itself still pins a point size.
+    assert result.returncode == 1
+    assert findings(result) == [("NestedRelativeTo.swift", 2, "fixed-font-size")]
+
+
+def test_fixed_font_size_reports_a_point_size_modifier_on_a_font(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/PointSize.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(Font.body.pointSize(14))\n'
+            "let font = Font.title.pointSize(12)\n"
+        ),
+    })
+    result = run(root)
+    # `pointSize(_:)` stops a style-based font from scaling, so a literal one is
+    # reported whether it is written inside a `.font(` or spelled out on a Font.
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("PointSize.swift", 2, "fixed-font-size"),
+        ("PointSize.swift", 3, "fixed-font-size"),
+    ]
+
+
+def test_fixed_font_size_allows_a_custom_font_relative_to_a_text_style(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/RelativeFont.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom("Inter", size: 14, relativeTo: .body)\n'
+            'Text("a").font(.custom("Inter", size: 14, relativeTo: .largeTitle))\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_allows_text_styles(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/TextStyles.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(.headline)\n'
+            'Text("b").font(.system(.body, design: .rounded))\n'
+            "let font = Font.system(.title3)\n"
+            "let other = Font.system(.largeTitle, design: .serif)\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_ignores_comments_and_string_literals(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Prose.swift": (
+            "import SwiftUI\n"
+            "// .font(.system(size: 14))\n"
+            "/* .custom(\"Inter\", size: 14) */\n"
+            'let sample = ".font(Font.system(size: 12))"\n'
+            'Text("a").font(.body)\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_is_skipped_by_its_own_lint_allow(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Allowed.swift": (
+            "import SwiftUI\n"
+            'let caption = Font.custom("Inter", fixedSize: 11) // lint-allow: fixed-font-size\n'
+            'let other = Font.custom("Inter", fixedSize: 11)\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The directive covers only the line it is written on.
+    assert findings(result) == [("Allowed.swift", 3, "fixed-font-size")]
+
+
+def test_fixed_font_size_allows_the_other_font_rules_to_still_fire(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/OnlyOneName.swift": (
+            "import SwiftUI\n"
+            "let font = Font.system(size: 14) // lint-allow: fixed-font-size\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A fixed-font-size exemption says nothing about the fixed-font rule.
+    assert findings(result) == [("OnlyOneName.swift", 2, "fixed-font")]
+
+
+def test_fixed_font_size_reports_a_call_wrapped_over_lines(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/WrappedSize.swift": (
+            "import SwiftUI\n"
+            "let font = Font.custom(\n"
+            '    "Inter",\n'
+            "    fixedSize: 14\n"
+            ")\n"
+            "let scaled = Font.custom(\n"
+            '    "Inter",\n'
+            "    fixedSize: 14,\n"
+            "    relativeTo: .body\n"
+            ")\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("WrappedSize.swift", 2, "fixed-font-size")]
+
+
+def test_fixed_font_size_covers_the_app_target(tmp_path: Path) -> None:
+    write_tree(tmp_path, {f"{UI}/Fine.swift": 'import SwiftUI\nText("hi").font(.body)\n'})
+    sources = tmp_path / "ios" / "HealthNutrition" / "Sources"
+    sources.mkdir(parents=True)
+    (sources / "RootView.swift").write_text(
+        "import SwiftUI\n"
+        "struct RootView: View {\n"
+        "    var body: some View {\n"
+        '        Text("hi").font(.system(size: 17))\n'
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    result = run(tmp_path / "ios" / "NutritionCore")
+    assert result.returncode == 1
+    assert findings(result) == [("RootView.swift", 4, "fixed-font-size")]
 
 
 def test_forbidden_import_and_urlsession_report_file_and_line(tmp_path: Path) -> None:
@@ -216,9 +450,12 @@ def test_colour_call_split_across_lines_is_reported(tmp_path: Path) -> None:
     assert findings(result) == [
         ("Wrapped.swift", 2, "colour-literal"),
         ("WrappedFont.swift", 2, "fixed-font"),
+        ("WrappedFont.swift", 2, "fixed-font-size"),
         # The chained call opens on line 5 and the prohibited label sits on line 7;
         # the finding is reported where the construct starts.
         ("WrappedFont.swift", 5, "fixed-font"),
+        # The font call itself starts on line 6, which is where this rule reports.
+        ("WrappedFont.swift", 6, "fixed-font-size"),
     ]
 
 
@@ -1128,6 +1365,136 @@ def test_a_branch_of_a_sibling_view_ends_the_modifier_chain(tmp_path: Path) -> N
     assert result.returncode == 1
     # The second image's label belongs to that image, so the first stays unnamed.
     assert findings(result) == [("SiblingBranch.swift", 5, "unlabeled-image")]
+
+
+def test_nested_arms_that_all_name_the_image_exempt_it(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedArms.swift": (
+            "import SwiftUI\n"
+            "struct NestedArms: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        .accessibilityLabel("Debug")\n'
+            "        #else\n"
+            '        .accessibilityLabel("Release")\n'
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    # Every compiled path names the image, however deeply the conditionals nest.
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_nested_arm_without_a_name_leaves_the_image_unlabeled(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedUnnamed.swift": (
+            "import SwiftUI\n"
+            "struct NestedUnnamed: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        .accessibilityLabel("Debug")\n'
+            "        #else\n"
+            "        .padding()\n"
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The release build of the iOS arm names nothing at all.
+    assert findings(result) == [("NestedUnnamed.swift", 4, "unlabeled-image")]
+
+
+def test_a_nested_arm_holding_a_sibling_view_ends_the_chain(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedSibling.swift": (
+            "import SwiftUI\n"
+            "struct NestedSibling: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        Text("y")\n'
+            "        #endif\n"
+            "        #endif\n"
+            '        Image("z").accessibilityLabel("Z")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The nested arm holds a sibling view, so the first image stays unnamed, and
+    # the label after the block belongs to the second image.
+    assert findings(result) == [("NestedSibling.swift", 4, "unlabeled-image")]
+
+
+def test_a_closure_in_a_conditional_modifier_does_not_name_the_image(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ConditionalOverlay.swift": (
+            "import SwiftUI\n"
+            "struct ConditionalOverlay: View {\n"
+            "    var body: some View {\n"
+            '        Image("photo")\n'
+            "        #if DEBUG\n"
+            '        .overlay { Image("badge").accessibilityLabel("New") }\n'
+            "        #else\n"
+            '        .accessibilityLabel("Photo")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The label in the overlay closure names the image inside it, not the one the
+    # overlay is applied to, so the debug build leaves this image unnamed.
+    assert findings(result) == [("ConditionalOverlay.swift", 4, "unlabeled-image")]
+
+
+def test_a_sibling_after_a_nested_conditional_ends_the_outer_arm(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedThenSibling.swift": (
+            "import SwiftUI\n"
+            "struct NestedThenSibling: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            "        .padding()\n"
+            "        #else\n"
+            "        .padding()\n"
+            "        #endif\n"
+            '        Text("sibling").accessibilityLabel("Sibling")\n'
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The sibling view sits inside the first outer arm, so the image is unnamed in
+    # every build taking it, whatever the other arms say.
+    assert findings(result) == [("NestedThenSibling.swift", 4, "unlabeled-image")]
 
 
 def test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows(
