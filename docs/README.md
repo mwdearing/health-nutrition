@@ -10,3 +10,4 @@ Public architecture decisions and design notes for this project live here.
 - [Personal recipes: versions, calculation and logging](recipes.md)
 - [ADR 0002: HealthKit sync identifier and sync version](adr/0002-healthkit-sync.md)
 - [HealthKit writer: the write plan](healthkit-writer.md)
+- [Label capture: scan, parse, confirm, save](label-capture.md)
