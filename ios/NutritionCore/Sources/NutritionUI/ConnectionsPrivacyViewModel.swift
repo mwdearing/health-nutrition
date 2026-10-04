@@ -329,7 +329,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // happen first and then be undone.
         guard !isErasing else { return false }
         isErasing = true
-        // Anything this import publishes afterwards is about a journal that is about to be deleted.
+        // The import state from *before* the erase goes now, as the screen enters its erasing state: "Imported
+        // 3 entries" describes a journal that is about to stop existing. It is cleared here rather than at
+        // the end, because an import asked for during the erase is refused with a message of its own, and
+        // clearing afterwards would throw that away - and it is the only thing on the screen explaining why
+        // the file they chose did nothing.
+        clearImport()
+        // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
         importGeneration += 1
         importTask?.cancel()
         guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
@@ -355,10 +361,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         forgetExportFile()
         entryCount = 0
         exportState = .idle
-        // The import state goes with it. "Imported 3 entries" describes a journal that no longer exists, so
-        // leaving it up would have the screen contradict what it just did; and a journal that has just been
-        // erased is exactly the empty one an import is allowed into.
-        clearImport()
         errorMessage = failed ? Self.eraseFailedMessage : nil
         eraseGeneration += 1
         return !failed
@@ -451,19 +453,25 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let generation = importGeneration
         let gate = importGate
         gate.begin()
+        // Created here, on the main actor, and not inside the task below. The restore has to be *running*
+        // before this method returns, because an erase can block the main actor the moment it is called, and
+        // a task body that needs the main actor in order to start would never get to run: the erase would
+        // wait on a signal nothing was ever going to send. A detached task needs no actor to begin, and its
+        // `defer` opens the gate from a background thread as soon as the store writes are done.
+        let restore = Task.detached(priority: .userInitiated) { () -> ImportOutcome in
+            // The gate is opened from the background, and not from the task below: the erase waits on it from
+            // the main actor, so it has to be signalled by the work it is waiting for.
+            defer { gate.end() }
+            do {
+                return .imported(try JournalImporter.importExport(data, into: store, favorites: favorites))
+            } catch let error as JournalImportError {
+                return .failed(.refused(error))
+            } catch {
+                return .failed(.other)
+            }
+        }
         importTask = Task { [weak self] in
-            let outcome = await Task.detached(priority: .userInitiated) { () -> ImportOutcome in
-                // The gate is opened from here, on the background, and not from the task below: the erase
-                // waits on it from the main actor, so it has to be signalled by the work it is waiting for.
-                defer { gate.end() }
-                do {
-                    return .imported(try JournalImporter.importExport(data, into: store, favorites: favorites))
-                } catch let error as JournalImportError {
-                    return .failed(.refused(error))
-                } catch {
-                    return .failed(.other)
-                }
-            }.value
+            let outcome = await restore.value
             // Named rather than inherited: the task's own isolation decides where this would run, and the
             // state it updates is main-actor state, so the hop is stated instead of assumed.
             await MainActor.run { self?.apply(outcome, startedAt: generation) }

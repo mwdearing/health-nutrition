@@ -227,13 +227,15 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
 
     /// Starts an import and waits for it to publish. The restore runs off the main actor and publishes its
     /// outcome back on it, so the assertions have to run after that hop rather than straight after the call.
-    /// The wait is bounded, so a publish that never arrives fails the test instead of hanging it.
+    /// The wait is on time, not on a number of yields: a yield is a scheduling hint, not a bound, and how
+    /// many of them fit into a millisecond depends on the machine. The deadline is generous so a slow store
+    /// does not fail the test, and bounded so a publish that never arrives fails it instead of hanging.
     private func importAndSettle(_ model: ConnectionsPrivacyViewModel, data: Data) async {
         model.importJournal(data: data)
-        for _ in 0..<2_000 {
-            if model.importState != .idle { return }
-            await Task.yield()
+        let deadline = Date(timeIntervalSinceNow: 10)
+        while model.importState == .idle, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 1_000_000)
         }
-        XCTFail("the import never published an outcome")
+        XCTAssertNotEqual(model.importState, .idle, "the import never published an outcome")
     }
 }
