@@ -15,6 +15,9 @@ import VisionKit
 /// unavailable (no camera, or the camera in use by something else). Both have to hold, otherwise
 /// Add intake shows no Scan button at all and the barcode is typed.
 enum BarcodeScanner {
+    // Both properties are main-actor isolated, so this is too. It is read from the form's Scan
+    // action, which runs on the main actor like the rest of the view.
+    @MainActor
     static var isAvailable: Bool {
         DataScannerViewController.isSupported && DataScannerViewController.isAvailable
     }
@@ -111,6 +114,8 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
         context.coordinator.startScanning(on: controller)
     }
 
+    // Main actor for the same reason as `startScanning(on:)`: it touches the controller.
+    @MainActor
     static func dismantleUIViewController(
         _ controller: DataScannerViewController, coordinator: Coordinator
     ) {
@@ -129,6 +134,9 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
             self.parent = parent
         }
 
+        // Main actor, because it reads the scanner's main-actor isolated availability and starts
+        // the controller. SwiftUI calls this from its update pass, which is on the main actor.
+        @MainActor
         func startScanning(on controller: DataScannerViewController) {
             guard !isRunning, !hasDelivered else { return }
             guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
