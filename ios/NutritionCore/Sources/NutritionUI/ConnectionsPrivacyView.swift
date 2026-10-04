@@ -105,9 +105,9 @@ public struct ConnectionsPrivacyView: View {
         }
     }
 
-    /// Reads the file the person chose and hands the bytes to the model. A picker that was cancelled, or a
-    /// file that cannot be read, says so through the same message an import refusal would use: from here
-    /// the only thing that matters is that no rows were written.
+    /// Reads the file the person chose and hands the bytes to the model. A picker that was cancelled goes
+    /// back to the screen's empty import state; a file that cannot be read is a failed import, because the
+    /// person asked for it and nothing happened. Either way no rows were written.
     private func importPickedFile(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else {
             model.clearImport()
@@ -118,7 +118,7 @@ public struct ConnectionsPrivacyView: View {
         let isSecurityScoped = url.startAccessingSecurityScopedResource()
         defer { if isSecurityScoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else {
-            model.clearImport()
+            model.importCouldNotReadFile()
             return
         }
         model.importJournal(data: data)

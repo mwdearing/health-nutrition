@@ -189,6 +189,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public func importJournal(data: Data) -> Bool {
         do {
             let summary = try JournalImporter.importExport(data, into: store, favorites: favorites)
+            // The export this screen was holding was made from the journal as it was before the restore, so
+            // the share control would still offer the wrong journal. It goes, and the screen stops offering
+            // it, rather than leaving a file of the pre-import journal one tap away.
+            removeExportFile()
+            exportState = .idle
+            entryCount = 0
+            errorMessage = nil
             importSummary = summary
             importState = .imported
             importMessage = Self.importSummaryText(summary)
@@ -204,6 +211,15 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             importMessage = Self.importFailedMessage
             return false
         }
+    }
+
+    /// The file the person chose could not be read at all. They asked for that file to be imported and
+    /// nothing happened, so this is a failed import and not a cancellation: it says so rather than leaving
+    /// the screen looking as if it were never asked.
+    public func importCouldNotReadFile() {
+        importSummary = nil
+        importState = .failed
+        importMessage = Self.importFailedMessage
     }
 
     /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
