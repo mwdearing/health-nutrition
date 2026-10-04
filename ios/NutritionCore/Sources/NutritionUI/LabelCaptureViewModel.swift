@@ -218,9 +218,15 @@ public final class LabelCaptureViewModel: ObservableObject {
     }
 
     /// The user accepts the serving size the parser corrected.
+    ///
+    /// Confirming resolves the flag as well as recording the answer, so the serving size stops counting
+    /// as pending and the screen stops asking about it. The flag describes a question the parser raised
+    /// and the user has now answered; leaving it standing would keep `canApply` false for a serving size
+    /// nobody is being asked about any more.
     public func confirmServing() {
         guard servingNeedsReview else { return }
         isServingConfirmed = true
+        servingNeedsReview = false
         correctionError = nil
     }
 

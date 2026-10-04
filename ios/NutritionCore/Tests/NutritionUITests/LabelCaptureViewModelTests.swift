@@ -179,7 +179,9 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot?.catalogOrigin, "label_capture")
         XCTAssertEqual(snapshot?.labelBasis, "per serving (240 mL)")
         XCTAssertEqual(snapshot?.name, "Synthetic Soup")
-        XCTAssertEqual(snapshot?.value(for: "calories"), .known(Decimal(180), .kcal))
+        // Under the key the journal uses for the panel's Calories row, which is the same key the
+        // barcode path stores, not the row's printed name.
+        XCTAssertEqual(snapshot?.value(for: LookedUpProduct.energyKcal), .known(Decimal(180), .kcal))
     }
 
     func testALaterBarcodeInvalidatesTheCapturedValues() throws {

@@ -1,4 +1,5 @@
 import Foundation
+import NutritionJournal
 import NutritionUI
 import SwiftUI
 

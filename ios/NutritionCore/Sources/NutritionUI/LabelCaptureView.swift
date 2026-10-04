@@ -82,11 +82,13 @@ public struct LabelCaptureView: View {
                 Text(text)
                     .font(.body)
                 Spacer()
-                if model.servingNeedsReview && !model.isServingConfirmed {
+                if model.servingNeedsReview {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(TokenColors.warning)
                         .accessibilityLabel("Needs your confirmation")
-                } else if model.servingNeedsReview {
+                } else if model.isServingConfirmed {
+                    // Confirming clears the flag, so the answered state is read from the confirmation
+                    // itself rather than from a flag that no longer stands.
                     Text("confirmed")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
@@ -94,8 +96,11 @@ public struct LabelCaptureView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
-                "Serving size \(text)" + (model.servingNeedsReview ? ", needs your confirmation" : ""))
-            if model.servingNeedsReview && !model.isServingConfirmed {
+                "Serving size \(text)"
+                    + (model.servingNeedsReview
+                        ? ", needs your confirmation"
+                        : (model.isServingConfirmed ? ", confirmed" : "")))
+            if model.servingNeedsReview {
                 Text("The parser had to correct this serving size. Confirm it, or scan the panel again.")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.error)
