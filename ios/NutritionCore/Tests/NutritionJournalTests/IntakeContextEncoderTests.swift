@@ -98,7 +98,7 @@ final class IntakeContextEncoderTests: XCTestCase {
         let projection = try encoder.linkProjection(
             intake: intake,
             revision: waterAndCreatineRevision,
-            product: nil,
+            product: product,
             sequence: 2,
             links: [
                 waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
@@ -674,7 +674,9 @@ final class IntakeContextEncoderTests: XCTestCase {
                 try encoder.linkProjection(
                     intake: intake,
                     revision: waterAndCreatineRevision,
-                    product: nil,
+                    // The revision's own snapshot: a projection is checked against the facts of that
+                    // revision, and a missing or mismatched snapshot is refused first.
+                    product: product,
                     sequence: 2,
                     links: testCase.links,
                     operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587"),
@@ -687,7 +689,9 @@ final class IntakeContextEncoderTests: XCTestCase {
             try encoder.linkProjection(
                 intake: intake,
                 revision: waterAndCreatineRevision,
-                product: nil,
+                // The revision's own snapshot: a projection is checked against the facts of that
+                // revision, and a missing or mismatched snapshot is refused first.
+                product: product,
                 sequence: 2,
                 links: [waterLink(disposition: .active, sampleUUID: sample, syncVersion: 3)],
                 operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587"))
@@ -754,7 +758,7 @@ final class IntakeContextEncoderTests: XCTestCase {
         let legal = try encoder.linkProjection(
             intake: intake,
             revision: waterAndCreatineRevision,
-            product: nil,
+            product: product,
             sequence: 2,
             links: [
                 waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
@@ -891,7 +895,7 @@ final class IntakeContextEncoderTests: XCTestCase {
             try encoder.linkProjection(
                 intake: intake,
                 revision: waterAndCreatineRevision,
-                product: nil,
+                product: product,
                 sequence: 2,
                 links: [
                     waterLink(
@@ -916,11 +920,11 @@ final class IntakeContextEncoderTests: XCTestCase {
             waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
         ]
         let first = try encoder.linkProjection(
-            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 2, links: links)
+            intake: intake, revision: waterAndCreatineRevision, product: product, sequence: 2, links: links)
         let retry = try encoder.linkProjection(
-            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 2, links: links)
+            intake: intake, revision: waterAndCreatineRevision, product: product, sequence: 2, links: links)
         let later = try encoder.linkProjection(
-            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 3, links: [
+            intake: intake, revision: waterAndCreatineRevision, product: product, sequence: 3, links: [
                 waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 4),
             ])
         let delivered = try XCTUnwrap(first.member("operation_id")?.stringValue)
@@ -951,9 +955,9 @@ final class IntakeContextEncoderTests: XCTestCase {
         ]
         let second = waterAndCreatineRevision(number: 3)
         let atTwo = try encoder.linkProjection(
-            intake: intake, revision: waterAndCreatineRevision, product: nil, sequence: 2, links: links)
+            intake: intake, revision: waterAndCreatineRevision, product: product, sequence: 2, links: links)
         let atThree = try encoder.linkProjection(
-            intake: intake, revision: second, product: nil, sequence: 2, links: links)
+            intake: intake, revision: second, product: product, sequence: 2, links: links)
         let revision2 = try XCTUnwrap(atTwo.member("operation_id")?.stringValue)
         let revision3 = try XCTUnwrap(atThree.member("operation_id")?.stringValue)
         XCTAssertNotEqual(revision2, revision3)
@@ -1031,8 +1035,11 @@ final class IntakeContextEncoderTests: XCTestCase {
     /// A component id may be as long as the contract's slug allows, so a code derived from it is shortened
     /// rather than left over the limit: a code the schema rejects would fail the whole operation.
     func testInferredCodesStayWithinTheSlugLimit() throws {
-        let componentID = String("extremely-long-synthetic-food-name-for-the-slug-limit".prefix(64))
-        XCTAssertGreaterThan(componentID.count + "dietary_".count, 64)
+        // The journal will accept a component id that fills the contract's whole 64-character slug, so the
+        // derived code would be 72 characters without trimming and has to come back inside the limit.
+        let componentID = String("extremely-long-synthetic-food-name-for-the-slug-limit-check".prefix(64))
+        XCTAssertEqual(componentID.count, 64)
+        XCTAssertEqual(componentID.count + "dietary_".count, 72)
         let value = try encoder.upsert(
             intake: intake,
             revision: waterAndCreatineRevision(components: [
@@ -1046,6 +1053,7 @@ final class IntakeContextEncoderTests: XCTestCase {
             operation: upsertOperation)
         let fact = try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue?.first)
         let code = try XCTUnwrap(fact.string("code"))
+        XCTAssertEqual(code, "dietary_extremely_long_synthetic_food_name_for_the_slug_limit_ch")
         XCTAssertLessThanOrEqual(code.count, 64, code)
         XCTAssertTrue(IntakeContextFactCatalog.isSlug(code), code)
         XCTAssertTrue(code.hasPrefix("dietary_"))
