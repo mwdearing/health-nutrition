@@ -304,7 +304,8 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
-public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, JournalErasing, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshotSource, JournalTombstoneSource,
+    JournalErasing, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -485,6 +486,137 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
             for row in try context.fetch(FetchDescriptor<ProjectionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
+        }
+    }
+
+    // MARK: Delivery bookkeeping
+
+    /// Marks one operation delivered and its projection `succeeded`, in one save.
+    ///
+    /// Acknowledging an operation that is already acknowledged is not an error: a worker that
+    /// crashed after writing but before recording the delivery will deliver again, and that second
+    /// delivery has to be recordable rather than refused.
+    public func acknowledge(operationID: String, at date: Date) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.acknowledgedAt = date
+            row.nextAttemptAt = nil
+            try Self.setProjectionState(
+                .succeeded, of: row, in: context)
+        }
+    }
+
+    /// Records one failed attempt: `attempts` grows by one, and the operation is due again at
+    /// `retryAt` unless the failure needs a person, in which case the projection becomes
+    /// `needsAttention` and no automatic retry is scheduled.
+    ///
+    /// An acknowledged operation is left alone: it was delivered, so a failure recorded afterwards
+    /// belongs to a different attempt and must not reopen it.
+    public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.attempts += 1
+            row.nextAttemptAt = retryAt
+            try Self.setProjectionState(needsAttention ? .needsAttention : .pending, of: row, in: context)
+        }
+    }
+
+    private static func outboxRecord(_ operationID: String, in context: ModelContext) throws -> OutboxRecord? {
+        try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> { $0.operationID == operationID })).first
+    }
+
+    /// The pending operations a worker must not retry on its own.
+    ///
+    /// Read through the projections rather than inferred from the operations, because `nil` on
+    /// `nextAttemptAt` means both "do not retry" (suspended) and "due now" (first attempt). Only the
+    /// projection records which one it is.
+    ///
+    /// **A suspension outlives the projection becoming noncurrent.** An edit supersedes the previous
+    /// projections but leaves their outbox operations pending, so a denied revision 1 whose projection
+    /// has just been marked noncurrent is still an undelivered, suspended operation. Filtering on
+    /// `isCurrent` here would drop it, and every later run would retry the denied write, grow its
+    /// attempt count and block the newer revision indefinitely. Each `needsAttention` projection is
+    /// therefore matched to its operation whatever its currency, because the projection still names
+    /// the one operation it belongs to.
+    public func suspendedOperationIDs() throws -> Set<String> {
+        let context = ModelContext(try openContainer())
+        let state = DestinationState.needsAttention.rawValue
+        let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
+            predicate: #Predicate<ProjectionRecord> { $0.stateRaw == state }))
+        var suspended: Set<String> = []
+        for projection in projections {
+            // Copied out of the model first: a #Predicate may compare a key path of the iterated model
+            // only against plain values, never against a key path read from a different model object.
+            let intakeID = projection.intakeID
+            let revision = projection.revision
+            let destination = projection.destinationRaw
+            let action = projection.actionRaw
+            let operations = try context.fetch(FetchDescriptor<OutboxRecord>(
+                predicate: #Predicate<OutboxRecord> { $0.intakeID == intakeID }))
+            for operation in operations where operation.acknowledgedAt == nil
+                && operation.revision == revision
+                && operation.destinationRaw == destination
+                && operation.kindRaw == action {
+                suspended.insert(operation.operationID)
+            }
+        }
+        return suspended
+    }
+
+    /// Clears the suspension on one operation, so an automatic run may pick it up again.
+    ///
+    /// This is the only way a `needsAttention` operation becomes due again, and it is deliberately a
+    /// separate call: re-arming after a person has granted or withdrawn Health access is their
+    /// decision, not something a scheduled run may decide on its own.
+    public func rearmDelivery(operationID: String) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.nextAttemptAt = nil
+            // `includingSuperseded: true`: the suspension is recorded on the projection belonging to
+            // this operation, and a later edit may have made that projection noncurrent. Clearing only
+            // current projections would leave the state at `needsAttention`, and since suspension is
+            // matched by state whatever the projection's currency, the operation would stay suspended
+            // and never be delivered again — re-arming would silently do nothing.
+            try Self.setProjectionState(.pending, of: row, in: context, includingSuperseded: true)
+        }
+    }
+
+    /// Moves the projection for this operation's revision, destination **and action**.
+    ///
+    /// The action is part of the match because deleting an intake does not bump its revision: the
+    /// queued upsert and the queued delete share an intake id, a revision number and a destination, and
+    /// differ only in what they are for. Matching without it would let acknowledging the stale upsert
+    /// mark the delete `succeeded`, and the app would then report a finished retraction while the
+    /// samples are still in Health.
+    ///
+    /// A superseded projection is left as it is: what a later revision is doing matters more than what
+    /// an old operation did.
+    /// `includingSuperseded` is for clearing a suspension, where the projection that records it may
+    /// already have been superseded by a later edit. Every other caller wants current projections only.
+    private static func setProjectionState(
+        _ state: DestinationState, of row: OutboxRecord, in context: ModelContext,
+        includingSuperseded: Bool = false
+    ) throws {
+        // Copied out of the outbox row first: a #Predicate may compare a key path of the iterated
+        // model only against plain values, not against a key path read from a different model object.
+        let intakeID = row.intakeID
+        let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
+            predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+        for projection in rows where (includingSuperseded || projection.isCurrent)
+            && projection.revision == row.revision
+            && projection.destinationRaw == row.destinationRaw
+            && projection.actionRaw == row.kindRaw {
+            projection.stateRaw = state.rawValue
         }
     }
 
