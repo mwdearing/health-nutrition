@@ -856,6 +856,161 @@ def test_accessibility_label_in_every_build_branch_exempts(tmp_path: Path) -> No
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_label_passed_as_an_argument_names_the_image_in_it(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/AddButton.swift": (
+            "import SwiftUI\n"
+            "struct AddButton: View {\n"
+            "    var body: some View {\n"
+            "        Button(action: {}, label: {\n"
+            '            Image(systemName: "plus")\n'
+            "        })\n"
+            '        .accessibilityLabel("Add water")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_label_in_every_branch_of_a_standalone_image_exempts(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Conditional.swift": (
+            "import SwiftUI\n"
+            "struct Conditional: View {\n"
+            "    var body: some View {\n"
+            '        Image(systemName: "drop")\n'
+            "#if DEBUG\n"
+            '        .accessibilityLabel("Water, debug build")\n'
+            "#else\n"
+            '        .accessibilityLabel("Water")\n'
+            "#endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_image_built_as_decorative_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Decorative.swift": (
+            "import SwiftUI\n"
+            "struct DecorativeBackground: View {\n"
+            "    var body: some View {\n"
+            '        Image(decorative: "watermark", bundle: .module)\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_label_title_closure_names_its_icon_closure(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Titled.swift": (
+            "import SwiftUI\n"
+            "struct Titled: View {\n"
+            "    var body: some View {\n"
+            "        Label {\n"
+            '            Text("Water")\n'
+            "        } icon: {\n"
+            '            Image(systemName: "drop")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_nested_labelled_image_does_not_exempt_the_outer_one(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Overlay.swift": (
+            "import SwiftUI\n"
+            "struct Overlay: View {\n"
+            "    var body: some View {\n"
+            '        Image("photo").overlay {\n'
+            '            Image(systemName: "star").accessibilityLabel("New")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The nested modifier belongs to the view inside the closure, so the outer
+    # image is still unnamed.
+    assert findings(result) == [("Overlay.swift", 4, "unlabeled-image")]
+
+
+def test_text_hidden_from_accessibility_does_not_name_a_control(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/HiddenCaption.swift": (
+            "import SwiftUI\n"
+            "struct HiddenCaption: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            remove()\n"
+            "        } label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete").accessibilityHidden(true)\n'
+            "        }\n"
+            "    }\n"
+            "    private func remove() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("HiddenCaption.swift", 7, "unlabeled-image")]
+
+
+def test_picker_options_are_not_the_picker_label(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Choice.swift": (
+            "import SwiftUI\n"
+            "struct Choice: View {\n"
+            "    var body: some View {\n"
+            '        Picker("Choose", selection: .constant(1)) {\n'
+            '            Image(systemName: "a").tag(1)\n'
+            "        }\n"
+            '        .accessibilityLabel("Choice")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The label names the picker, not the option inside it.
+    assert findings(result) == [("Choice.swift", 5, "unlabeled-image")]
+
+
+def test_action_and_label_closures_with_an_argument_list_are_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Destructive.swift": (
+            "import SwiftUI\n"
+            "struct Destructive: View {\n"
+            "    var body: some View {\n"
+            "        Button(role: .destructive) {\n"
+            "            remove()\n"
+            "        } label: {\n"
+            '            Image(systemName: "trash")\n'
+            "        }\n"
+            '        .accessibilityLabel("Remove")\n'
+            "    }\n"
+            "    private func remove() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_a_run_over_the_package_root_also_lints_the_app_target(tmp_path: Path) -> None:
     write_tree(tmp_path, {f"{UI}/Fine.swift": 'import SwiftUI\nText("hi").font(.body)\n'})
     app = tmp_path / "ios" / "HealthNutrition" / "Sources"
