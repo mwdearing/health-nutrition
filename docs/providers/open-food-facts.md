@@ -74,7 +74,16 @@ journal's product record holds no nutrient values, so the prefilled nutrients st
 storing them needs a change to the journal type.
 
 The amount, unit and time are never taken from the source: the user confirms how much they ate.
-Camera scanning is not part of this; the user types the barcode.
+
+Scanning a barcode with the camera is a way of typing it. The scanner recognizes only EAN and UPC
+codes and hands its raw payload to `ScannedBarcode.normalize`, which applies the same rule the field
+applies to typed digits: 8, 12 or 13 digits with a correct GS1 check digit, anything else ignored.
+The first payload that passes fills the barcode field and closes the scanner; no request is sent
+while the camera is open, and the lookup still runs only on the explicit Look up action. The Scan
+button is shown only where the device can scan at all, the camera lives in the app target so the UI
+package stays free of any camera framework, and the scanner never sees anything but the code: no
+image is stored, and a code of the wrong length or with a wrong check digit is simply skipped while
+scanning goes on.
 
 ## Licences
 
