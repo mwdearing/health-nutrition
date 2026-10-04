@@ -1014,7 +1014,9 @@ final class IntakeContextEncoderTests: XCTestCase {
         // The label states these per 100 g and 60 g were logged, so the facts are scaled: 210 kcal per 100 g
         // is 126 kcal here, and 20 g of protein is 12 g. Sending the label's own numbers would state the whole
         // package, not the amount eaten.
-        XCTAssertEqual(facts[1].string("code"), "dietary_energy")
+        // Energy's code is the one that names DietaryEnergyConsumed, not a `dietary_energy` that would
+        // point at a type HealthKit does not have.
+        XCTAssertEqual(facts[1].string("code"), "dietary_energy_consumed")
         XCTAssertEqual(facts[1].string("amount"), "126")
         XCTAssertEqual(facts[1].string("unit"), "kcal")
         XCTAssertEqual(facts[2].string("code"), "dietary_protein")
@@ -1028,7 +1030,7 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertEqual(facts[3].string("provenance"), "catalog_reference")
         // Each of them joins HealthKit under the type its code lands in.
         XCTAssertEqual(
-            IntakeContextFactCatalog.healthKitTypeIdentifier(forCode: "dietary_energy"),
+            IntakeContextFactCatalog.healthKitTypeIdentifier(forCode: facts[1].string("code") ?? ""),
             "HKQuantityTypeIdentifierDietaryEnergyConsumed")
     }
 

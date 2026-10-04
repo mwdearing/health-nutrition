@@ -156,6 +156,29 @@ public enum IntakeContextFactCatalog {
         return slug
     }
 
+    /// The contract code for a nutrient the journal names by key.
+    ///
+    /// The slug is the fact's identity, but the code is what names the value to the receiver and to HealthKit,
+    /// and for some nutrients the two differ: energy is `dietary_energy_consumed`, which is what
+    /// `HKQuantityTypeIdentifierDietaryEnergyConsumed` follows from and what the contract's own blend fixture
+    /// writes, so a fact coded `dietary_energy` would name a type HealthKit does not have. A key a catalog row
+    /// covers uses that row's code, and anything the app maps to a dietary quantity type gets the code that type
+    /// implies; only a key the app does not map falls back to its own name.
+    public static func code(forNutrientKey key: String) -> String {
+        let canonical = HealthKitWritePlanner.canonicalKey(for: key)
+        if let row = components.values.first(where: { $0.nutrientKey == canonical }) {
+            return row.code
+        }
+        if let mapping = HealthKitWritePlanner.mappings.first(where: { $0.nutrientKey == canonical }) {
+            let identifier = mapping.quantityTypeIdentifier
+            let prefix = "HKQuantityTypeIdentifierDietary"
+            if identifier.hasPrefix(prefix) {
+                return dietaryCodePrefix + identifier.dropFirst(prefix.count).lowercased()
+            }
+        }
+        return dietaryCode(named: nutrientSlug(for: canonical))
+    }
+
     /// The provenance of a value taken from a product snapshot, or of one recorded with no product behind it.
     ///
     /// A snapshot a recipe built was calculated from that recipe's ingredients, and the contract records that

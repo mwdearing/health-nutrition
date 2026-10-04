@@ -664,7 +664,7 @@ public struct IntakeContextEncoder: Sendable {
             var members: [String: IntakeContextJSONValue] = [
                 "component_id": .string(slug),
                 "kind": .string(FactKind.nutrient.rawValue),
-                "code": .string(IntakeContextFactCatalog.dietaryCode(named: slug)),
+                "code": .string(IntakeContextFactCatalog.code(forNutrientKey: key)),
                 "aggregation_role": .string(AggregationRole.contextOnly.intakeContextValue),
                 "provenance": .string(provenance),
             ]
