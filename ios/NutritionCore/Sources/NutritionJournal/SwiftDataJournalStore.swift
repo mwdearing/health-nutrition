@@ -427,6 +427,13 @@ enum JournalSchemaV3: VersionedSchema {
 /// suspension on the projection and nowhere else, so an upgrade would have silently **released** every
 /// denied operation, and the next automatic run would retry a denial that retrying cannot fix, for as
 /// long as it took someone to notice.
+///
+/// The work happens in **`didMigrate`, not `willMigrate`**, and that placement is the whole point of
+/// the stage rather than a detail. The context passed to `willMigrate` is still bound to the *old*
+/// schema, where `suspensionReason` does not exist: fetching V3 models there fails outright, which
+/// means the container never finishes opening and an existing journal does not open at all. After the
+/// migration the context is V3, so the new column can be read and written, and the store's own save
+/// commits it with the migration.
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self]
@@ -434,7 +441,13 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: JournalSchemaV1.self, toVersion: JournalSchemaV2.self),
-            .custom(fromVersion: JournalSchemaV2.self, toVersion: JournalSchemaV3.self, willMigrate: backfillSuspensionReasons),
+            .custom(
+                fromVersion: JournalSchemaV2.self, toVersion: JournalSchemaV3.self,
+                willMigrate: nil,
+                didMigrate: { context in
+                    try backfillSuspensionReasons(context: context)
+                    try context.save()
+                }),
         ]
     }
 
@@ -541,23 +554,30 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// Writes one suspended outbox operation with the V2 model, exactly as that build recorded it: the
     /// suspension lives on the projection and nowhere else, so migrating it is what proves the
     /// backfill is doing the work rather than the column having been filled in already.
+    ///
+    /// The V2 container is released before returning, so the caller opens a **real file on disk** rather
+    /// than one still held open by this process — which is the situation a real upgrade is in, and the
+    /// only one where the migration stage runs at all.
     static func writeV2SuspendedOperationForTesting(
         url: URL, operationID: String, intakeID: String, revision: Int, destination: JournalDestination,
         nutrientsJSON: String?
     ) throws {
-        let context = ModelContext(try v2StoreForTesting(url: url))
-        context.autosaveEnabled = false
-        context.insert(JournalSchemaV2.ProductRecord(
-            snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
-            labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1", nutrientsJSON: nutrientsJSON))
-        context.insert(JournalSchemaV2.ProjectionRecord(
-            intakeID: intakeID, revision: revision, destinationRaw: destination.rawValue,
-            actionRaw: OutboxKind.upsert.rawValue, stateRaw: DestinationState.needsAttention.rawValue,
-            isCurrent: true))
-        context.insert(JournalSchemaV2.OutboxRecord(
-            operationID: operationID, kindRaw: OutboxKind.upsert.rawValue, intakeID: intakeID,
-            revision: revision, destinationRaw: destination.rawValue, payloadHash: "hash"))
-        try context.save()
+        do {
+            let context = ModelContext(try v2StoreForTesting(url: url))
+            context.autosaveEnabled = false
+            context.insert(JournalSchemaV2.ProductRecord(
+                snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
+                labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
+                nutrientsJSON: nutrientsJSON))
+            context.insert(JournalSchemaV2.ProjectionRecord(
+                intakeID: intakeID, revision: revision, destinationRaw: destination.rawValue,
+                actionRaw: OutboxKind.upsert.rawValue, stateRaw: DestinationState.needsAttention.rawValue,
+                isCurrent: true))
+            context.insert(JournalSchemaV2.OutboxRecord(
+                operationID: operationID, kindRaw: OutboxKind.upsert.rawValue, intakeID: intakeID,
+                revision: revision, destinationRaw: destination.rawValue, payloadHash: "hash"))
+            try context.save()
+        }
     }
 
     /// Writes one revision with the V1 model, exactly as the first build did, and commits it.

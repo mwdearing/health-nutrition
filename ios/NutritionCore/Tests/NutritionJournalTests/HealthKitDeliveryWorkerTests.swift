@@ -1205,6 +1205,9 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
             url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
             destination: .healthKit, nutrientsJSON: nutrients)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: url.path),
+            "the fixture has to be a real V2 file on disk, or the migration stage never runs")
 
         let store = try makeStore(directory)
 
@@ -1224,6 +1227,9 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
             url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
             destination: .healthKit, nutrientsJSON: nil)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: url.path),
+            "the fixture has to be a real V2 file on disk, or the migration stage never runs")
 
         let store = try makeStore(directory)
 
