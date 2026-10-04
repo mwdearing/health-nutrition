@@ -601,7 +601,17 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
         guard stored.withNutrients([:]) == product.withNutrients([:]) else {
             throw JournalError.snapshotConflict(id)
         }
-        if stored.nutrients == product.nutrients { return false }
+        // The values are compared as decoded `[String: NutrientValue]`, never as the stored JSON text, so
+        // key order, the spelling of a decimal and an absent dictionary cannot make two equal sets look
+        // different.
+        //
+        // A plan that states no values at all is the everyday case: a document carries a product's identity
+        // and origin, not what it states, so every snapshot built from one arrives with an empty dictionary.
+        // That is not a disagreement with the values this store holds - it is the absence of an opinion -
+        // and treating it as one refused every restore into a store that already knew the product. Only two
+        // sets that both state values and differ are a conflict, because one snapshot id cannot name two
+        // products that state different things.
+        guard !product.nutrients.isEmpty, stored.nutrients != product.nutrients else { return false }
         guard stored.nutrients.isEmpty else { throw JournalError.snapshotConflict(id) }
         row.nutrientsJSON = Self.encodeNutrients(product.nutrients)
         return false

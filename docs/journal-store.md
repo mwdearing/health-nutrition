@@ -66,8 +66,8 @@ refuses with `JournalImportError.corrupt` instead of throwing that work away to 
 A product snapshot the store already held is not in the receipt and is never touched. A snapshot the file
 describes is matched against what the store holds by identity alone: its stored nutrient values are kept,
 because the document carries none and an import must not empty the ones the journal was reading, while a
-stored row that states none is filled in from the plan. Two different sets of values, or a *different* product
-under a snapshot id the store holds, are still a `snapshotConflict`.
+stored row that states none is filled in from the plan. Only two sets that both state values and differ are a
+`snapshotConflict`, as is a *different* product under a snapshot id the store holds.
 
 ## Usage constraints
 

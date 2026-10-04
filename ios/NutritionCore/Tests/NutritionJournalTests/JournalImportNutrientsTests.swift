@@ -114,4 +114,35 @@ final class JournalImportNutrientsTests: JournalImportTestCase {
             JournalRestorePlan(entries: [], tombstones: [], products: [product()], favorites: []))
         XCTAssertEqual(try journal.product(snapshotID: "snap-oats-1")?.nutrients, sampleNutrients)
     }
+
+    func testASnapshotStatingExactlyWhatTheStoreAlreadyHoldsIsLeftAlone() throws {
+        // The stored values have been through the store's own JSON by now, so the plan's in-memory copy and
+        // the decoded row are the same values written two ways. They are equal, and an equal set is not a
+        // conflict - not a key order apart, not a decimal spelled differently, not an empty dictionary.
+        let target = try directory()
+        let journal = try store(target)
+        try journal.insertProductSnapshotForTesting(product())
+        let receipt = try journal.restore(
+            JournalRestorePlan(entries: [], tombstones: [], products: [product()], favorites: []))
+        XCTAssertTrue(receipt.insertedProductSnapshotIDs.isEmpty, "the row was already there")
+        XCTAssertEqual(try journal.product(snapshotID: "snap-oats-1")?.nutrients, sampleNutrients)
+    }
+
+    func testADocumentThatStatesNoValuesNeverConflictsWithTheStoredOnes() throws {
+        // Every snapshot built from an export arrives with no values, because version 1 carries a product's
+        // identity and origin and not what it states. Restoring into a store that already knows the product
+        // is the ordinary case, and it must keep the values it had rather than refuse the file.
+        for stored in [sampleNutrients, [:]] {
+            let target = try directory()
+            let journal = try store(target)
+            var seeded = product()
+            seeded.nutrients = stored
+            try journal.insertProductSnapshotForTesting(seeded)
+
+            let summary = try JournalImporter.importExport(
+                try exportData(favorites: false), into: journal, favorites: nil)
+            XCTAssertEqual(summary.intakes, 2)
+            XCTAssertEqual(try journal.product(snapshotID: "snap-oats-1")?.nutrients, stored)
+        }
+    }
 }

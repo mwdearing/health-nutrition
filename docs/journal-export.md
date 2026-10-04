@@ -89,10 +89,13 @@ from, not what that product states, so a restored snapshot brings no nutrient va
 has no field for them and adding one would need a new schema version. Where the store already knows that
 snapshot id, **its values are kept exactly**: they are what the journal was reading before the restore, so an
 import cannot quietly empty them. A snapshot the store does not know is written with no values, and the
-catalog supplies them again when something needs them. Two rows under one snapshot id may differ only in
-that, and only when one of them states no values: a stored row with none is filled in from the plan, and two
-different sets of values are a conflict, because one snapshot id cannot name two products that state different
-things. The product's identity always has to match, so a file that describes a different product under a
+catalog supplies them again when something needs them. The values are compared as decoded
+`[String: NutrientValue]`, never as the stored JSON text, so key order, the spelling of a decimal and an
+absent dictionary cannot make two equal sets look different. A plan that states no values at all - which is
+every snapshot built from a document - is the absence of an opinion rather than a disagreement, so the stored
+values stand. Only two sets that **both** state values and differ are a conflict, because one snapshot id
+cannot name two products that state different things; a stored row that states none is filled in from the
+plan. The product's identity always has to match, so a file that describes a different product under a
 snapshot id the store holds is refused with `JournalError.snapshotConflict`, as it is everywhere else.
 
 **Identifiers are checked, not just stored.** A time zone has to be a name a calendar can resolve: an empty
