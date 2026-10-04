@@ -25,6 +25,9 @@ everything the app target keeps under `ios/HealthNutrition/Sources/**` — an
 
 A control spelled out as `SwiftUI.Button` is read as the same control as
 `Button`, so a module-qualified label closure names its image just the same.
+Any other qualifier names a type of its own, so a custom view spelled
+`Custom.Button` is not a SwiftUI control and the text inside its label closure
+names nothing.
 
 An enclosing layout is not a control, so text elsewhere in the same `VStack`
 names nothing:
@@ -86,12 +89,57 @@ Menu(content: {
 .accessibilityLabel("More")
 ```
 
+Only a `content:` written as an argument of the control itself counts, so the
+picker below is still left holding its options and the option image is still a
+finding:
+
+```swift
+Picker("Choose", selection: binding(content: value)) {  // content: is the binding's
+    Image(systemName: "a").tag(1)                      // unlabeled-image
+}
+.accessibilityLabel("Choice")
+```
+
 A modifier guarded by conditional compilation only counts when every
 configuration that compiles the image compiles a name as well, so a label
 written for `#if DEBUG` alone does not exempt an image that release builds leave
-unnamed. Text hidden for one build only is no exception: it speaks in the builds
-where it is visible and names nothing in the ones where it is not, so the image
-is still a finding.
+unnamed. The conditional is only followed when it is written directly after the
+image, and an arm that starts with a view rather than a modifier ends the chain —
+the traversal stops at the matching `#endif`, so nothing beyond the block is read
+as a modifier of the image:
+
+```swift
+Image("one")   // unlabeled-image
+#if DEBUG
+Text("x")      // a sibling view, not a modifier of the first image
+#endif
+Image("two").accessibilityLabel("Two")
+```
+
+Text hidden from VoiceOver reads nothing aloud, so it names nothing in the builds
+that compile the hiding. It does still name the control in the builds where it
+is visible, so the control below is named either way — a debug build reads
+"Remove" and a release build reads "Delete" — while the one below it is a finding
+in every build:
+
+```swift
+Button {} label: {
+    Image(systemName: "trash")
+    Text("Delete")
+    #if DEBUG
+    .accessibilityHidden(true)
+    Text("Remove")       // names the button in debug builds
+    #endif
+}
+
+Button {} label: {
+    Image(systemName: "trash")
+    Text("Delete")
+    #if DEBUG
+    .accessibilityHidden(true)   // unlabeled-image: the debug build names nothing
+    #endif
+}
+```
 
 Findings are reported as `path:line: unlabeled-image: …`, on the line where the
 `Image` starts.

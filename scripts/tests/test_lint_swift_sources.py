@@ -1107,6 +1107,96 @@ def test_a_trailing_closure_after_a_content_argument_is_the_control_label(tmp_pa
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_a_branch_of_a_sibling_view_ends_the_modifier_chain(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/SiblingBranch.swift": (
+            "import SwiftUI\n"
+            "struct SiblingBranch: View {\n"
+            "    var body: some View {\n"
+            "        VStack {\n"
+            '            Image("one")\n'
+            "            #if DEBUG\n"
+            '            Text("x")\n'
+            "            #endif\n"
+            '            Image("two").accessibilityLabel("Two")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The second image's label belongs to that image, so the first stays unnamed.
+    assert findings(result) == [("SiblingBranch.swift", 5, "unlabeled-image")]
+
+
+def test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/HiddenInDebug.swift": (
+            "import SwiftUI\n"
+            "struct HiddenInDebug: View {\n"
+            "    var body: some View {\n"
+            "        Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "            #if DEBUG\n"
+            "            .accessibilityHidden(true)\n"
+            '            Text("Remove")\n'
+            "            #endif\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    # A debug build reads "Remove" and a release build reads "Delete", so the
+    # control is named either way.
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_nested_content_argument_is_not_the_control_content(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedContent.swift": (
+            "import SwiftUI\n"
+            "struct NestedContent: View {\n"
+            "    var body: some View {\n"
+            '        Picker("Choose", selection: binding(content: value)) {\n'
+            '            Image(systemName: "one").tag(1)\n'
+            '        }.accessibilityLabel("Choice")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The modifier names the picker, and the option image is still unnamed.
+    assert findings(result) == [("NestedContent.swift", 5, "unlabeled-image")]
+
+
+def test_a_custom_qualified_control_does_not_name_the_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/CustomControl.swift": (
+            "import SwiftUI\n"
+            "struct CustomControl: View {\n"
+            "    var body: some View {\n"
+            "        Custom.Button(action: {}) label: {\n"
+            "            VStack {\n"
+            '                Image(systemName: "star")\n'
+            '                Text("Favourite")\n'
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A text inside a custom view's label closure is not a control label.
+    assert findings(result) == [("CustomControl.swift", 6, "unlabeled-image")]
+
+
 def test_a_run_over_the_package_root_also_lints_the_app_target(tmp_path: Path) -> None:
     write_tree(tmp_path, {f"{UI}/Fine.swift": 'import SwiftUI\nText("hi").font(.body)\n'})
     app = tmp_path / "ios" / "HealthNutrition" / "Sources"
