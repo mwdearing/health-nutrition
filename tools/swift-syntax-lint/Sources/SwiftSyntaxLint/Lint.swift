@@ -282,7 +282,7 @@ struct Allowances {
     /// newlines is one piece with a count rather than one piece per newline.
     private static func written(_ piece: TriviaPiece) -> String {
         var text = ""
-        text.write(piece)
+        piece.write(to: &text)
         return text
     }
 
