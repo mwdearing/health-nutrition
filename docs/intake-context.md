@@ -43,28 +43,29 @@ rather than a conflict.
 | Contract field | Journal source | Rule |
 |---|---|---|
 | `schema`, `schema_version` | `IntakeContextEncoder.schema`, `.schemaVersion` | Constant `healthrelay.intake-context`, `1.0`. No digest covers the constant, but every digest covers `schema_version`. |
-| `batch_id` | the caller's delivery id, `batch(batchID:operations:)` | Transport only; no digest covers it, so a retry may reuse it. |
-| `producer_id`, `writer_bundle_id`, `installation_id` | the injected `IntakeContextProducerScope` | Inside `client_payload_hash`; `producer_id` is also inside the other two, so the same intake id from another producer never collides. |
-| `operations` | `upsert(...)`, `delete(...)`, `linkProjection(...)` | Array order is the receiver's apply order, so the caller's order is kept. |
-| `operation_id` | `OutboxOperation.operationID` | The delivery identity: the same id with the same `client_payload_hash` is a duplicate, and with a different one a conflict. |
+| `batch_id` | the caller's delivery id, `batch(batchID:operations:)` | Transport only; no digest covers it, so a retry may reuse it. It is normalized to lowercase canonical UUID text, and text that is not a UUID is refused. |
+| `producer_id`, `writer_bundle_id`, `installation_id` | the injected `IntakeContextProducerScope` | Inside `client_payload_hash`; `producer_id` is also inside the other two, so the same intake id from another producer never collides. `installation_id` is normalized to lowercase canonical UUID text when the scope is built, because the schema requires that form and `UUID().uuidString` is upper case; an id that is not a UUID at all is refused before anything is hashed. |
+| `operations` | `upsert(...)`, `delete(...)`, `linkProjection(...)` | Array order is the receiver's apply order, so the caller's order is kept. Every input must be a single operation encoded under this encoder's scope: a value that is already a batch carries its own envelope and would nest one inside `operations`, so it is refused. |
+| `operation_id` | `OutboxOperation.operationID` | The delivery identity: the same id with the same `client_payload_hash` is a duplicate, and with a different one a conflict. The row's destination must be `.relay` and its action must be the one the method delivers (a link-only change is dispatched under that revision's relay upsert row), so a worker that picks up the wrong pending row cannot send one kind of operation under another's delivery identity. |
 | `operation` | `OutboxOperation.kind`, or `linkProjection(...)` | `upsert`, `delete` or `link_projection`. |
 | `intake_id` | `Intake.id` | Lowercase UUID. An operation whose outbox row names another intake or another revision is refused. |
-| `revision` | `IntakeRevision.number` | Monotonic per intake; a delete must carry a higher revision than any accepted one. |
+| `revision` | `IntakeRevision.number` | Monotonic per intake. A delete is written at **one above** the revision it deletes, because the contract requires a tombstone to stand above every accepted revision; the outbox row is the journal's bookkeeping at the last accepted revision and is not the revision the tombstone claims. |
 | `projection_sequence` | 1 for an upsert, the caller's sequence for a link projection | An upsert opens the projection lifecycle of its revision, so it is always 1; a link-only change starts at 2 and carries the complete snapshot. |
-| `occurred_at` | `Intake.occurredAt` | Written in `Intake.timeZoneIdentifier` with that zone's offset at the instant, so the wall clock and the instant agree. An unknown zone name is refused rather than silently replaced by the device's zone. |
-| `time_zone` | `Intake.timeZoneIdentifier` | An IANA name, never a host-local key. |
+| `occurred_at` | `Intake.occurredAt` | Written in `Intake.timeZoneIdentifier` with that zone's offset at the instant, so the wall clock and the instant agree. |
+| `time_zone` | `Intake.timeZoneIdentifier` | An IANA name, never a host-local key. A name this platform does not know is refused, and so is one it knows but the contract does not accept: `Factory`, `localtime`, `posixrules` and the `posix/` and `right/` copies, because they name one zone on this device rather than on every receiver. |
 | `recorded_at`, `deleted_at` | `IntakeRevision.createdAt`, the caller's deletion instant | Instants rather than wall clocks, so they are written in UTC. |
 | `category` | `Intake.category` | The journal's slug. |
+| which product the facts come from | the `ProductDefinition?` passed to `upsert` | It must be the snapshot `revision.productSnapshotID` names, and a revision that names none must be encoded with no product at all. The product's name and nutrient states are hashed as immutable facts of `(intake_id, revision)`, so another snapshot would silently make this revision's facts that product's values and the receiver would reject the retry as a domain conflict. |
 | `display_name` | `ProductDefinition.name`, else `Intake.meal`, else `Intake.note`, else `Intake.category` | The first non-empty of those. |
 | `serving` | the revision's components | The first component measured by volume, else the first measured by count, else the first component. The journal has no serving of its own. |
 | `facts` | the revision's components | One fact per component, in component order, which is part of the hashed content. |
-| `facts[].component_id` | `IntakeComponent.componentID` | A slug, unique within the operation; a repeated one is refused. |
-| `facts[].kind`, `.code`, `.aggregation_role`, `.quantity_basis`, `.provenance` | `IntakeContextFactCatalog` | The kind fixes the role: a nutrient is `context_only`, a compound is `compound_measurement` and needs a basis, a blend is `blend_total_only` and needs members. A compound states `quantity_basis` and so does a blend, whose total is a mass of the blend as printed; a nutrient states none, because its amount is the nutrient's own. A component with no catalog row is refused, because no code is invented for it. |
+| `facts[].component_id` | `IntakeComponent.componentID` | Any slug the contract accepts, unique within the operation; a repeated one and an id outside `^[a-z0-9][a-z0-9._-]{0,63}$` are refused. The journal builds these ids from food names and from recipes, so they are not a fixed list. |
+| `facts[].kind`, `.code`, `.aggregation_role`, `.quantity_basis`, `.provenance` | the component, its product, and `IntakeContextFactCatalog` as the overrides | The kind fixes the role: a nutrient is `context_only`, a compound is `compound_measurement` and needs a basis, a blend is `blend_total_only` and needs members. A compound states `quantity_basis` and so does a blend, whose total is a mass of the blend as printed; a nutrient states none, because its amount is the nutrient's own. A component with a catalog row is that row. Any other slug is inferred: it is a nutrient, because a compound and a blend carry facts a journal component does not have; its code follows what it measures (a volume is water, so `hydration`, and anything else is `dietary_<its own name>`, which is also what lets a link to it join); and its provenance is `catalog_reference` when a product snapshot is attached and `user_confirmed` when the user recorded it. |
 | `facts[].label_name` | `IntakeComponent.name` | A compound or a blend carries the name as printed; a nutrient's code already names it, so it carries none. |
 | `facts[].amount`, `.unit`, `.value_state` | the component's amount and unit, limited by the product snapshot's state | `known` carries both, spelled as the journal spells them; `unknown` and `not_applicable` carry neither, and `below_reporting_threshold` carries no amount. **Unknown is never zero.** A nutrient the snapshot states as unknown is encoded as `value_state: "unknown"` with no amount at all, and a nutrient the snapshot does not mention keeps the recorded amount. |
 | `facts[].members` | `IntakeContextFactCatalog` | Blend members in label order; a member the label does not quantify carries its name only, because member amounts are never invented or split from the total. |
-| `healthkit_links` | `[IntakeContextLink]?` | Carried when the HealthKit write plan gave one, empty otherwise: the field is required either way. A link has to name a nutrient fact of the same upsert and its `healthkit_type` has to be the type that fact's code lands in, so a link to a compound or a blend is refused. The sync identifier is `HealthKitWritePlanner.syncIdentifier(intakeID:nutrientKey:)` and the sample UUID is lowercase canonical text. |
-| `nutrition_completeness` | the product snapshot and the facts | `complete` when a snapshot states a known value for every nutrient the app writes, `partial` when some source data is known, `unknown` when nothing is. It describes this intake's source data, not the day. |
+| `healthkit_links` | `[IntakeContextLink]?` | Carried when the HealthKit write plan gave one, empty otherwise: the field is required either way. A link has to name a nutrient of this revision and its `healthkit_type` has to be the type that code lands in, so a link to a compound, a blend or an absent component is refused - and a `link_projection` is checked against the revision it names, exactly as an upsert's links are. The snapshot's own rules are checked too, because each is a permanent failure at the receiver: `sync_version` is at least 1, a `(component_id, sample)` pair appears once, one sample is active on at most one component, and within one `(component_id, healthkit_type, sync_identifier)` the versions are unique, only one sample is active, and an inactive link is never newer than the active one. The sync identifier is `HealthKitWritePlanner.syncIdentifier(intakeID:nutrientKey:)` and the sample UUID is lowercase canonical text. |
+| `nutrition_completeness` | the product snapshot and the facts | `complete` only when a snapshot states a **known** value for every nutrient the app writes and no recorded fact is unknown; a snapshot that keeps an unknown entry states the gap and is never complete however many other nutrients it fills in. Otherwise it is `partial` when some source data is known and `unknown` when nothing is. It describes this intake's source data, not the day. |
 | the three digests | `IntakeContextDigests` | Computed in the contract's order over the canonical bytes of the operation as sent, with the batch scope in place. |
 
 ## The three scopes
@@ -78,6 +79,23 @@ A changed `display_name` moves the domain and client digests and leaves the proj
 `installation_id` moves only the client digest. Reordering `healthkit_links` moves only the client digest,
 because the projection digest sorts them.
 
+## What the encoder refuses
+Every refusal is something the receiver rejects as a permanent failure, caught before a digest is taken, so a
+refusal here never costs a delivery attempt. `IntakeContextEncoderError` names the reason:
+
+- an outbox row that is not this operation's: another intake, another revision, an action the method does not
+  deliver, or a destination other than the relay;
+- a product that is not the snapshot the revision names, or one supplied for a revision that names none;
+- an empty component list, a repeated component id, a component id that is not a slug, or a negative amount;
+- a time zone name that is unknown, or that the contract rejects as host-local: `Factory`, `localtime`,
+  `posixrules`, `posix/`, `right/`;
+- a blend with no members, because member amounts are never invented;
+- a link to a component that is not a nutrient of the revision, a link whose type is not the one its code lands
+  in, a repeated `(component, sample)` pair, a non-canonical sample UUID, a `sync_version` below 1, one sample
+  active on two components, and the sync identity's unique versions, single active sample and ordering;
+- a `link_projection` at sequence 1, an empty batch, a batch carrying another batch or another scope, and a
+  `batch_id` or `installation_id` that is not UUID text.
+
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/IntakeContextDigestTests.swift` checks the worked digests and
 the worked canonical projection bytes from the contract as literal vectors, recomputes every digest of every
@@ -90,7 +108,8 @@ escapes, decimal spelling as content and link order under the projection digest.
 `Intake`, `IntakeRevision`, `ProductDefinition` and `OutboxOperation` values and compares the canonical bytes
 the encoder produced with the canonical bytes of each fixture, so the mapping table above is checked against
 the receiver's own contract rather than against itself. It also covers decimal spelling, an unknown nutrient
-that is never written as zero, compound and blend facts, the link snapshot, the injected producer scope,
-determinism, and the refusals the receiver would make anyway.
+that is never written as zero, compound and blend facts, ordinary food and recipe components, the tombstone
+revision, completeness, the link snapshot and its sync identity rules, the injected producer scope, envelope
+UUID normalization, determinism, and every refusal listed above.
 
 Swift tests run in macOS CI; the acceptance for this package is static.

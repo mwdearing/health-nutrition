@@ -72,8 +72,12 @@ public struct IntakeContextComponentDescriptor: Sendable, Hashable {
 /// It is the intake-context counterpart of `HealthKitWritePlanner.mappings`: both are tables the app keeps so
 /// that the same journal component always names the same contract concept, whatever the caller does.
 public enum IntakeContextFactCatalog {
-    /// The components this app writes. A component with no row has no catalog code, and the encoder refuses it
-    /// instead of inventing one, because the receiver's catalog decides which codes exist.
+    /// The code water is always written under, whatever the component that holds the water is called.
+    public static let hydrationCode = "hydration"
+
+    /// The components whose contract concept is not derivable from what they measure: a compound states a
+    /// basis, a blend states members. Everything else is a nutrient under its own name, so a food or a recipe
+    /// component needs no row here.
     public static let components: [String: IntakeContextComponentDescriptor] = [
         "water": IntakeContextComponentDescriptor(
             kind: .nutrient,
@@ -125,7 +129,7 @@ public enum IntakeContextFactCatalog {
     /// `dietary_vitamin_b6` is `HKQuantityTypeIdentifierDietaryVitaminB6`. The encoder checks a link's
     /// `healthkit_type` against this, because a link that names another type would not join.
     public static func healthKitTypeIdentifier(forCode code: String) -> String? {
-        if code == "hydration" { return "HKQuantityTypeIdentifierDietaryWater" }
+        if code == hydrationCode { return "HKQuantityTypeIdentifierDietaryWater" }
         guard code.hasPrefix("dietary_") else { return nil }
         let name = code.dropFirst("dietary_".count)
         let parts = name.split(separator: "_").map { part -> String in

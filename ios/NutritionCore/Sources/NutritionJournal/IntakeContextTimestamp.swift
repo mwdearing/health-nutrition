@@ -20,11 +20,12 @@ enum IntakeContextTimestamp {
     /// A whole-second instant in the named IANA zone, with that zone's offset at the instant, for example
     /// `2026-09-30T12:30:00-05:00` in `America/Chicago`.
     ///
-    /// A zone name the platform does not know is refused: a host-local key such as `localtime` or a name only
-    /// this device knows does not name one zone on every receiver, and silently falling back to the device's
-    /// own zone would send a timestamp whose wall clock no longer agrees with `time_zone`.
+    /// A zone name the platform does not know is refused, and so is one it knows but the contract does not
+    /// accept: `Factory`, `localtime` and `posixrules`, and the `posix/` and `right/` copies, name one zone on
+    /// this device rather than on every receiver. Silently falling back to the device's own zone would send a
+    /// timestamp whose wall clock no longer agrees with `time_zone`.
     static func local(_ date: Date, timeZone identifier: String) throws -> String {
-        guard let zone = TimeZone(identifier: identifier) else {
+        guard let zone = portableZone(identifier: identifier) else {
             throw IntakeContextEncoderError.unknownTimeZone(identifier)
         }
         let fields = calendarFields(of: date, in: zone)
@@ -39,6 +40,22 @@ enum IntakeContextTimestamp {
     }
 
     private static let utcZone = TimeZone(secondsFromGMT: 0)!
+
+    /// The zone names the contract rejects, lowercased: they are host-local or implementation-specific keys
+    /// rather than portable IANA zone names.
+    private static let forbiddenZoneNames: Set<String> = ["factory", "localtime", "posixrules"]
+
+    /// The forbidden trees, which are alternative copies of the zone database rather than zones in it.
+    private static let forbiddenZonePrefixes = ["posix/", "right/"]
+
+    /// The zone a contract timestamp may be written in, or nil when the name is not a portable one.
+    static func portableZone(identifier: String) -> TimeZone? {
+        let name = identifier.lowercased()
+        let forbidden = forbiddenZoneNames.contains(name)
+            || forbiddenZonePrefixes.contains(where: { name.hasPrefix($0) })
+        guard !forbidden else { return nil }
+        return TimeZone(identifier: identifier)
+    }
 
     /// The Gregorian calendar fields of an instant in a zone, with the seconds of the instant itself and
     /// nothing finer.
