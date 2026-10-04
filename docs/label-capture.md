@@ -122,6 +122,11 @@ The rules the screen keeps are short:
   it is stated the basis reads `per serving (30 g)`, the same spelling a panel that stated its own serving
   gets. A serving size the panel printed as words alone (`Serving size 1 large biscuit`) is shown as it was
   printed rather than asked for: the panel's own words are what the user checks, and the basis carries them.
+- **A printed serving size can be corrected, like a nutrient row.** The printed line is read text, so it is
+  as easy to misread as any row, and it scales everything below it besides. Correcting it takes the same
+  amount-with-its-unit form (`30 g`), has no dimension to agree with — a serving may be weighed, poured or
+  counted — and stands as an answer: the parser's question about it is answered either way. The control is
+  hidden when there is no serving to correct, which is the case for a panel that stated none.
 - **Every row the parser read an amount for can be corrected, not only a flagged one.** Recognition can
   read one valid number as another valid one — `180` as `130` — and then the parser records no reason,
   because the transcript is perfectly well formed. The row is still wrong, so the screen offers the same
@@ -137,8 +142,10 @@ The rules the screen keeps are short:
 - **A correction's unit has to be of the nutrient's own dimension.** Another unit of the same kind is
   fine, so a sodium row printed in mg may be restated as g; a litre of sodium or a gram of calories is
   refused, because nothing downstream can interpret a value in the wrong dimension and would drop it in
-  silence. The dimension is the one the row was read with, or the one that row usually carries when the
-  panel printed no unit of its own — the Calories row is measured in energy, not in grams.
+  silence. The dimension is the **nutrient's expected** one, not the unit a particular capture happened to
+  read: the printed unit is sometimes the reason the row was flagged in the first place, so following it
+  would let a correction walk into a dimension nothing downstream can interpret. The Calories row is
+  measured in energy, sodium in mass, whatever the panel happened to print.
 - **A nutrient the panel does not state stays `.unknown`.** It is shown as "not on the panel" and is
   left out of the product rather than stored as zero, so `ProductDefinition.value(for:)` reads it back
   as unknown.

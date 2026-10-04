@@ -326,15 +326,39 @@ public final class LabelCaptureViewModel: ObservableObject {
 
     /// The user states what one serving is, because the panel did not say.
     ///
-    /// An amount with its unit is required, and a unit is required with it: a serving stated as a
-    /// household word alone ("a biscuit") leaves every amount on the panel as ambiguous as it was, and a
-    /// per-serving value nobody can scale is not worth storing. A serving of zero is refused for the same
-    /// reason an intake of zero is: it says nothing.
-    ///
-    /// Text that does not state an amount changes nothing and returns false, and says why.
+    /// A serving the panel printed has nothing to enter and is replaced with `correctServingSize(text:)`
+    /// instead; this is only for the case where there is nothing on screen to correct.
     @discardableResult
     public func enterServingSize(text: String) -> Bool {
         guard servingIsMissing else { return false }
+        return applyServingSize(text)
+    }
+
+    /// The user replaces a serving size the panel printed. The printed line is read text like any other,
+    /// so it is as easy to misread as a nutrient row, and it scales every value below it besides.
+    ///
+    /// There is no dimension to check here, unlike a nutrient: a serving may be weighed, poured or counted,
+    /// so mass, volume and count units are all one serving of something.
+    @discardableResult
+    public func correctServingSize(text: String) -> Bool {
+        guard !servingIsMissing, servingText != nil else { return false }
+        guard applyServingSize(text) else { return false }
+        // Replacing the printed serving size is an answer, not a question left standing.
+        servingNeedsReview = false
+        return true
+    }
+
+    /// Whether the screen offers to correct the serving size, which it does whenever the panel stated one:
+    /// a serving that was never stated is entered, not corrected.
+    public var servingCanBeCorrected: Bool { !servingIsMissing && servingText != nil }
+
+    /// Takes one serving as the user stated it.
+    ///
+    /// An amount with its unit is required, and a unit is required with it: a serving stated as a household
+    /// word alone ("a biscuit") leaves every amount on the panel as ambiguous as it was, and a per-serving
+    /// value nobody can scale is not worth storing. A serving of zero is refused for the same reason an
+    /// intake of zero is: it says nothing. Text that does not state an amount changes nothing and says why.
+    private func applyServingSize(_ text: String) -> Bool {
         guard let parsed = NutrientAmountParser.parse(text), parsed.value > 0, let unit = parsed.unit else {
             servingSizeError = "Enter what one serving is, as an amount with its unit, for example 30 g or 240 mL."
             return false
@@ -369,7 +393,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         // A unit of another dimension is refused rather than stored: a litre of sodium or a gram of
         // calories cannot be interpreted by anything downstream, which would drop the value in silence.
         // Another unit of the same dimension is fine, so mg may be restated as g.
-        let dimension = Self.dimension(of: rows[index].value, for: key)
+        let dimension = Self.expectedDimension(for: key)
         if let named = parsed.unit, named.dimension != dimension {
             correctionError =
                 "\(rows[index].name) is measured \(Self.describe(dimension)), so the amount has to be in a unit of that kind."
@@ -382,16 +406,14 @@ public final class LabelCaptureViewModel: ObservableObject {
         return true
     }
 
-    /// The dimension a row's value is measured in: the one it was read with, or the one this row usually
-    /// carries when the panel printed none. It is what a correction's own unit has to agree with.
-    static func dimension(of value: NutrientValue, for key: NutritionFactKey) -> UnitDimension {
-        switch value {
-        case .known(_, let unit), .belowReportingThreshold(let unit):
-            if let unit { return unit.dimension }
-        case .unknown, .notApplicable:
-            break
-        }
-        return usualUnits[key]?.dimension ?? .mass
+    /// The dimension a nutrient is measured in, which is what a correction's own unit has to agree with.
+    ///
+    /// It is the nutrient's expected dimension rather than the one a particular capture happened to read.
+    /// The unit on the panel is sometimes the reason a row was flagged in the first place, so trusting it
+    /// would let a correction follow the capture into a dimension nothing downstream can interpret — and
+    /// a value silently dropped later is worse than a refused correction here.
+    static func expectedDimension(for key: NutritionFactKey) -> UnitDimension {
+        usualUnits[key]?.dimension ?? .mass
     }
 
     /// How a dimension is named in a sentence about it.

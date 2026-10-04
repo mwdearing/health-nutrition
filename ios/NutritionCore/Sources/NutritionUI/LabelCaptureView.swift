@@ -24,8 +24,10 @@ public struct LabelCaptureView: View {
     /// keyboard.
     @State private var editing: NutritionFactKey?
     @State private var draft = ""
-    /// The serving size typed for a panel that stated none.
+    /// The serving size typed for a panel that stated none, or the one replacing a serving it did state.
     @State private var servingDraft = ""
+    /// Whether the field for correcting a printed serving size is open.
+    @State private var editingServing = false
 
     public init(
         model: LabelCaptureViewModel,
@@ -85,6 +87,12 @@ public struct LabelCaptureView: View {
                     .font(.body)
                     .foregroundStyle(TokenColors.textSecondary)
                     .accessibilityLabel("Serving size not stated by the panel")
+                if let prompt = model.servingPrompt {
+                    Text(prompt)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.error)
+                        .accessibilityLabel(prompt)
+                }
                 servingEntry
             } else {
                 let text = model.servingText ?? "not stated"
@@ -119,7 +127,26 @@ public struct LabelCaptureView: View {
                         .buttonStyle(.borderless)
                         .accessibilityLabel("Confirm the serving size")
                 }
+                if model.servingNeedsReview {
+                    correctServingControl
+                }
+                if editingServing {
+                    servingEntry
+                }
             }
+        }
+    }
+
+    /// The control that opens the serving-size field for a serving the panel printed. Hidden when there is
+    /// no serving to correct, which is the same rule the nutrient rows follow.
+    @ViewBuilder
+    private var correctServingControl: some View {
+        if model.servingCanBeCorrected {
+            Button("Correct") { editingServing = true }
+                .font(.body)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Correct the serving size")
+                .accessibilityHint("Types a different serving, with its unit")
         }
     }
 
@@ -131,9 +158,10 @@ public struct LabelCaptureView: View {
                 .font(.footnote)
                 .foregroundStyle(TokenColors.error)
                 .accessibilityLabel(model.servingPrompt ?? "")
+            // No decimal keypad here: the answer is an amount with its unit, so the keyboard has to
+            // offer the letters that spell the unit.
             TextField("One serving", text: $servingDraft)
                 .font(.body)
-                .amountKeyboard()
                 .accessibilityLabel("What one serving is, with its unit")
                 .accessibilityHint("For example 30 g or 240 mL")
             if let message = model.servingSizeError {
@@ -142,8 +170,15 @@ public struct LabelCaptureView: View {
                     .foregroundStyle(TokenColors.error)
                     .accessibilityLabel(message)
             }
-            Button("Use this serving") {
-                if model.enterServingSize(text: servingDraft) { servingDraft = "" }
+            Button(model.servingIsMissing ? "Use this serving" : "Save this serving") {
+                let accepted =
+                    model.servingIsMissing
+                    ? model.enterServingSize(text: servingDraft)
+                    : model.correctServingSize(text: servingDraft)
+                if accepted {
+                    servingDraft = ""
+                    editingServing = false
+                }
             }
             .font(.body)
             .buttonStyle(.borderless)

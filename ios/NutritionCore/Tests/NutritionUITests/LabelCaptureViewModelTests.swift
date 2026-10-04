@@ -263,6 +263,54 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertFalse(model.enterServingSize(text: "anything"))
     }
 
+    // MARK: Correcting the serving size
+
+    /// A serving size the panel printed is read, not fixed: the user has to be able to replace it the
+    /// same way they replace a nutrient row, because the printed line is as easy to misread.
+    func testServingSizeCanBeCorrectedAfterItWasRead() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+
+        XCTAssertTrue(model.servingCanBeCorrected)
+        XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(240), unit: .mL))
+
+        XCTAssertTrue(model.correctServingSize(text: "30 g"))
+
+        XCTAssertEqual(model.servingText, "30 g")
+        XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(30), unit: .g))
+        XCTAssertFalse(model.servingIsMissing)
+        // Correcting the serving size is an answer like any other: it does not put the panel back to
+        // asking, and it does not block the values.
+        XCTAssertTrue(model.isServingConfirmed)
+        XCTAssertTrue(model.canApply)
+        XCTAssertEqual(model.makeProduct()?.labelBasis, "per serving (30 g)")
+    }
+
+    func testCorrectingAServingSizeWantsAnAmountWithItsUnit() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        for text in ["", "a biscuit", "30", "0 g", "30 zz"] {
+            XCTAssertFalse(model.correctServingSize(text: text), "refused: \(text)")
+            XCTAssertNotNil(model.servingSizeError)
+            // The printed serving size is still what the values are scaled by.
+            XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(240), unit: .mL))
+        }
+        XCTAssertNil(model.servingSizeError, "an accepted correction clears the message")
+    }
+
+    /// A panel that stated no serving size has nothing to correct; it has something to be told, which is
+    /// the entry field the screen shows for it.
+    func testAServingSizeThatWasNeverStatedIsEnteredRatherThanCorrected() {
+        let model = makeModel()
+        model.load(lines: ["Calories 180", "Total Fat 4g"])
+
+        XCTAssertFalse(model.servingCanBeCorrected)
+        XCTAssertFalse(model.correctServingSize(text: "30 g"))
+        XCTAssertTrue(model.servingIsMissing)
+    }
+
     // MARK: Correction units
 
     /// A correction may restate the amount in another unit of the same kind, so mg for a row printed in
@@ -278,6 +326,27 @@ final class LabelCaptureViewModelTests: XCTestCase {
         // The Calories row carries no unit of its own, so its usual unit supplies the dimension.
         XCTAssertTrue(model.correct(key: .calories, text: "180 kcal"))
         XCTAssertEqual(model.row(for: .calories)?.value, .known(Decimal(180), .kcal))
+    }
+
+    /// The dimension a correction is checked against is the nutrient's own, not whatever the capture read:
+    /// the printed unit is sometimes the reason a row was flagged in the first place.
+    func testCorrectionIsCheckedAgainstTheExpectedDimensionNotTheOneRead() {
+        XCTAssertEqual(LabelCaptureViewModel.expectedDimension(for: .sodium), .mass)
+        XCTAssertEqual(LabelCaptureViewModel.expectedDimension(for: .calories), .energy)
+        XCTAssertEqual(LabelCaptureViewModel.expectedDimension(for: .fat), .mass)
+
+        // A fat row printed in milligrams, which is flagged as an unexpected unit for fat. Correcting it
+        // to grams is the same dimension and is allowed; correcting it to calories is not.
+        let model = makeModel()
+        model.load(lines: ["Total Fat 120mg"])
+        XCTAssertEqual(model.row(for: .fat)?.value, .known(Decimal(120), .mg))
+
+        XCTAssertTrue(model.correct(key: .fat, text: "8 g"))
+        XCTAssertEqual(model.row(for: .fat)?.value, .known(Decimal(8), .g))
+
+        XCTAssertFalse(model.correct(key: .fat, text: "8 kcal"))
+        XCTAssertNotNil(model.correctionError)
+        XCTAssertEqual(model.row(for: .fat)?.value, .known(Decimal(8), .g))
     }
 
     func testCorrectionRefusesAUnitFromAnotherDimension() {
