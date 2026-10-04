@@ -7,6 +7,10 @@ import NutritionUI
 @MainActor
 struct RootView: View {
     let services: AppServices
+    /// Observed rather than reached through `services`, so publishing a change on it re-evaluates this
+    /// shell. Reading it through the plain property left the erase handler below waiting for some
+    /// unrelated change before it ran, with erased entries still on screen.
+    @ObservedObject var connections: ConnectionsPrivacyViewModel
 
     @State private var selection: AppTab = .today
     @State private var addingIntake = false
@@ -33,6 +37,7 @@ struct RootView: View {
 
     init(services: AppServices) {
         self.services = services
+        _connections = ObservedObject(wrappedValue: services.connections)
         _recipeList = State(initialValue: RecipeListViewModel(store: services.recipeStore))
     }
 
@@ -74,7 +79,10 @@ struct RootView: View {
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
-            LibraryView(model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() })
+            LibraryView(
+                model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
+                connections: connections
+            )
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
                 .sheet(isPresented: $showingRecipes) {
@@ -92,6 +100,12 @@ struct RootView: View {
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { reload() }
+        }
+        // An erase on the Connections and privacy screen empties the stores these tabs read, so their
+        // held values go with it rather than showing entries that no longer exist.
+        .onChange(of: connections.eraseGeneration) { _, _ in
+            reload()
+            recipeList.load()
         }
         .sheet(isPresented: $addingIntake) {
             if let model = addIntakeModel {
