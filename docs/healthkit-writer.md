@@ -14,9 +14,13 @@ The behaviour follows [ADR 0002](../adr/0002-healthkit-sync.md), which records w
 did on a device rather than what its documentation says. The three consequences that shape this
 plan:
 
-- **One sync identifier per (intake, nutrient)**, `"<intakeID>.<nutrientKey>"`. A shared identifier
+- **One sync identifier per (intake, nutrient)**, `"intake:<intakeID>:<nutrientKey>"` — for example
+  `intake:e6677963-418c-4027-b563-551d8a531eed:water`. A shared identifier
   would let two nutrients of one intake resolve against each other; the spike in ADR 0002 gave water
-  and protein separate identifiers for exactly this reason.
+  and protein separate identifiers for exactly this reason. The `intake:<id>:<key>` shape is not a
+  free choice here: it is the convention the HealthRelay intake-context v1 receiver contract and its
+  golden vectors write, so it matches that contract's worked example and the writer and the receiver
+  end up naming the same sample.
 - **The sync version is the journal revision.** A higher version replaces the sample; an equal
   version replaces it again (harmless, because the sample is rebuilt entirely from the stored
   revision); a lower version is silently ignored and still reports success, so the writer never

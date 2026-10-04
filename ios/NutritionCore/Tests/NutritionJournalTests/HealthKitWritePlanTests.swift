@@ -26,7 +26,7 @@ final class HealthKitWritePlanTests: XCTestCase {
 
     /// The spec the plan wrote for one nutrient, found by its sync identifier.
     private func spec(_ nutrientKey: String, in specs: [HealthKitSampleSpec]) throws -> HealthKitSampleSpec {
-        try XCTUnwrap(specs.first { $0.syncIdentifier == "\(intakeID).\(nutrientKey)" })
+        try XCTUnwrap(specs.first { $0.syncIdentifier == "intake:\(intakeID):\(nutrientKey)" })
     }
 
     // MARK: - Sync identifier and version
@@ -35,7 +35,7 @@ final class HealthKitWritePlanTests: XCTestCase {
         let specs = plan(["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
 
         XCTAssertEqual(specs.count, 2)
-        XCTAssertEqual(specs.map(\.syncIdentifier), ["\(intakeID).protein", "\(intakeID).water"])
+        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):protein", "intake:\(intakeID):water"])
         XCTAssertEqual(Set(specs.map(\.quantityTypeIdentifier)).count, 2, "water and protein are different HealthKit types")
     }
 
@@ -43,7 +43,7 @@ final class HealthKitWritePlanTests: XCTestCase {
         let otherID = "3d0c1f4a-9b2e-4d1c-8f77-2b5c6d8e9a01"
         let specs = plan(["water": .known(dec("250"), .mL)], intakeID: otherID)
 
-        XCTAssertEqual(specs.map(\.syncIdentifier), ["\(otherID).water"])
+        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(otherID):water"])
     }
 
     func testSyncVersionIsTheJournalRevision() {
@@ -87,13 +87,13 @@ final class HealthKitWritePlanTests: XCTestCase {
             "vitaminB12": .known(dec("2.4"), .mcg),
         ])
 
-        XCTAssertEqual(specs.map(\.syncIdentifier), ["\(intakeID).vitaminB12"])
+        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):vitaminB12"])
     }
 
     func testAnUnmappedNutrientKeyIsSkipped() {
         let specs = plan(["quercetin": .known(dec("10"), .mg), "water": .known(dec("250"), .mL)])
 
-        XCTAssertEqual(specs.map(\.syncIdentifier), ["\(intakeID).water"])
+        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):water"])
     }
 
     func testATotalWhoseUnitDoesNotMatchTheMappingIsSkipped() {
@@ -218,14 +218,14 @@ final class HealthKitWritePlanTests: XCTestCase {
     func testDeletionReturnsTheSyncIdentifiersToRemove() {
         XCTAssertEqual(
             HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["protein", "water"]),
-            ["\(intakeID).protein", "\(intakeID).water"]
+            ["intake:\(intakeID):protein", "intake:\(intakeID):water"]
         )
     }
 
     func testDeletionIsSortedAndDeduplicated() {
         XCTAssertEqual(
             HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["water", "protein", "water"]),
-            ["\(intakeID).protein", "\(intakeID).water"]
+            ["intake:\(intakeID):protein", "intake:\(intakeID):water"]
         )
     }
 
@@ -244,7 +244,7 @@ final class HealthKitWritePlanTests: XCTestCase {
         let specs = plan(totals)
         let deletions = HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["water", "protein", "sodium"])
 
-        XCTAssertEqual(deletions, ["\(intakeID).protein", "\(intakeID).sodium", "\(intakeID).water"])
+        XCTAssertEqual(deletions, ["intake:\(intakeID):protein", "intake:\(intakeID):sodium", "intake:\(intakeID):water"])
         XCTAssertTrue(
             deletions.count >= specs.count,
             "a delete has to cover every sample this intake may have written, not only this revision's"
@@ -258,12 +258,12 @@ final class HealthKitWritePlanTests: XCTestCase {
         let first = plan(["water": .known(dec("250"), .mL), "sodium": .known(dec("900"), .mg)], revision: 1)
         let edited = plan(["water": .known(dec("500"), .mL), "sodium": .unknown], revision: 2)
 
-        XCTAssertEqual(first.map(\.syncIdentifier), ["\(intakeID).sodium", "\(intakeID).water"])
-        XCTAssertEqual(edited.map(\.syncIdentifier), ["\(intakeID).water"], "the new revision writes no sodium sample")
+        XCTAssertEqual(first.map(\.syncIdentifier), ["intake:\(intakeID):sodium", "intake:\(intakeID):water"])
+        XCTAssertEqual(edited.map(\.syncIdentifier), ["intake:\(intakeID):water"], "the new revision writes no sodium sample")
 
         let deletions = HealthKitWritePlanner.deletion(intakeID: intakeID, keys: ["water", "sodium"])
 
-        XCTAssertTrue(deletions.contains("\(intakeID).sodium"), "the stale sodium sample from revision 1 has to go")
-        XCTAssertEqual(deletions, ["\(intakeID).sodium", "\(intakeID).water"])
+        XCTAssertTrue(deletions.contains("intake:\(intakeID):sodium"), "the stale sodium sample from revision 1 has to go")
+        XCTAssertEqual(deletions, ["intake:\(intakeID):sodium", "intake:\(intakeID):water"])
     }
 }

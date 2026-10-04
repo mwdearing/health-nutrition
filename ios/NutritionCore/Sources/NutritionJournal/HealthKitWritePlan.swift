@@ -157,8 +157,10 @@ public enum HealthKitWritePlanner {
         Array(Set(keys)).sorted().map { syncIdentifier(intakeID: intakeID, nutrientKey: $0) }
     }
 
-    /// ADR 0002: one sync identifier per (intake, nutrient), `"<intakeID>.<nutrientKey>"`.
+    /// ADR 0002: one sync identifier per (intake, nutrient), `"intake:<intakeID>:<nutrientKey>"`. The
+    /// `intake:<id>:<key>` shape is the one the HealthRelay intake-context v1 receiver contract and its
+    /// golden vectors use, so the writer and the receiver name the same samples.
     public static func syncIdentifier(intakeID: String, nutrientKey: String) -> String {
-        "\(intakeID).\(nutrientKey)"
+        "intake:\(intakeID):\(nutrientKey)"
     }
 }
