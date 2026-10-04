@@ -58,8 +58,9 @@ final class IntakeContextEncoderTests: XCTestCase {
             operation.operations.first?.clientPayloadHash, try fixture?.string(named: "client_payload_hash"))
     }
 
-    /// A delete at a higher revision carries the tombstone and nothing else: no food details, no facts, no
-    /// links, and no projection digest.
+    /// A delete carries the tombstone and nothing else: no food details, no facts, no links, and no projection
+    /// digest. It stands one revision above the last accepted upsert, which is what the receiver requires of a
+    /// tombstone and what the contract fixture encodes.
     func testDeleteIsRebuiltFromJournalTypesWithTheFixtureCanonicalBytes() throws {
         let deleted = Intake(
             id: intakeID,
@@ -70,7 +71,7 @@ final class IntakeContextEncoderTests: XCTestCase {
             currentRevision: 3)
         let deletion = try encoder.delete(
             intake: deleted,
-            revision: waterAndCreatineRevision(number: 3, components: nil),
+            revision: waterAndCreatineRevision,
             operation: outboxOperation(id: "c1f4a7d2-93be-4e65-8d0a-2b6f1e7c9a35", kind: .delete, revision: 3),
             deletedAt: Self.deletedAt)
         // Read back through the reader the receiver's own document would go through, so the assertions are on
@@ -162,7 +163,10 @@ final class IntakeContextEncoderTests: XCTestCase {
             catalogVersion: "1",
             nutrients: ["water": NutrientValue.unknown])
         let value = try encoder.upsert(
-            intake: intake, revision: waterAndCreatineRevision, product: undisclosed, operation: upsertOperation)
+            intake: intake,
+            revision: waterAndCreatineRevision(productSnapshotID: "snapshot-undisclosed-water"),
+            product: undisclosed,
+            operation: upsertOperation)
         let water = try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue?.first)
         XCTAssertEqual(water.string("value_state"), "unknown")
         XCTAssertNil(water.member("amount"), "an unknown value has no amount, and above all not a zero")
@@ -190,7 +194,7 @@ final class IntakeContextEncoderTests: XCTestCase {
                     unit: .mg),
                 IntakeComponent(componentID: "water", name: "Water", amount: try XCTUnwrap(DecimalText.decode("500")), unit: .mL),
             ],
-            productSnapshotID: "snapshot-blend",
+            productSnapshotID: nil,
             changeReason: "Logged from the label",
             createdAt: Self.labelReadAt)
         let value = try encoder.upsert(
@@ -326,17 +330,17 @@ final class IntakeContextEncoderTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? IntakeContextEncoderError, .operationDoesNotMatchIntake(intakeID))
         }
-        // A component with no catalog row has no contract code, and none is invented for it.
+        // A component id that is not a slug cannot be a contract component id, so it is refused.
         XCTAssertThrowsError(
             try encoder.upsert(
                 intake: intake,
                 revision: waterAndCreatineRevision(components: [
-                    IntakeComponent(componentID: "oats", name: "Oats", amount: try XCTUnwrap(DecimalText.decode("50")), unit: .g),
-                ]),
+                    IntakeComponent(componentID: "Rolled oats", name: "Rolled oats", amount: try XCTUnwrap(DecimalText.decode("50")), unit: .g),
+                ], productSnapshotID: nil),
                 product: nil,
                 operation: upsertOperation)
         ) { error in
-            XCTAssertEqual(error as? IntakeContextEncoderError, .unknownComponent("oats"))
+            XCTAssertEqual(error as? IntakeContextEncoderError, .invalidComponentID("Rolled oats"))
         }
         // A link to a compound would never join: a compound has no HealthKit quantity type.
         XCTAssertThrowsError(
@@ -400,6 +404,495 @@ final class IntakeContextEncoderTests: XCTestCase {
         }
     }
 
+    // MARK: - What the contract requires of a tombstone
+
+    /// A tombstone has to stand above every accepted revision, or the receiver rejects it instead of keeping
+    /// it, so the delete is written at one above the revision it deletes.
+    func testDeleteIsWrittenOneRevisionAboveTheLastAcceptedRevision() throws {
+        let lastUpsert = waterAndCreatineRevision
+        let upsert = try encoder.upsert(
+            intake: intake, revision: lastUpsert, product: product, operation: upsertOperation)
+        let deletion = try encoder.delete(
+            intake: intake,
+            revision: lastUpsert,
+            operation: outboxOperation(id: "c1f4a7d2-93be-4e65-8d0a-2b6f1e7c9a35", kind: .delete, revision: 3),
+            deletedAt: Self.deletedAt)
+        let tombstone = try XCTUnwrap(deletion.operations.first?.revision)
+        XCTAssertGreaterThan(tombstone, try XCTUnwrap(upsert.operations.first?.revision))
+        XCTAssertEqual(tombstone, lastUpsert.number + 1)
+    }
+
+    // MARK: - What the app actually records
+
+    /// Ordinary journal foods and recipe components are encodable. The catalog is a set of known overrides,
+    /// not a whitelist: any slug is a component, and its code is derived from what it measures.
+    func testAnySlugComponentIDIsEncodable() throws {
+        let oats = IntakeComponent(
+            componentID: "oats", name: "Rolled oats", amount: try XCTUnwrap(DecimalText.decode("50")), unit: .g)
+        let coffee = IntakeComponent(
+            componentID: "coffee", name: "Coffee", amount: try XCTUnwrap(DecimalText.decode("250")), unit: .mL)
+        let snapshot = ProductDefinition(
+            snapshotID: "snapshot-oats",
+            productID: "product-oats",
+            name: "Oats",
+            labelBasis: "per_serving",
+            catalogOrigin: "synthetic-catalog",
+            catalogVersion: "1",
+            nutrients: ["oats": .known(try XCTUnwrap(DecimalText.decode("380")), .kcal)])
+        let value = try encoder.upsert(
+            intake: intake,
+            revision: IntakeRevision(
+                intakeID: intakeID,
+                number: 1,
+                components: [oats, coffee],
+                productSnapshotID: "snapshot-oats",
+                changeReason: "Logged from the label",
+                createdAt: Self.recordedAt),
+            product: snapshot,
+            operation: outboxOperation(id: "4a1c9d0e-5b6f-4a8c-9d2e-3f4a5b6c7d8e", kind: .upsert, revision: 1))
+        let facts = try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue)
+        XCTAssertEqual(facts.map { $0.string("component_id") }, ["oats", "coffee"])
+        // A food measured by mass is an ordinary nutrient under its own catalog-style code, and its provenance
+        // is the catalog it was read from.
+        XCTAssertEqual(facts[0].string("kind"), "nutrient")
+        XCTAssertEqual(facts[0].string("code"), "dietary_oats")
+        XCTAssertEqual(facts[0].string("amount"), "50")
+        XCTAssertEqual(facts[0].string("unit"), "g")
+        XCTAssertEqual(facts[0].string("aggregation_role"), "context_only")
+        XCTAssertEqual(facts[0].string("provenance"), "catalog_reference")
+        XCTAssertNil(facts[0].member("quantity_basis"), "a nutrient's amount is the nutrient's own")
+        // A drink's volume is water, and water is always `hydration` whatever the component is called.
+        XCTAssertEqual(facts[1].string("kind"), "nutrient")
+        XCTAssertEqual(facts[1].string("code"), "hydration")
+        XCTAssertEqual(facts[1].string("unit"), "mL")
+        // Such a fact still joins HealthKit, because its code is a catalog code.
+        XCTAssertEqual(
+            IntakeContextFactCatalog.healthKitTypeIdentifier(forCode: try XCTUnwrap(facts[0].string("code"))),
+            "HKQuantityTypeIdentifierDietaryOats")
+    }
+
+    /// A component id the contract's slug pattern rejects has no contract form, so it is refused.
+    func testComponentIDsThatAreNotSlugsAreRejected() throws {
+        for bad in ["Rolled oats", "-water", "water!", ""] {
+            XCTAssertThrowsError(
+                try encoder.upsert(
+                    intake: intake,
+                    revision: waterAndCreatineRevision(components: [
+                        IntakeComponent(
+                            componentID: bad,
+                            name: "Whatever",
+                            amount: try XCTUnwrap(DecimalText.decode("50")),
+                            unit: .g),
+                    ], productSnapshotID: nil),
+                    product: nil,
+                    operation: upsertOperation)
+            ) { error in
+                XCTAssertEqual(error as? IntakeContextEncoderError, .invalidComponentID(bad), bad)
+            }
+        }
+    }
+
+    /// `complete` means every relevant entry is known. A snapshot that keeps an unknown entry states the gap,
+    /// so it is partial however many other nutrients it fills in.
+    func testCompletenessIsCompleteOnlyWhenEveryRelevantEntryIsKnown() throws {
+        var stated: [String: NutrientValue] = [:]
+        for key in HealthKitWritePlanner.mappings.map(\.nutrientKey) {
+            stated[key] = .known(1, .g)
+        }
+        let complete = ProductDefinition(
+            snapshotID: "snapshot-complete",
+            productID: "product-complete",
+            name: "Water with creatine",
+            labelBasis: "per_serving",
+            catalogOrigin: "synthetic-catalog",
+            catalogVersion: "1",
+            nutrients: stated)
+        let revision = waterAndCreatineRevision(productSnapshotID: "snapshot-complete")
+        let allKnown = try encoder.upsert(
+            intake: intake, revision: revision, product: complete, operation: upsertOperation)
+        XCTAssertEqual(allKnown.member("nutrition_completeness")?.stringValue, "complete")
+
+        stated["energy"] = NutrientValue.unknown
+        let oneUnknown = ProductDefinition(
+            snapshotID: "snapshot-complete",
+            productID: "product-complete",
+            name: "Water with creatine",
+            labelBasis: "per_serving",
+            catalogOrigin: "synthetic-catalog",
+            catalogVersion: "1",
+            nutrients: stated)
+        let partial = try encoder.upsert(
+            intake: intake, revision: revision, product: oneUnknown, operation: upsertOperation)
+        XCTAssertEqual(partial.member("nutrition_completeness")?.stringValue, "partial")
+    }
+
+    /// One sample is never counted for two components, so a sample UUID may be active on at most one of them.
+    func testOneSampleCannotBeActiveOnTwoComponents() throws {
+        let sample = "2c932bd1-c46d-4e38-b481-e0d842fdd429"
+        let revision = waterAndCreatineRevision(components: [
+            IntakeComponent(componentID: "water", name: "Water", amount: 250, unit: .mL),
+            IntakeComponent(componentID: "caffeine", name: "Caffeine", amount: 80, unit: .mg),
+        ], productSnapshotID: nil)
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake,
+                revision: revision,
+                product: nil,
+                operation: upsertOperation,
+                links: [
+                    waterLink(disposition: .active, sampleUUID: sample, syncVersion: 2),
+                    link(
+                        componentID: "caffeine",
+                        nutrientKey: "caffeine",
+                        sampleUUID: sample,
+                        syncVersion: 2,
+                        disposition: .active),
+                ])
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError,
+                .sampleActiveOnTwoComponents(sample: sample, first: "water", second: "caffeine"))
+        }
+        // The same sample as a superseded link on the other component is fine: it counts for nothing.
+        let ok = try encoder.upsert(
+            intake: intake,
+            revision: revision,
+            product: nil,
+            operation: upsertOperation,
+            links: [
+                waterLink(disposition: .active, sampleUUID: sample, syncVersion: 2),
+                link(
+                    componentID: "caffeine",
+                    nutrientKey: "caffeine",
+                    sampleUUID: sample,
+                    syncVersion: 2,
+                    disposition: .superseded),
+            ])
+        XCTAssertEqual(try XCTUnwrap(try XCTUnwrap(ok.member("healthkit_links"))?.arrayValue).count, 2)
+    }
+
+    /// The product is hashed as an immutable fact of the revision, so it has to be the snapshot that revision
+    /// names. The wrong snapshot, or one for a revision that has none, is refused rather than hashed.
+    func testProductSnapshotMustMatchTheRevision() throws {
+        let other = ProductDefinition(
+            snapshotID: "snapshot-other",
+            productID: "product-other",
+            name: "Something else",
+            labelBasis: "per_serving",
+            catalogOrigin: "synthetic-catalog",
+            catalogVersion: "1")
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake, revision: waterAndCreatineRevision, product: other, operation: upsertOperation)
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError,
+                .productSnapshotMismatch(expected: "snapshot-water-creatine", found: "snapshot-other"))
+        }
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake,
+                revision: waterAndCreatineRevision(productSnapshotID: nil),
+                product: product,
+                operation: upsertOperation)
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError,
+                .productSnapshotMismatch(expected: nil, found: "snapshot-water-creatine"))
+        }
+        // A snapshot the revision does name is of course accepted.
+        XCTAssertNoThrow(
+            try encoder.upsert(
+                intake: intake, revision: waterAndCreatineRevision, product: product, operation: upsertOperation))
+    }
+
+    /// A batch is built from operations, never from another batch: nesting one envelope inside `operations`
+    /// would produce a payload the receiver rejects as a schema failure.
+    func testBatchRejectsAValueThatIsAlreadyABatch() throws {
+        let upsert = try encoder.upsert(
+            intake: intake, revision: waterAndCreatineRevision, product: product, operation: upsertOperation)
+        let batch = try encoder.batch(batchID: "0bda35fc-3eab-47ce-9e31-c684343dd8d7", operations: [upsert])
+        XCTAssertEqual(batch.operations.count, 1)
+        XCTAssertThrowsError(
+            try encoder.batch(batchID: "1e2f3a4b-5c6d-4e8f-9a0b-1c2d3e4f5a6b", operations: [batch])
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .operationAlreadyBatched)
+        }
+        XCTAssertThrowsError(
+            try encoder.batch(batchID: "1e2f3a4b-5c6d-4e8f-9a0b-1c2d3e4f5a6b", operations: [upsert, batch])
+        )
+    }
+
+    /// A link projection is checked against the revision it names, exactly as an upsert's links are, so it
+    /// cannot link a compound, a component that is not there, or the wrong quantity type.
+    func testLinkProjectionValidatesItsLinksAgainstTheRevision() throws {
+        let projection = { (links: [IntakeContextLink]) in
+            try encoder.linkProjection(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                sequence: 2,
+                operation: outboxOperation(id: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587", kind: .upsert, revision: 2),
+                links: links)
+        }
+        // A compound has no HealthKit quantity type, so a link to it would never join.
+        XCTAssertThrowsError(
+            try projection([
+                link(
+                    componentID: "creatine-monohydrate",
+                    nutrientKey: "creatine-monohydrate",
+                    sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
+                    syncVersion: 3,
+                    disposition: .active),
+            ])
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError, .linkComponentIsNotAFact("creatine-monohydrate"))
+        }
+        // Neither can a component the revision does not have.
+        XCTAssertThrowsError(
+            try projection([
+                link(
+                    componentID: "caffeine",
+                    nutrientKey: "caffeine",
+                    sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
+                    syncVersion: 3,
+                    disposition: .active),
+            ])
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .linkComponentIsNotAFact("caffeine"))
+        }
+        // And a nutrient of this revision still has to name the type its code lands in.
+        XCTAssertThrowsError(
+            try projection([
+                waterLink(
+                    disposition: .active,
+                    sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
+                    syncVersion: 3,
+                    typeIdentifier: "HKQuantityTypeIdentifierDietarySodium"),
+            ])
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError,
+                .linkTypeMismatch(
+                    component: "water",
+                    expected: "HKQuantityTypeIdentifierDietaryWater",
+                    found: "HKQuantityTypeIdentifierDietarySodium"))
+        }
+        XCTAssertNoThrow(
+            try projection([
+                waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
+            ]))
+    }
+
+    /// One sync identity names one object: its versions are unique, only one sample of it is active, and an
+    /// inactive link is never newer than the active one.
+    func testSyncIdentityRulesWithinOneSnapshot() throws {
+        let newer = "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396"
+        let older = "2c932bd1-c46d-4e38-b481-e0d842fdd429"
+        // Two samples active for one sync identity: HealthKit replaces a sample, it never duplicates it.
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                product: product,
+                operation: upsertOperation,
+                links: [
+                    waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
+                    waterLink(disposition: .active, sampleUUID: older, syncVersion: 2),
+                ])
+        ) { error in
+            guard case .duplicateActiveLinkForSyncIdentity? = error as? IntakeContextEncoderError else {
+                return XCTFail("expected a duplicate active link, got \(error)")
+            }
+        }
+        // The same version twice for one identity.
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                product: product,
+                operation: upsertOperation,
+                links: [
+                    waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
+                    waterLink(disposition: .superseded, sampleUUID: older, syncVersion: 3),
+                ])
+        ) { error in
+            guard case .duplicateSyncVersion? = error as? IntakeContextEncoderError else {
+                return XCTFail("expected a duplicate sync version, got \(error)")
+            }
+        }
+        // An inactive link newer than the active one.
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                product: product,
+                operation: upsertOperation,
+                links: [
+                    waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
+                    waterLink(disposition: .superseded, sampleUUID: older, syncVersion: 4),
+                ])
+        ) { error in
+            XCTAssertEqual(
+                error as? IntakeContextEncoderError,
+                .inactiveLinkNewerThanActive(
+                    syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+                    active: 3,
+                    found: 4))
+        }
+        // The contract's own sequence-2 snapshot is exactly the legal shape: one active link at the highest
+        // version, with the sample it replaced kept for audit.
+        let legal = try encoder.linkProjection(
+            intake: intake,
+            revision: waterAndCreatineRevision,
+            sequence: 2,
+            operation: outboxOperation(id: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587", kind: .upsert, revision: 2),
+            links: [
+                waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
+                waterLink(disposition: .superseded, sampleUUID: older, syncVersion: 2),
+            ])
+        XCTAssertEqual(try XCTUnwrap(try XCTUnwrap(legal.member("healthkit_links"))?.arrayValue).count, 2)
+    }
+
+    /// A sync version below 1 is a schema failure, so it never reaches a digest.
+    func testNonPositiveSyncVersionsAreRejected() throws {
+        for version in [0, -1] {
+            XCTAssertThrowsError(
+                try encoder.upsert(
+                    intake: intake,
+                    revision: waterAndCreatineRevision,
+                    product: product,
+                    operation: upsertOperation,
+                    links: [
+                        waterLink(
+                            disposition: .active,
+                            sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+                            syncVersion: version),
+                    ])
+            ) { error in
+                XCTAssertEqual(error as? IntakeContextEncoderError, .invalidSyncVersion(version))
+            }
+        }
+    }
+
+    /// A zone name that does not name one zone on every receiver is refused, even when this platform knows it.
+    func testImplementationSpecificTimeZonesAreRejected() throws {
+        for identifier in [
+            "Factory", "localtime", "posixrules", "posix/America/Chicago", "right/UTC", "Nowhere/Special",
+        ] {
+            var copy = intake
+            copy.timeZoneIdentifier = identifier
+            XCTAssertThrowsError(
+                try encoder.upsert(
+                    intake: copy,
+                    revision: waterAndCreatineRevision,
+                    product: product,
+                    operation: upsertOperation)
+            ) { error in
+                XCTAssertEqual(error as? IntakeContextEncoderError, .unknownTimeZone(identifier), identifier)
+            }
+        }
+        // A real IANA zone is of course accepted.
+        XCTAssertNoThrow(
+            try encoder.upsert(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                product: product,
+                operation: upsertOperation))
+    }
+
+    /// The envelope's UUIDs are normalized to lowercase canonical text before anything is hashed, so a caller
+    /// that spells one in upper case still sends a payload the schema accepts, and text that is not a UUID is
+    /// refused rather than sent.
+    func testEnvelopeUUIDsAreNormalizedToLowercaseCanonicalText() throws {
+        let shouted = IntakeContextEncoder(scope: IntakeContextProducerScope(
+            producerID: "nutrition-app",
+            writerBundleID: "com.example.healthrelay.nutrition",
+            installationID: "507B8FBB-78D3-450C-A88F-487E90DF92E6"))
+        XCTAssertEqual(shouted.scope.installationID, "507b8fbb-78d3-450c-a88f-487e90df92e6")
+        let value = try shouted.upsert(
+            intake: intake, revision: waterAndCreatineRevision, product: product, operation: upsertOperation)
+        let lowercased = try encoder.upsert(
+            intake: intake, revision: waterAndCreatineRevision, product: product, operation: upsertOperation)
+        // Normalization happens before hashing, so the two spellings are one payload.
+        XCTAssertEqual(value.canonicalBytes, lowercased.canonicalBytes)
+        let batch = try shouted.batch(
+            batchID: "0BDA35FC-3EAB-47CE-9E31-C684343DD8D7", operations: [value])
+        XCTAssertEqual(batch.member("batch_id")?.stringValue, "0bda35fc-3eab-47ce-9e31-c684343dd8d7")
+        XCTAssertEqual(batch.member("installation_id")?.stringValue, "507b8fbb-78d3-450c-a88f-487e90df92e6")
+        XCTAssertEqual(
+            batch.canonicalBytes,
+            try encoder.batch(batchID: "0bda35fc-3eab-47ce-9e31-c684343dd8d7", operations: [lowercased]).canonicalBytes)
+
+        let broken = IntakeContextEncoder(scope: IntakeContextProducerScope(
+            producerID: "nutrition-app",
+            writerBundleID: "com.example.healthrelay.nutrition",
+            installationID: "not-a-uuid"))
+        XCTAssertThrowsError(
+            try broken.upsert(
+                intake: intake, revision: waterAndCreatineRevision, product: product, operation: upsertOperation)
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .invalidInstallationID("not-a-uuid"))
+        }
+        XCTAssertThrowsError(
+            try encoder.batch(batchID: "not-a-uuid", operations: [lowercased])
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .invalidBatchID("not-a-uuid"))
+        }
+    }
+
+    /// The outbox row's action and destination have to be the ones this method delivers, so a worker that
+    /// dispatches the wrong pending row cannot send one kind of operation under another's delivery identity.
+    func testOutboxActionAndDestinationMustMatchTheMethod() throws {
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                product: product,
+                operation: outboxOperation(id: "8b8719ea-6bb3-4dd4-8508-a63ee33d1381", kind: .delete, revision: 2))
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .operationActionMismatch(.delete))
+        }
+        XCTAssertThrowsError(
+            try encoder.upsert(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                product: product,
+                operation: outboxOperation(
+                    id: "8b8719ea-6bb3-4dd4-8508-a63ee33d1381",
+                    kind: .upsert,
+                    revision: 2,
+                    destination: .healthKit))
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .operationDestinationMismatch(.healthKit))
+        }
+        XCTAssertThrowsError(
+            try encoder.delete(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                operation: outboxOperation(id: "c1f4a7d2-93be-4e65-8d0a-2b6f1e7c9a35", kind: .upsert, revision: 3),
+                deletedAt: Self.deletedAt)
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .operationActionMismatch(.upsert))
+        }
+        // A link-only change is dispatched under the revision's relay upsert row.
+        XCTAssertThrowsError(
+            try encoder.linkProjection(
+                intake: intake,
+                revision: waterAndCreatineRevision,
+                sequence: 2,
+                operation: outboxOperation(id: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587", kind: .delete, revision: 2),
+                links: [
+                    waterLink(
+                        disposition: .active,
+                        sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
+                        syncVersion: 3),
+                ])
+        ) { error in
+            XCTAssertEqual(error as? IntakeContextEncoderError, .operationActionMismatch(.delete))
+        }
+    }
+
     // MARK: - The journal types the fixtures are rebuilt from
 
     /// 2026-09-30T17:30:00Z is the worked example's `occurred_at` of 12:30 in `America/Chicago`, whose offset
@@ -421,10 +914,14 @@ final class IntakeContextEncoderTests: XCTestCase {
     }
 
     private var waterAndCreatineRevision: IntakeRevision {
-        waterAndCreatineRevision(number: 2, components: nil)
+        waterAndCreatineRevision()
     }
 
-    private func waterAndCreatineRevision(number: Int = 2, components: [IntakeComponent]?) -> IntakeRevision {
+    private func waterAndCreatineRevision(
+        number: Int = 2,
+        components: [IntakeComponent]? = nil,
+        productSnapshotID: String? = "snapshot-water-creatine"
+    ) -> IntakeRevision {
         IntakeRevision(
             intakeID: intakeID,
             number: number,
@@ -432,7 +929,7 @@ final class IntakeContextEncoderTests: XCTestCase {
                 IntakeComponent(componentID: "water", name: "Water", amount: 500, unit: .mL),
                 IntakeComponent(componentID: "creatine-monohydrate", name: "Creatine monohydrate", amount: 5, unit: .g),
             ],
-            productSnapshotID: "snapshot-water-creatine",
+            productSnapshotID: productSnapshotID,
             changeReason: "Added the creatine",
             createdAt: Self.recordedAt)
     }
@@ -454,27 +951,54 @@ final class IntakeContextEncoderTests: XCTestCase {
         outboxOperation(id: "8b8719ea-6bb3-4dd4-8508-a63ee33d1381", kind: .upsert, revision: 2)
     }
 
-    private func outboxOperation(id: String, kind: OutboxKind, revision: Int) -> OutboxOperation {
+    private func outboxOperation(
+        id: String,
+        kind: OutboxKind,
+        revision: Int,
+        destination: JournalDestination = .relay
+    ) -> OutboxOperation {
         OutboxOperation(
             operationID: id,
             kind: kind,
             intakeID: intakeID,
             revision: revision,
-            destination: .relay,
+            destination: destination,
             payloadHash: "sha256:" + String(repeating: "0", count: 64))
     }
 
     private func waterLink(
         disposition: IntakeContextLinkDisposition,
         sampleUUID: String,
-        syncVersion: Int
+        syncVersion: Int,
+        typeIdentifier: String? = nil
+    ) -> IntakeContextLink {
+        link(
+            componentID: "water",
+            nutrientKey: "water",
+            typeIdentifier: typeIdentifier,
+            sampleUUID: sampleUUID,
+            syncVersion: syncVersion,
+            disposition: disposition)
+    }
+
+    /// One link, with the type and the sync identifier the write plan would have used for that nutrient.
+    private func link(
+        componentID: String,
+        nutrientKey: String,
+        typeIdentifier: String? = nil,
+        sampleUUID: String,
+        syncVersion: Int,
+        disposition: IntakeContextLinkDisposition,
+        syncIdentifier: String? = nil
     ) -> IntakeContextLink {
         IntakeContextLink(
-            componentID: "water",
+            componentID: componentID,
             sampleUUID: sampleUUID,
-            healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+            healthKitTypeIdentifier: typeIdentifier
+                ?? "HKQuantityTypeIdentifierDietary" + nutrientKey.prefix(1).uppercased() + nutrientKey.dropFirst(),
             // ADR 0002: one sync identifier per (intake, nutrient), the same one the writer saved with.
-            syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+            syncIdentifier: syncIdentifier
+                ?? HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: nutrientKey),
             syncVersion: syncVersion,
             disposition: disposition)
     }
