@@ -216,6 +216,11 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// The parser had to correct the serving size, so the user is asked about it like any other value.
     @Published public private(set) var servingNeedsReview = false
     @Published public private(set) var isServingConfirmed = false
+    /// The panel stated no serving size, or stated one with no amount in it, so the values are per
+    /// something the user has to name before they can be used.
+    @Published public private(set) var servingIsMissing = false
+    /// Why a serving size the user typed was refused, or nil when the last one was accepted.
+    @Published public private(set) var servingSizeError: String?
     /// The panel stated no amount at all, so there is nothing to review.
     @Published public private(set) var isUnreadable = false
     @Published public private(set) var hasPanel = false
@@ -259,6 +264,10 @@ public final class LabelCaptureViewModel: ObservableObject {
         servingsPerContainer = panel.servingsPerContainer
         servingNeedsReview = panel.servingSize?.review != nil
         isServingConfirmed = false
+        // A serving size the panel printed with no amount in it ("1 large biscuit") states nothing the
+        // values can be scaled by, so it is asked for in the same way a missing one is.
+        servingIsMissing = panel.servingSize?.quantity == nil
+        servingSizeError = nil
         isUnreadable = panel.isUnreadable
         hasPanel = true
         correctionError = nil
@@ -272,6 +281,8 @@ public final class LabelCaptureViewModel: ObservableObject {
         servingsPerContainer = nil
         servingNeedsReview = false
         isServingConfirmed = false
+        servingIsMissing = false
+        servingSizeError = nil
         isUnreadable = false
         hasPanel = false
         correctionError = nil
@@ -313,6 +324,29 @@ public final class LabelCaptureViewModel: ObservableObject {
         correctionError = nil
     }
 
+    /// The user states what one serving is, because the panel did not say.
+    ///
+    /// An amount with its unit is required, and a unit is required with it: a serving stated as a
+    /// household word alone ("a biscuit") leaves every amount on the panel as ambiguous as it was, and a
+    /// per-serving value nobody can scale is not worth storing. A serving of zero is refused for the same
+    /// reason an intake of zero is: it says nothing.
+    ///
+    /// Text that does not state an amount changes nothing and returns false, and says why.
+    @discardableResult
+    public func enterServingSize(text: String) -> Bool {
+        guard servingIsMissing else { return false }
+        guard let parsed = NutrientAmountParser.parse(text), parsed.value > 0, let unit = parsed.unit else {
+            servingSizeError = "Enter what one serving is, as an amount with its unit, for example 30 g or 240 mL."
+            return false
+        }
+        servingText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        servingQuantity = Quantity(value: parsed.value, unit: unit)
+        servingIsMissing = false
+        isServingConfirmed = true
+        servingSizeError = nil
+        return true
+    }
+
     /// Replaces a value with one the user typed, in the unit the text named or in the unit the panel
     /// printed.
     ///
@@ -332,11 +366,43 @@ public final class LabelCaptureViewModel: ObservableObject {
             correctionError = "Enter zero or more, using digits and a point, and add the unit if you want a different one."
             return false
         }
+        // A unit of another dimension is refused rather than stored: a litre of sodium or a gram of
+        // calories cannot be interpreted by anything downstream, which would drop the value in silence.
+        // Another unit of the same dimension is fine, so mg may be restated as g.
+        let dimension = Self.dimension(of: rows[index].value, for: key)
+        if let named = parsed.unit, named.dimension != dimension {
+            correctionError =
+                "\(rows[index].name) is measured \(Self.describe(dimension)), so the amount has to be in a unit of that kind."
+            return false
+        }
         let unit = parsed.unit ?? Self.unit(of: rows[index].value, for: key)
         rows[index].value = .known(parsed.value, unit)
         rows[index].status = .corrected
         correctionError = nil
         return true
+    }
+
+    /// The dimension a row's value is measured in: the one it was read with, or the one this row usually
+    /// carries when the panel printed none. It is what a correction's own unit has to agree with.
+    static func dimension(of value: NutrientValue, for key: NutritionFactKey) -> UnitDimension {
+        switch value {
+        case .known(_, let unit), .belowReportingThreshold(let unit):
+            if let unit { return unit.dimension }
+        case .unknown, .notApplicable:
+            break
+        }
+        return usualUnits[key]?.dimension ?? .mass
+    }
+
+    /// How a dimension is named in a sentence about it.
+    static func describe(_ dimension: UnitDimension) -> String {
+        switch dimension {
+        case .mass: return "by weight"
+        case .volume: return "by volume"
+        case .energy: return "in energy units"
+        case .count: return "in counts"
+        case .internationalUnit: return "in international units"
+        }
     }
 
     /// The unit a corrected value keeps: the one the panel printed, or the one this row usually
@@ -353,14 +419,17 @@ public final class LabelCaptureViewModel: ObservableObject {
         return usualUnits[key] ?? .g
     }
 
-    /// How many values are still waiting for the user: the flagged rows they have not answered, plus
-    /// a flagged serving size.
+    /// How many values are still waiting for the user: the flagged rows they have not answered, a
+    /// serving size the parser corrected or the panel left out, and nothing else.
     public var pendingCount: Int {
-        rows.filter(\.isPending).count + (servingNeedsReview && !isServingConfirmed ? 1 : 0)
+        var pending = rows.filter(\.isPending).count
+        if servingIsMissing || (servingNeedsReview && !isServingConfirmed) { pending += 1 }
+        return pending
     }
 
     /// Whether the captured values may be used. False while a value the parser was unsure about is
-    /// unanswered, and false for a panel that stated no amount at all.
+    /// unanswered, false for a panel that stated no amount at all, and false while one serving is still
+    /// unstated: per-serving numbers that cannot be scaled are not worth saving.
     public var canApply: Bool {
         hasPanel && !isUnreadable && !rows.isEmpty && pendingCount == 0
     }
@@ -380,8 +449,31 @@ public final class LabelCaptureViewModel: ObservableObject {
             let known = rows.filter { $0.value != .unknown }.count
             return "Read \(known) of \(rows.count) rows. A nutrient the panel does not state stays unknown."
         }
-        let rowsPhrase = pending == 1 ? "1 value needs your confirmation" : "\(pending) values need your confirmation"
-        return "\(rowsPhrase) before these values can be used."
+        let pendingRows = rows.filter(\.isPending).count
+        var parts: [String] = []
+        if pendingRows == 1 {
+            parts.append("1 value needs your confirmation")
+        } else if pendingRows > 1 {
+            parts.append("\(pendingRows) values need your confirmation")
+        }
+        if servingIsMissing {
+            parts.append("the panel's serving size was not read, so enter what one serving is")
+        } else if servingNeedsReview && !isServingConfirmed {
+            parts.append("the serving size needs your confirmation")
+        }
+        return parts.joined(separator: ", ") + " before these values can be used."
+    }
+
+    /// The prompt above the serving-size field, or nil when there is nothing to ask for: a serving the
+    /// panel printed is either fine or, when the parser corrected it, answered by confirming it.
+    public var servingPrompt: String? {
+        if servingIsMissing {
+            return "The serving size was not read from that shot. Enter what one serving is, so the values below can be scaled to how much you actually have."
+        }
+        if servingNeedsReview && !isServingConfirmed {
+            return "The parser had to correct this serving size. Confirm it, or scan the panel again."
+        }
+        return nil
     }
 
     // MARK: The product

@@ -24,6 +24,8 @@ public struct LabelCaptureView: View {
     /// keyboard.
     @State private var editing: NutritionFactKey?
     @State private var draft = ""
+    /// The serving size typed for a panel that stated none.
+    @State private var servingDraft = ""
 
     public init(
         model: LabelCaptureViewModel,
@@ -74,40 +76,79 @@ public struct LabelCaptureView: View {
     }
 
     /// The serving size as the panel printed it, flagged like any other value because it scales
-    /// everything below it.
+    /// everything below it. A panel that stated none gets a field instead: the values stay per serving,
+    /// so one serving has to be named before they can be used or scaled to an intake.
     private var servingSection: some View {
         Section("Serving size") {
-            let text = model.servingText ?? "not stated"
-            HStack {
-                Text(text)
+            if model.servingIsMissing {
+                Text("not stated")
                     .font(.body)
-                Spacer()
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .accessibilityLabel("Serving size not stated by the panel")
+                servingEntry
+            } else {
+                let text = model.servingText ?? "not stated"
+                HStack {
+                    Text(text)
+                        .font(.body)
+                    Spacer()
+                    if model.servingNeedsReview {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(TokenColors.warning)
+                            .accessibilityLabel("Needs your confirmation")
+                    } else if model.isServingConfirmed {
+                        // Confirming clears the flag, so the answered state is read from the confirmation
+                        // itself rather than from a flag that no longer stands.
+                        Text("confirmed")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "Serving size \(text)"
+                        + (model.servingNeedsReview
+                            ? ", needs your confirmation"
+                            : (model.isServingConfirmed ? ", confirmed" : "")))
                 if model.servingNeedsReview {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(TokenColors.warning)
-                        .accessibilityLabel("Needs your confirmation")
-                } else if model.isServingConfirmed {
-                    // Confirming clears the flag, so the answered state is read from the confirmation
-                    // itself rather than from a flag that no longer stands.
-                    Text("confirmed")
+                    Text(model.servingPrompt ?? "")
                         .font(.footnote)
-                        .foregroundStyle(TokenColors.textSecondary)
+                        .foregroundStyle(TokenColors.error)
+                    Button("Confirm serving size") { model.confirmServing() }
+                        .font(.body)
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Confirm the serving size")
                 }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(
-                "Serving size \(text)"
-                    + (model.servingNeedsReview
-                        ? ", needs your confirmation"
-                        : (model.isServingConfirmed ? ", confirmed" : "")))
-            if model.servingNeedsReview {
-                Text("The parser had to correct this serving size. Confirm it, or scan the panel again.")
+        }
+    }
+
+    /// The field for a serving size the panel did not state. The unit is part of what is asked for,
+    /// because "30" or "a biscuit" would leave the values below exactly as unscalable as they were.
+    private var servingEntry: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(model.servingPrompt ?? "")
+                .font(.footnote)
+                .foregroundStyle(TokenColors.error)
+                .accessibilityLabel(model.servingPrompt ?? "")
+            TextField("One serving", text: $servingDraft)
+                .font(.body)
+                .amountKeyboard()
+                .accessibilityLabel("What one serving is, with its unit")
+                .accessibilityHint("For example 30 g or 240 mL")
+            if let message = model.servingSizeError {
+                Text(message)
                     .font(.footnote)
                     .foregroundStyle(TokenColors.error)
-                Button("Confirm serving size") { model.confirmServing() }
-                    .font(.body)
-                    .accessibilityLabel("Confirm the serving size")
+                    .accessibilityLabel(message)
             }
+            Button("Use this serving") {
+                if model.enterServingSize(text: servingDraft) { servingDraft = "" }
+            }
+            .font(.body)
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Use this serving size")
+            .accessibilityHint("Keeps the values per serving, with this serving written down")
         }
     }
 

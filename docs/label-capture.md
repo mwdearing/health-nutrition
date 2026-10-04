@@ -114,6 +114,14 @@ The rules the screen keeps are short:
   saved on the parser's word.
 - **A flagged serving size blocks the same way.** The serving size scales every nutrient below it, so
   a `Serving size 1 cup (24O mL)` the parser corrected is confirmed separately, exactly like a row.
+- **A panel that stated no serving size cannot be used until the user states one.** Values read from a
+  panel are per serving, and one serving may be 30 g, 250 mL or one item, so a capture that missed the
+  serving-size line would otherwise be stored as a bare `per serving` with numbers nothing can scale. The
+  screen asks for it in an amount with its unit — `30 g`, `240 mL` — and refuses a number without one or a
+  household word on its own, because that would leave the values exactly as unscalable as they were. Once
+  it is stated the basis reads `per serving (30 g)`, the same spelling a panel that stated its own serving
+  gets. A serving the panel printed with no amount in it (`Serving size 1 large biscuit`) is asked for in
+  the same way.
 - **Every row the parser read an amount for can be corrected, not only a flagged one.** Recognition can
   read one valid number as another valid one — `180` as `130` — and then the parser records no reason,
   because the transcript is perfectly well formed. The row is still wrong, so the screen offers the same
@@ -126,6 +134,11 @@ The rules the screen keeps are short:
   entry. Everything else stays as strict as the form — digits with at most one point, no sign, no locale
   and no grouping. The unit is optional: text that names none keeps the unit the panel printed, and text
   that names one is read as that unit.
+- **A correction's unit has to be of the nutrient's own dimension.** Another unit of the same kind is
+  fine, so a sodium row printed in mg may be restated as g; a litre of sodium or a gram of calories is
+  refused, because nothing downstream can interpret a value in the wrong dimension and would drop it in
+  silence. The dimension is the one the row was read with, or the one that row usually carries when the
+  panel printed no unit of its own — the Calories row is measured in energy, not in grams.
 - **A nutrient the panel does not state stays `.unknown`.** It is shown as "not on the panel" and is
   left out of the product rather than stored as zero, so `ProductDefinition.value(for:)` reads it back
   as unknown.

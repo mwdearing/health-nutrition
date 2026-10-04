@@ -215,6 +215,91 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertNil(model.servingQuantity)
     }
 
+    /// A panel can be read except for its serving-size line, which leaves every amount ambiguous: one
+    /// serving might be 30 g or 250 mL or one item, and nothing downstream can scale the values. So the
+    /// screen asks for the serving size rather than storing a bare "per serving".
+    func testCaptureWithoutAServingSizeCannotBeAppliedUntilOneIsEntered() {
+        let model = makeModel()
+        model.load(lines: ["Calories 180", "Total Fat 4g", "Protein 8g"])
+
+        XCTAssertFalse(model.isUnreadable, "the rows were read, so this is not an unreadable panel")
+        XCTAssertTrue(model.servingIsMissing)
+        XCTAssertFalse(model.canApply)
+        XCTAssertNil(model.makeProduct())
+        XCTAssertEqual(model.pendingCount, 1)
+
+        XCTAssertTrue(model.enterServingSize(text: "30 g"))
+
+        XCTAssertFalse(model.servingIsMissing)
+        XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(30), unit: .g))
+        XCTAssertTrue(model.canApply)
+        // The values stay per serving, now with the serving spelled out.
+        XCTAssertEqual(model.makeProduct()?.labelBasis, "per serving (30 g)")
+    }
+
+    func testEnteringAServingSizeWantsAnAmountWithItsUnit() {
+        let model = makeModel()
+        model.load(lines: ["Calories 180", "Total Fat 4g"])
+
+        for text in ["", "a biscuit", "30", "0 g", "30 zz"] {
+            XCTAssertFalse(model.enterServingSize(text: text), "refused: \(text)")
+            XCTAssertNotNil(model.servingSizeError)
+            XCTAssertTrue(model.servingIsMissing)
+        }
+
+        XCTAssertTrue(model.enterServingSize(text: "240 mL"))
+        XCTAssertNil(model.servingSizeError)
+        XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(240), unit: .mL))
+    }
+
+    /// A serving size the panel printed is the user's to confirm, not to retype: it was read, so it is
+    /// shown as printed and only asked about when the parser corrected it.
+    func testAStatedServingSizeIsNotAskedForAgain() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        XCTAssertFalse(model.servingIsMissing)
+        XCTAssertEqual(model.servingText, "1 cup (240mL)")
+        XCTAssertFalse(model.enterServingSize(text: "anything"))
+    }
+
+    // MARK: Correction units
+
+    /// A correction may restate the amount in another unit of the same kind, so mg for a row printed in
+    /// mg and g for the same row both read. It may not move a nutrient into a dimension nothing can
+    /// interpret, because the value would then be silently dropped downstream.
+    func testCorrectionAcceptsAnotherUnitOfTheSameDimension() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        XCTAssertTrue(model.correct(key: .sodium, text: "0.18 g"))
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(string: "0.18")!, .g))
+
+        // The Calories row carries no unit of its own, so its usual unit supplies the dimension.
+        XCTAssertTrue(model.correct(key: .calories, text: "180 kcal"))
+        XCTAssertEqual(model.row(for: .calories)?.value, .known(Decimal(180), .kcal))
+    }
+
+    func testCorrectionRefusesAUnitFromAnotherDimension() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+
+        // A volume for a mass, and a mass for the energy row.
+        XCTAssertFalse(model.correct(key: .sodium, text: "1 L"))
+        XCTAssertNotNil(model.correctionError)
+        XCTAssertFalse(model.correct(key: .calories, text: "5 g"))
+        XCTAssertNotNil(model.correctionError)
+        // A count is no better a fit for a nutrient.
+        XCTAssertFalse(model.correct(key: .protein, text: "2 tablets"))
+        XCTAssertNotNil(model.correctionError)
+
+        // Nothing was changed: the values are the ones the panel stated.
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(180), .mg))
+        XCTAssertEqual(model.row(for: .calories)?.value, .known(Decimal(180), .kcal))
+        XCTAssertEqual(model.row(for: .protein)?.value, .known(Decimal(8), .g))
+    }
+
     // MARK: Unreadable panels
 
     func testUnreadablePanelSaysSoAndOffersRetake() {
