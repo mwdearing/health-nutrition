@@ -124,6 +124,21 @@ class JournalImportTestCase: XCTestCase {
         try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    /// One restored entry with the given number of revisions, for the tests that hand a plan straight to
+    /// the store instead of going through a document.
+    func entry(_ id: String, revisions revisionCount: Int) -> JournalRestoreEntry {
+        let count = max(1, revisionCount)
+        return JournalRestoreEntry(
+            intake: Intake(
+                id: id, category: "food", occurredAt: base, timeZoneIdentifier: "Europe/Berlin",
+                meal: "breakfast", lifecycle: .active, currentRevision: count),
+            revisions: (1...count).map { number in
+                IntakeRevision(
+                    intakeID: id, number: number, components: [oats("40")], productSnapshotID: nil,
+                    changeReason: "created", createdAt: base.addingTimeInterval(TimeInterval(number) * 60))
+            })
+    }
+
     /// The first field where two encoded documents disagree, named as a key path such as
     /// `$.intakes[0].current_revision`. A round trip that is not byte-identical otherwise fails with two
     /// long blobs and no idea which field moved, so the failure says which one it was.
@@ -570,6 +585,100 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertEqual(summary.intakes, 2)
         XCTAssertEqual(
             try journal.revisions(of: waterID).first?.productSnapshotID, nil)
+    }
+
+    func testAnEntryWithoutATimeZoneIsRejected() throws {
+        // The time zone is what says when an entry happened where the person was. An empty string, or a name
+        // no calendar knows, would be stored as text and read back as a zone the app cannot use, so the file
+        // is refused instead.
+        for identifier in ["", "Middle/Earth"] {
+            var root = try object(of: try exportData(favorites: false))
+            var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+            intakes[0]["time_zone"] = identifier
+            root["intakes"] = intakes
+
+            let target = try directory()
+            let journal = try store(target)
+            do {
+                _ = try JournalImporter.importExport(
+                    try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+                XCTFail("a time zone of \"\(identifier)\" must be refused")
+            } catch let error as JournalImportError {
+                guard case .corrupt = error else {
+                    return XCTFail("expected a corrupt file, got \(error)")
+                }
+            }
+            XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        }
+    }
+
+    func testATombstoneWithoutATimeZoneIsRejected() throws {
+        var root = try object(of: try exportData(favorites: false))
+        var tombstones = try XCTUnwrap(root["tombstones"] as? [[String: Any]])
+        tombstones[0]["time_zone"] = ""
+        root["tombstones"] = tombstones
+
+        let target = try directory()
+        let journal = try store(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+            XCTFail("a tombstone with no time zone must be refused")
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.deletedIntakes().isEmpty)
+    }
+
+    func testACurrentRevisionTheRevisionsDoNotAddUpToIsRejected() throws {
+        // The current revision has to be the last one there is. Checking that by walking the list the file
+        // holds, rather than by building the range it claims, also keeps a hand-edited number from turning
+        // into an enormous allocation: the file below claims two billion revisions and carries two.
+        for claimed in [3, 2_000_000_000] {
+            var root = try object(of: try exportData(favorites: false))
+            var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+            intakes[0]["current_revision"] = claimed
+            root["intakes"] = intakes
+
+            let target = try directory()
+            let journal = try store(target)
+            do {
+                _ = try JournalImporter.importExport(
+                    try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+                XCTFail("a current revision of \(claimed) over two revisions must be refused")
+            } catch let error as JournalImportError {
+                guard case .corrupt = error else {
+                    return XCTFail("expected a corrupt file, got \(error)")
+                }
+            }
+            XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        }
+    }
+
+    func testRevisionsOutOfOrderAreRejected() throws {
+        var root = try object(of: try exportData(favorites: false))
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        var first = intakes[0]
+        var revisions = try XCTUnwrap(first["revisions"] as? [[String: Any]])
+        revisions.swapAt(0, 1)
+        first["revisions"] = revisions
+        intakes[0] = first
+        root["intakes"] = intakes
+
+        let target = try directory()
+        let journal = try store(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+            XCTFail("revisions that do not read 1, 2 in order must be refused")
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
     }
 
     func testAFavoriteWithAUnitThisBuildDoesNotKnowIsRejected() throws {

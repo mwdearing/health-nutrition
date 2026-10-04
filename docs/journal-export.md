@@ -89,9 +89,19 @@ from, not what that product states, so a restored snapshot brings no nutrient va
 has no field for them and adding one would need a new schema version. Where the store already knows that
 snapshot id, **its values are kept exactly**: they are what the journal was reading before the restore, so an
 import cannot quietly empty them. A snapshot the store does not know is written with no values, and the
-catalog supplies them again when something needs them. The product's identity still has to match, so a file
-that describes a different product under a snapshot id the store holds is refused with
-`JournalError.snapshotConflict`, as it is everywhere else.
+catalog supplies them again when something needs them. Two rows under one snapshot id may differ only in
+that, and only when one of them states no values: a stored row with none is filled in from the plan, and two
+different sets of values are a conflict, because one snapshot id cannot name two products that state different
+things. The product's identity always has to match, so a file that describes a different product under a
+snapshot id the store holds is refused with `JournalError.snapshotConflict`, as it is everywhere else.
+
+**Identifiers are checked, not just stored.** A time zone has to be a name a calendar can resolve: an empty
+string, or one nothing knows, is refused rather than stored as text the app cannot use and has nothing to
+repair from later. An entry's revisions have to read `1, 2, ...` in order, and its current revision has to be
+the last one there is. That is checked by walking the revisions the file holds and comparing each number with
+its own position, not by building the range the file claims, so a hand-edited `current_revision` of two
+billion is refused in constant time instead of turning into an enormous set of numbers to check two
+revisions against.
 
 **No delivery work is queued.** An import writes no projection and no outbox operation: a restored entry is
 history the destinations were already sent once, and re-sending yesterday's breakfast because a phone was
@@ -107,9 +117,17 @@ dropped them.
 The journal and the favorites then live in two separate store files, so their two writes cannot be one
 transaction. **The journal is written first**, in one `save()` covering every row, and the favorites in one
 `save()` after it. That order is what makes the import all-or-nothing: when the favorites write fails, the
-journal is emptied again - it held no intake rows before, which the store checks in its own transaction - and
-the failure is reported, so both stores are as they were found and the same file can simply be imported
-again. When the journal write itself fails, it rolls itself back and nothing was written at all.
+journal is emptied again and the failure is reported, so both stores are as they were found and the same file
+can simply be imported again. When the journal write itself fails, it rolls itself back and nothing was
+written at all.
+
+The compensation is narrow on purpose. `restore` returns a receipt naming, for each entry it wrote, the
+lifecycle, the current revision and the revision numbers that are its own; `undoRestore` removes exactly those
+rows, one revision number at a time. If a write reached the same journal in between - an edit that added a
+revision, a delete that hid the entry - those rows are no longer only the restore's, and removing them would
+throw the person's work away to make the journal look empty. So the undo refuses, and the import reports that
+it could not be put back. Product rows are removed only for the snapshots that restore created, which nothing
+else writes.
 
 **The empty check is inside the transaction.** `SwiftDataJournalStore.restore(_:)` reads its own emptiness
 predicate inside the same `commit` closure as the inserts, under the same write lock, and throws

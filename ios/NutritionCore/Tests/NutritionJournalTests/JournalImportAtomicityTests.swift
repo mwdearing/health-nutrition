@@ -119,4 +119,54 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
                     exportedAt: exportedAt)))
         XCTAssertNil(changedField)
     }
+
+    func testUndoingARestoreRemovesTheRevisionsItWroteAndNoOthers() throws {
+        // The undo is compensation, not a clean-up: between the journal write and the favorites failing,
+        // somebody may have written to the same journal. It removes the rows the restore inserted, by
+        // intake id and revision number, and refuses when an entry no longer looks the way it left it.
+        let target = try directory()
+        let journal = try store(target)
+        let receipt = try journal.restore(
+            JournalRestorePlan(
+                entries: [entry(oatsID, revisions: 2)], tombstones: [], products: [], favorites: []))
+        XCTAssertEqual(receipt.intakes.map(\.intakeID), [oatsID])
+        XCTAssertEqual(receipt.intakes.first?.revisionNumbers, [1, 2])
+
+        // An edit lands on the restored entry, so the undo can no longer tell its own rows from that one.
+        try journal.edit(
+            intakeID: oatsID, components: [water("300")], product: nil, changeReason: "more",
+            now: base.addingTimeInterval(9000))
+        XCTAssertThrowsError(try journal.undoRestore(receipt)) { error in
+            guard case .corrupt = error as? JournalImportError else {
+                return XCTFail("expected the undo to refuse, got \(error)")
+            }
+        }
+        // Nothing of the person's was thrown away to achieve that.
+        XCTAssertEqual(try journal.revisions(of: oatsID).map(\.number), [1, 2, 3])
+        XCTAssertEqual(try journal.revisions(of: oatsID).last?.changeReason, "more")
+    }
+
+    func testUndoingARestoreLeavesAnEntryThatNobodyTouched() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let receipt = try journal.restore(
+            JournalRestorePlan(entries: [entry(oatsID, revisions: 2)], tombstones: [], products: [], favorites: []))
+        try journal.undoRestore(receipt)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try journal.revisions(of: oatsID).isEmpty)
+    }
+
+    func testUndoingARestoreRefusesWhenAnEntryWasDeletedAfterwards() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let receipt = try journal.restore(
+            JournalRestorePlan(entries: [entry(oatsID, revisions: 1)], tombstones: [], products: [], favorites: []))
+        try journal.delete(intakeID: oatsID, now: base.addingTimeInterval(600))
+        XCTAssertThrowsError(try journal.undoRestore(receipt))
+        // The deletion is the person's, so it stands: the undo removed nothing rather than revive an entry
+        // or throw away the revision it still holds.
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertEqual(try journal.deletedIntakes().count, 1)
+        XCTAssertEqual(try journal.revisions(of: oatsID).count, 1)
+    }
 }

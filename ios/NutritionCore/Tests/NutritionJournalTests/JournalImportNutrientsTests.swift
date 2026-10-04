@@ -48,11 +48,26 @@ final class JournalImportNutrientsTests: JournalImportTestCase {
 
     func testASnapshotWhoseValuesDisagreeWithTheStoredOnesIsStillRefused() throws {
         // Keeping the stored values is not a licence to accept a file that describes a different product
-        // under the same snapshot id: the identity still has to match.
+        // under the same snapshot id: the identity still has to match. The name is changed in the products
+        // list *and* in the revision's own provenance, so the file stays consistent with itself and the
+        // refusal comes from the store's snapshot rule rather than from the file contradicting itself.
         var root = try object(of: try exportData(favorites: false))
         var products = try XCTUnwrap(root["products"] as? [[String: Any]])
         products[0]["name"] = "Sample muesli"
         root["products"] = products
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        for index in intakes.indices {
+            var revisions = try XCTUnwrap(intakes[index]["revisions"] as? [[String: Any]])
+            for revisionIndex in revisions.indices {
+                guard var provenance = revisions[revisionIndex]["provenance"] as? [String: Any] else {
+                    continue
+                }
+                provenance["name"] = "Sample muesli"
+                revisions[revisionIndex]["provenance"] = provenance
+            }
+            intakes[index]["revisions"] = revisions
+        }
+        root["intakes"] = intakes
 
         let target = try directory()
         let journal = try store(target)
@@ -64,6 +79,39 @@ final class JournalImportNutrientsTests: JournalImportTestCase {
             XCTAssertEqual(error as? JournalError, .snapshotConflict("snap-oats-1"))
         }
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertEqual(try journal.product(snapshotID: "snap-oats-1")?.nutrients, sampleNutrients)
+    }
+
+    func testASnapshotWhoseStoredValuesDifferFromTheOnesBeingRestoredIsStillAConflict() throws {
+        // A document carries no nutrient values, so this case cannot come from an export: it is the rule
+        // itself, checked by handing the store a plan whose snapshot states values the stored row does not.
+        // Silently keeping the stored ones would hide a plan that disagrees with the store.
+        let target = try directory()
+        let journal = try store(target)
+        try journal.insertProductSnapshotForTesting(product())
+
+        var different = product()
+        different.nutrients = ["energy": .known(Decimal(string: "111")!, .kcal)]
+        XCTAssertThrowsError(
+            try journal.restore(
+                JournalRestorePlan(entries: [], tombstones: [], products: [different], favorites: []))
+        ) { error in
+            XCTAssertEqual(error as? JournalError, .snapshotConflict("snap-oats-1"))
+        }
+        XCTAssertEqual(try journal.product(snapshotID: "snap-oats-1")?.nutrients, sampleNutrients)
+    }
+
+    func testASnapshotThatStatesValuesWhereTheStoreHasNoneIsFilledIn() throws {
+        // The other half of the same rule: a stored row with no values is not a disagreement, it is a
+        // snapshot this store knows less about than the plan does.
+        let target = try directory()
+        let journal = try store(target)
+        var bare = product()
+        bare.nutrients = [:]
+        try journal.insertProductSnapshotForTesting(bare)
+
+        _ = try journal.restore(
+            JournalRestorePlan(entries: [], tombstones: [], products: [product()], favorites: []))
         XCTAssertEqual(try journal.product(snapshotID: "snap-oats-1")?.nutrients, sampleNutrients)
     }
 }

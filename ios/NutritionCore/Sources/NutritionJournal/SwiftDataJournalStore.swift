@@ -485,6 +485,7 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
             guard try context.fetchCount(FetchDescriptor<IntakeRecord>()) == 0 else {
                 throw JournalImportError.notEmpty
             }
+            var restored: [JournalRestoredIntake] = []
             var insertedProducts: [String] = []
             for product in plan.products {
                 if try Self.restoreSnapshot(product, in: context) {
@@ -504,6 +505,10 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
                         productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
                         createdAt: revision.createdAt))
                 }
+                restored.append(
+                    JournalRestoredIntake(
+                        intakeID: intake.id, lifecycle: .active, currentRevision: intake.currentRevision,
+                        revisionNumbers: entry.revisions.map(\.number)))
             }
             for tombstone in plan.tombstones {
                 // A tombstone has no revision row: the export carries the revision number it was deleted
@@ -513,31 +518,50 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
                     timeZoneIdentifier: tombstone.timeZoneIdentifier, meal: tombstone.meal,
                     note: tombstone.note, lifecycleRaw: IntakeLifecycle.deleted.rawValue,
                     currentRevision: tombstone.currentRevision))
+                restored.append(
+                    JournalRestoredIntake(
+                        intakeID: tombstone.id, lifecycle: .deleted,
+                        currentRevision: tombstone.currentRevision, revisionNumbers: []))
             }
-            return JournalRestoreReceipt(
-                intakeIDs: plan.entries.map(\.intake.id) + plan.tombstones.map(\.id),
-                insertedProductSnapshotIDs: insertedProducts)
+            return JournalRestoreReceipt(intakes: restored, insertedProductSnapshotIDs: insertedProducts)
         }
     }
 
-    /// Removes what a restore inserted, so a later step of the same import can be undone. The journal held
-    /// no intake rows before the restore, which `restore` checked under its own write lock, so these are
-    /// all of them; a product snapshot that was already there is not in the receipt and stays.
+    /// Removes the rows a restore inserted, so a later step of the same import can be undone.
+    ///
+    /// This is compensation, not a reset, and it is deliberately narrow. An intake the restore wrote is only
+    /// removed while it still looks exactly as the restore left it: same lifecycle, same current revision. A
+    /// write that landed in between - an edit that added a revision, a delete that hid the entry - means
+    /// those rows are no longer only the restore's, and removing them would throw the person's work away to
+    /// make the journal look empty. So the undo refuses instead, and the importer says the import could not
+    /// be put back. Revisions go one number at a time for the same reason. Product rows are removed only for
+    /// the snapshots this restore created; nothing else writes one, so nothing else can be caught by it.
     public func undoRestore(_ receipt: JournalRestoreReceipt) throws {
         try commit { context in
+            for restored in receipt.intakes {
+                guard let record = try Self.intakeRecord(restored.intakeID, in: context) else {
+                    throw JournalImportError.corrupt(
+                        "the entry \(restored.intakeID) is gone already, so the import cannot be undone")
+                }
+                guard record.lifecycleRaw == restored.lifecycle.rawValue,
+                      record.currentRevision == restored.currentRevision
+                else {
+                    throw JournalImportError.corrupt(
+                        "the entry \(restored.intakeID) was written to after the import restored it, "
+                            + "so undoing the import would throw that away too")
+                }
+                for number in restored.revisionNumbers {
+                    for row in try context.fetch(FetchDescriptor<RevisionRecord>(
+                        predicate: #Predicate<RevisionRecord> {
+                            $0.intakeID == restored.intakeID && $0.number == number })) {
+                        context.delete(row)
+                    }
+                }
+                context.delete(record)
+            }
             for snapshotID in receipt.insertedProductSnapshotIDs {
                 for row in try context.fetch(FetchDescriptor<ProductRecord>(
                     predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID })) {
-                    context.delete(row)
-                }
-            }
-            for intakeID in receipt.intakeIDs {
-                for row in try context.fetch(FetchDescriptor<RevisionRecord>(
-                    predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID })) {
-                    context.delete(row)
-                }
-                for row in try context.fetch(FetchDescriptor<IntakeRecord>(
-                    predicate: #Predicate<IntakeRecord> { $0.intakeID == intakeID })) {
                     context.delete(row)
                 }
             }
@@ -548,10 +572,15 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     ///
     /// A document records which product a revision used and where it came from, not the nutrient values
     /// that product states, so a restored snapshot brings no values of its own. Where this store already
-    /// knows the snapshot, its values are the better ones: they are what the journal was reading before
-    /// the restore, so they are kept exactly and an import cannot quietly empty them. The identity of the
-    /// product still has to match, because one snapshot id cannot name two products, and only a row this
-    /// restore created is listed in the receipt for `undoRestore` to remove.
+    /// knows the snapshot, its values are the better ones: they are what the journal was reading before the
+    /// restore, so they are kept exactly and an import cannot quietly empty them.
+    ///
+    /// Two rows under one snapshot id may therefore differ only in that one respect, and only when one of
+    /// them states no values: the stored row's values win when it has any, and a stored row with none is
+    /// filled in from the plan. The product's identity always has to match, and two sets of values that
+    /// disagree are a conflict rather than a preference, because one snapshot id cannot name two products
+    /// that state different things. Only a row this restore created is listed in the receipt for
+    /// `undoRestore` to remove.
     @discardableResult
     private static func restoreSnapshot(_ product: ProductDefinition, in context: ModelContext) throws -> Bool {
         let id = product.snapshotID
@@ -569,9 +598,9 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
         guard stored.withNutrients([:]) == product.withNutrients([:]) else {
             throw JournalError.snapshotConflict(id)
         }
-        if stored.nutrients.isEmpty, !product.nutrients.isEmpty {
-            row.nutrientsJSON = Self.encodeNutrients(product.nutrients)
-        }
+        if stored.nutrients == product.nutrients { return false }
+        guard stored.nutrients.isEmpty else { throw JournalError.snapshotConflict(id) }
+        row.nutrientsJSON = Self.encodeNutrients(product.nutrients)
         return false
     }
 

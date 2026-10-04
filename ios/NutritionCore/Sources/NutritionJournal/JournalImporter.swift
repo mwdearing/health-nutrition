@@ -317,13 +317,8 @@ public enum JournalImporter {
                 try merge(ProductDefinition(provenance: provenance), into: &productsByID)
             }
 
-            var numbers = Set<Int>()
             var revisions: [IntakeRevision] = []
             for revision in exported.revisions {
-                guard numbers.insert(revision.number).inserted else {
-                    throw JournalImportError.corrupt(
-                        "\(exported.id) has two revisions numbered \(revision.number)")
-                }
                 if let snapshotID = revision.productSnapshotID, productsByID[snapshotID] == nil {
                     throw JournalImportError.corrupt(
                         "revision \(revision.number) of \(exported.id) uses the product snapshot "
@@ -336,18 +331,18 @@ public enum JournalImporter {
                         productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
                         createdAt: revision.createdAt))
             }
-            // The revisions must read 1, 2, ... in order and the current one must be the last: an
-            // importer that kept the file's order as it stands would write a history that reads as if
-            // time ran backwards.
-            guard exported.currentRevision >= 1 else {
-                throw JournalImportError.corrupt("\(exported.id) has no current revision")
-            }
-            guard numbers == Set(1...exported.currentRevision),
-                  revisions.map(\.number) == Array(1...exported.currentRevision)
+            // The revisions must read 1, 2, ... in order and the current one must be the last: an importer
+            // that kept the file's order as it stands would write a history that reads as if time ran
+            // backwards. This walks the revisions the file actually holds and compares each number with its
+            // position, rather than building the range the file claims: a hand-edited current_revision of two
+            // billion would otherwise turn into an enormous set of numbers to check two revisions against.
+            guard exported.currentRevision == revisions.count,
+                  revisions.indices.allSatisfy({ revisions[$0].number == $0 + 1 })
             else {
                 throw JournalImportError.corrupt(
                     "\(exported.id) does not hold the revisions 1 to \(exported.currentRevision) in order")
             }
+            try checkTimeZone(exported.timeZoneIdentifier, of: exported.id)
             entries.append(
                 JournalRestoreEntry(
                     intake: Intake(
@@ -373,6 +368,7 @@ public enum JournalImporter {
             // A tombstone carries the id, the revision it was deleted at, when it happened and where, which
             // is all a retraction needs. Its category is not in the file, and a deleted entry is never
             // listed, so the restored row carries an empty category rather than an invented one.
+            try checkTimeZone(tombstone.timeZoneIdentifier, of: tombstone.intakeID)
             tombstones.append(
                 Intake(
                     id: tombstone.intakeID, category: "", occurredAt: tombstone.occurredAt,
@@ -425,6 +421,17 @@ public enum JournalImporter {
         return JournalRestorePlan(
             entries: entries, tombstones: tombstones,
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites)
+    }
+
+    /// The time zone an entry was recorded in. It is what says when an entry happened where the person was,
+    /// so it has to be a name a calendar can actually resolve: an empty string, or one nothing knows, would
+    /// be stored as text and read back as a zone the app cannot use, and there would be nothing to repair it
+    /// from later.
+    private static func checkTimeZone(_ identifier: String, of intakeID: String) throws {
+        guard !identifier.isEmpty, TimeZone(identifier: identifier) != nil else {
+            throw JournalImportError.corrupt(
+                "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone")
+        }
     }
 
     private static func productIndex(

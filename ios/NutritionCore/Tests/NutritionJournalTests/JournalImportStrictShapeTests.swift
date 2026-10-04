@@ -10,6 +10,9 @@ import XCTest
 final class JournalImportStrictShapeTests: XCTestCase {
     private let intakeID = "1f0c9d2a-6b3e-4a7f-9c5d-0e2b6f8a1d33"
     private let exportedAt = Date(timeIntervalSince1970: 1_705_310_100)
+    /// The same instant as the text an export writes. Values put into a document that is going to be
+    /// re-serialized have to be JSON text, never a Swift `Date`, which `JSONSerialization` refuses.
+    private let exportedAtText = "2024-01-15T09:15:00Z"
 
     private func document(
         intakes: [JournalExportIntake] = [], tombstones: [JournalExportTombstone] = [],
@@ -157,7 +160,7 @@ final class JournalImportStrictShapeTests: XCTestCase {
         var intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
         var first = intakes[0]
         var revisions = try XCTUnwrap(first["revisions"] as? [[String: Any]])
-        revisions[0]["eaten_at"] = exportedAt
+        revisions[0]["eaten_at"] = exportedAtText
         first["revisions"] = revisions
         intakes[0] = first
         fields["intakes"] = intakes
@@ -205,7 +208,7 @@ final class JournalImportStrictShapeTests: XCTestCase {
                     timeZoneIdentifier: "Europe/Berlin")
             ]))
         var tombstones = try XCTUnwrap(fields["tombstones"] as? [[String: Any]])
-        tombstones[0]["deleted_at"] = exportedAt
+        tombstones[0]["deleted_at"] = exportedAtText
         fields["tombstones"] = tombstones
         try assertRefusedAsMalformed(fields)
     }

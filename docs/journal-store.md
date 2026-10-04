@@ -59,12 +59,15 @@ predicate **inside** its own `commit` closure, under the same write lock as the 
 `JournalImportError.notEmpty` from there. A check before the save would leave a window in which another write
 creates an entry and the restore joins it, which is the merge the importer refuses; there is no merge.
 
-A restore returns a `JournalRestoreReceipt` naming what it inserted, and `undoRestore(_:)` removes exactly
-those rows, which is how a failed later step of the same import puts the journal back. A product snapshot the
-store already held is not in the receipt and is never touched. A snapshot the file describes is matched
-against what the store holds by identity alone, and its stored nutrient values are kept: the document
-carries no nutrient values, so an import must not empty the ones the journal was reading. A file that
-describes a *different* product under a snapshot id the store holds is still a `snapshotConflict`.
+A restore returns a `JournalRestoreReceipt` naming, per entry, the lifecycle, the current revision and the
+revision numbers that are its own, and `undoRestore(_:)` removes exactly those rows. It is compensation, not
+a reset: an entry edited or deleted after the restore no longer looks the way the restore left it, so the undo
+refuses with `JournalImportError.corrupt` instead of throwing that work away to make the journal look empty.
+A product snapshot the store already held is not in the receipt and is never touched. A snapshot the file
+describes is matched against what the store holds by identity alone: its stored nutrient values are kept,
+because the document carries none and an import must not empty the ones the journal was reading, while a
+stored row that states none is filled in from the plan. Two different sets of values, or a *different* product
+under a snapshot id the store holds, are still a `snapshotConflict`.
 
 ## Usage constraints
 
