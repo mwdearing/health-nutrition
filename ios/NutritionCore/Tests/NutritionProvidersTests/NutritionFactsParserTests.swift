@@ -33,6 +33,12 @@ final class NutritionFactsParserTests: XCTestCase {
         return unit
     }
 
+    /// The reasons a value was flagged for review. The dictionary is keyed by the string the parser uses,
+    /// so the key type is named here rather than left to a leading-dot shorthand.
+    private func reviewReasons(_ key: NutritionFactKey, _ panel: ParsedNutritionFacts) -> Set<ParsedValueReview.Reason>? {
+        panel.valuesNeedingReview[key.rawValue]?.reasons
+    }
+
     /// A complete panel as OCR would hand it over: one row per line, the % Daily Value column
     /// separated by two spaces, a synthetic product invented for these tests.
     private var fullPanel: [String] {
@@ -105,7 +111,7 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.sodium, panel), dec("10"))
         XCTAssertEqual(try unit(.sodium, panel), .mg)
         XCTAssertTrue(panel.needsReview(.sodium), "a corrected letter O is low confidence")
-        XCTAssertEqual(panel.valuesNeedingReview[.sodium.rawValue]?.reasons, [.correctedLetterO])
+        XCTAssertEqual(reviewReasons(.sodium, panel), [.correctedLetterO])
 
         XCTAssertEqual(try amount(.fat, panel), dec("0"))
         XCTAssertTrue(panel.needsReview(.fat))
@@ -321,7 +327,7 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.fat, panel), dec("120"))
         XCTAssertEqual(try unit(.fat, panel), .mg, "the printed unit is kept, not rewritten")
         XCTAssertTrue(panel.needsReview(.fat))
-        XCTAssertEqual(panel.valuesNeedingReview[.fat.rawValue]?.reasons, [.unexpectedUnit])
+        XCTAssertEqual(reviewReasons(.fat, panel), [.unexpectedUnit])
     }
 
     func testEmptyInputParsesToAnUnreadablePanel() {
