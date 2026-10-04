@@ -448,7 +448,8 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
-public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnapshotSource, JournalTombstoneSource,
+    JournalErasing, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -606,6 +607,29 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             try Self.supersedeProjections(of: intakeID, in: context)
             let revision = record.currentRevision
             queueWork(intakeID: intakeID, revision: revision, kind: .delete, payload: "delete:\(intakeID):\(revision)", context: context)
+        }
+    }
+
+    // MARK: Erasing
+
+    /// Removes every row the journal file holds: intakes, their revision history, product snapshots,
+    /// projections and queued outbox operations. A deleted entry leaves no tombstone behind either,
+    /// because a tombstone only exists so a later export can retract the entry.
+    ///
+    /// The rows are fetched and deleted one at a time rather than with the batch delete, which runs
+    /// against the persistent store immediately, outside the save and outside the rollback. Fetching
+    /// keeps the whole erase inside one commit, so a failure anywhere in it leaves the journal exactly
+    /// as it was: a journal emptied by a failed save would be worse than an unerased one, because the
+    /// person cannot tell which half is gone.
+    ///
+    /// The container is not closed: the store reads empty and accepts new entries afterwards.
+    public func eraseAll() throws {
+        _ = try commit { context in
+            for row in try context.fetch(FetchDescriptor<RevisionRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<OutboxRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<ProjectionRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
         }
     }
 
