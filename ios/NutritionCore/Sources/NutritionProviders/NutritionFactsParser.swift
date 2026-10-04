@@ -78,9 +78,10 @@ public enum NutritionFactsParser {
             // A capture can flatten the serving metadata and a nutrient row onto one line, so the
             // metadata is taken off first and whatever text is left behind it is still read.
             var residual = withoutDailyValueHeading(in: cleaned[index])
-            if let read = servingSize(in: residual) {
+            let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
+            if let read = servingSize(in: residual, next: following) {
                 if size == nil { size = read }
-                residual = withoutServingSize(in: residual)
+                residual = withoutServingSize(in: residual, next: following)
             }
             if let count = servingsPerContainer(in: residual) {
                 if perContainer == nil { perContainer = count }
@@ -90,7 +91,6 @@ public enum NutritionFactsParser {
                 index += 1
                 continue
             }
-            let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
             let usedNext = absorbRows(in: residual, following: following, amounts: &amounts, reviews: &reviews)
             index += usedNext ? 2 : 1
         }
@@ -110,14 +110,14 @@ public enum NutritionFactsParser {
     /// The measure ends where the next piece of panel text begins, because a flattened line can carry
     /// another field behind the serving size and the serving size is only what the label printed in
     /// front of it.
-    private static func servingSize(in line: String) -> ParsedServingSize? {
+    private static func servingSize(in line: String, next nextLine: String? = nil) -> ParsedServingSize? {
         let lower = line.lowercased()
         guard let marker = lower.range(of: "serving size") else { return nil }
         var text = after(marker, in: line, lowercased: lower)
         if let colon = text.firstIndex(of: ":") {
             text = String(text[text.index(after: colon)...])
         }
-        text = String(text[..<nextField(in: text)])
+        text = String(text[..<nextField(in: text, next: nextLine)])
         text = trimmed(text)
         guard !text.isEmpty else { return nil }
         let measure = servingMeasure(in: text)
@@ -145,7 +145,7 @@ public enum NutritionFactsParser {
     ///
     /// The span is what `parse` takes off the line before it reads the rows behind it, so a flattened
     /// line that carries a nutrient row behind its serving metadata still has that row read.
-    private static func servingSizeSpan(in line: String) -> Range<String.Index>? {
+    private static func servingSizeSpan(in line: String, next nextLine: String? = nil) -> Range<String.Index>? {
         let lower = line.lowercased()
         guard let marker = lower.range(of: "serving size") else { return nil }
         let start = index(marker.lowerBound, in: line, lowercased: lower)
@@ -157,7 +157,7 @@ public enum NutritionFactsParser {
         }
         // The span runs to the next piece of panel text, or to the end of the line when the measure is
         // the last thing the line states.
-        end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: nextField(in: tail)))
+        end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: nextField(in: tail, next: nextLine)))
         return start..<end
     }
 
@@ -172,8 +172,8 @@ public enum NutritionFactsParser {
     /// "Serving size 1 cup (240mL) 8 servings per container", so each field stops where the other begins.
     /// When the next field is the servings count, the count itself belongs to that field rather than to
     /// this one, so the boundary steps back over it.
-    private static func nextField(in text: String) -> String.Index {
-        let rowBoundary = firstRowThatStatesAmount(in: text) ?? text.endIndex
+    private static func nextField(in text: String, next nextLine: String? = nil) -> String.Index {
+        let rowBoundary = firstRowThatStatesAmount(in: text, next: nextLine) ?? text.endIndex
         let lower = text.lowercased()
         guard let marker = servingsMarker(in: lower) else { return rowBoundary }
         let markerStart = index(marker.lowerBound, in: text, lowercased: lower)
@@ -192,8 +192,11 @@ public enum NutritionFactsParser {
     /// A nutrient name is only the start of a row when an amount follows it, so a name inside a
     /// serving description is skipped and the search carries on behind it: in
     /// "1 protein bar (50g) Protein 6g" the first name describes the bar and the second one opens a row.
-    /// The name is stepped over rather than the text after it, so a later whole-word name still matches.
-    private static func firstRowThatStatesAmount(in text: String) -> String.Index? {
+    /// A name the text ends with is a row whose amount landed on the next line, as in
+    /// "Serving size 1 bar (50g) Protein" followed by "6g", so it ends the serving description too and
+    /// that row is read from the line behind it. The name is stepped over rather than the text after it,
+    /// so a later whole-word name still matches.
+    private static func firstRowThatStatesAmount(in text: String, next nextLine: String? = nil) -> String.Index? {
         var offset = 0
         while offset < text.count {
             let tail = String(text.dropFirst(offset))
@@ -203,14 +206,19 @@ public enum NutritionFactsParser {
             if let scan = scanAmount(in: remainder), statesAmount(scan, for: match.row) {
                 return text.index(text.startIndex, offsetBy: start)
             }
+            if remainder.isEmpty, let nextLine, let scan = scanAmount(in: trimmed(nextLine)),
+               statesAmount(scan, for: match.row)
+            {
+                return text.index(text.startIndex, offsetBy: start)
+            }
             offset = start + tail.distance(from: tail.startIndex, to: match.end)
         }
         return nil
     }
 
     /// The line with its serving size taken off, so whatever else it carries is still read.
-    private static func withoutServingSize(in line: String) -> String {
-        guard let span = servingSizeSpan(in: line) else { return line }
+    private static func withoutServingSize(in line: String, next nextLine: String? = nil) -> String {
+        guard let span = servingSizeSpan(in: line, next: nextLine) else { return line }
         return trimmed(String(line[..<span.lowerBound]) + " " + String(line[span.upperBound...]))
     }
 
@@ -254,7 +262,8 @@ public enum NutritionFactsParser {
     /// percent sign is dropped only when it is the heading's own, as in "% Daily Value Total Fat 7g": a
     /// sign attached to a number belongs to that row's Daily Value, so "Calories 10% Daily Value" keeps
     /// its sign and stays a Daily Value rather than becoming a calorie count. The capture can space the
-    /// sign away from the number, as in "Calories 10 % Daily Value", and the sign still belongs to it.
+    /// sign away from the number, as in "Calories 10 % Daily Value", and it stays with the number for the
+    /// same reason unless the heading was flattened with the rows behind it.
     private static func withoutDailyValueHeading(in line: String) -> String {
         var text = line
         while true {
@@ -262,16 +271,36 @@ public enum NutritionFactsParser {
             guard let marker = lower.range(of: "daily value") else { break }
             let headEnd = index(marker.lowerBound, in: text, lowercased: lower)
             var head = trimmed(String(text[..<headEnd]))
-            if head.hasSuffix("%"), !isAttachedToNumber(head) { head = trimmed(String(head.dropLast())) }
             let tail = String(text[index(marker.upperBound, in: text, lowercased: lower)...])
+            if isHeadingPercent(head, tail: tail) {
+                head = trimmed(String(head.dropLast()))
+            }
             text = trimmed(head + " " + tail)
         }
         return trimmed(text)
     }
 
+    /// Whether the percent sign the text in front of a Daily Value heading belongs to that heading.
+    ///
+    /// The heading's own sign is either the one that opens it, with no number in front of it as in
+    /// "% Daily Value Total Fat 7g", or the one the capture wrote in front of the heading's words while it
+    /// flattened the heading together with the rows behind it, as in
+    /// "Calories 250 % Daily Value* Total Fat 7g", where the row beside the heading keeps the amount the
+    /// label printed. A sign that stands behind a number is that row's own Daily Value, whether the
+    /// capture touched it or spaced it away, so "Calories 10 % Daily Value" keeps its sign and stays a
+    /// Daily Value rather than a calorie count.
+    private static func isHeadingPercent(_ head: String, tail: String) -> Bool {
+        guard head.hasSuffix("%") else { return false }
+        // The sign with no number in front of it opened the heading, so it is the heading's.
+        guard isAttachedToNumber(head) else { return true }
+        // The sign the capture spaced away from its number is the heading's only where the heading was
+        // flattened with a row behind it, because that is where the heading's own sign ends up.
+        return firstRow(in: tail) != nil
+    }
+
     /// Whether the text ends in a percent sign that stands behind a number, as the ten of
-    /// "Calories 10%" does. A capture can write the space between them, as in "Calories 10 %", and the
-    /// sign still belongs to that number. A percent sign with no number in front of it is a heading's.
+    /// "Calories 10%" does. The capture can write the space between them, as in "Calories 10 %", and the
+    /// sign still belongs to that number.
     private static func isAttachedToNumber(_ text: String) -> Bool {
         let characters = Array(text)
         guard characters.count >= 2, characters[characters.count - 1] == "%" else { return false }
@@ -390,7 +419,7 @@ public enum NutritionFactsParser {
             // A panel states some rows with the amount in front of the name: "Includes 5g Added
             // Sugars". The rest of the line is still read, because a flattened panel runs the rows that
             // follow on the same line.
-            if let scan = leadingAmount(before: String(cursor[..<match.nameStart])), statesAmount(scan, for: row) {
+            if let scan = leadingAmount(before: String(cursor[..<match.nameStart]), for: row), statesAmount(scan, for: row) {
                 record(scan, for: row, amounts: &amounts, reviews: &reviews)
                 cursor = remainder
                 continue
@@ -447,9 +476,9 @@ public enum NutritionFactsParser {
     /// An amount written in front of its nutrient name. Only the words and the number immediately in
     /// front of the name are read, so an earlier row's amount is never pulled onto this row. A token in
     /// front of a percent sign is a Daily Value of another row and is never an amount here. The words
-    /// in between may be none at all, because a capture can drop the qualifier and leave the amount
-    /// alone in front of the name, as in "5g Added Sugars".
-    private static func leadingAmount(before text: String) -> ScannedAmount? {
+    /// in between may be none at all when the row prints its amount first, as in "5g Added Sugars" where
+    /// the capture dropped the `Includes`.
+    private static func leadingAmount(before text: String, for row: PanelRow) -> ScannedAmount? {
         let tokens = text.split(separator: " ")
         for count in [2, 1] {
             let tail = tokens.suffix(count).joined(separator: " ")
@@ -460,14 +489,22 @@ public enum NutritionFactsParser {
             let words = tokens.dropLast(count)
             guard words.allSatisfy({ leadingWords.contains($0.lowercased()) }) else { continue }
             guard let scan = scanAmount(in: tail) else { continue }
-            // An empty prefix is the capture having dropped the qualifier, as in "5g Added Sugars", and
-            // the amount then has to carry its own unit. A bare number in front of a name belongs to the
-            // text before it, as the "2,000" of the standard calorie footnote, and is never read here.
-            if words.isEmpty, scan.unit == nil { continue }
+            if words.isEmpty {
+                // An empty prefix is read only for a row a panel prints its amount in front of, and then
+                // only when the amount carries its own unit. Every other row states its amount behind its
+                // name, so a bare amount in front of one is a front-of-pack callout rather than a row of
+                // the panel: the 20g of "20g Protein" is not the protein of "Protein 6g". A bare number
+                // with no unit is left alone as well, as the 2,000 of the standard calorie footnote.
+                guard amountFirstRows.contains(row.key), scan.unit != nil else { continue }
+            }
             return scan
         }
         return nil
     }
+
+    /// The rows a panel prints with their amount in front of their name: the breakdown rows it states
+    /// inside another row, as in "Includes 5g Added Sugars" and "Includes 2g Trans Fat".
+    private static let amountFirstRows: Set<NutritionFactKey> = [.addedSugars, .transFat]
 
     /// The words a panel may print between an amount and the nutrient name it belongs to, as in
     /// "Includes 5g Added Sugars". A row that states its amount in front of its name is stated with one

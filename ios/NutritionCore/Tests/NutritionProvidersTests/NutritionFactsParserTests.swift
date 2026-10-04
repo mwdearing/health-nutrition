@@ -578,6 +578,44 @@ final class NutritionFactsParserTests: XCTestCase {
         )
     }
 
+    /// A front-of-pack callout in front of a panel row is not a row of the panel, so an amount written in
+    /// front of a name with no qualifier is only read for the rows that print their amount first.
+    func testACalloutInFrontOfAPanelRowIsNotItsValue() throws {
+        let panel = parse(["20g Protein", "Protein 6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"), "the panel row is read, not the callout")
+        XCTAssertEqual(value(.protein, parse(["20g Protein"])), .unknown)
+        XCTAssertEqual(
+            try amount(.addedSugars, parse(["Total Sugars 12g", "5g Added Sugars"])),
+            dec("5"),
+            "the rows that print their amount first still lose the qualifier"
+        )
+    }
+
+    /// A heading that was flattened together with the rows behind it carries its own percent sign in
+    /// front of its words, so the row beside it keeps the amount the label printed.
+    func testAFlattenedHeadingKeepsItsOwnPercentSign() throws {
+        let panel = parse(["Calories 250 % Daily Value* Total Fat 7g"])
+
+        XCTAssertEqual(try amount(.calories, panel), dec("250"))
+        XCTAssertEqual(try amount(.fat, panel), dec("7"))
+        XCTAssertEqual(
+            value(.calories, parse(["Calories 10 % Daily Value"])),
+            .unknown,
+            "a sign with no row behind the heading still belongs to its number"
+        )
+    }
+
+    /// A name the serving metadata line ends with can take its amount from the next line, so it is a row
+    /// of the panel rather than part of the serving description.
+    func testASplitRowBehindTheServingSizeKeepsBoth() throws {
+        let panel = parse(["Serving size 1 bar (50g) Protein", "6g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 bar (50g)")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("50"), unit: .g))
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false
