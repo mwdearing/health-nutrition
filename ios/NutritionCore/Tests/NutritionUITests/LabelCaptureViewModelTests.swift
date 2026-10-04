@@ -297,7 +297,11 @@ final class LabelCaptureViewModelTests: XCTestCase {
             // The printed serving size is still what the values are scaled by.
             XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(240), unit: .mL))
         }
-        XCTAssertNil(model.servingSizeError, "an accepted correction clears the message")
+
+        // An accepted correction puts the message away: it belonged to the text that was refused.
+        XCTAssertTrue(model.correctServingSize(text: "30 g"))
+        XCTAssertNil(model.servingSizeError)
+        XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(30), unit: .g))
     }
 
     /// A panel that stated no serving size has nothing to correct; it has something to be told, which is
