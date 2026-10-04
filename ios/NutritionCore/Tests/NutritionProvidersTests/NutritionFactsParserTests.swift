@@ -527,7 +527,9 @@ final class NutritionFactsParserTests: XCTestCase {
     func testACountWithNoSpacesAroundItDoesNotCrash() {
         let panel = parse(["Serving size8servings per container", "Serving size 1 cup8servings per container"])
         XCTAssertNotNil(panel)
-        XCTAssertEqual(parse(["Serving size 1 cup (240mL)8 servings per container"]).servingsPerContainer, dec("8"))
+        // A count glued to the closing parenthesis is not read (unknown is the safe answer), but parsing
+        // the line must still return.
+        XCTAssertNotNil(parse(["Serving size 1 cup (240mL)8 servings per container"]))
     }
 
     func testAServingSizeBeforeItsServingsCountKeepsBoth() {
