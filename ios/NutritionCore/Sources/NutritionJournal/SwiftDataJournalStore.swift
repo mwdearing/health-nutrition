@@ -304,7 +304,7 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
-public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -462,6 +462,66 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
             try Self.supersedeProjections(of: intakeID, in: context)
             let revision = record.currentRevision
             queueWork(intakeID: intakeID, revision: revision, kind: .delete, payload: "delete:\(intakeID):\(revision)", context: context)
+        }
+    }
+
+    // MARK: Delivery bookkeeping
+
+    /// Marks one operation delivered and its projection `succeeded`, in one save.
+    ///
+    /// Acknowledging an operation that is already acknowledged is not an error: a worker that
+    /// crashed after writing but before recording the delivery will deliver again, and that second
+    /// delivery has to be recordable rather than refused.
+    public func acknowledge(operationID: String, at date: Date) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.acknowledgedAt = date
+            row.nextAttemptAt = nil
+            try Self.setProjectionState(
+                .succeeded, of: row, in: context)
+        }
+    }
+
+    /// Records one failed attempt: `attempts` grows by one, and the operation is due again at
+    /// `retryAt` unless the failure needs a person, in which case the projection becomes
+    /// `needsAttention` and no automatic retry is scheduled.
+    ///
+    /// An acknowledged operation is left alone: it was delivered, so a failure recorded afterwards
+    /// belongs to a different attempt and must not reopen it.
+    public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.attempts += 1
+            row.nextAttemptAt = retryAt
+            try Self.setProjectionState(needsAttention ? .needsAttention : .pending, of: row, in: context)
+        }
+    }
+
+    private static func outboxRecord(_ operationID: String, in context: ModelContext) throws -> OutboxRecord? {
+        try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> { $0.operationID == operationID })).first
+    }
+
+    /// Moves the projection for this operation's revision and destination. A superseded projection is
+    /// left as it is: what a later revision is doing matters more than what an old operation did.
+    private static func setProjectionState(
+        _ state: DestinationState, of row: OutboxRecord, in context: ModelContext
+    ) throws {
+        let destination = row.destinationRaw
+        let revision = row.revision
+        let intakeID = row.intakeID
+        let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
+            predicate: #Predicate<ProjectionRecord> {
+                $0.intakeID == intakeID && $0.revision == revision && $0.destinationRaw == destination
+            }))
+        for projection in rows where projection.isCurrent {
+            projection.stateRaw = state.rawValue
         }
     }
 

@@ -21,6 +21,13 @@ final class AppServices {
     /// Barcode lookups in Add intake. One client for the app's lifetime, so its rolling rate-limit
     /// window is shared and never reset by opening the form again.
     let barcodeLookup: BarcodeProductLookup
+    /// Delivers queued journal revisions to HealthKit.
+    ///
+    /// The worker exists and is wired up, but it has nothing to do: the journal store below enables no
+    /// destinations, so no HealthKit operation is ever queued and `runOnce` always finds an empty
+    /// queue. Turning delivery on is a separate decision, because it starts writing real health data
+    /// (see `docs/healthkit-writer.md`).
+    let healthKitDelivery: HealthKitDeliveryWorker
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
@@ -37,6 +44,12 @@ final class AppServices {
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
         barcodeLookup = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
+        let totals = JournalSnapshotTotals(store: journalStore)
+        healthKitDelivery = HealthKitDeliveryWorker(
+            store: journalStore,
+            writer: HealthKitSampleWriter(),
+            totals: { intakeID, revision in await totals.totals(intakeID: intakeID, revision: revision) }
+        )
     }
 
     /// The marketing version from the bundle; the provider requires a User-Agent that names the app
@@ -48,8 +61,10 @@ final class AppServices {
     /// Opens all three store files in `directory`, creating them if needed.
     static func make() throws -> AppServices {
         let directory = defaultDirectory
-        // No delivery worker exists yet (HealthKit writer and relay outbox come later): queue nothing for them,
-        // so entries never sit in a permanent Pending state.
+        // HealthKit delivery stays off: `enabledDestinations` is empty, so nothing is queued for it and
+        // `healthKitDelivery` has no work. Enabling it writes real intake data into Health, which is a
+        // deliberate decision rather than a consequence of the worker existing (docs/healthkit-writer.md).
+        // The relay destination is off for the same reason.
         let journalStore: SwiftDataJournalStore
         do {
             journalStore = try SwiftDataJournalStore(

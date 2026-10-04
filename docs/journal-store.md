@@ -47,7 +47,29 @@ A disabled destination gets a `disabled` projection and no outbox operation.
 
 The app must use ONE `SwiftDataJournalStore` per database file. The write lock is per instance, so two instances on the same file are unsupported and can assign duplicate revision numbers.
 
-Delivery acknowledgement is not part of this store yet: there is no method to mark an outbox operation as delivered, so `pendingOutbox()` keeps returning queued operations. It arrives with the delivery-worker PR.
+## Delivery acknowledgement
+
+`JournalOutboxDelivery` refines `JournalStore` with the two calls a delivery worker needs to record
+what happened to one operation. It is a refinement rather than part of `JournalStore` because reading
+the journal is something every implementation can do, while recording a delivery needs the store that
+owns the outbox; a read-only stand-in (an export source, a view model's test double) should not have to
+invent it. `SwiftDataJournalStore` is the implementation.
+
+- `acknowledge(operationID:at:)` stamps `acknowledgedAt`, clears `nextAttemptAt` and moves the
+  current projection for that revision and destination to `succeeded`. Acknowledging an operation that
+  is already acknowledged is not an error: a worker that crashed after writing but before recording
+  the delivery will deliver again, and that second delivery has to be recordable.
+- `recordFailure(operationID:retryAt:needsAttention:)` grows `attempts` by one, sets `nextAttemptAt`,
+  and puts the projection in `pending` or, with `needsAttention`, in `needsAttention`. An acknowledged
+  operation is left alone.
+
+Both are single saves through the same `commit` path as every other write, so a failure rolls back and
+the injected-failure test flag covers them. `pendingOutbox()` excludes acknowledged operations, so a
+delivered operation is never offered again.
+
+No schema change was needed: the three columns already existed.
+
+See [healthkit-writer.md](healthkit-writer.md) for the worker that calls them and the retry policy.
 
 ## Testing
 
