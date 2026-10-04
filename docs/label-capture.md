@@ -120,8 +120,8 @@ The rules the screen keeps are short:
   screen asks for it in an amount with its unit — `30 g`, `240 mL` — and refuses a number without one or a
   household word on its own, because that would leave the values exactly as unscalable as they were. Once
   it is stated the basis reads `per serving (30 g)`, the same spelling a panel that stated its own serving
-  gets. A serving the panel printed with no amount in it (`Serving size 1 large biscuit`) is asked for in
-  the same way.
+  gets. A serving size the panel printed as words alone (`Serving size 1 large biscuit`) is shown as it was
+  printed rather than asked for: the panel's own words are what the user checks, and the basis carries them.
 - **Every row the parser read an amount for can be corrected, not only a flagged one.** Recognition can
   read one valid number as another valid one — `180` as `130` — and then the parser records no reason,
   because the transcript is perfectly well formed. The row is still wrong, so the screen offers the same

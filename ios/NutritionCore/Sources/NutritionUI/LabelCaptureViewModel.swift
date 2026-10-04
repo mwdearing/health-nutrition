@@ -264,9 +264,9 @@ public final class LabelCaptureViewModel: ObservableObject {
         servingsPerContainer = panel.servingsPerContainer
         servingNeedsReview = panel.servingSize?.review != nil
         isServingConfirmed = false
-        // A serving size the panel printed with no amount in it ("1 large biscuit") states nothing the
-        // values can be scaled by, so it is asked for in the same way a missing one is.
-        servingIsMissing = panel.servingSize?.quantity == nil
+        // Only a serving size the panel never stated is asked for. One it printed as words is shown as
+        // printed: the panel's own words are what the user checks, and the basis carries them.
+        servingIsMissing = panel.servingSize == nil
         servingSizeError = nil
         isUnreadable = panel.isUnreadable
         hasPanel = true
