@@ -787,6 +787,13 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     /// Deleting an intake does not bump its revision, so the queued upsert and delete share an intake,
     /// a revision and a destination and differ only by action. Matching without the action marks the
     /// delete `succeeded` while its samples are still in Health.
+    /// What the store actually guarantees here is narrow, and this asserts exactly that.
+    ///
+    /// Deleting an intake supersedes the earlier projections, so by the time the stale upsert is
+    /// acknowledged its projection is no longer current — and `setProjectionState` deliberately updates
+    /// only current projections, so it is left as it was. The guarantee that matters is the negative
+    /// one: the pending **delete** projection must not be marked `succeeded`, which is what the
+    /// action-less match used to do.
     func testAcknowledgingAStaleUpsertLeavesTheDeleteProjectionPending() throws {
         let store = try makeStore(try makeDirectory())
 
@@ -803,10 +810,14 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let deleteProjection = try XCTUnwrap(projections.first {
             $0.destination == .healthKit && $0.desiredAction == .delete
         })
-        XCTAssertEqual(upsertProjection.state, .succeeded)
+        XCTAssertFalse(upsertProjection.isCurrent, "deleting supersedes the upsert projection")
+        XCTAssertEqual(
+            upsertProjection.state, .pending,
+            "a superseded projection is left as it is; only current ones are updated")
         XCTAssertEqual(
             deleteProjection.state, .pending,
             "the retraction is not delivered, so its projection must not claim it was")
+        XCTAssertTrue(deleteProjection.isCurrent)
     }
 
     /// The same separation the other way round: acknowledging the delete must not mark the upsert.
@@ -826,5 +837,112 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(
             try XCTUnwrap(projections.first { $0.destination == .healthKit && $0.desiredAction == .upsert }).state,
             .pending)
+    }
+
+    // MARK: - A failed acknowledgement is unresolved
+
+    /// The samples reached HealthKit but the journal could not record it, so the operation is still
+    /// queued. Reporting that as delivered would let this run go on to a newer revision for the same
+    /// intake; the next run would then redeliver the older one, and if the newer revision dropped a
+    /// nutrient, the stale-sample deletion has left no higher-version sample to protect it.
+    func testAFailedAcknowledgementLeavesTheOperationPendingAndBlocksLaterRevisions() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component("water", amount: 250, unit: .mL)], product: nil,
+            changeReason: "water only", now: when)
+        // The next commit fails inside the store: the write to HealthKit has already happened by then.
+        store.failNextSaveForTesting = true
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saveCalls, 1, "revision 1 reached HealthKit")
+        XCTAssertEqual(
+            writer.saved.map(\.syncVersion), [1],
+            "revision 2 must not be delivered behind an unacknowledged revision 1")
+        let queued = try XCTUnwrap(try healthKitOperation(store, kind: .upsert))
+        XCTAssertEqual(queued.revision, 1, "revision 1 is still queued: its delivery was never recorded")
+        XCTAssertNil(queued.acknowledgedAt)
+        XCTAssertEqual(outcomes.count, 2, "both operations report, and the second reports being blocked")
+        guard case .blocked(_, let blockedBy) = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("the newer revision must report being blocked, got \(outcomes)")
+        }
+        XCTAssertEqual(blockedBy, try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID))
+    }
+
+    /// The queue is left consistent rather than lost: the undelivered revision is still there and is
+    /// picked up once the store can write again.
+    func testTheUnacknowledgedRevisionIsDeliveredAgainOnALaterRun() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        // Read before the second run: a delivered operation leaves the queue, so its id has to be
+        // captured while it is still there.
+        let operationID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        store.failNextSaveForTesting = true
+        _ = await worker.runOnce(now: when)
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(60))
+
+        XCTAssertEqual(writer.saved.map(\.syncVersion), [1], "the undelivered revision is written again")
+        XCTAssertEqual(outcomes, [.delivered(operationID: operationID, samples: 1)])
+        XCTAssertNil(try healthKitOperation(store, kind: .upsert), "and it leaves the queue this time")
+    }
+
+    // MARK: - Suspension survives a later edit
+
+    /// An edit supersedes the denied revision's projection but leaves its operation pending. The
+    /// suspension belongs to the operation, so filtering on the current projection would lose it, retry
+    /// the denied write on every run and block the newer revision forever.
+    func testADeniedRevisionStaysSuspendedAfterALaterEditSupersedesItsProjection() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryWater")
+        _ = await worker.runOnce(now: when)
+        let deniedID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "second try", now: when)
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(3600))
+
+        XCTAssertEqual(
+            try store.pendingOutbox().first { $0.operationID == deniedID }?.attempts, 1,
+            "the denied revision is not retried after its projection is superseded")
+        XCTAssertEqual(writer.saveCalls, 0)
+        guard case .needsAttention(let operationID, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the suspended revision must still report needsAttention, got \(outcomes)")
+        }
+        XCTAssertEqual(operationID, deniedID)
+        guard case .blocked(_, let blockedBy) = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("the newer revision stays blocked behind the suspended one, got \(outcomes)")
+        }
+        XCTAssertEqual(blockedBy, deniedID)
+    }
+
+    /// The newer revision is still delivered once the older suspended one is re-armed and delivered,
+    /// which is what makes the suspension recoverable rather than a dead end.
+    func testTheRevisionBehindASuspensionIsDeliveredAfterReArming() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryWater")
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "second try", now: when)
+        writer.allow("HKQuantityTypeIdentifierDietaryWater")
+        try store.rearmDelivery(operationID: try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID))
+        writer.reset()
+
+        _ = await worker.runOnce(now: when.addingTimeInterval(3600))
+
+        XCTAssertEqual(
+            writer.saved.map(\.syncVersion), [1, 2],
+            "re-arming releases the older revision, and the newer one follows it")
+        XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.destination == .relay })
     }
 }

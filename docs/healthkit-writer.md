@@ -179,6 +179,12 @@ waiting, and revision 2 dropped a nutrient, then no higher-version sample protec
 revision 1 is finally delivered, HealthKit accepts its obsolete sample — ADR 0002's run showed a lower
 version is **silently ignored but still accepted as a save** — and stale nutrition data reappears.
 
+**A failed acknowledgement is unresolved too.** If the samples reach HealthKit but the store cannot
+record the delivery, the operation is still queued, so the outcome is `.notAcknowledged` rather than
+delivered. Letting the run continue to a newer revision would set up exactly the same failure on the
+next run, which would redeliver the older revision into a queue where its stale-sample deletion has
+already removed the protection.
+
 ### Retraction is per type
 
 A delete asks about **every** mapped type, because any of them may hold a sample this app wrote. It
@@ -219,6 +225,7 @@ so both routes end in the same place.
 | `authorizationDenied` | Projection becomes `needsAttention`, the operation is **suspended**, no retry is scheduled. |
 | `HealthSampleWriterError.transient` | `attempts` grows by one, `nextAttemptAt` moves out along the backoff. |
 | Any other error, including a failed totals read | Treated as transient: retrying is the safe direction. |
+| The store's acknowledgement throws after a successful write | Reported as `.notAcknowledged`, which is **unresolved**. |
 
 A denial is never retried because **retrying cannot grant Health access**. A worker that retried it
 would fail on a timer forever and hide the real problem behind a queue that never drains; leaving the
@@ -231,6 +238,12 @@ attempt count forever. The worker therefore asks the store which operations are 
 (`suspendedOperationIDs()`), which reads the projections, and leaves those alone. **Re-arming is a
 deliberate act**: `rearmDelivery(operationID:)` clears the suspension and makes the operation due
 again, and only a person decides when a denial has actually been resolved.
+
+**A suspension belongs to the operation, not to the current projection.** An edit supersedes the earlier
+projections while leaving their operations pending, so a denied revision 1 whose projection has just
+gone noncurrent is still an undelivered, suspended operation. `suspendedOperationIDs()` therefore matches
+each `needsAttention` projection to its operation whatever its currency; filtering on `isCurrent` would
+drop the suspension, retry the denied write forever and block the newer revision indefinitely.
 
 The backoff is **1, 5 and 30 minutes, then every 2 hours**
 (`HealthKitDeliveryWorker.backoffSeconds(afterAttempt:)`). Backoff rather than a fixed interval: one

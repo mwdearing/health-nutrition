@@ -103,6 +103,10 @@ public enum HealthKitDeliveryOutcome: Sendable, Equatable {
     case needsAttention(operationID: String, reason: String)
     /// A retryable failure; the operation is due again at `nextAttemptAt`.
     case retryScheduled(operationID: String, nextAttemptAt: Date, reason: String)
+    /// The samples reached HealthKit but the journal could not record the delivery, so the operation is
+    /// still queued. Unresolved on purpose: until the queue is consistent, nothing later for this
+    /// intake may be delivered, or a redelivery of this revision could recreate an obsolete value.
+    case notAcknowledged(operationID: String, detail: String)
 
     /// True when this operation is finished with and must not hold up the next one for its intake.
     ///
@@ -113,7 +117,7 @@ public enum HealthKitDeliveryOutcome: Sendable, Equatable {
         switch self {
         case .delivered, .retracted, .superseded:
             return true
-        case .partlyRetracted, .notDue, .blocked, .needsAttention, .retryScheduled:
+        case .partlyRetracted, .notDue, .blocked, .needsAttention, .retryScheduled, .notAcknowledged:
             return false
         }
     }
@@ -445,13 +449,25 @@ public struct HealthKitDeliveryWorker: Sendable {
 
     /// Acknowledges a delivered operation, so `pendingOutbox()` stops offering it.
     ///
-    /// A failed acknowledgement returns the outcome anyway: the samples were written, and a redelivery
-    /// is harmless because the plan is rebuilt from the stored revision and HealthKit replaces an
-    /// equal-version sample. Reporting the failure as if nothing had been written would be wrong.
+    /// **A failed acknowledgement is unresolved, not delivered.** The samples are in HealthKit but the
+    /// journal does not know it, so the operation is still queued. Reporting the outcome as resolved
+    /// would let this run deliver a newer revision for the same intake, and the next run would then
+    /// redeliver this older one — and if the newer revision dropped a nutrient, the stale-sample
+    /// deletion has left no higher-version sample protecting that identifier, so the obsolete value can
+    /// be recreated. Returning an unresolved outcome keeps the intake blocked until the queue is
+    /// consistent again.
     private func acknowledge(
         _ operation: OutboxOperation, now: Date, outcome: HealthKitDeliveryOutcome
     ) -> HealthKitDeliveryOutcome {
-        try? store.acknowledge(operationID: operation.operationID, at: now)
-        return outcome
+        do {
+            try store.acknowledge(operationID: operation.operationID, at: now)
+            return outcome
+        } catch {
+            // Deliberately not `try?`: the write happened and the record did not, and only the caller
+            // can decide what that means for the rest of the queue.
+            return .notAcknowledged(
+                operationID: operation.operationID,
+                detail: "the samples were written but the journal could not record the delivery")
+        }
     }
 }
