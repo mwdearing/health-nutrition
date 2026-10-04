@@ -330,16 +330,16 @@ public struct IntakeContextEncoder: Sendable {
         guard tombstone.intakeID == intake.id else {
             throw IntakeContextEncoderError.tombstoneIntakeMismatch(tombstone.intakeID)
         }
-        let tombstone = revision.number + 1
+        let tombstoneRevision = revision.number + 1
         var members: [String: IntakeContextJSONValue] = [
             "operation_id": .string(operation.operationID),
             "operation": .string(IntakeContextOperationKind.delete.contractValue),
             "intake_id": .string(intake.id),
-            "revision": .integer(String(tombstone)),
+            "revision": .integer(String(tombstoneRevision)),
             "deleted_at": .string(IntakeContextTimestamp.utc(tombstone.deletedAt)),
         ]
         return try sealed(members: &members, kind: .delete, operationID: operation.operationID,
-            intakeID: intake.id, revision: tombstone, sequence: 0)
+            intakeID: intake.id, revision: tombstoneRevision, sequence: 0)
     }
 
     /// The `link_projection` for a link-only change to a revision whose facts are already accepted.
