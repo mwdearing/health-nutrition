@@ -505,6 +505,31 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.sodium, panel), dec("180"))
     }
 
+    /// A label may put the qualifier between the marker and the count, as in "Servings Per Container
+    /// About 8", with or without a colon.
+    func testAQualifierBetweenTheMarkerAndTheCountIsSkipped() {
+        XCTAssertEqual(parse(["Servings Per Container About 8"]).servingsPerContainer, dec("8"))
+        XCTAssertEqual(parse(["Servings Per Container: About 8"]).servingsPerContainer, dec("8"))
+    }
+
+    /// Removing a heading that follows a percent sign leaves the percent sign where the row printed it,
+    /// so `Calories 10% Daily Value` stays a Daily Value rather than becoming ten calories.
+    func testAPercentSignInFrontOfAHeadingIsKept() {
+        let panel = parse(["Calories 10% Daily Value"])
+
+        XCTAssertEqual(value(.calories, panel), .unknown)
+    }
+
+    /// Flattened serving metadata in the other order: the size comes first and the count behind it, so the
+    /// size keeps only its own measure and the count is still read.
+    func testAServingSizeBeforeItsServingsCountKeepsBoth() {
+        let panel = parse(["Serving size 1 cup (240mL) 8 servings per container"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 cup (240mL)")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+        XCTAssertEqual(panel.servingsPerContainer, dec("8"))
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false

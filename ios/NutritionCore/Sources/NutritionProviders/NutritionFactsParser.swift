@@ -107,8 +107,9 @@ public enum NutritionFactsParser {
 
     /// The serving size a line states, read after the words "serving size" and past any colon.
     ///
-    /// The measure ends at the next nutrient row, because a flattened line can carry a row behind the
-    /// serving size and the serving size is only what the label printed in front of it.
+    /// The measure ends where the next piece of panel text begins, because a flattened line can carry
+    /// another field behind the serving size and the serving size is only what the label printed in
+    /// front of it.
     private static func servingSize(in line: String) -> ParsedServingSize? {
         let lower = line.lowercased()
         guard let marker = lower.range(of: "serving size") else { return nil }
@@ -116,11 +117,7 @@ public enum NutritionFactsParser {
         if let colon = text.firstIndex(of: ":") {
             text = String(text[text.index(after: colon)...])
         }
-        // The measure stops at the next nutrient row, because a flattened line can carry a row behind
-        // the serving size and the serving size is only what the label printed in front of it.
-        if let nextRow = firstRow(in: text)?.nameStart {
-            text = String(text[..<nextRow])
-        }
+        text = String(text[..<nextField(in: text)])
         text = trimmed(text)
         guard !text.isEmpty else { return nil }
         let measure = servingMeasure(in: text)
@@ -158,14 +155,30 @@ public enum NutritionFactsParser {
             end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: colon) + 1)
             tail = String(line[end...])
         }
-        // The span runs to the next nutrient row, or to the end of the line when the measure is the last
-        // thing the line states.
-        if let nextRow = firstRow(in: tail)?.nameStart {
-            end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: nextRow))
-        } else {
-            end = line.endIndex
-        }
+        // The span runs to the next piece of panel text, or to the end of the line when the measure is
+        // the last thing the line states.
+        end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: nextField(in: tail)))
         return start..<end
+    }
+
+    /// Where the next piece of panel text begins in `text`: the next nutrient row, or the next piece of
+    /// serving metadata, whichever comes first.
+    ///
+    /// Flattened metadata puts the two fields next to each other in either order, as in
+    /// "Serving size 1 cup (240mL) 8 servings per container", so each field stops where the other begins.
+    /// When the next field is the servings count, the count itself belongs to that field rather than to
+    /// this one, so the boundary steps back over it.
+    private static func nextField(in text: String) -> String.Index {
+        let rowBoundary = firstRow(in: text)?.nameStart ?? text.endIndex
+        let lower = text.lowercased()
+        guard let marker = servingsMarker(in: lower) else { return rowBoundary }
+        let markerStart = index(marker.lowerBound, in: text, lowercased: lower)
+        guard markerStart < rowBoundary else { return rowBoundary }
+
+        let tokens = trimmed(String(text[..<markerStart])).split(separator: " ").map(String.init)
+        guard let last = tokens.last, completeDecimal(last) != nil else { return markerStart }
+        let offset = lower.distance(from: lower.startIndex, to: markerStart) - last.count - 1
+        return text.index(text.startIndex, offsetBy: offset, limitedBy: text.endIndex) ?? markerStart
     }
 
     /// The line with its serving size taken off, so whatever else it carries is still read.
@@ -174,8 +187,8 @@ public enum NutritionFactsParser {
         return trimmed(String(line[..<span.lowerBound]) + " " + String(line[span.upperBound...]))
     }
 
-    /// The line with its servings-per-container marker and the count beside it taken off, so whatever
-    /// else the flattened line carries is still read.
+    /// The line with its servings-per-container marker, the qualifier words and the count beside it taken
+    /// off, so whatever else the flattened line carries is still read.
     private static func withoutServingsPerContainer(in line: String) -> String {
         let lower = line.lowercased()
         guard let marker = servingsMarker(in: lower) else { return line }
@@ -186,8 +199,12 @@ public enum NutritionFactsParser {
         }
         var end = index(marker.upperBound, in: line, lowercased: lower)
         var tail = String(line[end...])
-        if let colon = tail.firstIndex(of: ":") {
-            end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: colon) + 1)
+        // A colon and the qualifier words stand between the marker and the count, as in
+        // "Servings Per Container: About 8", and are stepped over rather than read as one.
+        while let first = tail.split(separator: " ").first,
+              first == ":" || leadingWords.contains(String(first).lowercased())
+        {
+            end = line.index(end, offsetBy: first.count + 1, limitedBy: line.endIndex) ?? line.endIndex
             tail = String(line[end...])
         }
         if let count = tail.split(separator: " ").first, completeDecimal(String(count)) != nil {
@@ -199,18 +216,30 @@ public enum NutritionFactsParser {
     /// The line with a flattened % Daily Value heading taken off, so the rows that share the line with
     /// the heading are still read.
     ///
-    /// The heading names the column and states no amount of its own, so only its own text is skipped.
+    /// The heading names the column and states no amount of its own, so only its own text is skipped. A
+    /// percent sign is dropped only when it is the heading's own, as in "% Daily Value Total Fat 7g": a
+    /// sign attached to a number belongs to that row's Daily Value, so "Calories 10% Daily Value" keeps
+    /// its sign and stays a Daily Value rather than becoming a calorie count.
     private static func withoutDailyValueHeading(in line: String) -> String {
         var text = line
         while true {
             let lower = text.lowercased()
             guard let marker = lower.range(of: "daily value") else { break }
-            var head = trimmed(String(text[..<index(marker.lowerBound, in: text, lowercased: lower)]))
-            if head.hasSuffix("%") { head = trimmed(String(head.dropLast())) }
+            let headEnd = index(marker.lowerBound, in: text, lowercased: lower)
+            var head = trimmed(String(text[..<headEnd]))
+            if head.hasSuffix("%"), !isAttachedToNumber(head) { head = trimmed(String(head.dropLast())) }
             let tail = String(text[index(marker.upperBound, in: text, lowercased: lower)...])
             text = trimmed(head + " " + tail)
         }
         return trimmed(text)
+    }
+
+    /// Whether the text ends in a percent sign that stands directly behind a number, as the ten of
+    /// "Calories 10%" does. A percent sign with no number in front of it belongs to a heading.
+    private static func isAttachedToNumber(_ text: String) -> Bool {
+        let characters = Array(text)
+        guard characters.count >= 2, characters[characters.count - 1] == "%" else { return false }
+        return isDigit(characters[characters.count - 2])
     }
 
     /// The first of the two wordings of a servings-per-container marker that a line carries.
@@ -224,12 +253,18 @@ public enum NutritionFactsParser {
         return found
     }
 
-    /// The count written directly behind a marker, past any colon, as in "Servings Per Container: 12".
+    /// The count written directly behind a marker, past any colon and any qualifier word, as in
+    /// "Servings Per Container: 12" and "Servings Per Container About 8".
     private static func firstCompleteDecimal(in rawText: String) -> Decimal? {
-        var text = trimmed(rawText)
-        while text.hasPrefix(":") { text = trimmed(String(text.dropFirst())) }
-        guard let first = text.split(separator: " ").first else { return nil }
-        return completeDecimal(String(first))
+        var tokens = trimmed(rawText).split(separator: " ").map(String.init)
+        while let first = tokens.first {
+            if first == ":" || leadingWords.contains(first.lowercased()) {
+                tokens.removeFirst()
+                continue
+            }
+            return completeDecimal(first)
+        }
+        return nil
     }
 
     /// The count written directly in front of a marker, as in "About 6 servings per container".
