@@ -65,7 +65,7 @@ private struct PayloadDTO: Codable {
 }
 
 /// Recipes in their own store file; the URL is injected. Nothing here is shared or synced.
-public final class SwiftDataRecipeStore: RecipeStore, @unchecked Sendable {
+public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked Sendable {
     private let lock = NSLock()
     /// Held across each whole write so two saves never read the same latest number.
     private let writeLock = NSLock()
@@ -163,6 +163,25 @@ public final class SwiftDataRecipeStore: RecipeStore, @unchecked Sendable {
             predicate: #Predicate<RecipeTombstoneRecord> { $0.recipeID == id }))
         guard existing.isEmpty else { return }
         context.insert(RecipeTombstoneRecord(recipeID: id, deletedAt: Date()))
+        try context.save()
+    }
+
+    // MARK: Erasing
+
+    /// Removes every recipe version and every tombstone. Both are personal data: a version
+    /// is the recipe as typed, and a tombstone names a recipe the person deleted, which is still their
+    /// business and is never sent anywhere.
+    ///
+    /// The fetched rows are deleted one at a time rather than with the batch delete, which runs against
+    /// the persistent store immediately and so cannot be rolled back with the save. The store stays
+    /// open, and with the tombstones gone a recipe id can start again at version one. A closed store
+    /// throws `RecipeStoreError.closed`.
+    public func eraseAll() throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        for row in try context.fetch(FetchDescriptor<RecipeTombstoneRecord>()) { context.delete(row) }
+        for row in try context.fetch(FetchDescriptor<RecipeVersionRecord>()) { context.delete(row) }
         try context.save()
     }
 

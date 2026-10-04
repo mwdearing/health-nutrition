@@ -9,6 +9,9 @@ public struct ConnectionsPrivacyView: View {
     /// Held here rather than in the model so the file picker is a view concern: the model never sees a
     /// file, only the bytes the person chose.
     @State private var isImporting = false
+    /// Held so the erase button asks first, and the ask is a dialog with the erase action and a cancel
+    /// side by side.
+    @State private var confirmingErase = false
 
     public init(model: ConnectionsPrivacyViewModel, now: @escaping () -> Date = { Date() }) {
         self.model = model
@@ -43,9 +46,6 @@ public struct ConnectionsPrivacyView: View {
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
                         .accessibilityLabel("Exported \(model.entryCount) entries")
-                }
-                if let message = model.errorMessage {
-                    Text(message).font(.footnote).foregroundStyle(TokenColors.error)
                 }
             }
             Section("Import") {
@@ -88,6 +88,39 @@ public struct ConnectionsPrivacyView: View {
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
             }
+            if model.canEraseAll {
+                Section {
+                    Button(role: .destructive) {
+                        confirmingErase = true
+                    } label: {
+                        Text(ConnectionsPrivacyViewModel.eraseButtonTitle).font(.headline)
+                    }
+                    .accessibilityLabel(ConnectionsPrivacyViewModel.eraseButtonTitle)
+                    .accessibilityHint("Asks first. Deletes every entry, favorite and recipe on this device")
+                } footer: {
+                    Text(ConnectionsPrivacyViewModel.eraseFooterMessage)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
+            }
+            // One place for a message, so an erase that could not finish reads the same wherever on the
+            // screen it happened.
+            if let message = model.errorMessage {
+                Section {
+                    Text(message).font(.footnote).foregroundStyle(TokenColors.error)
+                }
+            }
+        }
+        .confirmationDialog(
+            ConnectionsPrivacyViewModel.eraseConfirmationTitle, isPresented: $confirmingErase,
+            titleVisibility: .visible
+        ) {
+            Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
+                model.eraseAllData()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(ConnectionsPrivacyViewModel.eraseConfirmationMessage)
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
