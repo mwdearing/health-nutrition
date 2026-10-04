@@ -76,14 +76,18 @@ storing them needs a change to the journal type.
 The amount, unit and time are never taken from the source: the user confirms how much they ate.
 
 Scanning a barcode with the camera is a way of typing it. The scanner recognizes only EAN and UPC
-codes and hands its raw payload to `ScannedBarcode.normalize`, which applies the same rule the field
-applies to typed digits: 8, 12 or 13 digits with a correct GS1 check digit, anything else ignored.
-The first payload that passes fills the barcode field and closes the scanner; no request is sent
-while the camera is open, and the lookup still runs only on the explicit Look up action. The Scan
-button is shown only where the device can scan at all, the camera lives in the app target so the UI
-package stays free of any camera framework, and the scanner never sees anything but the code: no
-image is stored, and a code of the wrong length or with a wrong check digit is simply skipped while
-scanning goes on.
+codes and hands its raw payload to the UI package, which applies the same rule the field applies to
+typed digits: 8, 12 or 13 digits with a correct GS1 check digit, anything else ignored. A UPC-E
+payload is the one exception: its eight printed digits stand for a GTIN-12 with zeros left out, so
+they pass the EAN-8 check while naming a different number, and the payload is expanded to its
+GTIN-12 first (`ScannedBarcode.expandUPCE`). A payload that does not expand is skipped rather than
+looked up as the eight digits it shows. The first payload that passes fills the barcode field and
+closes the scanner; no request is sent while the camera is open, and the lookup still runs only on
+the explicit Look up action. The Scan button is shown only where the device can scan at all, the
+camera lives in the app target so the UI package stays free of any camera framework, and the
+scanner never sees anything but the code: no image is stored. If the camera becomes unavailable
+while the sheet is open, for instance when permission is denied, the sheet shows the reason and a
+Close button and asks once: it does not keep retrying while the notice is on screen.
 
 ## Licences
 

@@ -27,7 +27,8 @@ enum BarcodeScanner {
 ///
 /// Scanning never looks anything up. The first payload the UI package accepts as a barcode fills
 /// the field and closes the sheet; the request to the source still waits for the user to tap Look
-/// up (see `docs/providers/open-food-facts.md`).
+/// up (see `docs/providers/open-food-facts.md`). Once the camera becomes unavailable the sheet
+/// says so once, with a Close button, and never asks again.
 struct BarcodeScannerSheet: View {
     let onScanned: (String) -> Void
 
@@ -36,22 +37,27 @@ struct BarcodeScannerSheet: View {
 
     var body: some View {
         NavigationStack {
-            BarcodeDataScanner(onScan: accept, onFailure: fail)
-                .ignoresSafeArea(edges: .bottom)
-                .overlay(alignment: .bottom) {
-                    if let failureMessage {
-                        failureNotice(failureMessage)
-                    } else {
-                        hint
-                    }
-                }
+            content
                 .navigationTitle("Scan barcode")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
+                        Button(failureMessage == nil ? "Cancel" : "Close") { dismiss() }
                     }
                 }
+        }
+    }
+
+    /// The camera while it works, the notice once it cannot. A terminal failure takes the scanner
+    /// out of the tree altogether, so nothing asks it to start again.
+    @ViewBuilder
+    private var content: some View {
+        if let failureMessage {
+            failureNotice(failureMessage)
+        } else {
+            BarcodeDataScanner(onScan: accept, onFailure: fail)
+                .ignoresSafeArea(edges: .bottom)
+                .overlay(alignment: .bottom) { hint }
         }
     }
 
@@ -65,15 +71,15 @@ struct BarcodeScannerSheet: View {
     }
 
     private func failureNotice(_ message: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Text(message)
-                .font(.footnote)
+                .font(.body)
                 .multilineTextAlignment(.center)
             Button("Close") { dismiss() }
                 .font(.headline)
         }
         .padding()
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.thinMaterial)
     }
 
@@ -129,6 +135,12 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
         /// Set the moment a barcode is handed over, so the same code read again frame after frame
         /// cannot fill the field twice or reopen the sheet.
         private var hasDelivered = false
+        /// Set when scanning became unavailable for good, and never cleared. Reporting a failure
+        /// changes the sheet's state, which sends SwiftUI back through `updateUIViewController`, so
+        /// without this the availability guard would report the same failure on every update and
+        /// keep the main queue busy for as long as the notice is on screen. A terminal failure is
+        /// asked for once and never retried.
+        private var hasFailed = false
 
         init(parent: BarcodeDataScanner) {
             self.parent = parent
@@ -138,7 +150,7 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
         // the controller. SwiftUI calls this from its update pass, which is on the main actor.
         @MainActor
         func startScanning(on controller: DataScannerViewController) {
-            guard !isRunning, !hasDelivered else { return }
+            guard !isRunning, !hasDelivered, !hasFailed else { return }
             guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
                 report("This device cannot scan barcodes. Type the digits instead.")
                 return
@@ -159,13 +171,23 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
             for item in addedItems {
                 guard case let .barcode(barcode) = item else { continue }
                 guard let payload = barcode.payloadStringValue else { continue }
+                // A UPC-E payload is compressed: its eight digits would pass the EAN-8 check while
+                // standing for a different number, so it is expanded to its GTIN-12 first. Every
+                // other symbology is used as printed.
+                let expanded = barcode.observationBarcode.symbology == .upce
+                    ? ScannedBarcode.expandUPCE(payload) : nil
+                if let expanded {
+                    deliver(expanded, from: dataScanner)
+                    return
+                }
                 // The same rule the field applies to typed digits: a code of another length, or one
-                // with a wrong check digit, is skipped and scanning goes on.
-                guard let accepted = ScannedBarcode.normalize(payload) else { continue }
-                hasDelivered = true
-                isRunning = false
-                dataScanner.stopScanning()
-                parent.onScan(accepted)
+                // with a wrong check digit, is skipped and scanning goes on. A UPC-E payload that did
+                // not expand is skipped for the same reason: looking up its eight printed digits
+                // would ask about a GTIN-8 that was never on the package.
+                guard barcode.observationBarcode.symbology != .upce,
+                      let accepted = ScannedBarcode.normalize(payload)
+                else { continue }
+                deliver(accepted, from: dataScanner)
                 return
             }
         }
@@ -178,10 +200,20 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
             report("Scanning stopped, so the barcode was not read. Type the digits instead.")
         }
 
+        /// Hands the barcode over once and stops the camera. Set before the callback, so the same
+        /// code read again in a later frame is ignored rather than delivered twice.
+        private func deliver(_ barcode: String, from dataScanner: DataScannerViewController) {
+            hasDelivered = true
+            isRunning = false
+            dataScanner.stopScanning()
+            parent.onScan(barcode)
+        }
+
         /// Told to SwiftUI outside the update pass that is running when scanning is started, so a
         /// failure never changes view state while SwiftUI is laying the view out.
         private func report(_ message: String) {
             isRunning = false
+            hasFailed = true
             let parent = parent
             DispatchQueue.main.async { parent.onFailure(message) }
         }
