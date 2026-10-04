@@ -71,6 +71,11 @@ public struct ConnectionsPrivacyView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Connections and privacy")
+        .onDisappear {
+            // Leaving the screen deletes the exported copy. A journal export that outlives the screen would
+            // sit in the temporary directory with nothing able to remove it.
+            model.clearExport()
+        }
     }
 
     private func connectionRow(title: String, detail: String) -> some View {

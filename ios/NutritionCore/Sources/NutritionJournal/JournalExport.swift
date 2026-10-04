@@ -505,9 +505,13 @@ public enum JournalExporter {
     public static func encode(_ export: JournalExport) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        // One formatter for the whole run: building a `DateFormatter` per date is the expensive part of
+        // encoding a long journal, and encoding is synchronous on the calling thread, so this one is only ever
+        // used here.
+        let formatter = microsecondFormatter()
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(JournalExporter.microsecondFormatter().string(from: date))
+            try container.encode(formatter.string(from: date))
         }
         return try encoder.encode(export)
     }
@@ -526,18 +530,22 @@ public enum JournalExporter {
     /// or changed fields mean, and guessing would silently drop data.
     public static func decode(_ data: Data) throws -> JournalExport {
         let decoder = JSONDecoder()
+        // One set of readers for the whole run; see `encode` for why they are not rebuilt per date.
+        let microseconds = microsecondFormatter()
+        let wholeSeconds = wholeSecondFormatter()
+        let legacy = legacyFormatters()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let text = try container.decode(String.self)
             // Whole-second text goes to the plain ISO-8601 reader, and text with a fraction to the six-digit
             // one, so a second is never put through a formatter that has to guess how many digits it has.
             if text.contains(".") {
-                if let date = JournalExporter.microsecondFormatter().date(from: text) { return date }
-            } else if let date = JournalExporter.wholeSecondFormatter().date(from: text) {
+                if let date = microseconds.date(from: text) { return date }
+            } else if let date = wholeSeconds.date(from: text) {
                 return date
             }
             // An older build wrote three fractional digits; those files must still import.
-            for formatter in JournalExporter.legacyFormatters() {
+            for formatter in legacy {
                 if let date = formatter.date(from: text) { return date }
             }
             throw DecodingError.dataCorruptedError(
@@ -559,11 +567,14 @@ public enum JournalExporter {
     /// of its sixteen significant decimal digits there, so six fractional digits is the finest text that still
     /// parses back to the same instant. The schema describes the dates as `format: date-time`, which RFC 3339
     /// allows at any fractional length.
-    static let microsecondDateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
+    public static let microsecondDateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'"
 
-    /// A fresh formatter per call. `DateFormatter` is a reference type that Foundation does not promise to
-    /// keep thread-safe across mutations, and this is only used a handful of times per export.
-    static func microsecondFormatter() -> DateFormatter {
+    /// Builds the one `DateFormatter` a run of `encode` or `decode` uses. Building a formatter is the expensive
+    /// part of formatting a date, so a run builds one and reuses it; encoding and decoding are synchronous on
+    /// the calling thread, so nothing else can reach it.
+    ///
+    /// This is a seam so a test can count the formatters a run builds. Production code never assigns it.
+    nonisolated(unsafe) public static var microsecondFormatter: () -> DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = TimeZone(secondsFromGMT: 0)

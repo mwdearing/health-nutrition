@@ -285,7 +285,27 @@ final class JournalExportTests: XCTestCase {
         }
     }
 
-    func testEncoderOutputIsDeterministicForTheSameData() throws {
+    func testOneDateFormatterIsBuiltPerRunNotPerDate() throws {
+        // Building a DateFormatter is the expensive part of formatting a date, and an export has one date per
+        // intake, revision and header. This test counts the formatters a run builds.
+        let original = JournalExporter.microsecondFormatter
+        addTeardownBlock { JournalExporter.microsecondFormatter = original }
+        var builds = 0
+        JournalExporter.microsecondFormatter = {
+            builds += 1
+            return original()
+        }
+        let document = try makeExport(store: filledStore(), favorites: favorites())
+        XCTAssertTrue(document.intakes.first?.revisions.first?.createdAt.timeIntervalSince1970 ?? 0 > 0)
+        builds = 0
+        let data = try JournalExporter.encode(document)
+        XCTAssertEqual(builds, 1, "one formatter for the whole encode run")
+        builds = 0
+        _ = try JournalExporter.decode(data)
+        XCTAssertEqual(builds, 1, "one formatter for the whole decode run")
+    }
+
+func testEncoderOutputIsDeterministicForTheSameData() throws {
         let store = filledStore()
         let first = try JournalExporter.encode(try makeExport(store: store))
         let second = try JournalExporter.encode(try makeExport(store: store))

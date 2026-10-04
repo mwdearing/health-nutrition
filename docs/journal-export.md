@@ -74,11 +74,14 @@ version 2 file is never half-understood.
 ## Privacy
 - The export is **local and user-initiated**. Nothing is uploaded, and no network call is involved: the
   module imports no networking framework, and the file is written into the app's temporary directory.
+- The file is written complete-only (`[.atomic, .completeFileProtection]`), so the journal is unreadable
+  while the device is locked, and written in one step so no half-written copy can be shared.
 - Data leaves the app only through the system share sheet or a file exporter the person opens, and only
   because they asked. Nothing is shared on a timer or in the background.
 - Deleting the app deletes its store; the temporary export file is removed from disk when the export is
-  cleared, when an export attempt fails, and when a new export replaces it in another second. At most one
-  copy of the journal is ever left in the temporary directory.
+  cleared, when the screen is left (`onDisappear` calls `clearExport()`), when an export attempt fails, and
+  when a new export replaces it in another second. At most one copy of the journal is ever left in the
+  temporary directory.
 - Apple Health and HealthRelay are listed on that screen as **shown but disabled**: the switches cannot be
   turned on until those work packages ship, so the screen never implies that data is already leaving the
   device.

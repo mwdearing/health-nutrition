@@ -99,7 +99,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-            try data.write(to: url, options: .atomic)
+            // The export is the whole health history in one file, so it is written complete-only: unreadable
+            // while the phone is locked, and written in one step so no half-written copy is ever shared.
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
             // A second export in another second gets a different file name, so the copy this screen was
             // holding would be left behind with nothing able to remove it. It holds the same journal, so it
             // goes before the new URL replaces it.

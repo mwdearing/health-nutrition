@@ -179,7 +179,37 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 
-    func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
+    func testTheExportedFileIsWrittenCompleteOnly() throws {
+        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites(), appVersion: "0.1.0")
+        XCTAssertTrue(model.export(now: now))
+        let url = try XCTUnwrap(model.exportFileURL)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        // The file holds the whole journal, so it must be unreadable while the device is locked. macOS does not
+        // record file protection, so the check only runs where the attribute exists.
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let protection = attributes[.protectionKey] as? FileProtectionType else {
+            throw XCTSkip("this platform does not record a file protection attribute")
+        }
+        XCTAssertEqual(protection, .complete)
+    }
+
+func testClearingTheExportWhenTheScreenGoesAwayLeavesNothingOnDisk() throws {
+        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        XCTAssertTrue(model.export(now: now))
+        let url = try XCTUnwrap(model.exportFileURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        // What the screen's `onDisappear` calls.
+        model.clearExport()
+        XCTAssertEqual(model.exportState, .idle)
+        XCTAssertNil(model.exportFileURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        // Leaving and coming back to the screen must not resurrect the old file or its state.
+        XCTAssertNil(model.exportFileName)
+        XCTAssertEqual(model.entryCount, 0)
+        XCTAssertNil(model.errorMessage)
+    }
+
+func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
         let store = filledStore()
         let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())
         store.failReads = true
