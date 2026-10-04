@@ -56,13 +56,18 @@ final class JournalEraseTests: XCTestCase {
             intakeID: intakeID, components: [oats()], product: nil, changeReason: "bigger bowl", now: when)
         // The second entry stays active, so the precondition holds rows of every kind: an active entry,
         // a deleted one with its tombstone, two revisions, a snapshot, projections and outbox work.
+        // Create, edit and delete each queue a projection per destination, so only their presence is
+        // asserted here; the erase is what has to empty them.
         try store.create(otherIntake(), components: [oats()], product: product(), now: when)
         try store.delete(intakeID: intakeID, now: when)
         XCTAssertEqual(try store.activeIntakes().map(\.id), [otherIntakeID])
         XCTAssertEqual(try store.deletedIntakes().map(\.id), [intakeID])
         XCTAssertEqual(try store.revisions(of: intakeID).count, 2)
         XCTAssertEqual(try store.revisions(of: otherIntakeID).count, 1)
-        XCTAssertEqual(try store.projections(of: intakeID).count, 4)
+        // Only that rows exist: how many projections a create, an edit and a delete leave behind is the
+        // projection logic's business, and pinning the count here would test that instead of the erase.
+        XCTAssertFalse(try store.projections(of: intakeID).isEmpty)
+        XCTAssertFalse(try store.projections(of: otherIntakeID).isEmpty)
         XCTAssertNotNil(try store.product(snapshotID: "snap-erase-1"))
         XCTAssertFalse(try store.pendingOutbox().isEmpty)
 
