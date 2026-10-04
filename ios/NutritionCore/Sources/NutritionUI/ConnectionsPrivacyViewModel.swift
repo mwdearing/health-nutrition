@@ -43,43 +43,48 @@ public enum ConnectionsPrivacyImportState: Equatable {
     case failed
 }
 
-/// Whether a journal restore is running, and how to wait for it to stop.
+/// How many journal restores are running, and how to wait for all of them to stop.
 ///
-/// A lock and a semaphore rather than an actor, because the two sides are on different actors by design: the
-/// restore finishes on a background thread - that is the whole point of running it there - while the erase
-/// waits on the main actor. `begin` is called before the restore starts and `end` when it has finished,
-/// whether it succeeded or failed; `wait` reports whether the work in flight had finished within the time it
-/// was given, so a caller never blocks forever on a signal that cannot arrive.
+/// A lock and a condition rather than an actor, because the two sides are on different actors by design: the
+/// restores finish on background threads - that is the whole point of running them there - while the erase
+/// waits on the main actor. `begin` is called before a restore starts and `end` when it has finished, whether
+/// it succeeded or failed; `wait` reports whether every restore in flight had finished within the time it was
+/// given, so a caller never blocks forever on work that cannot arrive.
 private final class ImportGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var running = false
-    private var finished: DispatchSemaphore?
+    private let condition = NSCondition()
+    /// How many restores are in flight. A count rather than a flag: two imports can overlap, and the first
+    /// of them to finish must not report the gate idle while the second is still writing.
+    private var inFlight = 0
 
-    /// Marks a restore as started. A second one while the first is running reuses the same signal, so the
-    /// last restore to finish opens the gate rather than the first to start.
+    /// Marks a restore as started.
     func begin() {
-        lock.withLock {
-            running = true
-            if finished == nil { finished = DispatchSemaphore(value: 0) }
-        }
+        condition.lock()
+        inFlight += 1
+        condition.unlock()
     }
 
-    /// Marks the restore as finished and wakes anything waiting for it.
+    /// Marks a restore as finished, and wakes anything waiting once the last one is gone.
     func end() {
-        let semaphore = lock.withLock {
-            running = false
-            defer { finished = nil }
-            return finished
-        }
-        semaphore?.signal()
+        condition.lock()
+        if inFlight > 0 { inFlight -= 1 }
+        if inFlight == 0 { condition.broadcast() }
+        condition.unlock()
     }
 
-    /// Blocks the caller until the restore in flight has finished. True when there was nothing running, or
-    /// when it finished in time; false when it was still running after `timeout`, which is the caller's cue
-    /// to refuse rather than erase beside a restore that is still writing.
+    /// Blocks the caller until **every** restore in flight has finished. True when there was nothing running,
+    /// or when they all finished in time; false when one was still running after `timeout`, which is the
+    /// caller's cue to refuse rather than erase beside a restore that is still writing.
     func wait(upTo timeout: TimeInterval) -> Bool {
-        guard let semaphore = lock.withLock({ running ? finished : nil }) else { return true }
-        return semaphore.wait(timeout: .now() + timeout) == .success
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        condition.lock()
+        defer { condition.unlock() }
+        while inFlight > 0 {
+            if !condition.wait(until: deadline) {
+                // Out of time. True only if the last restore happened to finish in the same breath.
+                return inFlight == 0
+            }
+        }
+        return true
     }
 }
 
@@ -439,8 +444,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // Read out of the main actor's own state first, so the background task touches nothing here.
         let store = store
         let favorites = favorites
-        let generation = importGeneration
+        // Counted first, then read: this import's token is the number *after* its own increment, which is
+        // what `apply` compares against. Reading before incrementing hands out the previous import's number,
+        // so every outcome looks stale and none is ever published.
         importGeneration += 1
+        let generation = importGeneration
         let gate = importGate
         gate.begin()
         importTask = Task { [weak self] in
