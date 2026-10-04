@@ -78,3 +78,19 @@ python3 -m pytest scripts/tests/test_lint_swift_sources.py
 
 Both the lint and its tests run on every pull request via
 `.github/workflows/swift-lint.yml`.
+
+## The SwiftSyntax spike
+
+`tools/swift-syntax-lint/` reimplements `unlabeled-image` and `fixed-font-size` on
+a SwiftSyntax tree instead of with regular expressions, to find out whether the
+same rules are simpler and more correct that way. It enforces nothing: this script
+still decides what the repository has to satisfy, and the spike's CI job runs with
+`continue-on-error: true`.
+
+The two are run over the same snippets, which
+`scripts/export_lint_corpus.py` exports from the cases in
+`scripts/tests/test_lint_swift_sources.py` into
+`tools/swift-syntax-lint/Tests/corpus.json`. The package's test target runs every
+case through its own rules and reports the agreement, which
+`tools/swift-syntax-lint/README.md` records. The decision this feeds is
+[adr/0003-swift-syntax-lint.md](adr/0003-swift-syntax-lint.md), which is Proposed.

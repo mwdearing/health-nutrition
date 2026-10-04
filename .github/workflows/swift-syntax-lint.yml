@@ -1,0 +1,44 @@
+name: swift-syntax-lint (spike)
+
+# The SwiftSyntax spike for issue #68. This job is deliberately advisory: it
+# builds tools/swift-syntax-lint on macOS, runs its corpus test over the snippets
+# of the Python lint's own tests, and runs the tool over the two SwiftUI
+# surfaces. It reports what it finds and never blocks a pull request, because it
+# enforces nothing yet; docs/adr/0003-swift-syntax-lint.md records the decision
+# that has to be made about whether it should.
+on:
+  pull_request:
+    paths:
+      - "tools/swift-syntax-lint/**"
+      - ".github/workflows/swift-syntax-lint.yml"
+      - "scripts/export_lint_corpus.py"
+      - "scripts/tests/test_export_lint_corpus.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    name: SwiftSyntax spike (advisory)
+    runs-on: macos-15
+    timeout-minutes: 30
+    # The spike is a measurement, not a gate: a failure here says the two
+    # implementations disagree, which is the result the ADR asks for.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - name: Show the toolchain
+        run: swift --version
+      - name: Build the package
+        run: swift build --package-path tools/swift-syntax-lint
+      - name: Run the corpus test
+        run: swift test --package-path tools/swift-syntax-lint
+      - name: Check the corpus is up to date
+        run: python3 scripts/export_lint_corpus.py --check
+      - name: Run the spike over the SwiftUI surfaces
+        run: |
+          swift run --package-path tools/swift-syntax-lint swift-syntax-lint ios/NutritionCore || true
+          swift run --package-path tools/swift-syntax-lint swift-syntax-lint ios/HealthNutrition || true
