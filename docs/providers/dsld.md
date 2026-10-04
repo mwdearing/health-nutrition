@@ -28,7 +28,7 @@ and the adapter keeps that basis; it does not normalise to 100 g and it does not
 | `ingredientRows[].name` | `labelName` | A row with no name is skipped, because a fact without a name cannot be shown. |
 | `ingredientRows[].forms[].name` | `chemicalForm` | The first form name the row states, for example "Magnesium Citrate". |
 | `ingredientRows[].quantity[]` | `amount` (`NutrientValue`) | The entry whose `servingSizeOrder` matches the serving size being read; see the amount rules below. |
-| `category` is `blend`, or the name or ingredient group says "Proprietary Blend" | `blends` (`ProprietaryBlend`) | The row amount is the blend total and the nested rows are the members. A blend total is not repeated in `facts`. |
+| `category` is `blend`, or the name or ingredient group says "Proprietary Blend" | `blends` (`ProprietaryBlend`) | The row amount is the blend total and the nested rows are the members. A blend total is not repeated in `facts`. The blend identifier is `dsld-<label id>-<row order>-<ingredient id>`, so two blend rows of one label never collide and no blend is dropped from identifier-based totals. |
 | `ingredientRows[].nestedRows[]` of an ordinary nutrient | further `facts` | Nesting alone is not blend metadata: DSLD also nests a nutrient under its own breakdown (Folate with Folic Acid, Calories with Calories from Fat). The parent stays a fact and the child becomes a fact of its own, with its own identifier and amount. |
 | `ingredientRows[].nestedRows[]` of a blend | `blends[].members` (`BlendMember`) | A nested row that states an amount keeps it; a nested row with no amount is `.unknown`. |
 | `ingredientRows[].category`, `notes` | not mapped | Free text kept by DSLD for display; the app does not read them. |

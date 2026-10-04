@@ -284,6 +284,10 @@ public struct DSLDLabelAdapter: Sendable {
     /// proprietary blend. Nesting alone is not blend metadata: DSLD also uses `nestedRows` to present a
     /// nutrient with its own breakdown, such as Folate with Folic Acid or Calories with Calories from Fat,
     /// and those rows stay facts.
+    ///
+    /// The identifier carries the row order as well as the label and the ingredient, because one label
+    /// can list the same ingredient as a blend more than once; without the row order the two blends would
+    /// collide and the second one would be dropped from identifier-based totals.
     private static func blend(
         object: [String: DSLDJSON],
         name: String,
@@ -313,7 +317,7 @@ public struct DSLDLabelAdapter: Sendable {
             )
         }
         return try ProprietaryBlend(
-            identifier: "dsld-\(labelIdentifier)-\(substanceIdentifier)",
+            identifier: "dsld-\(labelIdentifier)-\(rowOrder)-\(substanceIdentifier)",
             labelName: name,
             total: amount,
             basis: .compoundMass,

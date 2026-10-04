@@ -161,6 +161,46 @@ final class DSLDLabelAdapterTests: XCTestCase {
         XCTAssertNotNil(label.fact(named: "Melatonin"))
     }
 
+    func testTwoBlendRowsWithTheSameIngredientIdStayTwoBlends() throws {
+        // Both blend rows carry the same numeric ingredientId, which is what DSLD does when a label
+        // lists the same blend under two presentations.
+        let label = try parseInline(
+            """
+            {"id":18,"fullName":"Two blends","brandName":"Test","offMarket":0,
+             "ingredientSizes":[],
+             "ingredientRows":[
+              {"order":1,"ingredientId":900,"name":"Proprietary Blend","category":"blend","forms":[],
+               "nestedRows":[{"order":2,"ingredientId":901,"name":"Valerian","quantity":[{"servingSizeOrder":1,"operator":"=","quantity":0,"unit":"NP"}]}],
+               "quantity":[{"servingSizeOrder":1,"operator":"=","quantity":500,"unit":"mg"}]},
+              {"order":3,"ingredientId":900,"name":"Proprietary Blend","category":"blend","forms":[],
+               "nestedRows":[{"order":4,"ingredientId":902,"name":"Hops","quantity":[{"servingSizeOrder":1,"operator":"=","quantity":0,"unit":"NP"}]}],
+               "quantity":[{"servingSizeOrder":1,"operator":"=","quantity":250,"unit":"mg"}]}]}
+            """
+        )
+        XCTAssertEqual(label.blends.count, 2)
+        let identifiers = label.blends.map(\.identifier)
+        XCTAssertEqual(Set(identifiers).count, 2, "two blend rows must not share one identifier")
+        XCTAssertEqual(identifiers, ["dsld-18-1-900", "dsld-18-3-900"])
+        XCTAssertEqual(label.blends.map(\.total), [.known(dec("500"), .mg), .known(dec("250"), .mg)])
+        XCTAssertEqual(label.blends[1].members.map(\.labelName), ["Hops"])
+
+        // Both blends reach a total: SupplementTotals drops a blend whose identifier it has already seen.
+        let total = try SupplementTotals.total(
+            substance: "dsld-18-1-900",
+            basis: .compoundMass,
+            facts: label.facts,
+            blends: label.blends
+        )
+        XCTAssertEqual(total.value, .known(dec("500"), .mg))
+        let other = try SupplementTotals.total(
+            substance: "dsld-18-3-900",
+            basis: .compoundMass,
+            facts: label.facts,
+            blends: label.blends
+        )
+        XCTAssertEqual(other.value, .known(dec("250"), .mg))
+    }
+
     func testNestedRowsUnderAnOrdinaryNutrientStayFacts() throws {
         // Folate carries a nested row for presentation; it is not a proprietary blend.
         let prenatal = try adapter.parse(DSLDFixtures.label(202695))
@@ -200,7 +240,7 @@ final class DSLDLabelAdapterTests: XCTestCase {
         let blend = try adapter.parse(DSLDFixtures.label(216782))
             .blends.first { $0.labelName == "Proprietary Blend" }
         let proprietaryBlend = try XCTUnwrap(blend)
-        XCTAssertEqual(proprietaryBlend.identifier, "dsld-216782-284535")
+        XCTAssertEqual(proprietaryBlend.identifier, "dsld-216782-1-284535")
         XCTAssertEqual(proprietaryBlend.members.first?.substanceIdentifier, "231239", "a nested member keeps its numeric id")
         XCTAssertEqual(
             proprietaryBlend.totalFact.provenance,
