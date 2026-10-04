@@ -489,7 +489,9 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let recorded = await totals.totals(intakeID: intakeID, revision: 1)
 
         XCTAssertEqual(recorded, ["water": .known(dec("250"), .mL)])
-        XCTAssertEqual(await totals.totals(intakeID: intakeID, revision: 9), [:], "an unknown revision states nothing")
+        // Hoisted out of the assertion: XCTAssert takes an autoclosure, which cannot be async.
+        let missing = await totals.totals(intakeID: intakeID, revision: 9)
+        XCTAssertEqual(missing, [:], "an unknown revision states nothing")
     }
 
     func testAcknowledgingAnUnknownOperationIsRefused() throws {

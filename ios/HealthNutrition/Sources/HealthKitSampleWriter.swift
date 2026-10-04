@@ -34,7 +34,7 @@ struct HealthKitSampleWriter: HealthSampleWriter {
     func canWrite(identifiers: [String]) async -> [String: Bool] {
         var answer: [String: Bool] = [:]
         for identifier in identifiers {
-            guard let type = HKQuantityType(identifier: identifier) else {
+            guard let type = Self.quantityType(for: identifier) else {
                 answer[identifier] = false
                 continue
             }
@@ -63,7 +63,7 @@ struct HealthKitSampleWriter: HealthSampleWriter {
     func deleteSamples(syncIdentifiers: [String]) async throws -> Int {
         var deleted = 0
         for identifier in syncIdentifiers {
-            guard let type = HKQuantityType(identifier: Self.typeIdentifier(for: identifier)) else {
+            guard let type = Self.quantityType(for: Self.typeIdentifier(for: identifier)) else {
                 continue
             }
             do {
@@ -86,7 +86,7 @@ struct HealthKitSampleWriter: HealthSampleWriter {
     /// an absent nutrient as unknown, and a zero would turn "not stated" into "none" in Health. The
     /// worker plans from the same table, so this is a guard against a table HealthKit disagrees with.
     private static func sample(from spec: HealthKitSampleSpec) -> HKQuantitySample? {
-        guard let type = HKQuantityType(identifier: spec.quantityTypeIdentifier),
+        guard let type = quantityType(for: spec.quantityTypeIdentifier),
               let unit = HKUnit(from: spec.unitSymbol)
         else { return nil }
         return HKQuantitySample(
@@ -101,6 +101,16 @@ struct HealthKitSampleWriter: HealthSampleWriter {
                 HKMetadataKeySyncVersion: NSNumber(value: spec.syncVersion),
             ]
         )
+    }
+
+    /// The quantity type for an identifier string, or nil when HealthKit does not know it.
+    ///
+    /// `HKQuantityType` is built from `HKQuantityTypeIdentifier(rawValue:)`, because that is the
+    /// initializer the SDK actually declares; there is no `HKQuantityType(identifier:)`. A raw value
+    /// that no identifier declares gives an `HKQuantityTypeIdentifier` that holds no type, so a nil
+    /// result here is a table that disagrees with HealthKit rather than a type to guess at.
+    private static func quantityType(for identifier: String) -> HKQuantityType? {
+        HKQuantityType(HKQuantityTypeIdentifier(rawValue: identifier))
     }
 
     /// The quantity type a sync identifier belongs to, from its trailing nutrient key. A key no row
