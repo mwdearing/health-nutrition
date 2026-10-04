@@ -616,6 +616,44 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("6"))
     }
 
+    /// A percent sign that touches its number is that row's Daily Value whatever the heading does, while a
+    /// sign the capture spaced in front of a heading it flattened with the rows behind it is the heading's.
+    func testAPercentSignTouchingItsNumberStaysADailyValue() throws {
+        let attached = parse(["Calories 10% Daily Value Total Fat 7g"])
+        XCTAssertEqual(value(.calories, attached), .unknown)
+        XCTAssertEqual(try amount(.fat, attached), dec("7"))
+
+        let attachedBeforeAmount = parse(["Calories 10% Daily Value 5g Added Sugars"])
+        XCTAssertEqual(value(.calories, attachedBeforeAmount), .unknown)
+
+        let spaced = parse(["Calories 250 % Daily Value* Total Fat 7g"])
+        XCTAssertEqual(try amount(.calories, spaced), dec("250"), "a spaced sign in front of a heading is the heading's")
+        XCTAssertEqual(try amount(.fat, spaced), dec("7"))
+    }
+
+    /// Added Sugars is the only row read from a qualifier-free leading amount: every other row states its
+    /// amount behind its name, so a callout in front of one is not a row of the panel.
+    func testACalloutInFrontOfATransFatRowIsNotItsValue() throws {
+        let panel = parse(["0g Trans Fat", "Trans Fat 1g"])
+
+        XCTAssertEqual(try amount(.transFat, panel), dec("1"), "the panel row is read, not the callout")
+        XCTAssertEqual(value(.transFat, parse(["0g Trans Fat"])), .unknown)
+        XCTAssertEqual(
+            try amount(.addedSugars, parse(["Total Sugars 12g", "5g Added Sugars"])),
+            dec("5"),
+            "the row that prints its amount first still loses the qualifier"
+        )
+    }
+
+    /// A serving description can name a nutrient more than once before the row behind it, and each name is
+    /// stepped over once, so the row is still found and the description is not swallowed.
+    func testANutrientWordBeforeARowIsSteppedOverOnlyOnce() throws {
+        let panel = parse(["Serving size 1 high protein bar Protein 6g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 high protein bar")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false

@@ -211,7 +211,9 @@ public enum NutritionFactsParser {
             {
                 return text.index(text.startIndex, offsetBy: start)
             }
-            offset = start + tail.distance(from: tail.startIndex, to: match.end)
+            // Step over the name by its own length: `start` is already measured from the beginning of the
+            // text, so adding the match's position as well would skip past whatever follows the name.
+            offset = offset + tail.distance(from: tail.startIndex, to: match.end)
         }
         return nil
     }
@@ -286,27 +288,28 @@ public enum NutritionFactsParser {
     /// "% Daily Value Total Fat 7g", or the one the capture wrote in front of the heading's words while it
     /// flattened the heading together with the rows behind it, as in
     /// "Calories 250 % Daily Value* Total Fat 7g", where the row beside the heading keeps the amount the
-    /// label printed. A sign that stands behind a number is that row's own Daily Value, whether the
-    /// capture touched it or spaced it away, so "Calories 10 % Daily Value" keeps its sign and stays a
-    /// Daily Value rather than a calorie count.
+    /// label printed. A sign that touches its number is that row's own Daily Value and stays with it
+    /// whatever the heading does, so "Calories 10% Daily Value Total Fat 7g" keeps its ten percent rather
+    /// than becoming ten calories.
     private static func isHeadingPercent(_ head: String, tail: String) -> Bool {
         guard head.hasSuffix("%") else { return false }
-        // The sign with no number in front of it opened the heading, so it is the heading's.
-        guard isAttachedToNumber(head) else { return true }
-        // The sign the capture spaced away from its number is the heading's only where the heading was
+        // The sign with no number in front of it at all opened the heading, so it is the heading's.
+        guard let number = numberBeforePercent(head) else { return true }
+        // A sign that touches its number is the row's own, so the rows behind the heading cannot move it.
+        if number == head.count - 2 { return false }
+        // A sign the capture spaced away from its number is the heading's only where the heading was
         // flattened with a row behind it, because that is where the heading's own sign ends up.
         return firstRow(in: tail) != nil
     }
 
-    /// Whether the text ends in a percent sign that stands behind a number, as the ten of
-    /// "Calories 10%" does. The capture can write the space between them, as in "Calories 10 %", and the
-    /// sign still belongs to that number.
-    private static func isAttachedToNumber(_ text: String) -> Bool {
+    /// Where the number in front of the percent sign the text ends in stands, stepping over whitespace
+    /// the capture wrote between the two, or nil when no number stands there.
+    private static func numberBeforePercent(_ text: String) -> Int? {
         let characters = Array(text)
-        guard characters.count >= 2, characters[characters.count - 1] == "%" else { return false }
         var look = characters.count - 2
         while look >= 0, characters[look] == " " || characters[look] == "\t" { look -= 1 }
-        return look >= 0 && isDigit(characters[look])
+        guard look >= 0, isDigit(characters[look]) else { return nil }
+        return look
     }
 
     /// The first of the two wordings of a servings-per-container marker that a line carries.
@@ -491,10 +494,11 @@ public enum NutritionFactsParser {
             guard let scan = scanAmount(in: tail) else { continue }
             if words.isEmpty {
                 // An empty prefix is read only for a row a panel prints its amount in front of, and then
-                // only when the amount carries its own unit. Every other row states its amount behind its
+                // only when the amount carries its own unit. Any other row states its amount behind its
                 // name, so a bare amount in front of one is a front-of-pack callout rather than a row of
-                // the panel: the 20g of "20g Protein" is not the protein of "Protein 6g". A bare number
-                // with no unit is left alone as well, as the 2,000 of the standard calorie footnote.
+                // the panel: the 20g of "20g Protein" is not the protein of "Protein 6g", nor the 0g of
+                // "0g Trans Fat" the trans fat of "Trans Fat 1g". A bare number with no unit is left
+                // alone as well, as the 2,000 of the standard calorie footnote.
                 guard amountFirstRows.contains(row.key), scan.unit != nil else { continue }
             }
             return scan
@@ -502,9 +506,11 @@ public enum NutritionFactsParser {
         return nil
     }
 
-    /// The rows a panel prints with their amount in front of their name: the breakdown rows it states
-    /// inside another row, as in "Includes 5g Added Sugars" and "Includes 2g Trans Fat".
-    private static let amountFirstRows: Set<NutritionFactKey> = [.addedSugars, .transFat]
+    /// The rows a panel prints with their amount in front of their name. Only Added Sugars is one: it is
+    /// stated inside the total sugars row, as in "Includes 5g Added Sugars", so a capture that drops the
+    /// `Includes` leaves a bare amount in front of the name. Every other row states its amount behind its
+    /// name, and a bare amount in front of one of those is a front-of-pack callout rather than a row.
+    private static let amountFirstRows: Set<NutritionFactKey> = [.addedSugars]
 
     /// The words a panel may print between an amount and the nutrient name it belongs to, as in
     /// "Includes 5g Added Sugars". A row that states its amount in front of its name is stated with one
