@@ -80,7 +80,7 @@ final class FavoriteRecord {
 }
 
 /// Favorites in their own store file, next to the journal file; the URL is injected.
-public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable {
+public final class SwiftDataFavoritesStore: FavoritesStore, JournalErasing, @unchecked Sendable {
     private let lock = NSLock()
     /// Held across each whole write (fetch, delete, insert, save) so concurrent writers cannot interleave.
     private let writeLock = NSLock()
@@ -147,5 +147,20 @@ public final class SwiftDataFavoritesStore: FavoritesStore, @unchecked Sendable 
         let rows = try context.fetch(FetchDescriptor<FavoriteRecord>(
             predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id }))
         return !rows.isEmpty
+    }
+
+    // MARK: Erasing
+
+    /// Removes every favorite in one save. A favorite is a template copied from what was eaten, and it
+    /// carries that entry's amounts, so it is part of what the erase action removes.
+    ///
+    /// The store stays open, so a favorite can be added again afterwards. A closed store throws
+    /// `FavoritesError.closed`, the same error every other call on it throws.
+    public func eraseAll() throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        try context.delete(model: FavoriteRecord.self)
+        try context.save()
     }
 }

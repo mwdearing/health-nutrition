@@ -18,6 +18,9 @@ final class AppServices {
     let today: TodayViewModel
     let journal: JournalViewModel
     let library: LibraryViewModel
+    /// The Connections and privacy screen. It reads the same stores and, for its "Erase all data"
+    /// action, holds all three as erasers, so one action empties every file the app keeps.
+    let connections: ConnectionsPrivacyViewModel
     /// Barcode lookups in Add intake. One client for the app's lifetime, so its rolling rate-limit
     /// window is shared and never reset by opening the form again.
     let barcodeLookup: BarcodeProductLookup
@@ -35,6 +38,9 @@ final class AppServices {
         today = TodayViewModel(store: journalStore, lookup: SnapshotNutrientFacts())
         journal = JournalViewModel(store: journalStore)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
+        connections = ConnectionsPrivacyViewModel(
+            store: journalStore, favorites: favoritesStore,
+            appVersion: Self.appVersion, erasers: [journalStore, favoritesStore, recipeStore])
         barcodeLookup = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
     }

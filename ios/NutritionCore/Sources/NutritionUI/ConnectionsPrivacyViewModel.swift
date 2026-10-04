@@ -46,6 +46,21 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportButtonTitle = "Export journal"
     public static let shareButtonTitle = "Share the export"
     public static let exportFailedMessage = "Could not export the journal."
+    public static let eraseButtonTitle = "Erase all data"
+    /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
+    public static let eraseConfirmationMessage = """
+        Every entry, favorite and recipe this app stores on this device is deleted, along with any copy \
+        it has exported. This cannot be undone.
+        """
+    public static let eraseConfirmationTitle = "Erase all data?"
+    /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
+    /// only in the dialog that follows.
+    public static let eraseFooterMessage = """
+        Erases the journal, favorites and recipes this app stores on this device. Nothing has been sent \
+        anywhere, so nothing has to be deleted anywhere else.
+        """
+    public static let eraseFailedMessage =
+        "Some stored data could not be erased. Quit and reopen the app, then try again."
     public static let unavailableVersion = "unknown"
     /// Fixed until the app target exists and can inject its real version string.
     public static let defaultAppVersion = "0.0.0-development"
@@ -59,6 +74,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var exportFileName: String?
     @Published public private(set) var entryCount = 0
     @Published public private(set) var errorMessage: String?
+    /// Counts how often data was erased, so a host holding this model can tell that the stores behind
+    /// its other screens are empty now and reload them. The erase happens on this screen; the totals on
+    /// Today and the rows in the Journal would otherwise still show what was just deleted.
+    @Published public private(set) var eraseGeneration = 0
     /// Switch positions of the two connections. They stay off because the toggles are disabled.
     @Published public var appleHealthEnabled = false
     @Published public var healthRelayEnabled = false
@@ -67,6 +86,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let favorites: FavoritesStore?
     private let appVersion: String
     private let writer: ConnectionsPrivacyExportWriter
+    /// One entry per store file this app keeps. `eraseAllData()` runs them all; the app injects the real
+    /// stores, and a test injects recorders or a store that refuses.
+    private let erasers: [JournalErasing]
 
     /// The write options the export always asks for: complete-only, so the journal is unreadable while the
     /// device is locked, and atomic, so no half-written copy can be shared.
@@ -80,12 +102,14 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public init(
         store: JournalStore, favorites: FavoritesStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
-        writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport
+        writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
+        erasers: [JournalErasing] = []
     ) {
         self.store = store
         self.favorites = favorites
         self.appVersion = appVersion
         self.writer = writer
+        self.erasers = erasers
     }
 
     public var privacyText: String { Self.privacySummary }
@@ -108,6 +132,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// can tap export again. Nothing on this screen can clear the error state, so disabling the button on it
     /// would strand the person on a screen with no working way out.
     public var canExport: Bool { true }
+
+    /// The erase action is offered only when the screen was given the stores to erase. Without one it
+    /// would report an erase it never ran, which is worse than not offering it.
+    public var canEraseAll: Bool { !erasers.isEmpty }
 
     /// Builds the export document, encodes it and writes it to a temporary file. Nothing is sent anywhere.
     @discardableResult
@@ -147,6 +175,33 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         entryCount = 0
         exportState = .idle
         errorMessage = nil
+    }
+
+    /// Deletes everything this app stores on this device: every journal entry with its revision history,
+    /// product snapshots, queued outbox operations, favorites and personal recipes, plus the exported
+    /// copy this screen was holding. Nothing is sent anywhere, so nothing has to be retracted there.
+    ///
+    /// One store failing does not stop the rest: each store erases itself and the person is told that
+    /// something was left behind, so they can try again rather than believe the data is gone when it is
+    /// not. Returns whether every store erased itself.
+    @discardableResult
+    public func eraseAllData() -> Bool {
+        var failed = false
+        for eraser in erasers {
+            do {
+                try eraser.eraseAll()
+            } catch {
+                failed = true
+            }
+        }
+        // The exported copy holds the same history as the stores just emptied, so it goes with them
+        // rather than sitting in the temporary directory with nothing able to remove it.
+        removeExportFile()
+        entryCount = 0
+        exportState = .idle
+        errorMessage = failed ? Self.eraseFailedMessage : nil
+        eraseGeneration += 1
+        return !failed
     }
 
     /// Deletes the file while its URL is still known. A file that is already gone is not an error.

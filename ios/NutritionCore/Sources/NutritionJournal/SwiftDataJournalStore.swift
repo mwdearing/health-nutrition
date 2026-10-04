@@ -304,7 +304,7 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
-public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, JournalErasing, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -462,6 +462,24 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
             try Self.supersedeProjections(of: intakeID, in: context)
             let revision = record.currentRevision
             queueWork(intakeID: intakeID, revision: revision, kind: .delete, payload: "delete:\(intakeID):\(revision)", context: context)
+        }
+    }
+
+    // MARK: Erasing
+
+    /// Removes every row the journal file holds: intakes, their revision history, product snapshots,
+    /// projections and queued outbox operations. A deleted entry leaves no tombstone behind either,
+    /// because a tombstone only exists so a later export can retract the entry.
+    ///
+    /// All five tables go in one save, so a failure leaves the journal exactly as it was. The container
+    /// is not closed: the store reads empty and accepts new entries afterwards.
+    public func eraseAll() throws {
+        _ = try commit { context in
+            try context.delete(model: IntakeRecord.self)
+            try context.delete(model: RevisionRecord.self)
+            try context.delete(model: ProductRecord.self)
+            try context.delete(model: ProjectionRecord.self)
+            try context.delete(model: OutboxRecord.self)
         }
     }
 
