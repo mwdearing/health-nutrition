@@ -522,6 +522,14 @@ final class NutritionFactsParserTests: XCTestCase {
 
     /// Flattened serving metadata in the other order: the size comes first and the count behind it, so the
     /// size keeps only its own measure and the count is still read.
+    /// OCR can drop every space around the count. Parsing such a line must not trap; it may leave the
+    /// serving fields unknown.
+    func testACountWithNoSpacesAroundItDoesNotCrash() {
+        let panel = parse(["Serving size8servings per container", "Serving size 1 cup8servings per container"])
+        XCTAssertNotNil(panel)
+        XCTAssertEqual(parse(["Serving size 1 cup (240mL)8 servings per container"]).servingsPerContainer, dec("8"))
+    }
+
     func testAServingSizeBeforeItsServingsCountKeepsBoth() {
         let panel = parse(["Serving size 1 cup (240mL) 8 servings per container"])
 

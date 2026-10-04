@@ -175,10 +175,12 @@ public enum NutritionFactsParser {
         let markerStart = index(marker.lowerBound, in: text, lowercased: lower)
         guard markerStart < rowBoundary else { return rowBoundary }
 
-        let tokens = trimmed(String(text[..<markerStart])).split(separator: " ").map(String.init)
+        let head = text[..<markerStart]
+        let tokens = trimmed(String(head)).split(separator: " ").map(String.init)
         guard let last = tokens.last, completeDecimal(last) != nil else { return markerStart }
-        let offset = lower.distance(from: lower.startIndex, to: markerStart) - last.count - 1
-        return text.index(text.startIndex, offsetBy: offset, limitedBy: text.endIndex) ?? markerStart
+        // Find the count in the original text rather than doing index arithmetic: OCR can drop the
+        // spaces around it, and an offset computed from assumed separators can fall before the start.
+        return head.range(of: last, options: .backwards)?.lowerBound ?? markerStart
     }
 
     /// The line with its serving size taken off, so whatever else it carries is still read.
