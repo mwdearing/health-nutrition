@@ -382,6 +382,12 @@ public enum JournalImporter {
             guard favoriteIDs.insert(favorite.id).inserted else {
                 throw JournalImportError.corrupt("the export lists the favorite \(favorite.id) twice")
             }
+            // A favorite with nothing in it cannot be repeated: there are no amounts to repeat, so the row
+            // would show a name and no numbers and the intake it created would claim nothing. An empty list
+            // is a file that does not say what the template is, not a template of "none of the above".
+            guard !favorite.components.isEmpty else {
+                throw JournalImportError.corrupt("the favorite \(favorite.id) has no components")
+            }
             var favoriteComponents: [FavoriteComponent] = []
             var favoriteComponentIDs = Set<String>()
             for component in favorite.components {

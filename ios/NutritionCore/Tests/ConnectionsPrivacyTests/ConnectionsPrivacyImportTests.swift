@@ -161,6 +161,70 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importFailedMessage)
     }
 
+    /// Stores on disk, so an erase that runs beside a restore is testing the real files.
+    private func diskStores() throws -> (SwiftDataJournalStore, SwiftDataFavoritesStore) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return (
+            try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
+            try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        )
+    }
+
+    /// An eraser that asks for an import in the middle of an erase, which is the window the refusal is for.
+    private final class EraserThatStartsAnImport: JournalErasing, @unchecked Sendable {
+        var model: ConnectionsPrivacyViewModel?
+        var data: Data?
+
+        func eraseAll() throws {
+            // The erase runs on the main actor, so this is the main actor: exactly the moment an import must
+            // not be allowed to start.
+            MainActor.assumeIsolated {
+                guard let model, let data else { return }
+                model.importJournal(data: data)
+            }
+        }
+    }
+
+    func testAnEraseAfterAStartedImportLeavesTheStoresEmpty() throws {
+        // The two write the same journal. Run together they could land in either order, and "erase
+        // everything" that a restore then undoes is the failure this guards: the erase waits for the restore
+        // it found in flight, so the journal it empties is the one the import wrote.
+        let (journal, favoritesStore) = try diskStores()
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favoritesStore, erasers: [journal, favoritesStore], remover: { _ in })
+        model.importJournal(data: try export())
+
+        XCTAssertTrue(model.eraseAllData())
+
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try journal.deletedIntakes().isEmpty)
+        XCTAssertTrue(try journal.pendingOutbox().isEmpty)
+        XCTAssertTrue(try favoritesStore.list().isEmpty)
+        // And the import's own outcome is dropped rather than shown: it would describe a journal that is gone.
+        XCTAssertNotEqual(model.importState, .imported)
+        XCTAssertNil(model.importSummary)
+    }
+
+    func testAnImportStartedWhileAnEraseRunsIsRefused() throws {
+        let (journal, favoritesStore) = try diskStores()
+        let eraser = EraserThatStartsAnImport()
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favoritesStore, erasers: [eraser, journal, favoritesStore],
+            remover: { _ in })
+        eraser.model = model
+        eraser.data = try export()
+
+        XCTAssertTrue(model.eraseAllData())
+
+        // Queuing it instead would have restored a journal the person had just erased.
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importDuringEraseMessage)
+        XCTAssertNil(model.importSummary)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+    }
+
     /// Starts an import and waits for it to publish. The restore runs off the main actor and publishes its
     /// outcome back on it, so the assertions have to run after that hop rather than straight after the call.
     /// The wait is bounded, so a publish that never arrives fails the test instead of hanging it.

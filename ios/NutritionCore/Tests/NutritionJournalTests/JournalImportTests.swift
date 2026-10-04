@@ -650,6 +650,31 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertTrue(try favoritesStore.list().isEmpty, line: line)
     }
 
+    func testAFavoriteWithNoComponentsIsRejected() throws {
+        // A favorite with nothing in it cannot be repeated: there are no amounts to repeat, so the row would
+        // show a name and no numbers, and the intake it created would claim nothing at all.
+        var root = try object(of: try exportData())
+        var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
+        let index = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-tea-1" })
+        favoriteList[index]["components"] = []
+        root["favorites"] = favoriteList
+
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
+            XCTFail("a favorite with no components must be refused")
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try favoritesStore.list().isEmpty)
+    }
+
     func testAnEntryWithoutATimeZoneIsRejected() throws {
         // The time zone is what says when an entry happened where the person was. An empty string, or a name
         // no calendar knows, would be stored as text and read back as a zone the app cannot use, so the file
