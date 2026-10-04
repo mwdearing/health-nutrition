@@ -28,10 +28,13 @@ Nothing in this flow saves anything by itself. The parser is a pure function ove
 a scanned number reaches the journal is through a confirmation the user gave.
 
 The camera lives in the app target (`LabelCaptureSheet.swift`), never in the UI package: it uses
-VisionKit's `DataScannerViewController` with `recognizedDataTypes: [.text()]`, checks `isSupported` and
-`isAvailable` before offering the entry, and a Capture button collects the recognized lines in reading
-order — top to bottom, and left to right within one line of print, so a two-column panel reads as the
-rows it printed. `NutritionUI` sees only `[String]`.
+VisionKit's `DataScannerViewController` with `recognizedDataTypes: [.text()]` and
+`recognizesMultipleItems` on, because a panel is printed as many separate items and asking for one at a
+time caps what the scanner reports. It checks `isSupported` and `isAvailable` before offering the entry,
+and a Capture button collects the recognized lines in reading order — top to bottom, and left to right
+within one line of print, so a two-column panel reads as the rows it printed. The held lines are replaced
+on every change to the recognized set, including a removal, so Capture submits the frame in front of the
+camera rather than the last frame that had anything on it. `NutritionUI` sees only `[String]`.
 
 ## What the parser handles
 
@@ -111,11 +114,18 @@ The rules the screen keeps are short:
   saved on the parser's word.
 - **A flagged serving size blocks the same way.** The serving size scales every nutrient below it, so
   a `Serving size 1 cup (24O mL)` the parser corrected is confirmed separately, exactly like a row.
-- **A correction is checked with the same amount parser the intake form uses.** `AmountParser.parse`
-  accepts digits and at most one point; anything else is refused, changes nothing and says why. A
-  correction keeps the unit the panel printed, so it never moves a value between units: a row printed
-  in mg stays in mg, and a row the panel printed no unit for is corrected in the unit that row usually
-  carries.
+- **Every row the parser read an amount for can be corrected, not only a flagged one.** Recognition can
+  read one valid number as another valid one — `180` as `130` — and then the parser records no reason,
+  because the transcript is perfectly well formed. The row is still wrong, so the screen offers the same
+  Correct control whether the parser asked about the row or not. A row the panel did not state has no
+  amount to correct and is shown as unknown; a bound is a limit rather than a number, so it is read or
+  not read and the panel's own words stand.
+- **A correction is checked with `NutrientAmountParser`, which accepts zero.** That is the one rule on
+  which it differs from the intake form's `AmountParser`: a panel states `0g` often and legitimately,
+  and `NutrientValue.known(0, unit)` is what such a row means, while an intake of nothing is not an
+  entry. Everything else stays as strict as the form — digits with at most one point, no sign, no locale
+  and no grouping. The unit is optional: text that names none keeps the unit the panel printed, and text
+  that names one is read as that unit.
 - **A nutrient the panel does not state stays `.unknown`.** It is shown as "not on the panel" and is
   left out of the product rather than stored as zero, so `ProductDefinition.value(for:)` reads it back
   as unknown.
@@ -145,8 +155,9 @@ Text recognition runs on the device and nothing leaves it:
   the entry says where the values came from, and that is a panel the user read on their own device.
 - **Only the panel's text enters the app.** What is stored with the entry is the nutrient values and
   the serving, which is what the user chose to record.
-- **The camera is used only for this.** The existing camera usage description already covers it, so no
-  new Info.plist key is needed.
+- **The camera is used only for this and for the barcode.** The camera usage description says both: the
+  camera reads a barcode to fill the field, and reads the text of a Nutrition Facts panel so the values
+  can be checked. No new Info.plist key is needed, and recognition runs on the device.
 
 ## What is not here yet
 

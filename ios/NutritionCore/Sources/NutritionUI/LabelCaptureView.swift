@@ -111,7 +111,11 @@ public struct LabelCaptureView: View {
         }
     }
 
-    /// One nutrient: the value as read, and the controls for the rows the parser was unsure about.
+    /// One nutrient: the value as read, and the controls the row offers.
+    ///
+    /// A row the parser flagged is asked about: it says why, and it offers Confirm as well as Correct.
+    /// A row that was read cleanly is not flagged, but it is still the user's to change, because
+    /// recognition can turn one valid number into another valid one and nothing here would notice.
     private func nutrientRow(_ row: LabelCaptureRow) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -136,26 +140,21 @@ public struct LabelCaptureView: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(row.name) needs your confirmation. \(row.reviewSummary)")
+            }
 
-                if editing == row.key {
-                    correctionEditor(row)
-                } else {
-                    HStack {
-                        Button("Confirm") { model.confirm(row.key) }
-                            .font(.body)
-                            .accessibilityLabel("Confirm \(row.name)")
-                            .accessibilityHint("Keeps the value as the label was read")
-                        Button("Correct") { beginCorrection(for: row) }
-                            .font(.body)
-                            .accessibilityLabel("Correct \(row.name)")
-                            .accessibilityHint("Types a different amount for this row")
-                    }
-                }
-            } else if row.status == .confirmed || row.status == .corrected {
+            if editing == row.key {
+                correctionEditor(row)
+            } else {
+                rowControls(row)
+            }
+
+            if !row.needsConfirmation, row.status == .confirmed || row.status == .corrected {
                 Text(row.status == .corrected ? "Corrected by you" : "Confirmed by you")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
-                    .accessibilityLabel("\(row.name): \(row.valueText), \(row.status == .corrected ? "corrected by you" : "confirmed by you")")
+                    .accessibilityLabel(
+                        "\(row.name): \(row.valueText), "
+                            + (row.status == .corrected ? "corrected by you" : "confirmed by you"))
             }
         }
         .padding(.vertical, 4)
@@ -163,8 +162,36 @@ public struct LabelCaptureView: View {
         .listRowBackground(row.needsConfirmation ? TokenColors.warning.opacity(0.12) : Color.clear)
     }
 
-    /// The text field a correction is typed into, with the row's own unit beside it so the user can
-    /// see which unit the value will be stored in: a correction never moves a value between units.
+    /// The actions a row offers. A row still waiting for an answer gets Confirm as well as Correct; a
+    /// row the user has already answered still gets Correct, because they may have read it wrong
+    /// themselves; a row with no amount to correct gets nothing.
+    @ViewBuilder
+    private func rowControls(_ row: LabelCaptureRow) -> some View {
+        if row.needsConfirmation {
+            HStack {
+                Button("Confirm") { model.confirm(row.key) }
+                    .font(.body)
+                    .accessibilityLabel("Confirm \(row.name)")
+                    .accessibilityHint("Keeps the value as the label was read")
+                correctButton(row)
+            }
+        } else if row.canBeCorrected {
+            correctButton(row)
+        }
+    }
+
+    private func correctButton(_ row: LabelCaptureRow) -> some View {
+        Button("Correct") { beginCorrection(for: row) }
+            .font(.body)
+            .accessibilityLabel("Correct \(row.name)")
+            .accessibilityHint("Types a different amount for this row, zero included")
+    }
+
+    /// The text field a correction is typed into, with the row's own unit beside it.
+    ///
+    /// The unit beside the field is the one the value will be stored in, so a correction that names no
+    /// unit stays in it. Zero is a value here: a panel states `0g` often, and `NutrientValue.known(0,
+    /// unit)` is what such a row means.
     private func correctionEditor(_ row: LabelCaptureRow) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -172,6 +199,7 @@ public struct LabelCaptureView: View {
                     .font(.body)
                     .amountKeyboard()
                     .accessibilityLabel("Amount for \(row.name)")
+                    .accessibilityHint("Zero or more, in \(unitSymbol(for: row))")
                 Text(unitSymbol(for: row))
                     .font(.body)
                     .foregroundStyle(TokenColors.textSecondary)

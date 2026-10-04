@@ -66,6 +66,94 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertTrue(model.canApply)
     }
 
+    /// A panel row may state zero, and a Nutrition Facts panel states it often, so a correction to zero
+    /// is a real answer rather than a mistake. The intake amount parser is the wrong rule here: it
+    /// refuses zero because an intake of nothing is not an entry.
+    func testCorrectionAcceptsZero() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        XCTAssertTrue(model.correct(key: .sodium, text: "0"))
+        XCTAssertNil(model.correctionError)
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(0), .mg))
+        XCTAssertEqual(model.row(for: .sodium)?.status, .corrected)
+        XCTAssertTrue(model.canApply)
+        // A stated zero is stored as a zero, not dropped as if the panel had said nothing.
+        XCTAssertEqual(model.makeProduct()?.value(for: "sodium"), .known(Decimal(0), .mg))
+    }
+
+    func testCorrectionAcceptsZeroWithTheUnitsUnitName() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        XCTAssertTrue(model.correct(key: .sodium, text: "0 mg"))
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(0), .mg))
+
+        // The same row in the unit it usually carries: a correction may state its own unit.
+        XCTAssertTrue(model.correct(key: .fat, text: "0 g"))
+        XCTAssertEqual(model.row(for: .fat)?.value, .known(Decimal(0), .g))
+    }
+
+    func testCorrectionRefusesNegativeAndUnreadableAmounts() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        for text in ["-1", "1.2.3", "18O", "", "abc", "1,5"] {
+            XCTAssertFalse(model.correct(key: .sodium, text: text), "refused: \(text)")
+        }
+        XCTAssertNotNil(model.correctionError)
+        // Nothing was changed by any of them, so the row still waits for the user.
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(180), .mg))
+        XCTAssertFalse(model.canApply)
+    }
+
+    /// Recognition can read one valid number as another valid one, and then the parser has no reason
+    /// to flag anything. The user can see the wrong value, so the user has to be able to replace it
+    /// without the parser having asked.
+    func testCorrectionOfAnUnflaggedKnownRowReplacesItsValue() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+
+        let fat = model.row(for: .fat)
+        XCTAssertEqual(fat?.value, .known(Decimal(4), .g))
+        XCTAssertFalse(fat?.isFlagged == true)
+        XCTAssertTrue(fat?.canBeCorrected == true)
+
+        XCTAssertTrue(model.correct(key: .fat, text: "7"))
+
+        XCTAssertEqual(model.row(for: .fat)?.value, .known(Decimal(7), .g))
+        XCTAssertEqual(model.row(for: .fat)?.status, .corrected)
+        XCTAssertTrue(model.canApply)
+        XCTAssertEqual(model.makeProduct()?.value(for: "fat"), .known(Decimal(7), .g))
+    }
+
+    /// A row the panel says nothing about has no value to correct, so it is left out of the correction
+    /// controls rather than offered an amount field the user cannot fill in meaningfully.
+    func testUnknownRowOffersNoCorrection() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        let potassium = model.row(for: .potassium)
+        XCTAssertEqual(potassium?.value, .unknown)
+        XCTAssertFalse(potassium?.canBeCorrected == true)
+    }
+
+    /// A bound is a limit, not an amount, so it is not a number the user can correct; it is read or
+    /// not read, and the panel's own words stand.
+    func testCorrectionKeepsTheUnitsThePanelPrinted() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+
+        // Text with no unit keeps the unit the panel printed: a correction never moves a value.
+        XCTAssertTrue(model.correct(key: .sodium, text: "150"))
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(150), .mg))
+
+        // Text that names the same unit is read the same way.
+        XCTAssertTrue(model.correct(key: .sodium, text: "150 mg"))
+        XCTAssertEqual(model.row(for: .sodium)?.value, .known(Decimal(150), .mg))
+    }
+
     func testFlaggedServingSizeBlocksApplyUntilItIsConfirmed() {
         let model = makeModel()
         model.load(lines: [

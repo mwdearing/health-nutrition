@@ -65,6 +65,18 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
     public var needsConfirmation: Bool { status == .needsConfirmation }
     /// The row still waits for the user, so nothing may be saved yet.
     public var isPending: Bool { status == .needsConfirmation }
+    /// Whether the row carries an amount the user may replace.
+    ///
+    /// Every row the parser read an amount for qualifies, flagged or not: recognition can turn one
+    /// valid number into another valid one, and the parser has no reason to flag that, so the user has
+    /// to be able to correct it anyway. A row the panel said nothing about has no amount to correct,
+    /// and a bound is a limit rather than a number, so neither offers the correction control.
+    public var canBeCorrected: Bool {
+        switch value {
+        case .known: return true
+        case .unknown, .notApplicable, .belowReportingThreshold: return false
+        }
+    }
 
     /// The value as the screen shows it. An unknown row reads as "not on the panel", never as zero.
     public var valueText: String {
@@ -115,6 +127,68 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         case .belowReportingThreshold(let unit):
             return "below reporting threshold" + (unit.map { " \($0.symbol)" } ?? "")
         }
+    }
+}
+
+/// Reads the amount a user types to correct one captured row.
+///
+/// This is deliberately not `AmountParser`: that parser reads what someone ate, where zero is not an
+/// entry, while a Nutrition Facts row states zero often and legitimately — a label that printed
+/// `Total Fat 0g` means what it says. The rules here differ on exactly that one point.
+///
+/// Everything else is as strict as the intake form: digits with at most one point, no sign, no locale
+/// and no grouping, so a correction is never stored as something the form would have refused. The unit
+/// is optional: text that states no unit keeps the unit the panel printed, and text that states one is
+/// read as that unit, so `0 g` is a correction of a row printed in grams and `0` is the same correction
+/// with the unit left as the panel had it.
+public enum NutrientAmountParser {
+    public static let locale = Locale(identifier: "en_US_POSIX")
+
+    /// One amount as the user typed it: the number, and the unit the text named when it named one.
+    public struct Amount: Equatable, Sendable {
+        public let value: Decimal
+        public let unit: MeasureUnit?
+
+        public init(value: Decimal, unit: MeasureUnit?) {
+            self.value = value
+            self.unit = unit
+        }
+    }
+
+    /// Returns the amount the text states, or nil for anything else. Zero is a value; a negative or
+    /// unreadable amount is not.
+    public static func parse(_ text: String) -> Amount? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
+        guard let value = decimal(parts[0]) else { return nil }
+        guard parts.count == 1 else {
+            // A unit the registry does not carry is not resolved into one it does, so the text is
+            // refused rather than stored as an amount in a unit nobody printed.
+            let symbol = parts[1].trimmingCharacters(in: .whitespaces)
+            guard let unit = try? MeasureUnit(symbol: symbol) else { return nil }
+            return Amount(value: value, unit: unit)
+        }
+        return Amount(value: value, unit: nil)
+    }
+
+    /// A non-negative decimal written with digits and at most one point, and no sign.
+    private static func decimal(_ text: String) -> Decimal? {
+        guard !text.isEmpty else { return nil }
+        var dots = 0
+        var digits = 0
+        for character in text {
+            if character == "." {
+                dots += 1
+            } else if character.isASCII, character.isNumber {
+                digits += 1
+            } else {
+                return nil
+            }
+        }
+        guard dots <= 1, digits > 0 else { return nil }
+        guard let value = Decimal(string: text, locale: locale), !value.isNaN, value >= 0 else { return nil }
+        return value
     }
 }
 
@@ -230,20 +304,27 @@ public final class LabelCaptureViewModel: ObservableObject {
         correctionError = nil
     }
 
-    /// Replaces a value with one the user typed, in the unit the panel printed.
+    /// Replaces a value with one the user typed, in the unit the text named or in the unit the panel
+    /// printed.
     ///
-    /// The text is checked with the same amount parser the intake form uses, so a correction is never
-    /// stored as something the form would have refused. Text it does not accept changes nothing and
-    /// returns false; the row keeps waiting for the user either way.
+    /// The text is read with `NutrientAmountParser`, so a correction is never stored as something the
+    /// intake form would have refused, and a stated zero is a correction rather than a mistake: a panel
+    /// says `0g` often. Text the parser does not accept changes nothing and returns false, and says why;
+    /// the row keeps waiting for the user either way.
+    ///
+    /// Any row the parser read an amount for can be corrected, not only a flagged one: recognition can
+    /// read one valid number as another valid one, and then nothing is flagged while the value on screen
+    /// is still wrong.
     @discardableResult
     public func correct(key: NutritionFactKey, text: String) -> Bool {
         guard let index = rows.firstIndex(where: { $0.key == key }) else { return false }
-        guard let amount = AmountParser.parse(text) else {
-            correctionError = "Enter an amount greater than zero, using digits and a point."
+        guard rows[index].canBeCorrected else { return false }
+        guard let parsed = NutrientAmountParser.parse(text) else {
+            correctionError = "Enter zero or more, using digits and a point, and add the unit if you want a different one."
             return false
         }
-        let unit = Self.unit(of: rows[index].value, for: key)
-        rows[index].value = .known(amount, unit)
+        let unit = parsed.unit ?? Self.unit(of: rows[index].value, for: key)
+        rows[index].value = .known(parsed.value, unit)
         rows[index].status = .corrected
         correctionError = nil
         return true

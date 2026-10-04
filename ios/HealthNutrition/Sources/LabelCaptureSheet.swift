@@ -47,7 +47,9 @@ final class LabelCaptureSession: ObservableObject {
         self.controller = controller
     }
 
-    /// Replaces the held lines with the ones this frame carries.
+    /// Replaces the held lines with the ones the scanner recognizes now. Called for every change to the
+    /// recognized set — an item added, changed or taken away — so what is held is the frame in front of
+    /// the camera and not the last frame that had anything on it.
     func update(with items: [RecognizedItem]) {
         lines = LabelCaptureSession.linesInReadingOrder(items)
     }
@@ -208,7 +210,11 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
         let controller = DataScannerViewController(
             recognizedDataTypes: [.text()],
             qualityLevel: .balanced,
-            recognizesMultipleItems: false,
+            // A Nutrition Facts panel is printed as many separate items — a heading, fifteen rows, a
+            // footnote — so the scanner is asked to identify all of them. Asking for one at a time caps
+            // `allItems` at whatever the scanner felt like return, and most captures would then parse as
+            // incomplete or unreadable.
+            recognizesMultipleItems: true,
             isHighFrameRateTrackingEnabled: false,
             isPinchToZoomEnabled: true,
             isGuidanceEnabled: true,
@@ -263,14 +269,32 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
             }
         }
 
+        /// All three of VisionKit's item callbacks feed the same place: each one carries the collection
+        /// the scanner currently recognizes, so the held lines are replaced from every one of them.
+        ///
+        /// Reacting only to additions would leave the previous panel's text in place after that panel
+        /// left the frame, and tapping Capture with the camera pointing at something else would then
+        /// submit lines that are no longer on screen. An update says a recognized item changed, and a
+        /// removal says one went away; either can change what the frame says, so both are answered.
         func dataScanner(
             _ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem],
             allItems: [RecognizedItem]
         ) {
-            guard isRunning else { return }
-            // Each frame replaces the last, so only the panel as the camera sees it right now is held.
-            // This callback arrives on the main thread, like the Capture button that reads it.
-            parent.session.update(with: allItems)
+            refresh(with: allItems)
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController, didUpdate updatedItems: [RecognizedItem],
+            allItems: [RecognizedItem]
+        ) {
+            refresh(with: allItems)
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController, didRemove removedItems: [RecognizedItem],
+            allItems: [RecognizedItem]
+        ) {
+            refresh(with: allItems)
         }
 
         func dataScanner(
@@ -278,6 +302,17 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
             becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
         ) {
             report("The camera stopped, so the panel was not read. Try again in a moment.")
+        }
+
+        /// Replaces the held lines with what the scanner recognizes now, so Capture submits the frame
+        /// in front of the camera rather than the last frame that had anything on it. An empty
+        /// collection clears them, which is what makes a capture of a blank frame come back unreadable
+        /// instead of quietly reusing the previous panel.
+        ///
+        /// The callback arrives on the main thread, like the Capture button that reads these lines.
+        private func refresh(with items: [RecognizedItem]) {
+            guard isRunning, !hasFailed else { return }
+            parent.session.update(with: items)
         }
 
         /// Told to SwiftUI outside the update pass that is running when scanning is started, so a
