@@ -539,21 +539,24 @@ public final class SwiftDataJournalStore: JournalOutboxDelivery, JournalSnapshot
     public func undoRestore(_ receipt: JournalRestoreReceipt) throws {
         try commit { context in
             for restored in receipt.intakes {
-                guard let record = try Self.intakeRecord(restored.intakeID, in: context) else {
+                // Copied out of the receipt first: a #Predicate may compare a key path of the iterated model
+                // only against plain values, not against a property read from a different object. The same
+                // rule the delivery bookkeeping below follows for the same reason.
+                let intakeID = restored.intakeID
+                guard let record = try Self.intakeRecord(intakeID, in: context) else {
                     throw JournalImportError.corrupt(
-                        "the entry \(restored.intakeID) is gone already, so the import cannot be undone")
+                        "the entry \(intakeID) is gone already, so the import cannot be undone")
                 }
                 guard record.lifecycleRaw == restored.lifecycle.rawValue,
                       record.currentRevision == restored.currentRevision
                 else {
                     throw JournalImportError.corrupt(
-                        "the entry \(restored.intakeID) was written to after the import restored it, "
+                        "the entry \(intakeID) was written to after the import restored it, "
                             + "so undoing the import would throw that away too")
                 }
                 for number in restored.revisionNumbers {
                     for row in try context.fetch(FetchDescriptor<RevisionRecord>(
-                        predicate: #Predicate<RevisionRecord> {
-                            $0.intakeID == restored.intakeID && $0.number == number })) {
+                        predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == number })) {
                         context.delete(row)
                     }
                 }
