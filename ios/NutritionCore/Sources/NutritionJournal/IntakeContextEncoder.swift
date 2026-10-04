@@ -346,9 +346,11 @@ public struct IntakeContextEncoder: Sendable {
     ///
     /// A later HealthKit save can reveal a sample UUID after the facts were accepted. The operation carries the
     /// complete link snapshot, never a delta, and no facts and no domain digest, so every link is checked here
-    /// against the components of `revision`: it has to name a nutrient of that revision and the type that
-    /// nutrient's code lands in, exactly as an upsert's links are. Sequence 1 belongs to the revision's upsert,
-    /// so a link-only change starts at 2.
+    /// against the facts of `revision`: it has to name a nutrient of that revision and the type that nutrient's
+    /// code lands in, exactly as an upsert's links are. The facts are rebuilt from the revision and its product
+    /// snapshot the same way the upsert built them, because a barcode or recipe revision's nutrients are not
+    /// components: they came from the snapshot, so a component-only list would refuse a link to a fact the
+    /// receiver already holds. Sequence 1 belongs to the revision's upsert, so a link-only change starts at 2.
     ///
     /// It takes no outbox row, because it must not reuse one. Sequence 1 was already delivered under the
     /// revision's relay upsert row, and a second delivery under that same `operation_id` with a different
@@ -359,6 +361,7 @@ public struct IntakeContextEncoder: Sendable {
     public func linkProjection(
         intake: Intake,
         revision: IntakeRevision,
+        product: ProductDefinition?,
         sequence: Int,
         links: [IntakeContextLink],
         operationID: String? = nil
@@ -370,8 +373,9 @@ public struct IntakeContextEncoder: Sendable {
         guard sequence >= 2 else {
             throw IntakeContextEncoderError.projectionSequenceMustBeAtLeastTwo(sequence)
         }
+        let snapshot = try checkedProduct(product, for: revision)
         let deliveryID = try Self.deliveryID(operationID, intakeID: intake.id, sequence: sequence)
-        let codes = try nutrientCodes(of: revision)
+        let codes = try nutrientCodes(of: revision, product: snapshot)
         var members: [String: IntakeContextJSONValue] = [
             "operation_id": .string(deliveryID),
             "operation": .string(IntakeContextOperationKind.linkProjection.contractValue),
@@ -610,29 +614,40 @@ public struct IntakeContextEncoder: Sendable {
             }
             facts.append(try encodedFact(for: component, product: product))
         }
-        facts.append(contentsOf: try snapshotFacts(for: product, excluding: seen))
+        facts.append(contentsOf: try snapshotFacts(for: product, logged: revision.components, excluding: &seen))
         return facts
     }
 
-    /// The nutrients a product snapshot states, as facts of their own.
+    /// The nutrients a product snapshot states, as facts of their own, scaled to the amount logged.
     ///
     /// A barcode or recipe entry keeps one food component and puts its nutrition in the snapshot, so iterating
     /// the revision's components alone would send an invented fact for the food and none of the values behind
     /// it. Each stated nutrient becomes a fact under its own code, which is also what lets a link to it join;
-    /// a nutrient the label does not state stays unknown rather than becoming a zero. One whose component id
-    /// the revision already carries a fact for is left out, so `component_id` stays unique.
+    /// a nutrient the label does not state stays unknown rather than becoming a zero.
+    ///
+    /// The snapshot states the product, not the portion: 40 g logged of a product stated as 13 g of protein per
+    /// 100 g carries 5.2 g, and sending 13 g would state the whole bar. So the value is scaled by the basis the
+    /// snapshot names and the logged quantity, and a basis that cannot be resolved against what was logged sends
+    /// nothing at all rather than something unscaled. `excluding` is updated with every id written, so a
+    /// canonical key and an accepted alias - `energy` and `energyKcal` - produce one fact, and the contract's
+    /// unique `component_id` rule holds.
     private func snapshotFacts(
         for product: ProductDefinition?,
-        excluding covered: Set<String>
+        logged components: [IntakeComponent],
+        excluding covered: inout Set<String>
     ) throws -> [IntakeContextJSONValue] {
         guard let product else { return [] }
+        guard let factor = IntakeContextSnapshotBasis.scalingFactor(
+            labelBasis: product.labelBasis, logged: components)
+        else { return [] }
         let provenance = IntakeContextFactCatalog.provenance(for: product)
         var facts: [IntakeContextJSONValue] = []
-        // Sorted by the journal's key, so the same snapshot always produces the same fact order.
+        // Sorted by the journal's key, so the same snapshot always produces the same fact order, and the first
+        // key of a canonical pair is the one that speaks for it.
         for key in product.nutrients.keys.sorted() {
             guard let value = product.nutrients[key] else { continue }
             let slug = IntakeContextFactCatalog.nutrientSlug(for: key)
-            guard IntakeContextFactCatalog.isSlug(slug), !covered.contains(slug) else { continue }
+            guard IntakeContextFactCatalog.isSlug(slug), covered.insert(slug).inserted else { continue }
             var members: [String: IntakeContextJSONValue] = [
                 "component_id": .string(slug),
                 "kind": .string(FactKind.nutrient.rawValue),
@@ -642,10 +657,13 @@ public struct IntakeContextEncoder: Sendable {
             ]
             switch value {
             case .known(let amount, let unit):
-                members["amount"] = .string(DecimalText.encode(amount))
+                // The stated value for the logged amount, never the stated value itself.
+                members["amount"] = .string(DecimalText.encode(amount * factor))
                 members["unit"] = .string(unit.symbol)
                 members["value_state"] = .string("known")
             case .belowReportingThreshold(let unit):
+                // A threshold is a statement about the label, so it is carried through unscaled: it has no
+                // amount to scale and no unit to convert.
                 members["value_state"] = .string("below_reporting_threshold")
                 if let unit { members["unit"] = .string(unit.symbol) }
             case .unknown:
@@ -837,16 +855,11 @@ public struct IntakeContextEncoder: Sendable {
         return codes
     }
 
-    /// The same codes, read from a revision's components rather than from built facts, so a link projection is
-    /// checked against the revision it names.
-    private func nutrientCodes(of revision: IntakeRevision) throws -> [String: String] {
-        var codes: [String: String] = [:]
-        for component in revision.components {
-            let descriptor = try descriptor(for: component, product: nil)
-            guard descriptor.kind == .nutrient else { continue }
-            codes[component.componentID] = descriptor.code
-        }
-        return codes
+    /// The same codes, rebuilt from a revision and its snapshot the way that revision's upsert built its facts, so
+    /// a projection is checked against the facts the receiver actually holds - including the ones a product
+    /// snapshot contributed, which are facts of the revision without being components of it.
+    private func nutrientCodes(of revision: IntakeRevision, product: ProductDefinition?) throws -> [String: String] {
+        nutrientCodes(of: try encodedFacts(of: revision, product: product))
     }
 
     /// The link snapshot as the contract writes it.
