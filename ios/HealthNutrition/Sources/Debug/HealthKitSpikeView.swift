@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import HealthKit
+import NutritionCore
 import Observation
 import SwiftUI
 import UIKit
@@ -458,15 +459,9 @@ final class HealthKitSpikeRunner {
     /// can go into the public repository without carrying a private bundle identifier or the
     /// operator's device name.
     private func redact(_ text: String) -> String {
-        var out = text
-        if let bundle = Bundle.main.bundleIdentifier, !bundle.isEmpty {
-            out = out.replacingOccurrences(of: bundle, with: "<bundle-id>", options: .caseInsensitive)
-        }
-        let device = UIDevice.current.name
-        if !device.isEmpty {
-            out = out.replacingOccurrences(of: device, with: "<device>")
-        }
-        return out
+        // The tested implementation lives in NutritionCore (TranscriptRedactionTests).
+        TranscriptRedaction.redact(
+            text, bundleIdentifier: Bundle.main.bundleIdentifier, deviceName: UIDevice.current.name)
     }
 
     private func record(_ text: String) {
