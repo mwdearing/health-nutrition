@@ -294,13 +294,15 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
         transport.answer(.init(results: [.duplicate], detail: "already held"))
+        // Read the queued operation before the run: once delivered it leaves the queue.
+        let queuedID = try XCTUnwrap(relayOperation(store)?.operationID)
 
         let outcomes = await worker.runOnce(now: when)
 
         guard case .delivered(let id, _, _) = try XCTUnwrap(outcomes.first) else {
             return XCTFail("a duplicate is a success, got \(outcomes)")
         }
-        XCTAssertEqual(id, try XCTUnwrap(relayOperation(store)?.operationID))
+        XCTAssertEqual(id, queuedID)
         XCTAssertEqual(try pendingRelay(store), [])
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
     }
