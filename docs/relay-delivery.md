@@ -43,35 +43,33 @@ decision about what is due and when a retry is scheduled.
 
 ## Ordering
 The receiver applies a batch in array order and refuses an operation whose revision is below one it
-already holds. So order is not tidiness here, it is the delivery succeeding:
+already holds. So order is not tidiness here, it is the delivery succeeding.
 
-- operations are read in queue order and packed in that order, so one intake's revisions travel oldest
-  first, in one array when they fit;
-- an operation that is **suspended**, **not due yet**, or **unencodable** holds back the operations *behind
-  it* for the same intake, because they were never delivered;
-- once a batch comes back, an operation whose outcome is unresolved holds back the later operations for
-  its intake in the batches after it.
+**Whether an operation can be sent is decided in one place.** Each intake's queued operations are walked
+once, in order, and the first thing that cannot go out ends the road for that intake: it is not due, it is
+suspended, or it does not encode. That operation becomes the intake's blocker, and **every later operation
+of the same intake is reported as blocked by it** — including one that would itself have encoded cleanly. A
+sound revision offered after a broken one would come back `stale_revision`, because the receiver never
+accepted the revision before it.
 
-**A blocker only ever holds back what comes after it.** The receiver's rule is one-directional: it
-refuses going forwards, so revision 3 delivered before revision 2 is refused while revision 2 delivered
-before revision 3 is fine. A parked revision 3 is therefore no reason to withhold a due revision 1 — that
-would leave the queue permanently stuck behind a problem the earlier revision does not share. Each blocker
-records where it sits in the queue, and only an operation further along is held back by it.
+An **encoding failure is rescheduled, not parked**, because it is local and may be correctable: a link
+snapshot naming a component the revision does not state is wrong once, not wrong forever, and parking it
+would mean a correction could never be delivered. A conflict the *receiver* reports is different, and is
+parked — see the outcome table.
 
-**And only the earliest blocker counts.** An intake can hit more than one problem in a run — two of its
-revisions can both fail to encode — and the check is `blocker.position < item.position`, so keeping the
-*later* failure would clear everything between the two and let a sound revision go out past a revision that
-failed ahead of it. With revisions 1 and 3 both failing, revision 1 is the blocker and revision 2 is held
-back with revision 3.
+Batches are then built only from the sendable prefixes, and each is filtered again before it goes. A
+previous batch — or a split half of one — may have left an intake unresolved, and that intake's remaining
+items are dropped from the rest of the run. **A 413 split obeys the same rule inside itself**: splitting is a
+second request, not a second decision, so the tail is filtered through the head's results before it is sent.
 
-**A 413 split obeys the same rule inside itself.** Splitting a batch is a second request, not a second
-decision, so the tail is filtered through the head's results before it is sent: an intake the head left
-unresolved has its later operations held back there too. Otherwise the split would quietly weaken the
-ordering rule every other boundary enforces.
+### What stops the whole run
+| From | Why |
+|---|---|
+| 401 | every later batch carries the same token to the same receiver, so one cause is reported rather than one refusal per batch |
+| 429 | the receiver asked this producer to send less; the remaining batches are more of exactly that, and a split would not help since the limit is on traffic rather than size |
 
-A queued upsert whose intake has since been deleted is acknowledged as **superseded**, not sent: the
-delete queued beside it is what decides what the receiver holds, and sending the upsert would put back
-exactly what that delete retracts.
+In both cases the operations already sent are reported as they were, and the ones the run never reached are
+reported as `notAttempted` — untouched, with no attempt recorded against them.
 
 ## Outcome mapping
 One result per operation comes back in the 200, and the receiver's seven results map like this:
@@ -102,8 +100,8 @@ HealthRelay connection that will read them back.
 | 200 | the per-operation results above |
 | 400, 403 | permanent for the operations of that batch: the payload or the producer binding is refused, so the same bytes are refused again. The receiver's `error` code is the stored reason |
 | 401 | **the run stops.** Retrying cannot mint a new token and every later batch would be refused the same way, so one cause is reported instead of one refusal per batch. The operations sent so far are parked with a token reason and no retry until re-armed; the operations the run never reached are reported as `notAttempted`. A 401 on the **head of a split** stops the split there too: the tail shares the refused credential, so sending it would be one more refusal for the same reason and would park those operations against a token already known to be bad |
-| 413 | the batch is **split once** and each half is retried, keeping the order the operations were read in. An operation too large on its own cannot be split, so it is parked as permanently refused |
-| 429 | retried at `Retry-After` when the receiver sent one — a rate limit answered with its own interval is the receiver telling this producer exactly how long to stop — and on the **per-operation backoff ladder** when it did not, so a repeatedly throttled producer waits longer each time rather than holding at one minute |
+| 413 | the batch is **split and each half retried, recursively**, keeping the order the operations were read in and filtering the tail through the head's results. How large one operation is on its own is not knowable here — one with a long link snapshot may need to travel alone while a bare facts-only one would have fitted — so only a **single** operation still refused is the payload being too large, and only that is parked. Parking whatever survived one halving would refuse operations that were perfectly sendable |
+| 429 | **stops the run**, with or without `Retry-After`. A stated wait is honoured as given; without one, the **per-operation backoff ladder** decides, so a repeatedly throttled producer waits longer each time rather than holding at one minute |
 | 5xx, and transport errors | retried on the backoff. A thrown transport error means nothing arrived, so there is no status to read and the same bytes are worth sending again |
 
 The backoff is 1, 5 and 30 minutes, then every 2 hours, indexed by the attempt count **including** the
@@ -122,12 +120,16 @@ for once per run, never once per batch.
 A capabilities read that fails sends nothing and reschedules every operation: a guess at the limits would
 produce the very 413 this run exists to avoid.
 
-**Both halves of the contract name have to match.** The `schema` must be `healthrelay.intake-context` *and*
-the version must be one it lists. A receiver of some other contract may well list a version this build also
-uses, and reading that as agreement would send intake data somewhere it was never meant to go. A mismatch is
-reported as an **endpoint mismatch** rather than as a permanent failure of each operation — nothing is wrong
-with the operations, and the difference is a configuration fact a person settles by pointing the app at the
-right receiver.
+**Both halves of the contract name are checked, and each has its own reason.** The `schema` must be
+`healthrelay.intake-context` *and* the version must be one it lists. A receiver of some other contract may
+well list a version this build also uses, and reading that as agreement would send intake data somewhere it
+was never meant to go.
+
+The two are reported differently because they are different problems: a receiver whose `schema` is not ours
+is the **wrong endpoint**, while one that answers with our schema and does not list our version is the right
+endpoint at a version this build does not speak. Either way the operations are parked rather than retried —
+retrying cannot change what a receiver understands, and both are configuration facts a person settles rather
+than failures of the operations themselves.
 
 ## What is injected, and why
 | Injected | Why |
@@ -185,12 +187,14 @@ reconcile a state the earlier one could not be sent in.
 `SwiftDataJournalStore` on disk and a fake transport that reads the `operation_id`s out of the bytes it was
 handed, so an assertion is about what was actually encoded rather than about what the test expected. It
 covers every row of the outcome table, 429 with and without `Retry-After` and the ladder a headerless one
-walks, 401 stopping the run and the next run not retrying, 401 on the head of a split, 400, 403, 5xx and
-transport errors, a token that cannot be read and one fetched per batch, the 413 split and a 413 that
-cannot be split, both batch limits, the order of one intake's revisions, a parked *later* revision not
-stranding an earlier due one, a suspended operation holding back what is behind it, a delete sent as a
-tombstone with the instant the journal recorded, an upsert retry reusing its first link snapshot, a
-projection's retry date reaching its queue, an unencodable projection holding back the later ones, and
+walks, both of them stopping the run, 401 stopping the run and the next run not retrying, a stop on the head
+of a split, 400, 403, 5xx and transport errors, a token that cannot be read and one fetched per batch, a 413
+split that recurses until only a single operation is refused, both batch limits, the order of one intake's
+revisions, a parked *later* revision not stranding an earlier due one, an earlier failure blocking a sound
+revision behind it, a suspended operation holding back what is behind it, a split tail held back for an
+intake the head left unresolved, a delete sent as a tombstone with the instant the journal recorded, an upsert
+retry reusing its first link snapshot, an invalid first snapshot not frozen and a corrected one delivered,
+a projection's retry date reaching its queue, an unencodable projection holding back the later ones, and
 delivery off — a store with no enabled relay destination sends nothing at all, and does not even ask the
 receiver for its capabilities.
 

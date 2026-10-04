@@ -14,6 +14,7 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     private let intakeID = "0b6f7d3e-5a1c-4c52-9a2e-3f1d8c7b6a10"
     private let otherIntakeID = "3c9a1f52-7d84-4b6e-9a10-2b5e6f8c9d31"
     private let thirdIntakeID = "8e4b2d17-9c05-4a3f-b6d2-1f7a4c8e0b52"
+    private let fourthIntakeID = "5d91c7a4-2e68-4b03-9f27-6a8e1b4d0c93"
     private let when = Date(timeIntervalSince1970: 1_700_000_000)
 
     private static let scope = IntakeContextProducerScope(
@@ -636,7 +637,7 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     }
 
     /// A single operation cannot be split, so a 413 for it is permanent: the payload itself is what the
-    /// receiver refuses.
+    /// receiver refuses, and no smaller request exists.
     func testA413ForOneOperationIsPermanentRatherThanRetried() async throws {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
@@ -649,7 +650,69 @@ final class RelayDeliveryWorkerTests: XCTestCase {
             return XCTFail("a payload the receiver refuses is permanent, got \(outcomes)")
         }
         XCTAssertTrue(reason.contains("too large"), reason)
-        XCTAssertEqual(transport.sendCallCount, 1, "there is nothing to split")
+        XCTAssertEqual(transport.sendCallCount, 1, "there is nothing left to split")
+    }
+
+    /// The split keeps going until there is nothing left to split, because how large one operation is on its
+    /// own is not knowable here. A batch of four refused for size is halved into two pairs; the first pair is
+    /// refused again and halved once more into singles, which are accepted. Every one of the four is
+    /// delivered, because each fitted on its own and none of them was the payload that was too large.
+    func testA413KeepsSplittingUntilOnlyASingleOperationIsRefused() async throws {
+        let store = try makeStore(try makeDirectory())
+        let ids = [intakeID, otherIntakeID, thirdIntakeID, fourthIntakeID]
+        for id in ids {
+            try store.create(sampleIntake(id: id), components: components(), product: nil, now: when)
+        }
+        let ordered = try pendingRelay(store).map(\.operationID)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        // The batch of four, then its first half of two, are both refused for size. Each single is accepted.
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(store: store, transport: transport).runOnce(now: when)
+
+        XCTAssertEqual(
+            transport.sendCallCount, 5,
+            "the batch, its first half, that half's two singles, and the second half: five requests")
+        XCTAssertEqual(
+            transport.sentBatches.dropFirst().flatMap { FakeIntakeContextTransport.operationIDs(in: $0) },
+            ordered, "the splits keep the queue's order")
+        XCTAssertEqual(
+            outcomes.count, 4, "one outcome per operation")
+        XCTAssertTrue(
+            outcomes.allSatisfy(\.isResolved),
+            "none of the four was the payload that was too large: \(outcomes)")
+    }
+
+    /// Only a **single** operation still coming back 413 is permanent. Two operations refused together are
+    /// halved rather than parked, because each of them might have fitted alone — which is exactly the case
+    /// where parking would refuse operations that were perfectly sendable.
+    func testA413IsPermanentOnlyForTheSingleOperationThatIsStillRefused() async throws {
+        let store = try makeStore(try makeDirectory())
+        for id in [intakeID, otherIntakeID] {
+            try store.create(sampleIntake(id: id), components: components(), product: nil, now: when)
+        }
+        let ordered = try pendingRelay(store).map(\.operationID)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        // Both halves are refused, so each operation is finally asked on its own. One of them is refused
+        // again; the other is accepted.
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(store: store, transport: transport).runOnce(now: when)
+
+        let parked = outcomes.compactMap { outcome -> String? in
+            guard case .needsAttention(let id, let reason) = outcome else { return nil }
+            XCTAssertTrue(reason.contains("too large"), reason)
+            return id
+        }
+        XCTAssertEqual(parked, [ordered[0]], "only the operation refused on its own is permanent")
+        XCTAssertTrue(
+            outcomes.contains { $0.isResolved },
+            "its neighbour fitted alone and was delivered: \(outcomes)")
     }
 
     // MARK: - Ordering
@@ -1147,6 +1210,29 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertEqual(next, when.addingTimeInterval(3600).addingTimeInterval(300))
     }
 
+    /// A rate limit stops the run, whatever the rest of the batch sizes would be. The receiver asked this
+    /// producer to send less, and the remaining batches are more of exactly that; splitting would not help,
+    /// since the limit is on traffic rather than on size.
+    func testARateLimitStopsTheRunRatherThanSendingTheRemainingBatches() async throws {
+        let store = try makeStore(try makeDirectory())
+        for id in [intakeID, otherIntakeID, thirdIntakeID] {
+            try store.create(sampleIntake(id: id), components: components(), product: nil, now: when)
+        }
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities(maxOperations: 1))
+        transport.answer(.init(statusCode: 429, retryAfterSeconds: 90))
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(store: store, transport: transport).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 1, "the run stops at the first rate limit")
+        XCTAssertEqual(
+            outcomes.filter { if case .notAttempted = $0 { return true } else { return false } }.count, 2,
+            "the operations after it are reported as unattempted: \(outcomes)")
+        XCTAssertEqual(
+            try pendingRelay(store).map(\.attempts), [1, 0, 0],
+            "only the batch that was refused counts as failed")
+    }
+
     /// The tombstone carries when the person deleted the entry, not when the last revision was written.
     /// `delete(intakeID:now:)` knows, the journal records it, and it is hashed — so an approximation could
     /// never be corrected afterwards without turning the retry into a conflict.
@@ -1312,9 +1398,15 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         transport.answerEverythingAccepted()
         let worker = makeWorker(store: store, transport: transport, projections: queue)
 
+        let upsert = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
         let outcomes = await worker.runOnce(now: when)
 
-        XCTAssertEqual(transport.sendCallCount, 0, "the later sequence is not sent past the one that failed")
+        XCTAssertEqual(
+            transport.sentOperationIDs, [upsert],
+            "only the revision's upsert goes out: neither projection is sent past the one that failed")
+        XCTAssertFalse(
+            transport.sentOperationIDs.contains(later.operationID),
+            "the later sequence is genuinely not sent, not merely reported as blocked")
         XCTAssertEqual(
             outcomes.filter { if case .blocked(_, let by) = $0 { return by == bad.operationID } else { return false } }
                 .map(\.operationID),
@@ -1485,6 +1577,11 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
             return XCTFail("an unreadable version is not a delivery attempt, got \(outcomes)")
         }
-        XCTAssertTrue(reason.contains("1.0"), reason)
+        // The receiver is the right endpoint and simply does not speak this version, so the reason says so.
+        XCTAssertTrue(reason.contains("does not accept"), reason)
+        XCTAssertTrue(reason.contains("1.0"), "it names the version it writes: \(reason)")
+        XCTAssertTrue(reason.contains("0.9"), "and the one it speaks instead: \(reason)")
+        XCTAssertFalse(
+            reason.contains("not an"), "a wrong-endpoint reason would send the wrong reader looking: \(reason)")
     }
 }
