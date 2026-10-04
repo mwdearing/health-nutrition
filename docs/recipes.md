@@ -38,4 +38,19 @@ Deleting a recipe hides it from the list. Every stored version is kept.
 
 ## Privacy
 
-Recipes are personal. They are stored on the device in their own store file, and are never shared, synced or published.
+Recipes are personal. They are stored on the device in their own store file (`recipes.store`, next to
+the journal and favorites files), and are never shared, synced or published.
+
+## Where the screens live
+
+The app creates one `SwiftDataRecipeStore` at startup and opens the recipe list from a row in
+Library. The list, detail and editor screens share one navigation stack, so a recipe opens over the
+list and editing pushes a new version over the detail. A failed open of any store file closes the
+files already opened and names the one that failed on the startup failure screen.
+
+## What the editor can change
+
+The editor asks for every nutrient the Today screen tracks by default: energy, protein, sodium,
+potassium and fiber. A nutrient left blank is unknown, never zero. The unit an ingredient's
+per-unit values are stated in is not entered in the editor: an existing value is carried through an
+edit unchanged, so a recipe stated per 100 g stays stated per 100 g.

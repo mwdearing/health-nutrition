@@ -8,10 +8,14 @@ public struct RecipeNutrientField: Equatable, Identifiable {
     public let label: String
     public let unit: MeasureUnit
 
+    /// Every nutrient the Today screen tracks by default is enterable, so a recipe logged from the
+    /// editor does not read as lacking one of them.
     public static let all: [RecipeNutrientField] = [
         RecipeNutrientField(id: "energy", label: "Energy", unit: .kcal),
         RecipeNutrientField(id: "protein", label: "Protein", unit: .g),
         RecipeNutrientField(id: "sodium", label: "Sodium", unit: .mg),
+        RecipeNutrientField(id: "potassium", label: "Potassium", unit: .mg),
+        RecipeNutrientField(id: "fiber", label: "Fiber", unit: .g),
     ]
 
     public static func label(for nutrientID: String) -> String {
@@ -28,6 +32,9 @@ public struct RecipeIngredientDraft: Identifiable, Equatable {
     public var densityText: String = ""
     /// Per-unit values by nutrient id; blank means unknown.
     public var nutrientTexts: [String: String] = [:]
+    /// The unit the per-unit values are stated in, when it differs from `unitSymbol`. The editor has
+    /// no field for it, so an existing value is carried through untouched.
+    public var basisUnit: MeasureUnit?
     /// Values the editor has no field for, carried over unchanged.
     var preserved: [String: NutrientValue] = [:]
     var sourceNote: String?
@@ -101,6 +108,7 @@ public final class RecipeEditorViewModel: ObservableObject {
             draft.amountText = DecimalFormatting.text(ingredient.quantity.value)
             draft.unitSymbol = ingredient.quantity.unit.symbol
             draft.densityText = ingredient.density.map { DecimalFormatting.text($0) } ?? ""
+            draft.basisUnit = ingredient.basisUnit
             draft.sourceNote = ingredient.sourceNote
             for (key, value) in ingredient.perUnit {
                 if nutrientFields.contains(where: { $0.id == key }), case .known(let amount, _) = value {
@@ -182,7 +190,7 @@ public final class RecipeEditorViewModel: ObservableObject {
             if let amount, let unit {
                 built.append(RecipeIngredient(
                     id: ingredientID, name: name, quantity: Quantity(value: amount, unit: unit), perUnit: perUnit,
-                    density: density, sourceNote: draft.sourceNote))
+                    density: density, sourceNote: draft.sourceNote, basisUnit: draft.basisUnit))
             }
         }
 

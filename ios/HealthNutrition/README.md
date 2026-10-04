@@ -19,13 +19,15 @@ declares the capability and the usage strings, but nothing in a release build re
 - `project.yml`: the XcodeGen spec for the `HealthNutrition` app (iOS 18, Swift 5 language mode).
 - `HealthNutrition.entitlements`: the HealthKit capability. No signing team id, certificate or
   profile is ever committed here.
-- `Sources/HealthNutritionApp.swift`: the app entry point. It creates one `SwiftDataJournalStore`
-  and one `SwiftDataFavoritesStore` for the app's lifetime and hands them to the screens. One
+- `Sources/HealthNutritionApp.swift`: the app entry point. It creates one `SwiftDataJournalStore`,
+  one `SwiftDataFavoritesStore` and one `SwiftDataRecipeStore` for the app's lifetime and hands them
+  to the screens. One
   store instance per database file is required: the store serializes writes with a lock that
   belongs to the instance, so two instances on the same file would assign duplicate revision
   numbers (see [docs/journal-store.md](../../docs/journal-store.md)).
 - `Sources/RootView.swift`: the tab shell with Today, Journal and Library, plus a HealthKit tab in
-  debug builds only.
+  debug builds only. Library opens the personal recipes in its own navigation stack
+  (see [docs/recipes.md](../../docs/recipes.md)).
 - `Sources/Debug/HealthKitSpikeView.swift`: the debug-only HealthKit write spike, whole file inside
   `#if DEBUG`. It writes synthetic samples to measure how HealthKit resolves a repeated sync
   identifier, and deletes them again.

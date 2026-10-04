@@ -7,11 +7,13 @@ import NutritionUI
 ///
 /// The journal store holds a write lock per instance, so the app creates exactly one store per
 /// database file and keeps it for its whole lifetime (see `docs/journal-store.md`). Favorites
-/// live in a second file next to the journal file.
+/// live in a second file next to the journal file, and recipes in a third.
 @MainActor
 final class AppServices {
     let journalStore: SwiftDataJournalStore
     let favoritesStore: SwiftDataFavoritesStore
+    /// Personal recipes, in their own file. Never shared or synced.
+    let recipeStore: SwiftDataRecipeStore
 
     let today: TodayViewModel
     let journal: JournalViewModel
@@ -20,9 +22,13 @@ final class AppServices {
     /// window is shared and never reset by opening the form again.
     let barcodeLookup: BarcodeProductLookup
 
-    private init(journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore) {
+    private init(
+        journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
+        recipeStore: SwiftDataRecipeStore
+    ) {
         self.journalStore = journalStore
         self.favoritesStore = favoritesStore
+        self.recipeStore = recipeStore
         today = TodayViewModel(store: journalStore)
         journal = JournalViewModel(store: journalStore)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
@@ -36,7 +42,7 @@ final class AppServices {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// Opens both store files in `directory`, creating them if needed.
+    /// Opens all three store files in `directory`, creating them if needed.
     static func make() throws -> AppServices {
         let directory = defaultDirectory
         // No delivery worker exists yet (HealthKit writer and relay outbox come later): queue nothing for them,
@@ -50,12 +56,21 @@ final class AppServices {
         } catch {
             throw StoreStartupError.journal(error)
         }
+        let favoritesStore: SwiftDataFavoritesStore
         do {
-            let favoritesStore = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
-            return AppServices(journalStore: journalStore, favoritesStore: favoritesStore)
+            favoritesStore = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
         } catch {
             journalStore.close()
             throw StoreStartupError.favorites(error)
+        }
+        do {
+            let recipeStore = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
+            return AppServices(
+                journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore)
+        } catch {
+            favoritesStore.close()
+            journalStore.close()
+            throw StoreStartupError.recipes(error)
         }
     }
 
@@ -63,6 +78,7 @@ final class AppServices {
     enum StoreStartupError: LocalizedError {
         case journal(Error)
         case favorites(Error)
+        case recipes(Error)
 
         var errorDescription: String? {
             switch self {
@@ -70,6 +86,8 @@ final class AppServices {
                 return "The journal store file could not be opened: \(error.localizedDescription)"
             case .favorites(let error):
                 return "The favorites store file could not be opened: \(error.localizedDescription)"
+            case .recipes(let error):
+                return "The recipes store file could not be opened: \(error.localizedDescription)"
             }
         }
     }

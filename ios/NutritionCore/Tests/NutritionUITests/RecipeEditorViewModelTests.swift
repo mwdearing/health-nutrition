@@ -85,4 +85,61 @@ final class RecipeEditorViewModelTests: XCTestCase {
         XCTAssertEqual(saved?.ingredients.first?.perUnit["sodium"], .known(0, .mg))
         XCTAssertEqual(saved?.ingredients.first?.perUnit["protein"], .unknown)
     }
+
+    /// Editing a recipe must not drop the unit its per-unit values are stated in, even though the
+    /// editor has no field for it.
+    func testEditKeepsExplicitBasisUnit() throws {
+        let store = try makeStore()
+        let version = RecipeVersion(
+            recipeID: "recipe-basis", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour", quantity: Quantity(value: 200, unit: .mL),
+                    perUnit: ["energy": .known(uiDec("3.5"), .kcal)], density: uiDec("0.4"),
+                    basisUnit: .g)
+            ],
+            yield: .servings(4), createdAt: when)
+        try store.saveNewVersion(version)
+
+        let edit = RecipeEditorViewModel(store: store, editing: version)
+        edit.ingredients[0].amountText = "250"
+        XCTAssertTrue(edit.save(now: when), "\(edit.messages)")
+
+        let v2 = try XCTUnwrap(try store.version(recipeID: "recipe-basis", number: 2))
+        XCTAssertEqual(v2.ingredients.first?.basisUnit, .g)
+        XCTAssertEqual(v2.ingredients.first?.quantity.value, 250)
+        XCTAssertEqual(v2.ingredients.first?.density, uiDec("0.4"))
+        // The stored version still round-trips through the same store.
+        let reread = try XCTUnwrap(try store.version(recipeID: "recipe-basis", number: 2))
+        XCTAssertEqual(reread.ingredients.first?.basisUnit, .g)
+    }
+
+    /// A new draft has no explicit basis unit; the ingredient's own unit is the basis.
+    func testNewDraftHasNoExplicitBasisUnit() throws {
+        let store = try makeStore()
+        let model = filledModel(store)
+        XCTAssertNil(model.ingredients[0].basisUnit)
+        XCTAssertTrue(model.save(now: when))
+        XCTAssertNil(try store.version(recipeID: "recipe-new", number: 1)?.ingredients.first?.basisUnit)
+    }
+
+    /// Every nutrient the Today screen tracks by default must be enterable in the recipe editor,
+    /// otherwise a recipe logged from the editor always reads as lacking it.
+    func testEveryDefaultTrackedNutrientIsEditable() throws {
+        let editable = Set(RecipeNutrientField.all.map(\.id))
+        for nutrient in TodayViewModel.defaultTrackedNutrients {
+            XCTAssertTrue(editable.contains(nutrient), "\(nutrient) has no editor field")
+        }
+        XCTAssertEqual(RecipeNutrientField.all.first { $0.id == "potassium" }?.unit, .mg)
+        XCTAssertEqual(RecipeNutrientField.all.first { $0.id == "fiber" }?.unit, .g)
+
+        let store = try makeStore()
+        let model = filledModel(store)
+        model.ingredients[0].nutrientTexts["potassium"] = "400"
+        model.ingredients[0].nutrientTexts["fiber"] = "10"
+        XCTAssertTrue(model.save(now: when), "\(model.messages)")
+        let saved = try XCTUnwrap(try store.version(recipeID: "recipe-new", number: 1))
+        XCTAssertEqual(saved.ingredients.first?.perUnit["potassium"], .known(400, .mg))
+        XCTAssertEqual(saved.ingredients.first?.perUnit["fiber"], .known(10, .g))
+    }
 }
