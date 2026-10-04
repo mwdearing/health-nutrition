@@ -20,7 +20,14 @@ everything the app target keeps under `ios/HealthNutrition/Sources/**` — an
 - the image shares a control label with a `Text` that names it, because the
   text already names the control;
 - the image is a `Label("…", systemImage:)`, which speaks its own title, or
-  sits in the `icon:` closure of a `Label` whose title speaks for it.
+  sits in the `icon:` closure of a `Label` whose title speaks for it, whether
+  those closures are trailing or passed as `title:` and `icon:` arguments.
+
+A control spelled out as `SwiftUI.Button` is read as the same control as
+`Button`, so a module-qualified label closure names its image just the same.
+Any other qualifier names a type of its own, so a custom view spelled
+`Custom.Button` is not a SwiftUI control and the text inside its label closure
+names nothing.
 
 An enclosing layout is not a control, so text elsewhere in the same `VStack`
 names nothing:
@@ -45,12 +52,17 @@ Button { toggle() } label: {
 ```
 
 A modifier belongs to the view it is written on, so a label inside a nested
-view names that view and leaves the one around it unnamed:
+view names that view and leaves the one around it unnamed — whether the nested
+view arrives in a trailing closure or in an argument:
 
 ```swift
 Image("photo").overlay {         // unlabeled-image
     Image(systemName: "star").accessibilityLabel("New")
 }
+
+Image("photo").overlay(content: {  // unlabeled-image as well
+    Image(systemName: "star").accessibilityLabel("New")
+})
 ```
 
 Text that is hidden from VoiceOver reads nothing aloud, so it does not name a
@@ -65,10 +77,69 @@ Picker("Choose", selection: $choice) {
 .accessibilityLabel("Choice")        // names the picker, not the option
 ```
 
+Once that content has been passed as `content:`, a trailing closure is the
+control's label, so the control's own name covers the image in it:
+
+```swift
+Menu(content: {
+    Button("Delete") { remove() }
+}) {
+    Image(systemName: "ellipsis")
+}
+.accessibilityLabel("More")
+```
+
+Only a `content:` written as an argument of the control itself counts, so the
+picker below is still left holding its options and the option image is still a
+finding:
+
+```swift
+Picker("Choose", selection: binding(content: value)) {  // content: is the binding's
+    Image(systemName: "a").tag(1)                      // unlabeled-image
+}
+.accessibilityLabel("Choice")
+```
+
 A modifier guarded by conditional compilation only counts when every
 configuration that compiles the image compiles a name as well, so a label
 written for `#if DEBUG` alone does not exempt an image that release builds leave
-unnamed.
+unnamed. The conditional is only followed when it is written directly after the
+image, and an arm that starts with a view rather than a modifier ends the chain —
+the traversal stops at the matching `#endif`, so nothing beyond the block is read
+as a modifier of the image:
+
+```swift
+Image("one")   // unlabeled-image
+#if DEBUG
+Text("x")      // a sibling view, not a modifier of the first image
+#endif
+Image("two").accessibilityLabel("Two")
+```
+
+Text hidden from VoiceOver reads nothing aloud, so it names nothing in the builds
+that compile the hiding. It does still name the control in the builds where it
+is visible, so the control below is named either way — a debug build reads
+"Remove" and a release build reads "Delete" — while the one below it is a finding
+in every build:
+
+```swift
+Button {} label: {
+    Image(systemName: "trash")
+    Text("Delete")
+    #if DEBUG
+    .accessibilityHidden(true)
+    Text("Remove")       // names the button in debug builds
+    #endif
+}
+
+Button {} label: {
+    Image(systemName: "trash")
+    Text("Delete")
+    #if DEBUG
+    .accessibilityHidden(true)   // unlabeled-image: the debug build names nothing
+    #endif
+}
+```
 
 Findings are reported as `path:line: unlabeled-image: …`, on the line where the
 `Image` starts.
@@ -126,5 +197,6 @@ app target beside it, so the single invocation CI runs enforces both surfaces.
 view trees for the icon-only `Button`, the labelled button, the decorative
 image, the `Label` with a system image, the unlabelled layout caption, the
 label passed as an argument, the `Label` with title and icon closures, the
-nested view in an `overlay`, the hidden text, the `Picker` options and the
-conditional-compilation branches.
+module-qualified control, the nested view in an `overlay` and in an
+`overlay(content:)`, the hidden text, the `Picker` options, the `Menu` with a
+`content:` argument and the conditional-compilation branches.

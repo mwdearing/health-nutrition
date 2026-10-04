@@ -19,8 +19,10 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     private final class FakeHealthSampleWriter: HealthSampleWriter, @unchecked Sendable {
         private let lock = NSLock()
         private var allowed: Set<String> = []
-        private var saveError: HealthSampleWriterError?
-        private var deleteError: HealthSampleWriterError?
+        // Typed as `Error`, not `HealthSampleWriterError`: the writer reports permanent failures with
+        // their own type, and the worker is supposed to tell them apart by what was thrown.
+        private var saveError: (any Error)?
+        private var deleteError: (any Error)?
         private var savedSpecs: [HealthKitSampleSpec] = []
         private var deletedIdentifiers: [String] = []
         private var saveCallCount = 0
@@ -60,11 +62,11 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         /// nil clears the failure, so a test can let a retry through.
-        func failSaves(with error: HealthSampleWriterError?) {
+        func failSaves(with error: (any Error)?) {
             lock.withLock { saveError = error }
         }
 
-        func failDeletes(with error: HealthSampleWriterError?) {
+        func failDeletes(with error: (any Error)?) {
             lock.withLock { deleteError = error }
         }
 
@@ -86,7 +88,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         func save(_ specs: [HealthKitSampleSpec]) async throws {
-            let error = lock.withLock { () -> HealthSampleWriterError? in
+            let error = lock.withLock { () -> (any Error)? in
                 saveCallCount += 1
                 order.append("save")
                 attemptedVersions.append(contentsOf: specs.map(\.syncVersion))
@@ -98,7 +100,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         func deleteSamples(syncIdentifiers: [String]) async throws -> Int {
-            let outcome = lock.withLock { () -> (HealthSampleWriterError?, Int) in
+            let outcome = lock.withLock { () -> ((any Error)?, Int) in
                 order.append("delete")
                 guard deleteError == nil else { return (deleteError, 0) }
                 deletedIdentifiers.append(contentsOf: syncIdentifiers)
@@ -386,7 +388,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("HealthKit store unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("HealthKit store unavailable"))
         let outcomes = await worker.runOnce(now: when)
 
         guard case .retryScheduled(let operationID, let nextAttemptAt, _) = try XCTUnwrap(outcomes.first) else {
@@ -411,7 +413,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         try store.delete(intakeID: intakeID, now: when)
-        writer.failDeletes(with: .transient("query failed"))
+        writer.failDeletes(with: HealthSampleWriterError.transient("query failed"))
         let outcomes = await worker.runOnce(now: when)
 
         XCTAssertTrue(outcomes.contains { if case .retryScheduled = $0 { return true } else { return false } })
@@ -423,7 +425,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         writer.failSaves(with: nil)
         writer.reset()
@@ -442,7 +444,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker(enabled: [.healthKit, .relay])
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
 
         let relay = try XCTUnwrap(try store.pendingOutbox().first { $0.destination == .relay })
@@ -473,7 +475,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         writer.failSaves(with: nil)
         writer.reset()
@@ -541,7 +543,10 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertThrowsError(try store.acknowledge(operationID: "no-such-operation", at: when)) {
             XCTAssertEqual($0 as? JournalError, .unknownOperation("no-such-operation"))
         }
-        XCTAssertThrowsError(try store.recordFailure(operationID: "no-such-operation", retryAt: nil, needsAttention: false)) {
+        XCTAssertThrowsError(
+            try store.recordFailure(
+                operationID: "no-such-operation", retryAt: nil, needsAttention: false, reason: nil)
+        ) {
             XCTAssertEqual($0 as? JournalError, .unknownOperation("no-such-operation"))
         }
     }
@@ -555,7 +560,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         writer.failSaves(with: nil)
         // Revision 2 drops the nutrient, which is what makes the ordering observable.
@@ -586,7 +591,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         _ = await worker.runOnce(now: when)
         try store.edit(
             intakeID: intakeID, components: [component("water", amount: 250, unit: .mL)], product: nil,
@@ -730,7 +735,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.failSaves(with: .transient("unavailable"))
+        writer.failSaves(with: HealthSampleWriterError.transient("unavailable"))
         var now = when
         var waits: [TimeInterval] = []
         for _ in 1...3 {
@@ -852,7 +857,8 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         let operationID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
-        try store.recordFailure(operationID: operationID, retryAt: nil, needsAttention: true)
+        try store.recordFailure(
+            operationID: operationID, retryAt: nil, needsAttention: true, reason: "HealthKit access is not granted")
         XCTAssertTrue(try store.suspendedOperationIDs().contains(operationID))
 
         try store.edit(
@@ -944,34 +950,33 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     // MARK: - Suspension survives a later edit
 
     /// An edit supersedes the denied revision's projection but leaves its operation pending. The
-    /// suspension belongs to the operation, so filtering on the current projection would lose it, retry
-    /// the denied write on every run and block the newer revision forever.
-    func testADeniedRevisionStaysSuspendedAfterALaterEditSupersedesItsProjection() async throws {
-        let (store, writer, _, worker) = try makeWorker()
+    /// suspension belongs to the operation, so matching on the current projection would lose it and the
+    /// denied write would be retried on every run.
+    ///
+    /// The suspension is also on the **current** projection, so the entry screen shows the condition:
+    /// `EntryDetailViewModel` reads only current projections, and a state nobody can see is not
+    /// something a person can act on. That propagation must not suspend the newer operation, which has
+    /// never been attempted — suspension always follows an attempt.
+    func testADenialOnASupersededRevisionSuspendsTheOlderOperationAndShowsOnTheCurrentProjection() throws {
+        let store = try makeStore(try makeDirectory())
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        writer.deny("HKQuantityTypeIdentifierDietaryWater")
-        _ = await worker.runOnce(now: when)
-        let deniedID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
-
         try store.edit(
             intakeID: intakeID, components: [component()], product: nil, changeReason: "second try", now: when)
-        writer.reset()
+        let superseded = try XCTUnwrap(try store.pendingOutbox().first { $0.revision == 1 })
+        let current = try XCTUnwrap(try store.pendingOutbox().first { $0.revision == 2 })
 
-        let outcomes = await worker.runOnce(now: when.addingTimeInterval(3600))
+        try store.recordFailure(
+            operationID: superseded.operationID, retryAt: nil, needsAttention: true,
+            reason: "HealthKit access is not granted")
 
-        XCTAssertEqual(
-            try store.pendingOutbox().first { $0.operationID == deniedID }?.attempts, 1,
-            "the denied revision is not retried after its projection is superseded")
-        XCTAssertEqual(writer.saveCalls, 0)
-        guard case .needsAttention(let operationID, _) = try XCTUnwrap(outcomes.first) else {
-            return XCTFail("the suspended revision must still report needsAttention, got \(outcomes)")
-        }
-        XCTAssertEqual(operationID, deniedID)
-        guard case .blocked(_, let blockedBy) = try XCTUnwrap(outcomes.last) else {
-            return XCTFail("the newer revision stays blocked behind the suspended one, got \(outcomes)")
-        }
-        XCTAssertEqual(blockedBy, deniedID)
+        XCTAssertTrue(
+            try store.suspendedOperationIDs().contains(superseded.operationID),
+            "the suspension belongs to the operation whose projection has gone noncurrent")
+        XCTAssertFalse(
+            try store.suspendedOperationIDs().contains(current.operationID),
+            "the newer operation has never been attempted, so a propagated state must not park it")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
     }
 
     /// The newer revision is still delivered once the older suspended one is re-armed and delivered,
@@ -994,5 +999,271 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             writer.saved.map(\.syncVersion), [1, 2],
             "re-arming releases the older revision, and the newer one follows it")
         XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.destination == .relay })
+    }
+
+    /// An edit queued before revision 1's first attempt has already made revision 1's projection
+    /// noncurrent. The denial still has to suspend the **operation**: recording it on current
+    /// projections alone would leave nothing in `needsAttention`, so `suspendedOperationIDs()` would
+    /// not report the operation and every automatic run would retry a denial forever.
+    ///
+    /// Once it is suspended, the correction queued behind it takes over: revision 1 is skipped and
+    /// revision 2 is delivered, so editing the entry is what unblocks the intake.
+    func testADenialOnASupersededRevisionSuspendsTheOperationAndTheCorrectionThenTakesOver() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component(amount: 55)], product: nil,
+            changeReason: "bigger bowl", now: when)
+        let denied = try XCTUnwrap(try store.pendingOutbox().first {
+            $0.destination == .healthKit && $0.revision == 1
+        })
+        writer.deny("HKQuantityTypeIdentifierDietaryWater")
+
+        _ = await worker.runOnce(now: when)
+
+        let deniedProjection = try XCTUnwrap(try store.projections(of: intakeID).first {
+            $0.destination == .healthKit && $0.revision == 1 && $0.desiredAction == .upsert
+        })
+        XCTAssertFalse(
+            deniedProjection.isCurrent,
+            "the edit superseded this projection before the first delivery attempt")
+        XCTAssertEqual(
+            deniedProjection.state, .needsAttention,
+            "a denial is recorded on the projection belonging to the operation, superseded or not")
+        XCTAssertTrue(
+            try store.suspendedOperationIDs().contains(denied.operationID),
+            "otherwise the denied revision looks due and every automatic run retries it")
+
+        writer.allow("HKQuantityTypeIdentifierDietaryWater")
+        writer.reset()
+        _ = await worker.runOnce(now: when.addingTimeInterval(3600))
+
+        XCTAssertEqual(
+            writer.saved.map(\.syncVersion), [2],
+            "the denied revision is skipped, not delivered again; the correction behind it is")
+        XCTAssertTrue(
+            try store.pendingOutbox().allSatisfy { $0.destination == .relay },
+            "the superseded operation leaves the queue rather than holding it")
+    }
+
+    /// A rejected sample and a denied type are different problems, and the app has to keep saying which
+    /// one it was. The reason is reported from the stored suspension, not recomputed, so a later run —
+    /// or the next launch — cannot present a rejected sample as an authorization problem.
+    func testTheStoredSuspensionReasonIsReportedAgainOnALaterRun() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid"))
+        _ = await worker.runOnce(now: when)
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(7200))
+
+        XCTAssertEqual(writer.saveCalls, 0, "the operation is suspended, so nothing is attempted")
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a suspended operation still reports that it needs a person, got \(outcomes)")
+        }
+        XCTAssertTrue(
+            reason.contains("invalid"),
+            "the stored reason survives the run: a rejected sample is not reported as a denial, got \(reason)")
+    }
+
+    /// A denial and a rejected sample are different suspendings, and the app says which. This is the
+    /// other half of the test above: a stored denial must not come back worded as a rejected sample.
+    func testAStoredDenialIsStillReportedAsADenialOnALaterRun() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryWater")
+        _ = await worker.runOnce(now: when)
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(7200))
+
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a suspended operation still reports that it needs a person, got \(outcomes)")
+        }
+        XCTAssertTrue(reason.contains("access"), "a denial keeps its own reason, got \(reason)")
+        XCTAssertFalse(reason.contains("invalid"), "a denial is not reported as a rejected sample")
+    }
+
+    /// The two human remedies for a rejected sample are an edit and a deletion, and both have to
+    /// release the intake. Blocking every later operation behind the parked one made both useless:
+    /// editing queued a revision nothing would deliver, and deleting stranded the written samples.
+    func testARetractionSupersedesARejectedUpsertAndRemovesTheSamples() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid"))
+        _ = await worker.runOnce(now: when)
+        let rejected = try XCTUnwrap(try store.pendingOutbox().first {
+            $0.destination == .healthKit && $0.kind == .upsert
+        })
+        writer.failSaves(with: nil)
+        try store.delete(intakeID: intakeID, now: when)
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when.addingTimeInterval(7200))
+
+        XCTAssertEqual(
+            writer.deleted, allMappedIdentifiers(intakeID),
+            "the retraction runs, so a rejected upsert no longer strands what a deletion removes")
+        XCTAssertTrue(
+            outcomes.contains { if case .superseded = $0 { return true } else { return false } },
+            "the rejected upsert is superseded rather than delivered again")
+        XCTAssertFalse(outcomes.contains { if case .blocked = $0 { return true } else { return false } })
+        XCTAssertNil(
+            try store.pendingOutbox().first { $0.operationID == rejected.operationID },
+            "a superseded operation leaves the queue")
+        XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.destination == .relay })
+    }
+
+    /// Superseding is not the same as delivering: the rejected revision must not be offered to the
+    /// writer even though its successor is. Writing it again would fail identically, since the plan is
+    /// rebuilt from the same immutable revision.
+    func testASupersededRejectedRevisionIsNotOfferedToTheWriterAgain() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid"))
+        _ = await worker.runOnce(now: when)
+        writer.failSaves(with: nil)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "correction", now: when)
+        writer.reset()
+
+        _ = await worker.runOnce(now: when.addingTimeInterval(7200))
+
+        XCTAssertEqual(
+            writer.attemptedSyncVersions, [2],
+            "only the corrected revision is attempted; the rejected one is skipped")
+        XCTAssertEqual(writer.saved.map(\.syncVersion), [2])
+        XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.destination == .relay })
+    }
+
+    /// Re-arming is for retrying **the same** revision, which is the other half of superseding: the
+    /// suspension clears and the identical revision is attempted again rather than skipped.
+    func testReArmingStillRetriesTheRejectedRevisionItself() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid"))
+        _ = await worker.runOnce(now: when)
+        writer.failSaves(with: nil)
+        try store.rearmDelivery(operationID: try XCTUnwrap(healthKitOperation(store, kind: .upsert)).operationID)
+        writer.reset()
+
+        _ = await worker.runOnce(now: when.addingTimeInterval(7200))
+
+        XCTAssertEqual(
+            writer.attemptedSyncVersions, [1],
+            "re-arming retries the same revision, which is the point of re-arming")
+        XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.destination == .relay })
+    }
+
+    /// A sample HealthKit will never accept is not a delivery hiccup. A retry rebuilds the same
+    /// immutable revision, so the same save fails identically every time; the operation is parked for
+    /// a person instead of backing off forever against something waiting cannot fix.
+    func testARejectedSampleNeedsAttentionAndIsNotRetried() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: HealthSampleRejectedError(reason: "HealthKit rejected a sample as invalid"))
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .needsAttention(let operationID, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a sample that can never be saved must ask for a person, got \(outcomes)")
+        }
+        XCTAssertTrue(
+            reason.contains("invalid"), "the reason has to say what HealthKit refused: \(reason)")
+        let operation = try XCTUnwrap(try store.pendingOutbox().first { $0.operationID == operationID })
+        XCTAssertEqual(operation.attempts, 1)
+        XCTAssertNil(operation.nextAttemptAt, "a rejected sample is not retried on a timer")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
+
+        writer.reset()
+        _ = await worker.runOnce(now: when.addingTimeInterval(7200))
+
+        XCTAssertEqual(
+            try store.pendingOutbox().first { $0.operationID == operationID }?.attempts, 1,
+            "the permanent failure is not attempted again")
+        XCTAssertEqual(writer.saveCalls, 0)
+    }
+
+    // MARK: - The suspension column arrives by migration
+
+    /// The V2→V3 stage only **adds** the column, so everything the previous schema held has to survive
+    /// it: a migration that quietly dropped the nutrient values would turn every recorded product into
+    /// one that states nothing, which is indistinguishable from a product that never stated any.
+    func testTheMigrationToTheSuspensionColumnKeepsTheNutrientValues() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let nutrients = SwiftDataJournalStore.encodeNutrients(["protein": .known(dec("13"), .g)])
+        try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
+            url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
+            destination: .healthKit, nutrientsJSON: nutrients)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: url.path),
+            "the fixture has to be a real V2 file on disk, or the migration stage never runs")
+
+        let store = try makeStore(directory)
+
+        let snapshot = try XCTUnwrap(store.product(snapshotID: "snap-1"))
+        XCTAssertEqual(snapshot.name, "Sample oats")
+        XCTAssertEqual(snapshot.value(for: "protein"), .known(dec("13"), .g))
+    }
+
+    /// A store written before the column existed recorded a suspension **on the projection**, so opening
+    /// it with the new schema has to copy that onto the operation. Without the backfill the suspension
+    /// simply disappears: `suspendedOperationIDs()` reads the column, sees nil, and every automatic run
+    /// retries a denial that retrying cannot fix — exactly the storm the suspension exists to prevent,
+    /// handed back to every existing user by an upgrade.
+    func testTheMigrationBackfillsTheSuspensionReasonSoAParkedOperationStaysParked() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
+            url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
+            destination: .healthKit, nutrientsJSON: nil)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: url.path),
+            "the fixture has to be a real V2 file on disk, or the migration stage never runs")
+
+        let store = try makeStore(directory)
+
+        XCTAssertTrue(
+            try store.suspendedOperationIDs().contains("op-v2"),
+            "an operation the previous schema had suspended must still be suspended after the upgrade")
+        XCTAssertNotNil(
+            try store.suspensionReason(operationID: "op-v2"),
+            "the backfilled reason is what the run reports from now on")
+    }
+
+    /// The backfilled suspension must hold through an actual run, not only in the store's own answer:
+    /// the writer must not be offered the operation again, and it must report that a person is needed.
+    func testTheMigratedSuspensionStillStopsAnAutomaticRun() async throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
+            url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
+            destination: .healthKit, nutrientsJSON: nil)
+        let store = try makeStore(directory)
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings {
+            writer.allow(mapping.quantityTypeIdentifier)
+        }
+        let recording = RecordingTotals(["water": .known(dec("250"), .mL)])
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer,
+            totals: { id, revision in try await recording.totals(intakeID: id, revision: revision) })
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saveCalls, 0, "the migrated suspension is not retried")
+        guard case .needsAttention(_, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the run must report the parked operation, got \(outcomes)")
+        }
     }
 }
