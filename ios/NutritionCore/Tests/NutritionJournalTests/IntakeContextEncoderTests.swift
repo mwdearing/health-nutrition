@@ -100,11 +100,11 @@ final class IntakeContextEncoderTests: XCTestCase {
             revision: waterAndCreatineRevision,
             product: nil,
             sequence: 2,
-            operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
             links: [
                 waterLink(disposition: .active, sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396", syncVersion: 3),
                 waterLink(disposition: .superseded, sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429", syncVersion: 2),
-            ])
+            ],
+            operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587")
         let encoded = try Self.read(projection)
         XCTAssertNil(encoded.member("facts"), "a link projection carries no facts at all")
         XCTAssertNil(encoded.member("domain_facts_hash"), "and so no domain digest")
@@ -676,8 +676,8 @@ final class IntakeContextEncoderTests: XCTestCase {
                     revision: waterAndCreatineRevision,
                     product: nil,
                     sequence: 2,
-                    operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
-                    links: testCase.links),
+                    links: testCase.links,
+                    operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587"),
                 testCase.what
             ) { error in
                 XCTAssertEqual(error as? IntakeContextEncoderError, testCase.expected, testCase.what)
@@ -689,8 +689,8 @@ final class IntakeContextEncoderTests: XCTestCase {
                 revision: waterAndCreatineRevision,
                 product: nil,
                 sequence: 2,
-                operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
-                links: [waterLink(disposition: .active, sampleUUID: sample, syncVersion: 3)]))
+                links: [waterLink(disposition: .active, sampleUUID: sample, syncVersion: 3)],
+                operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587"))
     }
 
     /// One sync identity names one object: its versions are unique, only one sample of it is active, and an
@@ -756,11 +756,11 @@ final class IntakeContextEncoderTests: XCTestCase {
             revision: waterAndCreatineRevision,
             product: nil,
             sequence: 2,
-            operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587",
             links: [
                 waterLink(disposition: .active, sampleUUID: newer, syncVersion: 3),
                 waterLink(disposition: .superseded, sampleUUID: older, syncVersion: 2),
-            ])
+            ],
+            operationID: "d94b6e18-27c3-4a5f-8e91-b0f3a6c2d587")
         XCTAssertEqual(try XCTUnwrap(try XCTUnwrap(legal.member("healthkit_links"))?.arrayValue).count, 2)
     }
 
@@ -893,13 +893,13 @@ final class IntakeContextEncoderTests: XCTestCase {
                 revision: waterAndCreatineRevision,
                 product: nil,
                 sequence: 2,
-                operationID: "not-a-uuid",
                 links: [
                     waterLink(
                         disposition: .active,
                         sampleUUID: "9a1f3c57-8e2d-4b60-a7c4-d5e0b1f28396",
                         syncVersion: 3),
-                ])
+                ],
+                operationID: "not-a-uuid")
         ) { error in
             XCTAssertEqual(error as? IntakeContextEncoderError, .invalidOperationID("not-a-uuid"))
         }
