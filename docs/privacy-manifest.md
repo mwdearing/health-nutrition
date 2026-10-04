@@ -52,19 +52,44 @@ where a real timestamp is what matters.
 
 ## Keeping it honest
 
-`scripts/check_privacy_manifest.py` scans every `*.swift` file under `ios/` for
-the required-reason APIs Apple lists, ignoring comments and string literals, and
-fails when a category a source uses is not declared in the manifest with a
-reason this project is entitled to, or when `NSPrivacyTracking` is not false.
-The categories it knows are:
+`scripts/check_privacy_manifest.py` scans the Swift code the app actually ships
+for the required-reason APIs Apple lists, and fails when a category a source uses
+is not declared with a reason Apple publishes for it, when a declared reason is
+not one Apple publishes (a typo such as an extra `BOGUS`, or a reason belonging
+to another category), or when `NSPrivacyTracking` is not false.
 
-| Category | Reason expected | API spellings |
-| --- | --- | --- |
-| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | `UserDefaults`, `@AppStorage` |
-| `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | `systemUptime`, `mach_absolute_time` |
-| `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1` | `creationDate`, `modificationDate`, `attributesOfItem` |
-| `NSPrivacyAccessedAPICategoryDiskSpace` | `E174.1` | `volumeAvailableCapacity`, `systemFreeSize` |
-| `NSPrivacyAccessedAPICategoryActiveKeyboards` | `54BD.1` | `activeInputModes` |
+### Which code is scanned
+
+The scope comes from the build description, not from the directory layout. The
+script reads `ios/HealthNutrition/project.yml` for the app target's source paths
+and the NutritionCore products it links, then `ios/NutritionCore/Package.swift`
+for those products' target directories and their target dependencies. That is
+`ios/HealthNutrition/Sources` plus `NutritionCore`, `NutritionDomain`,
+`NutritionProviders`, `NutritionJournal` and `NutritionUI`, which is what ends
+up in the app binary. Test targets and `JournalStoreSpike`, a standalone target
+the app does not link, are never scanned: a restricted API used only there does
+not ship and must not demand a declaration. A missing or unreadable
+`project.yml` or `Package.swift` is a usage error rather than a silent full scan.
+
+### What is matched
+
+| Category | Reason this app declares | Published reasons accepted | API spellings |
+| --- | --- | --- | --- |
+| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | `CA92.1`, `1C8F.1`, `C56D.1`, `AC9B.1` | `UserDefaults`, `@AppStorage` |
+| `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | `35F9.1`, `8FFB.1`, `3D61.1` | `systemUptime`, `mach_absolute_time` |
+| `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1` | `C617.1`, `0A2A.1`, `E9D9.1`, `3D62.1` | `FileAttributeKey.creationDate`/`.modificationDate`, `URLResourceKey.creationDateKey`/`contentModificationDateKey`, an attribute subscript such as `attributes[.creationDate]`, `attributesOfItem`, `stat`/`fstat`/`lstat` |
+| `NSPrivacyAccessedAPICategoryDiskSpace` | `E174.1` | `E174.1`, `85F4.1`, `7D9E.1` | `statfs`, `statvfs`, `fstatfs`, `fstatvfs`, `getattrlist`, `getattrlistbulk`, `getattrlistat`, `fgetattrlist`, `volumeAvailableCapacity…`, `volumeTotalCapacityKey`, `systemSize`, `systemFreeSize` |
+| `NSPrivacyAccessedAPICategoryActiveKeyboards` | `54BD.1` | `54BD.1`, `3EC4.1` | `activeInputModes` |
+
+The timestamp row matches real file metadata access only. A domain property that
+merely happens to be called `creationDate` or `modificationDate` is not an access
+to Apple's API and does not match, so a false positive can never be silenced by
+adding an inaccurate `C617.1` declaration.
+
+`//` comments, `/* */` comments and the text of string literals are masked
+before matching, including the raw and extended literal forms. An interpolated
+expression is code, so `"defaults: \(UserDefaults.standard)"` is matched while
+the surrounding prose is not.
 
 Findings print one per line as `path:line: message` and the script exits 1.
 `.github/workflows/ios.yml` runs it, and its tests, in the `privacy-manifest`
