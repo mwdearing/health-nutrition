@@ -18,9 +18,19 @@ final class AppServices {
     let today: TodayViewModel
     let journal: JournalViewModel
     let library: LibraryViewModel
+    /// The Connections and privacy screen. It reads the same stores and, for its "Erase all data"
+    /// action, holds all three as erasers, so one action empties every file the app keeps.
+    let connections: ConnectionsPrivacyViewModel
     /// Barcode lookups in Add intake. One client for the app's lifetime, so its rolling rate-limit
     /// window is shared and never reset by opening the form again.
     let barcodeLookup: BarcodeProductLookup
+    /// Delivers queued journal revisions to HealthKit.
+    ///
+    /// The worker exists and is wired up, but it has nothing to do: the journal store below enables no
+    /// destinations, so no HealthKit operation is ever queued and `runOnce` always finds an empty
+    /// queue. Turning delivery on is a separate decision, because it starts writing real health data
+    /// (see `docs/healthkit-writer.md`).
+    let healthKitDelivery: HealthKitDeliveryWorker
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
@@ -35,8 +45,17 @@ final class AppServices {
         today = TodayViewModel(store: journalStore, lookup: SnapshotNutrientFacts())
         journal = JournalViewModel(store: journalStore)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
+        connections = ConnectionsPrivacyViewModel(
+            store: journalStore, favorites: favoritesStore,
+            appVersion: Self.appVersion, erasers: [journalStore, favoritesStore, recipeStore])
         barcodeLookup = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
+        let totals = JournalSnapshotTotals(store: journalStore)
+        healthKitDelivery = HealthKitDeliveryWorker(
+            store: journalStore,
+            writer: HealthKitSampleWriter(),
+            totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
+        )
     }
 
     /// The marketing version from the bundle; the provider requires a User-Agent that names the app
@@ -45,11 +64,16 @@ final class AppServices {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// Opens all three store files in `directory`, creating them if needed.
-    static func make() throws -> AppServices {
-        let directory = defaultDirectory
-        // No delivery worker exists yet (HealthKit writer and relay outbox come later): queue nothing for them,
-        // so entries never sit in a permanent Pending state.
+    /// Opens all three store files in `directory`, creating the directory and the files if needed.
+    ///
+    /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
+    /// real Application Support ones. The default is the app's own directory, unchanged.
+    static func make(directory: URL = defaultDirectory) throws -> AppServices {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // HealthKit delivery stays off: `enabledDestinations` is empty, so nothing is queued for it and
+        // `healthKitDelivery` has no work. Enabling it writes real intake data into Health, which is a
+        // deliberate decision rather than a consequence of the worker existing (docs/healthkit-writer.md).
+        // The relay destination is off for the same reason.
         let journalStore: SwiftDataJournalStore
         do {
             journalStore = try SwiftDataJournalStore(
@@ -96,7 +120,11 @@ final class AppServices {
     }
 
     /// Application Support/HealthNutrition, created on first use.
-    static var defaultDirectory: URL {
+    ///
+    /// Nonisolated because it is the default argument of `make(directory:)` below, and a default
+    /// argument is evaluated in a nonisolated context. It touches nothing but `FileManager`, so it has
+    /// no reason to be on the main actor anyway.
+    nonisolated static var defaultDirectory: URL {
         let directory = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("HealthNutrition", isDirectory: true)

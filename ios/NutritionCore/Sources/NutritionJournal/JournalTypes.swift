@@ -37,6 +37,7 @@ public enum JournalError: Error, Sendable, Equatable {
     case intakeAlreadyExists(String)
     case intakeDeleted(String)
     case snapshotConflict(String)
+    case unknownOperation(String)
     case corruptRecord(String)
 }
 
@@ -299,4 +300,37 @@ public protocol JournalStore: AnyObject, Sendable {
     func activeIntakesFromBackground() async throws -> [Intake]
     /// Releases the store; a new instance can reopen the same file.
     func close()
+}
+
+/// What a delivery worker needs from the journal beyond recording: reading the queue and recording
+/// what happened to one operation.
+///
+/// This is a refinement of `JournalStore` rather than part of it on purpose. Reading the journal is
+/// something every implementation can do; recording a delivery is something only a store that owns the
+/// outbox can do, and a read-only stand-in (an export source, a view model's test double) should not
+/// have to invent it. `SwiftDataJournalStore` is the implementation the app and the worker use.
+public protocol JournalOutboxDelivery: JournalStore {
+    /// Records that a worker delivered one operation: `acknowledgedAt` is stamped and the projection
+    /// for that revision and destination becomes `succeeded`. An acknowledged operation is never
+    /// offered again by `pendingOutbox()`.
+    ///
+    /// Acknowledging an operation that is already acknowledged is not an error: a worker that crashed
+    /// after writing but before recording the delivery will deliver again, and that second delivery
+    /// has to be recordable rather than refused.
+    func acknowledge(operationID: String, at date: Date) throws
+    /// Records one delivery attempt that did not succeed. `attempts` grows by one and the operation
+    /// becomes due again at `retryAt`, which is nil when nothing should retry it on its own. A
+    /// failure only a person can fix is recorded with `needsAttention`, which puts the projection in
+    /// `needsAttention` so the app can show it instead of the worker retrying it forever.
+    func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws
+    /// The pending operations whose current projection is `needsAttention`, which a delivery worker
+    /// must leave alone: they are suspended until someone calls `rearmDelivery(operationID:)`.
+    ///
+    /// A suspension is not visible from the operation alone — its `nextAttemptAt` is nil, which is
+    /// exactly what "do not retry" looks like and exactly what "due now" also looks like — so the
+    /// worker has to ask.
+    func suspendedOperationIDs() throws -> Set<String>
+    /// Clears the suspension, making the operation due again. Deliberately explicit: re-arming after a
+    /// person has resolved the denial is their decision, not a scheduled run's.
+    func rearmDelivery(operationID: String) throws
 }

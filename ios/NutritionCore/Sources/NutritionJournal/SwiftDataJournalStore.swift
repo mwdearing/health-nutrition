@@ -272,20 +272,223 @@ enum JournalSchemaV2: VersionedSchema {
     }
 }
 
-/// The store is written with V2. The stage is lightweight because the only change is one optional column,
-/// so an existing file is migrated in place and its rows keep their values.
-enum JournalMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [JournalSchemaV1.self, JournalSchemaV2.self] }
-    static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: JournalSchemaV1.self, toVersion: JournalSchemaV2.self)]
+/// The suspended-reason column, added as one optional string. V1 and V2 above are kept exactly as the
+/// builds that wrote them did, so a file either of them created still has a schema SwiftData can
+/// migrate from; an outbox row with no stored reason reads back as suspended for an unnamed reason.
+enum JournalSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [IntakeRecord.self, RevisionRecord.self, ProductRecord.self, ProjectionRecord.self, OutboxRecord.self]
+    }
+
+    @Model
+    final class IntakeRecord {
+        var intakeID: String
+        var category: String
+        var occurredAt: Date
+        var timeZoneIdentifier: String
+        var meal: String?
+        var note: String?
+        var lifecycleRaw: String
+        var currentRevision: Int
+
+        init(
+            intakeID: String, category: String, occurredAt: Date, timeZoneIdentifier: String,
+            meal: String?, note: String?, lifecycleRaw: String, currentRevision: Int
+        ) {
+            self.intakeID = intakeID
+            self.category = category
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+            self.meal = meal
+            self.note = note
+            self.lifecycleRaw = lifecycleRaw
+            self.currentRevision = currentRevision
+        }
+    }
+
+    @Model
+    final class RevisionRecord {
+        var intakeID: String
+        var number: Int
+        /// JSON array of components; amounts are decimal text.
+        var componentsJSON: String
+        var productSnapshotID: String?
+        var changeReason: String
+        var createdAt: Date
+
+        init(
+            intakeID: String, number: Int, componentsJSON: String,
+            productSnapshotID: String?, changeReason: String, createdAt: Date
+        ) {
+            self.intakeID = intakeID
+            self.number = number
+            self.componentsJSON = componentsJSON
+            self.productSnapshotID = productSnapshotID
+            self.changeReason = changeReason
+            self.createdAt = createdAt
+        }
+    }
+
+    @Model
+    final class ProductRecord {
+        var snapshotID: String
+        var productID: String
+        var name: String
+        var brand: String?
+        var barcode: String?
+        var labelBasis: String
+        var catalogOrigin: String
+        var catalogVersion: String
+        /// JSON of the nutrient values the product states, sorted by id.
+        var nutrientsJSON: String?
+
+        init(
+            snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
+            labelBasis: String, catalogOrigin: String, catalogVersion: String, nutrientsJSON: String? = nil
+        ) {
+            self.snapshotID = snapshotID
+            self.productID = productID
+            self.name = name
+            self.brand = brand
+            self.barcode = barcode
+            self.labelBasis = labelBasis
+            self.catalogOrigin = catalogOrigin
+            self.catalogVersion = catalogVersion
+            self.nutrientsJSON = nutrientsJSON
+        }
+    }
+
+    @Model
+    final class ProjectionRecord {
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var actionRaw: String
+        var stateRaw: String
+        var isCurrent: Bool
+
+        init(
+            intakeID: String, revision: Int, destinationRaw: String,
+            actionRaw: String, stateRaw: String, isCurrent: Bool
+        ) {
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.actionRaw = actionRaw
+            self.stateRaw = stateRaw
+            self.isCurrent = isCurrent
+        }
+    }
+
+    @Model
+    final class OutboxRecord {
+        var operationID: String
+        var kindRaw: String
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var payloadHash: String
+        var attempts: Int
+        var nextAttemptAt: Date?
+        var acknowledgedAt: Date?
+        /// Why the operation was suspended, kept so a later run and the next launch report the same
+        /// reason rather than guessing from the state. Nil while the operation has never been suspended,
+        /// and backfilled by the V2→V3 migration for operations the previous schema left suspended.
+        var suspensionReason: String?
+
+        init(
+            operationID: String, kindRaw: String, intakeID: String, revision: Int,
+            destinationRaw: String, payloadHash: String
+        ) {
+            self.operationID = operationID
+            self.kindRaw = kindRaw
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.payloadHash = payloadHash
+            self.attempts = 0
+            self.nextAttemptAt = nil
+            self.acknowledgedAt = nil
+            self.suspensionReason = nil
+        }
     }
 }
 
-typealias IntakeRecord = JournalSchemaV2.IntakeRecord
-typealias RevisionRecord = JournalSchemaV2.RevisionRecord
-typealias ProductRecord = JournalSchemaV2.ProductRecord
-typealias ProjectionRecord = JournalSchemaV2.ProjectionRecord
-typealias OutboxRecord = JournalSchemaV2.OutboxRecord
+/// The store is written with V3.
+///
+/// The V1→V2 stage is lightweight: the only change is one optional column, so an existing file is
+/// migrated in place and its rows keep their values.
+///
+/// **The V2→V3 stage is custom, because a lightweight one cannot populate a column.** It also only adds
+/// an optional column — every existing column survives untouched, nutrients included — but the new
+/// `suspensionReason` has to be filled in for operations the previous schema had already suspended.
+/// Leaving it nil would mean `suspendedOperationIDs()` no longer sees them: the V2 store recorded a
+/// suspension on the projection and nowhere else, so an upgrade would have silently **released** every
+/// denied operation, and the next automatic run would retry a denial that retrying cannot fix, for as
+/// long as it took someone to notice.
+///
+/// The work happens in **`didMigrate`, not `willMigrate`**, and that placement is the whole point of
+/// the stage rather than a detail. The context passed to `willMigrate` is still bound to the *old*
+/// schema, where `suspensionReason` does not exist: fetching V3 models there fails outright, which
+/// means the container never finishes opening and an existing journal does not open at all. After the
+/// migration the context is V3, so the new column can be read and written, and the store's own save
+/// commits it with the migration.
+enum JournalMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self]
+    }
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: JournalSchemaV1.self, toVersion: JournalSchemaV2.self),
+            .custom(
+                fromVersion: JournalSchemaV2.self, toVersion: JournalSchemaV3.self,
+                willMigrate: nil,
+                didMigrate: { context in
+                    try backfillSuspensionReasons(context: context)
+                    try context.save()
+                }),
+        ]
+    }
+
+    /// Copies the V2 projection state onto the V3 outbox rows, for the operations it suspended.
+    ///
+    /// The same match `suspendedOperationIDs()` used in V2, on the same four fields — intake, revision,
+    /// destination and action — and only for rows that are still pending: an acknowledged operation was
+    /// delivered whatever its projection says.
+    ///
+    /// The reason written is the store's neutral one rather than a guess. V2 never recorded which kind
+    /// of permanent failure it was, so nothing here can name it truthfully, and inventing a specific
+    /// cause would be worse than saying the suspension was recorded without one.
+    static func backfillSuspensionReasons(context: ModelContext) throws {
+        let state = DestinationState.needsAttention.rawValue
+        let projections = try context.fetch(FetchDescriptor<JournalSchemaV3.ProjectionRecord>(
+            predicate: #Predicate<JournalSchemaV3.ProjectionRecord> { $0.stateRaw == state }))
+        guard !projections.isEmpty else { return }
+        let operations = try context.fetch(FetchDescriptor<JournalSchemaV3.OutboxRecord>(
+            predicate: #Predicate<JournalSchemaV3.OutboxRecord> { $0.acknowledgedAt == nil }))
+        for operation in operations {
+            let alreadyRecorded = operation.suspensionReason != nil
+            guard !alreadyRecorded else { continue }
+            for projection in projections {
+                let intakeID = projection.intakeID
+                let revision = projection.revision
+                let destination = projection.destinationRaw
+                let action = projection.actionRaw
+                if operation.intakeID == intakeID && operation.revision == revision
+                    && operation.destinationRaw == destination && operation.kindRaw == action {
+                    operation.suspensionReason = SwiftDataJournalStore.unrecordedSuspensionReason
+                }
+            }
+        }
+    }
+}
+
+typealias IntakeRecord = JournalSchemaV3.IntakeRecord
+typealias RevisionRecord = JournalSchemaV3.RevisionRecord
+typealias ProductRecord = JournalSchemaV3.ProductRecord
+typealias ProjectionRecord = JournalSchemaV3.ProjectionRecord
+typealias OutboxRecord = JournalSchemaV3.OutboxRecord
 
 private struct StoredComponent: Codable {
     var componentID: String
@@ -304,7 +507,8 @@ private struct StoredNutrient: Codable {
     var unitSymbol: String?
 }
 
-public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, JournalTombstoneSource, @unchecked Sendable {
+public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnapshotSource, JournalTombstoneSource,
+    JournalErasing, @unchecked Sendable {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -321,7 +525,7 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV2.self)
+        let schema = Schema(versionedSchema: JournalSchemaV3.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -337,6 +541,43 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
         let schema = Schema(versionedSchema: JournalSchemaV1.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         return try ModelContainer(for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+    }
+
+    /// Opens a store written with the schema before the suspension column, so a test can write a file
+    /// the current one has to migrate **and backfill**. Nothing in the app opens a store this way.
+    static func v2StoreForTesting(url: URL) throws -> ModelContainer {
+        let schema = Schema(versionedSchema: JournalSchemaV2.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        return try ModelContainer(for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+    }
+
+    /// Writes one suspended outbox operation with the V2 model, exactly as that build recorded it: the
+    /// suspension lives on the projection and nowhere else, so migrating it is what proves the
+    /// backfill is doing the work rather than the column having been filled in already.
+    ///
+    /// The V2 container is released before returning, so the caller opens a **real file on disk** rather
+    /// than one still held open by this process — which is the situation a real upgrade is in, and the
+    /// only one where the migration stage runs at all.
+    static func writeV2SuspendedOperationForTesting(
+        url: URL, operationID: String, intakeID: String, revision: Int, destination: JournalDestination,
+        nutrientsJSON: String?
+    ) throws {
+        do {
+            let context = ModelContext(try v2StoreForTesting(url: url))
+            context.autosaveEnabled = false
+            context.insert(JournalSchemaV2.ProductRecord(
+                snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
+                labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
+                nutrientsJSON: nutrientsJSON))
+            context.insert(JournalSchemaV2.ProjectionRecord(
+                intakeID: intakeID, revision: revision, destinationRaw: destination.rawValue,
+                actionRaw: OutboxKind.upsert.rawValue, stateRaw: DestinationState.needsAttention.rawValue,
+                isCurrent: true))
+            context.insert(JournalSchemaV2.OutboxRecord(
+                operationID: operationID, kindRaw: OutboxKind.upsert.rawValue, intakeID: intakeID,
+                revision: revision, destinationRaw: destination.rawValue, payloadHash: "hash"))
+            try context.save()
+        }
     }
 
     /// Writes one revision with the V1 model, exactly as the first build did, and commits it.
@@ -462,6 +703,236 @@ public final class SwiftDataJournalStore: JournalStore, JournalSnapshotSource, J
             try Self.supersedeProjections(of: intakeID, in: context)
             let revision = record.currentRevision
             queueWork(intakeID: intakeID, revision: revision, kind: .delete, payload: "delete:\(intakeID):\(revision)", context: context)
+        }
+    }
+
+    // MARK: Erasing
+
+    /// Removes every row the journal file holds: intakes, their revision history, product snapshots,
+    /// projections and queued outbox operations. A deleted entry leaves no tombstone behind either,
+    /// because a tombstone only exists so a later export can retract the entry.
+    ///
+    /// The rows are fetched and deleted one at a time rather than with the batch delete, which runs
+    /// against the persistent store immediately, outside the save and outside the rollback. Fetching
+    /// keeps the whole erase inside one commit, so a failure anywhere in it leaves the journal exactly
+    /// as it was: a journal emptied by a failed save would be worse than an unerased one, because the
+    /// person cannot tell which half is gone.
+    ///
+    /// The container is not closed: the store reads empty and accepts new entries afterwards.
+    public func eraseAll() throws {
+        _ = try commit { context in
+            for row in try context.fetch(FetchDescriptor<RevisionRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<OutboxRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<ProjectionRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
+        }
+    }
+
+    // MARK: Delivery bookkeeping
+
+    /// Marks one operation delivered and its projection `succeeded`, in one save.
+    ///
+    /// Acknowledging an operation that is already acknowledged is not an error: a worker that
+    /// crashed after writing but before recording the delivery will deliver again, and that second
+    /// delivery has to be recordable rather than refused.
+    public func acknowledge(operationID: String, at date: Date) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.acknowledgedAt = date
+            row.nextAttemptAt = nil
+            // A superseded or delivered operation is no longer suspended, and a stale reason left on the
+            // row would report it as parked after it has left the queue.
+            row.suspensionReason = nil
+            try Self.setProjectionState(
+                .succeeded, of: row, in: context)
+        }
+    }
+
+    /// Records one failed attempt: `attempts` grows by one, and the operation is due again at
+    /// `retryAt` unless the failure needs a person, in which case the projection becomes
+    /// `needsAttention` and no automatic retry is scheduled.
+    ///
+    /// An acknowledged operation is left alone: it was delivered, so a failure recorded afterwards
+    /// belongs to a different attempt and must not reopen it.
+    ///
+    /// **A suspension is recorded on the projection belonging to the operation, superseded or not.** A
+    /// worker can record the denial after an edit has already superseded that projection — the edit was
+    /// queued before the revision's first attempt — and marking only current projections would leave
+    /// nothing in `needsAttention`. `suspendedOperationIDs()` matches by state whatever the
+    /// projection's currency, so nothing would report the operation, it would look due (`nil` retry
+    /// date), and every automatic run would retry a denial forever while growing its attempt count.
+    /// `rearmDelivery(operationID:)` clears this same state from this same projection, so both halves
+    /// of the suspension have to reach it.
+    ///
+    /// A transient failure still touches current projections only: it is scheduled to be tried again,
+    /// and what a later revision is doing matters more than what an old operation did.
+    public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+        try recordFailure(
+            operationID: operationID, retryAt: retryAt, needsAttention: needsAttention, reason: nil)
+    }
+
+    /// Records one failed attempt, keeping the reason a suspension is reported with.
+    ///
+    /// A distinct method rather than a defaulted `reason`, because `JournalOutboxDelivery` states the
+    /// three-argument form as a requirement: a defaulted fourth parameter does not satisfy it, so the
+    /// store would no longer conform to the protocol it delivers through.
+    public func recordFailure(
+        operationID: String, retryAt: Date?, needsAttention: Bool, reason: String?
+    ) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.attempts += 1
+            row.nextAttemptAt = retryAt
+            // The reason is stored, not recomputed: a later run and the next launch have to report the
+            // same one, and a rejected sample must not come back worded as a denial.
+            row.suspensionReason = needsAttention ? (reason ?? Self.unrecordedSuspensionReason) : nil
+            try Self.setProjectionState(
+                needsAttention ? .needsAttention : .pending, of: row, in: context,
+                includingSuperseded: needsAttention)
+            if needsAttention {
+                try Self.markCurrentProjectionNeedsAttention(of: row, in: context)
+            }
+        }
+    }
+
+    /// The reason one suspended operation was parked, or nil when it is not suspended.
+    ///
+    /// Read back rather than reconstructed from the state, because `needsAttention` on its own says
+    /// only that a person is needed, not whether Health access was refused or a sample was rejected.
+    public func suspensionReason(operationID: String) throws -> String? {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.outboxRecord(operationID, in: context), row.acknowledgedAt == nil else {
+            return nil
+        }
+        return row.suspensionReason
+    }
+
+    private static func outboxRecord(_ operationID: String, in context: ModelContext) throws -> OutboxRecord? {
+        try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> { $0.operationID == operationID })).first
+    }
+
+    /// What a suspension reads as when the caller recorded no reason of its own.
+    ///
+    /// Neutral on purpose: it must not claim the failure was an authorization problem, because the
+    /// state that reports it is the same one a rejected sample is parked in.
+    static let unrecordedSuspensionReason = "waiting to be re-armed after a failed delivery"
+
+    /// Also marks the **current** projection for this destination `needsAttention`.
+    ///
+    /// A suspension on a superseded projection is invisible in the app: `EntryDetailViewModel` reads
+    /// only current projections, so the entry would show a pending destination while its queue was
+    /// parked and every later operation blocked. Propagating the state is what puts the condition in
+    /// front of a person.
+    ///
+    /// It says nothing about the newer operation, and `suspendedOperationIDs()` deliberately does not
+    /// read this state: suspension follows an attempt, and the current projection's revision is
+    /// normally one whose operation has not been tried at all.
+    private static func markCurrentProjectionNeedsAttention(
+        of row: OutboxRecord, in context: ModelContext
+    ) throws {
+        let intakeID = row.intakeID
+        let destination = row.destinationRaw
+        let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
+            predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+        for projection in rows where projection.isCurrent && projection.destinationRaw == destination {
+            projection.stateRaw = DestinationState.needsAttention.rawValue
+        }
+    }
+
+    /// The pending operations a worker must not retry on its own.
+    ///
+    /// Read off the **operations** rather than inferred from `nextAttemptAt`, because `nil` on that date
+    /// means both "do not retry" (suspended) and "due now" (first attempt), and read off the stored
+    /// reason rather than a projection's state, because a suspension belongs to the operation that
+    /// failed: an edit supersedes its projection while leaving the operation pending, and propagating
+    /// `needsAttention` to the current projection for the app to display must not park an operation that
+    /// has never been attempted.
+    public func suspendedOperationIDs() throws -> Set<String> {
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil && $0.suspensionReason != nil }))
+        return Set(rows.map(\.operationID))
+    }
+
+    /// Clears the suspension on one operation, so an automatic run may pick it up again.
+    ///
+    /// This is the only way a `needsAttention` operation becomes due again, and it is deliberately a
+    /// separate call: re-arming after a person has granted or withdrawn Health access is their
+    /// decision, not something a scheduled run may decide on its own.
+    public func rearmDelivery(operationID: String) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.nextAttemptAt = nil
+            // The reason goes with the suspension: a re-armed operation is due again, so a stored reason
+            // would report a state the operation is no longer in.
+            row.suspensionReason = nil
+            // `includingSuperseded: true`: the suspension is recorded on the projection belonging to
+            // this operation, and a later edit may have made that projection noncurrent. Clearing only
+            // current projections would leave the state at `needsAttention` on the projection that
+            // actually records it, and the operation would never be delivered again — re-arming would
+            // silently do nothing.
+            try Self.setProjectionState(.pending, of: row, in: context, includingSuperseded: true)
+            // The current projection may be carrying the propagated state as well, so the entry would
+            // go on showing a condition that no longer exists. Only cleared when this was the intake's
+            // last suspension, so a second parked operation behind it keeps its own state visible.
+            let intakeID = row.intakeID
+            let destination = row.destinationRaw
+            let stillSuspended = try context.fetch(FetchDescriptor<OutboxRecord>(
+                predicate: #Predicate<OutboxRecord> {
+                    $0.intakeID == intakeID && $0.destinationRaw == destination
+                        && $0.acknowledgedAt == nil && $0.suspensionReason != nil
+                }))
+            if stillSuspended.isEmpty {
+                let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
+                    predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+                let state = DestinationState.needsAttention.rawValue
+                let pending = DestinationState.pending.rawValue
+                for projection in projections where projection.isCurrent
+                    && projection.destinationRaw == destination && projection.stateRaw == state {
+                    projection.stateRaw = pending
+                }
+            }
+        }
+    }
+
+    /// Moves the projection for this operation's revision, destination **and action**.
+    ///
+    /// The action is part of the match because deleting an intake does not bump its revision: the
+    /// queued upsert and the queued delete share an intake id, a revision number and a destination, and
+    /// differ only in what they are for. Matching without it would let acknowledging the stale upsert
+    /// mark the delete `succeeded`, and the app would then report a finished retraction while the
+    /// samples are still in Health.
+    ///
+    /// A superseded projection is left as it is: what a later revision is doing matters more than what
+    /// an old operation did.
+    /// `includingSuperseded` is for the two halves of a suspension — recording it and clearing it —
+    /// which both travel with the operation rather than with the current projection and so may have to
+    /// reach one a later edit has already superseded. Every other caller wants current projections only.
+    private static func setProjectionState(
+        _ state: DestinationState, of row: OutboxRecord, in context: ModelContext,
+        includingSuperseded: Bool = false
+    ) throws {
+        // Copied out of the outbox row first: a #Predicate may compare a key path of the iterated
+        // model only against plain values, not against a key path read from a different model object.
+        let intakeID = row.intakeID
+        let rows = try context.fetch(FetchDescriptor<ProjectionRecord>(
+            predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+        for projection in rows where (includingSuperseded || projection.isCurrent)
+            && projection.revision == row.revision
+            && projection.destinationRaw == row.destinationRaw
+            && projection.actionRaw == row.kindRaw {
+            projection.stateRaw = state.rawValue
         }
     }
 

@@ -7,12 +7,21 @@ import NutritionUI
 @MainActor
 struct RootView: View {
     let services: AppServices
+    /// Observed rather than reached through `services`, so publishing a change on it re-evaluates this
+    /// shell. Reading it through the plain property left the erase handler below waiting for some
+    /// unrelated change before it ran, with erased entries still on screen.
+    @ObservedObject var connections: ConnectionsPrivacyViewModel
 
     @State private var selection: AppTab = .today
     @State private var addingIntake = false
+    /// Held rather than built inside the sheet, so a scanned barcode can be written into the same
+    /// form that will be saved.
+    @State private var addIntakeModel: AddIntakeViewModel?
+    @State private var scanningBarcode = false
     @State private var selectedIntakeID: String?
-    @State private var showingRecipes = false
-    @State private var recipePath: [RecipeRoute] = []
+    /// Held rather than kept as plain view state, so the erase below closes the recipe sheet and drops
+    /// its routes through one method a test can call.
+    @StateObject private var recipeNavigation = RecipeNavigation()
     @State private var recipeList: RecipeListViewModel
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
@@ -20,15 +29,9 @@ struct RootView: View {
     @State private var healthKitSpike = HealthKitSpikeRunner()
     #endif
 
-    /// Where the recipe screens navigate to inside their own stack.
-    private enum RecipeRoute: Hashable {
-        case detail(RecipeVersion)
-        /// nil while creating a new recipe, a version while editing one.
-        case editor(RecipeVersion?)
-    }
-
     init(services: AppServices) {
         self.services = services
+        _connections = ObservedObject(wrappedValue: services.connections)
         _recipeList = State(initialValue: RecipeListViewModel(store: services.recipeStore))
     }
 
@@ -46,7 +49,7 @@ struct RootView: View {
             NavigationStack {
                 TodayView(
                     model: services.today,
-                    onAddIntake: { addingIntake = true },
+                    onAddIntake: { startAddingIntake() },
                     onOpenJournal: { selection = .journal },
                     onOpenLibrary: { selection = .library }
                 )
@@ -70,10 +73,13 @@ struct RootView: View {
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
-            LibraryView(model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() })
+            LibraryView(
+                model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
+                connections: connections
+            )
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
-                .sheet(isPresented: $showingRecipes) {
+                .sheet(isPresented: $recipeNavigation.showingRecipes) {
                     recipesSheet
                 }
 
@@ -89,35 +95,72 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { reload() }
         }
-        .sheet(isPresented: $addingIntake) {
-            AddIntakeView(
-                model: AddIntakeViewModel(
-                    store: services.journalStore, now: Date(), lookup: services.barcodeLookup
-                ),
-                now: { Date() },
-                onSaved: {
-                    addingIntake = false
-                    reload()
-                },
-                onFromLibrary: {
-                    addingIntake = false
-                    selection = .library
-                }
-            )
+        // An erase on the Connections and privacy screen empties the stores these tabs read, so their
+        // held values go with it rather than showing entries that no longer exist.
+        .onChange(of: connections.eraseGeneration) { _, _ in
+            // A recipe detail or editor holds its own copy of the recipe, so close those routes too:
+            // otherwise an erased recipe stays on screen and can still be logged.
+            recipeNavigation.reset()
+            reload()
+            recipeList.load()
         }
+        .sheet(isPresented: $addingIntake) {
+            if let model = addIntakeModel {
+                AddIntakeView(
+                    model: model,
+                    now: { Date() },
+                    onSaved: {
+                        addingIntake = false
+                        addIntakeModel = nil
+                        reload()
+                    },
+                    onFromLibrary: {
+                        addingIntake = false
+                        addIntakeModel = nil
+                        selection = .library
+                    },
+                    // nil hides the button, so the form only offers scanning where the device has a
+                    // camera that can read barcodes.
+                    onScanBarcode: scanBarcode
+                )
+                // The scanner fills the field and closes itself. The lookup still runs only when
+                // the user taps Look up.
+                .sheet(isPresented: $scanningBarcode) {
+                    BarcodeScannerSheet { barcode in
+                        // Through the model, so a scan drops whatever an earlier lookup filled in.
+                        model.setScannedBarcode(barcode)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Opens the intake form with a fresh model, so a scan and the save that follows share one form.
+    private func startAddingIntake() {
+        addIntakeModel = AddIntakeViewModel(
+            store: services.journalStore, now: Date(), lookup: services.barcodeLookup
+        )
+        addingIntake = true
+    }
+
+    /// The action the intake form's Scan button runs. nil where the device cannot scan barcodes,
+    /// which hides the button instead of offering something that would not work.
+    private var scanBarcode: (() -> Void)? {
+        guard BarcodeScanner.isAvailable else { return nil }
+        return { scanningBarcode = true }
     }
 
     /// The recipes screen, in its own navigation stack so the recipe screens push over each other
     /// without adding a tab. Personal only: nothing here is shared or synced.
     private var recipesSheet: some View {
-        NavigationStack(path: $recipePath) {
+        NavigationStack(path: $recipeNavigation.path) {
             RecipeListView(
                 model: recipeList,
-                onNew: { recipePath.append(.editor(nil)) },
+                onNew: { recipeNavigation.path.append(.editor(nil)) },
                 onOpen: { item in
                     if let version = try? services.recipeStore.version(
                         recipeID: item.id, number: item.versionNumber) {
-                        recipePath.append(.detail(version))
+                        recipeNavigation.path.append(.detail(version))
                     }
                 }
             )
@@ -127,7 +170,7 @@ struct RootView: View {
                     RecipeDetailView(
                         model: RecipeDetailViewModel(version: version, journal: services.journalStore),
                         now: { Date() },
-                        onEdit: { recipePath.append(.editor(version)) },
+                        onEdit: { recipeNavigation.path.append(.editor(version)) },
                         onLogged: { reload() }
                     )
                 case .editor(let version):
@@ -137,7 +180,7 @@ struct RootView: View {
                         onSaved: {
                             // Back to the list: a detail screen would still hold the version it
                             // was opened with, and saving writes a new one.
-                            recipePath = []
+                            recipeNavigation.path = []
                             recipeList.load()
                         }
                     )
@@ -148,8 +191,7 @@ struct RootView: View {
 
     /// Opens the recipes screen from a clean stack.
     private func openRecipes() {
-        recipePath = []
-        showingRecipes = true
+        recipeNavigation.open()
     }
 
     /// The journal row being edited, or nil when nothing is open.

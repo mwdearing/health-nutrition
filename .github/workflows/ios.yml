@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - "ios/**"
+      - "scripts/check_privacy_manifest.py"
+      - "scripts/tests/test_check_privacy_manifest.py"
       - ".github/workflows/ios.yml"
   push:
     branches: [main]
     paths:
       - "ios/**"
+      - "scripts/check_privacy_manifest.py"
+      - "scripts/tests/test_check_privacy_manifest.py"
       - ".github/workflows/ios.yml"
   # Manual runs only. Builds an unsigned device .ipa so it can be signed and sideloaded locally;
   # no signing material ever lives in this repository.
@@ -35,6 +39,20 @@ permissions:
   contents: read
 
 jobs:
+  privacy-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install pytest
+      - name: Check the privacy manifest against the Swift sources
+        run: python scripts/check_privacy_manifest.py
+      - name: Test the privacy manifest check
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_check_privacy_manifest.py
+
   swift-test:
     runs-on: macos-latest
     steps:
@@ -59,6 +77,52 @@ jobs:
       - name: Build the app for the iOS Simulator
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+
+  # The app target's own unit tests. Same shape as app-build: regenerate the project, then run the
+  # HealthNutritionTests bundle, which is hosted by the app so @testable import HealthNutrition works.
+  app-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: xcodegen generate
+      # The simulator is picked from what this runner actually has, never a name that might not exist:
+      # GitHub adds and retires runtimes, so a hard-coded iPhone would start failing on its own.
+      - name: Pick an available iPhone simulator
+        id: simulator
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
+          name=$(python3 - "$RUNNER_TEMP/simulators.json" <<'PY'
+          import json
+          import sys
+
+          devices = json.load(open(sys.argv[1]))["devices"]
+          names = [
+              device["name"]
+              for runtime in sorted(devices)
+              for device in devices[runtime]
+              if device.get("isAvailable") and device["name"].startswith("iPhone")
+          ]
+          print(names[0] if names else "")
+          PY
+          )
+          if [ -z "$name" ]; then
+            echo "No available iPhone simulator on this runner." >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Test the app target on the simulator
+        working-directory: ios/HealthNutrition
+        env:
+          SIMULATOR: ${{ steps.simulator.outputs.name }}
+        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO test
 
   # Manual only: an unsigned device build, for whoever runs it to sign with their own identity and sideload.
   unsigned-ipa:

@@ -73,8 +73,242 @@ def test_fixed_font_in_ui_reports_file_and_line(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert findings(result) == [
         ("BadFont.swift", 3, "fixed-font"),
+        ("BadFont.swift", 3, "fixed-font-size"),
         ("BadFontCall.swift", 2, "fixed-font"),
+        ("BadFontCall.swift", 2, "fixed-font-size"),
     ]
+
+
+def test_fixed_font_size_reports_system_size_in_ui(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/BadSize.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(.system(size: 14))\n'
+            'Text("b").font(.system(size: 14, weight: .bold))\n'
+        ),
+        f"{UI}/BadSizeSpelledOut.swift": (
+            "import SwiftUI\n"
+            'Text("c").font(Font.system(size: 12))\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A system font written with a point size trips both font rules: the older
+    # `fixed-font` spells out the two forbidden spellings, and `fixed-font-size`
+    # reads the size out of any font call.
+    assert findings(result) == [
+        ("BadSize.swift", 2, "fixed-font"),
+        ("BadSize.swift", 2, "fixed-font-size"),
+        ("BadSize.swift", 3, "fixed-font"),
+        ("BadSize.swift", 3, "fixed-font-size"),
+        ("BadSizeSpelledOut.swift", 2, "fixed-font"),
+        ("BadSizeSpelledOut.swift", 2, "fixed-font-size"),
+    ]
+
+
+def test_fixed_font_size_allows_the_custom_size_overload_that_scales(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ScalingCustomFont.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom("Inter", size: 14)\n'
+            'Text("a").font(.custom("Inter", size: 14))\n'
+        ),
+    })
+    result = run(root)
+    # Apple documents `custom(_:size:)` as scaling with the body text style, so
+    # only the non-scaling `custom(_:fixedSize:)` overload is a finding here.
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_reports_a_custom_font_with_a_fixed_size(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/FixedCustomFont.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom("Inter", fixedSize: 14)\n'
+            'Text("a").font(.custom("Inter", fixedSize: 13, weight: .bold))\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("FixedCustomFont.swift", 2, "fixed-font-size"),
+        ("FixedCustomFont.swift", 3, "fixed-font-size"),
+    ]
+
+
+def test_fixed_font_size_ignores_custom_calls_that_build_no_font(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/WidgetFactory.swift": (
+            "import SwiftUI\n"
+            'let widget = Widget.custom(name: "compact", size: 14)\n'
+            "let tile = Tile.custom(size: 14, fixedSize: 2)\n"
+            'Text("a").font(.custom("Inter", fixedSize: 14))\n'
+        ),
+    })
+    result = run(root)
+    # Only a custom font factory carries the API's meaning: a `.custom(` call on
+    # another type is that type's own, even when it names a size.
+    assert result.returncode == 1
+    assert findings(result) == [("WidgetFactory.swift", 4, "fixed-font-size")]
+
+
+def test_fixed_font_size_allows_a_size_that_is_not_a_literal(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ScaledMetric.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(.system(size: scaledSize))\n'
+            'let font = Font.custom("Inter", size: scaledSize)\n'
+            'let other = Font.custom("Inter", fixedSize: scaledSize)\n'
+            'let pinned = Font.body.pointSize(scaledSize)\n'
+        ),
+    })
+    result = run(root)
+    # A size read from a @ScaledMetric property already tracks Dynamic Type, so
+    # this rule is about the literal point size that cannot move. The older
+    # `fixed-font` rule still names the `.font(.system(size:` spelling itself.
+    assert [f for f in findings(result) if f[2] == "fixed-font-size"] == []
+
+
+def test_fixed_font_size_reads_relative_to_at_the_font_call_depth(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedRelativeTo.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom(resolveName(relativeTo: locale), fixedSize: 14)\n'
+            'let scaled = Font.custom("Inter", size: 14, relativeTo: .body)\n'
+        ),
+    })
+    result = run(root)
+    # A `relativeTo:` belonging to a nested call is that call's own argument; the
+    # font factory itself still pins a point size.
+    assert result.returncode == 1
+    assert findings(result) == [("NestedRelativeTo.swift", 2, "fixed-font-size")]
+
+
+def test_fixed_font_size_reports_a_point_size_modifier_on_a_font(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/PointSize.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(Font.body.pointSize(14))\n'
+            "let font = Font.title.pointSize(12)\n"
+        ),
+    })
+    result = run(root)
+    # `pointSize(_:)` stops a style-based font from scaling, so a literal one is
+    # reported whether it is written inside a `.font(` or spelled out on a Font.
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("PointSize.swift", 2, "fixed-font-size"),
+        ("PointSize.swift", 3, "fixed-font-size"),
+    ]
+
+
+def test_fixed_font_size_allows_a_custom_font_relative_to_a_text_style(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/RelativeFont.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom("Inter", size: 14, relativeTo: .body)\n'
+            'Text("a").font(.custom("Inter", size: 14, relativeTo: .largeTitle))\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_allows_text_styles(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/TextStyles.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(.headline)\n'
+            'Text("b").font(.system(.body, design: .rounded))\n'
+            "let font = Font.system(.title3)\n"
+            "let other = Font.system(.largeTitle, design: .serif)\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_ignores_comments_and_string_literals(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Prose.swift": (
+            "import SwiftUI\n"
+            "// .font(.system(size: 14))\n"
+            "/* .custom(\"Inter\", size: 14) */\n"
+            'let sample = ".font(Font.system(size: 12))"\n'
+            'Text("a").font(.body)\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_is_skipped_by_its_own_lint_allow(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Allowed.swift": (
+            "import SwiftUI\n"
+            'let caption = Font.custom("Inter", fixedSize: 11) // lint-allow: fixed-font-size\n'
+            'let other = Font.custom("Inter", fixedSize: 11)\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The directive covers only the line it is written on.
+    assert findings(result) == [("Allowed.swift", 3, "fixed-font-size")]
+
+
+def test_fixed_font_size_allows_the_other_font_rules_to_still_fire(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/OnlyOneName.swift": (
+            "import SwiftUI\n"
+            "let font = Font.system(size: 14) // lint-allow: fixed-font-size\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A fixed-font-size exemption says nothing about the fixed-font rule.
+    assert findings(result) == [("OnlyOneName.swift", 2, "fixed-font")]
+
+
+def test_fixed_font_size_reports_a_call_wrapped_over_lines(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/WrappedSize.swift": (
+            "import SwiftUI\n"
+            "let font = Font.custom(\n"
+            '    "Inter",\n'
+            "    fixedSize: 14\n"
+            ")\n"
+            "let scaled = Font.custom(\n"
+            '    "Inter",\n'
+            "    fixedSize: 14,\n"
+            "    relativeTo: .body\n"
+            ")\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("WrappedSize.swift", 2, "fixed-font-size")]
+
+
+def test_fixed_font_size_covers_the_app_target(tmp_path: Path) -> None:
+    write_tree(tmp_path, {f"{UI}/Fine.swift": 'import SwiftUI\nText("hi").font(.body)\n'})
+    sources = tmp_path / "ios" / "HealthNutrition" / "Sources"
+    sources.mkdir(parents=True)
+    (sources / "RootView.swift").write_text(
+        "import SwiftUI\n"
+        "struct RootView: View {\n"
+        "    var body: some View {\n"
+        '        Text("hi").font(.system(size: 17))\n'
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    result = run(tmp_path / "ios" / "NutritionCore")
+    assert result.returncode == 1
+    assert findings(result) == [("RootView.swift", 4, "fixed-font-size")]
 
 
 def test_forbidden_import_and_urlsession_report_file_and_line(tmp_path: Path) -> None:
@@ -216,9 +450,12 @@ def test_colour_call_split_across_lines_is_reported(tmp_path: Path) -> None:
     assert findings(result) == [
         ("Wrapped.swift", 2, "colour-literal"),
         ("WrappedFont.swift", 2, "fixed-font"),
+        ("WrappedFont.swift", 2, "fixed-font-size"),
         # The chained call opens on line 5 and the prohibited label sits on line 7;
         # the finding is reported where the construct starts.
         ("WrappedFont.swift", 5, "fixed-font"),
+        # The font call itself starts on line 6, which is where this rule reports.
+        ("WrappedFont.swift", 6, "fixed-font-size"),
     ]
 
 
@@ -550,6 +787,806 @@ def test_lint_allow_text_inside_a_string_does_not_allow(tmp_path: Path) -> None:
     assert result.returncode == 1
     # Only the real trailing comment on line 4 counts as an exemption.
     assert findings(result) == [("Doc.swift", 2, "binary-float")]
+
+
+def test_unlabeled_image_in_an_icon_only_button_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/IconButton.swift": (
+            "import SwiftUI\n"
+            "struct IconButton: View {\n"
+            "    var body: some View {\n"
+            '        Button(action: {}) { Image(systemName: "plus") }\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("IconButton.swift", 4, "unlabeled-image")]
+
+
+def test_labelled_icon_only_button_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/LabelledImage.swift": (
+            "import SwiftUI\n"
+            "struct LabelledImage: View {\n"
+            "    var body: some View {\n"
+            '        Image(systemName: "plus")\n'
+            '            .accessibilityLabel("Add water")\n'
+            "    }\n"
+            "}\n"
+        ),
+        f"{UI}/LabelledButton.swift": (
+            "import SwiftUI\n"
+            "struct LabelledButton: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            add()\n"
+            '        } label: {\n'
+            '            Image(systemName: "plus")\n'
+            "        }\n"
+            '        .accessibilityLabel("Add water")\n'
+            "    }\n"
+            "    private func add() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_decorative_image_hidden_from_accessibility_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Decorative.swift": (
+            "import SwiftUI\n"
+            "struct Decorative: View {\n"
+            "    var body: some View {\n"
+            "        HStack {\n"
+            '            Image(systemName: "drop").accessibilityHidden(true)\n'
+            '            Text("Water")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_label_with_a_system_image_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Labelled.swift": (
+            "import SwiftUI\n"
+            "struct Labelled: View {\n"
+            "    var body: some View {\n"
+            '        Label("Water", systemImage: "drop")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_image_beside_text_in_the_same_button_label_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/IconWithText.swift": (
+            "import SwiftUI\n"
+            "struct IconWithText: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            toggle()\n"
+            "        } label: {\n"
+            "            HStack {\n"
+            '                Image(systemName: "star")\n'
+            '                Text("Favorite")\n'
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    private func toggle() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_unlabeled_image_outside_a_button_is_reported(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Row.swift": (
+            "import SwiftUI\n"
+            "struct Row: View {\n"
+            "    var body: some View {\n"
+            "        HStack {\n"
+            '            Image(systemName: "drop")\n'
+            "            Spacer()\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("Row.swift", 5, "unlabeled-image")]
+
+
+def test_unlabeled_image_in_the_app_target_sources_is_reported(tmp_path: Path) -> None:
+    root = tmp_path / "ios" / "HealthNutrition"
+    (root / "Sources").mkdir(parents=True)
+    (root / "Sources" / "RootView.swift").write_text(
+        "import SwiftUI\n"
+        "struct RootView: View {\n"
+        "    var body: some View {\n"
+        '        Button(action: {}) { Image(systemName: "plus") }\n'
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("RootView.swift", 4, "unlabeled-image")]
+
+
+def test_lint_allow_comment_skips_an_unlabeled_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Allowed.swift": (
+            "import SwiftUI\n"
+            'let badge = Image(systemName: "dot") // lint-allow: unlabeled-image\n'
+        ),
+        f"{UI}/NotAllowed.swift": (
+            "import SwiftUI\n"
+            'let badge = Image(systemName: "dot")\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("NotAllowed.swift", 2, "unlabeled-image")]
+
+
+def test_text_beside_an_image_outside_a_control_label_does_not_name_it(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/CaptionRow.swift": (
+            "import SwiftUI\n"
+            "struct CaptionRow: View {\n"
+            "    var body: some View {\n"
+            "        VStack {\n"
+            '            Text("Caption")\n'
+            '            Image(systemName: "person")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The text sits in the enclosing layout, not in a control label, so it names
+    # nothing and the image still has to be labelled.
+    assert findings(result) == [("CaptionRow.swift", 6, "unlabeled-image")]
+
+
+def test_image_in_a_layout_inside_a_labelled_control_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedLabel.swift": (
+            "import SwiftUI\n"
+            "struct NestedLabel: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            toggle()\n"
+            "        } label: {\n"
+            "            HStack {\n"
+            '                Image(systemName: "star")\n'
+            "            }\n"
+            "        }\n"
+            '        .accessibilityLabel("Favorite")\n'
+            "    }\n"
+            "    private func toggle() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_image_constructor_outside_the_ui_module_is_not_a_finding(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{DOMAIN}/Snapshot.swift": (
+            "import Foundation\n"
+            "struct Snapshot {\n"
+            '    let source = Image("avatar")\n'
+            "}\n"
+        ),
+        f"{JOURNAL}/Snapshot.swift": (
+            "import Foundation\n"
+            'let receipt = Image("receipt")\n'
+        ),
+        f"{PROVIDERS}/Snapshot.swift": (
+            "import Foundation\n"
+            'let thumbnail = Image(systemName: "photo")\n'
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_interpolated_image_argument_keeps_the_control_window(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Avatar.swift": (
+            "import SwiftUI\n"
+            "struct Avatar: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            open()\n"
+            "        } label: {\n"
+            '            Image("avatar-\\(name)")\n'
+            "        }\n"
+            '        .accessibilityLabel("Avatar")\n'
+            "    }\n"
+            "    private func open() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_preceding_label_does_not_exempt_a_later_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Receipt.swift": (
+            "import SwiftUI\n"
+            "struct Receipt: View {\n"
+            "    var body: some View {\n"
+            "        VStack {\n"
+            '            Label("Water", systemImage: "drop")\n'
+            '            Image("receipt")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("Receipt.swift", 6, "unlabeled-image")]
+
+
+def test_accessibility_label_in_only_one_build_branch_does_not_exempt(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/DebugOnly.swift": (
+            "import SwiftUI\n"
+            "struct DebugOnly: View {\n"
+            "    var body: some View {\n"
+            "        Button(action: {}) {\n"
+            '            Image(systemName: "plus")\n'
+            "        }\n"
+            "#if DEBUG\n"
+            '        .accessibilityLabel("Add water")\n'
+            "#endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A label that only exists in one configuration leaves release builds with an
+    # unnamed image, so it cannot exempt the image.
+    assert findings(result) == [("DebugOnly.swift", 5, "unlabeled-image")]
+
+
+def test_accessibility_label_in_every_build_branch_exempts(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Labelled.swift": (
+            "import SwiftUI\n"
+            "struct Labelled: View {\n"
+            "    var body: some View {\n"
+            "        Button(action: {}) {\n"
+            '            Image(systemName: "plus")\n'
+            "        }\n"
+            "#if DEBUG\n"
+            '        .accessibilityLabel("Add water")\n'
+            "#else\n"
+            '        .accessibilityLabel("Add a glass of water")\n'
+            "#endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_label_passed_as_an_argument_names_the_image_in_it(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/AddButton.swift": (
+            "import SwiftUI\n"
+            "struct AddButton: View {\n"
+            "    var body: some View {\n"
+            "        Button(action: {}, label: {\n"
+            '            Image(systemName: "plus")\n'
+            "        })\n"
+            '        .accessibilityLabel("Add water")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_label_in_every_branch_of_a_standalone_image_exempts(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Conditional.swift": (
+            "import SwiftUI\n"
+            "struct Conditional: View {\n"
+            "    var body: some View {\n"
+            '        Image(systemName: "drop")\n'
+            "#if DEBUG\n"
+            '        .accessibilityLabel("Water, debug build")\n'
+            "#else\n"
+            '        .accessibilityLabel("Water")\n'
+            "#endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_image_built_as_decorative_is_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Decorative.swift": (
+            "import SwiftUI\n"
+            "struct DecorativeBackground: View {\n"
+            "    var body: some View {\n"
+            '        Image(decorative: "watermark", bundle: .module)\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_label_title_closure_names_its_icon_closure(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Titled.swift": (
+            "import SwiftUI\n"
+            "struct Titled: View {\n"
+            "    var body: some View {\n"
+            "        Label {\n"
+            '            Text("Water")\n'
+            "        } icon: {\n"
+            '            Image(systemName: "drop")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_nested_labelled_image_does_not_exempt_the_outer_one(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Overlay.swift": (
+            "import SwiftUI\n"
+            "struct Overlay: View {\n"
+            "    var body: some View {\n"
+            '        Image("photo").overlay {\n'
+            '            Image(systemName: "star").accessibilityLabel("New")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The nested modifier belongs to the view inside the closure, so the outer
+    # image is still unnamed.
+    assert findings(result) == [("Overlay.swift", 4, "unlabeled-image")]
+
+
+def test_text_hidden_from_accessibility_does_not_name_a_control(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/HiddenCaption.swift": (
+            "import SwiftUI\n"
+            "struct HiddenCaption: View {\n"
+            "    var body: some View {\n"
+            "        Button {\n"
+            "            remove()\n"
+            "        } label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete").accessibilityHidden(true)\n'
+            "        }\n"
+            "    }\n"
+            "    private func remove() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("HiddenCaption.swift", 7, "unlabeled-image")]
+
+
+def test_picker_options_are_not_the_picker_label(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Choice.swift": (
+            "import SwiftUI\n"
+            "struct Choice: View {\n"
+            "    var body: some View {\n"
+            '        Picker("Choose", selection: .constant(1)) {\n'
+            '            Image(systemName: "a").tag(1)\n'
+            "        }\n"
+            '        .accessibilityLabel("Choice")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The label names the picker, not the option inside it.
+    assert findings(result) == [("Choice.swift", 5, "unlabeled-image")]
+
+
+def test_action_and_label_closures_with_an_argument_list_are_clean(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Destructive.swift": (
+            "import SwiftUI\n"
+            "struct Destructive: View {\n"
+            "    var body: some View {\n"
+            "        Button(role: .destructive) {\n"
+            "            remove()\n"
+            "        } label: {\n"
+            '            Image(systemName: "trash")\n'
+            "        }\n"
+            '        .accessibilityLabel("Remove")\n'
+            "    }\n"
+            "    private func remove() {}\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_module_qualified_control_label_names_the_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Qualified.swift": (
+            "import SwiftUI\n"
+            "struct Qualified: View {\n"
+            "    var body: some View {\n"
+            "        SwiftUI.Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_label_title_argument_names_the_image_in_its_icon_argument(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ArgumentLabel.swift": (
+            "import SwiftUI\n"
+            "struct ArgumentLabel: View {\n"
+            "    var body: some View {\n"
+            '        Label(title: { Text("Water") }, icon: { Image(systemName: "drop") })\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_text_hidden_in_one_branch_does_not_name_the_control(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/DebugCaption.swift": (
+            "import SwiftUI\n"
+            "struct DebugCaption: View {\n"
+            "    var body: some View {\n"
+            "        Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "            #if DEBUG\n"
+            "            .accessibilityHidden(true)\n"
+            "            #endif\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # In a release build the text is hidden and names nothing, so the image is
+    # still unnamed there.
+    assert findings(result) == [("DebugCaption.swift", 5, "unlabeled-image")]
+
+
+def test_a_nested_labelled_image_in_a_content_argument_does_not_exempt_the_outer_one(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/OverlayArgument.swift": (
+            "import SwiftUI\n"
+            "struct OverlayArgument: View {\n"
+            "    var body: some View {\n"
+            '        Image("photo").overlay(content: {\n'
+            '            Image(systemName: "star").accessibilityLabel("New")\n'
+            "        })\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    assert findings(result) == [("OverlayArgument.swift", 4, "unlabeled-image")]
+
+
+def test_a_trailing_closure_after_a_content_argument_is_the_control_label(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/Overflow.swift": (
+            "import SwiftUI\n"
+            "struct Overflow: View {\n"
+            "    var body: some View {\n"
+            "        Menu(content: {\n"
+            '            Button("Action") {}\n'
+            "        }) {\n"
+            '            Image(systemName: "ellipsis")\n'
+            '        }.accessibilityLabel("More")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_branch_of_a_sibling_view_ends_the_modifier_chain(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/SiblingBranch.swift": (
+            "import SwiftUI\n"
+            "struct SiblingBranch: View {\n"
+            "    var body: some View {\n"
+            "        VStack {\n"
+            '            Image("one")\n'
+            "            #if DEBUG\n"
+            '            Text("x")\n'
+            "            #endif\n"
+            '            Image("two").accessibilityLabel("Two")\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The second image's label belongs to that image, so the first stays unnamed.
+    assert findings(result) == [("SiblingBranch.swift", 5, "unlabeled-image")]
+
+
+def test_nested_arms_that_all_name_the_image_exempt_it(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedArms.swift": (
+            "import SwiftUI\n"
+            "struct NestedArms: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        .accessibilityLabel("Debug")\n'
+            "        #else\n"
+            '        .accessibilityLabel("Release")\n'
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    # Every compiled path names the image, however deeply the conditionals nest.
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_nested_arm_without_a_name_leaves_the_image_unlabeled(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedUnnamed.swift": (
+            "import SwiftUI\n"
+            "struct NestedUnnamed: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        .accessibilityLabel("Debug")\n'
+            "        #else\n"
+            "        .padding()\n"
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The release build of the iOS arm names nothing at all.
+    assert findings(result) == [("NestedUnnamed.swift", 4, "unlabeled-image")]
+
+
+def test_a_nested_arm_holding_a_sibling_view_ends_the_chain(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedSibling.swift": (
+            "import SwiftUI\n"
+            "struct NestedSibling: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        Text("y")\n'
+            "        #endif\n"
+            "        #endif\n"
+            '        Image("z").accessibilityLabel("Z")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The nested arm holds a sibling view, so the first image stays unnamed, and
+    # the label after the block belongs to the second image.
+    assert findings(result) == [("NestedSibling.swift", 4, "unlabeled-image")]
+
+
+def test_a_closure_in_a_conditional_modifier_does_not_name_the_image(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ConditionalOverlay.swift": (
+            "import SwiftUI\n"
+            "struct ConditionalOverlay: View {\n"
+            "    var body: some View {\n"
+            '        Image("photo")\n'
+            "        #if DEBUG\n"
+            '        .overlay { Image("badge").accessibilityLabel("New") }\n'
+            "        #else\n"
+            '        .accessibilityLabel("Photo")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The label in the overlay closure names the image inside it, not the one the
+    # overlay is applied to, so the debug build leaves this image unnamed.
+    assert findings(result) == [("ConditionalOverlay.swift", 4, "unlabeled-image")]
+
+
+def test_a_sibling_after_a_nested_conditional_ends_the_outer_arm(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedThenSibling.swift": (
+            "import SwiftUI\n"
+            "struct NestedThenSibling: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            "        .padding()\n"
+            "        #else\n"
+            "        .padding()\n"
+            "        #endif\n"
+            '        Text("sibling").accessibilityLabel("Sibling")\n'
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The sibling view sits inside the first outer arm, so the image is unnamed in
+    # every build taking it, whatever the other arms say.
+    assert findings(result) == [("NestedThenSibling.swift", 4, "unlabeled-image")]
+
+
+def test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/HiddenInDebug.swift": (
+            "import SwiftUI\n"
+            "struct HiddenInDebug: View {\n"
+            "    var body: some View {\n"
+            "        Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "            #if DEBUG\n"
+            "            .accessibilityHidden(true)\n"
+            '            Text("Remove")\n'
+            "            #endif\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    # A debug build reads "Remove" and a release build reads "Delete", so the
+    # control is named either way.
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_nested_content_argument_is_not_the_control_content(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedContent.swift": (
+            "import SwiftUI\n"
+            "struct NestedContent: View {\n"
+            "    var body: some View {\n"
+            '        Picker("Choose", selection: binding(content: value)) {\n'
+            '            Image(systemName: "one").tag(1)\n'
+            '        }.accessibilityLabel("Choice")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The modifier names the picker, and the option image is still unnamed.
+    assert findings(result) == [("NestedContent.swift", 5, "unlabeled-image")]
+
+
+def test_a_custom_qualified_control_does_not_name_the_image(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/CustomControl.swift": (
+            "import SwiftUI\n"
+            "struct CustomControl: View {\n"
+            "    var body: some View {\n"
+            "        Custom.Button(action: {}) label: {\n"
+            "            VStack {\n"
+            '                Image(systemName: "star")\n'
+            '                Text("Favourite")\n'
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # A text inside a custom view's label closure is not a control label.
+    assert findings(result) == [("CustomControl.swift", 6, "unlabeled-image")]
+
+
+def test_a_run_over_the_package_root_also_lints_the_app_target(tmp_path: Path) -> None:
+    write_tree(tmp_path, {f"{UI}/Fine.swift": 'import SwiftUI\nText("hi").font(.body)\n'})
+    app = tmp_path / "ios" / "HealthNutrition" / "Sources"
+    app.mkdir(parents=True)
+    (app / "RootView.swift").write_text(
+        "import SwiftUI\n"
+        "struct RootView: View {\n"
+        "    var body: some View {\n"
+        '        Button(action: {}) { Image(systemName: "plus") }\n'
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    result = run(tmp_path / "ios" / "NutritionCore")
+    assert result.returncode == 1
+    # CI only names the package root, so that run has to cover the app target too.
+    assert findings(result) == [("RootView.swift", 4, "unlabeled-image")]
+
+
+def test_the_repository_app_target_is_clean() -> None:
+    root = SCRIPT.parents[1] / "ios" / "HealthNutrition"
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_missing_root_is_reported_as_an_error(tmp_path: Path) -> None:

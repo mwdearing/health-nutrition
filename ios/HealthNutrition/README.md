@@ -28,6 +28,9 @@ declares the capability and the usage strings, but nothing in a release build re
 - `Sources/RootView.swift`: the tab shell with Today, Journal and Library, plus a HealthKit tab in
   debug builds only. Library opens the personal recipes in its own navigation stack
   (see [docs/recipes.md](../../docs/recipes.md)).
+- `Sources/RecipeNavigation.swift`: the recipe sheet's presentation and navigation stack on one small
+  `@MainActor` object, so the erase on the Connections and privacy screen can close the sheet and drop
+  its routes without a UI test.
 - `Sources/Debug/HealthKitSpikeView.swift`: the debug-only HealthKit write spike, whole file inside
   `#if DEBUG`. It writes synthetic samples to measure how HealthKit resolves a repeated sync
   identifier, and deletes them again.
@@ -37,6 +40,8 @@ declares the capability and the usage strings, but nothing in a release build re
   the screens depend on. The screens never see the client or the source; this file fills in the
   attribution and serving definition that a licensed source requires.
 - `Resources/Assets.xcassets`: an empty `AppIcon` and an `AccentColor`.
+- `Tests/`: the app target's own XCTest bundle, hosted by the app so `@testable import HealthNutrition`
+  works. See [Running the tests](#running-the-tests).
 
 ## Generating the project
 
@@ -91,12 +96,34 @@ The ipa is **unsigned**, so it will not install as it is. Sign it yourself (AltS
 a free or paid Apple developer certificate, your own provisioning profile) and then sideload it
 on your iPhone. Do not commit any certificate, profile or team id while doing so.
 
-The other two jobs (`swift-test` and `app-build`) run on pull requests and pushes to `main`, and
-`app-build` produces a simulator build only, which needs no signing at all.
+The other jobs (`swift-test`, `app-build` and `app-test`) run on pull requests and pushes to
+`main`, and `app-build` produces a simulator build only, which needs no signing at all.
+
+## Running the tests
+
+The app target has its own test bundle, `Tests/`, which is hosted by the app: the tests read the
+app's own types through `@testable import HealthNutrition`, which is what makes the erase reset and
+the store wiring testable without a UI test. Each test builds `AppServices` on its own throwaway
+files in a temporary directory, so no test reads or writes the app's real Application Support
+directory and no two tests share a store.
+
+```sh
+cd ios/HealthNutrition
+xcodegen generate
+xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition \
+  -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO test
+```
+
+Name a simulator that is actually installed on the machine;
+`xcrun simctl list devices available` lists them. In Xcode, select the `HealthNutritionTests` bundle
+in the Test navigator and press Run.
 
 ## Checks
 
-CI has three jobs. `swift-test` runs the package tests in `ios/NutritionCore`, `app-build`
+CI has five jobs. `swift-test` runs the package tests in `ios/NutritionCore`, `app-build`
 installs XcodeGen, generates this project and runs an unsigned
-`xcodebuild ... -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`, and
-`unsigned-ipa` is the manual device build described above.
+`xcodebuild ... -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`,
+`app-test` does the same and then runs
+`xcodebuild ... -destination 'platform=iOS Simulator,name=<picked at run time>' CODE_SIGNING_ALLOWED=NO test`
+for the app tests above, `privacy-manifest` checks the privacy manifest against the Swift sources,
+and `unsigned-ipa` is the manual device build described above.

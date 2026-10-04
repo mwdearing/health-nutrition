@@ -172,6 +172,25 @@ public final class AddIntakeViewModel: ObservableObject {
         }
     }
 
+    /// Puts a scanned code in the field, dropping everything an earlier lookup put into the form.
+    ///
+    /// This is the path a lookup that finds nothing takes. A different code means every value on the
+    /// form belongs to another product, so the scanned value goes through the same invalidation: the
+    /// name, brand and nutrients the lookup filled in, the attribution and the product snapshot all
+    /// go with it. Writing the field alone would keep them, and saving then would store the previous
+    /// product's snapshot under the code now on screen. A reply still on its way is answered for the
+    /// code it was asked about and is dropped by the generation check.
+    public func setScannedBarcode(_ scanned: String) {
+        let trimmed = scanned.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Scanning the code already on the field changes nothing, so the values that code filled in
+        // stay where they are.
+        guard trimmed != barcode.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        lookupGeneration += 1
+        invalidateLookup()
+        lookupState = .idle
+        barcode = trimmed
+    }
+
     /// Drops everything an earlier lookup put into the form, so a failed or empty lookup for a second
     /// barcode cannot leave the first product's values, or its snapshot, attached to the next entry.
     ///

@@ -55,6 +55,9 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "The debug HealthKit spike writes a few test water and protein samples so their sync behaviour can be measured. You delete them again from the spike screen."
+        # Barcode scanning in Add intake. The camera is only used to read the barcode printed on the
+        # package; the picture is never stored and never sent anywhere.
+        INFOPLIST_KEY_NSCameraUsageDescription: "Add intake can scan the barcode on a package to fill in the barcode field. The camera is only used for that, and no image is stored or sent."
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -64,14 +67,41 @@ targets:
         # No DEVELOPMENT_TEAM here: set your own team in Xcode, never commit it.
         SWIFT_EMIT_LOC_STRINGS: YES
 
+  # Unit tests for the app target itself. They depend on the app so the bundle is hosted by it, which
+  # is what lets them read the app's own types through @testable and run against a real UIKit runtime.
+  HealthNutritionTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: HealthNutrition
+      # The stores, the Connections view model and the recipe types the assertions use are the
+      # package's, so the test bundle links them directly rather than relying on the app target's own
+      # links.
+      - package: NutritionCore
+        product: NutritionJournal
+      - package: NutritionCore
+        product: NutritionDomain
+      - package: NutritionCore
+        product: NutritionUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionTests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   HealthNutrition:
     build:
       targets:
         HealthNutrition: all
+        HealthNutritionTests: [test]
     run:
       config: Debug
     test:
       config: Debug
+      targets:
+        - HealthNutritionTests
     archive:
       config: Release
