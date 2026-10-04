@@ -36,6 +36,9 @@ public struct RecipeIngredientDraft: Identifiable, Equatable {
     /// be converted to it exactly. The field still shows the number, so saving writes the value back
     /// in the unit it was stored in rather than relabelling it.
     public var nutrientUnits: [String: MeasureUnit] = [:]
+    /// A state a field cannot express, such as not applicable or below a reporting threshold. The field
+    /// shows no number for it, so it is carried through an edit unless the user types a number there.
+    var states: [String: NutrientValue] = [:]
     /// The unit the per-unit values are stated in, when it differs from `unitSymbol`. The editor has
     /// no field for it, so an existing value is carried through untouched.
     public var basisUnit: MeasureUnit?
@@ -123,7 +126,13 @@ public final class RecipeEditorViewModel: ObservableObject {
                     draft.preserved[key] = value
                     continue
                 }
-                guard case .known(let amount, let storedUnit) = value else { continue }
+                guard case .known(let amount, let storedUnit) = value else {
+                    // A state the field cannot express (not applicable, below a reporting threshold)
+                    // is kept as it is, so an edit that does not touch this field does not turn it into
+                    // unknown, which counts as missing rather than as stated.
+                    draft.states[key] = value
+                    continue
+                }
                 // The field shows a number, so a value stored in another unit of the same kind is
                 // converted into the field's unit exactly. A unit that cannot be converted (a mass
                 // against a volume with no density, say) keeps the number and its own unit, so saving
@@ -192,7 +201,9 @@ public final class RecipeEditorViewModel: ObservableObject {
             for field in nutrientFields {
                 let text = (draft.nutrientTexts[field.id] ?? "").trimmingCharacters(in: .whitespaces)
                 if text.isEmpty {
-                    perUnit[field.id] = .unknown
+                    // A blank field means unknown, unless the field still holds a state the editor has
+                    // no way to show and the user has not typed over it.
+                    perUnit[field.id] = draft.states[field.id] ?? .unknown
                 } else if let value = Self.parseNonNegative(text) {
                     // A value the editor could not express in this field's unit keeps the unit it was
                     // loaded with; every other value is written in the field's own unit.

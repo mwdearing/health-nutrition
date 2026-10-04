@@ -202,6 +202,14 @@ public struct ProductDefinition: Sendable, Hashable {
     public func value(for nutrient: String) -> NutrientValue {
         nutrients[nutrient] ?? .unknown
     }
+
+    /// This snapshot with the given values in place of its own. Every other field is kept, so a caller
+    /// can ask whether two snapshots of one product differ only in what they record.
+    public func withNutrients(_ values: [String: NutrientValue]) -> ProductDefinition {
+        var copy = self
+        copy.nutrients = values
+        return copy
+    }
 }
 
 public struct DestinationProjection: Sendable, Hashable {

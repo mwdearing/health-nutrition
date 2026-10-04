@@ -97,8 +97,8 @@ final class RecipeLoggerTests: XCTestCase {
             ingredients: [sampleIngredient("oat-flour", amount: "800", perUnit: energyPerUnit("3.6"))],
             yield: .total(Quantity(value: dec("0.8"), unit: .kg)))
         try RecipeLogger.logPortion(
-            store: journal, version: version, portion: 200, portionUnit: .g, now: when, id: intakeID,
-            timeZoneIdentifier: "UTC", meal: nil)
+            store: journal, version: version, portion: 200, now: when, id: intakeID,
+            timeZoneIdentifier: "UTC", meal: nil, portionUnit: .g)
         let component = try journal.revisions(of: intakeID)[0].components[0]
         XCTAssertEqual(component.amount, dec("0.2"))
         XCTAssertEqual(component.unit, .kg)

@@ -169,6 +169,58 @@ final class RecipeEditorViewModelTests: XCTestCase {
         XCTAssertEqual(v2.ingredients.first?.perUnit["protein"], .known(1000, .iu))
     }
 
+    /// Not-applicable and below-threshold are stated values, not missing ones, so an edit that leaves the
+    /// field alone must not turn them into unknown.
+    func testNotApplicableAndBelowThresholdSurviveAnEdit() throws {
+        let store = try makeStore()
+        let version = RecipeVersion(
+            recipeID: "recipe-states", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour", quantity: Quantity(value: 200, unit: .g),
+                    perUnit: [
+                        "energy": .known(Decimal(360), .kcal),
+                        "protein": .notApplicable,
+                        "sodium": .belowReportingThreshold(.mg),
+                        "fiber": .unknown,
+                    ])
+            ],
+            yield: .servings(4), createdAt: when)
+        try store.saveNewVersion(version)
+
+        let edit = RecipeEditorViewModel(store: store, editing: version)
+        edit.title = "Oat bake, richer"
+        XCTAssertTrue(edit.save(now: when), "\(edit.messages)")
+
+        let v2 = try XCTUnwrap(try store.version(recipeID: "recipe-states", number: 2))
+        let perUnit = try XCTUnwrap(v2.ingredients.first?.perUnit)
+        XCTAssertEqual(perUnit["protein"], .notApplicable)
+        XCTAssertEqual(perUnit["sodium"], .belowReportingThreshold(.mg))
+        XCTAssertEqual(perUnit["fiber"], .unknown)
+        XCTAssertEqual(perUnit["energy"], .known(Decimal(360), .kcal))
+    }
+
+    /// Typing a number where a state was stored replaces it: that is what the user asked for.
+    func testTypingOverAStateReplacesIt() throws {
+        let store = try makeStore()
+        let version = RecipeVersion(
+            recipeID: "recipe-states-typed", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour", quantity: Quantity(value: 200, unit: .g),
+                    perUnit: ["protein": .notApplicable])
+            ],
+            yield: .servings(4), createdAt: when)
+        try store.saveNewVersion(version)
+
+        let edit = RecipeEditorViewModel(store: store, editing: version)
+        edit.ingredients[0].nutrientTexts["protein"] = "12"
+        XCTAssertTrue(edit.save(now: when), "\(edit.messages)")
+
+        let v2 = try XCTUnwrap(try store.version(recipeID: "recipe-states-typed", number: 2))
+        XCTAssertEqual(v2.ingredients.first?.perUnit["protein"], .known(Decimal(12), .g))
+    }
+
     /// A damaged stored row still holds its version number, so saving takes the number the store expects
 /// rather than refusing the edit.
     func testEditingSucceedsAfterADamagedStoredVersion() throws {

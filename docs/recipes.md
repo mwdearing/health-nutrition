@@ -76,6 +76,10 @@ into the field's unit exactly, so an edit that only touches the title cannot tur
 A value in a unit that cannot be converted at all keeps both its number and its own unit, and the
 field says which unit that is.
 
+A value the field cannot show as a number - not applicable, or below a reporting threshold - is carried
+through an edit as it is. Those are stated values rather than missing ones, so an edit that leaves the
+field alone must not turn one into unknown; typing a number over it replaces it.
+
 The unit an ingredient's per-unit values are stated in is not entered in the editor: an existing value
 is carried through an edit unchanged, and the prompt above the nutrient fields names that basis unit
 rather than the ingredient's own unit.
