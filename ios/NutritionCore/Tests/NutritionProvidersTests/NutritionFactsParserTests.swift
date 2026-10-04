@@ -232,6 +232,65 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(value(.potassium, panel), .unknown)
     }
 
+    func testDailyValueRemovalStopsAtTheNextRowOnTheLine() throws {
+        let panel = parse(["Trans Fat 0g Total Carbohydrate 20g 7%"])
+
+        XCTAssertEqual(try amount(.transFat, panel), dec("0"))
+        XCTAssertEqual(try amount(.carbohydrates, panel), dec("20"), "the next row keeps its own Daily Value")
+        XCTAssertEqual(try unit(.carbohydrates, panel), .g)
+    }
+
+    func testIncludesAfterATransFatRowDoesNotHideIt() throws {
+        let panel = parse([
+            "Total Fat 12g 21% Trans Fat 0g Cholesterol 0mg 0% Includes 5g Added Sugars 25%",
+        ])
+
+        XCTAssertEqual(try amount(.fat, panel), dec("12"))
+        XCTAssertEqual(try amount(.transFat, panel), dec("0"), "a later Includes is not this row's qualifier")
+        XCTAssertEqual(try amount(.cholesterol, panel), dec("0"))
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("5"))
+    }
+
+    func testAnUnreadableRowDoesNotStopTheRestOfTheLine() throws {
+        let panel = parse(["Total Fat 7oz Sodium 180mg"])
+
+        XCTAssertEqual(value(.fat, panel), .unknown, "an unsupported unit is not resolved into one that exists")
+        XCTAssertEqual(try amount(.sodium, panel), dec("180"), "the next row on the line is still read")
+        XCTAssertEqual(try unit(.sodium, panel), .mg)
+    }
+
+    func testLeadingAmountsNeedAUnitAndAreNeverDailyValues() throws {
+        let stated = parse(["Total Sugars 12g", "Includes 5g Added Sugars"])
+        XCTAssertEqual(try amount(.addedSugars, stated), dec("5"))
+
+        let unitless = parse(["Total Sugars 12g", "Includes 5 Added Sugars"])
+        XCTAssertEqual(value(.addedSugars, unitless), .unknown, "a leading number without a unit is not a measure")
+
+        let dailyValue = parse(["Total Sugars 12g 24%", "Includes 10% Added Sugars"])
+        XCTAssertEqual(value(.addedSugars, dailyValue), .unknown, "a leading Daily Value is not an amount")
+        XCTAssertEqual(try amount(.sugars, dailyValue), dec("12"))
+    }
+
+    func testServingSizeCorrectionsAreFlaggedForReview() throws {
+        let corrected = parse(["Serving size 1 cup (24O mL)"])
+
+        XCTAssertEqual(corrected.servingSize?.text, "1 cup (24O mL)", "the printed text is kept as it was read")
+        XCTAssertEqual(corrected.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+        XCTAssertEqual(corrected.servingSize?.review?.reasons, [.correctedLetterO])
+
+        let clean = parse(["Serving size 2/3 cup (55g)"])
+        XCTAssertEqual(clean.servingSize?.quantity, Quantity(value: dec("55"), unit: .g))
+        XCTAssertNil(clean.servingSize?.review, "a serving size read as printed needs no review")
+    }
+
+    func testLeadingLetterOBeforeADecimalPointIsCorrected() throws {
+        let panel = parse(["Total Sugars O.5g"])
+
+        XCTAssertEqual(try amount(.sugars, panel), dec("0.5"))
+        XCTAssertEqual(try unit(.sugars, panel), .g)
+        XCTAssertEqual(reviewReasons(.sugars, panel), [.correctedLetterO])
+    }
+
     func testGarbageAndUnrelatedLinesAreIgnored() {
         let panel = parse([
             "",
