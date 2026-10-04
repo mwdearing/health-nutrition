@@ -30,19 +30,20 @@ NSPrivacyAccessedAPICategoryFileTimestamp (C617.1)
     File attribute and resource key access only: ``FileAttributeKey`` and
     ``URLResourceKey`` members, the timestamp resource keys, an attribute
     subscript such as ``attributes[.creationDate]``, ``attributesOfItem`` and
-    ``stat``/``fstat``/``lstat``. A domain property that happens to be called
-    ``creationDate`` is not an access to Apple's API, so it does not match.
+    the ``stat``/``fstat``/``lstat``/``fstatat`` and ``getattrlist`` families. A
+    domain property that happens to be called ``creationDate`` is not an access
+    to Apple's API, so it does not match.
 NSPrivacyAccessedAPICategoryDiskSpace (E174.1)
-    ``statfs``, ``statvfs``, ``fstatfs``, ``fstatvfs``, the ``getattrlist``
-    family, ``volumeAvailableCapacity`` and friends, ``volumeTotalCapacityKey``
-    and ``systemSize``/``systemFreeSize``.
+    ``statfs``, ``statvfs``, ``fstatfs``, ``fstatvfs``, ``volumeAvailableCapacity``
+    and friends, ``volumeTotalCapacityKey`` and ``systemSize``/``systemFreeSize``.
 NSPrivacyAccessedAPICategoryActiveKeyboards (54BD.1)
     ``activeInputModes``.
 
 ``//`` comments, ``/* */`` comments and the contents of string literals are
 masked out before matching, so a mention in prose or in a message text does not
 count as a use. An interpolated expression is code, so ``"\\(UserDefaults.standard)"``
-is matched while the surrounding literal text is not.
+is matched, while the literal text before the opening parenthesis and after the
+closing one is not.
 """
 from __future__ import annotations
 
@@ -59,13 +60,13 @@ PACKAGE_DIR_RELATIVE = Path("NutritionCore")
 MANIFEST_RELATIVE = Path("Resources/PrivacyInfo.xcprivacy")
 PACKAGE_NAME = "NutritionCore"
 
-# category -> (the reason this project needs, the API spellings, every reason
+# category -> (the reason this project declares, the API spellings, every reason
 # Apple publishes for that category)
 CATEGORIES: dict[str, tuple[str, tuple[str, ...], frozenset[str]]] = {
     "NSPrivacyAccessedAPICategoryUserDefaults": (
         "CA92.1",
         (r"\bUserDefaults\b", r"@AppStorage"),
-        frozenset({"CA92.1", "1C8F.1", "C56D.1", "AC9B.1"}),
+        frozenset({"CA92.1", "1C8F.1", "C56D.1", "AC6B.1"}),
     ),
     "NSPrivacyAccessedAPICategorySystemBootTime": (
         "35F9.1",
@@ -80,24 +81,24 @@ CATEGORIES: dict[str, tuple[str, tuple[str, ...], frozenset[str]]] = {
             r"\.\s*(?:creationDate|modificationDate)\s*\]",
             r"\b(?:creationDateKey|contentModificationDateKey|contentAccessDateKey)\b",
             r"\battributesOfItem\b",
-            r"\b(?:stat|fstat|lstat)\s*\(",
+            r"\b(?:stat|fstat|lstat|fstatat|getattrlist|getattrlistbulk|getattrlistat|fgetattrlist)\s*\(",
         ),
-        frozenset({"C617.1", "0A2A.1", "E9D9.1", "3D62.1"}),
+        frozenset({"DDA9.1", "C617.1", "3B52.1", "0A2A.1"}),
     ),
     "NSPrivacyAccessedAPICategoryDiskSpace": (
         "E174.1",
         (
-            r"\b(?:statfs|fstatfs|statvfs|fstatvfs|getattrlist|getattrlistbulk|getattrlistat|fgetattrlist)\b",
+            r"\b(?:statfs|fstatfs|statvfs|fstatvfs)\s*\(",
             r"\bvolumeAvailableCapacity\w*\b",
             r"\bvolumeTotalCapacityKey\b",
             r"\b(?:systemSize|systemFreeSize)\b",
         ),
-        frozenset({"E174.1", "85F4.1", "7D9E.1"}),
+        frozenset({"85F4.1", "E174.1", "7D9E.1", "B728.1"}),
     ),
     "NSPrivacyAccessedAPICategoryActiveKeyboards": (
         "54BD.1",
         (r"\bactiveInputModes\b",),
-        frozenset({"54BD.1", "3EC4.1"}),
+        frozenset({"3EC4.1", "54BD.1"}),
     ),
 }
 
@@ -113,10 +114,15 @@ def blank(text: str) -> str:
     return "".join("\n" if ch == "\n" else BLANK for ch in text)
 
 
-def matching_paren(source: str, start: int) -> int:
-    """Index just past the ``)`` closing the ``(`` at ``start - 1``."""
-    depth = 0
-    i = start
+def matching_paren(source: str, open_paren: int) -> int:
+    """Index just past the ``)`` closing the ``(`` at ``open_paren``.
+
+    Scanning starts inside the parenthesis, so the depth is already one: the
+    closing parenthesis of the interpolation is where the scan stops, and any
+    literal text after it stays literal text.
+    """
+    depth = 1
+    i = open_paren + 1
     n = len(source)
     while i < n:
         ch = source[i]
@@ -181,14 +187,16 @@ def scan_string(source: str, start: int, hashes: int) -> tuple[int, str]:
             marker = "\\" + "#" * hashes + "("
             if run == 1 and source.startswith(marker, i):
                 out.append(blank(source[literal_start:i]))
-                end = matching_paren(source, i + len(marker))
+                end = matching_paren(source, i + len(marker) - 1)
                 out.append("(")
                 out.append(mask(source[i + len(marker) : end - 1]))
                 out.append(")")
                 i = end
                 literal_start = i
                 continue
-            i += run
+            # An escape such as \" or \\: the escaped character is consumed with
+            # the backslash, so an escaped delimiter cannot end the literal.
+            i += run + 1
             continue
         if source.startswith(closing, i):
             out.append(blank(source[literal_start:i]))
@@ -386,13 +394,21 @@ def shipped_directories(root: Path) -> list[Path]:
     return [d for d in directories if "Tests" not in d.parts]
 
 
+def declared_entries(manifest: dict) -> list[tuple[object, object]]:
+    """Return (category, reasons) pairs as written, without filtering."""
+    entries = manifest.get("NSPrivacyAccessedAPITypes", [])
+    if not isinstance(entries, list):
+        return []
+    return [(entry.get("NSPrivacyAccessedAPIType"), entry.get("NSPrivacyAccessedAPITypeReasons"))
+            if isinstance(entry, dict) else (entry, None) for entry in entries]
+
+
 def declared_reasons(manifest: dict) -> dict[str, list[str]]:
+    """category -> the string reasons declared for it."""
     declared: dict[str, list[str]] = {}
-    for entry in manifest.get("NSPrivacyAccessedAPITypes", []):
-        category = entry.get("NSPrivacyAccessedAPIType")
-        if not isinstance(category, str):
+    for category, reasons in declared_entries(manifest):
+        if not isinstance(category, str) or not isinstance(reasons, list):
             continue
-        reasons = entry.get("NSPrivacyAccessedAPITypeReasons", [])
         declared.setdefault(category, []).extend(r for r in reasons if isinstance(r, str))
     return declared
 
@@ -428,11 +444,32 @@ def main(argv: list[str] | None = None) -> int:
         findings.append(f"{manifest_path}: NSPrivacyTracking must be false in this manifest")
 
     declared = declared_reasons(manifest)
-    for category, reasons in sorted(declared.items()):
-        published = CATEGORIES.get(category, (None, (), frozenset()))[2]
-        allowed = ", ".join(sorted(published)) or "none this project knows"
-        for reason in reasons:
-            if reason not in published:
+    for category, reasons in declared_entries(manifest):
+        if not isinstance(category, str):
+            findings.append(f"{manifest_path}: an accessed-API entry has no usable NSPrivacyAccessedAPIType")
+            continue
+        published = CATEGORIES.get(category)
+        if published is None:
+            findings.append(
+                f"{manifest_path}: {category} is not an API category Apple publishes; a declaration "
+                "needs a known category and at least one reason"
+            )
+            continue
+        codes = published[2]
+        allowed = ", ".join(sorted(codes))
+        if not isinstance(reasons, list) or not reasons:
+            findings.append(
+                f"{manifest_path}: {category} declares no reason; it needs at least one of {allowed}"
+            )
+            continue
+        strings = [r for r in reasons if isinstance(r, str)]
+        if len(strings) != len(reasons):
+            findings.append(
+                f"{manifest_path}: every reason of {category} has to be a string, such as {allowed}"
+            )
+            continue
+        for reason in strings:
+            if reason not in codes:
                 findings.append(
                     f"{manifest_path}: {category} declares {reason}, which Apple does not publish "
                     f"for that category; the published reasons are {allowed}"

@@ -54,9 +54,11 @@ where a real timestamp is what matters.
 
 `scripts/check_privacy_manifest.py` scans the Swift code the app actually ships
 for the required-reason APIs Apple lists, and fails when a category a source uses
-is not declared with a reason Apple publishes for it, when a declared reason is
-not one Apple publishes (a typo such as an extra `BOGUS`, or a reason belonging
-to another category), or when `NSPrivacyTracking` is not false.
+is not declared with a reason Apple publishes for it, when a declaration is
+malformed (an unknown category, an empty reasons array, a reason that is not a
+string), when a declared reason is not one Apple publishes (a typo such as an
+extra `BOGUS`, or a reason belonging to another category), or when
+`NSPrivacyTracking` is not false.
 
 ### Which code is scanned
 
@@ -75,11 +77,17 @@ not ship and must not demand a declaration. A missing or unreadable
 
 | Category | Reason this app declares | Published reasons accepted | API spellings |
 | --- | --- | --- | --- |
-| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | `CA92.1`, `1C8F.1`, `C56D.1`, `AC9B.1` | `UserDefaults`, `@AppStorage` |
+| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | `CA92.1`, `1C8F.1`, `C56D.1`, `AC6B.1` | `UserDefaults`, `@AppStorage` |
 | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | `35F9.1`, `8FFB.1`, `3D61.1` | `systemUptime`, `mach_absolute_time` |
-| `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1` | `C617.1`, `0A2A.1`, `E9D9.1`, `3D62.1` | `FileAttributeKey.creationDate`/`.modificationDate`, `URLResourceKey.creationDateKey`/`contentModificationDateKey`, an attribute subscript such as `attributes[.creationDate]`, `attributesOfItem`, `stat`/`fstat`/`lstat` |
-| `NSPrivacyAccessedAPICategoryDiskSpace` | `E174.1` | `E174.1`, `85F4.1`, `7D9E.1` | `statfs`, `statvfs`, `fstatfs`, `fstatvfs`, `getattrlist`, `getattrlistbulk`, `getattrlistat`, `fgetattrlist`, `volumeAvailableCapacity…`, `volumeTotalCapacityKey`, `systemSize`, `systemFreeSize` |
-| `NSPrivacyAccessedAPICategoryActiveKeyboards` | `54BD.1` | `54BD.1`, `3EC4.1` | `activeInputModes` |
+| `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1` | `DDA9.1`, `C617.1`, `3B52.1`, `0A2A.1` | `FileAttributeKey.creationDate`/`.modificationDate`, `URLResourceKey.creationDateKey`/`contentModificationDateKey`, an attribute subscript such as `attributes[.creationDate]`, `attributesOfItem`, `stat`, `fstat`, `lstat`, `fstatat`, `getattrlist`, `getattrlistbulk`, `getattrlistat`, `fgetattrlist` |
+| `NSPrivacyAccessedAPICategoryDiskSpace` | `E174.1` | `85F4.1`, `E174.1`, `7D9E.1`, `B728.1` | `statfs`, `fstatfs`, `statvfs`, `fstatvfs`, `volumeAvailableCapacity…`, `volumeTotalCapacityKey`, `systemSize`, `systemFreeSize` |
+| `NSPrivacyAccessedAPICategoryActiveKeyboards` | `54BD.1` | `3EC4.1`, `54BD.1` | `activeInputModes` |
+
+The reason codes above are the ones Apple publishes per category; anything else
+is rejected, so a manifest cannot carry a code the store would refuse. Apple's
+disk-space category holds the `statfs`/`statvfs` family and the volume-capacity
+keys, while the `getattrlist` family belongs to the file-timestamp category
+alongside `stat`, `fstat`, `lstat` and `fstatat`.
 
 The timestamp row matches real file metadata access only. A domain property that
 merely happens to be called `creationDate` or `modificationDate` is not an access
@@ -87,9 +95,11 @@ to Apple's API and does not match, so a false positive can never be silenced by
 adding an inaccurate `C617.1` declaration.
 
 `//` comments, `/* */` comments and the text of string literals are masked
-before matching, including the raw and extended literal forms. An interpolated
-expression is code, so `"defaults: \(UserDefaults.standard)"` is matched while
-the surrounding prose is not.
+before matching, including the raw and extended literal forms and escaped
+delimiters such as `"say \"UserDefaults.standard\" only"`. An interpolated
+expression is code and is scanned as such, so `"defaults: \(UserDefaults.standard)"`
+is matched, while everything up to the opening parenthesis and everything after
+the closing one stays literal text, so `"\(value) UserDefaults"` is not.
 
 Findings print one per line as `path:line: message` and the script exits 1.
 `.github/workflows/ios.yml` runs it, and its tests, in the `privacy-manifest`

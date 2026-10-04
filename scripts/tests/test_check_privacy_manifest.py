@@ -72,40 +72,23 @@ let package = Package(
 def manifest_xml(
     *,
     tracking: bool = False,
-    declared: list[tuple[str, list[str]]] | None = None,
+    declared: list[tuple[str, list[object]]] | None = None,
 ) -> str:
     if declared is None:
         declared = [BOOT_TIME]
-    apis = "\n".join(
-        "\t\t<dict>\n"
-        "\t\t\t<key>NSPrivacyAccessedAPIType</key>\n"
-        f"\t\t\t<string>{category}</string>\n"
-        "\t\t\t<key>NSPrivacyAccessedAPITypeReasons</key>\n"
-        "\t\t\t<array>\n"
-        + "".join(f"\t\t\t\t<string>{reason}</string>\n" for reason in reasons)
-        + "\t\t\t</array>\n"
-        "\t\t</dict>"
-        for category, reasons in declared
-    )
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
-        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-        '<plist version="1.0">\n'
-        "<dict>\n"
-        "\t<key>NSPrivacyTracking</key>\n"
-        f"\t<{'true' if tracking else 'false'}/>\n"
-        "\t<key>NSPrivacyTrackingDomains</key>\n"
-        "\t<array/>\n"
-        "\t<key>NSPrivacyCollectedDataTypes</key>\n"
-        "\t<array/>\n"
-        "\t<key>NSPrivacyAccessedAPITypes</key>\n"
-        "\t<array>\n"
-        f"{apis}\n"
-        "\t</array>\n"
-        "</dict>\n"
-        "</plist>\n"
-    )
+    payload = {
+        "NSPrivacyTracking": tracking,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [],
+        "NSPrivacyAccessedAPITypes": [
+            {
+                "NSPrivacyAccessedAPIType": category,
+                "NSPrivacyAccessedAPITypeReasons": reasons,
+            }
+            for category, reasons in declared
+        ],
+    }
+    return plistlib.dumps(payload).decode("utf-8")
 
 
 def write_tree(
@@ -267,6 +250,36 @@ def test_api_in_string_interpolation_is_code(tmp_path: Path) -> None:
     assert "NSPrivacyAccessedAPICategoryUserDefaults" in result.stdout
 
 
+def test_literal_text_after_an_interpolation_is_not_code(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        {
+            "HealthNutrition/Sources/Settings.swift": (
+                "import Foundation\n"
+                'let label = "\\(value) UserDefaults"\n'
+            )
+        },
+        manifest=manifest_xml(declared=[]),
+    )
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_escaped_quote_inside_a_literal_is_not_code(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        {
+            "HealthNutrition/Sources/Settings.swift": (
+                "import Foundation\n"
+                'let label = "say \\"UserDefaults.standard\\" only"\n'
+            )
+        },
+        manifest=manifest_xml(declared=[]),
+    )
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_interpolated_literal_text_is_not_code(tmp_path: Path) -> None:
     root = write_tree(
         tmp_path,
@@ -339,10 +352,6 @@ def test_nested_interpolation_is_scanned(tmp_path: Path) -> None:
         "statvfs(&info)",
         "fstatfs(1, &info)",
         "fstatvfs(1, &info)",
-        'getattrlist("/tmp", &attrs, &count, 0)',
-        "getattrlistbulk(&attrs, &count)",
-        "fgetattrlist(1, &attrs, &count, 0)",
-        "getattrlistat(AT_FDCWD, \"/tmp\", &attrs)",
         "URLResourceValues.volumeAvailableCapacityForImportantUsage",
         "values.volumeAvailableCapacity",
         "let key = URLResourceKey.volumeTotalCapacityKey",
@@ -432,6 +441,94 @@ def test_transitive_library_dependency_is_scanned(tmp_path: Path) -> None:
     assert "NSPrivacyAccessedAPICategoryUserDefaults" in result.stdout
 
 
+PUBLISHED_REASONS = {
+    "NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1", "1C8F.1", "C56D.1", "AC6B.1"],
+    "NSPrivacyAccessedAPICategorySystemBootTime": ["35F9.1", "8FFB.1", "3D61.1"],
+    "NSPrivacyAccessedAPICategoryFileTimestamp": ["DDA9.1", "C617.1", "3B52.1", "0A2A.1"],
+    "NSPrivacyAccessedAPICategoryDiskSpace": ["85F4.1", "E174.1", "7D9E.1", "B728.1"],
+    "NSPrivacyAccessedAPICategoryActiveKeyboards": ["3EC4.1", "54BD.1"],
+}
+
+
+@pytest.mark.parametrize(
+    ("category", "reason"),
+    [(category, reason) for category, reasons in PUBLISHED_REASONS.items() for reason in reasons],
+)
+def test_published_reason_is_accepted(tmp_path: Path, category: str, reason: str) -> None:
+    """Every reason Apple publishes for every category this checker knows."""
+    root = write_tree(
+        tmp_path,
+        {"HealthNutrition/Sources/Empty.swift": "import Foundation\n"},
+        manifest=manifest_xml(declared=[(category, [reason])]),
+    )
+    result = run(root)
+    assert result.returncode == 0, f"{category} {reason}: {result.stdout}{result.stderr}"
+
+
+@pytest.mark.parametrize(
+    ("category", "reason"),
+    [
+        ("NSPrivacyAccessedAPICategoryUserDefaults", "AC9B.1"),
+        ("NSPrivacyAccessedAPICategoryFileTimestamp", "E9D9.1"),
+        ("NSPrivacyAccessedAPICategoryFileTimestamp", "3D62.1"),
+        ("NSPrivacyAccessedAPICategoryDiskSpace", "B728.2"),
+    ],
+)
+def test_reason_apple_does_not_publish_is_rejected(tmp_path: Path, category: str, reason: str) -> None:
+    root = write_tree(
+        tmp_path,
+        {"HealthNutrition/Sources/Empty.swift": "import Foundation\n"},
+        manifest=manifest_xml(declared=[(category, [reason])]),
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert reason in result.stdout
+
+
+def test_unknown_category_is_rejected(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        {"HealthNutrition/Sources/Empty.swift": "import Foundation\n"},
+        manifest=manifest_xml(declared=[("NSPrivacyAccessedAPICategoryTimeMachine", ["35F9.1"])]),
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert "NSPrivacyAccessedAPICategoryTimeMachine" in result.stdout
+
+
+def test_unknown_category_with_no_reasons_is_rejected(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        {"HealthNutrition/Sources/Empty.swift": "import Foundation\n"},
+        manifest=manifest_xml(declared=[("NSPrivacyAccessedAPICategoryTimeMachine", [])]),
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert "NSPrivacyAccessedAPICategoryTimeMachine" in result.stdout
+
+
+def test_empty_reasons_array_is_rejected(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        {"HealthNutrition/Sources/Empty.swift": "import Foundation\n"},
+        manifest=manifest_xml(declared=[("NSPrivacyAccessedAPICategoryUserDefaults", [])]),
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert "NSPrivacyAccessedAPICategoryUserDefaults" in result.stdout
+
+
+def test_non_string_reason_is_rejected(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        {"HealthNutrition/Sources/Empty.swift": "import Foundation\n"},
+        manifest=manifest_xml(declared=[("NSPrivacyAccessedAPICategoryUserDefaults", [1])]),
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert "NSPrivacyAccessedAPICategoryUserDefaults" in result.stdout
+
+
 def test_unknown_reason_code_is_rejected(tmp_path: Path) -> None:
     root = write_tree(
         tmp_path,
@@ -515,6 +612,10 @@ def test_domain_property_named_creation_date_is_not_a_file_timestamp_api(tmp_pat
         'stat("index", &info)',
         "fstat(1, &info)",
         'lstat("index", &info)',
+        'fstatat(AT_FDCWD, "index", &info, 0)',
+        'getattrlist("index", &attrs, &count, 0)',
+        "getattrlistbulk(&attrs, &count)",
+        "fgetattrlist(1, &attrs, &count, 0)",
     ],
 )
 def test_real_file_timestamp_access_is_detected(tmp_path: Path, access: str) -> None:
