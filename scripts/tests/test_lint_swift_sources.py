@@ -106,19 +106,100 @@ def test_fixed_font_size_reports_system_size_in_ui(tmp_path: Path) -> None:
     ]
 
 
-def test_fixed_font_size_reports_a_custom_font_without_relative_to(tmp_path: Path) -> None:
+def test_fixed_font_size_allows_the_custom_size_overload_that_scales(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
-        f"{UI}/CustomFont.swift": (
+        f"{UI}/ScalingCustomFont.swift": (
             "import SwiftUI\n"
             'let font = Font.custom("Inter", size: 14)\n'
             'Text("a").font(.custom("Inter", size: 14))\n'
         ),
     })
     result = run(root)
+    # Apple documents `custom(_:size:)` as scaling with the body text style, so
+    # only the non-scaling `custom(_:fixedSize:)` overload is a finding here.
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_fixed_font_size_reports_a_custom_font_with_a_fixed_size(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/FixedCustomFont.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom("Inter", fixedSize: 14)\n'
+            'Text("a").font(.custom("Inter", fixedSize: 13, weight: .bold))\n'
+        ),
+    })
+    result = run(root)
     assert result.returncode == 1
     assert findings(result) == [
-        ("CustomFont.swift", 2, "fixed-font-size"),
-        ("CustomFont.swift", 3, "fixed-font-size"),
+        ("FixedCustomFont.swift", 2, "fixed-font-size"),
+        ("FixedCustomFont.swift", 3, "fixed-font-size"),
+    ]
+
+
+def test_fixed_font_size_ignores_custom_calls_that_build_no_font(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/WidgetFactory.swift": (
+            "import SwiftUI\n"
+            'let widget = Widget.custom(name: "compact", size: 14)\n'
+            "let tile = Tile.custom(size: 14, fixedSize: 2)\n"
+            'Text("a").font(.custom("Inter", fixedSize: 14))\n'
+        ),
+    })
+    result = run(root)
+    # Only a custom font factory carries the API's meaning: a `.custom(` call on
+    # another type is that type's own, even when it names a size.
+    assert result.returncode == 1
+    assert findings(result) == [("WidgetFactory.swift", 4, "fixed-font-size")]
+
+
+def test_fixed_font_size_allows_a_size_that_is_not_a_literal(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/ScaledMetric.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(.system(size: scaledSize))\n'
+            'let font = Font.custom("Inter", size: scaledSize)\n'
+            'let other = Font.custom("Inter", fixedSize: scaledSize)\n'
+            'let pinned = Font.body.pointSize(scaledSize)\n'
+        ),
+    })
+    result = run(root)
+    # A size read from a @ScaledMetric property already tracks Dynamic Type, so
+    # this rule is about the literal point size that cannot move. The older
+    # `fixed-font` rule still names the `.font(.system(size:` spelling itself.
+    assert [f for f in findings(result) if f[2] == "fixed-font-size"] == []
+
+
+def test_fixed_font_size_reads_relative_to_at_the_font_call_depth(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedRelativeTo.swift": (
+            "import SwiftUI\n"
+            'let font = Font.custom(resolveName(relativeTo: locale), fixedSize: 14)\n'
+            'let scaled = Font.custom("Inter", size: 14, relativeTo: .body)\n'
+        ),
+    })
+    result = run(root)
+    # A `relativeTo:` belonging to a nested call is that call's own argument; the
+    # font factory itself still pins a point size.
+    assert result.returncode == 1
+    assert findings(result) == [("NestedRelativeTo.swift", 2, "fixed-font-size")]
+
+
+def test_fixed_font_size_reports_a_point_size_modifier_on_a_font(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/PointSize.swift": (
+            "import SwiftUI\n"
+            'Text("a").font(Font.body.pointSize(14))\n'
+            "let font = Font.title.pointSize(12)\n"
+        ),
+    })
+    result = run(root)
+    # `pointSize(_:)` stops a style-based font from scaling, so a literal one is
+    # reported whether it is written inside a `.font(` or spelled out on a Font.
+    assert result.returncode == 1
+    assert findings(result) == [
+        ("PointSize.swift", 2, "fixed-font-size"),
+        ("PointSize.swift", 3, "fixed-font-size"),
     ]
 
 
@@ -169,8 +250,8 @@ def test_fixed_font_size_is_skipped_by_its_own_lint_allow(tmp_path: Path) -> Non
     root = write_tree(tmp_path, {
         f"{UI}/Allowed.swift": (
             "import SwiftUI\n"
-            'let caption = Font.custom("Inter", size: 11) // lint-allow: fixed-font-size\n'
-            "let other = Font.custom(\"Inter\", size: 11)\n"
+            'let caption = Font.custom("Inter", fixedSize: 11) // lint-allow: fixed-font-size\n'
+            'let other = Font.custom("Inter", fixedSize: 11)\n'
         ),
     })
     result = run(root)
@@ -198,11 +279,11 @@ def test_fixed_font_size_reports_a_call_wrapped_over_lines(tmp_path: Path) -> No
             "import SwiftUI\n"
             "let font = Font.custom(\n"
             '    "Inter",\n'
-            "    size: 14\n"
+            "    fixedSize: 14\n"
             ")\n"
             "let scaled = Font.custom(\n"
             '    "Inter",\n'
-            "    size: 14,\n"
+            "    fixedSize: 14,\n"
             "    relativeTo: .body\n"
             ")\n"
         ),
