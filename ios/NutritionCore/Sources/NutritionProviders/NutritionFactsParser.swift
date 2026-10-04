@@ -75,19 +75,23 @@ public enum NutritionFactsParser {
 
         var index = 0
         while index < cleaned.count {
-            let line = cleaned[index]
-            if let read = servingSize(in: line) {
+            // A capture can flatten the serving metadata and a nutrient row onto one line, so the
+            // metadata is taken off first and whatever text is left behind it is still read.
+            var residual = withoutDailyValueHeading(in: cleaned[index])
+            if let read = servingSize(in: residual) {
                 if size == nil { size = read }
-                index += 1
-                continue
+                residual = withoutServingSize(in: residual)
             }
-            if let count = servingsPerContainer(in: line) {
+            if let count = servingsPerContainer(in: residual) {
                 if perContainer == nil { perContainer = count }
+                residual = withoutServingsPerContainer(in: residual)
+            }
+            guard !residual.isEmpty else {
                 index += 1
                 continue
             }
             let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
-            let usedNext = absorbRows(in: line, following: following, amounts: &amounts, reviews: &reviews)
+            let usedNext = absorbRows(in: residual, following: following, amounts: &amounts, reviews: &reviews)
             index += usedNext ? 2 : 1
         }
 
@@ -102,6 +106,10 @@ public enum NutritionFactsParser {
     // MARK: - Serving size and servings per container
 
     /// The serving size a line states, read after the words "serving size" and past any colon.
+    ///
+    /// The measure ends where the next piece of panel text begins, because a flattened line can carry
+    /// another field behind the serving size and the serving size is only what the label printed in
+    /// front of it.
     private static func servingSize(in line: String) -> ParsedServingSize? {
         let lower = line.lowercased()
         guard let marker = lower.range(of: "serving size") else { return nil }
@@ -109,6 +117,7 @@ public enum NutritionFactsParser {
         if let colon = text.firstIndex(of: ":") {
             text = String(text[text.index(after: colon)...])
         }
+        text = String(text[..<nextField(in: text)])
         text = trimmed(text)
         guard !text.isEmpty else { return nil }
         let measure = servingMeasure(in: text)
@@ -117,17 +126,169 @@ public enum NutritionFactsParser {
 
     /// The count a "servings per container" line states. The number may stand before the phrase
     /// ("About 6 servings per container") or after it ("Servings Per Container: 12").
+    ///
+    /// Both the plural and the singular wording are read, because a single-serving package states
+    /// "1 serving per container" and its count would otherwise be lost.
     private static func servingsPerContainer(in line: String) -> Decimal? {
         let lower = line.lowercased()
-        guard let marker = lower.range(of: "servings per container") else { return nil }
-        var tail = after(marker, in: line, lowercased: lower)
+        guard let marker = servingsMarker(in: lower) else { return nil }
+        let head = String(line[..<index(marker.lowerBound, in: line, lowercased: lower)])
+        // The count is the number next to the marker: the one behind the phrase when the label wrote it
+        // there ("Servings Per Container: 12"), and otherwise the one in front of it, as in "About 6
+        // servings per container". An earlier number that belongs to the rest of the line, such as the
+        // twelve of "Net wt 12 oz About 6 servings per container", is never read as the count.
+        if let count = firstCompleteDecimal(in: after(marker, in: line, lowercased: lower)) { return count }
+        return lastCompleteDecimal(in: head)
+    }
+
+    /// The span of a line a serving size is written in, from the marker to the end of the measure.
+    ///
+    /// The span is what `parse` takes off the line before it reads the rows behind it, so a flattened
+    /// line that carries a nutrient row behind its serving metadata still has that row read.
+    private static func servingSizeSpan(in line: String) -> Range<String.Index>? {
+        let lower = line.lowercased()
+        guard let marker = lower.range(of: "serving size") else { return nil }
+        let start = index(marker.lowerBound, in: line, lowercased: lower)
+        var end = index(marker.upperBound, in: line, lowercased: lower)
+        var tail = String(line[end...])
         if let colon = tail.firstIndex(of: ":") {
-            tail = String(tail[tail.index(after: colon)...])
+            end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: colon) + 1)
+            tail = String(line[end...])
         }
-        if let count = firstDecimal(in: tail) { return count }
-        let offset = lower.distance(from: lower.startIndex, to: marker.lowerBound)
-        let headEnd = line.index(line.startIndex, offsetBy: offset, limitedBy: line.endIndex) ?? line.endIndex
-        return firstDecimal(in: String(line[..<headEnd]))
+        // The span runs to the next piece of panel text, or to the end of the line when the measure is
+        // the last thing the line states.
+        end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: nextField(in: tail)))
+        return start..<end
+    }
+
+    /// Where the next piece of panel text begins in `text`: the next nutrient row, or the next piece of
+    /// serving metadata, whichever comes first.
+    ///
+    /// Flattened metadata puts the two fields next to each other in either order, as in
+    /// "Serving size 1 cup (240mL) 8 servings per container", so each field stops where the other begins.
+    /// When the next field is the servings count, the count itself belongs to that field rather than to
+    /// this one, so the boundary steps back over it.
+    private static func nextField(in text: String) -> String.Index {
+        let rowBoundary = firstRow(in: text)?.nameStart ?? text.endIndex
+        let lower = text.lowercased()
+        guard let marker = servingsMarker(in: lower) else { return rowBoundary }
+        let markerStart = index(marker.lowerBound, in: text, lowercased: lower)
+        guard markerStart < rowBoundary else { return rowBoundary }
+
+        let head = text[..<markerStart]
+        let tokens = trimmed(String(head)).split(separator: " ").map(String.init)
+        guard let last = tokens.last, completeDecimal(last) != nil else { return markerStart }
+        // Find the count in the original text rather than doing index arithmetic: OCR can drop the
+        // spaces around it, and an offset computed from assumed separators can fall before the start.
+        return head.range(of: last, options: .backwards)?.lowerBound ?? markerStart
+    }
+
+    /// The line with its serving size taken off, so whatever else it carries is still read.
+    private static func withoutServingSize(in line: String) -> String {
+        guard let span = servingSizeSpan(in: line) else { return line }
+        return trimmed(String(line[..<span.lowerBound]) + " " + String(line[span.upperBound...]))
+    }
+
+    /// The line with its servings-per-container marker, the qualifier words and the count beside it taken
+    /// off, so whatever else the flattened line carries is still read.
+    private static func withoutServingsPerContainer(in line: String) -> String {
+        let lower = line.lowercased()
+        guard let marker = servingsMarker(in: lower) else { return line }
+        var head = String(line[..<index(marker.lowerBound, in: line, lowercased: lower)])
+        // The count in front of the marker belongs to it, as the six of "About 6 servings per container".
+        if let last = head.split(separator: " ").last, completeDecimal(String(last)) != nil {
+            head = head.split(separator: " ").dropLast().joined(separator: " ")
+        }
+        var end = index(marker.upperBound, in: line, lowercased: lower)
+        var tail = String(line[end...])
+        // A colon and the qualifier words stand between the marker and the count, as in
+        // "Servings Per Container: About 8", and are stepped over rather than read as one.
+        while let first = tail.split(separator: " ").first,
+              first == ":" || leadingWords.contains(String(first).lowercased())
+        {
+            end = line.index(end, offsetBy: first.count + 1, limitedBy: line.endIndex) ?? line.endIndex
+            tail = String(line[end...])
+        }
+        if let count = tail.split(separator: " ").first, completeDecimal(String(count)) != nil {
+            end = line.index(end, offsetBy: count.count + 1, limitedBy: line.endIndex) ?? line.endIndex
+        }
+        return trimmed(head + " " + String(line[end...]))
+    }
+
+    /// The line with a flattened % Daily Value heading taken off, so the rows that share the line with
+    /// the heading are still read.
+    ///
+    /// The heading names the column and states no amount of its own, so only its own text is skipped. A
+    /// percent sign is dropped only when it is the heading's own, as in "% Daily Value Total Fat 7g": a
+    /// sign attached to a number belongs to that row's Daily Value, so "Calories 10% Daily Value" keeps
+    /// its sign and stays a Daily Value rather than becoming a calorie count.
+    private static func withoutDailyValueHeading(in line: String) -> String {
+        var text = line
+        while true {
+            let lower = text.lowercased()
+            guard let marker = lower.range(of: "daily value") else { break }
+            let headEnd = index(marker.lowerBound, in: text, lowercased: lower)
+            var head = trimmed(String(text[..<headEnd]))
+            if head.hasSuffix("%"), !isAttachedToNumber(head) { head = trimmed(String(head.dropLast())) }
+            let tail = String(text[index(marker.upperBound, in: text, lowercased: lower)...])
+            text = trimmed(head + " " + tail)
+        }
+        return trimmed(text)
+    }
+
+    /// Whether the text ends in a percent sign that stands directly behind a number, as the ten of
+    /// "Calories 10%" does. A percent sign with no number in front of it belongs to a heading.
+    private static func isAttachedToNumber(_ text: String) -> Bool {
+        let characters = Array(text)
+        guard characters.count >= 2, characters[characters.count - 1] == "%" else { return false }
+        return isDigit(characters[characters.count - 2])
+    }
+
+    /// The first of the two wordings of a servings-per-container marker that a line carries.
+    private static func servingsMarker(in lower: String) -> Range<String.Index>? {
+        var found: Range<String.Index>?
+        for marker in ["servings per container", "serving per container"] {
+            guard let range = lower.range(of: marker) else { continue }
+            if let current = found, current.lowerBound <= range.lowerBound { continue }
+            found = range
+        }
+        return found
+    }
+
+    /// The count written directly behind a marker, past any colon and any qualifier word, as in
+    /// "Servings Per Container: 12" and "Servings Per Container About 8".
+    private static func firstCompleteDecimal(in rawText: String) -> Decimal? {
+        var tokens = trimmed(rawText).split(separator: " ").map(String.init)
+        while let first = tokens.first {
+            if first == ":" || leadingWords.contains(first.lowercased()) {
+                tokens.removeFirst()
+                continue
+            }
+            return completeDecimal(first)
+        }
+        return nil
+    }
+
+    /// The count written directly in front of a marker, as in "About 6 servings per container".
+    ///
+    /// The search walks the text backwards and stops at the first number it finds, because the count
+    /// stands next to the marker: in "Net wt 12 oz About 6 servings per container" the twelve belongs
+    /// to the net weight and the six is the serving count.
+    private static func lastCompleteDecimal(in rawText: String) -> Decimal? {
+        for token in trimmed(rawText).split(separator: " ").reversed() {
+            if let count = completeDecimal(String(token)) { return count }
+        }
+        return nil
+    }
+
+    /// The number a whitespace-separated token states, when it states one and nothing else.
+    ///
+    /// A token that runs straight into letters is a token the capture misread, such as `1O`: it is
+    /// either a number with a zero spelled as a letter or nothing at all, and it is never read as the
+    /// smaller number its digits spell.
+    private static func completeDecimal(_ token: String) -> Decimal? {
+        guard !token.isEmpty, token.allSatisfy({ isDigit($0) || $0 == "." || $0 == "," }) else { return nil }
+        return decimal(token)
     }
 
     /// The measure a serving size states: the one in parentheses when the label writes one, otherwise the
@@ -185,21 +346,25 @@ public enum NutritionFactsParser {
                 cursor = scan.remaining
                 continue
             }
-            // A panel states some rows with the amount in front of the name: "Includes 5g Added Sugars".
-            // It states its unit like any other amount, and a number in front of a percent sign belongs
-            // to the Daily Value column rather than to this row.
+            // A panel states some rows with the amount in front of the name: "Includes 5g Added
+            // Sugars". The rest of the line is still read, because a flattened panel runs the rows that
+            // follow on the same line.
             if let scan = leadingAmount(before: String(cursor[..<match.nameStart])), statesAmount(scan, for: row) {
                 record(scan, for: row, amounts: &amounts, reviews: &reviews)
-                break
+                cursor = remainder
+                continue
             }
-            if remainder.isEmpty, let nextLine, let scan = scanAmount(in: trimmed(nextLine)),
+            if remainder.isEmpty, !usedNextLine, let nextLine, let scan = scanAmount(in: trimmed(nextLine)),
                statesAmount(scan, for: row)
             {
                 // A name and its amount can also land on separate lines when the panel was read column by
-                // column.
+                // column. The text left beside that amount on the same line belongs to the rows behind
+                // it, so it is read before the line is left behind as well.
                 record(scan, for: row, amounts: &amounts, reviews: &reviews)
                 usedNextLine = true
-                break
+                guard scan.remaining != cursor else { break }
+                cursor = scan.remaining
+                continue
             }
             // The row states no amount the parser can read, so it keeps none. The rest of the line is
             // still read: one damaged row does not cost the rows that follow it. The cursor is always
@@ -230,7 +395,12 @@ public enum NutritionFactsParser {
     /// read there and nowhere else. Everywhere else a number without a unit is left alone: it is either a
     /// % Daily Value column or a row whose unit the capture lost, and neither is guessed at.
     private static func statesAmount(_ scan: ScannedAmount, for row: PanelRow) -> Bool {
-        scan.unit != nil || row.usualUnit == .kcal
+        if scan.unit != nil { return true }
+        // The Calories row is the only row of a panel that prints no unit of its own, so a bare number is
+        // read there and nowhere else. It is read only when it stands on its own: a number the capture
+        // left in front of a percent sign, as in "Calories 10%", is the Daily Value column of a row whose
+        // amount the capture lost, and it is never turned into a calorie count.
+        return row.usualUnit == .kcal && !scan.isPercentSuffixed
     }
 
     /// An amount written in front of its nutrient name. Only the words and the number immediately in
@@ -241,10 +411,20 @@ public enum NutritionFactsParser {
         for count in [2, 1] {
             let tail = tokens.suffix(count).joined(separator: " ")
             guard !tail.contains("%") else { continue }
+            // Only the words a panel prints in front of such an amount stand between it and the name,
+            // so a number that belongs to unrecognised text before the name is never read as this
+            // row's amount: the 50mg of "Magnesium 50mg Calcium" is magnesium, not calcium.
+            let words = tokens.dropLast(count)
+            guard !words.isEmpty, words.allSatisfy({ leadingWords.contains($0.lowercased()) }) else { continue }
             if let scan = scanAmount(in: tail) { return scan }
         }
         return nil
     }
+
+    /// The words a panel may print between an amount and the nutrient name it belongs to, as in
+    /// "Includes 5g Added Sugars". A row that states its amount in front of its name is stated with one
+    /// of these words in between, so a number with any other word in front of it is left alone.
+    private static let leadingWords: Set<String> = ["includes", "contains", "about", "with", "of", "has"]
 
     /// A nutrient name found on a line, with the span the name occupies.
     private struct RowMatch {
@@ -260,15 +440,24 @@ public enum NutritionFactsParser {
 
         for row in rows {
             for alias in row.aliases {
-                guard let found = lower.range(of: alias), isWholeWord(found, in: lower) else { continue }
-                let start = lower.distance(from: lower.startIndex, to: found.lowerBound)
-                let length = alias.count
-                if let current = best {
-                    // Keep the earliest name on the line; at the same start keep the longer one, so
-                    // "Saturated Fat" wins over the "fat" inside it and "Added Sugars" over "sugars".
-                    if start > current.start || (start == current.start && length <= current.length) { continue }
+                // An alias can also stand inside another word, as the "sodium" of "Monosodium glutamate".
+                // The search moves past such an occurrence instead of giving up on the name, so a later
+                // whole-word occurrence still matches.
+                var search = lower.startIndex
+                while let found = lower.range(of: alias, range: search..<lower.endIndex) {
+                    if isWholeWord(found, in: lower) {
+                        let start = lower.distance(from: lower.startIndex, to: found.lowerBound)
+                        let length = alias.count
+                        if let current = best {
+                            // Keep the earliest name on the line; at the same start keep the longer one, so
+                            // "Saturated Fat" wins over the "fat" inside it and "Added Sugars" over "sugars".
+                            if start > current.start || (start == current.start && length <= current.length) { break }
+                        }
+                        best = (start, length, row)
+                        break
+                    }
+                    search = found.lowerBound < found.upperBound ? found.upperBound : lower.index(after: found.lowerBound)
                 }
-                best = (start, length, row)
             }
         }
 
@@ -326,6 +515,9 @@ public enum NutritionFactsParser {
         let amount: Decimal
         let unit: MeasureUnit?
         let isBound: Bool
+        /// Whether the number stands directly in front of a percent sign, which means it belongs to the
+        /// % Daily Value column and not to the row.
+        let isPercentSuffixed: Bool
         let reasons: Set<ParsedValueReview.Reason>
         let remaining: String
     }
@@ -409,9 +601,19 @@ public enum NutritionFactsParser {
             amount: amount,
             unit: printed,
             isBound: false,
+            isPercentSuffixed: isPercentSuffix(characters, at: index),
             reasons: reasons,
             remaining: remaining(after: look, in: characters)
         )
+    }
+
+    /// Whether the number read up to `index` is written straight in front of a percent sign, as in
+    /// "Calories 10%". Such a number is a % Daily Value the capture flattened onto the row, never an
+    /// amount the row printed.
+    private static func isPercentSuffix(_ characters: [Character], at index: Int) -> Bool {
+        var look = index
+        while look < characters.count, characters[look] == " " || characters[look] == "\t" { look += 1 }
+        return look < characters.count && characters[look] == "%"
     }
 
     /// Reads the amount of a line that states a bound, which becomes `.belowReportingThreshold`.
@@ -422,6 +624,7 @@ public enum NutritionFactsParser {
             amount: scan.amount,
             unit: scan.unit,
             isBound: true,
+            isPercentSuffixed: scan.isPercentSuffixed,
             reasons: scan.reasons,
             remaining: scan.remaining
         )
@@ -511,24 +714,7 @@ public enum NutritionFactsParser {
         return true
     }
 
-    /// The first number anywhere in a piece of text, for a count the label states in words around it.
-    private static func firstDecimal(in rawText: String) -> Decimal? {
-        let characters = Array(trimmed(rawText))
-        var index = 0
-        while index < characters.count {
-            guard isDigit(characters[index]) || characters[index] == "." else {
-                index += 1
-                continue
-            }
-            var digits = ""
-            while index < characters.count, isDigit(characters[index]) || characters[index] == "." {
-                digits.append(characters[index])
-                index += 1
-            }
-            if let value = decimal(digits) { return value }
-        }
-        return nil
-    }
+    
 
     /// Whether a match is a whole word, so the "fat" of "Saturated Fat" is not read as the fat row when
     /// nothing longer matched before it.
@@ -547,9 +733,16 @@ public enum NutritionFactsParser {
     /// The text of `line` from a match found in its lowercased copy. Lowercasing can move a Swift string
     /// index, so the offset is measured in the lowercased text and applied to the original.
     private static func after(_ range: Range<String.Index>, in line: String, lowercased lower: String) -> String {
-        let offset = lower.distance(from: lower.startIndex, to: range.upperBound)
-        guard let start = line.index(line.startIndex, offsetBy: offset, limitedBy: line.endIndex) else { return "" }
-        return String(line[start...])
+        String(line[index(range.upperBound, in: line, lowercased: lower)...])
+    }
+
+    /// The place in `line` a position of its lowercased copy stands at.
+    ///
+    /// Lowercasing can move a Swift string index, so the offset is measured in the lowercased text and
+    /// applied to the original.
+    private static func index(_ position: String.Index, in line: String, lowercased lower: String) -> String.Index {
+        let offset = lower.distance(from: lower.startIndex, to: position)
+        return line.index(line.startIndex, offsetBy: offset, limitedBy: line.endIndex) ?? line.endIndex
     }
 
     private static func trimmed(_ text: String) -> String {
