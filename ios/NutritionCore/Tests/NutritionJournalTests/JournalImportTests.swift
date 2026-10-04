@@ -587,6 +587,69 @@ final class JournalImportTests: JournalImportTestCase {
             try journal.revisions(of: waterID).first?.productSnapshotID, nil)
     }
 
+    func testAFavoriteWithAZeroAmountIsRejected() throws {
+        // A favorite is a template to repeat. "0 g of oats" asks the person to eat nothing, and repeating it
+        // would create an intake that claims a measurement the template never made.
+        try assertFavoriteRefused(amountText: "0", why: "zero is not a quantity")
+    }
+
+    func testAFavoriteWithANegativeAmountIsRejected() throws {
+        // "-5 g" is not a smaller portion, it is a subtraction. Storing it would show a negative amount on the
+        // favorites row and ask for it on the intake the repeat creates.
+        try assertFavoriteRefused(amountText: "-5", why: "a negative amount is not a quantity")
+    }
+
+    func testAFavoriteThatNamesOneComponentTwiceIsRejected() throws {
+        var root = try object(of: try exportData())
+        var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
+        let index = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-tea-1" })
+        var components = try XCTUnwrap(favoriteList[index]["components"] as? [[String: Any]])
+        components.append(components[0])
+        favoriteList[index]["components"] = components
+        root["favorites"] = favoriteList
+
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
+            XCTFail("a favorite naming one component twice must be refused")
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try favoritesStore.list().isEmpty)
+    }
+
+    /// One favorite with the given amount text, refused and with nothing written.
+    private func assertFavoriteRefused(amountText: String, why: String, line: UInt = #line) throws {
+        var root = try object(of: try exportData())
+        var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
+        let index = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-tea-1" })
+        var components = try XCTUnwrap(favoriteList[index]["components"] as? [[String: Any]])
+        components[0]["amount"] = amountText
+        favoriteList[index]["components"] = components
+        root["favorites"] = favoriteList
+
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
+            XCTFail("a favorite with \"\(amountText)\" must be refused, \(why)", line: line)
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)", line: line)
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty, line: line)
+        XCTAssertTrue(try favoritesStore.list().isEmpty, line: line)
+    }
+
     func testAnEntryWithoutATimeZoneIsRejected() throws {
         // The time zone is what says when an entry happened where the person was. An empty string, or a name
         // no calendar knows, would be stored as text and read back as a zone the app cannot use, so the file

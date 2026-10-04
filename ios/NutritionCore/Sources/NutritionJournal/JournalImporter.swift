@@ -383,15 +383,30 @@ public enum JournalImporter {
                 throw JournalImportError.corrupt("the export lists the favorite \(favorite.id) twice")
             }
             var favoriteComponents: [FavoriteComponent] = []
+            var favoriteComponentIDs = Set<String>()
             for component in favorite.components {
                 guard JournalValidation.isValidComponentID(component.componentID) else {
                     throw JournalImportError.corrupt(
                         "the favorite \(favorite.id) has the component id \(component.componentID)")
                 }
+                guard favoriteComponentIDs.insert(component.componentID).inserted else {
+                    throw JournalImportError.corrupt(
+                        "the favorite \(favorite.id) names \(component.componentID) twice")
+                }
                 guard component.valueState == .known, let text = component.amount,
-                      DecimalText.isValidDecimalText(text) else {
+                      DecimalText.isValidDecimalText(text), let amount = DecimalText.decode(text)
+                else {
                     throw JournalImportError.corrupt(
                         "the favorite \(favorite.id) has no exact decimal amount for \(component.componentID)")
+                }
+                // A favorite is a template to repeat, so every component has to name a quantity. Zero and
+                // negative amounts are refused rather than stored: repeating one asks the person to eat
+                // nothing, or to subtract something from a meal, and neither is a template that can be shown
+                // as amounts or turned into an intake.
+                guard amount > 0 else {
+                    throw JournalImportError.corrupt(
+                        "the favorite \(favorite.id) has the amount \(text) for \(component.componentID), "
+                            + "which is not a quantity")
                 }
                 // The favorites store keeps a unit symbol as text and never parses it, so an unusable symbol
                 // would be stored happily and only fail later, when the person repeats the favorite and the

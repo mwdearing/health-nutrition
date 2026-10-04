@@ -313,16 +313,51 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportFileName = nil
     }
 
+    /// What an import produced, carried from the background back to the screen. Both cases are values the
+    /// background can build on its own - the summary is a count and a refusal is already the sentence the
+    /// screen shows - so nothing that touches the stores or the file system crosses back to the main actor.
+    private enum ImportOutcome: Sendable {
+        case imported(JournalImportSummary)
+        case refused(String)
+    }
+
     /// Reads a file the person chose and restores it. Nothing is sent anywhere: the file was already on
     /// this device or in a place they opened it from, and the restore only writes to the local stores.
     ///
-    /// The importer refuses anything it cannot do whole - a file from a newer schema version, a journal
-    /// that already has entries, a file it cannot read - and says which, so the message can tell the
-    /// person whether to try another file or to delete something first.
-    @discardableResult
-    public func importJournal(data: Data) -> Bool {
-        do {
-            let summary = try JournalImporter.importExport(data, into: store, favorites: favorites)
+    /// The read and the restore run off the main actor, because they are the slow part: a journal with
+    /// thousands of revisions is parsed, checked and written in one go, and doing that here would freeze the
+    /// screen the person is looking at, on the one action that starts by reading a file of unknown size.
+    /// Only the outcome is published, and it is published here, on the main actor, because that is what
+    /// updates the screen. The stores are `Sendable` and each one serializes its own writes, so the restore
+    /// is as safe off this actor as it was on it.
+    ///
+    /// The importer refuses anything it cannot do whole - a file from a newer schema version, a journal that
+    /// already has entries, a file it cannot read - and the message is chosen here, where the error is, and
+    /// travels with the outcome.
+    public func importJournal(data: Data) {
+        // Read out of the main actor's own state first, so the background task touches nothing here.
+        let store = store
+        let favorites = favorites
+        Task { [weak self] in
+            let outcome = await Task.detached(priority: .userInitiated) { () -> ImportOutcome in
+                do {
+                    return .imported(try JournalImporter.importExport(data, into: store, favorites: favorites))
+                } catch let error as JournalImportError {
+                    return .refused(Self.importFailureText(for: error))
+                } catch {
+                    return .refused(Self.importFailedMessage)
+                }
+            }.value
+            // Named rather than inherited: the task's own isolation decides where this would run, and the
+            // state it updates is main-actor state, so the hop is stated instead of assumed.
+            await MainActor.run { self?.apply(outcome) }
+        }
+    }
+
+    /// Publishes an import's outcome on the main actor, which is the only place that touches this state.
+    private func apply(_ outcome: ImportOutcome) {
+        switch outcome {
+        case .imported(let summary):
             // The export this screen was holding was made from the journal as it was before the restore, so
             // the share control would still offer the wrong journal. It goes, and the screen stops offering
             // it, rather than leaving a file of the pre-import journal one tap away.
@@ -333,17 +368,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             importSummary = summary
             importState = .imported
             importMessage = Self.importSummaryText(summary)
-            return true
-        } catch let error as JournalImportError {
+        case .refused(let message):
             importSummary = nil
             importState = .failed
-            importMessage = Self.importFailureText(for: error)
-            return false
-        } catch {
-            importSummary = nil
-            importState = .failed
-            importMessage = Self.importFailedMessage
-            return false
+            importMessage = message
         }
     }
 
