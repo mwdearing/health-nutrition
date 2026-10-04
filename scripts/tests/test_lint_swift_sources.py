@@ -1130,6 +1130,81 @@ def test_a_branch_of_a_sibling_view_ends_the_modifier_chain(tmp_path: Path) -> N
     assert findings(result) == [("SiblingBranch.swift", 5, "unlabeled-image")]
 
 
+def test_nested_arms_that_all_name_the_image_exempt_it(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedArms.swift": (
+            "import SwiftUI\n"
+            "struct NestedArms: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        .accessibilityLabel("Debug")\n'
+            "        #else\n"
+            '        .accessibilityLabel("Release")\n'
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    # Every compiled path names the image, however deeply the conditionals nest.
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_nested_arm_without_a_name_leaves_the_image_unlabeled(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedUnnamed.swift": (
+            "import SwiftUI\n"
+            "struct NestedUnnamed: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        .accessibilityLabel("Debug")\n'
+            "        #else\n"
+            "        .padding()\n"
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The release build of the iOS arm names nothing at all.
+    assert findings(result) == [("NestedUnnamed.swift", 4, "unlabeled-image")]
+
+
+def test_a_nested_arm_holding_a_sibling_view_ends_the_chain(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedSibling.swift": (
+            "import SwiftUI\n"
+            "struct NestedSibling: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        Text("y")\n'
+            "        #endif\n"
+            "        #endif\n"
+            '        Image("z").accessibilityLabel("Z")\n'
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The nested arm holds a sibling view, so the first image stays unnamed, and
+    # the label after the block belongs to the second image.
+    assert findings(result) == [("NestedSibling.swift", 4, "unlabeled-image")]
+
+
 def test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows(
     tmp_path: Path,
 ) -> None:
