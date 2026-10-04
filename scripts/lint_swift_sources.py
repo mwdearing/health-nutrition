@@ -45,9 +45,11 @@ interpolation needs the same number of hashes as the literal, so ``\\#(`` inside
 A regex literal is ``/.../`` or ``#/.../#`` (and more hashes). To keep division
 out of it, a bare ``/`` only opens a regex where an expression may begin, and the
 literal has to close on its own line; a postfix ``!`` or ``?`` ends an operand,
-so the slash after ``foo!`` divides. A hash-delimited literal is unambiguous: its
-pattern may start with a space, it may span several lines, and an interpolation
-inside it is code, exactly as in an extended string.
+so the slash after ``foo!`` or ``a?.b`` divides. Swift's ternary ``?`` is infix and
+takes whitespace on both sides, so in ``flag ? /Double/ : /Float/`` the slash does
+open a pattern and its text is not code. A hash-delimited literal is unambiguous:
+its pattern may start with a space, it may span several lines, and an
+interpolation inside it is code, exactly as in an extended string.
 
 Allowing a finding
 ------------------
@@ -172,9 +174,12 @@ def _mask_regex(source: str, i: int, hashes: int, out: list[str]) -> int | None:
     except for the interpolations, which are compiled Swift and stay visible.
 
     To keep division out of it a bare ``/`` only opens a regex where an
-    expression may begin, and the literal has to close on its own line. A
-    hash-delimited literal is unambiguous, so its pattern may start with a space
-    and may span several lines: the scan runs to the closing delimiter.
+    expression may begin, and the literal has to close on its own line. That
+    includes a ternary ``?``, which takes whitespace on both sides, while a
+    postfix ``!`` or ``?`` ends an operand, so the slash after ``foo!`` or
+    ``a?.b`` divides. A hash-delimited literal is unambiguous, so its pattern
+    may start with a space and may span several lines: the scan runs to the
+    closing delimiter.
     """
     n = len(source)
     start = i + hashes
@@ -346,6 +351,12 @@ def _mask_code(
         if ch == "\n":
             prev = "\n"
             word = ""
+        elif ch == "?" and (i == 0 or source[i - 1].isspace()):
+            # Swift's ternary `?` is infix and takes whitespace on both sides, so
+            # an expression may follow it. A `?` attached to the previous token
+            # is postfix optional chaining (`a?.b`) and ends an operand instead.
+            prev = TERNARY_QUESTION
+            word = ""
         elif not ch.isspace():
             prev = ch
             if ch.isalnum() or ch == "_":
@@ -357,18 +368,24 @@ def _mask_code(
     return i
 
 
+# The marker `_mask_code` records for a ternary `?`. It is not a single
+# character, so it cannot be confused with the `prev` values read from source.
+TERNARY_QUESTION = "? "
+
 # Characters after which a `/` opens a regex literal rather than a division.
-# `!` and `?` are absent: `foo!/Double(n)/2` is a force-unwrap followed by a
-# division, so a postfix operator ends an operand rather than starting one.
-REGEX_PREFIXES = "=(,:[&|+-*%<>^~"
+# `!` and a postfix `?` are absent: `foo!/Double(n)/2` is a force-unwrap followed
+# by a division, and `a?.b / Double(c)` is optional chaining, so a postfix
+# operator ends an operand rather than starting one. The infix ternary `?` is
+# present, because `flag ? /Double/ : /Float/` starts an expression after it.
+REGEX_PREFIXES = "=(,:[&|+-*%<>^~" + TERNARY_QUESTION
 REGEX_KEYWORDS = {"return", "case", "in", "where", "is", "as", "try", "match", "guard", "throw"}
 
 
 def _regex_may_start(prev: str, word: str) -> bool:
     """Report whether a bare ``/`` may open a regex literal.
 
-    A regex may only begin where an expression may begin, which keeps `a / b`
-    and `x /= 2` from being read as patterns.
+    A regex may only begin where an expression may begin, which keeps `a / b`,
+    `x /= 2` and `a?.b / c` from being read as patterns.
     """
     if prev in {"", "\n"}:
         return True
