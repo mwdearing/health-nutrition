@@ -260,3 +260,11 @@ final class ImageVisitor: SyntaxVisitor {
         return .visitChildren
     }
 }
+
+extension UnlabeledImageRule {
+    /// The text of a trailing-closure label, or nil when the closure has none. A trailing closure's label is
+    /// always a token in this swift-syntax version; an unlabeled one is a missing token rather than absent.
+    static func label(of token: TokenSyntax) -> String? {
+        token.presence == .present ? token.text : nil
+    }
+}
