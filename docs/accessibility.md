@@ -16,9 +16,11 @@ everything the app target keeps under `ios/HealthNutrition/Sources/**` — an
   the latter even when it comes after the control's closing brace;
 - the image or that control is marked `.accessibilityHidden(true)`, which is
   how a purely decorative symbol is declared;
+- the image is built as `Image(decorative:)`, which says so itself;
 - the image shares a control label with a `Text` that names it, because the
   text already names the control;
-- the image is a `Label("…", systemImage:)`, which speaks its own title.
+- the image is a `Label("…", systemImage:)`, which speaks its own title, or
+  sits in the `icon:` closure of a `Label` whose title speaks for it.
 
 An enclosing layout is not a control, so text elsewhere in the same `VStack`
 names nothing:
@@ -40,6 +42,27 @@ Button { toggle() } label: {
     }
 }
 .accessibilityLabel("Favorite")
+```
+
+A modifier belongs to the view it is written on, so a label inside a nested
+view names that view and leaves the one around it unnamed:
+
+```swift
+Image("photo").overlay {         // unlabeled-image
+    Image(systemName: "star").accessibilityLabel("New")
+}
+```
+
+Text that is hidden from VoiceOver reads nothing aloud, so it does not name a
+control either, and a `Picker`, `Menu` or `ControlGroup` closure with no
+`label:` of its own holds content rather than a label — an option or an action
+that has to be named in its own right:
+
+```swift
+Picker("Choose", selection: $choice) {
+    Image(systemName: "a").tag(1)   // unlabeled-image
+}
+.accessibilityLabel("Choice")        // names the picker, not the option
 ```
 
 A modifier guarded by conditional compilation only counts when every
@@ -102,4 +125,6 @@ app target beside it, so the single invocation CI runs enforces both surfaces.
 `scripts/tests/test_lint_swift_sources.py` covers the rule itself with synthetic
 view trees for the icon-only `Button`, the labelled button, the decorative
 image, the `Label` with a system image, the unlabelled layout caption, the
-conditional-compilation branches and the module scope.
+label passed as an argument, the `Label` with title and icon closures, the
+nested view in an `overlay`, the hidden text, the `Picker` options and the
+conditional-compilation branches.
