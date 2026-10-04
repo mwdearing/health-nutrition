@@ -444,7 +444,10 @@ public struct IntakeContextEncoder: Sendable {
         if descriptor.kind != .nutrient {
             members["label_name"] = .string(component.name)
         }
-        if descriptor.kind == .compound {
+        // A compound has to state what its amount measures, and a proprietary blend states it too: the blend
+        // total is a mass of the blend as printed, which is what makes it a measurement rather than a guess.
+        // A nutrient states no basis, because its amount is the nutrient's own.
+        if descriptor.kind != .nutrient {
             members["quantity_basis"] = .string(descriptor.quantityBasis.intakeContextValue)
         }
         if descriptor.kind == .blend {

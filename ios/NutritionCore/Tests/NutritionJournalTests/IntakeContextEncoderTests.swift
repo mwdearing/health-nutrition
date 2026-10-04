@@ -124,30 +124,30 @@ final class IntakeContextEncoderTests: XCTestCase {
     /// floating point on the way, because the contract hashes the string as written and "5" and "5.0" are
     /// different content.
     func testDecimalSpellingsAreKeptAsGiven() throws {
+        let waterAmount = try XCTUnwrap(DecimalText.decode("250"))
+        let creatineAmount = try XCTUnwrap(DecimalText.decode("5.25"))
         let revision = waterAndCreatineRevision(components: [
-            IntakeComponent(componentID: "water", name: "Water", amount: try XCTUnwrap(DecimalText.decode("250")), unit: .mL),
-            IntakeComponent(
-                componentID: "creatine-monohydrate",
-                name: "Creatine monohydrate",
-                amount: try XCTUnwrap(DecimalText.decode("5.25")),
-                unit: .g),
+            IntakeComponent(componentID: "water", name: "Water", amount: waterAmount, unit: .mL),
+            IntakeComponent(componentID: "creatine-monohydrate", name: "Creatine monohydrate", amount: creatineAmount, unit: .g),
         ])
         let value = try encoder.upsert(
             intake: intake, revision: revision, product: product, operation: upsertOperation)
-        XCTAssertEqual(amounts(of: value), ["250", "5.25"])
-        // A journal that stored a trailing zero keeps it: what the decimal spells is what is sent, because the
-        // receiver would read a respelled amount as different facts at the same identity.
-        let trailingZero = try XCTUnwrap(DecimalText.decode("5.0"))
-        let respelled = try encoder.upsert(
-            intake: intake,
-            revision: waterAndCreatineRevision(components: [
-                IntakeComponent(componentID: "creatine-monohydrate", name: "Creatine monohydrate", amount: trailingZero, unit: .g),
-                IntakeComponent(componentID: "water", name: "Water", amount: try XCTUnwrap(DecimalText.decode("250")), unit: .mL),
-            ]),
-            product: product,
-            operation: upsertOperation)
-        XCTAssertEqual(amounts(of: respelled)[1], DecimalText.encode(trailingZero))
-        XCTAssertFalse(DecimalText.encode(trailingZero).contains("e"), "an amount is never an exponent")
+        // Facts are looked up by component id, because the contract makes their order part of the content and a
+        // fact's position says nothing about which fact it is.
+        XCTAssertEqual(amount(ofComponent: "water", in: value), "250")
+        XCTAssertEqual(amount(ofComponent: "creatine-monohydrate", in: value), "5.25")
+        // What is sent is exactly the spelling the journal spells, byte for byte. The journal keeps an exact
+        // decimal rather than text, so `DecimalText.encode` is the one rule the whole app spells amounts with,
+        // and the encoder may not respell a value the receiver would read as different facts at the same
+        // identity.
+        XCTAssertEqual(amount(ofComponent: "creatine-monohydrate", in: value), DecimalText.encode(creatineAmount))
+        XCTAssertEqual(amount(ofComponent: "water", in: value), DecimalText.encode(waterAmount))
+        // An amount is a decimal string in the payload, never a JSON number and never an exponent.
+        let canonical = String(decoding: value.canonicalBytes, as: UTF8.self)
+        XCTAssertTrue(canonical.contains("\"amount\":\"250\""))
+        XCTAssertTrue(canonical.contains("\"amount\":\"5.25\""))
+        XCTAssertFalse(canonical.contains("\"amount\":250"), "an amount never crosses the wire as a number")
+        XCTAssertFalse(canonical.contains("e+"), "an amount is never an exponent")
     }
 
     /// A nutrient the product snapshot does not state is unknown, and unknown is never written as a zero: the
@@ -199,11 +199,15 @@ final class IntakeContextEncoderTests: XCTestCase {
             product: nil,
             operation: outboxOperation(id: "f6a0c3e9-5b72-4d18-9c4e-a83d1b7f2e60", kind: .upsert, revision: 1))
         let facts = try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue)
+        // The contract makes the order of `facts` part of the content, and the journal's component order is
+        // the order the receiver hashes, so the encoder never sorts them.
+        XCTAssertEqual(facts.map { $0.string("component_id") }, ["energy-blend", "water"])
         let blend = facts[0]
         XCTAssertEqual(blend.string("kind"), "blend")
         XCTAssertEqual(blend.string("code"), "proprietary_energy_blend")
         XCTAssertEqual(blend.string("label_name"), "Energy Blend")
         XCTAssertEqual(blend.string("aggregation_role"), "blend_total_only")
+        // A blend states what its total measures, exactly as the contract's own blend fixture does.
         XCTAssertEqual(blend.string("quantity_basis"), "compound_mass")
         let members = try XCTUnwrap(blend.array("members"))
         XCTAssertEqual(members.count, 3)
@@ -481,9 +485,14 @@ final class IntakeContextEncoderTests: XCTestCase {
         try IntakeContextJSONReader.read(value.canonicalBytes)
     }
 
-    /// The amounts of a value's facts, in fact order.
-    private func amounts(of value: IntakeContextValue) -> [String] {
-        (value.payload.array("facts") ?? []).compactMap { $0.string("amount") }
+    /// The facts of a value, in the order they are sent.
+    private func facts(of value: IntakeContextValue) -> [IntakeContextJSONValue] {
+        value.payload.array("facts") ?? []
+    }
+
+    /// The amount of one named fact, so an assertion never depends on a fact's position.
+    private func amount(ofComponent componentID: String, in value: IntakeContextValue) -> String? {
+        facts(of: value).first { $0.string("component_id") == componentID }?.string("amount")
     }
 
     // MARK: - Fixture helpers
