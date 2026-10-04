@@ -340,10 +340,12 @@ enum JournalSchemaV3: VersionedSchema {
         var labelBasis: String
         var catalogOrigin: String
         var catalogVersion: String
+        /// JSON of the nutrient values the product states, sorted by id.
+        var nutrientsJSON: String?
 
         init(
             snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
-            labelBasis: String, catalogOrigin: String, catalogVersion: String
+            labelBasis: String, catalogOrigin: String, catalogVersion: String, nutrientsJSON: String? = nil
         ) {
             self.snapshotID = snapshotID
             self.productID = productID
@@ -353,6 +355,7 @@ enum JournalSchemaV3: VersionedSchema {
             self.labelBasis = labelBasis
             self.catalogOrigin = catalogOrigin
             self.catalogVersion = catalogVersion
+            self.nutrientsJSON = nutrientsJSON
         }
     }
 
@@ -390,7 +393,8 @@ enum JournalSchemaV3: VersionedSchema {
         var nextAttemptAt: Date?
         var acknowledgedAt: Date?
         /// Why the operation was suspended, kept so a later run and the next launch report the same
-        /// reason rather than guessing from the state. Nil while the operation has never been suspended.
+        /// reason rather than guessing from the state. Nil while the operation has never been suspended,
+        /// and backfilled by the V2→V3 migration for operations the previous schema left suspended.
         var suspensionReason: String?
 
         init(
@@ -411,8 +415,18 @@ enum JournalSchemaV3: VersionedSchema {
     }
 }
 
-/// The store is written with V3. Both stages are lightweight because each only adds optional columns,
-/// so an existing file is migrated in place and its rows keep their values.
+/// The store is written with V3.
+///
+/// The V1→V2 stage is lightweight: the only change is one optional column, so an existing file is
+/// migrated in place and its rows keep their values.
+///
+/// **The V2→V3 stage is custom, because a lightweight one cannot populate a column.** It also only adds
+/// an optional column — every existing column survives untouched, nutrients included — but the new
+/// `suspensionReason` has to be filled in for operations the previous schema had already suspended.
+/// Leaving it nil would mean `suspendedOperationIDs()` no longer sees them: the V2 store recorded a
+/// suspension on the projection and nowhere else, so an upgrade would have silently **released** every
+/// denied operation, and the next automatic run would retry a denial that retrying cannot fix, for as
+/// long as it took someone to notice.
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self]
@@ -420,8 +434,40 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: JournalSchemaV1.self, toVersion: JournalSchemaV2.self),
-            .lightweight(fromVersion: JournalSchemaV2.self, toVersion: JournalSchemaV3.self),
+            .custom(fromVersion: JournalSchemaV2.self, toVersion: JournalSchemaV3.self, willMigrate: backfillSuspensionReasons),
         ]
+    }
+
+    /// Copies the V2 projection state onto the V3 outbox rows, for the operations it suspended.
+    ///
+    /// The same match `suspendedOperationIDs()` used in V2, on the same four fields — intake, revision,
+    /// destination and action — and only for rows that are still pending: an acknowledged operation was
+    /// delivered whatever its projection says.
+    ///
+    /// The reason written is the store's neutral one rather than a guess. V2 never recorded which kind
+    /// of permanent failure it was, so nothing here can name it truthfully, and inventing a specific
+    /// cause would be worse than saying the suspension was recorded without one.
+    static func backfillSuspensionReasons(context: ModelContext) throws {
+        let state = DestinationState.needsAttention.rawValue
+        let projections = try context.fetch(FetchDescriptor<JournalSchemaV3.ProjectionRecord>(
+            predicate: #Predicate<JournalSchemaV3.ProjectionRecord> { $0.stateRaw == state }))
+        guard !projections.isEmpty else { return }
+        let operations = try context.fetch(FetchDescriptor<JournalSchemaV3.OutboxRecord>(
+            predicate: #Predicate<JournalSchemaV3.OutboxRecord> { $0.acknowledgedAt == nil }))
+        for operation in operations {
+            let alreadyRecorded = operation.suspensionReason != nil
+            guard !alreadyRecorded else { continue }
+            for projection in projections {
+                let intakeID = projection.intakeID
+                let revision = projection.revision
+                let destination = projection.destinationRaw
+                let action = projection.actionRaw
+                if operation.intakeID == intakeID && operation.revision == revision
+                    && operation.destinationRaw == destination && operation.kindRaw == action {
+                    operation.suspensionReason = SwiftDataJournalStore.unrecordedSuspensionReason
+                }
+            }
+        }
     }
 }
 
@@ -482,6 +528,36 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         let schema = Schema(versionedSchema: JournalSchemaV1.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         return try ModelContainer(for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+    }
+
+    /// Opens a store written with the schema before the suspension column, so a test can write a file
+    /// the current one has to migrate **and backfill**. Nothing in the app opens a store this way.
+    static func v2StoreForTesting(url: URL) throws -> ModelContainer {
+        let schema = Schema(versionedSchema: JournalSchemaV2.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        return try ModelContainer(for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+    }
+
+    /// Writes one suspended outbox operation with the V2 model, exactly as that build recorded it: the
+    /// suspension lives on the projection and nowhere else, so migrating it is what proves the
+    /// backfill is doing the work rather than the column having been filled in already.
+    static func writeV2SuspendedOperationForTesting(
+        url: URL, operationID: String, intakeID: String, revision: Int, destination: JournalDestination,
+        nutrientsJSON: String?
+    ) throws {
+        let context = ModelContext(try v2StoreForTesting(url: url))
+        context.autosaveEnabled = false
+        context.insert(JournalSchemaV2.ProductRecord(
+            snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
+            labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1", nutrientsJSON: nutrientsJSON))
+        context.insert(JournalSchemaV2.ProjectionRecord(
+            intakeID: intakeID, revision: revision, destinationRaw: destination.rawValue,
+            actionRaw: OutboxKind.upsert.rawValue, stateRaw: DestinationState.needsAttention.rawValue,
+            isCurrent: true))
+        context.insert(JournalSchemaV2.OutboxRecord(
+            operationID: operationID, kindRaw: OutboxKind.upsert.rawValue, intakeID: intakeID,
+            revision: revision, destinationRaw: destination.rawValue, payloadHash: "hash"))
+        try context.save()
     }
 
     /// Writes one revision with the V1 model, exactly as the first build did, and commits it.
@@ -674,7 +750,19 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     ///
     /// A transient failure still touches current projections only: it is scheduled to be tried again,
     /// and what a later revision is doing matters more than what an old operation did.
-    public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool, reason: String? = nil) throws {
+    public func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+        try recordFailure(
+            operationID: operationID, retryAt: retryAt, needsAttention: needsAttention, reason: nil)
+    }
+
+    /// Records one failed attempt, keeping the reason a suspension is reported with.
+    ///
+    /// A distinct method rather than a defaulted `reason`, because `JournalOutboxDelivery` states the
+    /// three-argument form as a requirement: a defaulted fourth parameter does not satisfy it, so the
+    /// store would no longer conform to the protocol it delivers through.
+    public func recordFailure(
+        operationID: String, retryAt: Date?, needsAttention: Bool, reason: String?
+    ) throws {
         try commit { context in
             guard let row = try Self.outboxRecord(operationID, in: context) else {
                 throw JournalError.unknownOperation(operationID)

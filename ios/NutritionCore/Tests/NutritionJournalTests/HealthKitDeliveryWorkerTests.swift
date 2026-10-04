@@ -1192,4 +1192,72 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             "the permanent failure is not attempted again")
         XCTAssertEqual(writer.saveCalls, 0)
     }
+
+    // MARK: - The suspension column arrives by migration
+
+    /// The V2→V3 stage only **adds** the column, so everything the previous schema held has to survive
+    /// it: a migration that quietly dropped the nutrient values would turn every recorded product into
+    /// one that states nothing, which is indistinguishable from a product that never stated any.
+    func testTheMigrationToTheSuspensionColumnKeepsTheNutrientValues() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let nutrients = SwiftDataJournalStore.encodeNutrients(["protein": .known(dec("13"), .g)])
+        try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
+            url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
+            destination: .healthKit, nutrientsJSON: nutrients)
+
+        let store = try makeStore(directory)
+
+        let snapshot = try XCTUnwrap(store.product(snapshotID: "snap-1"))
+        XCTAssertEqual(snapshot.name, "Sample oats")
+        XCTAssertEqual(snapshot.value(for: "protein"), .known(dec("13"), .g))
+    }
+
+    /// A store written before the column existed recorded a suspension **on the projection**, so opening
+    /// it with the new schema has to copy that onto the operation. Without the backfill the suspension
+    /// simply disappears: `suspendedOperationIDs()` reads the column, sees nil, and every automatic run
+    /// retries a denial that retrying cannot fix — exactly the storm the suspension exists to prevent,
+    /// handed back to every existing user by an upgrade.
+    func testTheMigrationBackfillsTheSuspensionReasonSoAParkedOperationStaysParked() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
+            url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
+            destination: .healthKit, nutrientsJSON: nil)
+
+        let store = try makeStore(directory)
+
+        XCTAssertTrue(
+            try store.suspendedOperationIDs().contains("op-v2"),
+            "an operation the previous schema had suspended must still be suspended after the upgrade")
+        XCTAssertNotNil(
+            try store.suspensionReason(operationID: "op-v2"),
+            "the backfilled reason is what the run reports from now on")
+    }
+
+    /// The backfilled suspension must hold through an actual run, not only in the store's own answer:
+    /// the writer must not be offered the operation again, and it must report that a person is needed.
+    func testTheMigratedSuspensionStillStopsAnAutomaticRun() async throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
+            url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
+            destination: .healthKit, nutrientsJSON: nil)
+        let store = try makeStore(directory)
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings {
+            writer.allow(mapping.quantityTypeIdentifier)
+        }
+        let recording = RecordingTotals(["water": .known(dec("250"), .mL)])
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer,
+            totals: { id, revision in try await recording.totals(intakeID: id, revision: revision) })
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saveCalls, 0, "the migrated suspension is not retried")
+        guard case .needsAttention(_, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the run must report the parked operation, got \(outcomes)")
+        }
+    }
 }
