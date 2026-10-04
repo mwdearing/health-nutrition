@@ -213,6 +213,8 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         [IntakeComponent(componentID: "water", name: "Water", amount: dec("500"), unit: .mL)]
     }
 
+    /// A worker over a store and a transport. Nothing queues link projections, so a run built here sends
+    /// upserts and deletes only.
     private func makeWorker(
         store: SwiftDataJournalStore,
         transport: FakeIntakeContextTransport,
