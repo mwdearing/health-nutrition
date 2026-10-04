@@ -1,0 +1,107 @@
+import Foundation
+import NutritionDomain
+import NutritionJournal
+import NutritionUI
+import XCTest
+
+@testable import HealthNutrition
+
+/// The app's own wiring, read from inside the app target.
+///
+/// These build a whole `AppServices` on throwaway files and run the erase the Connections and privacy
+/// screen offers, so the three stores are checked as the app wires them rather than one at a time: an
+/// erase that emptied the journal but left the recipes behind would still look like a working erase on
+/// any single store.
+@MainActor
+final class AppServicesEraseTests: XCTestCase {
+    private let when = Date(timeIntervalSince1970: 1_700_000_000)
+    private let intakeID = "3f5a1c72-8d64-4b19-9e0a-2c7f6b4d8e51"
+
+    /// A fresh directory per test, so a store file one test wrote can never be read by another and no
+    /// test touches the app's real Application Support files.
+    private func makeServices() throws -> (AppServices, URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return (try AppServices.make(directory: directory), directory)
+    }
+
+    private func sampleIntake() -> Intake {
+        Intake(id: intakeID, category: "food", occurredAt: when, timeZoneIdentifier: "UTC", meal: "breakfast")
+    }
+
+    private func oats() -> IntakeComponent {
+        IntakeComponent(componentID: "oats", name: "Rolled oats", amount: 40, unit: .g)
+    }
+
+    private func sampleFavorite() -> FavoriteTemplate {
+        FavoriteTemplate(
+            id: "favorite-oats", displayName: "Oat porridge", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "g")])
+    }
+
+    private func sampleRecipe() -> RecipeVersion {
+        RecipeVersion(
+            recipeID: "recipe-oats", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour",
+                    quantity: Quantity(value: Decimal(string: "200")!, unit: .g),
+                    perUnit: ["energy": .known(Decimal(string: "3.6")!, .kcal)])
+            ],
+            yield: .servings(4), createdAt: when)
+    }
+
+    /// One journal entry, one favorite and one recipe, so the erase below has something in every store.
+    private func fill(_ services: AppServices) throws {
+        try services.journalStore.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        try services.favoritesStore.add(sampleFavorite())
+        try services.recipeStore.saveNewVersion(sampleRecipe())
+    }
+
+    /// The erase empties the journal, the favorites and the recipes: every store the app keeps holds
+    /// nothing afterwards, and the screen reports that it worked rather than leaving a person to
+    /// believe data was deleted when it was not.
+    func testEraseEmptiesTheJournalTheFavoritesAndTheRecipes() throws {
+        let (services, _) = try makeServices()
+        try fill(services)
+
+        let erased = services.connections.eraseAllData()
+
+        XCTAssertTrue(erased)
+        XCTAssertNil(services.connections.errorMessage)
+        XCTAssertTrue(try services.journalStore.activeIntakes().isEmpty)
+        XCTAssertTrue(try services.favoritesStore.list().isEmpty)
+        XCTAssertTrue(try services.recipeStore.list().recipes.isEmpty)
+    }
+
+    /// An erase is a new start rather than a broken store: the same store instances take a write
+    /// afterwards and the entry is readable again.
+    func testTheStoresStayUsableAfterAnErase() throws {
+        let (services, _) = try makeServices()
+        try fill(services)
+        XCTAssertTrue(services.connections.eraseAllData())
+
+        try services.journalStore.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        try services.favoritesStore.add(sampleFavorite())
+        try services.recipeStore.saveNewVersion(sampleRecipe())
+
+        XCTAssertEqual(try services.journalStore.activeIntakes().map(\.id), [intakeID])
+        XCTAssertEqual(try services.favoritesStore.list().map(\.id), ["favorite-oats"])
+        XCTAssertEqual(try services.recipeStore.list().recipes.map(\.recipeID), ["recipe-oats"])
+    }
+
+    /// The stores are opened where they were asked for, so a test never writes into the app's own
+    /// Application Support directory.
+    func testTheStoresOpenInTheGivenDirectory() throws {
+        let (services, directory) = try makeServices()
+        try fill(services)
+
+        for name in ["journal.store", "favorites.store", "recipes.store"] {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path),
+                "\(name) is not in the given directory")
+        }
+    }
+}

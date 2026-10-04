@@ -19,21 +19,15 @@ struct RootView: View {
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var scanningBarcode = false
     @State private var selectedIntakeID: String?
-    @State private var showingRecipes = false
-    @State private var recipePath: [RecipeRoute] = []
+    /// Held rather than kept as plain view state, so the erase below closes the recipe sheet and drops
+    /// its routes through one method a test can call.
+    @StateObject private var recipeNavigation = RecipeNavigation()
     @State private var recipeList: RecipeListViewModel
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
     // One runner for the app's lifetime, so the transcript survives tab switches.
     @State private var healthKitSpike = HealthKitSpikeRunner()
     #endif
-
-    /// Where the recipe screens navigate to inside their own stack.
-    private enum RecipeRoute: Hashable {
-        case detail(RecipeVersion)
-        /// nil while creating a new recipe, a version while editing one.
-        case editor(RecipeVersion?)
-    }
 
     init(services: AppServices) {
         self.services = services
@@ -85,7 +79,7 @@ struct RootView: View {
             )
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
-                .sheet(isPresented: $showingRecipes) {
+                .sheet(isPresented: $recipeNavigation.showingRecipes) {
                     recipesSheet
                 }
 
@@ -106,8 +100,7 @@ struct RootView: View {
         .onChange(of: connections.eraseGeneration) { _, _ in
             // A recipe detail or editor holds its own copy of the recipe, so close those routes too:
             // otherwise an erased recipe stays on screen and can still be logged.
-            recipePath = []
-            showingRecipes = false
+            recipeNavigation.reset()
             reload()
             recipeList.load()
         }
@@ -160,14 +153,14 @@ struct RootView: View {
     /// The recipes screen, in its own navigation stack so the recipe screens push over each other
     /// without adding a tab. Personal only: nothing here is shared or synced.
     private var recipesSheet: some View {
-        NavigationStack(path: $recipePath) {
+        NavigationStack(path: $recipeNavigation.path) {
             RecipeListView(
                 model: recipeList,
-                onNew: { recipePath.append(.editor(nil)) },
+                onNew: { recipeNavigation.path.append(.editor(nil)) },
                 onOpen: { item in
                     if let version = try? services.recipeStore.version(
                         recipeID: item.id, number: item.versionNumber) {
-                        recipePath.append(.detail(version))
+                        recipeNavigation.path.append(.detail(version))
                     }
                 }
             )
@@ -177,7 +170,7 @@ struct RootView: View {
                     RecipeDetailView(
                         model: RecipeDetailViewModel(version: version, journal: services.journalStore),
                         now: { Date() },
-                        onEdit: { recipePath.append(.editor(version)) },
+                        onEdit: { recipeNavigation.path.append(.editor(version)) },
                         onLogged: { reload() }
                     )
                 case .editor(let version):
@@ -187,7 +180,7 @@ struct RootView: View {
                         onSaved: {
                             // Back to the list: a detail screen would still hold the version it
                             // was opened with, and saving writes a new one.
-                            recipePath = []
+                            recipeNavigation.path = []
                             recipeList.load()
                         }
                     )
@@ -198,8 +191,7 @@ struct RootView: View {
 
     /// Opens the recipes screen from a clean stack.
     private func openRecipes() {
-        recipePath = []
-        showingRecipes = true
+        recipeNavigation.open()
     }
 
     /// The journal row being edited, or nil when nothing is open.
