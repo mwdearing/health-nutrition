@@ -1586,4 +1586,169 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertFalse(
             reason.contains("not an"), "a wrong-endpoint reason would send the wrong reader looking: \(reason)")
     }
+
+    // MARK: - Split tails, superseded projections, and deletions
+
+    /// A prepared batch is not one request: a 413 splits it, and a head that is then rate limited, refused
+    /// for its token, or that leaves its own intake unresolved keeps the tail off the wire entirely. A
+    /// snapshot frozen for that tail at batch-packing time would be a record of links no request ever
+    /// carried, and would go on missing the links that arrived while the tail waited. So nothing is recorded
+    /// for it, and the run after the links arrive sends it with them.
+    func testAnUnattemptedSplitTailKeepsNoFrozenSnapshotSoLaterLinksGoOutWithIt() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        let ordered = try pendingRelay(store).map(\.operationID)
+        let tail = ordered[1]
+        let beforeSplit = projection(sequence: 2).links
+        let provider = LinkProvider(snapshot: beforeSplit)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        // The batch of two is refused for size; its single-operation head is then rate limited, which stops
+        // the split there, so the tail's own request is never made.
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answer(.init(statusCode: 429))
+
+        let outcomes = await makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current }
+        ).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 2, "the oversized batch and its head, and no tail")
+        XCTAssertEqual(
+            outcomes.filter { if case .notAttempted = $0 { return true } else { return false } }
+                .map(\.operationID), [tail],
+            "the tail is reported as never attempted: \(outcomes)")
+        XCTAssertNil(
+            try store.recordedLinks(operationID: tail),
+            "a tail that was never sent must keep no frozen snapshot")
+
+        // A HealthKit save reveals the sample while the tail is still waiting.
+        let arrived = [IntakeContextLink(
+            componentID: "water",
+            sampleUUID: "6f1c9d20-84ab-4e77-9a3b-5c0e2d84f611",
+            healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+            syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+            syncVersion: 9,
+            disposition: .active)]
+        provider.set(arrived)
+        transport.reset()
+        transport.answerEverythingAccepted()
+
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current }
+        ).runOnce(now: when.addingTimeInterval(3600))
+
+        let sent = try IntakeContextJSONReader.read(try XCTUnwrap(transport.sentBatches.first))
+        let byID = try XCTUnwrap(sent.array("operations")).reduce(into: [String: IntakeContextJSONValue]()) {
+            $0[$1.string("operation_id") ?? ""] = $1
+        }
+        let delivered = try XCTUnwrap(byID[tail])
+        XCTAssertEqual(
+            delivered.array("healthkit_links")?.first?.string("healthkit_sample_uuid"), arrived.first?.sampleUUID,
+            "the tail is finally sent carrying the link that arrived while it waited, not the one frozen for "
+                + "the split batch it was never part of")
+    }
+
+    /// A projection naming an intake or a revision the journal no longer holds is resolved as superseded, and
+    /// the run says so. Resolving it in the queue without reporting it would leave the run's outcomes not
+    /// reconciling with the queue: the caller would not learn the projection had been settled.
+    func testASupersededProjectionIsReportedInTheRunOutcomes() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let queue = RecordingProjectionQueue()
+        // The journal holds revision 1 of this intake; the projection names revision 7, which it does not.
+        let gone = RelayLinkProjection(
+            intakeID: intakeID, revision: 7, sequence: 2,
+            links: [IntakeContextLink(
+                componentID: "water",
+                sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+                healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+                syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+                syncVersion: 2,
+                disposition: .active)])
+        queue.offer([gone])
+        transport.answerEverythingAccepted()
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(queue.recorded, [.superseded], "the queue is told the projection is finished with")
+        XCTAssertFalse(
+            transport.sentOperationIDs.contains(gone.operationID), "and nothing was sent for it")
+        let reported = try XCTUnwrap(outcomes.first { $0.operationID == gone.operationID })
+        guard case .superseded = reported else {
+            return XCTFail("the run reports the superseded projection too, got \(outcomes)")
+        }
+    }
+
+    /// An upsert carries a complete link snapshot for its own revision and never a delta, so a projection of
+    /// an older revision of the same intake has nothing left to say once a newer revision's upsert is queued
+    /// in the same run. Sending it before or after would only earn `stale_revision`: the receiver holds a
+    /// newer revision either way, so it is resolved as superseded and reported, like any other superseded
+    /// projection.
+    func testAnOlderRevisionProjectionIsSupersededRatherThanSentBehindANewerUpsert() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        let queue = RecordingProjectionQueue()
+        // Revision 1's projection, queued while revision 2's upsert is queued in the same run.
+        let older = RelayLinkProjection(
+            intakeID: intakeID, revision: 1, sequence: 2,
+            links: [IntakeContextLink(
+                componentID: "water",
+                sampleUUID: "2c932bd1-c46d-4e38-b481-e0d842fdd429",
+                healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+                syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+                syncVersion: 2,
+                disposition: .active)])
+        queue.offer([older])
+        transport.answerEverythingAccepted()
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+        let queuedUpserts = try pendingRelay(store).map(\.operationID)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            transport.sentOperationIDs, queuedUpserts,
+            "only the upserts go out: the older revision's projection has nothing left to say")
+        XCTAssertEqual(queue.recorded, [.superseded])
+        guard case .superseded(_, let detail) = try XCTUnwrap(
+            outcomes.first { $0.operationID == older.operationID })
+        else {
+            return XCTFail("the superseded projection is reported, got \(outcomes)")
+        }
+        let reason = try XCTUnwrap(detail)
+        XCTAssertTrue(reason.contains("revision 2"), "it names the revision that replaced it: \(reason)")
+    }
+
+    /// A delete queued behind a suspended upsert supersedes it. The tombstone retracts exactly what the
+    /// upsert would have put into the receiver, so holding it behind a suspension nothing releases would keep
+    /// the receiver holding an entry the person deleted. One run delivers the tombstone and reports the
+    /// upsert finished with, and acknowledging it clears the suspension with it.
+    func testADeleteQueuedAfterASuspendedUpsertSupersedesItAndStillGoesOut() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let upsert = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        try store.recordFailure(
+            operationID: upsert, retryAt: nil, needsAttention: true, reason: "a domain conflict")
+        let deletedAt = when.addingTimeInterval(3600)
+        try store.delete(intakeID: intakeID, now: deletedAt)
+        let deleteRow = try XCTUnwrap(relayOperation(store, kind: .delete)?.operationID)
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(store: store, transport: transport).runOnce(now: deletedAt)
+
+        XCTAssertEqual(transport.sentOperationIDs, [deleteRow], "the tombstone goes out on its own")
+        let batch = try IntakeContextJSONReader.read(try XCTUnwrap(transport.sentBatches.first))
+        let tombstone = try XCTUnwrap(batch.array("operations")).first
+        XCTAssertEqual(tombstone?.string("operation"), "delete")
+        guard case .superseded(let id, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the suspended upsert is superseded, not parked, got \(outcomes)")
+        }
+        XCTAssertEqual(id, upsert, "it is the upsert that is finished with, and the delete that is delivered")
+        XCTAssertEqual(try pendingRelay(store), [], "neither row is left queued")
+        XCTAssertNil(
+            try store.suspensionReason(operationID: upsert),
+            "acknowledging it clears the suspension, so nothing is left parked")
+    }
 }

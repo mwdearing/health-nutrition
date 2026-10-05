@@ -71,6 +71,18 @@ second request, not a second decision, so the tail is filtered through the head'
 In both cases the operations already sent are reported as they were, and the ones the run never reached are
 reported as `notAttempted` — untouched, with no attempt recorded against them.
 
+### A deletion queued after a suspended upsert supersedes it
+A suspension is normally the end of the road for an intake: nothing later for that intake goes past it, since
+it was never delivered. **A deletion is the exception.** When a delete is queued behind a suspended upsert,
+the upsert is resolved as superseded and reported as such, and the tombstone goes out.
+
+The tombstone retracts exactly what the upsert would have put into the receiver, so the two say opposite
+things about the same entry and only one can be right. The delete is what decides what the receiver holds —
+that is already the rule for an upsert whose intake is gone — and holding it behind a suspension nothing
+releases would mean the receiver kept an entry the person deleted, indefinitely, waiting on someone to
+re-arm an operation that is no longer worth sending. Acknowledging the superseded upsert is what takes it out
+of the queue and clears the suspension with it, so nothing is left parked afterwards.
+
 ## Outcome mapping
 One result per operation comes back in the 200, and the receiver's seven results map like this:
 
@@ -165,14 +177,27 @@ varies between two attempts turns a lost response into a permanent disagreement:
   UUID — would move the projection and client digests, so a store that cannot record the snapshot cannot
   back this worker: it would have no way to make a retry the duplicate it needs to be.
 
-  The snapshot is **encoded before it is recorded, and recorded only once the operation is actually going
-  out**. The store keeps the first snapshot it is given for the life of the operation, so an invalid one
-  recorded eagerly would be frozen: every later attempt would read the same bad links back, the encoder
+  The snapshot is **encoded before it is recorded, and recorded only for the split piece that is actually
+  going out**. The store keeps the first snapshot it is given for the life of the operation, so an invalid
+  one recorded eagerly would be frozen: every later attempt would read the same bad links back, the encoder
   would refuse them again, and a snapshot that was merely wrong once — a link to a component the revision
   does not state, say — could never be replaced even after the writer had corrected it. And encoding does
   not promise a send, since the blocker check runs after it: an operation held back behind an earlier
   revision must leave nothing on record, or the first snapshot it *does* eventually go out with would not be
   the one on file.
+
+## An unattempted split tail keeps no frozen snapshot
+A prepared batch is **not one request**. A 413 splits it, and each half is a request of its own that can fail
+apart from the other: a 429 or a 401 on the head stops the split there, and an intake the head left unresolved
+has its tail items filtered out of it. Those tail items are reported `notAttempted` or `blocked` — they were
+never attempted — and **no link snapshot is recorded for them**. Recording one would leave a durable record
+of links no request ever carried, and would go on missing every link that arrived while the tail waited: the
+store keeps the first snapshot it is given, so the tail would go out carrying the links that happened to be
+current when the oversized batch was packed, and the link that arrived in the meantime would be lost.
+
+So the snapshot is written **per split piece, by the piece that carries the item**. What goes on the wire has
+its snapshot frozen; what does not has nothing on record at all. A later run therefore encodes the tail
+against the links current at that moment and sends those.
 
 ## What counts as a failed attempt
 Only an operation that was eligible to send. When the capabilities read fails, an operation held back behind
@@ -192,6 +217,27 @@ A projection that cannot be encoded at all is told `needsAttention` **and holds 
 of the same intake**, which are later sequences of the same revision and would otherwise ask the receiver to
 reconcile a state the earlier one could not be sent in.
 
+## A superseded projection is reported as well as resolved
+A projection naming an intake or a revision the journal no longer holds is resolved as `superseded` with its
+queue, and the run **appends a `superseded` outcome** for it. The two halves are separate jobs and both
+matter: the queue owns where the payload waits, so it has to be told the projection is finished with, and the
+run's outcome list has to reconcile with the queue, so a caller reading the run learns what became of
+everything it was offered. Resolving in the queue alone would leave an outcome list that silently drops
+something the queue asked about.
+
+## A projection of an older revision does not interleave
+A queued projection for revision N of an intake, when an upsert for a newer revision of the same intake is
+queued in the same run, is **neither sent before nor after it**: it is resolved as superseded and reported,
+exactly as above.
+
+The reason is in what an upsert carries. **Every upsert carries a complete link snapshot for its own
+revision, never a delta** — sequence 1 opens the projection lifecycle of that revision and the snapshot is
+whole. So once a newer revision's upsert is queued, the older revision's projection has nothing left to
+say: the newer upsert states the links of its own revision in full. Sending the older one either side of it
+would earn `stale_revision` from the receiver, which holds a newer revision by then, so the request buys
+nothing and risks offering a projection for a revision the receiver has moved past. This holds regardless of
+which of the two the receiver sees first, which is why it is settled by resolving rather than by ordering.
+
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/RelayDeliveryWorkerTests.swift` runs against a real
 `SwiftDataJournalStore` on disk and a fake transport that reads the `operation_id`s out of the bytes it was
@@ -203,9 +249,12 @@ split that recurses until only a single operation is refused, both batch limits,
 revisions, a parked *later* revision not stranding an earlier due one, an earlier failure blocking a sound
 revision behind it, a suspended operation holding back what is behind it, a split tail held back for an
 intake the head left unresolved, a delete sent as a tombstone with the instant the journal recorded, an upsert
-retry reusing its first link snapshot, an invalid first snapshot not frozen and a corrected one delivered,
-a projection's retry date reaching its queue, an unencodable projection holding back the later ones, and
-delivery off — a store with no enabled relay destination sends nothing at all, and does not even ask the
+retry reusing its first link snapshot, an invalid first snapshot not frozen and a corrected one delivered, a
+projection's retry date reaching its queue, an unencodable projection holding back the later ones, a
+superseded projection reported as well as resolved, a projection of an older revision superseded rather than
+sent behind a newer upsert, a delete queued after a suspended upsert superseding it and still going out, an
+unattempted split tail keeping no frozen snapshot so the links that arrived while it waited go out with it,
+and delivery off — a store with no enabled relay destination sends nothing at all, and does not even ask the
 receiver for its capabilities.
 
 Swift tests run in macOS CI; the acceptance for this package is static.

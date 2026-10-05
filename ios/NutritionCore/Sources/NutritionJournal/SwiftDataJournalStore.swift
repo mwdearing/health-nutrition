@@ -1217,23 +1217,31 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         return try Self.outboxRecord(operationID, in: context)?.deletedAt
     }
 
-    /// The link snapshot this operation was first encoded with, or nil when nothing has been recorded.
+    /// The link snapshot this operation was last sent under, or nil when nothing has been recorded.
     ///
     /// Read back rather than rebuilt, because the retry of an upsert has to carry the same links under the
     /// same delivery identity: links that changed in between would give the same `operation_id` a
     /// different `client_payload_hash`, which the receiver reads as a conflict rather than a duplicate.
+    ///
+    /// Nil means no request has carried this operation yet, so there is nothing to repeat and the next
+    /// attempt encodes against whatever the links are now. That is the normal state of an operation whose
+    /// first piece never went out.
     public func recordedLinks(operationID: String) throws -> [IntakeContextLink]? {
         let context = ModelContext(try openContainer())
         guard let text = try Self.outboxRecord(operationID, in: context)?.linksJSON else { return nil }
         return try RelayDeliveryLinkSnapshot.decode(text)
     }
 
-    /// Records the link snapshot an operation is about to be sent under, keeping the first one it is given.
+    /// Records the link snapshot an operation has just been sent under, keeping the first one it is given.
     ///
     /// Recording is first-write-wins: a later attempt cannot replace what an earlier one was sent with,
     /// which is the whole point of keeping it. When a snapshot is already recorded it is returned and the
-    /// one offered now is ignored, so the caller sends the stored one and two overlapping runs cannot send
-    /// different snapshots under one operation id.
+    /// one offered now is ignored, so **a returned snapshot that differs from the one offered tells the
+    /// caller that another run recorded a different one first** — the record then does not hold what this
+    /// caller sent, which is what it needs to know before treating a retry as a duplicate.
+    ///
+    /// Called once the piece carrying the operation has been answered, so what is recorded is what went on
+    /// the wire. An operation whose piece never carried it is never recorded here and keeps nothing.
     @discardableResult
     public func recordLinks(_ links: [IntakeContextLink], operationID: String) throws -> [IntakeContextLink] {
         // Encoded before the commit, so a snapshot that cannot be written leaves the row as it was instead

@@ -123,6 +123,10 @@ public typealias RelayTokenProvider = @Sendable () async throws -> String
 /// rebuild that named different values would arrive under the same `operation_id` with a different
 /// `client_payload_hash` — a conflict at the receiver, where a duplicate is what it should be. A store that
 /// cannot keep either cannot deliver a retry correctly, so it cannot back this worker either.
+    ///
+    /// `recordLinks(_:operationID:)` is called once a piece carrying the operation has been answered, not
+    /// before the batch is packed: what it records is what went on the wire, and an operation whose piece
+    /// never carried it keeps nothing on record.
 public protocol RelayDeliveryStore: JournalDeliverySuspension, JournalTombstoneSource {
     /// The instant the intake was deleted, as the queued delete row recorded it, or nil when it recorded
     /// none. A nil delete is delivered from the journal's own last-revision record rather than stranded.
@@ -131,10 +135,10 @@ public protocol RelayDeliveryStore: JournalDeliverySuspension, JournalTombstoneS
     /// The link snapshot this operation was first encoded with, or nil when nothing has been recorded.
     func recordedLinks(operationID: String) throws -> [IntakeContextLink]?
 
-    /// Records the snapshot an operation is about to be sent under, keeping the first one it is given, and
+    /// Records the snapshot an operation has just been sent under, keeping the first one it is given, and
     /// returns the snapshot that is on record afterwards: the one offered when nothing was there, otherwise
-    /// the one that won an earlier write. The caller sends what comes back, so two runs never send different
-    /// snapshots under one operation id.
+    /// the one that won an earlier write. A returned snapshot that is not the one offered says another run
+    /// recorded a different one first, so the caller knows the record does not hold what it sent.
     @discardableResult
     func recordLinks(_ links: [IntakeContextLink], operationID: String) throws -> [IntakeContextLink]
 }
@@ -251,14 +255,37 @@ public struct RelayDeliveryWorker: Sendable {
         // *receiver* reports is different, and is parked — see `resolve`.
         var queuedByIntake: [String: [OutboxOperation]] = [:]
         var intakeOrder: [String] = []
+        // The newest revision this run finds queued for each intake, which is what tells a link projection
+        // that an upsert for a later revision is waiting behind it in the same run.
+        var newestUpsertRevision: [String: Int] = [:]
         for operation in operations where operation.destination == .relay {
             if queuedByIntake[operation.intakeID] == nil { intakeOrder.append(operation.intakeID) }
             queuedByIntake[operation.intakeID, default: []].append(operation)
+            if operation.kind == .upsert {
+                newestUpsertRevision[operation.intakeID] =
+                    max(newestUpsertRevision[operation.intakeID] ?? operation.revision, operation.revision)
+            }
         }
         for intakeID in intakeOrder {
+            // The operations this delete retracts: everything queued before it for the same intake. A
+            // suspended one among them is finished with rather than parked — see the branch below.
+            let retracted = retractedByQueuedDelete(queuedByIntake[intakeID] ?? [])
             for operation in queuedByIntake[intakeID] ?? [] {
                 if let blocker = blocking[intakeID] {
                     outcomes.append(.blocked(operationID: operation.operationID, blockedBy: blocker))
+                    continue
+                }
+                if suspended.contains(operation.operationID), retracted.contains(operation.operationID) {
+                    // **A delete queued behind a suspended upsert supersedes it.** The tombstone retracts
+                    // exactly what the upsert would have put into the receiver, so leaving the upsert parked
+                    // holds the retraction behind a suspension nothing releases: the person deleted the
+                    // entry, and the receiver would keep it until someone re-armed an operation that is no
+                    // longer worth sending. The delete decides what the receiver holds, and acknowledging
+                    // the upsert is what takes it out of the queue and clears the suspension with it.
+                    outcomes.append(acknowledge(
+                        operation, now: now, outcome: .superseded(
+                            operationID: operation.operationID,
+                            detail: "a delete queued behind it retracts what it would have sent")))
                     continue
                 }
                 if suspended.contains(operation.operationID) {
@@ -303,9 +330,29 @@ public struct RelayDeliveryWorker: Sendable {
                 outcomes.append(.blocked(operationID: projection.operationID, blockedBy: blocker))
                 continue
             }
-            switch encode(projection) {
-            case .superseded:
+            // **A projection of an older revision does not interleave with the newer upsert queued beside
+            // it.** It is neither sent before nor after: the upsert already carries a complete link
+            // snapshot for its own revision and never a delta, so the older projection has nothing left to
+            // say, and once the newer revision is held the receiver answers it `stale_revision` anyway.
+            // Sending it would spend a request on a refusal and, worse, offer the receiver a projection for
+            // a revision it has moved past. Resolving it as superseded is what the queue needs to hear,
+            // and the outcome below is what makes the run's report agree with what the queue was told.
+            if let newer = newestUpsertRevision[projection.intakeID], newer > projection.revision {
                 await projections.resolve(projection, with: .superseded)
+                outcomes.append(.superseded(
+                    operationID: projection.operationID,
+                    detail: "revision \(projection.revision) is behind the revision \(newer) queued "
+                        + "for the same intake, whose upsert carries its own complete link snapshot"))
+                continue
+            }
+            switch encode(projection) {
+            case .superseded(let detail):
+                // **Resolved in the queue and reported here.** The queue is told, because it owns where the
+                // payload waits; the run reports it too, because an outcome list that silently drops
+                // something the queue offered no longer reconciles with the queue, and a caller reading the
+                // run would not know the projection had been settled.
+                await projections.resolve(projection, with: .superseded)
+                outcomes.append(.superseded(operationID: projection.operationID, detail: detail))
             case .failed:
                 // A projection that cannot be encoded is the queue's problem to hear about: it offered a
                 // payload this module refuses, and recording a failure here would be recording it with
@@ -386,8 +433,9 @@ public struct RelayDeliveryWorker: Sendable {
                 candidates.append(item)
             }
             guard !candidates.isEmpty else { continue }
-            // The credential comes before the snapshot is recorded: when it cannot be read nothing goes out,
-            // and a snapshot frozen for a send that never happened would carry stale links into the retry.
+            // The credential comes before anything is sent, and the snapshot is recorded only once a
+            // piece carrying it has been answered — so a token that cannot be read leaves nothing on
+            // record, and the next attempt encodes against the links current then.
             let credential: String
             do {
                 credential = try await token()
@@ -401,25 +449,7 @@ public struct RelayDeliveryWorker: Sendable {
                 }
                 continue
             }
-            var ready: [RelayEncodedOperation] = []
-            for item in candidates {
-                if let blocker = held[item.intakeID] {
-                    outcomes.append(.blocked(operationID: item.operationID, blockedBy: blocker))
-                    continue
-                }
-                // The snapshot is written here, once the request is about to go out: encoding alone does not
-                // promise a send, and recording earlier would freeze a snapshot for an operation that never
-                // went.
-                switch record(item, now: now) {
-                case .ready(let recorded):
-                    ready.append(recorded)
-                case .outcome(let refused):
-                    outcomes.append(refused)
-                    held[item.intakeID] = item.operationID
-                }
-            }
-            guard !ready.isEmpty else { continue }
-            let sent = await send(ready, credential: credential, now: now)
+            let sent = await transmit(candidates, credential: credential, now: now)
             outcomes.append(contentsOf: sent.deliveries.map(\.outcome))
             for delivery in sent.deliveries where !delivery.outcome.isResolved {
                 held[delivery.intakeID] = delivery.outcome.operationID
@@ -458,12 +488,16 @@ public struct RelayDeliveryWorker: Sendable {
         let origin: RelayOrigin
         let intakeID: String
         let value: IntakeContextValue
-        /// The sequence-1 link snapshot still to be recorded, set only on the first attempt of an upsert.
+        /// The sequence-1 link snapshot this item is carrying, set only on an upsert's first attempt.
         ///
-        /// Carried rather than written during encoding: an operation can be encoded and then never sent,
-        /// because its intake was blocked behind an earlier one, or because the capabilities read failed. The
-        /// snapshot is a durable record of what goes on the wire, so it is written when the operation is
-        /// actually about to be sent and not before.
+        /// Carried rather than written during encoding, and written by `record(_:)` once the piece carrying
+        /// this item has been answered. Encoding decides only whether the item is sendable at all: an
+        /// operation can be encoded and then never sent, because its intake was blocked behind an earlier
+        /// one, because the capabilities read failed, or because a 413 split it off into a piece that a rate
+        /// limit, a refused token or an unresolved intake kept from carrying it. The snapshot is a durable
+        /// record of what went on the wire, so it belongs to the piece that actually put it there — recording
+        /// it earlier would leave on record links no request carried, and go on missing every link that
+        /// arrived while the item waited to be sent.
         let snapshotToRecord: [IntakeContextLink]?
 
         init(
@@ -477,16 +511,6 @@ public struct RelayDeliveryWorker: Sendable {
         }
 
         var operationID: String { value.operations.first?.operationID ?? "" }
-
-        /// The same operation with nothing left to record.
-        ///
-        /// A copy rather than a flag, so an item that has been recorded cannot be recorded twice by later
-        /// code reading the field, and so the recorded snapshot is written exactly once per operation.
-        func withSnapshotRecorded() -> RelayEncodedOperation {
-            guard snapshotToRecord != nil else { return self }
-            return RelayEncodedOperation(
-                origin: origin, intakeID: intakeID, value: value, snapshotToRecord: nil)
-        }
     }
 
     /// Why an operation could not join this run.
@@ -499,46 +523,18 @@ public struct RelayDeliveryWorker: Sendable {
         case encoded(RelayEncodedOperation)
     }
 
-    /// What recording an operation's first link snapshot came to.
-    private enum RelayRecording {
-        /// Go ahead and send this, carrying the snapshot that is on record.
-        case ready(RelayEncodedOperation)
-        /// It cannot go this run; this is what became of it.
-        case outcome(RelayDeliveryOutcome)
-    }
-
-    /// Writes an operation's first link snapshot and returns the item to send, or the outcome if it cannot go.
-    ///
-    /// Nothing to do for a delete, a projection, or an operation whose snapshot is already on record. The
-    /// store returns the snapshot that won the first write: when another run recorded a different one, this
-    /// item is encoded again from the stored snapshot, so what goes out is what is on record. A failure to
-    /// write is **retried**, not parked: nothing has been sent yet, so the same snapshot can be written on
-    /// the next attempt, and parking would need a person to re-arm an operation that did nothing wrong.
-    private func record(_ item: RelayEncodedOperation, now: Date) -> RelayRecording {
-        guard let snapshot = item.snapshotToRecord, case .outbox(let operation) = item.origin else {
-            return .ready(item)
-        }
-        let stored: [IntakeContextLink]
-        do {
-            stored = try store.recordLinks(snapshot, operationID: operation.operationID)
-        } catch {
-            return .outcome(retry(
-                operation, reason: "the link snapshot for this operation could not be recorded", now: now))
-        }
-        if stored == snapshot { return .ready(item.withSnapshotRecorded()) }
-        switch encodeUpsert(operation) {
-        case .encoded(let rebuilt):
-            return .ready(rebuilt.withSnapshotRecorded())
-        case .failed(let reason):
-            return .outcome(retry(operation, reason: reason, now: now))
-        case .superseded(let detail):
-            return .outcome(acknowledge(
-                operation, now: now,
-                outcome: .superseded(operationID: operation.operationID, detail: detail)))
-        }
-    }
-
     // MARK: - Encoding
+
+    /// The operations a delete queued in this intake's own queue retracts: everything before it.
+    ///
+    /// One intake's queue is walked in the store's order — oldest revision first, an upsert before a
+    /// delete within a revision — so a delete stands above every operation ahead of it and nothing after
+    /// it. Only the delete's own delivery identity is used to decide; the operations it retracts are
+    /// recognised by position, which is what the receiver would see.
+    private static func retractedByQueuedDelete(_ queued: [OutboxOperation]) -> Set<String> {
+        guard let index = queued.firstIndex(where: { $0.kind == .delete }) else { return [] }
+        return Set(queued[..<index].map(\.operationID))
+    }
 
     /// Encodes one queued row as the operation it is.
     ///
@@ -579,7 +575,7 @@ public struct RelayDeliveryWorker: Sendable {
         // decides whether it is sendable at all — the encoder is the authority, and the store keeps the first
         // snapshot it is given for the life of the operation, so an invalid one written here would be frozen
         // permanently, with every later attempt reading the same bad links back. Recording waits for
-        // `record(_:)`, which runs once the operation is known to be going out.
+        // `record(_:)`, which runs once the piece carrying the operation has been answered.
         let recorded: [IntakeContextLink]?
         do {
             recorded = try store.recordedLinks(operationID: operation.operationID)
@@ -748,13 +744,36 @@ public struct RelayDeliveryWorker: Sendable {
         let stopsTheRun: Bool
     }
 
-    /// Sends one batch and maps what came back, splitting it again if the receiver says it is too large.
+    /// Puts one piece on the wire and maps what came back, splitting it again if the receiver says the body
+    /// was too large.
+    ///
+    /// **The link snapshot is recorded per piece, and only once that piece has been answered** — so what is
+    /// on record is exactly what went on the wire, and an item in a piece that never carried it has nothing.
+    /// A prepared batch is not one request: a 413 splits it into halves, and the halves are separate requests
+    /// that can fail apart. A rate limit or a refused token on the head stops the split, and an intake the
+    /// head left unresolved has its tail items filtered out of it, so those tail items were never on the wire
+    /// at all. Recording them at packing time would leave a durable record of links no request carried, and
+    /// would go on missing every link that arrived while they waited — the store keeps the first snapshot it
+    /// is given, so they would be sent carrying whatever happened to be current when the oversized batch was
+    /// packed. **The oversized request itself records nothing either**: a 413 means the receiver applied none
+    /// of it, and each piece the split produces records its own when its own request is answered.
+    ///
+    /// Recording still happens before the answer is mapped, so `apply` acknowledges rows while they are
+    /// writable and `recordLinks` is not refused for an acknowledged row.
+    ///
+    /// Recording after the request rather than before it also means the write can no longer change what is
+    /// sent, which is why `record(_:)` reports a snapshot the store did not take rather than re-encoding and
+    /// sending that instead. **What went on the wire is what the run records as sent**, and an operation whose
+    /// record disagrees is reported as unresolved rather than quietly assumed repeatable. The cost is a
+    /// narrow window — an intake deleted between being encoded and being sent goes out, and the tombstone
+    /// queued behind it retracts it on this run or the next — which is the same end state the receiver
+    /// reaches by applying the batch in array order.
     ///
     /// Recursive rather than one split, because how large a single operation is on its own is not knowable
     /// here: an operation with a long link snapshot may need to travel alone while a bare facts-only one
     /// would have fitted. Parking whatever survives a single halving would refuse operations that were
     /// perfectly sendable, and the recursion stops on its own at one operation the receiver still refuses.
-    private func send(
+    private func transmit(
         _ items: [RelayEncodedOperation], credential: String, now: Date
     ) async -> RelayBatchResult {
         let bytes: Data
@@ -763,6 +782,8 @@ public struct RelayDeliveryWorker: Sendable {
                 batchID: Self.batchID(for: items), operations: items.map(\.value)
             ).canonicalBytes
         } catch {
+            // Nothing was sent, so nothing is recorded: a snapshot frozen for a request that never went out
+            // would go on missing the links that arrive before the next one.
             return await result(
                 of: items, now: now, stopsTheRun: false, refused: "the batch could not be encoded for delivery")
         }
@@ -770,21 +791,25 @@ public struct RelayDeliveryWorker: Sendable {
         do {
             response = try await transport.send(batch: bytes, token: credential)
         } catch {
-            // Nothing arrived, so there is no status to read. Transient by definition: the same bytes are
-            // worth sending again.
+            // Nothing arrived, so there is no status to read, and the bytes may still have reached the
+            // receiver. Transient by definition: the same bytes are worth sending again — which is exactly
+            // what the snapshot on record has to reproduce, so it is written now.
+            let unrecorded = record(items)
             return await result(
                 of: items, now: now, stopsTheRun: false, refused: nil,
-                failed: "the batch could not be sent")
+                failed: "the batch could not be sent", unrecorded: unrecorded)
         }
         switch response.statusCode {
         case 200...299:
+            let unrecorded = record(items)
+            let delivered = await apply(response, to: items, now: now)
             return RelayBatchResult(
-                deliveries: await apply(response, to: items, now: now), stopsTheRun: false)
+                deliveries: merging(delivered, unrecorded: unrecorded), stopsTheRun: false)
         case 401:
             // The token is refused. Retrying cannot mint a new one, and every later batch would be refused
             // the same way, so the run stops and these operations are parked until someone re-arms them.
             return await result(
-                of: items, now: now, stopsTheRun: true,
+                of: items, now: now, stopsTheRun: true, unrecorded: record(items),
                 refused: "the receiver rejected the intake token, so nothing was delivered")
         case 429:
             // **A rate limit stops the run.** The receiver is telling this producer to send less, and the
@@ -801,7 +826,7 @@ public struct RelayDeliveryWorker: Sendable {
             let reason = wait.map { "the receiver asked this producer to wait \($0) seconds" }
                 ?? "the receiver rate limited this producer without stating a wait"
             return await result(
-                of: items, now: now, stopsTheRun: true, refused: nil,
+                of: items, now: now, stopsTheRun: true, unrecorded: record(items), refused: nil,
                 failed: reason,
                 failedAt: wait.map { now.addingTimeInterval(TimeInterval($0)) })
         case 413:
@@ -811,9 +836,13 @@ public struct RelayDeliveryWorker: Sendable {
             // have fitted. Halving once and parking whatever still does not fit would refuse operations that
             // were perfectly sendable, so the split recurses and only a **single** operation still coming back
             // 413 is the payload itself being too large. That case is permanent: no smaller request exists.
+            //
+            // **Nothing is recorded for this request.** The receiver applied none of it, and each piece the
+            // split produces records its own snapshot when its own request is answered, so an item in a piece
+            // that is never sent has nothing on record.
             if items.count > 1 {
                 let half = items.count / 2
-                let head = await send(Array(items[..<half]), credential: credential, now: now)
+                let head = await transmit(Array(items[..<half]), credential: credential, now: now)
                 // **A refused token or a rate limit on the head stops the split there.** The rest of the run
                 // carries the same token to the same receiver, so sending the tail would be one more request
                 // refused for the same reason, and its operations would be recorded against a credential or a
@@ -833,27 +862,80 @@ public struct RelayDeliveryWorker: Sendable {
                 var deliveries = head.deliveries
                 deliveries.append(contentsOf: blocked)
                 if !sendable.isEmpty {
-                    let sent = await send(sendable, credential: credential, now: now)
+                    let sent = await transmit(sendable, credential: credential, now: now)
                     deliveries.append(contentsOf: sent.deliveries)
                     return RelayBatchResult(deliveries: deliveries, stopsTheRun: sent.stopsTheRun)
                 }
                 return RelayBatchResult(deliveries: deliveries, stopsTheRun: false)
             }
             return await result(
-                of: items, now: now, stopsTheRun: false,
+                of: items, now: now, stopsTheRun: false, unrecorded: record(items),
                 refused: "the receiver refused this operation's payload as too large")
         case 400, 403:
             // Permanent for these operations: the payload or the producer binding is refused, and the same
             // bytes are refused again on every attempt.
             return await result(
-                of: items, now: now, stopsTheRun: false,
+                of: items, now: now, stopsTheRun: false, unrecorded: record(items),
                 refused: Self.errorText(in: response.body) ?? "the receiver refused the batch")
         default:
             // 5xx and anything else the receiver did not name: transient, because a later run may well find
             // it back. The status is in the reason so the queue is not silent about why it waited.
             return await result(
-                of: items, now: now, stopsTheRun: false, refused: nil,
+                of: items, now: now, stopsTheRun: false, unrecorded: record(items), refused: nil,
                 failed: "the receiver answered \(response.statusCode)")
+        }
+    }
+
+    /// Records the snapshot every item of one answered piece went out under, and names the ones the record
+    /// does not now hold.
+    ///
+    /// A delete, a projection and an operation whose snapshot is already on record have nothing to write. The
+    /// store keeps the first snapshot it is given for the life of the operation, and this is the write that
+    /// makes the next attempt of these operations a duplicate rather than a conflict: the answer has just
+    /// named what was on the wire, and this records exactly that.
+    ///
+    /// The returned identities are the ones where **the record does not hold what went on the wire** — either
+    /// the write failed, or another run had already recorded a different snapshot and won. `merging(_:unrecorded:)`
+    /// decides what that means for the outcome.
+    @discardableResult
+    private func record(_ items: [RelayEncodedOperation]) -> Set<String> {
+        var mismatched: Set<String> = []
+        for item in items {
+            guard let snapshot = item.snapshotToRecord, case .outbox(let operation) = item.origin else {
+                continue
+            }
+            do {
+                if try store.recordLinks(snapshot, operationID: operation.operationID) != snapshot {
+                    mismatched.insert(operation.operationID)
+                }
+            } catch {
+                mismatched.insert(operation.operationID)
+            }
+        }
+        return mismatched
+    }
+
+    /// Replaces the outcome of an **unresolved** operation whose sent snapshot is not the one on record.
+    ///
+    /// Only an operation that will be sent again is at risk: its next attempt reads the snapshot that is on
+    /// record, so if that is not what the receiver was just given, the retry arrives under the same delivery
+    /// identity with different content — a conflict where a duplicate is what it should be. A resolved
+    /// operation has left the queue and is never sent again, so what is on record cannot affect it and its
+    /// outcome stands as the receiver's answer reported it.
+    private func merging(
+        _ deliveries: [RelayDelivery], unrecorded: Set<String>
+    ) -> [RelayDelivery] {
+        guard !unrecorded.isEmpty else { return deliveries }
+        return deliveries.map { delivery in
+            guard !delivery.outcome.isResolved,
+                  unrecorded.contains(delivery.outcome.operationID)
+            else { return delivery }
+            return RelayDelivery(
+                intakeID: delivery.intakeID,
+                outcome: .notAcknowledged(
+                    operationID: delivery.outcome.operationID,
+                    detail: "the journal does not hold the link snapshot this operation was sent with, so a "
+                        + "retry cannot be guaranteed to repeat it"))
         }
     }
 
@@ -902,7 +984,8 @@ public struct RelayDeliveryWorker: Sendable {
     /// backoff for each operation's own attempt count.
     private func result(
         of items: [RelayEncodedOperation], now: Date, stopsTheRun: Bool,
-        refused: String?, failed: String? = nil, failedAt: Date? = nil
+        refused: String?, failed: String? = nil, failedAt: Date? = nil,
+        unrecorded: Set<String> = []
     ) async -> RelayBatchResult {
         var deliveries: [RelayDelivery] = []
         for item in items {
@@ -916,7 +999,8 @@ public struct RelayDeliveryWorker: Sendable {
             }
             deliveries.append(RelayDelivery(intakeID: item.intakeID, outcome: outcome))
         }
-        return RelayBatchResult(deliveries: deliveries, stopsTheRun: stopsTheRun)
+        return RelayBatchResult(
+            deliveries: merging(deliveries, unrecorded: unrecorded), stopsTheRun: stopsTheRun)
     }
 
     /// Maps the receiver's per-operation results onto outcomes.
