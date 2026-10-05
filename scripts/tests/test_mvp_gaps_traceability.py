@@ -300,13 +300,19 @@ def _unqualified_implemented_claims(text: str) -> set[int]:
     return unqualified
 
 
-# Sentence-level punctuation, and the connectives that start a contrast. Either
+# Sentence-level punctuation, and the connectives that start a new claim. Either
 # ends the claim the qualifying clause can cover: "Area 2 is implemented end to
-# end; Areas 5, 8 and 10 ..." and "Area 2 is implemented end to end, while Areas
-# 5, 8 and 10 ..." both qualify only the areas after the break. Commas are
-# deliberately absent — the legitimate sentence separates its areas with them.
+# end; Areas 5, 8 and 10 ...", "..., while Areas 5, 8 and 10 ..." and "..., and
+# Areas 5, 8 and 10 ..." each qualify only the areas after the break.
+#
+# A comma is a break only when a conjunction follows it, which is what separates
+# the ", and Areas" that starts a second claim from the plain commas inside "Areas
+# 5, 8 and 10". The `and` inside an area enumeration is deliberately not a break
+# on its own, for the same reason.
 _CLAUSE_BREAKER = re.compile(
-    r"[;.:!?]|\b(?:while|but|whereas|although|though|however|yet|whereby)\b",
+    r"[;.:!?]"
+    r"|,\s*(?:and|but|while|whereas|although|though|however|yet|whereby)\b"
+    r"|\b(?:while|but|whereas|although|though|however|yet|whereby)\b",
     re.IGNORECASE,
 )
 
@@ -361,6 +367,63 @@ ASSERTED_ABSENT_TREES = (
 )
 
 
+def _asserted_evidence_spec() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The tokens and trees the document claims, read out of the document.
+
+    Parsed rather than hard-coded, because a test that verifies a claim while
+    searching for something else is worse than no test: replacing `goal` with
+    `target` in the note would leave the suite searching for `goal` and passing
+    without ever checking the new claim.
+    """
+    text = _document()
+    note = re.search(
+        r"return zero matches across (?P<trees>.+?)\.", text, re.DOTALL
+    )
+    assert note is not None, (
+        "the evidence note no longer states which trees the zero-match search "
+        "covered"
+    )
+    trees = tuple(re.findall(r"`([^`]+)`", note.group("trees")))
+    # Every code span in the bullet that carries this claim, up to "return zero
+    # matches", is a token the document asserts is absent — however many there are
+    # and however the bullet wraps, so the list is never half-read.
+    bullet = re.search(
+        r"^- Absence was established.*?return zero matches across",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert bullet is not None, (
+        "the evidence note no longer states which tokens the zero-match search "
+        "covered"
+    )
+    tokens = tuple(
+        span
+        for span in re.findall(r"`([^`]+)`", bullet.group(0))
+        if "/" not in span
+    )
+    assert tokens, (
+        "the evidence note no longer lists the tokens the zero-match search "
+        "covered"
+    )
+    # Parsing the note means the search always follows the document, which is
+    # right — but it also means quietly narrowing the document would quietly
+    # narrow the search. These two are the specification the verdicts rest on, so
+    # a change to either has to be made here deliberately as well.
+    assert tokens == ASSERTED_ABSENT_TOKENS, (
+        f"the evidence note now claims {list(tokens)} are absent, but the "
+        f"specification this suite is written against is "
+        f"{list(ASSERTED_ABSENT_TOKENS)}. Update both together, and say why in "
+        "the document."
+    )
+    assert trees == ASSERTED_ABSENT_TREES, (
+        f"the evidence note now claims absence across {list(trees)}, but the "
+        f"specification this suite is written against is "
+        f"{list(ASSERTED_ABSENT_TREES)}. Update both together, and say why in "
+        "the document."
+    )
+    return tokens, trees
+
+
 def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
     """The document's evidence claims are assertions, not commentary.
 
@@ -369,24 +432,31 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
     over the trees the document names. A token that has appeared is reported with
     where it appeared, because the fix is to update the document's verdict and
     this test together rather than to delete the search.
+
+    The search is case-insensitive. Swift spells these `Goal`, `Reminder`,
+    `Notification` and `import UserNotifications`, so a case-sensitive check would
+    report zero matches for the very code that makes the claim false.
     """
-    for tree in ASSERTED_ABSENT_TREES:
+    tokens, trees = _asserted_evidence_spec()
+    assert tokens, "the evidence note lists no tokens to search for"
+    assert trees, "the evidence note names no trees to search"
+    for tree in trees:
         root = REPO_ROOT / tree
         assert root.is_dir(), f"the document names {tree}, which does not exist"
     offenders: list[str] = []
-    for tree in ASSERTED_ABSENT_TREES:
+    for tree in trees:
         for path in sorted((REPO_ROOT / tree).rglob("*.swift")):
-            text = path.read_text(encoding="utf-8")
-            for token in ASSERTED_ABSENT_TOKENS:
-                if token in text:
+            text = path.read_text(encoding="utf-8").lower()
+            for token in tokens:
+                if token.lower() in text:
                     relative = path.relative_to(REPO_ROOT)
                     offenders.append(f"{relative}: {token}")
     assert not offenders, (
         "the document states these tokens return zero matches across "
-        f"{list(ASSERTED_ABSENT_TREES)}, but they now appear:\n  "
+        f"{list(trees)}, but they now appear:\n  "
         + "\n  ".join(offenders)
         + "\nIf that is intended, update the document's evidence note and the "
-        "verdicts that rest on it, and then this list."
+        "verdicts that rest on it."
     )
 
 
