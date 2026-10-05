@@ -1844,7 +1844,7 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         transport.answerEverythingAccepted()
 
         _ = await makeWorker(
-            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links }
+            store: store, transport: transport, links: { _, _ in self.projection(sequence: 2).links }
         ).runOnce(now: when)
 
         XCTAssertEqual(transport.recordsAtSendTime.count, 1)
@@ -1867,7 +1867,7 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         transport.answerEverythingAccepted()
 
         _ = await makeWorker(
-            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links }
+            store: store, transport: transport, links: { _, _ in self.projection(sequence: 2).links }
         ).runOnce(now: when)
 
         // Every request is handed over with its own snapshots already on record — including the oversized one,
@@ -1895,7 +1895,7 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         store.failNextSaveForTesting = true
 
         let outcomes = await makeWorker(
-            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links }
+            store: store, transport: transport, links: { _, _ in self.projection(sequence: 2).links }
         ).runOnce(now: when)
 
         XCTAssertEqual(transport.sendCallCount, 0, "a payload whose snapshot is not on record is not sent")
