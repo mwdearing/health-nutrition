@@ -1,0 +1,47 @@
+name: docs-consistency
+
+# The MVP-GAPS traceability document states its verdicts twice — as a table row
+# per area and as a summary of counts — and three separate reviews found the two
+# disagreeing, because nothing compared them. This workflow runs the comparison,
+# so a table/summary inconsistency cannot merge unnoticed.
+#
+# It also checks that every path the document cites as evidence still exists, so
+# the trigger has to cover the cited source trees as well as the document: a PR
+# that deletes or renames a cited evidence file under ios/** must run the
+# citation checks, not slip past them.
+
+on:
+  pull_request:
+    paths:
+      - "docs/mvp-gaps-traceability.md"
+      - "scripts/tests/test_mvp_gaps_traceability.py"
+      - ".github/workflows/docs-consistency.yml"
+      - "ios/**"
+      # The absence assertion is repository-wide (a `Settings.swift` anywhere in
+      # the tree would falsify the document), so a PR that adds one outside ios/
+      # has to run these checks too, or the claim can go stale unnoticed.
+      - "**/Settings.swift"
+  push:
+    branches: [main]
+    paths:
+      - "docs/mvp-gaps-traceability.md"
+      - "scripts/tests/test_mvp_gaps_traceability.py"
+      - ".github/workflows/docs-consistency.yml"
+      - "ios/**"
+      - "**/Settings.swift"
+
+permissions:
+  contents: read
+
+jobs:
+  traceability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install pytest
+      - name: Check the traceability document is internally consistent
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_mvp_gaps_traceability.py
