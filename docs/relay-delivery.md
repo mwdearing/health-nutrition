@@ -117,6 +117,16 @@ They come from `GET /v1/intake-context/capabilities` and nowhere else — `max_o
 rather than against a local guess that the first 413 would correct. The capabilities document is asked
 for once per run, never once per batch.
 
+**Those two routes are off by default on the receiver.** `GET /v1/intake-context/capabilities` and
+`POST /v1/intake-context/batches` exist only when the receiver process was started with
+`--enable-intake-context` (`health-bridge receiver start --db … --enable-intake-context`). Without the
+flag it answers 404 on both, like any unknown path, and a receiver batch token offered at the intake
+batch route gets 403 as well. So a first end-to-end test has to start the receiver with the flag before
+anything on this page can be exercised, and a 404 on the capabilities read is that flag rather than a
+wrong path or a version the receiver does not speak. The receiver's own `docs/architecture.md` and
+`docs/reference/batch-v1.md` are the authority on this; the flag only enables the HTTP routes and does
+not change mailbox delivery.
+
 A capabilities read that fails sends nothing and reschedules every operation: a guess at the limits would
 produce the very 413 this run exists to avoid.
 
