@@ -1962,12 +1962,13 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         transport.answer(.init(statusCode: 401))
 
         _ = await makeWorker(
-            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links },
+            store: store, transport: transport,
             // The first record write of the run fails, so that operation is rescheduled during preparation.
             token: {
                 store.failNextSaveForTesting = true
                 return "synthetic-test-token"
-            }
+            },
+            links: { _, _ in self.projection(sequence: 2).links }
         ).runOnce(now: when)
 
         XCTAssertEqual(transport.sendCallCount, 2, "the refused batch and its head")
@@ -1997,13 +1998,14 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         transport.answerEverythingAccepted()
         // Between this run's encoding and its first send, an overlapping run records the same snapshots.
         let worker = makeWorker(
-            store: store, transport: transport, links: { _, _ in links },
+            store: store, transport: transport,
             token: {
                 for operation in try store.pendingOutbox() where operation.destination == .relay {
                     try? store.recordLinks(links, operationID: operation.operationID)
                 }
                 return "synthetic-test-token"
-            })
+            },
+            links: { _, _ in links })
 
         _ = await worker.runOnce(now: when)
 
