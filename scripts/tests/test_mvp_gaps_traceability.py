@@ -53,16 +53,28 @@ def _table_rows(text: str) -> list[tuple[int, str]]:
     return rows
 
 
-def _summary_areas(text: str, verdict: str) -> set[int]:
-    """Area numbers a summary bullet claims for ``verdict``.
+def _strip_markdown(text: str) -> str:
+    """Drop inline emphasis so word matching survives `**bold**` and `_italic_`."""
+    return text.replace("*", "").replace("_", "").replace("`", "")
 
-    The whole bullet is read, including wrapped continuation lines: a claim made
-    on a continuation line is still a claim, and reading only the heading's
-    physical line would let the table comparison and the collision check both
-    miss it.
+
+def _summary_bullet_count(text: str, verdict: str) -> int:
+    return len(
+        re.findall(r"^- \*\*" + verdict + r":\*\*", text, re.MULTILINE | re.IGNORECASE)
+    )
+
+
+def _summary_areas(text: str, verdict: str) -> set[int]:
+    """Area numbers a summary bullet's *category list* claims.
+
+    Only the enumeration is read, not the whole bullet: the bullet may go on to
+    say things like "Across all 10 areas ...", and a bare digit search over the
+    whole bullet would read that prose as a claim and silently disagree with the
+    table.
     """
     bullet = _summary_bullet(text, verdict)
-    return {int(number) for number in re.findall(r"\d+", bullet)}
+    enumeration = re.split(r"[.—]|\n", bullet, maxsplit=1)[0]
+    return {int(number) for number in re.findall(r"\d+", enumeration)}
 
 
 def test_document_exists() -> None:
@@ -82,6 +94,14 @@ def test_every_verdict_cell_is_a_declared_value() -> None:
         if verdict not in DECLARED_VERDICTS
     ]
     assert not offenders, f"verdict cells outside the declared values: {offenders}"
+
+
+def test_each_category_has_exactly_one_summary_bullet() -> None:
+    """A second bullet for a category would be silently ignored by a search."""
+    text = _document()
+    for verdict in ("partial", "scaffold", "unverified"):
+        count = _summary_bullet_count(text, verdict)
+        assert count == 1, f"expected exactly one {verdict} summary bullet, found {count}"
 
 
 def test_summary_counts_match_the_table() -> None:
@@ -141,23 +161,27 @@ def _summary_bullet(text: str, verdict: str) -> str:
         text,
         re.MULTILINE | re.IGNORECASE | re.DOTALL,
     )
-    return match.group(1) if match else ""
+    return _strip_markdown(match.group(1)) if match else ""
 
 
 def test_summary_does_not_assert_two_different_unverified_claims() -> None:
-    """A bullet must not both list unverified areas and say there are none."""
+    """A bullet must not both list unverified areas and say there are none.
+
+    Reads through the shared helpers, so the text is whole-bullet and stripped of
+    inline emphasis: the document writes these terms as `**unverified**`, and a
+    literal-space pattern would miss an emphasised denial entirely.
+    """
     text = _document()
-    bullets = re.findall(
-        r"^- \*\*Unverified:\*\*(.*?)(?=\n- \*\*|\n#{1,3} |\Z)",
-        text,
-        re.MULTILINE | re.IGNORECASE | re.DOTALL,
+    assert _summary_bullet_count(text, "unverified") == 1, (
+        "expected exactly one Unverified summary bullet, "
+        f"found {_summary_bullet_count(text, 'unverified')}"
     )
-    assert len(bullets) == 1, f"expected one Unverified summary bullet, found {len(bullets)}"
-    bullet = bullets[0]
+    bullet = _summary_bullet(text, "unverified")
     lists_areas = bool(re.search(r"\d", bullet))
     denies_any = bool(
         re.search(
-            r"no area is left unverified|there are no unverified|none of the ten are unverified",
+            r"no area is left unverified|no areas are left unverified"
+            r"|there are no unverified|none of the ten are unverified",
             bullet,
             re.IGNORECASE,
         )
