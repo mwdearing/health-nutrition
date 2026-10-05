@@ -38,8 +38,8 @@ Every path below is **relative to the repository root**. Line numbers are a hint
 - **Partial:** 2, 5, 7, 8, 9, 10.
 - **Scaffold:** 3, 6.
 - **Unverified:** 1 and 4 — and for both, the absence was positively established by exhaustive search rather
-  than merely failing to be established. No area is left unverified: every one of the ten was established
-  from the code.
+  than merely failing to be established. No area is left **unevaluated**: every one of the ten was read in the
+  code, so every row carries a verdict rather than a shrug.
 
 ## Notes on the evidence
 
