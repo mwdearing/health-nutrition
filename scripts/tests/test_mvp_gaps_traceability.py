@@ -68,6 +68,35 @@ def _summary_bullet_count(text: str, verdict: str) -> int:
     )
 
 
+def _implemented_bullet_count(text: str) -> int:
+    """How many `Implemented` bullets the summary carries.
+
+    Counted separately because its heading is prose ("Implemented end to end
+    with a failing-on-break test:") rather than a bare category name, so the
+    shared `_summary_bullet_count` pattern does not match it. It still has to be
+    exactly one: a second bullet would be ignored by `re.search`, so it could
+    claim areas as implemented while every category-union check carried on
+    reading only the "none of the ten" bullet.
+    """
+    return len(
+        re.findall(
+            r"^- \*\*Implemented end to end[^*]*:\*\*", text, re.MULTILINE | re.IGNORECASE
+        )
+    )
+
+
+def _summary_enumeration(text: str, verdict: str) -> list[int]:
+    """A category bullet's area list, in order and with duplicates preserved.
+
+    The sequence is kept rather than collapsed to a set: converting to a set
+    here would hide `2, 2, 5` before either the table comparison or the
+    collision check could see that the summary lists an area twice.
+    """
+    bullet = _summary_bullet(text, verdict)
+    enumeration = re.split(r"[.—]|\n", bullet, maxsplit=1)[0]
+    return [int(number) for number in re.findall(r"\d+", enumeration)]
+
+
 def _summary_areas(text: str, verdict: str) -> set[int]:
     """Area numbers a summary bullet's *category list* claims.
 
@@ -77,9 +106,7 @@ def _summary_areas(text: str, verdict: str) -> set[int]:
     table. Claims made anywhere else in the bullet are caught by
     ``_summary_bullet_claims`` instead.
     """
-    bullet = _summary_bullet(text, verdict)
-    enumeration = re.split(r"[.—]|\n", bullet, maxsplit=1)[0]
-    return {int(number) for number in re.findall(r"\d+", enumeration)}
+    return set(_summary_enumeration(text, verdict))
 
 
 def _summary_bullet_claims(text: str, verdict: str) -> set[int]:
@@ -119,6 +146,28 @@ def test_each_category_has_exactly_one_summary_bullet() -> None:
     for verdict in ("partial", "scaffold", "unverified"):
         count = _summary_bullet_count(text, verdict)
         assert count == 1, f"expected exactly one {verdict} summary bullet, found {count}"
+    implemented = _implemented_bullet_count(text)
+    assert implemented == 1, (
+        "expected exactly one Implemented summary bullet, found "
+        f"{implemented}. A second one would be ignored by the search that reads the "
+        "'none of the ten' bullet, so it could claim areas as implemented while "
+        "every category-union check carried on agreeing with the table."
+    )
+
+
+def test_no_area_is_listed_twice_in_one_summary_category() -> None:
+    """A category list that repeats an area is a claim the table cannot match.
+
+    Reading the enumeration into a set would hide `2, 2, 5` before the table
+    comparison saw it, so the sequence is checked against its own unique values.
+    """
+    offenders = []
+    for verdict in SUMMARY_VERDICTS:
+        listed = _summary_enumeration(_document(), verdict)
+        duplicates = sorted({n for n in listed if listed.count(n) > 1})
+        if duplicates:
+            offenders.append(f"{verdict}: {duplicates}")
+    assert not offenders, f"summary categories list an area more than once: {offenders}"
 
 
 def test_summary_counts_match_the_table() -> None:

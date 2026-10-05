@@ -17,6 +17,10 @@ on:
       - "scripts/tests/test_mvp_gaps_traceability.py"
       - ".github/workflows/docs-consistency.yml"
       - "ios/**"
+      # The absence assertion is repository-wide (a `Settings.swift` anywhere in
+      # the tree would falsify the document), so a PR that adds one outside ios/
+      # has to run these checks too, or the claim can go stale unnoticed.
+      - "**/Settings.swift"
   push:
     branches: [main]
     paths:
@@ -24,6 +28,7 @@ on:
       - "scripts/tests/test_mvp_gaps_traceability.py"
       - ".github/workflows/docs-consistency.yml"
       - "ios/**"
+      - "**/Settings.swift"
 
 permissions:
   contents: read
