@@ -18,6 +18,7 @@ These tests parse the document and assert the two views agree:
 """
 from __future__ import annotations
 
+import codecs
 import re
 from pathlib import Path
 
@@ -351,11 +352,14 @@ _IMPLEMENTATION_ASSERTION = re.compile(
 # the `and` inside an area enumeration such as "Areas 5, 8 and 10", which is part
 # of one claim rather than the start of another. A comma on its own is not a
 # break, because the legitimate sentence separates its areas with them.
+# A connective only ends a claim where a new claim actually starts, which in
+# this document means an area being named. A bare "but" inside prose — "…, but
+# 10 is a special case, with the surrounding requirement missing" — is not a new
+# claim, and treating it as one reported a correct sentence as contradictory.
 _CLAUSE_BREAKER = re.compile(
-    r"[;.:!?]"
-    r"|,\s*(?:and|but|while|whereas|although|though|however|yet|whereby)\b"
-    r"|\b(?:while|but|whereas|although|though|however|yet|whereby)\b"
-    r"|\b(?:and|but)\s+(?=Areas?\b)",
+    r"[;.:!?"
+    r"]|,\s*(?:and|but|while|whereas|although|though|however|yet|whereby)\s+(?=Areas?\b)"
+    r"|\b(?:while|but|whereas|although|though|however|yet|whereby)\s+(?=Areas?\b)",
     re.IGNORECASE,
 )
 
@@ -489,7 +493,7 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
     offenders: list[str] = []
     for tree in trees:
         for path in sorted(_text_files(REPO_ROOT / tree)):
-            text = path.read_text(encoding="utf-8", errors="replace").lower()
+            text = _read_text(path).lower()
             for token in tokens:
                 if token.lower() in text:
                     relative = path.relative_to(REPO_ROOT)
@@ -510,6 +514,30 @@ _TEXT_SKIP_SUFFIXES = frozenset(
     {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".xcarchive", ".dSYM"}
 )
 _TEXT_SKIP_DIRS = frozenset({".build", ".git", "__pycache__", ".swiftpm"})
+
+
+def _read_text(path: Path) -> str:
+    """Read a source file, honouring a UTF-16 byte-order mark.
+
+    Reading UTF-16 as UTF-8 with replacement yields interleaved NUL bytes, so
+    every token comparison silently fails and the document's absence claim looks
+    true. Undecodable bytes are replaced rather than raised, so a binary file
+    degrades to "no match" instead of failing the suite.
+
+    Known limitation: UTF-16 *without* a byte-order mark is not detected, in
+    either endianness. Nothing in the bytes distinguishes it reliably, and
+    guessing would mean decoding every NUL-interleaved file twice and risking a
+    false report. A marked file — which is what every real UTF-16 file is — is
+    handled.
+    """
+    raw = path.read_bytes()
+    for bom, encoding in (
+        (codecs.BOM_UTF16_LE, "utf-16-le"),
+        (codecs.BOM_UTF16_BE, "utf-16-be"),
+    ):
+        if raw.startswith(bom):
+            return raw.decode(encoding, errors="replace")
+    return raw.decode("utf-8", errors="replace")
 
 
 def _text_files(root: Path) -> list[Path]:
