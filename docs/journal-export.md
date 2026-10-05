@@ -214,5 +214,7 @@ that pushes `ConnectionsPrivacyView`. Today and Add intake have no entry to it, 
   them. Where the store already knew the snapshot its values are kept exactly; a snapshot the store does not
   know gets none until the catalog supplies them again. Carrying them in the document would need a version 2
   schema, which is a change of contract rather than of this importer.
-- The app target does not exist yet, so `ConnectionsPrivacyViewModel` injects a placeholder version string
-  until the shell can pass the real one.
+- The version string is not a placeholder. The app target exists and reads `CFBundleShortVersionString`
+  from its own bundle, handing that real value to `ConnectionsPrivacyViewModel`, so an export states the
+  shipping version. The `0.0.0-development` default on the view model is only what a test gets when it
+  does not pass one.

@@ -57,7 +57,7 @@ on. The erase cannot reach it; that is what sharing it in the first place meant.
   the sync identifiers the journal wrote, delete those samples through HealthKit first, and only then
   drop the local rows — in that order, because once the rows are gone the identifiers are too. While
   delivery is off, no sample exists and the erase does not claim to remove one.
-- **The same applies to the relay** when it ships. Outbox operations are deleted with the journal, which
+- **The same applies to the relay** when it is turned on. Outbox operations are deleted with the journal, which
   stops anything further being sent, but a receiver the person configured and owns has its own copy and
   is the person's to clear.
 
