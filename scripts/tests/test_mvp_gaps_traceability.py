@@ -291,28 +291,46 @@ def _unqualified_implemented_claims(text: str) -> set[int]:
             # implemented end to end, while Areas 5, 8 and 10 contain machinery
             # with the surrounding requirement missing" pass: the clause was
             # read as covering area 2 as well.
-            governed = _CLAUSE_BREAKER.split(sentence[: clause.start()])[-1]
-            unqualified |= claimed - {
-                int(number) for number in re.findall(r"\d+", governed)
+            #
+            # Compared by *occurrence*, not as sets: an area named on both sides
+            # of the break is still an unqualified claim on the earlier side. Set
+            # subtraction hid exactly that, because the number appeared in both
+            # halves and cancelled itself out.
+            governed_text = _CLAUSE_BREAKER.split(sentence[: clause.start()])[-1]
+            governed = {
+                (match.start(), int(match.group(0)))
+                for match in _AREA_NUMBER.finditer(governed_text)
+            }
+            offset = len(sentence[: clause.start()]) - len(governed_text)
+            unqualified |= {
+                int(match.group(0))
+                for match in _AREA_NUMBER.finditer(sentence[: clause.start()])
+                if (match.start() - offset, int(match.group(0))) not in governed
             }
             continue
         unqualified |= claimed
     return unqualified
 
 
+_AREA_NUMBER = re.compile(r"\d+")
+
+
 # Sentence-level punctuation, and the connectives that start a new claim. Either
 # ends the claim the qualifying clause can cover: "Area 2 is implemented end to
-# end; Areas 5, 8 and 10 ...", "..., while Areas 5, 8 and 10 ..." and "..., and
-# Areas 5, 8 and 10 ..." each qualify only the areas after the break.
+# end; Areas 5, 8 and 10 ...", "..., while Areas 5, 8 and 10 ...", "..., and
+# Areas 5, 8 and 10 ..." and the unpunctuated "... end to end and Areas 5, 8
+# and 10 ..." each qualify only the areas after the break.
 #
-# A comma is a break only when a conjunction follows it, which is what separates
-# the ", and Areas" that starts a second claim from the plain commas inside "Areas
-# 5, 8 and 10". The `and` inside an area enumeration is deliberately not a break
-# on its own, for the same reason.
+# The conjunction forms are matched only where they start a claim — after a
+# comma, or immediately before `Area`/`Areas`. That is what separates them from
+# the `and` inside an area enumeration such as "Areas 5, 8 and 10", which is part
+# of one claim rather than the start of another. A comma on its own is not a
+# break, because the legitimate sentence separates its areas with them.
 _CLAUSE_BREAKER = re.compile(
     r"[;.:!?]"
     r"|,\s*(?:and|but|while|whereas|although|though|however|yet|whereby)\b"
-    r"|\b(?:while|but|whereas|although|though|however|yet|whereby)\b",
+    r"|\b(?:while|but|whereas|although|though|however|yet|whereby)\b"
+    r"|\b(?:and|but)\s+(?=Areas?\b)",
     re.IGNORECASE,
 )
 
@@ -445,8 +463,8 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
         assert root.is_dir(), f"the document names {tree}, which does not exist"
     offenders: list[str] = []
     for tree in trees:
-        for path in sorted((REPO_ROOT / tree).rglob("*.swift")):
-            text = path.read_text(encoding="utf-8").lower()
+        for path in sorted(_text_files(REPO_ROOT / tree)):
+            text = path.read_text(encoding="utf-8", errors="replace").lower()
             for token in tokens:
                 if token.lower() in text:
                     relative = path.relative_to(REPO_ROOT)
@@ -458,6 +476,29 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
         + "\nIf that is intended, update the document's evidence note and the "
         "verdicts that rest on it."
     )
+
+
+# Binary and build artefacts are not read. Everything else is: the document claims
+# zero matches across the whole tree, not across the Swift files in it, so a JSON
+# configuration or a plist carrying one of these tokens has to count too.
+_TEXT_SKIP_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".xcarchive", ".dSYM"}
+)
+_TEXT_SKIP_DIRS = frozenset({".build", ".git", "__pycache__", ".swiftpm"})
+
+
+def _text_files(root: Path) -> list[Path]:
+    """Every readable text file under `root`."""
+    found: list[Path] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if set(path.relative_to(root).parts) & _TEXT_SKIP_DIRS:
+            continue
+        if path.suffix.lower() in _TEXT_SKIP_SUFFIXES:
+            continue
+        found.append(path)
+    return found
 
 
 def _summary_bullet(text: str, verdict: str) -> str:
