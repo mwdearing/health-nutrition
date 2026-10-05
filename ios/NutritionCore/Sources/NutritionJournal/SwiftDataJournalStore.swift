@@ -1232,7 +1232,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         return try RelayDeliveryLinkSnapshot.decode(text)
     }
 
-    /// Records the link snapshot an operation has just been sent under, keeping the first one it is given.
+    /// Records the link snapshot an operation is about to be sent under, keeping the first one it is given.
     ///
     /// Recording is first-write-wins: a later attempt cannot replace what an earlier one was sent with,
     /// which is the whole point of keeping it. When a snapshot is already recorded it is returned and the
@@ -1240,36 +1240,47 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// caller that another run recorded a different one first** — the record then does not hold what this
     /// caller sent, which is what it needs to know before treating a retry as a duplicate.
     ///
-    /// Called once the piece carrying the operation has been answered, so what is recorded is what went on
-    /// the wire. An operation whose piece never carried it is never recorded here and keeps nothing.
+    /// **`isNew` says whether this call wrote the record.** A returned snapshot equal to the one offered does
+    /// not prove it: the same snapshot may have been on record from an earlier attempt, or an overlapping run
+    /// may have written it first. Only a record this call created may be discarded later, so the caller needs
+    /// to be able to tell the two apart.
+    ///
+    /// Called before the piece carrying the operation is sent, so what is recorded is what will go on the
+    /// wire. An operation whose piece never carries it is never recorded here and keeps nothing.
     @discardableResult
-    public func recordLinks(_ links: [IntakeContextLink], operationID: String) throws -> [IntakeContextLink] {
+    public func recordLinks(
+        _ links: [IntakeContextLink], operationID: String
+    ) throws -> (snapshot: [IntakeContextLink], isNew: Bool) {
         // Encoded before the commit, so a snapshot that cannot be written leaves the row as it was instead
         // of failing a transaction that would have rolled back anyway.
         let text = try RelayDeliveryLinkSnapshot.encode(links)
-        let existing: String? = try commit { context -> String? in
+        // `isNew` says whether **this call** wrote the record, which is not the same as the returned snapshot
+        // matching the one offered: a snapshot already on record from an earlier attempt, or written by an
+        // overlapping run, is returned unchanged and is not this call's to discard later.
+        let outcome: (existing: String?, isNew: Bool) = try commit { context -> (existing: String?, isNew: Bool) in
             guard let row = try Self.outboxRecord(operationID, in: context) else {
                 throw JournalError.unknownOperation(operationID)
             }
-            if let winner = row.linksJSON { return winner }
-            guard row.acknowledgedAt == nil else { return nil }
+            if let winner = row.linksJSON { return (winner, false) }
+            guard row.acknowledgedAt == nil else { return (nil, false) }
             row.linksJSON = text
-            return nil
+            return (nil, true)
         }
-        guard let existing else { return links }
-        return try RelayDeliveryLinkSnapshot.decode(existing)
+        guard let existing = outcome.existing else { return (links, outcome.isNew) }
+        return (try RelayDeliveryLinkSnapshot.decode(existing), outcome.isNew)
     }
 
     /// Forgets the link snapshot recorded for one operation.
     ///
-    /// **Only for a request the receiver refused for size.** A 413 is refused before anything is applied, so
-    /// the payload was never committed under that operation id and there is nothing for a later attempt to
-    /// reproduce. Forgetting the snapshot is what lets the split pieces record the links current when they
-    /// actually go out, and leaves an operation whose piece never carried it with nothing on record.
+    /// **Only for a request the receiver refused for size, and only for a record this run wrote.** A 413 is
+    /// refused before anything is applied, so the payload was never committed under that operation id and
+    /// there is nothing for a later attempt to reproduce. Forgetting the snapshot is what lets the split pieces
+    /// record the links current when they actually go out, and leaves an operation whose piece never carried
+    /// it with nothing on record.
     ///
-    /// A snapshot that was already on record when the request went out is **not** forgotten by this: it
-    /// belongs to an earlier attempt whose answer may have been lost, and the receiver may already hold that
-    /// payload under the operation id.
+    /// A snapshot already on record is **not** this caller's to forget: it belongs to an earlier attempt whose
+    /// answer may have been lost, or to an overlapping run about to send it, and the receiver may already hold
+    /// that payload under the operation id.
     public func releaseLinks(operationID: String) throws {
         try commit { context in
             guard let row = try Self.outboxRecord(operationID, in: context) else {

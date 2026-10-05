@@ -1943,6 +1943,136 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertEqual(by, newerUpsert, "it names the upsert that has not been accepted")
     }
 
+    /// What preparation resolved survives a split whose head then stopped the run.
+    ///
+    /// Preparation deals with items before the piece reaches the wire: a record write that fails is rescheduled
+    /// there, and a later item of the same intake is held back behind it. Those outcomes are facts about
+    /// operations that were handled, and losing them when the head's 401 stops the split would report the
+    /// rescheduled operation as `notAttempted` — a different claim, and one the store has already contradicted
+    /// by counting the attempt.
+    func testPreparationOutcomesSurviveASplitWhoseHeadStopsTheRun() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: thirdIntakeID), components: components(), product: nil, now: when)
+        let ordered = try pendingRelay(store).map(\.operationID)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        // The batch of three is refused for size, and its head is then refused for the token.
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answer(.init(statusCode: 401))
+
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links },
+            // The first record write of the run fails, so that operation is rescheduled during preparation.
+            token: {
+                store.failNextSaveForTesting = true
+                return "synthetic-test-token"
+            }
+        ).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 2, "the refused batch and its head")
+        let recorded = try pendingRelay(store).first { $0.operationID == ordered[0] }
+        XCTAssertEqual(
+            recorded?.attempts, 1,
+            "preparation rescheduled it, so the attempt is counted and the outcome must survive")
+        XCTAssertNotEqual(
+            recorded?.nextAttemptAt, nil, "and it is due again rather than parked")
+    }
+
+    /// A snapshot that was already on record when the 413 arrived is **not** cleared, even though it was this
+    /// piece's to send.
+    ///
+    /// `recordLinks` answers with the snapshot on record, which is the offered one whether this run wrote it or
+    /// another run got there first. An overlapping run that recorded the same snapshot between this run's
+    /// encoding and its send owns that record, and clearing it on a 413 would destroy a snapshot another run
+    /// is about to send — the very thing the record exists to prevent. The token provider is asked between
+    /// encoding and the send, so it stands in for that overlapping run.
+    func testA413DoesNotClearASnapshotAnotherRunRecordedFirst() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        let links = projection(sequence: 2).links
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answerEverythingAccepted()
+        // Between this run's encoding and its first send, an overlapping run records the same snapshots.
+        let worker = makeWorker(
+            store: store, transport: transport, links: { _, _ in links },
+            token: {
+                for operation in try store.pendingOutbox() where operation.destination == .relay {
+                    try? store.recordLinks(links, operationID: operation.operationID)
+                }
+                return "synthetic-test-token"
+            })
+
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 3, "the refused batch and its two halves")
+        for operation in try store.pendingOutbox().filter({ $0.destination == .relay }) {
+            XCTAssertNotNil(
+                try store.recordedLinks(operationID: operation.operationID),
+                "\(operation.operationID): a snapshot another run recorded is not this run's to clear")
+        }
+    }
+
+    /// A newer upsert that this run acknowledges as **locally superseded** settles the older projection too.
+    ///
+    /// The intake was deleted, so the upsert was never sent: it left the queue without the receiver ever
+    /// holding it. Reporting the projection as blocked by that operation id would name something that no longer
+    /// exists — nothing is queued under it — and the projection would wait for an operation that will never
+    /// come. The intake is gone, so the projection is finished with as well.
+    func testAnOlderProjectionIsSupersededWhenItsNewerUpsertIsLocallySuperseded() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        let queue = RecordingProjectionQueue()
+        let older = projection(sequence: 2)
+        queue.offer([older])
+        // The entry is deleted after the projection was queued, so both upserts are superseded locally.
+        try store.delete(intakeID: intakeID, now: when)
+        transport.answerEverythingAccepted()
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            queue.recorded, [.superseded],
+            "the intake is gone, so the projection is finished with rather than waiting on a dead operation")
+        guard case .superseded(let id, _) = try XCTUnwrap(
+            outcomes.first { $0.operationID == older.operationID })
+        else {
+            return XCTFail("the projection is reported superseded, got \(outcomes)")
+        }
+        XCTAssertEqual(id, older.operationID)
+    }
+
+    /// A **single** operation refused with 413 is parked, not split, and its snapshot stays on record.
+    ///
+    /// The payload was sent and the receiver read it and refused it as too large, so a re-armed attempt has to
+    /// repeat exactly that payload — the refusal is about this payload's size, and a different snapshot would
+    /// be a different payload. A split piece is the opposite case: nothing in a refused body was applied, so
+    /// what that request recorded is released and each piece records its own.
+    func testASoleOperationRefusedWith413KeepsTheSnapshotItWasSent() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let operation = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        let links = projection(sequence: 2).links
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+
+        let outcomes = await makeWorker(
+            store: store, transport: transport, links: { _, _ in links }
+        ).runOnce(now: when)
+
+        guard case .needsAttention = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a payload the receiver refuses is parked, got \(outcomes)")
+        }
+        XCTAssertEqual(transport.sendCallCount, 1, "there was nothing to split")
+        XCTAssertEqual(
+            try store.recordedLinks(operationID: operation), links,
+            "the snapshot this payload was sent with stays on record, so a re-arm repeats it")
+    }
+
     /// The other half of that decision: an accepted or duplicate upsert does supersede the older projection,
     /// because the receiver now holds the newer revision and would answer the projection `stale_revision`.
     func testAnOlderRevisionProjectionIsSupersededOnceTheNewerUpsertIsAccepted() async throws {

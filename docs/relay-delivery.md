@@ -206,9 +206,17 @@ was packed, and so would go on missing every link that arrived while the tail wa
 
 A 413 applies none of its body, so nothing was committed under those delivery identities and there is nothing
 for a later attempt to reproduce. The worker therefore **releases what the refused request recorded**, each
-half records its own as it goes out, and an item whose half never goes out is left with nothing on record. Only
-a snapshot the refused request itself created is released: one that was already on record belongs to an earlier
-attempt whose answer may have been lost, and the receiver may already hold that payload, so it survives.
+half records its own as it goes out, and an item whose half never goes out is left with nothing on record.
+
+**Only a record this run wrote is released.** Recording reports whether it created the record, because a
+snapshot already on record comes back identical to the one offered — whether it was left by an earlier attempt
+whose answer may have been lost, or written by an overlapping run about to send it. Either way the receiver may
+already hold that payload under the operation id, and discarding it would undo the very guarantee the record
+exists for.
+
+**A sole operation refused with 413 keeps its snapshot.** There is no split in that case: the payload was sent,
+read, and refused for its size, and it is parked. A re-armed attempt has to repeat that same payload, so what
+is on record is what it will send.
 
 ## What counts as a failed attempt
 Only an operation that was eligible to send. When the capabilities read fails, an operation held back behind
@@ -245,6 +253,7 @@ obsolete:
 | The newer upsert | The projection |
 |---|---|
 | accepted, or a duplicate | resolved as `superseded` and reported as such |
+| superseded locally in this run — the intake is gone, so it left the queue unsent | resolved as `superseded` as well: nothing is queued under that id any more, so there is nothing to wait behind |
 | never sent, or unresolved — a conflict, a permanent or retryable failure, an answer that could not be matched, or `notAttempted` | **stays queued**, and is reported as `blocked` by that upsert |
 
 The reason is in what an upsert carries. **Every upsert carries a complete link snapshot for its own revision,
@@ -253,7 +262,8 @@ once the receiver *holds* the newer revision, the older projection has nothing l
 `stale_revision`. But that is a fact about the receiver, not about the queue: an upsert merely being queued
 says nothing about what the receiver holds. Resolving the projection on the strength of the upsert existing
 would discard something still deliverable in every run where that upsert was refused or never went out, so the
-decision waits for this run's answers and the projection waits with it.
+decision waits for this run's answers and the projection waits with it. A locally superseded upsert is the
+exception, and for the opposite reason: it is never coming, so waiting on it is waiting on nothing.
 
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/RelayDeliveryWorkerTests.swift` runs against a real
@@ -268,10 +278,13 @@ revision behind it, a suspended operation holding back what is behind it, a spli
 intake the head left unresolved, a delete sent as a tombstone with the instant the journal recorded, an upsert
 retry reusing its first link snapshot, an invalid first snapshot not frozen and a corrected one delivered, a
 projection's retry date reaching its queue, an unencodable projection holding back the later ones, a
-superseded projection reported as well as resolved, a projection of an older revision superseded rather than
-sent behind a newer upsert, a delete queued after a suspended upsert superseding it and still going out, an
-unattempted split tail keeping no frozen snapshot so the links that arrived while it waited go out with it,
-and delivery off — a store with no enabled relay destination sends nothing at all, and does not even ask the
-receiver for its capabilities.
+superseded projection reported as well as resolved, a projection of an older revision superseded only once the
+newer upsert is accepted and blocked by that upsert when it is not, a projection settled too when that upsert
+is superseded locally, a delete queued after a suspended upsert superseding it and still going out, a held-back
+delete when that acknowledgement fails, an unattempted split tail keeping no frozen snapshot so the links that
+arrived while it waited go out with it, a snapshot on record before the request carrying it and before each
+split piece, a failed record write sending nothing, a 413 leaving another run's snapshot alone, and a sole
+operation refused for size keeping the snapshot it was sent, and delivery off — a store with no enabled relay
+destination sends nothing at all, and does not even ask the receiver for its capabilities.
 
 Swift tests run in macOS CI; the acceptance for this package is static.
