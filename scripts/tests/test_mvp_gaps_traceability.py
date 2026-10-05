@@ -10,8 +10,11 @@ These tests parse the document and assert the two views agree:
 - every area number appears in exactly one summary category;
 - the number of areas in each summary category equals the number of table rows
   carrying that verdict;
-- every path the document cites as evidence actually exists, except the one
-  filename it deliberately names as absent.
+- every area a summary bullet names anywhere, including on a wrapped
+  continuation line, belongs to that bullet's own category;
+- every path the document cites as evidence actually exists, whatever file type
+  it has, except the filename it deliberately names as absent — which must stay
+  absent anywhere in the tree, not merely at the repository root.
 """
 from __future__ import annotations
 
@@ -26,7 +29,8 @@ DOC = REPO_ROOT / "docs/mvp-gaps-traceability.md"
 DECLARED_VERDICTS = ("implemented", "partial", "scaffold", "unverified")
 
 # Filenames the document deliberately cites as NOT existing, to make a point
-# about their absence. Everything else must resolve.
+# about their absence. Matched by basename anywhere in the tree. Everything else
+# the document cites must resolve.
 KNOWN_ABSENT = {"Settings.swift"}
 
 # Summary bullets that carry a verdict category and the area numbers it claims.
@@ -70,11 +74,24 @@ def _summary_areas(text: str, verdict: str) -> set[int]:
     Only the enumeration is read, not the whole bullet: the bullet may go on to
     say things like "Across all 10 areas ...", and a bare digit search over the
     whole bullet would read that prose as a claim and silently disagree with the
-    table.
+    table. Claims made anywhere else in the bullet are caught by
+    ``_summary_bullet_claims`` instead.
     """
     bullet = _summary_bullet(text, verdict)
     enumeration = re.split(r"[.—]|\n", bullet, maxsplit=1)[0]
     return {int(number) for number in re.findall(r"\d+", enumeration)}
+
+
+def _summary_bullet_claims(text: str, verdict: str) -> set[int]:
+    """Every area number asserted anywhere inside a category bullet.
+
+    A claim does not have to sit in the enumeration. A bullet that wraps onto a
+    continuation line, or adds a sentence after the list, still states areas in
+    that category — and if it names an area the table places in a different
+    category, the document contradicts itself however quietly it is worded.
+    """
+    bullet = _summary_bullet(text, verdict)
+    return {int(number) for number in re.findall(r"\d+", bullet)}
 
 
 def test_document_exists() -> None:
@@ -127,6 +144,31 @@ def test_no_area_is_claimed_by_two_summary_categories() -> None:
             else:
                 seen[number] = verdict
     assert not collisions, f"areas claimed by more than one category: {collisions}"
+
+
+def test_area_claims_inside_a_bullet_belong_to_that_category() -> None:
+    """A claim anywhere in a bullet counts, not only the enumeration.
+
+    The enumeration is deliberately read narrowly (see ``_summary_areas``), but
+    that narrowness must not become a blind spot: a bullet that wraps onto a
+    continuation line and there names an area the table places in another
+    category has claimed that area into the wrong category.
+    """
+    text = _document()
+    table = dict(_table_rows(text))
+    offenders: list[str] = []
+    for verdict in SUMMARY_VERDICTS:
+        for number in sorted(_summary_bullet_claims(text, verdict)):
+            actual = table.get(number)
+            if actual != verdict:
+                offenders.append(
+                    f"area {number}: claimed as {verdict!r} inside its bullet, "
+                    f"but the table says {actual!r}"
+                )
+    assert not offenders, (
+        "summary bullets name areas outside their own category: "
+        f"{offenders}. A claim anywhere in the bullet is a claim."
+    )
 
 
 def test_no_area_is_missing_from_the_summary() -> None:
@@ -192,36 +234,74 @@ def test_summary_does_not_assert_two_different_unverified_claims() -> None:
     )
 
 
-def _cited_paths(text: str) -> set[str]:
-    """Every repository path the document cites inside a code span.
+def _cited_path_from_span(span: str) -> str | None:
+    """The repository path a code span cites, or None if it cites no path.
 
-    A span may carry more than a bare path: a line number, a line range, several
-    comma-separated lines, and a trailing symbol. All of those forms are citations
-    and must be checked, so the closing backtick is allowed to follow any of them
-    rather than only an optional single line number.
+    A span may carry more than a bare path: a line number, a line range,
+    comma-separated lines, and a trailing symbol — `Units.swift:73
+    UnitRegistry`, `TodayViewModel.swift:68-108 load(now:)` and
+    `ConnectionsPrivacyView.swift:74,83` are all the same shape of citation.
+    So the span is trimmed of everything after the first whitespace or colon,
+    and what remains is judged by shape rather than by an extension allowlist:
+    an allowlist silently drops any file type nobody thought to list, which is
+    how `HealthNutrition.entitlements` came to be unchecked.
+
+    A shape test keeps the symbol-only spans (`Intake.meal`, `DatePicker`) out:
+    a citation is a path, so it has a directory separator, and it names a file
+    or a directory rather than a bare identifier.
     """
-    return {
-        match.group(1)
-        for match in re.finditer(
-            r"`([A-Za-z0-9_./-]+\.(?:swift|ts|sql|md|yml|json|py))"
-            r"(?::[0-9]+(?:[-,][0-9]+)*)?"
-            r"(?:\s[^`]*)?`",
-            text,
-        )
-    }
+    token = span.strip().split()[0].split(":")[0] if span.strip() else ""
+    if "/" not in token or token.startswith(("http:", "https:", "/", "./", "../")):
+        return None
+    if ".." in token.split("/"):
+        return None
+    return token
+
+
+def _cited_paths(text: str) -> set[str]:
+    """Every repository path the document cites inside a code span."""
+    paths: set[str] = set()
+    for match in re.finditer(r"`([^`\n]+)`", text):
+        path = _cited_path_from_span(match.group(1))
+        if path is not None:
+            paths.add(path)
+    return paths
+
+
+def _repository_paths() -> set[str]:
+    """Every path under the repository root, relative and posix-shaped."""
+    found: set[str] = set()
+    for path in REPO_ROOT.rglob("*"):
+        parts = path.relative_to(REPO_ROOT).parts
+        if parts and parts[0] == ".git":
+            continue
+        found.add("/".join(parts))
+    return found
 
 
 def test_every_cited_path_exists_except_known_absent() -> None:
     text = _document()
     cited = _cited_paths(text)
+    assert cited, "no cited paths were parsed out of the document at all"
     missing = sorted(path for path in cited if not (REPO_ROOT / path).exists())
-    assert set(missing) <= KNOWN_ABSENT, f"cited evidence paths do not exist: {missing}"
+    assert set(missing) <= KNOWN_ABSENT, (
+        f"cited evidence paths do not exist: {missing}. Every extension is "
+        "checked, not a fixed list of them, so a citation the parser skipped is "
+        "no longer possible."
+    )
 
 
 def test_deliberately_absent_paths_are_still_absent() -> None:
-    """An asserted absence is a claim, so it must stop being true loudly."""
-    present = sorted(path for path in KNOWN_ABSENT if (REPO_ROOT / path).exists())
+    """An asserted absence is a claim, so it must stop being true loudly.
+
+    The document says the named file does not exist, not that it does not exist
+    at the repository root, so the whole tree is searched by basename: dropping
+    `Settings.swift` into `ios/HealthNutrition/Sources/` must fail this just as
+    loudly as dropping it at the root.
+    """
+    present = {path for path in _repository_paths() if path.rsplit("/", 1)[-1] in KNOWN_ABSENT}
     assert not present, (
-        f"the document claims these do not exist, but they now do: {present}. "
-        "Update the document and KNOWN_ABSENT together."
+        "the document claims these files do not exist anywhere, but they now do: "
+        f"{sorted(present)}. Update the document and KNOWN_ABSENT together, or "
+        "delete the file that made the absence claim false."
     )

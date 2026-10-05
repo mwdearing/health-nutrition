@@ -4,6 +4,11 @@ name: docs-consistency
 # per area and as a summary of counts — and three separate reviews found the two
 # disagreeing, because nothing compared them. This workflow runs the comparison,
 # so a table/summary inconsistency cannot merge unnoticed.
+#
+# It also checks that every path the document cites as evidence still exists, so
+# the trigger has to cover the cited source trees as well as the document: a PR
+# that deletes or renames a cited evidence file under ios/** must run the
+# citation checks, not slip past them.
 
 on:
   pull_request:
@@ -11,12 +16,14 @@ on:
       - "docs/mvp-gaps-traceability.md"
       - "scripts/tests/test_mvp_gaps_traceability.py"
       - ".github/workflows/docs-consistency.yml"
+      - "ios/**"
   push:
     branches: [main]
     paths:
       - "docs/mvp-gaps-traceability.md"
       - "scripts/tests/test_mvp_gaps_traceability.py"
       - ".github/workflows/docs-consistency.yml"
+      - "ios/**"
 
 permissions:
   contents: read
