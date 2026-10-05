@@ -54,6 +54,12 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         private var sendFailure: Error?
         /// The answer used once the script runs out, so a test only scripts the calls it cares about.
         private var defaultResponse = ScriptedResponse(results: [.accepted])
+        /// Asked, while the batch is in hand and before any answer is produced, what the journal holds for
+        /// each operation it carries.
+        private var observer: ((_ operationIDs: [String]) -> Void)?
+        /// What the observer saw, one entry per batch received, keyed by nothing: a flat log of
+        /// `operationID -> links recorded at the moment the batch was received`.
+        private var observed: [[String: Bool]] = []
 
         init(capabilities: IntakeContextCapabilities) {
             self.capabilitiesAnswer = capabilities
@@ -78,6 +84,26 @@ final class RelayDeliveryWorkerTests: XCTestCase {
             lock.withLock { sendFailure = error }
         }
 
+        /// Reads the journal's recorded link snapshot for each operation of every batch received.
+        ///
+        /// Asked from inside `send(batch:token:)`, so what it sees is the state at the moment the batch was
+        /// handed over: a snapshot written after the answer would not be there yet, which is exactly what a
+        /// test asserting "recorded before the request" needs to be able to tell apart.
+        func observeRecords(of store: SwiftDataJournalStore) {
+            lock.withLock {
+                observer = { operationIDs in
+                    var seen: [String: Bool] = [:]
+                    for id in operationIDs {
+                        seen[id] = ((try? store.recordedLinks(operationID: id)) ?? nil) != nil
+                    }
+                    self.lock.withLock { self.observed.append(seen) }
+                }
+            }
+        }
+
+        /// For each batch received, whether each operation's snapshot was already on record.
+        var recordsAtSendTime: [[String: Bool]] { lock.withLock { observed } }
+
         
 
         /// Clears what has been recorded, so a second run in the same test is measured on its own. The
@@ -87,6 +113,7 @@ final class RelayDeliveryWorkerTests: XCTestCase {
                 recordedBatches = []
                 recordedTokens = []
                 capabilitiesReads = 0
+                observed = []
             }
         }
 
@@ -116,13 +143,17 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         }
 
         func send(batch: Data, token: String) async throws -> IntakeContextTransportResponse {
-            let (response, ids) = try lock.withLock { () throws -> (ScriptedResponse, [String]) in
+            let ids = Self.operationIDs(in: batch)
+            let observer = lock.withLock { () -> ((_ operationIDs: [String]) -> Void)? in
                 recordedBatches.append(batch)
                 recordedTokens.append(token)
-                if let sendFailure { throw sendFailure }
-                let next = scripted.isEmpty ? defaultResponse : scripted.removeFirst()
-                return (next, Self.operationIDs(in: batch))
+                return self.observer
             }
+            if let sendFailure { throw sendFailure }
+            let next = lock.withLock { scripted.isEmpty ? defaultResponse : scripted.removeFirst() }
+            // Asked before the answer is built, so the journal is read exactly as it stands for this request.
+            observer?(ids)
+            let response = next
             guard response.statusCode == 200, response.results != nil || response.resultsByOperation != nil
             else {
                 return IntakeContextTransportResponse(
@@ -1750,5 +1781,180 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertNil(
             try store.suspensionReason(operationID: upsert),
             "acknowledging it clears the suspension, so nothing is left parked")
+    }
+
+    /// An acknowledgement that fails leaves the suspended upsert queued and still suspended, so the delete
+    /// behind it must wait. Sending the tombstone anyway would retract what the receiver holds while the
+    /// journal still claims an upsert is outstanding for the same intake, and the receiver applies in array
+    /// order — the ordering rule this worker keeps depends on that claim being true.
+    func testAFailedSupersedeAcknowledgementHoldsTheQueuedDeleteBack() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let upsert = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        try store.recordFailure(
+            operationID: upsert, retryAt: nil, needsAttention: true, reason: "a domain conflict")
+        let deletedAt = when.addingTimeInterval(3600)
+        try store.delete(intakeID: intakeID, now: deletedAt)
+        let deleteRow = try XCTUnwrap(relayOperation(store, kind: .delete)?.operationID)
+        // The next write fails, which is the acknowledgement of the superseded upsert.
+        store.failNextSaveForTesting = true
+        transport.answerEverythingAccepted()
+
+        let outcomes = await makeWorker(store: store, transport: transport).runOnce(now: deletedAt)
+
+        XCTAssertEqual(transport.sendCallCount, 0, "the delete waits: its own predecessor is still outstanding")
+        guard case .notAcknowledged(let id, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the failed acknowledgement is reported, got \(outcomes)")
+        }
+        XCTAssertEqual(id, upsert, "it is the upsert whose acknowledgement failed")
+        guard case .blocked(let blocked, let by) = try XCTUnwrap(
+            outcomes.first { $0.operationID == deleteRow })
+        else {
+            return XCTFail("the delete is blocked by the upsert that is still queued, got \(outcomes)")
+        }
+        XCTAssertEqual(by, upsert, "and it names what holds it")
+        XCTAssertEqual(blocked, deleteRow)
+        XCTAssertEqual(
+            try pendingRelay(store).map(\.operationID), [upsert, deleteRow],
+            "both rows are untouched: the failed write rolled back")
+    }
+
+    /// The snapshot must be on record **before** the request that carries it goes out, not after the answer.
+    ///
+    /// A process death between the send and the write would otherwise leave a sent operation with no
+    /// snapshot: the retry would reuse the same `operation_id` with a different `client_payload_hash`, which
+    /// the receiver reads as a permanent conflict rather than the duplicate it should be. The transport is
+    /// asked, while it holds the batch and before any answer exists, what the journal holds — so a record
+    /// written afterwards would not be visible and this would fail.
+    func testASnapshotIsRecordedBeforeTheRequestCarryingItIsSent() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        transport.observeRecords(of: store)
+        transport.answerEverythingAccepted()
+
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links }
+        ).runOnce(now: when)
+
+        XCTAssertEqual(transport.recordsAtSendTime.count, 1)
+        for (operationID, recorded) in try XCTUnwrap(transport.recordsAtSendTime.first) {
+            XCTAssertTrue(
+                recorded,
+                "the snapshot for \(operationID) must already be on record when its request is handed over")
+        }
+    }
+
+    /// The same holds for each half of a split, which is a request of its own. A snapshot written after the
+    /// 413 that produced the split would leave the head unsent at the moment it goes out.
+    func testASplitPieceIsSentWithItsSnapshotAlreadyRecorded() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
+        try store.create(sampleIntake(id: otherIntakeID), components: components(), product: nil, now: when)
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        transport.observeRecords(of: store)
+        transport.answer(.init(statusCode: 413, error: "body too large"))
+        transport.answerEverythingAccepted()
+
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links }
+        ).runOnce(now: when)
+
+        // Every request is handed over with its own snapshots already on record — including the oversized one,
+        // which is a request that really was made. What the 413 does is release those records afterwards, so
+        // each half records its own and an item whose half never goes out is left with nothing.
+        XCTAssertEqual(transport.recordsAtSendTime.count, 3, "the refused batch and its two halves")
+        for (index, batch) in transport.recordsAtSendTime.enumerated() {
+            for (operationID, recorded) in batch {
+                XCTAssertTrue(
+                    recorded,
+                    "request \(index): the snapshot for \(operationID) is on record when it is handed over")
+            }
+        }
+    }
+
+    /// A record write that fails means the piece is **not sent**. Putting a payload on the wire whose snapshot
+    /// is not on record is what produces the permanent conflict above, and the operation is still deliverable:
+    /// nothing was sent, so it is rescheduled and the next attempt encodes against the links current then.
+    func testAFailedSnapshotRecordSendsNothingAndReschedulesInstead() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let operation = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        transport.answerEverythingAccepted()
+        // The next write fails, which is the snapshot record this piece makes before it goes out.
+        store.failNextSaveForTesting = true
+
+        let outcomes = await makeWorker(
+            store: store, transport: transport, links: { _, _ in projection(sequence: 2).links }
+        ).runOnce(now: when)
+
+        XCTAssertEqual(transport.sendCallCount, 0, "a payload whose snapshot is not on record is not sent")
+        guard case .retryScheduled(let id, _, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("the operation is rescheduled rather than lost, got \(outcomes)")
+        }
+        XCTAssertEqual(id, operation)
+        XCTAssertTrue(reason.contains("snapshot"), "the reason names the write that failed: \(reason)")
+        XCTAssertNil(
+            try store.recordedLinks(operationID: operation),
+            "and the failed write left nothing on record")
+        XCTAssertEqual(try pendingRelay(store).count, 1, "the operation is still queued")
+    }
+
+    /// A projection of an older revision is superseded only once the newer revision's upsert is **accepted**.
+    ///
+    /// The receiver holds a newer revision is a fact about the receiver, and an upsert merely being queued does
+    /// not make it one. When that upsert is refused, the receiver still holds the older revision, so the older
+    /// projection is something it can take and must stay queued — reported as blocked by the upsert that has
+    /// not landed rather than discarded as superseded.
+    func testAnOlderRevisionProjectionIsNotSupersededWhenTheNewerUpsertIsRefused() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        let queue = RecordingProjectionQueue()
+        let older = projection(sequence: 2)
+        queue.offer([older])
+        let queued = try pendingRelay(store).map(\.operationID)
+        let newerUpsert = queued[1]
+        transport.answer(.init(resultsByOperation: [newerUpsert: .permanentFailure]))
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            queue.recorded, [],
+            "the projection stays queued: its queue is told nothing, because nothing settled it")
+        guard case .blocked(let id, let by) = try XCTUnwrap(
+            outcomes.first { $0.operationID == older.operationID })
+        else {
+            return XCTFail("the projection is reported as blocked, not superseded, got \(outcomes)")
+        }
+        XCTAssertEqual(id, older.operationID)
+        XCTAssertEqual(by, newerUpsert, "it names the upsert that has not been accepted")
+    }
+
+    /// The other half of that decision: an accepted or duplicate upsert does supersede the older projection,
+    /// because the receiver now holds the newer revision and would answer the projection `stale_revision`.
+    func testAnOlderRevisionProjectionIsSupersededOnceTheNewerUpsertIsAccepted() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        let queue = RecordingProjectionQueue()
+        let older = projection(sequence: 2)
+        queue.offer([older])
+        transport.answer(.init(resultsByOperation: [try XCTUnwrap(pendingRelay(store).last).operationID: .duplicate]))
+        let worker = makeWorker(store: store, transport: transport, projections: queue)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            queue.recorded, [.superseded],
+            "a duplicate means the receiver holds the newer revision, so the projection is finished with")
+        guard case .superseded = try XCTUnwrap(
+            outcomes.first { $0.operationID == older.operationID })
+        else {
+            return XCTFail("and the run reports it superseded, got \(outcomes)")
+        }
     }
 }

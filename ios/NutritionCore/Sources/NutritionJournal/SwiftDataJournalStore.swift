@@ -1260,6 +1260,26 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         return try RelayDeliveryLinkSnapshot.decode(existing)
     }
 
+    /// Forgets the link snapshot recorded for one operation.
+    ///
+    /// **Only for a request the receiver refused for size.** A 413 is refused before anything is applied, so
+    /// the payload was never committed under that operation id and there is nothing for a later attempt to
+    /// reproduce. Forgetting the snapshot is what lets the split pieces record the links current when they
+    /// actually go out, and leaves an operation whose piece never carried it with nothing on record.
+    ///
+    /// A snapshot that was already on record when the request went out is **not** forgotten by this: it
+    /// belongs to an earlier attempt whose answer may have been lost, and the receiver may already hold that
+    /// payload under the operation id.
+    public func releaseLinks(operationID: String) throws {
+        try commit { context in
+            guard let row = try Self.outboxRecord(operationID, in: context) else {
+                throw JournalError.unknownOperation(operationID)
+            }
+            guard row.acknowledgedAt == nil else { return }
+            row.linksJSON = nil
+        }
+    }
+
     /// Clears the suspension on one operation, so an automatic run may pick it up again.
     ///
     /// This is the only way a `needsAttention` operation becomes due again, and it is deliberately a
