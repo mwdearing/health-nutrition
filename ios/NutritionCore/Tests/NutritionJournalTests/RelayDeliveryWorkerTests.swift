@@ -91,12 +91,16 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         /// test asserting "recorded before the request" needs to be able to tell apart.
         func observeRecords(of store: SwiftDataJournalStore) {
             lock.withLock {
-                observer = { operationIDs in
+                observer = { [weak self] operationIDs in
                     var seen: [String: Bool] = [:]
                     for id in operationIDs {
-                        seen[id] = ((try? store.recordedLinks(operationID: id)) ?? nil) != nil
+                        // `recordedLinks` both throws and returns an optional, so `try?` gives a double
+                        // optional; flattening it leaves nil both when the read fails and when nothing is
+                        // recorded, and either way there is no snapshot on record.
+                        let recorded = (try? store.recordedLinks(operationID: id)) ?? nil
+                        seen[id] = recorded != nil
                     }
-                    self.lock.withLock { self.observed.append(seen) }
+                    self?.lock.withLock { self?.observed.append(seen) }
                 }
             }
         }
@@ -144,13 +148,19 @@ final class RelayDeliveryWorkerTests: XCTestCase {
 
         func send(batch: Data, token: String) async throws -> IntakeContextTransportResponse {
             let ids = Self.operationIDs(in: batch)
-            let observer = lock.withLock { () -> ((_ operationIDs: [String]) -> Void)? in
+            // Everything read from the shared state is read under the lock, and the observer is taken out with
+            // it so it can be called afterwards without holding the lock: it reads the store, and holding the
+            // lock across that would serialise the run behind it for no reason.
+            let (observer, failure, next) = lock.withLock {
+                () -> (((_ operationIDs: [String]) -> Void)?, Error?, ScriptedResponse) in
                 recordedBatches.append(batch)
                 recordedTokens.append(token)
-                return self.observer
+                // A failed send throws without consuming a scripted answer, so a test that arms both a
+                // failure and a script sees the script on the next call rather than losing it to the failure.
+                if let sendFailure { return (self.observer, sendFailure, defaultResponse) }
+                return (self.observer, nil, scripted.isEmpty ? defaultResponse : scripted.removeFirst())
             }
-            if let sendFailure { throw sendFailure }
-            let next = lock.withLock { scripted.isEmpty ? defaultResponse : scripted.removeFirst() }
+            if let failure { throw failure }
             // Asked before the answer is built, so the journal is read exactly as it stands for this request.
             observer?(ids)
             let response = next
@@ -1943,7 +1953,9 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         let queue = RecordingProjectionQueue()
         let older = projection(sequence: 2)
         queue.offer([older])
-        transport.answer(.init(resultsByOperation: [try XCTUnwrap(pendingRelay(store).last).operationID: .duplicate]))
+        // Revision 2's upsert, the newest this run finds queued for the intake.
+        let newerUpsert = try XCTUnwrap(pendingRelay(store).last?.operationID)
+        transport.answer(.init(resultsByOperation: [newerUpsert: .duplicate]))
         let worker = makeWorker(store: store, transport: transport, projections: queue)
 
         let outcomes = await worker.runOnce(now: when)

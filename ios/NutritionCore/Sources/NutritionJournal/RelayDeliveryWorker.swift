@@ -815,7 +815,7 @@ public struct RelayDeliveryWorker: Sendable {
         _ items: [RelayEncodedOperation], credential: String, now: Date
     ) async -> RelayBatchResult {
         // The snapshot goes on record before the request, not after the answer.
-        let prepared = await prepare(items, now: now)
+        let prepared = prepare(items, now: now)
         let ready = prepared.ready
         guard !ready.isEmpty else {
             return RelayBatchResult(deliveries: prepared.deliveries, stopsTheRun: false)
@@ -823,7 +823,7 @@ public struct RelayDeliveryWorker: Sendable {
         let bytes: Data
         do {
             bytes = try encoder.batch(
-                batchID: Self.batchID(for: ready.map(\.value)), operations: ready.map(\.value)
+                batchID: Self.batchID(for: ready), operations: ready.map(\.value)
             ).canonicalBytes
         } catch {
             // Nothing was sent, so what was recorded for this request is released: it describes bytes that
@@ -1006,7 +1006,7 @@ public struct RelayDeliveryWorker: Sendable {
     /// and this item is re-encoded from what is on record so it sends the same payload that record describes.
     private func prepare(
         _ items: [RelayEncodedOperation], now: Date
-    ) async -> RelayPreparation {
+    ) -> RelayPreparation {
         var ready: [RelayEncodedOperation] = []
         var deliveries: [RelayDelivery] = []
         var written: [String] = []
@@ -1028,7 +1028,7 @@ public struct RelayDeliveryWorker: Sendable {
             } catch {
                 deliveries.append(RelayDelivery(
                     intakeID: item.intakeID,
-                    outcome: await retry(
+                    outcome: retry(
                         operation,
                         reason: "the link snapshot for this operation could not be recorded, so it was not "
                             + "sent and a retry must re-encode it",
@@ -1072,8 +1072,8 @@ public struct RelayDeliveryWorker: Sendable {
     /// later attempt the links that arrived in between — a smaller wrongness than refusing to release what can
     /// be released, and the next attempt still sends what is on record rather than nothing.
     private func release(_ prepared: RelayPreparation) {
-        for entry in prepared.written {
-            try? store.releaseLinks(operationID: entry.operationID)
+        for operationID in prepared.written {
+            try? store.releaseLinks(operationID: operationID)
         }
     }
 
