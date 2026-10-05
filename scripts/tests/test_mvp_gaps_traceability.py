@@ -235,8 +235,74 @@ def test_implemented_is_reported_as_none_of_the_ten() -> None:
         f"areas {implemented} are marked implemented; the summary and the "
         "opening prose both state that no area is implemented end to end"
     )
-    assert re.search(r"^- \*\*Implemented end to end[^*]*:\*\* none of the ten", text, re.MULTILINE), (
-        "the summary no longer states that no area is implemented end to end"
+    assert re.search(
+        r"^- \*\*Implemented end to end[^*]*:\*\* none of the ten", text, re.MULTILINE
+    ), "the summary no longer states that no area is implemented end to end"
+
+    unqualified = _unqualified_implemented_claims(text)
+    assert not unqualified, (
+        f"the Implemented bullet names areas {sorted(unqualified)} without saying what is "
+        "missing around them, while opening with 'none of the ten'. Either the claim is "
+        "qualified the way the other areas are, or it is a contradiction."
+    )
+
+
+# The clause the document uses when it names areas as containing implemented
+# machinery whose *requirement* is still missing. An area named in the Implemented
+# bullet has to carry it; without it, the bullet claims the area is implemented and
+# contradicts both the table and its own opening sentence. This is a whitelist, not
+# a parser: rewording the clause makes the guard ask for a human, which is the
+# asymmetry this file needs.
+_MISSING_REQUIREMENT_CLAUSE = re.compile(
+    r"with the surrounding requirement missing", re.IGNORECASE
+)
+
+
+def _unqualified_implemented_claims(text: str) -> set[int]:
+    """Areas the Implemented bullet names as implemented without qualifying them.
+
+    "none of the ten" is the number ten in prose, not an area claim, so it is
+    removed before the bullet's digits are read. An area is *qualified* when the
+    sentence naming it also says what is missing around it, which is how areas 5,
+    8 and 10 are legitimately discussed in this bullet.
+    """
+    match = re.search(
+        r"^- \*\*Implemented end to end[^*]*:\*\*(.*?)(?=\n- \*\*|\n#{1,3} |\Z)",
+        text,
+        re.MULTILINE | re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return set()
+    bullet = _strip_markdown(match.group(1)).replace("none of the ten", "")
+    unqualified: set[int] = set()
+    for sentence in re.split(r"(?<=[.!?])\s+", bullet):
+        if _MISSING_REQUIREMENT_CLAUSE.search(sentence):
+            continue
+        unqualified.update(int(number) for number in re.findall(r"\d+", sentence))
+    return unqualified
+
+
+def test_the_legend_agrees_with_the_table() -> None:
+    """The opening legend assigns verdicts to areas in prose too.
+
+    It states twice that areas 1 and 4 are the unverified ones. That is a third
+    statement of the same fact, so it is compared with the table rather than
+    trusted: prose that names the wrong areas contradicts both other views.
+    """
+    text = _document()
+    table = dict(_table_rows(text))
+    match = re.search(r"Two areas \((?P<areas>[^)]*)\)", text)
+    assert match is not None, (
+        "the legend no longer names the two areas that have no code behind them"
+    )
+    named = {
+        int(number)
+        for number in re.findall(r"\d+", match.group("areas"))
+    }
+    unverified = {number for number, verdict in table.items() if verdict == "unverified"}
+    assert named == unverified, (
+        f"the legend names areas {sorted(named)} as the ones with no code, but the "
+        f"table marks {sorted(unverified)} unverified"
     )
 
 
