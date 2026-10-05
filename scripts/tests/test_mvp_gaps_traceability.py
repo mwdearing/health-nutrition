@@ -54,15 +54,15 @@ def _table_rows(text: str) -> list[tuple[int, str]]:
 
 
 def _summary_areas(text: str, verdict: str) -> set[int]:
-    """Area numbers a summary bullet claims for ``verdict`` (case-insensitive)."""
-    areas: set[int] = set()
-    pattern = re.compile(
-        r"^- \*\*" + verdict + r":\*\*(.*)$", re.MULTILINE | re.IGNORECASE
-    )
-    for match in pattern.finditer(text):
-        for number in re.findall(r"\d+", match.group(1)):
-            areas.add(int(number))
-    return areas
+    """Area numbers a summary bullet claims for ``verdict``.
+
+    The whole bullet is read, including wrapped continuation lines: a claim made
+    on a continuation line is still a claim, and reading only the heading's
+    physical line would let the table comparison and the collision check both
+    miss it.
+    """
+    bullet = _summary_bullet(text, verdict)
+    return {int(number) for number in re.findall(r"\d+", bullet)}
 
 
 def test_document_exists() -> None:
