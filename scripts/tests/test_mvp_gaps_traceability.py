@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import codecs
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -487,6 +488,112 @@ def test_a_utf16_resource_hiding_a_token_is_still_found(tmp_path: Path) -> None:
         )
 
 
+def test_an_unmarked_utf16_resource_starting_non_ascii_is_still_found(
+    tmp_path: Path,
+) -> None:
+    """Unmarked UTF-16 that does not *begin* with ASCII must still be found.
+
+    The shape evidence used to be "a NUL in every second byte of the sample".
+    That holds only while the whole sample is U+0000–U+00FF. A localised
+    resource that opens with a CJK character, an accented letter or an emoji has
+    a non-zero high byte in its very first code unit, so the every-position
+    requirement fails, the file falls back to UTF-8, and the token is never seen:
+
+        file starts with   encoding    detector said   'goal' found
+        " (ASCII)          utf-16-le   utf-16-le       True
+        食 (CJK)           utf-16-le   None            False
+        🍊 (emoji)         utf-16-be   None            False
+
+    A shipped string beginning with a non-Latin character is ordinary for a
+    localised app, so both endiannesses and several leading scripts are pinned
+    here.
+    """
+    payload = '"goal" = "Goal";\n'
+    leads = {
+        "ascii": '"',
+        "accented": "é",
+        "cyrillic": "Привет",
+        "cjk": "食食食",
+        "emoji": "\U0001f9ca",
+        "mark-after-lead": "﻿",
+    }
+    for lead_name, lead in leads.items():
+        for endianness in ("utf-16-le", "utf-16-be"):
+            probe = tmp_path / f"{lead_name}-{endianness}.strings"
+            probe.write_bytes((lead + payload).encode(endianness))
+            detected = _unmarked_utf16_encoding(probe.read_bytes())
+            assert detected == endianness, (
+                f"a UTF-16 {endianness} resource beginning with {lead_name!r} was "
+                f"read as {detected!r}. Every leading code unit of that text is "
+                "outside U+0000–U+00FF, so a rule that needs a NUL in *every* "
+                "second byte cannot see the file and the token hides behind it."
+            )
+            read = _read_text(probe).lower()
+            assert "goal" in read, (
+                f"a UTF-16 {endianness} resource beginning with {lead_name!r} "
+                f"decodes to {read!r}, which does not contain 'goal'."
+            )
+
+
+def test_a_utf8_file_with_embedded_nul_bytes_is_not_read_as_utf16(
+    tmp_path: Path,
+) -> None:
+    """Tolerating non-ASCII must not turn every NUL-bearing file into UTF-16.
+
+    Loosening the old every-position rule is what stops non-ASCII-leading
+    resources hiding a token, and it is also the obvious way to make the guard
+    read binaries as text: a genuine UTF-8 file containing NUL bytes — a
+    NUL-terminated string in a fixture, a padded binary blob — is the case the
+    old rule existed to rule out. The replacement still requires evidence that
+    survives non-ASCII: the byte parity that would carry the NULs must actually
+    be NUL-dominant, the opposite parity must contain none, and the decoded text
+    must contain no control characters that text does not have.
+
+    Each case below is a real UTF-8 or binary byte string that must keep reading
+    as UTF-8. `utf8-token-and-nuls` is the sharpest of them: it holds the token
+    itself, so a misdetection would hide a hit rather than merely mislabel a
+    file.
+    """
+    utf8_cases = {
+        "utf8-sprinkled-nuls": b'key\x00value\x00\n',
+        "utf8-trailing-nul": b"{}\x00",
+        "utf8-token-and-nuls": b'let x = "goal";\x00\x00\x00\n',
+        "utf8-padded-json": b'{"goal":"x"}' + b"\x00" * 8,
+        "utf8-nul-heavy-tail": b'{"goal":1}\n' + b"\x00" * 48,
+        "utf8-tab-separated": b"name\tvalue\tgoal\n",
+        "utf8-non-ascii-token": "café naïve goal\n".encode("utf-8"),
+    }
+    for name, raw in utf8_cases.items():
+        detected = _unmarked_utf16_encoding(raw)
+        assert detected is None, (
+            f"{name} was misreported as {detected!r}. It is a genuine UTF-8 byte "
+            "string that merely contains NUL bytes; reading it as UTF-16 would "
+            "garble real source and can hide a token the document says is "
+            "absent."
+        )
+        probe = tmp_path / f"{name}.txt"
+        probe.write_bytes(raw)
+        assert _read_text(probe) == raw.decode("utf-8"), (
+            f"{name} did not decode as UTF-8, so the search is reading it as "
+            "something else"
+        )
+
+    binary_cases = {
+        "macho-header": b"\xcf\xfa\xed\xfeAppStorage UserDefaults" + b"\x00" * 64,
+        "byte-range": bytes(range(256)),
+        "png-header": b"\x89PNG\r\n\x1a\n" + bytes(range(200)),
+        "zip-header": b"PK\x03\x04" + b"\x00" * 40 + b"goal" + b"\x00" * 40,
+        "mach-o-arm64": b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01" + b"\x00" * 20
+        + bytes(range(40)),
+    }
+    for name, raw in binary_cases.items():
+        assert _unmarked_utf16_encoding(raw) is None, (
+            f"{name} was reported as UTF-16. The guard would start reading "
+            "binaries as text, and a spurious report is the same defect as a "
+            "missed one."
+        )
+
+
 def test_a_debug_bundle_beneath_a_source_root_is_not_searched(tmp_path: Path) -> None:
     """A build bundle is not a source file, and its binaries embed symbols.
 
@@ -529,31 +636,71 @@ def test_every_production_source_root_under_ios_is_searched() -> None:
     third production root left the suite green while the document's "no code
     anywhere" claim — and the `unverified` verdicts resting on it — went stale.
     Roots are discovered instead, and the document has to name every one of them.
+
+    Discovery reads the build configuration rather than recognising a directory
+    named `Sources`, because that is what the build uses.
+    `ios/HealthNutrition/project.yml` declares `Resources` as a production input
+    of the app target alongside `Sources`, and a convention-based search skipped
+    it — so a localized string shipped in the app could carry a token the
+    document claims is absent everywhere while every test here stayed green.
+
+    That makes the document's claim narrower than the search, which is the safe
+    direction: searching more than the note names can only strengthen "zero
+    matches across these trees". What must not happen is the reverse, so the
+    roots are checked three ways — the configuration's own declaration, an
+    independent sweep of every declared path, and the document's list.
     """
     _, named = _asserted_evidence_spec()
-    discovered = _discovered_source_roots()
+    configured = _configured_production_roots()
     assert named, "the evidence note names no trees to search"
-    assert discovered, (
-        "no production source root was discovered under ios/, so the search is "
-        "reading nothing. The note names "
+    assert configured, (
+        "no production source root was read from the iOS build configuration, so "
+        "the search is reading nothing. The note names "
         f"{list(named)}, which should have been found."
     )
-    unscanned = sorted(set(discovered) - set(named))
+
+    for tree in configured:
+        assert (REPO_ROOT / tree).is_dir(), (
+            f"the configuration declares {tree} as a production source root but "
+            f"{(REPO_ROOT / tree)} does not exist, so the search reads nothing "
+            "from it."
+        )
+
+    # Every path the configuration declares, read a second time by a
+    # deliberately simpler sweep. This is what makes the test fail when a
+    # declared root such as `Resources` is configured but unscanned: the sweep
+    # sees `path: Resources` and the search does not, and the two disagree. A
+    # check written against the same parser as the discovery would only assert
+    # that the parser agrees with itself.
+    declared = _independently_declared_paths()
+    unscanned = sorted(set(declared) - set(configured))
     assert not unscanned, (
-        f"production source roots exist under ios/ that the evidence note does "
-        f"not name: {unscanned}. The document claims the tokens return zero "
-        f"matches across {list(named)}, so a root outside that list is a claim "
-        "nobody is checking. Search the new root, then update the document's "
-        "evidence note and ASSERTED_ABSENT_TREES together, and say why in the "
-        "document."
+        f"the iOS build configuration declares {unscanned} as production source "
+        "roots but the search does not read them. The document claims these "
+        f"tokens return zero matches across {list(named)}; a production root "
+        "outside the search is a tree the claim was never established over, and "
+        "the gap is silent — every test stays green while a shipped resource "
+        "carries a token. Read the root in _configured_production_roots, then "
+        "update the document's evidence note and ASSERTED_ABSENT_TREES together "
+        "and say why in the document."
     )
-    missing = sorted(set(named) - set(discovered))
-    assert not missing, (
-        f"the evidence note names {missing}, which is not a production source "
-        f"root under ios/. Discovered roots are {sorted(discovered)}"
+
+    # And the document's own trees must be covered by what the search reads, so
+    # the claim it makes is a claim about code this guard actually looked at.
+    #
+    # Coverage runs both ways, because the two sides are stated at different
+    # granularity. A Swift package declares one root per *target*
+    # (`Sources/NutritionDomain`), while the document names their common parent
+    # `ios/NutritionCore/Sources`. Neither spelling encloses the other, so a tree
+    # counts as searched when it contains a declared root, when one of its
+    # ancestors is a declared root, or when it is one.
+    uncovered = sorted(tree for tree in named if not _is_covered_by(tree, configured))
+    assert not uncovered, (
+        f"the evidence note names {uncovered}, which no declared production "
+        f"source root covers. Declared roots are {list(configured)}, so the "
+        "document is claiming absence over a tree that is not part of this app."
     )
-    for tree in discovered:
-        assert (REPO_ROOT / tree).is_dir(), f"discovered root {tree} does not exist"
+
     # And the document still has to say the same thing this suite was written
     # against. Dropping a tree from the note would narrow the search, so it has
     # to be made here deliberately as well as in the document.
@@ -563,6 +710,201 @@ def test_every_production_source_root_under_ios_is_searched() -> None:
         f"{list(ASSERTED_ABSENT_TREES)}. Update both together, and say why in "
         "the document."
     )
+
+
+def _is_covered_by(tree: str, roots: tuple[str, ...]) -> bool:
+    """Is `tree` searched in full by `roots`, or wholly outside all of them?
+
+    Covers both directions of the containment, because the declaration and the
+    document state their trees at different granularity: `Package.swift` names
+    one root per target under `Sources/`, while the document names the shared
+    `Sources/` parent. Half a tree is neither — a root that merely overlaps it
+    would leave part of the tree unsearched while the guard reported it covered.
+    """
+    for root in roots:
+        if tree == root:
+            return True
+        if tree.startswith(f"{root}/"):
+            return True
+        if root.startswith(f"{tree}/"):
+            return True
+    return False
+
+
+def _independently_declared_paths() -> set[str]:
+    """Every production source path the configuration declares, swept naively.
+
+    A second reader, on purpose. ``_configured_production_roots`` reads the
+    configuration properly — it tracks targets, skips test bundles and resolves
+    ``Sources/<name>`` defaults. This one only looks for ``sources:`` blocks and
+    ``path:`` arguments, so it can only ever *over*-report: it names a path the
+    real reader skipped, never the reverse. That asymmetry is what makes the
+    comparison in
+    ``test_every_production_source_root_under_ios_is_searched`` able to fail.
+
+    A test-root path is filtered out of the result rather than the scan
+    narrowing: test fixtures deliberately name the tokens this guard looks for,
+    so including their targets would fail for a reason that has nothing to do
+    with whether a production root is searched.
+    """
+    found: set[str] = set()
+    for config, directory in _configuration_files(REPO_ROOT):
+        if config.name == "project.yml":
+            declared = _sweep_project_yml(config.read_text(encoding="utf-8"))
+        else:
+            declared = _sweep_package_swift(config.read_text(encoding="utf-8"))
+        for path in declared:
+            if "Tests" in Path(path).parts:
+                continue
+            relative = (directory / path).resolve().relative_to(REPO_ROOT.resolve())
+            found.add("/".join(relative.parts))
+    return found
+
+
+def _sweep_project_yml(text: str) -> tuple[str, ...]:
+    """Every `- path:` under a `sources:` key, ignoring targets and types."""
+    paths: list[str] = []
+    collecting = False
+    indent = 0
+    for raw in text.splitlines():
+        line = _strip_yaml_comment(raw).rstrip()
+        if not line.strip():
+            continue
+        column = len(line) - len(line.lstrip(" "))
+        stripped = line.strip()
+        if stripped.startswith("-"):
+            if collecting and column > indent:
+                path = _yaml_value(stripped[2:], "path")
+                if path is not None:
+                    paths.append(path)
+            continue
+        if stripped.split(":", 1)[0] == "sources":
+            collecting = True
+            indent = column
+            continue
+        if column <= indent:
+            collecting = False
+    return tuple(paths)
+
+
+def _sweep_package_swift(text: str) -> tuple[str, ...]:
+    """Every production target's path in a manifest, found by plain scanning."""
+    paths: list[str] = []
+    for match in re.finditer(r"\.(?P<kind>[A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
+        kind = match.group("kind")
+        if not _is_source_target(kind):
+            continue
+        body = text[match.end() : text.find(")", match.end()) + 1]
+        name = _swift_string(body, "name")
+        if name is None:
+            continue
+        paths.append(_swift_string(body, "path") or f"Sources/{name}")
+    return tuple(paths)
+
+
+def test_a_configured_resource_root_is_searched(tmp_path: Path) -> None:
+    """A token in a configured `Resources` root must not read as absent.
+
+    The reproduction this guards against: `project.yml` declares `Resources` as
+    a production input of the app target, and a search that recognises only a
+    directory named `Sources` never looked inside it, so
+
+        ios/HealthNutrition/Resources/Localizable.strings  ->  "goal" = "Goal";
+
+    passed every test in this file while the document claimed the token appears
+    nowhere in production. Dropping that one file into the real tree is the
+    planner's reproduction; doing it here on a copy is the same check with no
+    risk of leaving a token in the working tree.
+
+    Reading the declaration is what makes this general. `Resources` is not
+    special-cased anywhere below: the same code searches the next configured
+    input, because the root comes from the configuration rather than from a
+    directory name.
+    """
+    tree = _copy_ios_tree(tmp_path)
+    declaration = tree / "ios/HealthNutrition/project.yml"
+    assert "path: Resources" in declaration.read_text(encoding="utf-8"), (
+        "this test needs project.yml to declare a Resources input; it no longer "
+        "does, so either the declaration changed or this reproduction no longer "
+        "describes the hole it was written for."
+    )
+    (tree / "ios/HealthNutrition/Resources").mkdir(parents=True, exist_ok=True)
+    planted = tree / "ios/HealthNutrition/Resources/Localizable.strings"
+    planted.write_text('"goal" = "Goal";\n', encoding="utf-8")
+
+    tokens = ASSERTED_ABSENT_TOKENS
+    searched = _configured_production_roots(tree)
+    assert "ios/HealthNutrition/Resources" in searched, (
+        f"Resources is declared as a production input but the search reads only "
+        f"{list(searched)}, so nothing in it is ever searched."
+    )
+
+    found = [
+        str(path.relative_to(tree))
+        for root in searched
+        for path in _text_files(tree / root)
+        if any(token.lower() in _read_text(path).lower() for token in tokens)
+    ]
+    assert found == ["ios/HealthNutrition/Resources/Localizable.strings"], (
+        "a token planted in a configured production resource root was not "
+        f"reported; the search reported {found}. The document's zero-match claim "
+        "is stale while this stays green."
+    )
+
+
+def _copy_ios_tree(destination: Path) -> Path:
+    """A writable copy of `ios/` and its configurations, for mutation tests."""
+    destination.mkdir(parents=True, exist_ok=True)
+    tree = destination / "tree"
+    shutil.copytree(REPO_ROOT / "ios", tree / "ios", symlinks=True)
+    return tree
+
+
+def test_an_unreadable_configuration_fails_the_guard_rather_than_searching_less(
+    tmp_path: Path,
+) -> None:
+    """A configuration that cannot be parsed must stop the suite, not shrink it.
+
+    The whole point of reading roots from the configuration is that it cannot be
+    quietly mis-read. A parser that caught an error and returned the roots it had
+    found so far would turn a malformed `project.yml` into a search over part of
+    the app — and into a green suite, because the document's claim is still
+    checked against whatever list survived. Half a search and a passing test is
+    worse than a failing one: it looks like evidence.
+
+    Each corruption below removes one production root from the search without
+    removing it from the build. The shared defect is the same in all three, and
+    each case asserts the property rather than the message: no readable subset is
+    returned at all.
+    """
+    corruptions = {
+        "a sources entry that is not a path mapping": (
+            "      - path: Resources\n",
+            "      - excludes: [Ignored]\n",
+        ),
+        "an inline sources list": (
+            "    sources:\n      - path: Sources\n      - path: Resources\n",
+            "    sources: [Sources, Resources]\n",
+        ),
+        "a removed targets section": ("targets:\n", "buildTargets:\n"),
+    }
+    for description, (before, after) in corruptions.items():
+        tree = _copy_ios_tree(tmp_path / description.replace(" ", "_"))
+        declaration = tree / "ios/HealthNutrition/project.yml"
+        original = declaration.read_text(encoding="utf-8")
+        assert before in original, (
+            f"this case needs {before!r} in project.yml, which has changed, so it "
+            "no longer describes the corruption it was written for"
+        )
+        declaration.write_text(original.replace(before, after, 1), encoding="utf-8")
+
+        with pytest.raises(UnreadableConfiguration) as caught:
+            _configured_production_roots(tree)
+        message = str(caught.value)
+        assert "project.yml" in message, (
+            f"with {description}, the failure did not name the file it could not "
+            f"read: {message}"
+        )
 
 
 def test_the_legend_agrees_with_the_table() -> None:
@@ -615,35 +957,320 @@ ASSERTED_ABSENT_TREES = (
 )
 
 
-def _discovered_source_roots() -> tuple[str, ...]:
-    """Every production source root under `ios/`, discovered rather than listed.
+class UnreadableConfiguration(Exception):
+    """A build configuration the root discovery cannot read.
 
-    The zero-match claim is a claim about production code, so a root that this
-    tuple of two named trees does not contain is a tree nobody is checking. A
-    Swift package or app target is recognised by its `Sources` directory, which
-    is the convention both existing roots follow and the one `project.yml` and
-    `Package.swift` generate from. Test roots are excluded: they are not
+    Raised, never swallowed. A configuration the guard cannot parse leaves it
+    searching less than the app ships, and a guard that searches less than it
+    claims is green while being false — the single failure this whole file
+    exists to prevent. Silently carrying on with the roots it did manage to read
+    would turn a broken config into a passing suite.
+    """
+
+
+def _configured_production_roots(base: Path | None = None) -> tuple[str, ...]:
+    """Every production source root the iOS build configuration declares.
+
+    Derived from the configuration rather than from a directory-name convention,
+    because the convention is not what the build uses. `ios/HealthNutrition/
+    project.yml` declares *both* `Sources` and `Resources` as production
+    inputs of the app target, and a search that recognises only a directory
+    literally named `Sources` misses the second — so a localized string
+    shipped in the app can carry a token the document claims is absent
+    everywhere, and every test in this file stays green.
+
+    Reading the configuration also means the next configured input is picked up
+    without anyone remembering to add it here: a resource directory, a fixture
+    bundle, a second app target. Each declared root is resolved relative to the
+    file that declares it, and test targets are excluded — they are not
     production code, and the fixtures that name these tokens on purpose live
     there.
+
+    `base` exists so the parsing can be exercised against a synthetic tree; the
+    default is the repository.
     """
-    roots = []
-    for path in sorted((REPO_ROOT / "ios").rglob("Sources")):
-        if not path.is_dir():
-            continue
-        relative = path.relative_to(REPO_ROOT)
-        if set(relative.parts) & _TEXT_SKIP_DIRS:
-            continue
-        if "Tests" in relative.parts:
-            continue
-        roots.append("/".join(relative.parts))
+    root = REPO_ROOT if base is None else base
+    roots: set[str] = set()
+    for config, directory in _configuration_files(root):
+        declared = _declared_source_paths(config)
+        for path in declared:
+            resolved = (directory / path).resolve()
+            try:
+                relative = resolved.relative_to(root.resolve())
+            except ValueError:
+                raise UnreadableConfiguration(
+                    f"{config.name} declares the production path {path!r}, which "
+                    f"resolves to {resolved} — outside the repository. A root the "
+                    "search cannot reach is not a root that has been searched."
+                ) from None
+            roots.add("/".join(relative.parts))
     return tuple(sorted(roots))
+
+
+def _configuration_files(base: Path) -> list[tuple[Path, Path]]:
+    """Every build configuration under `ios/`, with the directory it is relative to.
+
+    Both spellings of the same declaration are read, because both are what this
+    project is built from: XcodeGen's `project.yml` for the app target and
+    `Package.swift` for the library package. A `Sources` directory that no
+    configuration declares is not a production root either — that is the same
+    assumption this function replaces, just applied the other way round.
+    """
+    ios = base / "ios"
+    found: list[tuple[Path, Path]] = []
+    for name in ("project.yml", "Package.swift"):
+        for config in sorted(ios.rglob(name)):
+            relative = config.relative_to(base)
+            if set(relative.parts) & _TEXT_SKIP_DIRS:
+                continue
+            found.append((config, config.parent))
+    if not found:
+        raise UnreadableConfiguration(
+            f"no project.yml or Package.swift was found under "
+            f"{_display(ios.relative_to(base))}, so no production source root "
+            "could be read. The document's zero-match claim is about production "
+            "code, and this cannot tell which trees that is."
+        )
+    return found
+
+
+def _display(path: Path) -> str:
+    return path.as_posix() or "."
+
+
+def _read_project_yml(text: str, source: str) -> tuple[str, ...]:
+    """Every production source path an XcodeGen project file declares.
+
+    Read as the block structure it is — a `targets:` mapping, each target with
+    a `type:` and a `sources:` list of `path:` entries — because what is
+    being read *is* the build's declaration of what ships. A target whose type
+    names a test bundle is skipped, and so is a path through a `Tests`
+    directory. A `sources:` list that cannot be resolved to paths is an error
+    rather than a partial result: half a target's inputs read is not a search
+    over half a target, it is an unknown search.
+
+    The file is read with a small reader rather than a YAML library so that this
+    module keeps its only third-party dependency at `pytest`: the
+    docs-consistency workflow installs nothing else, and a guard that only works
+    on a developer machine is not a guard.
+    """
+    entries: list[tuple[str, list[str]]] = []
+    current: list[str] | None = None
+    current_type = ""
+    current_indent = 0
+    in_targets = False
+    saw_targets = False
+
+    def close() -> None:
+        nonlocal current, current_type
+        if current is not None:
+            entries.append((current_type, current))
+        current = None
+        current_type = ""
+
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = _strip_yaml_comment(raw).rstrip()
+        if not line.strip():
+            continue
+        column = len(line) - len(line.lstrip(" "))
+        stripped = line.strip()
+
+        if column == 0:
+            key = stripped.split(":", 1)[0]
+            if key == "targets":
+                in_targets = True
+                saw_targets = True
+            else:
+                if in_targets:
+                    close()
+                in_targets = False
+            continue
+
+        if not in_targets:
+            continue
+
+        # A key at or left of the indent that opened the current list ends it,
+        # so a `dependencies:` block below `sources:` is not read as more
+        # production inputs. Indentation is what separates the two here: both are
+        # lists of mappings under the same target, at the same depth.
+        if not stripped.startswith("-") and current is not None:
+            if column <= current_indent:
+                close()
+
+        if stripped.startswith("- "):
+            # A list item belongs to the key at the indent above it.
+            if current is None:
+                continue
+            if column <= current_indent:
+                continue
+            path = _yaml_value(stripped[2:], "path")
+            if path is None:
+                raise UnreadableConfiguration(
+                    f"{source}:{number}: a list item under `sources:` that is not "
+                    f"a `path:` mapping ({stripped!r}), so the production input it "
+                    "names cannot be searched."
+                )
+            current.append(path)
+            continue
+
+        key, _, rest = stripped.partition(":")
+        key = key.strip()
+        rest = rest.strip()
+        if key == "sources":
+            close()
+            if rest:
+                raise UnreadableConfiguration(
+                    f"{source}:{number}: `sources:` written inline ({stripped!r}). "
+                    "This reads the block form only, so the production inputs "
+                    "would be missed."
+                )
+            current = []
+            current_indent = column
+        elif key == "type":
+            close()
+            current_type = rest.strip("\"'")
+
+    close()
+    if not saw_targets:
+        raise UnreadableConfiguration(
+            f"{source} has no `targets:` section, so the production inputs it "
+            "declares cannot be read."
+        )
+
+    paths: list[str] = []
+    for target_type, declared in entries:
+        if not declared:
+            raise UnreadableConfiguration(
+                f"{source}: a target declares `sources:` but no path could be "
+                "read from it, so its production inputs are unknown."
+            )
+        if "test" in target_type.lower():
+            continue
+        paths.extend(path for path in declared if "Tests" not in Path(path).parts)
+    return tuple(paths)
+
+
+def _strip_yaml_comment(line: str) -> str:
+    """Drop a trailing `#` comment, respecting quoted strings."""
+    quote = ""
+    for index, character in enumerate(line):
+        if quote:
+            if character == quote:
+                quote = ""
+        elif character in "\"'":
+            quote = character
+        elif character == "#" and (index == 0 or line[index - 1] in " \t"):
+            return line[:index]
+    return line
+
+
+def _yaml_value(entry: str, key: str) -> str | None:
+    """The value of `key` in a one-line YAML mapping, or None if absent."""
+    match = re.match(r"^" + re.escape(key) + r":\s*(?P<value>.*)$", entry)
+    if match is None:
+        return None
+    value = match.group("value").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return value
+
+
+# `PackageDescription` spells its factories in lower camel case — `target`,
+# `testTarget` — so the suffix match is case-insensitive.
+def _is_source_target(kind: str) -> bool:
+    """Is this target factory one that declares a directory of production source?
+
+    `testTarget` and `binaryTarget` are not: test fixtures name the tokens this
+    guard looks for on purpose, and a binary target is a prebuilt archive rather
+    than source. Anything else ending in `target` is read, including kinds added
+    later, so a new target type is searched rather than silently skipped.
+    """
+    if not kind.lower().endswith("target"):
+        return False
+    return kind.lower() not in {"testtarget", "binarytarget"}
+
+
+def _read_package_swift(text: str, source: str) -> tuple[str, ...]:
+    """Every production source path a Swift package manifest declares.
+
+    A target's directory is its explicit `path:` where it gives one and
+    `Sources/<name>` otherwise — SwiftPM's own default, not a convention
+    invented here. Call arguments are read to the matching close parenthesis so
+    a declaration spread over several lines is read whole rather than half-read,
+    and a target call with no readable name is an error rather than a skipped
+    root.
+    """
+    paths: list[str] = []
+    for match in re.finditer(r"\.(?P<kind>[A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
+        kind = match.group("kind")
+        if not _is_source_target(kind):
+            continue
+        body = _call_arguments(text, match.end() - 1, source)
+        name = _swift_string(body, "name")
+        if name is None:
+            raise UnreadableConfiguration(
+                f"{source}: a `.target(` call declares no name, so its production "
+                "path cannot be resolved."
+            )
+        path = _swift_string(body, "path") or f"Sources/{name}"
+        if "Tests" in Path(path).parts:
+            continue
+        paths.append(path)
+    if not paths:
+        raise UnreadableConfiguration(
+            f"{source}: no production target could be read from this manifest, so "
+            "the package's production inputs are unknown."
+        )
+    return tuple(paths)
+
+
+def _swift_string(body: str, key: str) -> str | None:
+    match = re.search(r"\b" + re.escape(key) + r":\s*\"(?P<value>[^\"]*)\"", body)
+    return match.group("value") if match is not None else None
+
+
+def _call_arguments(text: str, open_index: int, source: str) -> str:
+    """The argument text of the call whose `(` sits at `open_index`."""
+    depth = 0
+    quote = ""
+    for index in range(open_index, len(text)):
+        character = text[index]
+        if quote:
+            if character == quote and (index == 0 or text[index - 1] != "\\"):
+                quote = ""
+            continue
+        if character in "\"'":
+            quote = character
+        elif character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_index + 1 : index]
+    raise UnreadableConfiguration(
+        f"{source}: an unterminated call, so its arguments cannot be read."
+    )
+
+
+def _declared_source_paths(config: Path) -> tuple[str, ...]:
+    """The production source paths one configuration file declares."""
+    text = config.read_text(encoding="utf-8")
+    name = config.name
+    if name == "project.yml":
+        return _read_project_yml(text, name)
+    if name == "Package.swift":
+        return _read_package_swift(text, name)
+    raise UnreadableConfiguration(
+        f"{name} is not a configuration this guard knows how to read, so the "
+        "production inputs it declares would be missed."
+    )
 
 
 def _asserted_evidence_spec() -> tuple[tuple[str, ...], tuple[str, ...]]:
     """The tokens and trees the document claims, read out of the document.
 
     What is *there* is a separate question, answered by
-    ``_discovered_source_roots`` and compared with this in
+    ``_configured_production_roots`` and compared with this in
     ``test_every_production_source_root_under_ios_is_searched`` — the claim and
     the repository's shape held apart, so a new production root is reported as
     an unnamed root rather than as a changed document.
@@ -723,11 +1350,11 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
     # ``test_every_production_source_root_under_ios_is_searched``; searching
     # everything means the evidence is true even in the window before that
     # mismatch is fixed.
-    for tree in _discovered_source_roots():
+    for tree in _configured_production_roots():
         root = REPO_ROOT / tree
         assert root.is_dir(), f"the document names {tree}, which does not exist"
     offenders: list[str] = []
-    for tree in _discovered_source_roots():
+    for tree in _configured_production_roots():
         for path in sorted(_text_files(REPO_ROOT / tree)):
             text = _read_text(path).lower()
             for token in tokens:
@@ -778,24 +1405,88 @@ def _unmarked_utf16_encoding(raw: bytes) -> str | None:
     between every ASCII character: the token search finds nothing and the
     document's absence claim looks true while being false.
 
-    The signal is a NUL in *every* second byte of the leading sample, in one
-    parity only. That is not a guess about content, it is the encoding's own
-    shape: ASCII-range text in UTF-16 has a NUL in the high or low byte of each
-    code unit, and a genuine UTF-8 file containing NUL bytes does not do this in
-    one parity across a whole sample. Requiring every position rules out the
-    accidental case, which is the one a false report would come from.
+    A single NUL is not the signal. Requiring one in *every* second byte — which
+    this used to do — reads the sample's ASCII-ness as the evidence, and that
+    holds only while the sample is entirely U+0000–U+00FF. A localised resource
+    that opens with `食`, `é` or an emoji has a non-zero high byte in its first
+    code unit, so every-position fails, the file falls back to UTF-8, and a
+    token in it hides. This has to survive non-ASCII leads.
+
+    So the evidence is what holds for *every* UTF-16 file regardless of the
+    characters in it:
+
+    - the parity that would carry the NUL high bytes is NUL-dominant. ASCII is
+      the common case, so that parity is mostly zeros even when the leading
+      characters are not ASCII; a file whose high-byte parity is not
+      NUL-dominant is not UTF-16 text. Half is the floor: one non-ASCII lead in
+      a short sample still leaves the rest dominant, and a genuinely UTF-8 file
+      does not have half its bytes zero at one parity by accident.
+    - the opposite parity — the one that would carry the character bytes —
+      contains no NUL at all. UTF-16 has one byte per code unit, so a NUL there
+      is a code unit below U+0100, which is the accidental case: a UTF-8 file
+      that merely contains NUL bytes puts them wherever they land, not all at
+      one parity.
+    - the sample decodes as strict UTF-16. This rejects truncated code units,
+      unpaired surrogates and byte orders whose pairs are not code units.
+    - the decoded text contains no control characters beyond tab, newline,
+      carriage return, form feed and vertical tab. Random and binary bytes
+      decode into C1 controls and other unassigned code points, while real
+      text does not, and this is what keeps the guard from starting to read
+      binaries as text now that the every-position rule is gone.
 
     Returns None for anything else, including a file too short to sample, so the
     caller falls back to UTF-8 and a binary still degrades to "no match".
     """
-    sample = raw[:64]
-    if len(sample) < 8 or b"\x00" not in sample:
+    sample = raw[:_UTF16_SAMPLE_BYTES]
+    sample = sample[: len(sample) - (len(sample) % 2)]
+    if len(sample) < 8:
         return None
-    if all(byte == 0 for byte in sample[1::2]):
-        return "utf-16-le"
-    if all(byte == 0 for byte in sample[0::2]):
-        return "utf-16-be"
+    for encoding, high_parity in (("utf-16-le", 1), ("utf-16-be", 0)):
+        high = sample[high_parity::2]
+        low = sample[1 - high_parity::2]
+        zeros = high.count(0)
+        # NUL-dominant at this parity, and none at the other.
+        if zeros == 0 or zeros * 2 < len(high) or 0 in low:
+            continue
+        try:
+            text = sample.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if _is_readable_text(text):
+            return encoding
     return None
+
+
+# How many leading bytes of an unmarked file are sampled for the endianness
+# decision. Wider than the old 64 so a short non-ASCII lead is a minority of the
+# sample rather than most of it, and so a padded binary blob has enough bytes
+# for the control-character check to see something implausible.
+_UTF16_SAMPLE_BYTES = 512
+
+# Control characters text may legitimately contain. Everything else in the
+# C0/C1 ranges, plus DEL, is treated as evidence that the bytes were not text.
+_TEXT_CONTROL_CHARACTERS = frozenset("\t\n\r\f\v")
+
+
+def _is_readable_text(text: str) -> bool:
+    """Is `text` something a source or resource file could plausibly hold?
+
+    Rejects the empty string, unpaired surrogates and surrogates left over from
+    a truncated pair, every C0 control other than tab, newline, carriage return,
+    form feed and vertical tab, DEL, and the C1 controls. Genuine text survives;
+    binary bytes reinterpreted as UTF-16 overwhelmingly do not.
+    """
+    if not text:
+        return False
+    for character in text:
+        point = ord(character)
+        if character in _TEXT_CONTROL_CHARACTERS:
+            continue
+        if point < 0x20 or point == 0x7F or 0x80 <= point <= 0x9F:
+            return False
+        if 0xD800 <= point <= 0xDFFF:
+            return False
+    return True
 
 
 def _read_text(path: Path) -> str:
