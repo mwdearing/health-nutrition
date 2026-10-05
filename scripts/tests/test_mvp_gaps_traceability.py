@@ -262,9 +262,13 @@ def _unqualified_implemented_claims(text: str) -> set[int]:
     """Areas the Implemented bullet names as implemented without qualifying them.
 
     "none of the ten" is the number ten in prose, not an area claim, so it is
-    removed before the bullet's digits are read. An area is *qualified* when the
-    sentence naming it also says what is missing around it, which is how areas 5,
-    8 and 10 are legitimately discussed in this bullet.
+    removed before the bullet's digits are read.
+
+    The qualification is bound to the *claim*, not to the sentence: an area is
+    qualified only when the clause follows that area's own enumeration, so
+    appending "Area 2 is implemented end to end;" to a sentence that goes on to
+    qualify areas 5, 8 and 10 does not launder the new claim. Sentences that
+    carry no area number are prose and contribute nothing either way.
     """
     match = re.search(
         r"^- \*\*Implemented end to end[^*]*:\*\*(.*?)(?=\n- \*\*|\n#{1,3} |\Z)",
@@ -276,10 +280,21 @@ def _unqualified_implemented_claims(text: str) -> set[int]:
     bullet = _strip_markdown(match.group(1)).replace("none of the ten", "")
     unqualified: set[int] = set()
     for sentence in re.split(r"(?<=[.!?])\s+", bullet):
-        if _MISSING_REQUIREMENT_CLAUSE.search(sentence):
+        claimed = {int(number) for number in re.findall(r"\d+", sentence)}
+        if not claimed:
             continue
-        unqualified.update(int(number) for number in re.findall(r"\d+", sentence))
+        clause = _MISSING_REQUIREMENT_CLAUSE.search(sentence)
+        if clause is not None and not _CLAUSE_BREAKER.search(sentence[: clause.start()]):
+            continue
+        unqualified |= claimed
     return unqualified
+
+
+# A claim that is separated from the qualifying clause by a semicolon or a full
+# stop is its own claim: "Area 2 is implemented end to end; Areas 5, 8 and 10 ...
+# with the surrounding requirement missing" qualifies the areas it governs, not
+# the one asserted before the semicolon.
+_CLAUSE_BREAKER = re.compile(r"[;.]")
 
 
 def test_the_legend_agrees_with_the_table() -> None:
@@ -291,15 +306,28 @@ def test_the_legend_agrees_with_the_table() -> None:
     """
     text = _document()
     table = dict(_table_rows(text))
-    match = re.search(r"Two areas \((?P<areas>[^)]*)\)", text)
+    match = re.search(
+        r"Those rows carry the plain value \*{0,2}(?P<word>[a-z]+)", text
+    )
     assert match is not None, (
+        "the legend no longer states the verdict value those rows carry"
+    )
+    legend_verdict = match.group("word").strip("*").lower()
+    unverified = {number for number, verdict in table.items() if verdict == "unverified"}
+    assert legend_verdict in DECLARED_VERDICTS, (
+        f"the legend states {legend_verdict!r}, which is not one of the declared "
+        f"verdicts {list(DECLARED_VERDICTS)}"
+    )
+    assert legend_verdict == "unverified", (
+        f"the legend says the rows with no code carry {legend_verdict!r}, while the "
+        f"table marks {sorted(unverified)} unverified and the summary agrees with it"
+    )
+
+    areas = re.search(r"Two areas \((?P<areas>[^)]*)\)", text)
+    assert areas is not None, (
         "the legend no longer names the two areas that have no code behind them"
     )
-    named = {
-        int(number)
-        for number in re.findall(r"\d+", match.group("areas"))
-    }
-    unverified = {number for number, verdict in table.items() if verdict == "unverified"}
+    named = {int(number) for number in re.findall(r"\d+", areas.group("areas"))}
     assert named == unverified, (
         f"the legend names areas {sorted(named)} as the ones with no code, but the "
         f"table marks {sorted(unverified)} unverified"
