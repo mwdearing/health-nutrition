@@ -28,7 +28,11 @@ from __future__ import annotations
 import codecs
 import re
 import shutil
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -630,80 +634,60 @@ def test_a_debug_bundle_beneath_a_source_root_is_not_searched(tmp_path: Path) ->
 
 
 def test_every_production_source_root_under_ios_is_searched() -> None:
-    """No production source root under `ios/` may go unscanned.
+    """No production source tree under `ios/` may go unscanned.
 
     The zero-match search used a fixed tuple of two trees, so a PR that added a
-    third production root left the suite green while the document's "no code
-    anywhere" claim — and the `unverified` verdicts resting on it — went stale.
-    Roots are discovered instead, and the document has to name every one of them.
+    third left the suite green while the document's "no code anywhere" claim — and
+    the `unverified` verdicts resting on it — went stale. The search now reads
+    every source tree under `ios/`, so the question of which trees are production
+    cannot arise.
 
-    Discovery reads the build configuration rather than recognising a directory
-    named `Sources`, because that is what the build uses.
-    `ios/HealthNutrition/project.yml` declares `Resources` as a production input
-    of the app target alongside `Sources`, and a convention-based search skipped
-    it — so a localized string shipped in the app could carry a token the
-    document claims is absent everywhere while every test here stayed green.
+    An earlier version derived the roots from `project.yml` and `Package.swift`
+    instead. That is more faithful to what the build ships, and it cost three fix
+    rounds of parser findings: a declared `Resources` input missed by a
+    convention-based sweep, a configured *file* rejected because the check wanted
+    a directory, unhandled `include:` indirection, a nested dependency call, a
+    `systemLibrary` target, a target-dependency expression read as a declaration,
+    and a checked-in bundle skipped as a build artefact. Each was a new way for
+    "production code" to mean something the parser did not recognise, which is
+    the wrong failure mode for a guard whose job is to be unable to be wrong.
 
-    That makes the document's claim narrower than the search, which is the safe
-    direction: searching more than the note names can only strengthen "zero
-    matches across these trees". What must not happen is the reverse, so the
-    roots are checked three ways — the configuration's own declaration, an
-    independent sweep of every declared path, and the document's list.
+    Searching a superset of what the document names can only strengthen "these
+    tokens appear nowhere in these trees". What must not happen is the reverse, so
+    the document's own trees are checked against what the search actually reads.
     """
     _, named = _asserted_evidence_spec()
-    configured = _configured_production_roots()
+    searched = _searched_trees()
     assert named, "the evidence note names no trees to search"
-    assert configured, (
-        "no production source root was read from the iOS build configuration, so "
-        "the search is reading nothing. The note names "
-        f"{list(named)}, which should have been found."
+    assert searched, (
+        "no source tree was found under ios/, so the search is reading nothing. "
+        f"The note names {list(named)}, which should have been found."
     )
 
-    for tree in configured:
+    for tree in searched:
         assert (REPO_ROOT / tree).is_dir(), (
-            f"the configuration declares {tree} as a production source root but "
-            f"{(REPO_ROOT / tree)} does not exist, so the search reads nothing "
-            "from it."
+            f"{tree} is in the search but {(REPO_ROOT / tree)} is not a directory, "
+            "so the search reads nothing from it."
         )
 
-    # Every path the configuration declares, read a second time by a
-    # deliberately simpler sweep. This is what makes the test fail when a
-    # declared root such as `Resources` is configured but unscanned: the sweep
-    # sees `path: Resources` and the search does not, and the two disagree. A
-    # check written against the same parser as the discovery would only assert
-    # that the parser agrees with itself.
-    declared = _independently_declared_paths()
-    unscanned = sorted(set(declared) - set(configured))
-    assert not unscanned, (
-        f"the iOS build configuration declares {unscanned} as production source "
-        "roots but the search does not read them. The document claims these "
-        f"tokens return zero matches across {list(named)}; a production root "
-        "outside the search is a tree the claim was never established over, and "
-        "the gap is silent — every test stays green while a shipped resource "
-        "carries a token. Read the root in _configured_production_roots, then "
-        "update the document's evidence note and ASSERTED_ABSENT_TREES together "
-        "and say why in the document."
-    )
-
-    # And the document's own trees must be covered by what the search reads, so
-    # the claim it makes is a claim about code this guard actually looked at.
+    # The document's own trees must be covered by what the search reads, so the
+    # claim it makes is a claim about code this guard actually looked at.
     #
     # Coverage runs both ways, because the two sides are stated at different
-    # granularity. A Swift package declares one root per *target*
-    # (`Sources/NutritionDomain`), while the document names their common parent
-    # `ios/NutritionCore/Sources`. Neither spelling encloses the other, so a tree
-    # counts as searched when it contains a declared root, when one of its
-    # ancestors is a declared root, or when it is one.
-    uncovered = sorted(tree for tree in named if not _is_covered_by(tree, configured))
+    # granularity: the search names one tree per Swift package target under
+    # `Sources/`, while the document names the shared `Sources/` parent. Neither
+    # spelling encloses the other, so a tree counts as searched when it contains
+    # a searched tree, when one of its ancestors is searched, or when it is one.
+    uncovered = sorted(tree for tree in named if not _is_covered_by(tree, searched))
     assert not uncovered, (
-        f"the evidence note names {uncovered}, which no declared production "
-        f"source root covers. Declared roots are {list(configured)}, so the "
-        "document is claiming absence over a tree that is not part of this app."
+        f"the evidence note names {uncovered}, which the search does not cover, so "
+        "the document is claiming absence over a tree this guard never read. "
+        f"Searched trees are {list(searched)}."
     )
 
     # And the document still has to say the same thing this suite was written
-    # against. Dropping a tree from the note would narrow the search, so it has
-    # to be made here deliberately as well as in the document.
+    # against. Dropping a tree from the note would narrow the claim, so it has to
+    # be made here deliberately as well as in the document.
     assert named == ASSERTED_ABSENT_TREES, (
         f"the evidence note now claims absence across {list(named)}, but the "
         f"specification this suite is written against is "
@@ -711,15 +695,28 @@ def test_every_production_source_root_under_ios_is_searched() -> None:
         "the document."
     )
 
+@contextmanager
+def _repository_rooted_at(root: Path) -> Iterator[None]:
+    """Point `REPO_ROOT` at a copied tree for the duration of a mutation.
+
+    The search resolves every path from `REPO_ROOT`, so a probe that plants a file
+    in a copy has to move the root with it. Patching the module attribute is what
+    lets `_searched_trees` and `_text_files` run against the copy without either
+    taking a base path argument.
+    """
+    with mock.patch.object(sys.modules[__name__], "REPO_ROOT", root):
+        yield
+
 
 def _is_covered_by(tree: str, roots: tuple[str, ...]) -> bool:
     """Is `tree` searched in full by `roots`, or wholly outside all of them?
 
-    Covers both directions of the containment, because the declaration and the
-    document state their trees at different granularity: `Package.swift` names
-    one root per target under `Sources/`, while the document names the shared
-    `Sources/` parent. Half a tree is neither — a root that merely overlaps it
-    would leave part of the tree unsearched while the guard reported it covered.
+    Covers both directions of the containment, because the search and the
+    document state their trees at different granularity: the search names one
+    root per Swift package target under `Sources/`, while the document names the
+    shared `Sources/` parent. Half a tree is neither — a root that merely
+    overlaps it would leave part of the tree unsearched while the guard reported
+    it covered.
     """
     for root in roots:
         if tree == root:
@@ -731,180 +728,102 @@ def _is_covered_by(tree: str, roots: tuple[str, ...]) -> bool:
     return False
 
 
-def _independently_declared_paths() -> set[str]:
-    """Every production source path the configuration declares, swept naively.
+def _searched_trees() -> tuple[str, ...]:
+    """Every production source tree the zero-match search reads.
 
-    A second reader, on purpose. ``_configured_production_roots`` reads the
-    configuration properly — it tracks targets, skips test bundles and resolves
-    ``Sources/<name>`` defaults. This one only looks for ``sources:`` blocks and
-    ``path:`` arguments, so it can only ever *over*-report: it names a path the
-    real reader skipped, never the reverse. That asymmetry is what makes the
-    comparison in
-    ``test_every_production_source_root_under_ios_is_searched`` able to fail.
+    **Every** source tree under `ios/`, rather than a set read out of the build
+    configuration. An earlier version derived the roots from `project.yml` and
+    `Package.swift`, which is more faithful to what the build ships — and which
+    spent three fix rounds producing parser findings: a `Resources` input missed
+    by a convention-based sweep, then a configured *file* rejected because the
+    check wanted a directory, then `include:` indirection, a nested dependency
+    call, a `systemLibrary` target, a target-dependency expression read as a
+    declaration, and a bundle skipped as a build artefact. Each was a way for
+    "production code" to mean something the parser did not recognise.
 
-    A test-root path is filtered out of the result rather than the scan
-    narrowing: test fixtures deliberately name the tokens this guard looks for,
-    so including their targets would fail for a reason that has nothing to do
-    with whether a production root is searched.
+    Searching all of `ios/` removes the question. A superset can only strengthen
+    the document's claim — it says these tokens appear nowhere in the named trees,
+    and searching more trees than that leaves the claim true — so the direction
+    that matters is closed by construction rather than by a parser being right.
+
+    The cost is that test fixtures are searched too, and they deliberately name
+    these tokens. Those live under a `Tests` directory, which is excluded below.
+    Excluding a whole `Tests` path is the one narrowing here, and it is narrow by
+    name rather than by understanding the build.
     """
-    found: set[str] = set()
-    for config, directory in _configuration_files(REPO_ROOT):
-        if config.name == "project.yml":
-            declared = _sweep_project_yml(config.read_text(encoding="utf-8"))
-        else:
-            declared = _sweep_package_swift(config.read_text(encoding="utf-8"))
-        for path in declared:
-            if "Tests" in Path(path).parts:
-                continue
-            relative = (directory / path).resolve().relative_to(REPO_ROOT.resolve())
-            found.add("/".join(relative.parts))
-    return found
-
-
-def _sweep_project_yml(text: str) -> tuple[str, ...]:
-    """Every `- path:` under a `sources:` key, ignoring targets and types."""
-    paths: list[str] = []
-    collecting = False
-    indent = 0
-    for raw in text.splitlines():
-        line = _strip_yaml_comment(raw).rstrip()
-        if not line.strip():
+    ios = REPO_ROOT / "ios"
+    assert ios.is_dir(), f"{ios} does not exist, so the search reads nothing"
+    found: list[str] = []
+    for path in sorted(ios.rglob("*")):
+        if not path.is_dir() or path.name == ".build":
             continue
-        column = len(line) - len(line.lstrip(" "))
-        stripped = line.strip()
-        if stripped.startswith("-"):
-            if collecting and column > indent:
-                path = _yaml_value(stripped[2:], "path")
-                if path is not None:
-                    paths.append(path)
+        if "Tests" in path.relative_to(REPO_ROOT).parts:
             continue
-        if stripped.split(":", 1)[0] == "sources":
-            collecting = True
-            indent = column
+        if any(
+            part.lower().endswith(_TEXT_SKIP_BUNDLE_SUFFIXES)
+            for part in path.relative_to(REPO_ROOT).parts
+        ):
             continue
-        if column <= indent:
-            collecting = False
-    return tuple(paths)
-
-
-def _sweep_package_swift(text: str) -> tuple[str, ...]:
-    """Every production target's path in a manifest, found by plain scanning."""
-    paths: list[str] = []
-    for match in re.finditer(r"\.(?P<kind>[A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
-        kind = match.group("kind")
-        if not _is_source_target(kind):
-            continue
-        body = text[match.end() : text.find(")", match.end()) + 1]
-        name = _swift_string(body, "name")
-        if name is None:
-            continue
-        paths.append(_swift_string(body, "path") or f"Sources/{name}")
-    return tuple(paths)
-
-
-def test_a_configured_resource_root_is_searched(tmp_path: Path) -> None:
-    """A token in a configured `Resources` root must not read as absent.
-
-    The reproduction this guards against: `project.yml` declares `Resources` as
-    a production input of the app target, and a search that recognises only a
-    directory named `Sources` never looked inside it, so
-
-        ios/HealthNutrition/Resources/Localizable.strings  ->  "goal" = "Goal";
-
-    passed every test in this file while the document claimed the token appears
-    nowhere in production. Dropping that one file into the real tree is the
-    planner's reproduction; doing it here on a copy is the same check with no
-    risk of leaving a token in the working tree.
-
-    Reading the declaration is what makes this general. `Resources` is not
-    special-cased anywhere below: the same code searches the next configured
-    input, because the root comes from the configuration rather than from a
-    directory name.
-    """
-    tree = _copy_ios_tree(tmp_path)
-    declaration = tree / "ios/HealthNutrition/project.yml"
-    assert "path: Resources" in declaration.read_text(encoding="utf-8"), (
-        "this test needs project.yml to declare a Resources input; it no longer "
-        "does, so either the declaration changed or this reproduction no longer "
-        "describes the hole it was written for."
-    )
-    (tree / "ios/HealthNutrition/Resources").mkdir(parents=True, exist_ok=True)
-    planted = tree / "ios/HealthNutrition/Resources/Localizable.strings"
-    planted.write_text('"goal" = "Goal";\n', encoding="utf-8")
-
-    tokens = ASSERTED_ABSENT_TOKENS
-    searched = _configured_production_roots(tree)
-    assert "ios/HealthNutrition/Resources" in searched, (
-        f"Resources is declared as a production input but the search reads only "
-        f"{list(searched)}, so nothing in it is ever searched."
-    )
-
-    found = [
-        str(path.relative_to(tree))
-        for root in searched
-        for path in _text_files(tree / root)
-        if any(token.lower() in _read_text(path).lower() for token in tokens)
-    ]
-    assert found == ["ios/HealthNutrition/Resources/Localizable.strings"], (
-        "a token planted in a configured production resource root was not "
-        f"reported; the search reported {found}. The document's zero-match claim "
-        "is stale while this stays green."
-    )
-
+        found.append("/".join(path.relative_to(REPO_ROOT).parts))
+    return tuple(found)
 
 def _copy_ios_tree(destination: Path) -> Path:
-    """A writable copy of `ios/` and its configurations, for mutation tests."""
+    """A writable copy of `ios/`, for mutation tests.
+
+    The probe plants a file in a resource root, so the whole tree is copied rather
+    than a single file, and `REPO_ROOT` is repointed at the copy for the duration.
+    """
     destination.mkdir(parents=True, exist_ok=True)
     tree = destination / "tree"
     shutil.copytree(REPO_ROOT / "ios", tree / "ios", symlinks=True)
     return tree
 
 
-def test_an_unreadable_configuration_fails_the_guard_rather_than_searching_less(
-    tmp_path: Path,
-) -> None:
-    """A configuration that cannot be parsed must stop the suite, not shrink it.
+def test_a_shipped_resource_root_is_searched(tmp_path: Path) -> None:
+    """A token in a `Resources` root the app ships must not read as absent.
 
-    The whole point of reading roots from the configuration is that it cannot be
-    quietly mis-read. A parser that caught an error and returned the roots it had
-    found so far would turn a malformed `project.yml` into a search over part of
-    the app — and into a green suite, because the document's claim is still
-    checked against whatever list survived. Half a search and a passing test is
-    worse than a failing one: it looks like evidence.
+    The reproduction this guards against: `project.yml` declares `Resources` as a
+    production input of the app target, and a search that recognised only a
+    directory named `Sources` never looked inside it, so
 
-    Each corruption below removes one production root from the search without
-    removing it from the build. The shared defect is the same in all three, and
-    each case asserts the property rather than the message: no readable subset is
-    returned at all.
+        ios/HealthNutrition/Resources/Localizable.strings  ->  "goal" = "Goal";
+
+    left every test green while the document claimed `goal` appears nowhere in
+    the app's code.
+
+    The search now reads every source tree under `ios/`, so nothing declares a root
+    and nothing can be declared wrong. This keeps the original reproduction as the
+    regression it was written for, using the tree it was written about.
     """
-    corruptions = {
-        "a sources entry that is not a path mapping": (
-            "      - path: Resources\n",
-            "      - excludes: [Ignored]\n",
-        ),
-        "an inline sources list": (
-            "    sources:\n      - path: Sources\n      - path: Resources\n",
-            "    sources: [Sources, Resources]\n",
-        ),
-        "a removed targets section": ("targets:\n", "buildTargets:\n"),
-    }
-    for description, (before, after) in corruptions.items():
-        tree = _copy_ios_tree(tmp_path / description.replace(" ", "_"))
-        declaration = tree / "ios/HealthNutrition/project.yml"
-        original = declaration.read_text(encoding="utf-8")
-        assert before in original, (
-            f"this case needs {before!r} in project.yml, which has changed, so it "
-            "no longer describes the corruption it was written for"
-        )
-        declaration.write_text(original.replace(before, after, 1), encoding="utf-8")
+    tree = _copy_ios_tree(tmp_path)
+    declaration = tree / "ios/HealthNutrition/project.yml"
+    assert "path: Resources" in declaration.read_text(encoding="utf-8"), (
+        "this test needs project.yml to declare a Resources input; it no longer "
+        "does, so the tree it copies is not the one this reproduction describes."
+    )
+    (tree / "ios/HealthNutrition/Resources").mkdir(parents=True, exist_ok=True)
+    planted = tree / "ios/HealthNutrition/Resources/Localizable.strings"
+    planted.write_text('"goal" = "Goal";\n', encoding="utf-8")
 
-        with pytest.raises(UnreadableConfiguration) as caught:
-            _configured_production_roots(tree)
-        message = str(caught.value)
-        assert "project.yml" in message, (
-            f"with {description}, the failure did not name the file it could not "
-            f"read: {message}"
+    with _repository_rooted_at(tree):
+        # Deduplicated: the search reads every tree under `ios/`, so a file is
+        # reachable from its own directory and from each ancestor of it.
+        found = sorted(
+            {
+                str(path.relative_to(tree))
+                for searched in _searched_trees()
+                for path in _text_files(tree / searched)
+                if any(
+                    token.lower() in _read_text(path).lower()
+                    for token in ASSERTED_ABSENT_TOKENS
+                )
+            }
         )
+    assert found == ["ios/HealthNutrition/Resources/Localizable.strings"], (
+        "a token planted in a resource root the app ships was not reported; the "
+        f"search reported {found}. The document's zero-match claim would be false."
+    )
+
 
 
 def test_the_legend_agrees_with_the_table() -> None:
@@ -955,315 +874,6 @@ ASSERTED_ABSENT_TREES = (
     "ios/NutritionCore/Sources",
     "ios/HealthNutrition/Sources",
 )
-
-
-class UnreadableConfiguration(Exception):
-    """A build configuration the root discovery cannot read.
-
-    Raised, never swallowed. A configuration the guard cannot parse leaves it
-    searching less than the app ships, and a guard that searches less than it
-    claims is green while being false — the single failure this whole file
-    exists to prevent. Silently carrying on with the roots it did manage to read
-    would turn a broken config into a passing suite.
-    """
-
-
-def _configured_production_roots(base: Path | None = None) -> tuple[str, ...]:
-    """Every production source root the iOS build configuration declares.
-
-    Derived from the configuration rather than from a directory-name convention,
-    because the convention is not what the build uses. `ios/HealthNutrition/
-    project.yml` declares *both* `Sources` and `Resources` as production
-    inputs of the app target, and a search that recognises only a directory
-    literally named `Sources` misses the second — so a localized string
-    shipped in the app can carry a token the document claims is absent
-    everywhere, and every test in this file stays green.
-
-    Reading the configuration also means the next configured input is picked up
-    without anyone remembering to add it here: a resource directory, a fixture
-    bundle, a second app target. Each declared root is resolved relative to the
-    file that declares it, and test targets are excluded — they are not
-    production code, and the fixtures that name these tokens on purpose live
-    there.
-
-    `base` exists so the parsing can be exercised against a synthetic tree; the
-    default is the repository.
-    """
-    root = REPO_ROOT if base is None else base
-    roots: set[str] = set()
-    for config, directory in _configuration_files(root):
-        declared = _declared_source_paths(config)
-        for path in declared:
-            resolved = (directory / path).resolve()
-            try:
-                relative = resolved.relative_to(root.resolve())
-            except ValueError:
-                raise UnreadableConfiguration(
-                    f"{config.name} declares the production path {path!r}, which "
-                    f"resolves to {resolved} — outside the repository. A root the "
-                    "search cannot reach is not a root that has been searched."
-                ) from None
-            roots.add("/".join(relative.parts))
-    return tuple(sorted(roots))
-
-
-def _configuration_files(base: Path) -> list[tuple[Path, Path]]:
-    """Every build configuration under `ios/`, with the directory it is relative to.
-
-    Both spellings of the same declaration are read, because both are what this
-    project is built from: XcodeGen's `project.yml` for the app target and
-    `Package.swift` for the library package. A `Sources` directory that no
-    configuration declares is not a production root either — that is the same
-    assumption this function replaces, just applied the other way round.
-    """
-    ios = base / "ios"
-    found: list[tuple[Path, Path]] = []
-    for name in ("project.yml", "Package.swift"):
-        for config in sorted(ios.rglob(name)):
-            relative = config.relative_to(base)
-            if set(relative.parts) & _TEXT_SKIP_DIRS:
-                continue
-            found.append((config, config.parent))
-    if not found:
-        raise UnreadableConfiguration(
-            f"no project.yml or Package.swift was found under "
-            f"{_display(ios.relative_to(base))}, so no production source root "
-            "could be read. The document's zero-match claim is about production "
-            "code, and this cannot tell which trees that is."
-        )
-    return found
-
-
-def _display(path: Path) -> str:
-    return path.as_posix() or "."
-
-
-def _read_project_yml(text: str, source: str) -> tuple[str, ...]:
-    """Every production source path an XcodeGen project file declares.
-
-    Read as the block structure it is — a `targets:` mapping, each target with
-    a `type:` and a `sources:` list of `path:` entries — because what is
-    being read *is* the build's declaration of what ships. A target whose type
-    names a test bundle is skipped, and so is a path through a `Tests`
-    directory. A `sources:` list that cannot be resolved to paths is an error
-    rather than a partial result: half a target's inputs read is not a search
-    over half a target, it is an unknown search.
-
-    The file is read with a small reader rather than a YAML library so that this
-    module keeps its only third-party dependency at `pytest`: the
-    docs-consistency workflow installs nothing else, and a guard that only works
-    on a developer machine is not a guard.
-    """
-    entries: list[tuple[str, list[str]]] = []
-    current: list[str] | None = None
-    current_type = ""
-    current_indent = 0
-    in_targets = False
-    saw_targets = False
-
-    def close() -> None:
-        nonlocal current, current_type
-        if current is not None:
-            entries.append((current_type, current))
-        current = None
-        current_type = ""
-
-    for number, raw in enumerate(text.splitlines(), start=1):
-        line = _strip_yaml_comment(raw).rstrip()
-        if not line.strip():
-            continue
-        column = len(line) - len(line.lstrip(" "))
-        stripped = line.strip()
-
-        if column == 0:
-            key = stripped.split(":", 1)[0]
-            if key == "targets":
-                in_targets = True
-                saw_targets = True
-            else:
-                if in_targets:
-                    close()
-                in_targets = False
-            continue
-
-        if not in_targets:
-            continue
-
-        # A key at or left of the indent that opened the current list ends it,
-        # so a `dependencies:` block below `sources:` is not read as more
-        # production inputs. Indentation is what separates the two here: both are
-        # lists of mappings under the same target, at the same depth.
-        if not stripped.startswith("-") and current is not None:
-            if column <= current_indent:
-                close()
-
-        if stripped.startswith("- "):
-            # A list item belongs to the key at the indent above it.
-            if current is None:
-                continue
-            if column <= current_indent:
-                continue
-            path = _yaml_value(stripped[2:], "path")
-            if path is None:
-                raise UnreadableConfiguration(
-                    f"{source}:{number}: a list item under `sources:` that is not "
-                    f"a `path:` mapping ({stripped!r}), so the production input it "
-                    "names cannot be searched."
-                )
-            current.append(path)
-            continue
-
-        key, _, rest = stripped.partition(":")
-        key = key.strip()
-        rest = rest.strip()
-        if key == "sources":
-            close()
-            if rest:
-                raise UnreadableConfiguration(
-                    f"{source}:{number}: `sources:` written inline ({stripped!r}). "
-                    "This reads the block form only, so the production inputs "
-                    "would be missed."
-                )
-            current = []
-            current_indent = column
-        elif key == "type":
-            close()
-            current_type = rest.strip("\"'")
-
-    close()
-    if not saw_targets:
-        raise UnreadableConfiguration(
-            f"{source} has no `targets:` section, so the production inputs it "
-            "declares cannot be read."
-        )
-
-    paths: list[str] = []
-    for target_type, declared in entries:
-        if not declared:
-            raise UnreadableConfiguration(
-                f"{source}: a target declares `sources:` but no path could be "
-                "read from it, so its production inputs are unknown."
-            )
-        if "test" in target_type.lower():
-            continue
-        paths.extend(path for path in declared if "Tests" not in Path(path).parts)
-    return tuple(paths)
-
-
-def _strip_yaml_comment(line: str) -> str:
-    """Drop a trailing `#` comment, respecting quoted strings."""
-    quote = ""
-    for index, character in enumerate(line):
-        if quote:
-            if character == quote:
-                quote = ""
-        elif character in "\"'":
-            quote = character
-        elif character == "#" and (index == 0 or line[index - 1] in " \t"):
-            return line[:index]
-    return line
-
-
-def _yaml_value(entry: str, key: str) -> str | None:
-    """The value of `key` in a one-line YAML mapping, or None if absent."""
-    match = re.match(r"^" + re.escape(key) + r":\s*(?P<value>.*)$", entry)
-    if match is None:
-        return None
-    value = match.group("value").strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        value = value[1:-1]
-    return value
-
-
-# `PackageDescription` spells its factories in lower camel case — `target`,
-# `testTarget` — so the suffix match is case-insensitive.
-def _is_source_target(kind: str) -> bool:
-    """Is this target factory one that declares a directory of production source?
-
-    `testTarget` and `binaryTarget` are not: test fixtures name the tokens this
-    guard looks for on purpose, and a binary target is a prebuilt archive rather
-    than source. Anything else ending in `target` is read, including kinds added
-    later, so a new target type is searched rather than silently skipped.
-    """
-    if not kind.lower().endswith("target"):
-        return False
-    return kind.lower() not in {"testtarget", "binarytarget"}
-
-
-def _read_package_swift(text: str, source: str) -> tuple[str, ...]:
-    """Every production source path a Swift package manifest declares.
-
-    A target's directory is its explicit `path:` where it gives one and
-    `Sources/<name>` otherwise — SwiftPM's own default, not a convention
-    invented here. Call arguments are read to the matching close parenthesis so
-    a declaration spread over several lines is read whole rather than half-read,
-    and a target call with no readable name is an error rather than a skipped
-    root.
-    """
-    paths: list[str] = []
-    for match in re.finditer(r"\.(?P<kind>[A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
-        kind = match.group("kind")
-        if not _is_source_target(kind):
-            continue
-        body = _call_arguments(text, match.end() - 1, source)
-        name = _swift_string(body, "name")
-        if name is None:
-            raise UnreadableConfiguration(
-                f"{source}: a `.target(` call declares no name, so its production "
-                "path cannot be resolved."
-            )
-        path = _swift_string(body, "path") or f"Sources/{name}"
-        if "Tests" in Path(path).parts:
-            continue
-        paths.append(path)
-    if not paths:
-        raise UnreadableConfiguration(
-            f"{source}: no production target could be read from this manifest, so "
-            "the package's production inputs are unknown."
-        )
-    return tuple(paths)
-
-
-def _swift_string(body: str, key: str) -> str | None:
-    match = re.search(r"\b" + re.escape(key) + r":\s*\"(?P<value>[^\"]*)\"", body)
-    return match.group("value") if match is not None else None
-
-
-def _call_arguments(text: str, open_index: int, source: str) -> str:
-    """The argument text of the call whose `(` sits at `open_index`."""
-    depth = 0
-    quote = ""
-    for index in range(open_index, len(text)):
-        character = text[index]
-        if quote:
-            if character == quote and (index == 0 or text[index - 1] != "\\"):
-                quote = ""
-            continue
-        if character in "\"'":
-            quote = character
-        elif character == "(":
-            depth += 1
-        elif character == ")":
-            depth -= 1
-            if depth == 0:
-                return text[open_index + 1 : index]
-    raise UnreadableConfiguration(
-        f"{source}: an unterminated call, so its arguments cannot be read."
-    )
-
-
-def _declared_source_paths(config: Path) -> tuple[str, ...]:
-    """The production source paths one configuration file declares."""
-    text = config.read_text(encoding="utf-8")
-    name = config.name
-    if name == "project.yml":
-        return _read_project_yml(text, name)
-    if name == "Package.swift":
-        return _read_package_swift(text, name)
-    raise UnreadableConfiguration(
-        f"{name} is not a configuration this guard knows how to read, so the "
-        "production inputs it declares would be missed."
-    )
 
 
 def _asserted_evidence_spec() -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -1344,27 +954,26 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
     tokens, trees = _asserted_evidence_spec()
     assert tokens, "the evidence note lists no tokens to search for"
     assert trees, "the evidence note names no trees to search"
-    # Search every production source root that exists, not only the two the note
-    # names. Searching the named trees alone let a third root go unchecked, and
-    # the mismatch is reported by
-    # ``test_every_production_source_root_under_ios_is_searched``; searching
-    # everything means the evidence is true even in the window before that
-    # mismatch is fixed.
-    for tree in _configured_production_roots():
+    # Search every source tree that exists, not only the two the note names.
+    # Searching the named trees alone let a third go unchecked, and the mismatch
+    # is reported by ``test_every_production_source_root_under_ios_is_searched``;
+    # searching everything means the evidence is true even in the window before
+    # that mismatch is fixed.
+    for tree in _searched_trees():
         root = REPO_ROOT / tree
-        assert root.is_dir(), f"the document names {tree}, which does not exist"
-    offenders: list[str] = []
-    for tree in _configured_production_roots():
+        assert root.is_dir(), f"the search names {tree}, which does not exist"
+    offenders: set[str] = set()
+    for tree in _searched_trees():
         for path in sorted(_text_files(REPO_ROOT / tree)):
             text = _read_text(path).lower()
             for token in tokens:
                 if token.lower() in text:
                     relative = path.relative_to(REPO_ROOT)
-                    offenders.append(f"{relative}: {token}")
+                    offenders.add(f"{relative}: {token}")
     assert not offenders, (
         "the document states these tokens return zero matches across "
         f"{list(trees)}, but they now appear:\n  "
-        + "\n  ".join(offenders)
+        + "\n  ".join(sorted(offenders))
         + "\nIf that is intended, update the document's evidence note and the "
         "verdicts that rest on it."
     )
