@@ -269,7 +269,7 @@ public struct RelayDeliveryWorker: Sendable {
         for intakeID in intakeOrder {
             // The operations this delete retracts: everything queued before it for the same intake. A
             // suspended one among them is finished with rather than parked — see the branch below.
-            let retracted = retractedByQueuedDelete(queuedByIntake[intakeID] ?? [])
+            let retracted = Self.retractedByQueuedDelete(queuedByIntake[intakeID] ?? [])
             for operation in queuedByIntake[intakeID] ?? [] {
                 if let blocker = blocking[intakeID] {
                     outcomes.append(.blocked(operationID: operation.operationID, blockedBy: blocker))
@@ -809,8 +809,9 @@ public struct RelayDeliveryWorker: Sendable {
             // The token is refused. Retrying cannot mint a new one, and every later batch would be refused
             // the same way, so the run stops and these operations are parked until someone re-arms them.
             return await result(
-                of: items, now: now, stopsTheRun: true, unrecorded: record(items),
-                refused: "the receiver rejected the intake token, so nothing was delivered")
+                of: items, now: now, stopsTheRun: true,
+                refused: "the receiver rejected the intake token, so nothing was delivered",
+                unrecorded: record(items))
         case 429:
             // **A rate limit stops the run.** The receiver is telling this producer to send less, and the
             // other batches of this run are more of exactly what it just asked for of it — including the
@@ -826,9 +827,10 @@ public struct RelayDeliveryWorker: Sendable {
             let reason = wait.map { "the receiver asked this producer to wait \($0) seconds" }
                 ?? "the receiver rate limited this producer without stating a wait"
             return await result(
-                of: items, now: now, stopsTheRun: true, unrecorded: record(items), refused: nil,
+                of: items, now: now, stopsTheRun: true, refused: nil,
                 failed: reason,
-                failedAt: wait.map { now.addingTimeInterval(TimeInterval($0)) })
+                failedAt: wait.map { now.addingTimeInterval(TimeInterval($0)) },
+                unrecorded: record(items))
         case 413:
             // **Split until there is nothing left to split.** A 413 says the body was too large, and how
             // large a given operation is on its own is not something this module can know in advance: an
@@ -869,20 +871,23 @@ public struct RelayDeliveryWorker: Sendable {
                 return RelayBatchResult(deliveries: deliveries, stopsTheRun: false)
             }
             return await result(
-                of: items, now: now, stopsTheRun: false, unrecorded: record(items),
-                refused: "the receiver refused this operation's payload as too large")
+                of: items, now: now, stopsTheRun: false,
+                refused: "the receiver refused this operation's payload as too large",
+                unrecorded: record(items))
         case 400, 403:
             // Permanent for these operations: the payload or the producer binding is refused, and the same
             // bytes are refused again on every attempt.
             return await result(
-                of: items, now: now, stopsTheRun: false, unrecorded: record(items),
-                refused: Self.errorText(in: response.body) ?? "the receiver refused the batch")
+                of: items, now: now, stopsTheRun: false,
+                refused: Self.errorText(in: response.body) ?? "the receiver refused the batch",
+                unrecorded: record(items))
         default:
             // 5xx and anything else the receiver did not name: transient, because a later run may well find
             // it back. The status is in the reason so the queue is not silent about why it waited.
             return await result(
-                of: items, now: now, stopsTheRun: false, unrecorded: record(items), refused: nil,
-                failed: "the receiver answered \(response.statusCode)")
+                of: items, now: now, stopsTheRun: false, refused: nil,
+                failed: "the receiver answered \(response.statusCode)",
+                unrecorded: record(items))
         }
     }
 
