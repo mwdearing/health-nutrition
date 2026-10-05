@@ -283,36 +283,61 @@ def _unqualified_implemented_claims(text: str) -> set[int]:
         claimed = {int(number) for number in re.findall(r"\d+", sentence)}
         if not claimed:
             continue
-        clause = _MISSING_REQUIREMENT_CLAUSE.search(sentence)
-        if clause is not None:
-            # The clause qualifies the enumeration it governs, which is the one
-            # after the last contrastive break — not every number in the
-            # sentence. Exempting the whole sentence is what let "Area 2 is
-            # implemented end to end, while Areas 5, 8 and 10 contain machinery
-            # with the surrounding requirement missing" pass: the clause was
-            # read as covering area 2 as well.
-            #
-            # Compared by *occurrence*, not as sets: an area named on both sides
-            # of the break is still an unqualified claim on the earlier side. Set
-            # subtraction hid exactly that, because the number appeared in both
-            # halves and cancelled itself out.
-            governed_text = _CLAUSE_BREAKER.split(sentence[: clause.start()])[-1]
-            governed = {
-                (match.start(), int(match.group(0)))
-                for match in _AREA_NUMBER.finditer(governed_text)
-            }
-            offset = len(sentence[: clause.start()]) - len(governed_text)
-            unqualified |= {
-                int(match.group(0))
-                for match in _AREA_NUMBER.finditer(sentence[: clause.start()])
-                if (match.start() - offset, int(match.group(0))) not in governed
-            }
+        clauses = list(_MISSING_REQUIREMENT_CLAUSE.finditer(sentence))
+        if not clauses:
+            unqualified |= claimed
             continue
-        unqualified |= claimed
+        # Each clause qualifies the enumeration immediately before it — the
+        # numbers after the last break or previous clause. A number is qualified
+        # only if it sits in one of those enumerations; every other number in the
+        # sentence is an unqualified claim.
+        #
+        # Every clause is considered, not just the first: one sentence can hold
+        # two legitimately qualified claims, and searching for a single clause
+        # left everything after it unexamined. Occurrences are compared by
+        # position, so an area named on both sides of a break is still
+        # unqualified on the earlier side — comparing sets let the number cancel
+        # itself out.
+        governed: set[tuple[int, int]] = set()
+        previous_end = 0
+        for clause in clauses:
+            head = sentence[previous_end : clause.start()]
+            tail = _CLAUSE_BREAKER.split(head)[-1]
+            tail_start = previous_end + len(head) - len(tail)
+            # A qualification clause waives a *description of missing
+            # requirements*, not a claim of implementation. "Areas 5, 8 and 10
+            # contain genuinely implemented machinery ... with the surrounding
+            # requirement missing" is waived; "Area 2 is implemented end to end
+            # ... with the surrounding requirement missing" asserts
+            # implementation and the clause does not reach it. So numbers before
+            # the last implementation assertion in the segment stay unqualified.
+            assertion = list(_IMPLEMENTATION_ASSERTION.finditer(tail))
+            floor = tail_start + assertion[-1].start() if assertion else tail_start
+            governed |= {
+                (match.start() + tail_start, int(match.group(0)))
+                for match in _AREA_NUMBER.finditer(tail)
+                if match.start() + tail_start >= floor
+            }
+            previous_end = clause.end()
+        unqualified |= {
+            int(match.group(0))
+            for match in _AREA_NUMBER.finditer(sentence)
+            if (match.start(), int(match.group(0))) not in governed
+        }
     return unqualified
 
 
 _AREA_NUMBER = re.compile(r"\d+")
+
+# Wording that asserts an area *is* implemented, as opposed to describing
+# machinery that exists with its requirement still missing. A qualifying clause
+# waives the second, never the first.
+_IMPLEMENTATION_ASSERTION = re.compile(
+    r"\b(?:is|are|was|were)\s+implemented\b"
+    r"|\bimplemented\s+end\s+to\s+end\b"
+    r"|\bfull(?:y)?\s+implemented\b",
+    re.IGNORECASE,
+)
 
 
 # Sentence-level punctuation, and the connectives that start a new claim. Either
