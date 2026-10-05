@@ -284,17 +284,31 @@ def _unqualified_implemented_claims(text: str) -> set[int]:
         if not claimed:
             continue
         clause = _MISSING_REQUIREMENT_CLAUSE.search(sentence)
-        if clause is not None and not _CLAUSE_BREAKER.search(sentence[: clause.start()]):
+        if clause is not None:
+            # The clause qualifies the enumeration it governs, which is the one
+            # after the last contrastive break — not every number in the
+            # sentence. Exempting the whole sentence is what let "Area 2 is
+            # implemented end to end, while Areas 5, 8 and 10 contain machinery
+            # with the surrounding requirement missing" pass: the clause was
+            # read as covering area 2 as well.
+            governed = _CLAUSE_BREAKER.split(sentence[: clause.start()])[-1]
+            unqualified |= claimed - {
+                int(number) for number in re.findall(r"\d+", governed)
+            }
             continue
         unqualified |= claimed
     return unqualified
 
 
-# A claim that is separated from the qualifying clause by a semicolon or a full
-# stop is its own claim: "Area 2 is implemented end to end; Areas 5, 8 and 10 ...
-# with the surrounding requirement missing" qualifies the areas it governs, not
-# the one asserted before the semicolon.
-_CLAUSE_BREAKER = re.compile(r"[;.]")
+# Sentence-level punctuation, and the connectives that start a contrast. Either
+# ends the claim the qualifying clause can cover: "Area 2 is implemented end to
+# end; Areas 5, 8 and 10 ..." and "Area 2 is implemented end to end, while Areas
+# 5, 8 and 10 ..." both qualify only the areas after the break. Commas are
+# deliberately absent — the legitimate sentence separates its areas with them.
+_CLAUSE_BREAKER = re.compile(
+    r"[;.:!?]|\b(?:while|but|whereas|although|though|however|yet|whereby)\b",
+    re.IGNORECASE,
+)
 
 
 def test_the_legend_agrees_with_the_table() -> None:
@@ -331,6 +345,48 @@ def test_the_legend_agrees_with_the_table() -> None:
     assert named == unverified, (
         f"the legend names areas {sorted(named)} as the ones with no code, but the "
         f"table marks {sorted(unverified)} unverified"
+    )
+
+
+# The tokens the document states return zero matches across the two source trees,
+# and the trees it names for that claim. Asserting the absence is what stops the
+# evidence going stale: the whole workflow is triggered by `ios/**`, so a Swift
+# source that starts using one of these would otherwise pass every test here while
+# the documented evidence — and the `unverified` verdicts that rest on it — quietly
+# became false.
+ASSERTED_ABSENT_TOKENS = ("goal", "remind", "notif", "AppStorage", "UserDefaults")
+ASSERTED_ABSENT_TREES = (
+    "ios/NutritionCore/Sources",
+    "ios/HealthNutrition/Sources",
+)
+
+
+def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
+    """The document's evidence claims are assertions, not commentary.
+
+    "Absence was established by exhaustive search, not by sampling" is the whole
+    basis for calling areas 1 and 4 `unverified`, so the search is re-run here
+    over the trees the document names. A token that has appeared is reported with
+    where it appeared, because the fix is to update the document's verdict and
+    this test together rather than to delete the search.
+    """
+    for tree in ASSERTED_ABSENT_TREES:
+        root = REPO_ROOT / tree
+        assert root.is_dir(), f"the document names {tree}, which does not exist"
+    offenders: list[str] = []
+    for tree in ASSERTED_ABSENT_TREES:
+        for path in sorted((REPO_ROOT / tree).rglob("*.swift")):
+            text = path.read_text(encoding="utf-8")
+            for token in ASSERTED_ABSENT_TOKENS:
+                if token in text:
+                    relative = path.relative_to(REPO_ROOT)
+                    offenders.append(f"{relative}: {token}")
+    assert not offenders, (
+        "the document states these tokens return zero matches across "
+        f"{list(ASSERTED_ABSENT_TREES)}, but they now appear:\n  "
+        + "\n  ".join(offenders)
+        + "\nIf that is intended, update the document's evidence note and the "
+        "verdicts that rest on it, and then this list."
     )
 
 
