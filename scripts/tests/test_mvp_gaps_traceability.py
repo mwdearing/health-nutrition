@@ -168,13 +168,36 @@ def test_summary_does_not_assert_two_different_unverified_claims() -> None:
     )
 
 
-def test_every_cited_path_exists_except_known_absent() -> None:
-    text = _document()
-    cited = {
+def _cited_paths(text: str) -> set[str]:
+    """Every repository path the document cites inside a code span.
+
+    A span may carry more than a bare path: a line number, a line range, several
+    comma-separated lines, and a trailing symbol. All of those forms are citations
+    and must be checked, so the closing backtick is allowed to follow any of them
+    rather than only an optional single line number.
+    """
+    return {
         match.group(1)
         for match in re.finditer(
-            r"`([A-Za-z0-9_./-]+\.(?:swift|ts|sql|md|yml|json|py))(?:[:]\d+)?`", text
+            r"`([A-Za-z0-9_./-]+\.(?:swift|ts|sql|md|yml|json|py))"
+            r"(?::[0-9]+(?:[-,][0-9]+)*)?"
+            r"(?:\s[^`]*)?`",
+            text,
         )
     }
+
+
+def test_every_cited_path_exists_except_known_absent() -> None:
+    text = _document()
+    cited = _cited_paths(text)
     missing = sorted(path for path in cited if not (REPO_ROOT / path).exists())
     assert set(missing) <= KNOWN_ABSENT, f"cited evidence paths do not exist: {missing}"
+
+
+def test_deliberately_absent_paths_are_still_absent() -> None:
+    """An asserted absence is a claim, so it must stop being true loudly."""
+    present = sorted(path for path in KNOWN_ABSENT if (REPO_ROOT / path).exists())
+    assert not present, (
+        f"the document claims these do not exist, but they now do: {present}. "
+        "Update the document and KNOWN_ABSENT together."
+    )
