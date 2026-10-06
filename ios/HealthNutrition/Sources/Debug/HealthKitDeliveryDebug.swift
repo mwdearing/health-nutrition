@@ -100,6 +100,7 @@ final class HealthKitDeliveryStatus {
             // The async request returns nothing: it completes once the sheet is done and HealthKit
             // deliberately never says which types were granted.
             try await healthStore.requestAuthorization(toShare: share, read: [])
+            UserDefaults.standard.set(true, forKey: Self.authorizationRequestedKey)
             var summary = "requested write access for \(share.count) mapped type(s), no read access"
             if !unresolved.isEmpty {
                 summary += "; HealthKit does not know \(unresolved.sorted().joined(separator: ", "))"
@@ -112,15 +113,42 @@ final class HealthKitDeliveryStatus {
 
     /// One delivery pass, then the counts and the outcome list are read again so the screen shows what
     /// this run did rather than what the one before it did.
-    func run(now: Date = Date()) async {
-        guard !isBusy else { return }
+    ///
+    /// `automatic` is true for the runs the app starts itself (foreground, add, edit, delete). Those wait until
+    /// the operator has asked for Health access once: a worker that runs first would find no permission, suspend
+    /// the very first entry and report a denial that is only the missing request. The "Run now" button is never
+    /// automatic. A run requested while another is in flight is remembered and repeated when that one ends, so a
+    /// change made after the running pass read the queue is not left waiting for the next trigger.
+    func run(now: Date = Date(), automatic: Bool = false) async {
+        if automatic && !Self.authorizationWasRequested {
+            refresh()
+            return
+        }
+        guard !isBusy else {
+            rerunRequested = true
+            return
+        }
         isBusy = true
         defer { isBusy = false }
-        let outcomes = await healthKitDelivery.runOnce(now: now)
-        lastRunAt = now
-        lastRunLines = outcomes.map(Self.line(for:))
-        refresh()
+        var passTime = now
+        repeat {
+            rerunRequested = false
+            let outcomes = await healthKitDelivery.runOnce(now: passTime)
+            lastRunAt = passTime
+            lastRunLines = outcomes.map(Self.line(for:))
+            refresh()
+            passTime = Date()
+        } while rerunRequested
     }
+
+    /// Remembered across launches so a relaunch after the one-time request does not wait for a second one.
+    private static let authorizationRequestedKey = "debug.healthKitDelivery.authorizationRequested"
+
+    private static var authorizationWasRequested: Bool {
+        UserDefaults.standard.bool(forKey: authorizationRequestedKey)
+    }
+
+    private var rerunRequested = false
 
     /// Re-reads the queue, so the counts are correct after a change made anywhere in the app.
     func refresh() {

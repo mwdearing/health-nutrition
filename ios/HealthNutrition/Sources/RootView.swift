@@ -297,7 +297,7 @@ struct RootView: View {
     /// goes through. That is also why there is no timer: a queue that changed is delivered as it
     /// changes, and a retry that is not due yet is left to the next foreground rather than polled.
     private func deliverToHealthKit(now: Date = Date()) {
-        Task { await healthKitDeliveryStatus.run(now: now) }
+        Task { await healthKitDeliveryStatus.run(now: now, automatic: true) }
     }
     #endif
 }
