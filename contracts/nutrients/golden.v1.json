@@ -1,0 +1,871 @@
+{
+  "version": 1,
+  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere. Ops: convert (one exact unit conversion), scale (a label value scaled from its basis to a consumed amount, as ServingCalculation.scale does), sum (NutrientTotal.sum with its coverage), reject (the operation must fail with the named error). These mirror the Swift NutritionDomain behaviour of ios/NutritionCore/Sources/NutritionDomain. The optional `nutrient` field names the registry nutrient each case is about.",
+  "error_names": [
+    "unknown_symbol",
+    "dimension_mismatch",
+    "missing_density",
+    "invalid_density",
+    "missing_portion_definition",
+    "incompatible_count_units",
+    "international_unit_not_convertible",
+    "non_positive_amount",
+    "negative_amount"
+  ],
+  "cases": [
+    {
+      "id": "convert_grams_to_milligrams",
+      "op": "convert",
+      "nutrient": "protein",
+      "note": "Exact power of ten, never a division.",
+      "input": {
+        "amount": "1.5",
+        "unit": "g",
+        "to": "mg"
+      },
+      "expect": {
+        "amount": "1500",
+        "unit": "mg"
+      }
+    },
+    {
+      "id": "convert_kilograms_to_grams",
+      "op": "convert",
+      "nutrient": "water",
+      "input": {
+        "amount": "2",
+        "unit": "kg",
+        "to": "g"
+      },
+      "expect": {
+        "amount": "2000",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "convert_milligrams_to_micrograms",
+      "op": "convert",
+      "nutrient": "caffeine",
+      "input": {
+        "amount": "0.25",
+        "unit": "mg",
+        "to": "ug"
+      },
+      "expect": {
+        "amount": "250",
+        "unit": "ug"
+      }
+    },
+    {
+      "id": "convert_micrograms_to_grams_exact_round_trip",
+      "op": "convert",
+      "nutrient": "vitamin_d",
+      "note": "1 ug is 0.000001 g exactly; no drift, no rounding.",
+      "input": {
+        "amount": "1",
+        "unit": "ug",
+        "to": "g"
+      },
+      "expect": {
+        "amount": "0.000001",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "convert_milliliters_to_liters",
+      "op": "convert",
+      "nutrient": "water",
+      "input": {
+        "amount": "1250",
+        "unit": "mL",
+        "to": "L"
+      },
+      "expect": {
+        "amount": "1.25",
+        "unit": "L"
+      }
+    },
+    {
+      "id": "convert_kilocalories_to_kilojoules",
+      "op": "convert",
+      "nutrient": "energy",
+      "note": "Thermochemical factor, exact: 1 kcal = 4.184 kJ.",
+      "input": {
+        "amount": "150",
+        "unit": "kcal",
+        "to": "kJ"
+      },
+      "expect": {
+        "amount": "627.6",
+        "unit": "kJ"
+      }
+    },
+    {
+      "id": "convert_kilojoules_to_kilocalories",
+      "op": "convert",
+      "nutrient": "energy",
+      "note": "The reverse uses the same factor and comes back exact.",
+      "input": {
+        "amount": "627.6",
+        "unit": "kJ",
+        "to": "kcal"
+      },
+      "expect": {
+        "amount": "150",
+        "unit": "kcal"
+      }
+    },
+    {
+      "id": "convert_mass_to_volume_with_stated_density",
+      "op": "convert",
+      "nutrient": "water",
+      "note": "Density in grams per millilitre, stated, positive.",
+      "input": {
+        "amount": "80",
+        "unit": "g",
+        "to": "mL",
+        "density": "0.8"
+      },
+      "expect": {
+        "amount": "100",
+        "unit": "mL"
+      }
+    },
+    {
+      "id": "convert_volume_to_mass_with_stated_density",
+      "op": "convert",
+      "nutrient": "water",
+      "input": {
+        "amount": "250",
+        "unit": "mL",
+        "to": "g",
+        "density": "1.03"
+      },
+      "expect": {
+        "amount": "257.5",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "convert_volume_to_mass_across_scales",
+      "op": "convert",
+      "nutrient": "water",
+      "input": {
+        "amount": "2",
+        "unit": "L",
+        "to": "kg",
+        "density": "0.8"
+      },
+      "expect": {
+        "amount": "1.6",
+        "unit": "kg"
+      }
+    },
+    {
+      "id": "convert_count_to_mass_with_portion",
+      "op": "convert",
+      "nutrient": "protein",
+      "note": "1 scoop = 5 g, so 3 scoop = 15 g. The portion must match the count unit.",
+      "input": {
+        "amount": "3",
+        "unit": "scoop",
+        "to": "g",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "5",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "amount": "15",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "convert_international_unit_to_itself",
+      "op": "convert",
+      "nutrient": "vitamin_d",
+      "note": "Same unit is always identity, including IU.",
+      "input": {
+        "amount": "400",
+        "unit": "IU",
+        "to": "IU"
+      },
+      "expect": {
+        "amount": "400",
+        "unit": "IU"
+      }
+    },
+    {
+      "id": "scale_a_serving_of_a_hundred_gram_basis",
+      "op": "scale",
+      "nutrient": "protein",
+      "note": "Label values are stated per 100 g; 40 g consumed is a factor of 0.4.",
+      "input": {
+        "basis": {
+          "amount": "100",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "40",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "5.2",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "2.08",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "scale_energy_per_serving_to_consumed_servings",
+      "op": "scale",
+      "nutrient": "energy",
+      "input": {
+        "basis": {
+          "amount": "1",
+          "unit": "serving"
+        },
+        "consumed": {
+          "amount": "2.5",
+          "unit": "serving"
+        },
+        "value": {
+          "state": "known",
+          "amount": "120",
+          "unit": "kcal"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "300",
+        "unit": "kcal"
+      }
+    },
+    {
+      "id": "scale_consumed_amount_in_another_mass_unit",
+      "op": "scale",
+      "nutrient": "sodium",
+      "note": "The consumed amount is converted into the basis unit first.",
+      "input": {
+        "basis": {
+          "amount": "1000",
+          "unit": "mg"
+        },
+        "consumed": {
+          "amount": "0.5",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "12",
+          "unit": "mg"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "6",
+        "unit": "mg"
+      }
+    },
+    {
+      "id": "scale_known_zero_stays_known_zero",
+      "op": "scale",
+      "nutrient": "sodium",
+      "note": "A stated zero is a value, not a missing one.",
+      "input": {
+        "basis": {
+          "amount": "100",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "40",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "0",
+          "unit": "mg"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "0",
+        "unit": "mg"
+      }
+    },
+    {
+      "id": "scale_unknown_stays_unknown",
+      "op": "scale",
+      "nutrient": "sodium",
+      "note": "Scaling never invents a value.",
+      "input": {
+        "basis": {
+          "amount": "100",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "40",
+          "unit": "g"
+        },
+        "value": {
+          "state": "unknown"
+        }
+      },
+      "expect": {
+        "state": "unknown"
+      }
+    },
+    {
+      "id": "scale_not_applicable_stays_not_applicable",
+      "op": "scale",
+      "nutrient": "caffeine",
+      "input": {
+        "basis": {
+          "amount": "100",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "40",
+          "unit": "g"
+        },
+        "value": {
+          "state": "not_applicable"
+        }
+      },
+      "expect": {
+        "state": "not_applicable"
+      }
+    },
+    {
+      "id": "scale_below_threshold_keeps_its_unit",
+      "op": "scale",
+      "nutrient": "vitamin_d",
+      "note": "A below-threshold value stays below threshold and keeps its unit.",
+      "input": {
+        "basis": {
+          "amount": "100",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "40",
+          "unit": "g"
+        },
+        "value": {
+          "state": "below_reporting_threshold",
+          "unit": "ug"
+        }
+      },
+      "expect": {
+        "state": "below_reporting_threshold",
+        "unit": "ug"
+      }
+    },
+    {
+      "id": "sum_known_values_with_one_unknown",
+      "op": "sum",
+      "nutrient": "sodium",
+      "note": "Unknown is skipped from the total but counted in coverage.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "10",
+            "unit": "mg"
+          },
+          {
+            "state": "unknown"
+          },
+          {
+            "state": "known",
+            "amount": "5",
+            "unit": "mg"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "15",
+          "unit": "mg"
+        },
+        "coverage": {
+          "known_count": 2,
+          "total_count": 3,
+          "has_unknown": true,
+          "has_below_reporting_threshold": false,
+          "is_complete": false
+        }
+      }
+    },
+    {
+      "id": "sum_leaves_not_applicable_out_of_the_counts",
+      "op": "sum",
+      "nutrient": "caffeine",
+      "note": "not_applicable is left out entirely, so coverage stays complete.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "10",
+            "unit": "mg"
+          },
+          {
+            "state": "not_applicable"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "10",
+          "unit": "mg"
+        },
+        "coverage": {
+          "known_count": 1,
+          "total_count": 1,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
+      "id": "sum_of_only_unknown_values_is_unknown",
+      "op": "sum",
+      "nutrient": "sodium",
+      "note": "Never a zero total: unknown is not zero.",
+      "input": {
+        "values": [
+          {
+            "state": "unknown"
+          },
+          {
+            "state": "unknown"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "unknown"
+        },
+        "coverage": {
+          "known_count": 0,
+          "total_count": 2,
+          "has_unknown": true,
+          "has_below_reporting_threshold": false,
+          "is_complete": false
+        }
+      }
+    },
+    {
+      "id": "sum_of_only_below_threshold_values",
+      "op": "sum",
+      "nutrient": "vitamin_d",
+      "note": "Only traces, so the total is below threshold with no unit.",
+      "input": {
+        "values": [
+          {
+            "state": "below_reporting_threshold",
+            "unit": "mg"
+          },
+          {
+            "state": "below_reporting_threshold"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "below_reporting_threshold"
+        },
+        "coverage": {
+          "known_count": 0,
+          "total_count": 2,
+          "has_unknown": false,
+          "has_below_reporting_threshold": true,
+          "is_complete": false
+        }
+      }
+    },
+    {
+      "id": "sum_mixed_mass_units_into_the_first_unit",
+      "op": "sum",
+      "nutrient": "carbohydrate",
+      "note": "Without a target unit the first known value's unit is used.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "500",
+            "unit": "mg"
+          },
+          {
+            "state": "known",
+            "amount": "250000",
+            "unit": "ug"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "1.75",
+          "unit": "g"
+        },
+        "coverage": {
+          "known_count": 3,
+          "total_count": 3,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
+      "id": "sum_mixed_mass_units_into_a_stated_unit",
+      "op": "sum",
+      "nutrient": "carbohydrate",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "500",
+            "unit": "mg"
+          },
+          {
+            "state": "known",
+            "amount": "250000",
+            "unit": "ug"
+          }
+        ],
+        "unit": "mg"
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "1750",
+          "unit": "mg"
+        },
+        "coverage": {
+          "known_count": 3,
+          "total_count": 3,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
+      "id": "sum_of_nothing_is_unknown",
+      "op": "sum",
+      "nutrient": "fiber",
+      "note": "An empty list has no values at all, and is reported as unknown.",
+      "input": {
+        "values": []
+      },
+      "expect": {
+        "value": {
+          "state": "unknown"
+        },
+        "coverage": {
+          "known_count": 0,
+          "total_count": 0,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
+      "id": "sum_decimal_repeating_addition_has_no_binary_drift",
+      "op": "sum",
+      "nutrient": "fiber",
+      "note": "Ten tenths are exactly one gram.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "0.1",
+            "unit": "g"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "1",
+          "unit": "g"
+        },
+        "coverage": {
+          "known_count": 10,
+          "total_count": 10,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
+      "id": "reject_mass_to_volume_without_density",
+      "op": "reject",
+      "note": "No density is stated, so the conversion is refused rather than guessed.",
+      "input": {
+        "amount": "100",
+        "unit": "g",
+        "to": "mL"
+      },
+      "expect": {
+        "error": "missing_density"
+      }
+    },
+    {
+      "id": "reject_volume_to_mass_without_density",
+      "op": "reject",
+      "input": {
+        "amount": "1",
+        "unit": "L",
+        "to": "kg"
+      },
+      "expect": {
+        "error": "missing_density"
+      }
+    },
+    {
+      "id": "reject_zero_density",
+      "op": "reject",
+      "input": {
+        "amount": "1",
+        "unit": "mL",
+        "to": "g",
+        "density": "0"
+      },
+      "expect": {
+        "error": "invalid_density"
+      }
+    },
+    {
+      "id": "reject_international_unit_to_mass",
+      "op": "reject",
+      "note": "International units are activity, not mass. No conversion exists.",
+      "input": {
+        "amount": "400",
+        "unit": "IU",
+        "to": "ug"
+      },
+      "expect": {
+        "error": "international_unit_not_convertible"
+      }
+    },
+    {
+      "id": "reject_mass_to_international_unit",
+      "op": "reject",
+      "input": {
+        "amount": "10",
+        "unit": "mg",
+        "to": "IU"
+      },
+      "expect": {
+        "error": "international_unit_not_convertible"
+      }
+    },
+    {
+      "id": "reject_mass_to_energy",
+      "op": "reject",
+      "input": {
+        "amount": "1",
+        "unit": "g",
+        "to": "kcal"
+      },
+      "expect": {
+        "error": "dimension_mismatch"
+      }
+    },
+    {
+      "id": "reject_count_to_mass_without_portion",
+      "op": "reject",
+      "input": {
+        "amount": "2",
+        "unit": "scoop",
+        "to": "g"
+      },
+      "expect": {
+        "error": "missing_portion_definition"
+      }
+    },
+    {
+      "id": "reject_between_two_count_units",
+      "op": "reject",
+      "note": "A scoop is not a tablet, whatever portion is stated.",
+      "input": {
+        "amount": "2",
+        "unit": "scoop",
+        "to": "tablet",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "5",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "incompatible_count_units"
+      }
+    },
+    {
+      "id": "reject_unknown_unit_symbol",
+      "op": "reject",
+      "input": {
+        "amount": "1",
+        "unit": "furlong",
+        "to": "m"
+      },
+      "expect": {
+        "error": "unknown_symbol"
+      }
+    },
+    {
+      "id": "reject_non_positive_basis",
+      "op": "reject",
+      "note": "A label basis of zero grams is not a basis.",
+      "input": {
+        "basis": {
+          "amount": "0",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "40",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "5.2",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "non_positive_amount"
+      }
+    },
+    {
+      "id": "reject_negative_consumed_amount",
+      "op": "reject",
+      "note": "Nothing consumed is zero, not negative.",
+      "input": {
+        "basis": {
+          "amount": "100",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "-5",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "5.2",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "negative_amount"
+      }
+    },
+    {
+      "id": "reject_sum_across_dimensions",
+      "op": "reject",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "1",
+            "unit": "g"
+          },
+          {
+            "state": "known",
+            "amount": "10",
+            "unit": "kcal"
+          }
+        ]
+      },
+      "expect": {
+        "error": "dimension_mismatch"
+      }
+    },
+    {
+      "id": "reject_sum_into_an_unstated_compatible_unit",
+      "op": "reject",
+      "note": "A stated target unit still has to share the dimension.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "1",
+            "unit": "g"
+          }
+        ],
+        "unit": "kcal"
+      },
+      "expect": {
+        "error": "dimension_mismatch"
+      }
+    }
+  ]
+}

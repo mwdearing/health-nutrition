@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "description": "Nutrient and unit registry for catalog contract v1. Nutrient ids are the keys of a product version's nutrients object; every value's unit must be a unit symbol listed here, in the dimension of the nutrient. Factors are exact decimal strings to the canonical unit of the unit's own dimension, so a conversion within a dimension is a single exact multiplication. Mass to volume and volume to mass need a stated density; international units never convert; count units need a stated portion.",
+  "canonical_units_by_dimension": {
+    "mass": "g",
+    "volume": "mL",
+    "energy": "kJ",
+    "count": "serving",
+    "international_unit": "IU"
+  },
+  "dimensions": [
+    "mass",
+    "volume",
+    "energy",
+    "count",
+    "international_unit"
+  ],
+  "nutrients": [
+    { "id": "energy", "label": "Energy", "dimension": "energy", "canonical_unit": "kcal" },
+    { "id": "protein", "label": "Protein", "dimension": "mass", "canonical_unit": "g" },
+    { "id": "total_fat", "label": "Total fat", "dimension": "mass", "canonical_unit": "g" },
+    { "id": "saturated_fat", "label": "Saturated fat", "dimension": "mass", "canonical_unit": "g" },
+    { "id": "carbohydrate", "label": "Carbohydrate", "dimension": "mass", "canonical_unit": "g" },
+    { "id": "fiber", "label": "Fibre", "dimension": "mass", "canonical_unit": "g" },
+    { "id": "sugars", "label": "Sugars", "dimension": "mass", "canonical_unit": "g" },
+    { "id": "sodium", "label": "Sodium", "dimension": "mass", "canonical_unit": "mg" },
+    { "id": "potassium", "label": "Potassium", "dimension": "mass", "canonical_unit": "mg" },
+    { "id": "calcium", "label": "Calcium", "dimension": "mass", "canonical_unit": "mg" },
+    { "id": "iron", "label": "Iron", "dimension": "mass", "canonical_unit": "mg" },
+    { "id": "vitamin_a", "label": "Vitamin A", "dimension": "mass", "canonical_unit": "ug" },
+    { "id": "vitamin_c", "label": "Vitamin C", "dimension": "mass", "canonical_unit": "mg" },
+    { "id": "vitamin_d", "label": "Vitamin D", "dimension": "mass", "canonical_unit": "ug" },
+    { "id": "caffeine", "label": "Caffeine", "dimension": "mass", "canonical_unit": "mg" },
+    { "id": "water", "label": "Water", "dimension": "mass", "canonical_unit": "g" }
+  ],
+  "units": [
+    { "symbol": "g", "dimension": "mass", "factor_to_canonical": "1" },
+    { "symbol": "mg", "dimension": "mass", "factor_to_canonical": "0.001" },
+    { "symbol": "ug", "dimension": "mass", "factor_to_canonical": "0.000001" },
+    { "symbol": "mcg", "dimension": "mass", "factor_to_canonical": "0.000001" },
+    { "symbol": "kg", "dimension": "mass", "factor_to_canonical": "1000" },
+
+    { "symbol": "mL", "dimension": "volume", "factor_to_canonical": "1" },
+    { "symbol": "ml", "dimension": "volume", "factor_to_canonical": "1" },
+    { "symbol": "L", "dimension": "volume", "factor_to_canonical": "1000" },
+    { "symbol": "l", "dimension": "volume", "factor_to_canonical": "1000" },
+
+    { "symbol": "kcal", "dimension": "energy", "factor_to_canonical": "4.184" },
+    { "symbol": "kJ", "dimension": "energy", "factor_to_canonical": "1" },
+
+    { "symbol": "IU", "dimension": "international_unit", "factor_to_canonical": "1" },
+    { "symbol": "iu", "dimension": "international_unit", "factor_to_canonical": "1" },
+
+    { "symbol": "serving", "dimension": "count", "factor_to_canonical": "1" },
+    { "symbol": "scoop", "dimension": "count", "factor_to_canonical": null },
+    { "symbol": "tablet", "dimension": "count", "factor_to_canonical": null },
+    { "symbol": "capsule", "dimension": "count", "factor_to_canonical": null }
+  ],
+  "notes": [
+    "ug and mcg are the same unit; mL and ml, L and l, IU and iu likewise. Both spellings are accepted so a provider's own casing survives.",
+    "The energy dimension is canonical in kJ, so the kcal factor to it is the exact thermochemical 4.184. A nutrient's canonical_unit is the unit that nutrient is stated in, and energy is stated in kcal because that is what labels state.",
+    "Count units other than the canonical serving have no factor: converting between count units needs a portion definition, and converting between a count unit and a mass or volume unit needs both a portion definition and a density.",
+    "IU is dimensionless for storage but is not convertible to a mass; a provider that states an IU amount keeps IU."
+  ]
+}

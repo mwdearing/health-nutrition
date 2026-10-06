@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:healthrelay:schema:catalog-product-version:v1",
+  "title": "healthrelay.catalog-product-version v1",
+  "description": "One published version of one catalog product, as the public catalog serves it. Deny by default: every object level is closed, so any field that is not listed here - and nothing that identifies a person, a device or an intake - is refused. Amounts are exact decimal strings, never JSON numbers. Value states mirror the iOS NutrientValue cases.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["product_id", "version", "name", "serving", "nutrients", "source", "status"],
+  "properties": {
+    "product_id": { "$ref": "#/$defs/productId" },
+    "version": {
+      "description": "Monotonic version of this product record, starting at 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": { "$ref": "#/$defs/shortText" },
+    "brand": { "$ref": "#/$defs/shortText" },
+    "barcodes": {
+      "description": "Barcodes this product is known by. Digits only, no check-digit interpretation.",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/barcode" }
+    },
+    "serving": { "$ref": "#/$defs/serving" },
+    "nutrients": { "$ref": "#/$defs/nutrientMap" },
+    "source": { "$ref": "#/$defs/source" },
+    "status": {
+      "description": "Only published records are part of v1. Draft, pending and withdrawn records are never served.",
+      "const": "published"
+    }
+  },
+  "$defs": {
+    "productId": {
+      "description": "Catalog-internal product identifier, opaque to clients.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^prod_[a-z0-9][a-z0-9._-]{0,55}(?!\\n)$"
+    },
+    "shortText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~](?:[ -~]*[!-~])?(?!\\n)$"
+    },
+    "barcode": {
+      "description": "Digits only, 8 to 14 of them.",
+      "type": "string",
+      "pattern": "^[0-9]{8,14}(?!\\n)$"
+    },
+    "decimalString": {
+      "description": "An exact decimal: an optional minus, digits, optional fractional digits. No exponent, no thousands comma, no NaN, no infinity, no empty string, and never a JSON number.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?(?!\\n)$"
+    },
+    "unitSymbol": {
+      "description": "A unit symbol from contracts/nutrients/registry.v1.json. Anything else is an unknown unit symbol.",
+      "type": "string",
+      "enum": [
+        "g",
+        "mg",
+        "ug",
+        "mcg",
+        "kg",
+        "mL",
+        "ml",
+        "L",
+        "l",
+        "kcal",
+        "kJ",
+        "iu",
+        "IU",
+        "serving",
+        "scoop",
+        "tablet",
+        "capsule"
+      ]
+    },
+    "serving": {
+      "description": "The serving the nutrient values below are stated for.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "unit"],
+      "properties": {
+        "amount": { "$ref": "#/$defs/decimalString" },
+        "unit": { "$ref": "#/$defs/unitSymbol" }
+      }
+    },
+    "nutrientMap": {
+      "description": "Nutrient values keyed by registry nutrient id. Only known, unknown, not_applicable and below_reporting_threshold values may appear.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "patternProperties": {
+        "^[a-z][a-z0-9_]{0,63}$": { "$ref": "#/$defs/nutrientValue" }
+      },
+      "additionalProperties": false
+    },
+    "nutrientValue": {
+      "description": "A nutrient amount and its state. Only the known state carries an amount; the other three never do.",
+      "type": "object",
+      "required": ["state"],
+      "oneOf": [
+        { "$ref": "#/$defs/nutrientKnown" },
+        { "$ref": "#/$defs/nutrientUnknown" },
+        { "$ref": "#/$defs/nutrientNotApplicable" },
+        { "$ref": "#/$defs/nutrientBelowReportingThreshold" }
+      ]
+    },
+    "nutrientKnown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "amount", "unit"],
+      "properties": {
+        "state": { "const": "known" },
+        "amount": { "$ref": "#/$defs/decimalString" },
+        "unit": { "$ref": "#/$defs/unitSymbol" }
+      }
+    },
+    "nutrientUnknown": {
+      "description": "The provider does not state this nutrient for this product.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": { "state": { "const": "unknown" } }
+    },
+    "nutrientNotApplicable": {
+      "description": "This nutrient does not apply to this product at all.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": { "state": { "const": "not_applicable" } }
+    },
+    "nutrientBelowReportingThreshold": {
+      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "const": "below_reporting_threshold" },
+        "unit": { "$ref": "#/$defs/unitSymbol" }
+      }
+    },
+    "source": {
+      "description": "Where the record came from and under what licence it may be reused. Every record states its licence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "licence", "attribution"],
+      "properties": {
+        "name": {
+          "description": "Provider key, for example usda_fdc, dsld or open_food_facts.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]{0,63}(?!\\n)$"
+        },
+        "licence": {
+          "description": "SPDX-style licence identifier of the source data.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}(?!\\n)$"
+        },
+        "attribution": {
+          "description": "The credit line the licence requires. Safe to show to a user; never a person or an account.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[!-~](?:[ -~]*[!-~])?(?!\\n)$"
+        },
+        "url": {
+          "description": "Public https page describing the source record.",
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[!-~]+(?!\\n)$"
+        }
+      }
+    }
+  }
+}

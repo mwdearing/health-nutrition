@@ -18,6 +18,7 @@ dependencies = [
 test = [
     "pytest",
     "httpx",
+    "jsonschema",
 ]
 
 [tool.uv]

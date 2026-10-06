@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: Health Relay catalog
+  version: "1.0.0"
+  summary: Read-only public catalog of food products and nutrient values.
+  description: |
+    The catalog exposes catalog facts only, and only to a signed-in caller. Every
+    operation requires a bearer token; there are no anonymous reads. Nothing in a
+    request or a response identifies a person, a device or an intake: there is no
+    subject identifier, no contact detail, no free-text note, no dose, and no
+    record of when anything was taken.
+
+    v1 is read-only. Writes come from the import service alone, which does not
+    speak this API.
+
+    Amounts are exact decimal strings, never JSON numbers. See
+    contracts/nutrients/decimal-rules.md for the numeric rules and
+    contracts/nutrients/registry.v1.json for the unit vocabulary.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://catalog.example.invalid/v1
+    description: Placeholder host. The real host is not part of the public contract.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /v1/products/{product_id}:
+    get:
+      operationId: getProduct
+      summary: One published version of one product.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      responses:
+        "200":
+          description: The current published version of the product.
+          content:
+            application/json:
+              schema:
+                $ref: "./product-version.v1.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /v1/barcodes/{barcode}:
+    get:
+      operationId: getProductByBarcode
+      summary: The product a barcode resolves to.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: barcode
+          in: path
+          required: true
+          description: Digits only, 8 to 14 of them.
+          schema:
+            type: string
+            pattern: "^[0-9]{8,14}$"
+      responses:
+        "200":
+          description: The current published version of the product behind the barcode.
+          content:
+            application/json:
+              schema:
+                $ref: "./product-version.v1.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /v1/search:
+    get:
+      operationId: searchProducts
+      summary: Products whose name or brand matches a query.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Free-text query. It is matched against public fields only.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Matching product versions, newest import first.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: ["results"]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: "./product-version.v1.schema.json"
+        "400":
+          description: The query was missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "./error.v1.schema.json"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: An account token. Every operation requires one; v1 has no anonymous reads.
+
+  parameters:
+    ProductId:
+      name: product_id
+      in: path
+      required: true
+      description: Catalog-internal product identifier.
+      schema:
+        type: string
+        pattern: "^prod_[a-z0-9][a-z0-9._-]{0,55}$"
+
+  responses:
+    Unauthorized:
+      description: No token, or a token that is not valid.
+      content:
+        application/json:
+          schema:
+            $ref: "./error.v1.schema.json"
+          example:
+            code: unauthorized
+            message: "Sign in to look up catalog foods."
+    NotFound:
+      description: No published product matches.
+      content:
+        application/json:
+          schema:
+            $ref: "./error.v1.schema.json"
+          example:
+            code: not_found
+            message: "No such product."
+    RateLimited:
+      description: Too many requests. The response carries a Retry-After header and nothing else.
+      headers:
+        Retry-After:
+          description: Seconds to wait.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "./error.v1.schema.json"
+          example:
+            code: rate_limited
+            message: "Too many requests. Try again shortly."
