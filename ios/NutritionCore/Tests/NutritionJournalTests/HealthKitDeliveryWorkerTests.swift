@@ -520,28 +520,29 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
     // MARK: - The totals the app wires in
 
-    /// A water-category drink reports its volume. The snapshot's own nutrients are deliberately absent:
-    /// they are stated per 100 g, not for the amount recorded, so writing them unscaled would state
-    /// 13 g of protein for a 40 g portion of a product whose label says 13 g per 100 g.
-    func testTheSnapshotTotalsCarryAWaterDrinkAndNoUnscaledLabelValues() async throws {
+    /// A water-category drink reports its volume, and that volume is the water total: the snapshot
+    /// states its own water on the label's basis, but the water path already knows what was poured and
+    /// its number is the one that goes to Health. A snapshot never overwrites it.
+    func testASnapshotNeverOverwritesTheWaterTheComponentsState() async throws {
         let store = try makeStore(try makeDirectory())
-        let oats = ProductDefinition(
-            snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
-            labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
-            nutrients: ["protein": .known(dec("13"), .g), "sodium": .unknown])
-        let drink = Intake(
+        let drink = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-1", name: "Sample drink", brand: nil, barcode: nil,
+            labelBasis: "per 100 mL", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["water": .known(dec("90"), .mL), "protein": .known(dec("1.2"), .g)])
+        let intake = Intake(
             id: intakeID, category: "water", occurredAt: when, timeZoneIdentifier: "UTC", meal: "snack")
         try store.create(
-            drink,
-            components: [component("oats", amount: 40, unit: .g), component("water", amount: 1, unit: .L)],
-            product: oats, now: when)
+            intake,
+            components: [component("drink", amount: 1, unit: .L)],
+            product: drink, now: when)
         let totals = JournalSnapshotTotals(store: store)
 
         let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
 
-        XCTAssertEqual(recorded, ["water": .known(dec("1000"), .mL)])
-        XCTAssertNil(recorded["protein"], "an unscaled label value is not an intake total")
-        XCTAssertNil(recorded["sodium"])
+        XCTAssertEqual(
+            recorded["water"], .known(dec("1000"), .mL),
+            "the volume the components record is the water total, not the label's per-100 mL figure")
+        XCTAssertEqual(recorded["protein"], .known(dec("12"), .g), "the other snapshot nutrients still scale")
     }
 
     /// A revision that cannot be read throws, so the delivery is retried. Answering "nothing" instead
@@ -688,27 +689,151 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertNotNil(try healthKitOperation(store, kind: .upsert), "the operation is still queued")
     }
 
-    // MARK: - Revision 3: unscaled snapshot nutrients are omitted
+    // MARK: - Revision 3: snapshot nutrients are scaled to the logged amount
 
-    /// `ProductDefinition.nutrients` is stated on `labelBasis` (typically per 100 g), not for the
-    /// amount the component records, so copying it straight into totals writes the label's number as
-    /// the intake's. Nothing is written until the basis can be scaled exactly.
-    func testUnscaledSnapshotNutrientsAreOmittedRatherThanWrittenAsTotals() async throws {
+    /// A label states the whole product, not the portion eaten, so the stated value has to be scaled
+    /// by what was logged: 40 g of a product stating 13 g of protein per 100 g carries 5.2 g. Copying
+    /// the label's number into totals puts a wrong quantity into Health, and omitting it leaves a
+    /// product's nutrition out of Health entirely; the scaled value is the one that is actually right.
+    func testSnapshotProteinPerHundredGramsIsScaledToTheGramsLogged() async throws {
         let store = try makeStore(try makeDirectory())
         let oats = ProductDefinition(
             snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
             labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
-            nutrients: ["protein": .known(dec("13"), .g)])
-        try store.create(sampleIntake(), components: [component("oats", amount: 40, unit: .g)], product: oats, now: when)
+            nutrients: ["protein": .known(dec("13"), .g), "sodium": .known(dec("40"), .mg)])
+        try store.create(
+            sampleIntake(), components: [component("oats", amount: 40, unit: .g)], product: oats, now: when)
         let totals = JournalSnapshotTotals(store: store)
 
         let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
 
-        XCTAssertNil(
-            recorded["protein"],
-            "40 g of a per-100 g product is 5.2 g of protein, not the 13 g the label states")
-        XCTAssertEqual(recorded, [:], "nothing is stated until the label basis can be applied exactly")
+        XCTAssertEqual(recorded["protein"], .known(dec("5.2"), .g), "13 g per 100 g, 40 g logged")
+        XCTAssertEqual(recorded["sodium"], .known(dec("16"), .mg), "every stated nutrient is scaled the same way")
+        let plan = HealthKitWritePlanner.plan(
+            intakeID: intakeID, revision: 1, occurredAt: when, totals: recorded)
+        XCTAssertEqual(
+            plan.first { $0.syncIdentifier == proteinIdentifier(intakeID) }?.amount, dec("5.2"),
+            "the scaled value is what the plan writes, not the label's 13 g")
+        XCTAssertEqual(
+            plan.first { $0.syncIdentifier == proteinIdentifier(intakeID) }?.unitSymbol, "g",
+            "the stated unit is kept; the planner converts into Health's unit")
     }
+
+    /// A serving basis scales by the number of servings, which is a count rather than a weight: two
+    /// servings of a product stating 24 g of protein per serving carry 48 g.
+    func testSnapshotProteinPerServingIsScaledByTheServingsLogged() async throws {
+        let store = try makeStore(try makeDirectory())
+        let bar = ProductDefinition(
+            snapshotID: "snap-2", productID: "product-2", name: "Sample bar", brand: nil, barcode: nil,
+            labelBasis: "per serving; yield 4 servings", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["protein": .known(dec("24"), .g)])
+        try store.create(
+            sampleIntake(), components: [component("bar", amount: 2, unit: .serving)], product: bar, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded["protein"], .known(dec("48"), .g), "two servings of 24 g each")
+    }
+
+    /// A basis the journal cannot resolve against what was logged - "per 100 kcal" is not a quantity
+    /// an intake records, and "per 100 g or mL" says the source did not settle its own dimension -
+    /// has no factor. Nothing is written then: a guess would put a wrong number in Health, and a
+    /// truncated one would put a right-looking wrong number there.
+    func testASnapshotWhoseLabelBasisCannotBeResolvedContributesNothing() async throws {
+        for basis in ["per 100 kcal", "per 100 g or mL"] {
+            let store = try makeStore(try makeDirectory())
+            let ambiguous = ProductDefinition(
+                snapshotID: "snap-3", productID: "product-3", name: "Sample product", brand: nil, barcode: nil,
+                labelBasis: basis, catalogOrigin: "sample", catalogVersion: "1",
+                nutrients: ["protein": .known(dec("13"), .g)])
+            try store.create(
+                sampleIntake(), components: [component("oats", amount: 40, unit: .g)], product: ambiguous, now: when)
+            let totals = JournalSnapshotTotals(store: store)
+
+            let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+            XCTAssertEqual(recorded, [:], "\(basis) cannot be scaled, so no snapshot nutrient is stated")
+        }
+    }
+
+    /// The water path is a separate path: an unresolved snapshot leaves it exactly as it was, because
+    /// the volume a drink records needs no label to be right.
+    func testTheWaterPathIsUnaffectedByASnapshotThatCannotBeScaled() async throws {
+        let store = try makeStore(try makeDirectory())
+        let ambiguous = ProductDefinition(
+            snapshotID: "snap-3", productID: "product-3", name: "Sample drink", brand: nil, barcode: nil,
+            labelBasis: "per 100 kcal", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["protein": .known(dec("13"), .g)])
+        let drink = Intake(
+            id: intakeID, category: "water", occurredAt: when, timeZoneIdentifier: "UTC", meal: "snack")
+        try store.create(
+            drink, components: [component("water", amount: 250, unit: .mL)], product: ambiguous, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded, ["water": .known(dec("250"), .mL)])
+    }
+
+    /// Unknown, not applicable and below the reporting threshold state that there is no amount to
+    /// scale. Writing them as zero would claim a value the label declined to state, and the planner
+    /// plans no sample for them anyway, so they are left out of the totals entirely.
+    func testSnapshotNutrientsWithNoStatedAmountAreOmitted() async throws {
+        let store = try makeStore(try makeDirectory())
+        let oats = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
+            labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: [
+                "protein": .known(dec("13"), .g),
+                "fiber": .unknown,
+                "sugar": .notApplicable,
+                "vitaminD": .belowReportingThreshold(.mcg),
+            ])
+        try store.create(
+            sampleIntake(), components: [component("oats", amount: 40, unit: .g)], product: oats, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded, ["protein": .known(dec("5.2"), .g)])
+        XCTAssertNil(recorded["fiber"], "an unknown nutrient is never a zero")
+        XCTAssertNil(recorded["sugar"], "a nutrient that does not apply states no amount")
+        XCTAssertNil(recorded["vitaminD"], "below the reporting threshold is no amount either")
+    }
+
+    /// A revision with no product snapshot - an entry logged by hand - has nothing to scale, so the
+    /// totals provider reports whatever the components say and does not throw. Reading a snapshot that
+    /// is not there must not become a failed read, which the worker would retry forever.
+    func testARevisionWithNoProductSnapshotContributesNoSnapshotNutrient() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [component("oats", amount: 40, unit: .g)], product: nil, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded, [:], "there is no snapshot to scale, and that is not a failure")
+    }
+
+    /// The arithmetic is exact decimal, because the journal stores amounts as decimal text and a
+    /// binary float would state 0.8999... where the label says 0.9. Exactness is what lets a person
+    /// check the number against the packaging.
+    func testSnapshotScalingOfDecimalsIsExactAndNeverRounds() async throws {
+        let store = try makeStore(try makeDirectory())
+        let bar = ProductDefinition(
+            snapshotID: "snap-2", productID: "product-2", name: "Sample bar", brand: nil, barcode: nil,
+            labelBasis: "per serving", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["fiber": .known(dec("0.3"), .g)])
+        try store.create(
+            sampleIntake(), components: [component("bar", amount: 3, unit: .serving)], product: bar, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded["fiber"], .known(dec("0.9"), .g), "0.3 g three times is exactly 0.9 g")
+    }
+
+    // MARK: - Revision 3a: the snapshot's basis has to answer the logged components
 
     // MARK: - Revision 4: a needs-attention operation is not retried automatically
 
