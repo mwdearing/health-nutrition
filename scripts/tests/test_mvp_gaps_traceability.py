@@ -29,7 +29,7 @@ import codecs
 import re
 import shutil
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
@@ -669,6 +669,11 @@ def test_every_production_source_root_under_ios_is_searched() -> None:
             f"{tree} is in the search but {(REPO_ROOT / tree)} is not a directory, "
             "so the search reads nothing from it."
         )
+    for loose in _searched_root_files():
+        assert (REPO_ROOT / loose).is_file(), (
+            f"{loose} is in the search but {(REPO_ROOT / loose)} is not a file, so "
+            "the search reads nothing from it."
+        )
 
     # The document's own trees must be covered by what the search reads, so the
     # claim it makes is a claim about code this guard actually looked at.
@@ -747,25 +752,99 @@ def _searched_trees() -> tuple[str, ...]:
     that matters is closed by construction rather than by a parser being right.
 
     The cost is that test fixtures are searched too, and they deliberately name
-    these tokens. Those live under a `Tests` directory, which is excluded below.
-    Excluding a whole `Tests` path is the one narrowing here, and it is narrow by
-    name rather than by understanding the build.
+    these tokens. Those live under a `Tests` directory, which is excluded below —
+    both where roots are enumerated *and* in `_text_files`, because the roots
+    returned here include ancestors, so excluding only the enumeration would leave
+    every fixture readable from the directory above it. Excluding a whole `Tests`
+    path is the one narrowing here, and it is narrow by name rather than by
+    understanding the build.
+
+    A path with a build-output component is skipped however deep it is. The old
+    comparison was `path.name == ".build"`, which excluded only the directory
+    itself: `swift test` writes `.build/generated`, and that directory was
+    returned as a root of its own. `_text_files` then saw paths relative to it, so
+    the `.build` component that would have disqualified them was gone by the time
+    it decided what to read, and generated sources and binaries were scanned as if
+    they were production source.
     """
     ios = REPO_ROOT / "ios"
     assert ios.is_dir(), f"{ios} does not exist, so the search reads nothing"
     found: list[str] = []
     for path in sorted(ios.rglob("*")):
-        if not path.is_dir() or path.name == ".build":
+        if not path.is_dir():
             continue
-        if "Tests" in path.relative_to(REPO_ROOT).parts:
+        parts = path.relative_to(REPO_ROOT).parts
+        if set(parts) & _BUILD_OUTPUT_DIRS:
             continue
-        if any(
-            part.lower().endswith(_TEXT_SKIP_BUNDLE_SUFFIXES)
-            for part in path.relative_to(REPO_ROOT).parts
-        ):
+        if set(parts) & _TEST_FIXTURE_DIRS:
             continue
-        found.append("/".join(path.relative_to(REPO_ROOT).parts))
+        if _is_skipped_directory(parts):
+            continue
+        found.append("/".join(parts))
     return tuple(found)
+
+
+def _searched_root_files() -> tuple[str, ...]:
+    """Files sitting directly under `ios/`, which belong to no source tree.
+
+    Discovery returns directories, and `ios` itself is not returned because the
+    walk starts at `ios/*`. So a production input that is a *file* directly under
+    `ios/` — `ios/Shared.swift`, a shared input a target compiles — is reachable
+    from no root at all: not from `ios/HealthNutrition`, which is not its
+    ancestor, and not from `ios`, which is not a root. With the repository's
+    existing subdirectories the non-empty-search assertion still passes, so the
+    miss is silent.
+
+    Held beside `_searched_trees` rather than mixed into it, because the trees are
+    asserted to be directories — that assertion is what proves the search reads
+    something from each root it names — and a file root would quietly weaken it.
+    """
+    ios = REPO_ROOT / "ios"
+    return tuple(
+        "/".join(path.relative_to(REPO_ROOT).parts)
+        for path in sorted(ios.iterdir())
+        if path.is_file() and path.suffix.lower() not in _TEXT_SKIP_SUFFIXES
+    )
+
+
+def _searched_roots() -> tuple[str, ...]:
+    """Every root the zero-match search reads: trees, then loose files."""
+    return _searched_trees() + _searched_root_files()
+
+
+def _searched_paths() -> list[Path]:
+    """Every file the zero-match search reads, deduplicated by path.
+
+    A file under a source tree is reachable from its own directory and from each
+    ancestor of it, so collecting every root's files yields the same file several
+    times. Deduped here so a test can say which files the search reports rather
+    than which roots it walked. A root that is a file contributes itself, which is
+    how a file sitting directly under `ios/` is read at all.
+    """
+    found: dict[Path, None] = {}
+    for root in _searched_roots():
+        base = REPO_ROOT / root
+        for path in _text_files(base) if base.is_dir() else [base]:
+            found[path] = None
+    return sorted(found)
+
+
+def _token_bearing_files() -> list[str]:
+    """Every searched file carrying an asserted-absent token, as a sorted list.
+
+    This is the assertion the search itself makes, factored out so the mutation
+    probes can run exactly it against a copied tree: empty against the real
+    repository, and naming the planted file against a tree that has one.
+    """
+    return sorted(
+        str(path.relative_to(REPO_ROOT))
+        for path in _searched_paths()
+        if any(
+            token.lower() in _read_text(path).lower()
+            for token in ASSERTED_ABSENT_TOKENS
+        )
+    )
+
 
 def _copy_ios_tree(destination: Path) -> Path:
     """A writable copy of `ios/`, for mutation tests.
@@ -806,24 +885,215 @@ def test_a_shipped_resource_root_is_searched(tmp_path: Path) -> None:
     planted.write_text('"goal" = "Goal";\n', encoding="utf-8")
 
     with _repository_rooted_at(tree):
-        # Deduplicated: the search reads every tree under `ios/`, so a file is
-        # reachable from its own directory and from each ancestor of it.
-        found = sorted(
-            {
-                str(path.relative_to(tree))
-                for searched in _searched_trees()
-                for path in _text_files(tree / searched)
-                if any(
-                    token.lower() in _read_text(path).lower()
-                    for token in ASSERTED_ABSENT_TOKENS
-                )
-            }
-        )
+        # The same search the assertions run: every tree under `ios/`, plus any
+        # file sitting directly under it, deduplicated.
+        found = _token_bearing_files()
     assert found == ["ios/HealthNutrition/Resources/Localizable.strings"], (
         "a token planted in a resource root the app ships was not reported; the "
         f"search reported {found}. The document's zero-match claim would be false."
     )
 
+
+def test_an_ios_test_fixture_naming_an_asserted_token_is_not_searched(
+    tmp_path: Path,
+) -> None:
+    """A test fixture is not production code, and the exclusion must reach it.
+
+    `_searched_trees` skips a root whose path has a `Tests` component, but the
+    roots it returns are ancestors as well as leaves: `ios/HealthNutrition` is a
+    root, and `_text_files` descends from it without treating `Tests` as a
+    skipped directory. So a fixture naming one of these tokens fails the search.
+
+    That is the wrong failure. A fixture that pins the absence of `goal` has to
+    name `goal`, so the repository cannot add such a test — and the document's
+    claim is about production code, not about fixtures. The exclusion therefore
+    has to be effective at the file level, not only where roots are enumerated.
+    """
+    tree = _copy_ios_tree(tmp_path)
+    fixtures = tree / "ios/HealthNutrition/Tests"
+    assert fixtures.is_dir(), (
+        "this test needs an existing Tests directory under ios/ to plant a fixture "
+        f"in; {fixtures.relative_to(tree)} is not one, so the tree it copies is not "
+        "the repository this reproduction describes."
+    )
+    planted = fixtures / "GoalFixture.swift"
+    planted.write_text('let goal = "goal"\n', encoding="utf-8")
+
+    with _repository_rooted_at(tree):
+        found = _token_bearing_files()
+
+    # The fixture is really there and really names the token, so this is a
+    # fixture being skipped rather than a fixture that would never have matched.
+    assert "goal" in planted.read_text(encoding="utf-8")
+    assert found == [], (
+        "a test fixture naming an asserted-absent token was searched, so the "
+        f"search reported {found}. The document's claim is about production code: "
+        "fixtures deliberately name these tokens, and excluding a `Tests` tree only "
+        "where roots are enumerated does not exclude its files."
+    )
+
+
+def test_a_build_directory_beneath_ios_is_not_searched(tmp_path: Path) -> None:
+    """A `.build` descendant is build output, and `swift test` creates them.
+
+    The exclusion compared `path.name` to `.build`, so only the directory itself
+    was skipped and `swift test` output like `.build/generated` was returned as a
+    search root of its own. `_text_files` sees paths relative to that root, so the
+    `.build` component that would have disqualified them is gone by the time it
+    decides what to read — generated sources and the binaries beside them get
+    scanned as if they were production source.
+
+    Every path with a build-output component is excluded instead, which is what
+    `_BUILD_OUTPUT_DIRS` says and what `_text_files` already applied.
+    """
+    tree = _copy_ios_tree(tmp_path)
+    generated = tree / "ios/NutritionCore/.build/generated/Sources"
+    generated.mkdir(parents=True)
+    (generated / "Goal.swift").write_text('let goal = "goal"\n', encoding="utf-8")
+
+    with _repository_rooted_at(tree):
+        found = _token_bearing_files()
+
+    assert "goal" in (generated / "Goal.swift").read_text(encoding="utf-8"), (
+        "this test needs its planted file to carry the token, or a search that "
+        "reads nothing would satisfy it"
+    )
+    assert found == [], (
+        "build output under a `.build` directory was searched, so the search "
+        f"reported {found}. Generated sources and binaries are not production "
+        "code, and the `.build` component has to disqualify the whole subtree."
+    )
+
+
+def test_a_source_file_directly_under_ios_is_searched(tmp_path: Path) -> None:
+    """A production input that is a file, not a tree, must still be searched.
+
+    Discovery returns directories, and `ios` itself is not returned because the
+    walk starts at `ios/*`. So a file sitting directly under `ios/` —
+    `ios/Shared.swift`, a shared input the app target compiles — is reachable
+    from no root at all: not from `ios/HealthNutrition`, which is not its
+    ancestor, and not from `ios`, which is not a root.
+
+    With the repository's existing subdirectories the non-empty-search assertion
+    still passes, so the miss is silent: the search reports nothing because it
+    read something, not because it read everything.
+    """
+    tree = _copy_ios_tree(tmp_path)
+    planted = tree / "ios/Shared.swift"
+    planted.write_text('let goal = "goal"\n', encoding="utf-8")
+
+    with _repository_rooted_at(tree):
+        found = _token_bearing_files()
+
+    assert found == ["ios/Shared.swift"], (
+        "a production file sitting directly under ios/ was not reported; the "
+        f"search reported {found}. Discovery returns directories only, so a file "
+        "that belongs to no source tree is read by no root."
+    )
+
+
+def test_a_checked_in_resource_bundle_is_searched(tmp_path: Path) -> None:
+    """A `.bundle` the repository ships is a production input, not an artefact.
+
+    The suffix filter listed `.bundle` with `.app` and `.dSYM`, so
+    `Resources/Help.bundle` and everything under it was excluded twice over:
+    skipped as a root, and pruned again when `_text_files` reached it from an
+    ancestor. Before this file searched every tree under `ios/` it was searched,
+    because a configured root was returned whatever its name.
+
+    The two are told apart by provenance, not by shape — shape cannot, since both
+    are a directory with `Contents/` inside it. A generated bundle is one this
+    build produced, which means something above it is already excluded: a
+    build-output directory, or another bundle the build assembled. A bundle with
+    neither is checked in, so it is source the app ships and is searched. So
+    `.bundle` comes out of the suffix list entirely and no rule is added for it:
+    see the comment on `_GENERATED_BUNDLE_SUFFIXES`.
+    """
+    tree = _copy_ios_tree(tmp_path)
+    resources = tree / "ios/HealthNutrition/Resources/Help.bundle/Contents/Resources"
+    resources.mkdir(parents=True)
+    (resources / "Help.strings").write_text('"goal" = "Goal";\n', encoding="utf-8")
+
+    with _repository_rooted_at(tree):
+        found = _token_bearing_files()
+
+    assert found == [
+        "ios/HealthNutrition/Resources/Help.bundle/Contents/Resources/Help.strings"
+    ], (
+        "the contents of a checked-in .bundle were not searched, so the search "
+        f"reported {found}. Unlike a generated .app or .dSYM, a bundle the "
+        "repository ships is a production input, and the document's claim covers it."
+    )
+
+
+def test_a_file_named_like_a_skipped_directory_is_still_searched(
+    tmp_path: Path,
+) -> None:
+    """A checked-in file is judged by its suffix, never by its own name.
+
+    Both exclusions are `.gitignore`d as DIRECTORIES, and matching them against every
+    path component — including a file's own name — silently skipped a shipped resource
+    that happens to be called `build` or `Tests`. Nothing is named that way today, so
+    the guard stayed green while a token in a file the app ships was invisible to it.
+    """
+    assert FILE_NAMES_THAT_MUST_STILL_BE_SEARCHED, (
+        "the fixture is empty, so this asserts nothing"
+    )
+    tree = _copy_ios_tree(tmp_path)
+    for name in FILE_NAMES_THAT_MUST_STILL_BE_SEARCHED:
+        planted = tree / f"ios/HealthNutrition/Resources/{name}"
+        planted.parent.mkdir(parents=True, exist_ok=True)
+        assert not planted.is_dir(), (
+            f"{name!r} is a directory here, so this no longer describes a file that "
+            "merely shares a directory's name"
+        )
+        planted.write_text('"goal" = "Goal";\n', encoding="utf-8")
+
+    # `_text_files` is where the defect was: it walks from each root and tests every
+    # path component, so a FILE's own name matched a directory exclusion. The
+    # root-enumeration check tests directories only and was never wrong — `parts`
+    # there is always a directory. Reading is asserted directly so the test cannot
+    # pass because some other path happened to reach the file.
+    for name in FILE_NAMES_THAT_MUST_STILL_BE_SEARCHED:
+        planted = tree / f"ios/HealthNutrition/Resources/{name}"
+        assert planted in _text_files(planted.parent), (
+            f"a shipped resource named {name!r} was not read: a directory exclusion "
+            "matched the file's own name. These exclusions name directories, and "
+            "only directories."
+        )
+
+
+def test_a_generated_bundle_is_not_searched(tmp_path: Path) -> None:
+    """Searching a checked-in bundle must not start searching generated ones.
+
+    A resource bundle a build produced is a build artefact: it lands under a
+    build-output directory or inside a bundle the build assembled, and its
+    compiled contents embed the symbols this search looks for — the same defect as
+    a debug binary under a `.dSYM`. Both cases are planted here, each under
+    something already excluded, so the bundle's own name is the only thing not
+    doing the work.
+    """
+    tree = _copy_ios_tree(tmp_path)
+    # A bundle inside another bundle the build assembled. `Products` is not a
+    # build-output directory name, so nothing but the enclosing-bundle rule can
+    # exclude what is inside it.
+    assembled = tree / "ios/NutritionCore/Products/App.app/PlugIns/Widget.bundle"
+    assembled.mkdir(parents=True)
+    (assembled / "goal.txt").write_text("goal\n", encoding="utf-8")
+    # And one written straight into a build-output directory.
+    loose = tree / "ios/NutritionCore/.build/debug/Generated.bundle/Resources"
+    loose.mkdir(parents=True)
+    (loose / "Goal.strings").write_text('"goal" = "Goal";\n', encoding="utf-8")
+
+    with _repository_rooted_at(tree):
+        found = _token_bearing_files()
+
+    assert found == [], (
+        "a bundle produced by a build was searched, so the search reported "
+        f"{found}. A bundle under a build-output directory, or inside another "
+        "assembled bundle, is an artefact — which is how a generated one is told "
+        "apart from a checked-in one."
+    )
 
 
 def test_the_legend_agrees_with_the_table() -> None:
@@ -963,13 +1233,15 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
         root = REPO_ROOT / tree
         assert root.is_dir(), f"the search names {tree}, which does not exist"
     offenders: set[str] = set()
-    for tree in _searched_trees():
-        for path in sorted(_text_files(REPO_ROOT / tree)):
-            text = _read_text(path).lower()
-            for token in tokens:
-                if token.lower() in text:
-                    relative = path.relative_to(REPO_ROOT)
-                    offenders.add(f"{relative}: {token}")
+    # Over every file the search reads, which is every tree plus any file sitting
+    # directly under `ios/` — a file belongs to no tree, so it is reached only by
+    # the loose-file roots.
+    for path in _searched_paths():
+        text = _read_text(path).lower()
+        for token in tokens:
+            if token.lower() in text:
+                relative = path.relative_to(REPO_ROOT)
+                offenders.add(f"{relative}: {token}")
     assert not offenders, (
         "the document states these tokens return zero matches across "
         f"{list(trees)}, but they now appear:\n  "
@@ -985,7 +1257,57 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
 _TEXT_SKIP_SUFFIXES = frozenset(
     {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".xcarchive", ".dSYM"}
 )
-_TEXT_SKIP_DIRS = frozenset({".build", ".git", "__pycache__", ".swiftpm"})
+
+# Directory names that mean build output or tooling scratch rather than source:
+# SwiftPM's (`.build`, `.swiftpm`), Xcode's (`DerivedData`, `build`,
+# `xcuserdata`), and the repository's own (`.git`, `__pycache__`).
+#
+# One set, used both to drop a path from the roots `_searched_trees` returns and
+# to drop its files in `_text_files`. Two sets would make an exclusion
+# root-dependent — a path under `build/` skipped when reached from the directory
+# above and read when `build/` was the root it was found under — which is exactly
+# the defect a `.build` component caused when only `path.name == ".build"` was
+# compared. It is also what tells a generated `.bundle` from a checked-in one,
+# which is why it decides provenance rather than only listing SwiftPM's names.
+#
+# Every name here is ignored by this repository's `.gitignore` or is VCS metadata,
+# so nothing checked in lives under one and excluding them cannot hide a production
+# input. That is what makes excluding the whole subtree safe, rather than a
+# narrowing of the search over source.
+_BUILD_OUTPUT_DIRS = frozenset(
+    {".build", ".git", ".swiftpm", "__pycache__", "DerivedData", "build", "xcuserdata"}
+)
+# Every name above is `.gitignore`d as a DIRECTORY, so it is matched against directory
+# components only (`parts[:-1]`). Matching a file's own name skipped a checked-in
+# resource that happens to be called `build` — `ios/HealthNutrition/Resources/build` —
+# which ships and can carry a token the document claims is absent. A file is judged by
+# its suffix and by the directories above it, never by its own name.
+
+# Directory names that hold test fixtures rather than production code. Excluded
+# because a fixture pinning a token's absence has to name the token — that is what
+# a fixture for this document's own claim looks like — while the claim is about
+# production code. Narrow by name rather than by understanding the build, and this
+# is the one place the search deliberately looks at less than `ios/`. It is applied
+# to files as well as to the roots they are discovered under, because the roots
+# include ancestors: excluding a `Tests` tree only while enumerating roots excludes
+# nothing, because `ios/HealthNutrition` is itself a root and the search descends
+# from it straight into the fixtures.
+#
+# Matched on **directory components only** (`parts[:-1]`), which is what excludes a
+# fixture tree while still reading a *file* that happens to be named `Tests`. A
+# production target that laid its sources out under a `Tests` directory would be
+# skipped by name; no such target exists today, and narrowing to real test-target
+# roots would mean asking the build configuration, which this suite deliberately does
+# not do because it runs against copies of the tree. The gap fails in the safe
+# direction for that hypothetical — a fixture is skipped that should have been read,
+# so a token could be missed — which is recorded rather than papered over.
+_TEST_FIXTURE_DIRS = frozenset({"Tests"})
+
+# Names that are excluded as DIRECTORIES, planted here as FILES. Both exclusions
+# are `.gitignore`d as directories, so a file sharing one of their names is a
+# shipped resource, not an artefact.
+FILE_NAMES_THAT_MUST_STILL_BE_SEARCHED: tuple[str, ...] = ("build", "Tests")
+
 
 # Directory names that are build or packaging artefacts rather than source. Held
 # separately from the file-suffix set because the same suffix names a directory in
@@ -994,16 +1316,64 @@ _TEXT_SKIP_DIRS = frozenset({".build", ".git", "__pycache__", ".swiftpm"})
 # beneath it, because filtering the files inside a bundle reads a debug binary's
 # symbols as source. Lower-cased before comparison, so a lowercase `.dsym` or
 # `.xcarchive` is pruned too.
-_TEXT_SKIP_BUNDLE_SUFFIXES = (
+#
+# `.bundle` is deliberately absent, and that is the whole `.bundle` question. A
+# checked-in resource bundle is a production input the app ships — `Help.bundle`
+# and a strings catalogue are how a bundle reaches a target — while a bundle a
+# build produced is an artefact whose compiled contents embed the symbols this
+# search looks for, which is the same defect as a debug binary under a `.dSYM`.
+# Shape cannot tell them apart: both are a directory with `Contents/` inside it.
+#
+# Provenance can, so the name is not used and the enclosing path is. A bundle is
+# generated exactly when something above it is already excluded — a build-output
+# directory or another bundle this build assembled — and both of those are excluded
+# by name, so the exclusion needs no special case for `.bundle` at all. What
+# matters is only that `.bundle` is not itself in this tuple: a bundle that is
+# enclosed by nothing is checked in, and is searched. Both directions are pinned
+# by `test_a_checked_in_resource_bundle_is_searched` and
+# `test_a_generated_bundle_is_not_searched`.
+_GENERATED_BUNDLE_SUFFIXES = (
     ".xcarchive",
     ".dsym",
     ".xcodeproj",
     ".xcworkspace",
     ".app",
     ".framework",
-    ".bundle",
     ".playground",
 )
+
+
+def _is_assembled_bundle(name: str) -> bool:
+    """Is this directory name a bundle a build writes, never a source input?
+
+    True for `.app`, `.framework`, `.dSYM`, `.xcarchive`, `.xcodeproj`,
+    `.xcworkspace` and `.playground` — names only a build or a generator writes,
+    whose contents are binaries and copies of sources already read where they came
+    from.
+    """
+    return name.lower().endswith(_GENERATED_BUNDLE_SUFFIXES)
+
+
+def _is_skipped_directory(parts: Sequence[str]) -> bool:
+    """Is the directory at `parts` excluded, along with everything beneath it?
+
+    Examined component by component, so an exclusion survives the search
+    descending from an ancestor root: a `.dSYM` several levels up is still what
+    disqualifies the file below it. A bundle this build wrote is excluded for one
+    of two reasons, both of them about what is *above* it rather than about its own
+    name — a build-output directory, or another bundle this build assembled — so
+    both are already covered by the name checks above and nothing here has to
+    special-case `.bundle`.
+
+    That asymmetry is deliberate. Excluding an artefact wrongly costs a spurious
+    match on a debug binary; excluding a checked-in production bundle wrongly makes
+    the document's absence claim false over exactly the files it is about. So the
+    narrow reading is the safe one, and a generated bundle that a build happened to
+    write into a source tree is searched rather than missed. Distinguishing that
+    one would mean asking the version control system, which this suite deliberately
+    does not do: it runs against copies of the tree, not against a checkout.
+    """
+    return any(_is_assembled_bundle(part) for part in parts)
 
 
 def _unmarked_utf16_encoding(raw: bytes) -> str | None:
@@ -1130,29 +1500,45 @@ def _read_text(path: Path) -> str:
 def _text_files(root: Path) -> list[Path]:
     """Every readable text file under `root`.
 
-    A file is skipped when any *directory* above it is a build bundle, not only
-    when the file's own suffix says so. A `.dSYM` or `.xcarchive` beneath a
-    source root holds debug binaries whose DWARF symbols embed the very source
-    symbols the search is looking for, so the old suffix filter — which only saw
-    the files inside the bundle — turned a symbol name into an apparent source
-    match and reported a token no source file contains. A spurious report is the
-    same defect as a missed one: it sends whoever reads the failure looking for
-    code that does not exist.
+    A file is skipped when any *directory* above it is a build artefact, not only
+    when the file's own suffix says so. A `.dSYM` or `.xcarchive` beneath a source
+    root holds debug binaries whose DWARF symbols embed the very source symbols
+    the search is looking for, so the old suffix filter — which only saw the files
+    inside the bundle — turned a symbol name into an apparent source match and
+    reported a token no source file contains. A spurious report is the same defect
+    as a missed one: it sends whoever reads the failure looking for code that does
+    not exist.
 
     `rglob` still walks into a bundle to enumerate it; nothing inside one is
     returned. The match is on the directory components only, so a *file* named
     `Foo.dSYM` is still subject to the ordinary suffix filter.
+
+    Two exclusions are file-level as well as root-level, and have to be, because
+    the roots this is called with include ancestors:
+
+    - a `Tests` directory. Excluding it while enumerating roots excludes nothing
+      — `ios/HealthNutrition` is itself a root, and this descends through
+      `Tests/` to reach the fixtures. A fixture pinning the absence of `goal`
+      has to name `goal`, so a root-only exclusion left the repository unable to
+      add a test for the very claim this file guards.
+    - a build-output directory at any depth, for the same reason: a `.build`
+      subtree that was returned as a root of its own is read from that root,
+      where the `.build` component is no longer part of the relative path.
+
+    One exclusion is the other way round. A `.bundle` this build produced is
+    skipped; a `.bundle` that is checked in is not. The two are told apart by what
+    encloses them rather than by the name — see `_is_skipped_directory`.
     """
     found: list[Path] = []
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
         parts = path.relative_to(root).parts
-        if set(parts) & _TEXT_SKIP_DIRS:
+        if set(parts[:-1]) & _BUILD_OUTPUT_DIRS:
             continue
-        if any(
-            part.lower().endswith(_TEXT_SKIP_BUNDLE_SUFFIXES) for part in parts[:-1]
-        ):
+        if set(parts[:-1]) & _TEST_FIXTURE_DIRS:
+            continue
+        if _is_skipped_directory(parts[:-1]):
             continue
         if path.suffix.lower() in _TEXT_SKIP_SUFFIXES:
             continue
