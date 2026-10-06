@@ -187,12 +187,16 @@ already removed the protection.
 
 ### Retraction is per type
 
-A delete asks about **the types this intake actually has samples for**, which the plan for the revision
-being retracted names. A type that was never requested is `.notDetermined` and holds nothing in Health,
-so asking about it would read as a denial and park the delete behind a sample that does not exist. It
-still removes everything it is authorized to remove: someone can authorize water and refuse protein,
-and aborting the whole retraction would strand the authorized water sample in Health after the journal
-entry is gone — a sample the app could never remove again, attached to an entry that no longer exists.
+A delete asks about **the types this intake actually has samples for**, which the plans of every
+revision up to and including the one being retracted name between them. The current revision's plan
+alone is not enough: a nutrient an earlier revision wrote and a later one dropped is still in Health
+when the intake is deleted, because the upsert that dropped it is superseded by the delete rather than
+run, so that type still has a sample. A type that no revision wrote was never requested, is
+`.notDetermined` and holds nothing in Health, so asking about it would read as a denial and park the
+delete behind a sample that does not exist. It still removes everything it is authorized to remove:
+someone can authorize water and refuse protein, and aborting the whole retraction would strand the
+authorized water sample in Health after the journal entry is gone — a sample the app could never remove
+again, attached to an entry that no longer exists.
 
 So the retraction deletes what it may and reports `.partlyRetracted`, naming the denied type
 identifiers. Only those keep the operation queued and the projection at `needsAttention`.

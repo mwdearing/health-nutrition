@@ -119,6 +119,10 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     private final class RecordingTotals: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [String: NutrientValue]
+        /// Totals for one specific revision, so a test can give each revision of an intake different
+        /// totals. A revision named here does not use `values`, which stays the single set the other
+        /// tests install.
+        private var byRevision: [Int: [String: NutrientValue]] = [:]
         private var failure: Error?
         private var calls: [(intakeID: String, revision: Int)] = []
 
@@ -137,6 +141,14 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             }
         }
 
+        /// The totals one specific revision contributes, overriding the single set for this test.
+        func set(_ values: [String: NutrientValue], forRevision revision: Int) {
+            lock.withLock {
+                byRevision[revision] = values
+                failure = nil
+            }
+        }
+
         /// Every later read throws until `set(_:)` or `stopFailing()` clears it.
         func fail(with error: Error) {
             lock.withLock { failure = error }
@@ -150,7 +162,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             try lock.withLock {
                 calls.append((intakeID, revision))
                 if let failure { throw failure }
-                return values
+                return byRevision[revision] ?? values
             }
         }
     }
@@ -854,6 +866,42 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             "an intake with no samples retracts cleanly, got \(outcomes)")
         XCTAssertFalse(outcomes.contains { if case .partlyRetracted = $0 { return true } else { return false } })
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    /// An earlier revision's nutrient is still in Health when the intake is deleted, because the upsert
+    /// that dropped it is superseded by the delete rather than run. Asking only about the current
+    /// revision's plan left the authorization question narrow enough to miss that type, so a revoked
+    /// permission for it was reported as a clean retraction while the sample stayed in Health.
+    func testARetractionAsksAboutTheTypesEveryEarlierRevisionWrote() async throws {
+        let (store, writer, totals, worker) = try makeWorker(totals: [:])
+        // Revision 1 wrote protein and water; revision 2 dropped protein and wrote water only.
+        totals.set(["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)], forRevision: 1)
+        totals.set(["water": .known(dec("300"), .mL)], forRevision: 2)
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component(amount: 55)], product: nil,
+            changeReason: "protein dropped", now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryProtein")
+        let deleteID = try XCTUnwrap(healthKitOperation(store, kind: .delete)?.operationID)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .partlyRetracted(let operationID, _, let denied) = try XCTUnwrap(
+            outcomes.first { if case .partlyRetracted = $0 { return true } else { return false } }
+        ) else {
+            return XCTFail(
+                "a type an earlier revision wrote and a later one dropped must be part of the question, got \(outcomes)")
+        }
+        XCTAssertEqual(operationID, deleteID)
+        XCTAssertEqual(denied, ["HKQuantityTypeIdentifierDietaryProtein"], "the denied earlier type is named")
+        XCTAssertFalse(
+            writer.deleted.contains(proteinIdentifier(intakeID)),
+            "the denied protein sample is left in Health rather than acknowledged as removed")
+        XCTAssertTrue(
+            writer.deleted.contains(waterIdentifier(intakeID)),
+            "the authorized water sample is still removed")
     }
 
     // MARK: - Revision 7: only water-category intakes contribute water
