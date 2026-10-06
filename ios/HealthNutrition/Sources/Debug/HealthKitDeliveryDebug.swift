@@ -90,7 +90,7 @@ final class HealthKitDeliveryStatus {
         var share = Set<HKSampleType>()
         var unresolved: [String] = []
         for mapping in HealthKitWritePlanner.mappings {
-            if let type = HKObjectType.quantityType(forIdentifier: mapping.quantityTypeIdentifier) {
+            if let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: mapping.quantityTypeIdentifier)) {
                 share.insert(type)
             } else {
                 unresolved.append(mapping.nutrientKey)
