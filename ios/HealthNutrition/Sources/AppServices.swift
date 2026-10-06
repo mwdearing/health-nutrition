@@ -26,10 +26,9 @@ final class AppServices {
     let barcodeLookup: BarcodeProductLookup
     /// Delivers queued journal revisions to HealthKit.
     ///
-    /// The worker exists and is wired up, but it has nothing to do: the journal store below enables no
-    /// destinations, so no HealthKit operation is ever queued and `runOnce` always finds an empty
-    /// queue. Turning delivery on is a separate decision, because it starts writing real health data
-    /// (see `docs/healthkit-writer.md`).
+    /// Built in every build and driven in every build, but only a debug build queues anything for it:
+    /// the store below enables `.healthKit` only under `#if DEBUG`, so a release build's `runOnce`
+    /// always finds an empty queue (see `docs/healthkit-writer.md`).
     let healthKitDelivery: HealthKitDeliveryWorker
 
     private init(
@@ -70,16 +69,30 @@ final class AppServices {
     /// real Application Support ones. The default is the app's own directory, unchanged.
     static func make(directory: URL = defaultDirectory) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        // HealthKit delivery stays off: `enabledDestinations` is empty, so nothing is queued for it and
-        // `healthKitDelivery` has no work. Enabling it writes real intake data into Health, which is a
-        // deliberate decision rather than a consequence of the worker existing (docs/healthkit-writer.md).
-        // The relay destination is off for the same reason.
+        // Which destinations the journal queues work for.
+        //
+        // **A release build enables none.** Nothing is queued, so `healthKitDelivery` finds an empty
+        // queue on every run and no Health authorization is ever asked for. Turning delivery on writes
+        // real intake data into Health, which is a deliberate decision rather than a consequence of the
+        // worker existing (docs/healthkit-writer.md).
+        //
+        // **A debug build enables `.healthKit` only**, and does so for one reason: the device
+        // acceptance run (NC-08) has to drive the real writer against real entries, and a store that
+        // queues nothing gives the worker nothing to deliver. The relay destination is off in every
+        // build, for the same reason as above.
         let journalStore: SwiftDataJournalStore
         do {
+            #if DEBUG
+            journalStore = try SwiftDataJournalStore(
+                url: directory.appendingPathComponent("journal.store"),
+                enabledDestinations: [.healthKit]
+            )
+            #else
             journalStore = try SwiftDataJournalStore(
                 url: directory.appendingPathComponent("journal.store"),
                 enabledDestinations: []
             )
+            #endif
         } catch {
             throw StoreStartupError.journal(error)
         }

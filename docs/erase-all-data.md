@@ -47,9 +47,11 @@ on. The erase cannot reach it; that is what sharing it in the first place meant.
 - **The app sent nothing to any server by itself.** No relay is running in this release and the
   delivery worker writes to Apple Health only after a person turns Health delivery on, so there is no
   server-side copy of the journal to delete or retract.
-- **Apple Health.** Delivery is off: the store is opened with no enabled destinations, so no HealthKit
-  operation is ever queued and no sample this app names has ever been written. There is nothing in
-  Health to remove.
+- **Apple Health.** Delivery is off in every release build: the store is opened with no enabled
+  destinations, so no HealthKit operation is ever queued and no sample this app names has ever been
+  written. There is nothing in Health to remove. A debug build queues HealthKit operations, so a debug
+  erase can leave samples behind — the worker acknowledges nothing it did not deliver, and the erase
+  does not retract through HealthKit yet.
 - **When Health delivery is turned on, the erase has to grow.** A written sample is removed by the sync
   identifier the write plan already stamps on it (`[ADR 0002](adr/0002-healthkit-sync.md)`, and the
   write plan in [healthkit-writer.md](healthkit-writer.md)), not by deleting the local row: the Health

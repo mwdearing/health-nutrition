@@ -479,9 +479,14 @@ final class HealthKitSpikeRunner {
     }
 }
 
-/// The DEBUG-only spike screen: authorization, reset, one button per step, the transcript, and a
+/// The DEBUG-only spike sections: authorization, reset, one button per step, the transcript, and a
 /// way to copy it. Each step is enabled only once its prerequisite has succeeded.
-struct HealthKitSpikeView: View {
+///
+/// Sections rather than a screen of its own, so the HealthKit tab can show the real delivery driver
+/// (`HealthKitDeliveryDebugSection`) above these synthetic-sample steps in one list. Nothing about the
+/// experiment changed: it still writes its own two samples under its own sync identifiers, separate from
+/// anything the app's real writer does with real entries.
+struct HealthKitSpikeSteps: View {
     let runner: HealthKitSpikeRunner
 
     @State private var copied = false
@@ -499,63 +504,60 @@ struct HealthKitSpikeView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Health") {
-                    Text("Authorization: \(runner.authorizationSummary)")
-                    Text("Next: \(nextStep)")
-                    Button("Request authorization") {
-                        Task { await runner.requestAuthorization() }
-                    }
-                    .disabled(!runner.canRequestAuthorization)
+        Group {
+            Section("Health") {
+                Text("Authorization: \(runner.authorizationSummary)")
+                Text("Next: \(nextStep)")
+                Button("Request authorization") {
+                    Task { await runner.requestAuthorization() }
                 }
+                .disabled(!runner.canRequestAuthorization)
+            }
 
-                Section("Steps (synthetic samples)") {
-                    Button("Reset: clear the transcript and delete leftover samples") {
-                        Task { await runner.resetForNewRun() }
-                    }
-                    .disabled(!runner.canReset)
-
-                    Button("1. Save water 250 mL and protein 10 g") {
-                        Task { await runner.saveInitialSamples() }
-                    }
-                    .disabled(!runner.canSaveInitialSamples)
-
-                    Button("2. Save again with a higher sync version") {
-                        Task { await runner.saveHigherVersion() }
-                    }
-                    .disabled(!runner.canSaveHigherVersion)
-
-                    Button("3. Save again with the equal, then the lower, sync version") {
-                        Task { await runner.saveEqualAndLowerVersions() }
-                    }
-                    .disabled(!runner.canSaveEqualAndLowerVersions)
-
-                    Button("4. Delete the samples this app wrote") {
-                        Task { await runner.deleteOwnSamples() }
-                    }
-                    .disabled(!runner.canDeleteOwnSamples)
+            Section("Steps (synthetic samples)") {
+                Button("Reset: clear the transcript and delete leftover samples") {
+                    Task { await runner.resetForNewRun() }
                 }
+                .disabled(!runner.canReset)
 
-                Section("Results") {
-                    if runner.entries.isEmpty {
-                        Text("No results yet.").foregroundStyle(.secondary)
-                    }
-                    ForEach(runner.entries) { entry in
-                        Text(entry.text).font(.footnote.monospaced())
-                    }
-                    Button("Copy results (redacted)") {
-                        UIPasteboard.general.string = runner.transcript
-                        copied = true
-                    }
-                    if copied {
-                        Text("Copied, with the bundle id and device name redacted.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                Button("1. Save water 250 mL and protein 10 g") {
+                    Task { await runner.saveInitialSamples() }
+                }
+                .disabled(!runner.canSaveInitialSamples)
+
+                Button("2. Save again with a higher sync version") {
+                    Task { await runner.saveHigherVersion() }
+                }
+                .disabled(!runner.canSaveHigherVersion)
+
+                Button("3. Save again with the equal, then the lower, sync version") {
+                    Task { await runner.saveEqualAndLowerVersions() }
+                }
+                .disabled(!runner.canSaveEqualAndLowerVersions)
+
+                Button("4. Delete the samples this app wrote") {
+                    Task { await runner.deleteOwnSamples() }
+                }
+                .disabled(!runner.canDeleteOwnSamples)
+            }
+
+            Section("Results") {
+                if runner.entries.isEmpty {
+                    Text("No results yet.").foregroundStyle(.secondary)
+                }
+                ForEach(runner.entries) { entry in
+                    Text(entry.text).font(.footnote.monospaced())
+                }
+                Button("Copy results (redacted)") {
+                    UIPasteboard.general.string = runner.transcript
+                    copied = true
+                }
+                if copied {
+                    Text("Copied, with the bundle id and device name redacted.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("HealthKit spike")
         }
     }
 }

@@ -9,10 +9,11 @@ what was eaten including the parts HealthKit has no quantity type for. The encod
 
 ## Delivery is off
 **Nothing in the app enables the relay destination, so nothing is ever queued for this worker and every
-run finds an empty queue.** `AppServices` opens the journal store with `enabledDestinations: []`, which
-gives the relay a `disabled` projection and no outbox operation, so there is nothing to send. The worker
-exists and is tested against a fake transport; turning it on is a separate decision, made when the
-HealthRelay connection ships, because it starts sending real intake data off the device.
+run finds an empty queue.** `AppServices` opens the journal store with `.healthKit` alone in a debug
+build and with `enabledDestinations: []` in a release build, and neither includes `.relay`. The relay
+therefore has a `disabled` projection and no outbox operation in any build, so there is nothing to send.
+The worker exists and is tested against a fake transport; turning it on is a separate decision, made when
+the HealthRelay connection ships, because it starts sending real intake data off the device.
 
 Three things also stay off until then:
 

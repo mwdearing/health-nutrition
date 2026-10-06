@@ -349,16 +349,28 @@ the future is skipped and reported as `.notDue`.
 A retry rebuilds the plan from the stored revision, so it is byte-identical to the first attempt: an
 equal-version replacement, which ADR 0002's run showed HealthKit accepts and which changes nothing.
 
-## Delivery is off until it is turned on
+## Delivery is off in every release build
 
-`AppServices` constructs the worker, but `SwiftDataJournalStore` is opened with
-`enabledDestinations: []`. **No HealthKit operation is ever queued, so `runOnce` always finds an empty
-queue and the app writes nothing to Health.** Turning delivery on means changing that one setting, and
-it is a separate decision because it starts writing real intake data into a user's health store —
-scaling the totals first, and asking the user, are both still open. Nothing in this task changes it.
+`AppServices` constructs the worker in every build, but only a **debug** build opens
+`SwiftDataJournalStore` with `.healthKit` enabled. A release build passes `enabledDestinations: []`, so
+**no HealthKit operation is ever queued, `runOnce` always finds an empty queue, and the app writes
+nothing to Health and asks for no Health access.** Turning delivery on for real users means changing
+that one setting, and it is a separate decision because it starts writing real intake data into a user's
+health store — scaling the totals first, and asking the user, are both still open. Nothing in this
+repository changes it.
 
-The journal store keeps the `disabled` projection for HealthKit, so entries do not sit in a permanent
-`pending` state while delivery is off.
+A debug build enables the destination so the writer can be exercised on a device against real entries
+(NC-08 device acceptance). `ios/HealthNutrition/Sources/Debug/HealthKitDeliveryDebug.swift` is the whole
+of that: it asks HealthKit for write access to every type in `HealthKitWritePlanner.mappings`, calls
+`runOnce(now:)` when the app becomes active and after every journal change, and shows the pending,
+needing-attention and suspended counts plus the last run's outcome list. Today carries one line of the
+same counts. It changes no behaviour in the worker, the writer or the journal, and the whole file is
+behind `#if DEBUG`.
+
+The relay destination stays off in every build, debug included.
+
+Outside a debug build the journal store keeps the `disabled` projection for HealthKit, so entries do not
+sit in a permanent `pending` state while delivery is off.
 
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/HealthKitWritePlanTests.swift` covers the identifier
