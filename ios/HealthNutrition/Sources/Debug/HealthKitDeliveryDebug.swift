@@ -100,7 +100,6 @@ final class HealthKitDeliveryStatus {
             // The async request returns nothing: it completes once the sheet is done and HealthKit
             // deliberately never says which types were granted.
             try await healthStore.requestAuthorization(toShare: share, read: [])
-            UserDefaults.standard.set(true, forKey: Self.authorizationRequestedKey)
             var summary = "requested write access for \(share.count) mapped type(s), no read access"
             if !unresolved.isEmpty {
                 summary += "; HealthKit does not know \(unresolved.sorted().joined(separator: ", "))"
@@ -141,11 +140,19 @@ final class HealthKitDeliveryStatus {
         } while rerunRequested
     }
 
-    /// Remembered across launches so a relaunch after the one-time request does not wait for a second one.
-    private static let authorizationRequestedKey = "debug.healthKitDelivery.authorizationRequested"
-
+    /// Whether Health has been asked for access at all, read from Health itself: once the request sheet has
+    /// been answered, no mapped type is `.notDetermined` any more. Asking Health rather than remembering it
+    /// keeps the answer true across relaunches and reinstalls without storing anything of our own.
     private static var authorizationWasRequested: Bool {
-        UserDefaults.standard.bool(forKey: authorizationRequestedKey)
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        let store = HKHealthStore()
+        return HealthKitWritePlanner.mappings.contains { mapping in
+            guard
+                let type = HKObjectType.quantityType(
+                    forIdentifier: HKQuantityTypeIdentifier(rawValue: mapping.quantityTypeIdentifier))
+            else { return false }
+            return store.authorizationStatus(for: type) != .notDetermined
+        }
     }
 
     private var rerunRequested = false
