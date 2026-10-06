@@ -382,11 +382,10 @@ covers the cases above that are easy to get wrong: a newer revision is **blocked
 earlier one (not due, and failed-and-retrying), a failed totals read leaves the operation pending
 instead of writing an empty revision, snapshot nutrients are scaled by the logged amount (per 100 g,
 per serving, exactly, and never an unscaled value; an unresolvable basis writes nothing), a suspended
-operation
-is skipped by later runs and returns after being re-armed, repeated failures follow 1/5/30 minutes, a
-retraction removes the authorized types while naming the denied ones, volume only counts as water for
-a water-category intake, and acknowledging a stale upsert does not mark the delete projection
-`succeeded`. It also covers the retry edge cases: a denial recorded on a projection an earlier edit had
+operation is skipped by later runs and returns after being re-armed, repeated failures follow
+1/5/30 minutes, a retraction removes the authorized types while naming the denied ones, volume only
+counts as water for a water-category intake, and acknowledging a stale upsert does not mark the delete
+projection `succeeded`. It also covers the retry edge cases: a denial recorded on a projection an earlier edit had
 already superseded still suspends the operation and is shown on the current projection, a sample
 HealthKit rejects goes to `needsAttention` instead of being retried, the stored reason is reported again
 on every later run for both a rejection and a denial, and a correction or a retraction supersedes a
