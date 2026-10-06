@@ -7,8 +7,8 @@ import NutritionDomain
 /// A snapshot states the values for the product, on the basis its source named: 13 g of protein per 100 g, or
 /// 24 g of protein per serving. The facts of an intake are the amount that was actually logged, so those
 /// values have to be scaled before they are hashed. Sending them unscaled would state the whole package rather
-/// than the portion eaten, which is the same reason `JournalSnapshotTotals` carries no snapshot nutrient at all
-/// rather than carrying one unscaled.
+/// than the portion eaten, which is the same reason `JournalSnapshotTotals` scales a snapshot with
+/// this factor rather than carrying the stated value.
 enum IntakeContextSnapshotBasis: Equatable {
     /// Per 100 of the given unit, the shape a barcode lookup states.
     case perHundred(MeasureUnit)

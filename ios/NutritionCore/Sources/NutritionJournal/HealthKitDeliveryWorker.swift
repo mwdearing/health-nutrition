@@ -69,19 +69,29 @@ public typealias NutrientTotalsProvider = @Sendable (_ intakeID: String, _ revis
 
 /// The nutrient totals one journal revision contributes, read from what the revision itself recorded.
 ///
-/// This is the default answer `AppServices` wires in, and it states **very little on purpose**:
+/// This is the default answer `AppServices` wires in, and it states two things: the water a drink
+/// records, and the product's own nutrients scaled to the amount that was logged.
 ///
-/// - **Snapshot nutrients are omitted.** `ProductDefinition.nutrients` is stated on `labelBasis`
-///   (typically per 100 g), not for the amount the component records. A 40 g component of a product
-///   whose label states 13 g of protein per 100 g carries 5.2 g, and writing 13 g would put a wrong
-///   number into Health. Scaling needs to know the basis exactly — a serving, a yield and a count all
-///   scale differently — so until that arithmetic exists this provider contributes no snapshot nutrient
-///   at all rather than an unscaled one. The planner then plans no sample for it, which is the honest
-///   outcome. See `docs/healthkit-writer.md`.
+/// - **Snapshot nutrients are scaled, not copied.** `ProductDefinition.nutrients` is stated on
+///   `labelBasis` (typically per 100 g), not for the amount the component records, so a 40 g
+///   component of a product whose label states 13 g of protein per 100 g carries 5.2 g. The factor
+///   comes from `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`, the same arithmetic the
+///   relay encoder uses, and the multiplication is exact decimal: no float, no rounding. **Nothing is
+///   written when that factor cannot be resolved** — a basis the journal cannot answer ("per 100 kcal",
+///   "per 100 g or mL") or components that cannot scale it. An unscaled label value states the whole
+///   package rather than the portion eaten, which is a wrong number in Health, and a guessed one
+///   worse; the planner then plans no sample for the nutrient, which is the honest outcome. See
+///   `docs/healthkit-writer.md`.
+/// - **A nutrient with no stated amount is omitted.** `.unknown`, `.notApplicable` and
+///   `.belowReportingThreshold` say there is nothing to scale, so they contribute no total rather than
+///   a zero.
 /// - **Water comes from the components, and only for a water-category intake.** Volume is dietary
 ///   water when the entry is a drink; 250 mL of milk, juice or oil is not. A component measured in
 ///   another unit contributes nothing rather than a guess, because mass to volume needs a density the
-///   journal does not record.
+///   journal does not record. A snapshot's own water never replaces it: what was poured is recorded,
+///   and a label's per-100 mL figure is not.
+/// - A key the planner has no mapping for is passed through; deciding which keys are writeable is the
+///   planner's business, not this provider's.
 /// - A revision that cannot be read **throws**, so the delivery is retried rather than acknowledged as
 ///   an empty revision.
 public struct JournalSnapshotTotals: Sendable {
@@ -106,13 +116,37 @@ public struct JournalSnapshotTotals: Sendable {
             throw JournalError.unknownIntake("\(intakeID)@\(revision)")
         }
         var totals: [String: NutrientValue] = [:]
-        // No snapshot nutrient is carried here on purpose: see the type's documentation. The snapshot
-        // is not read at all rather than read and discarded, so a reader cannot mistake this for an
-        // oversight.
         if let water = Self.recordedWater(in: entry.components, category: intake.category) {
             totals["water"] = water
         }
+        // The water the components record wins a contested key: it is what was actually poured, where
+        // the snapshot states the product's own water on the label's basis.
+        totals.merge(
+            try scaledSnapshotNutrients(of: entry)) { recorded, _ in recorded }
         return totals
+    }
+
+    /// The nutrients the revision's product snapshot states, each scaled to the amount that was logged.
+    ///
+    /// **Nothing is returned when the basis cannot be applied**, rather than the unscaled value or a
+    /// guess: the snapshot states the product, not the portion, so a number that reaches Health
+    /// unscaled is the wrong number. A revision with no product snapshot — an entry logged by hand —
+    /// has nothing to scale and returns nothing, which is an answer and not a failed read.
+    private func scaledSnapshotNutrients(of revision: IntakeRevision) throws -> [String: NutrientValue] {
+        guard let snapshotID = revision.productSnapshotID,
+            let product = try store.product(snapshotID: snapshotID)
+        else { return [:] }
+        guard let factor = IntakeContextSnapshotBasis.scalingFactor(
+            labelBasis: product.labelBasis, logged: revision.components)
+        else { return [:] }
+        var scaled: [String: NutrientValue] = [:]
+        for (key, value) in product.nutrients {
+            // Only a stated amount can be scaled. The other cases say the product states no amount for
+            // this nutrient, and passing one on would state a value the label declined to state.
+            guard case .known(let amount, let unit) = value else { continue }
+            scaled[key] = .known(amount * factor, unit)
+        }
+        return scaled
     }
 
     /// The millilitres the revision's components record, summed, and only for a drink.

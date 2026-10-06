@@ -151,14 +151,21 @@ predictable: whether an operation is due, and when a retry is scheduled.
    stale, save nothing and acknowledge the operation. A failed read must never become a successful
    empty revision, so the failure has to reach the worker and leave the operation pending.
 
-   `JournalSnapshotTotals` is the default, and it states very little on purpose. A product snapshot's
-   nutrients are stated on `labelBasis` (typically per 100 g), **not** for the amount the component
-   records: a 40 g portion of a product whose label states 13 g of protein per 100 g carries 5.2 g.
-   Scaling needs to know the basis exactly — a serving, a yield and a count all scale differently — so
-   until that arithmetic exists **no snapshot nutrient is emitted**, rather than an unscaled one. The
-   planner then plans no sample for it, which is the honest outcome. Water is the one value it does
-   report: a **water-category** intake's volume components, because volume is dietary water when the
-   entry is a drink. 250 mL of milk, juice or oil is not, and is not counted.
+   `JournalSnapshotTotals` is the default. A product snapshot's nutrients are stated on `labelBasis`
+   (typically per 100 g), **not** for the amount the component records: a 40 g portion of a product
+   whose label states 13 g of protein per 100 g carries 5.2 g. So the stated value is **scaled** by
+   that basis and the logged quantity, with the exact decimal arithmetic
+   `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)` already uses for the relay encoder —
+   no float, no rounding — and the stated unit is kept for the planner to convert. **Nothing is written
+   for the snapshot when that basis cannot be resolved** ("per 100 kcal", "per 100 g or mL") or the
+   logged components cannot answer it: an unscaled label value states the whole package rather than
+   the portion eaten, so the planner plans no sample rather than a wrong one. A nutrient the label
+   states as `.unknown`, `.notApplicable` or below the reporting threshold is likewise omitted, and a
+   snapshot's own `water` never replaces the volume the components record. Water is otherwise the one
+   value that comes from the components: a **water-category** intake's volume components, because
+   volume is dietary water when the entry is a drink. 250 mL of milk, juice or oil is not, and is not
+   counted. A key the mapping table has no row for is passed through untouched; the planner decides
+   which keys are writeable.
 2. **Plan.** `HealthKitWritePlanner.plan(intakeID:revision:occurredAt:totals:)` turns them into
    `[HealthKitSampleSpec]`, ordered by nutrient key, stamped with the intake's own `occurredAt`.
 3. **Stale deletion.** For any revision after the first, the samples for mapped nutrients **this plan
@@ -373,7 +380,9 @@ across attempts, an operation that is not due is skipped, another destination's 
 alone, an acknowledged operation is not delivered again, and a retry rebuilds the same specs. It also
 covers the cases above that are easy to get wrong: a newer revision is **blocked** behind an unresolved
 earlier one (not due, and failed-and-retrying), a failed totals read leaves the operation pending
-instead of writing an empty revision, unscaled snapshot nutrients are omitted, a suspended operation
+instead of writing an empty revision, snapshot nutrients are scaled by the logged amount (per 100 g,
+per serving, exactly, and never an unscaled value; an unresolvable basis writes nothing), a suspended
+operation
 is skipped by later runs and returns after being re-armed, repeated failures follow 1/5/30 minutes, a
 retraction removes the authorized types while naming the denied ones, volume only counts as water for
 a water-category intake, and acknowledging a stale upsert does not mark the delete projection
