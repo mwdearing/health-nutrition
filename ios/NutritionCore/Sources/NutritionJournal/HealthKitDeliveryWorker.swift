@@ -435,12 +435,21 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     /// that no longer exists. So the retraction is per type: everything authorized goes, and only the
     /// denied types keep the operation queued, with the projection left for a person and the denied
     /// identifiers named so the app can say which ones are stranded.
+    ///
+    /// **Every mapped type is classified as exactly one of three things, and the classification never
+    /// reads the journal.** An authorized type is deleted; an explicitly denied one cannot be deleted
+    /// and keeps the operation for a person; a type that was never asked (`.notDetermined`) holds
+    /// nothing in Health and would refuse a delete, so it is skipped rather than counted as denied.
+    /// The retraction therefore asks two questions of the writer — `canWrite` to decide what may go,
+    /// `deniedWriteTypes` to decide what needs a person — and treats a type that is neither as never
+    /// asked.
     private func retract(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome {
         let identifiers = HealthKitWritePlanner.deletion(intakeID: operation.intakeID, keys: Self.mappedKeys)
-        let types = HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier)
-        let allowed = await writer.canWrite(identifiers: types)
-        let denied = Set(types.filter { allowed[$0] != true })
-        let removable = identifiers.filter { !denied.contains(Self.typeIdentifier(for: $0)) }
+        let allowed = await writer.canWrite(identifiers: Self.mappedTypeIdentifiers)
+        let denied = await writer.deniedWriteTypes(identifiers: Self.mappedTypeIdentifiers)
+        // A type that is neither writable nor denied was never asked (`.notDetermined`), so nothing
+        // can exist for it and it is silently skipped: no delete is attempted for it.
+        let removable = identifiers.filter { allowed[Self.typeIdentifier(for: $0)] == true }
         do {
             let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
             if denied.isEmpty {
@@ -479,6 +488,10 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     /// Every key the mapping table names, so a delete covers every sample this app could have written
     /// for the intake, not only the ones the current revision happens to state.
     private static let mappedKeys: [String] = HealthKitWritePlanner.mappings.map(\.nutrientKey)
+
+    /// Every quantity type the mapping table names, so a retraction can ask the writer about all of
+    /// them at once and still tell an authorized type from an explicitly denied one.
+    private static let mappedTypeIdentifiers: [String] = HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier)
 
     /// Marks every still-pending upsert for the intake at or below `revision` as superseded, because
     /// a delivered delete has retracted their samples.

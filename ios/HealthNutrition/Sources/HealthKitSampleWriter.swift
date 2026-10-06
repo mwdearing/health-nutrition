@@ -45,6 +45,23 @@ struct HealthKitSampleWriter: HealthSampleWriter {
         return answer
     }
 
+    /// The subset of these types the person explicitly denied.
+    ///
+    /// `canWrite` is false for both a denial and a type Health never asked about (`.notDetermined`),
+    /// and a retraction must tell them apart: a denied type keeps the operation for a person, while a
+    /// type that was never asked holds nothing and is skipped. Only `.sharingDenied` is denied here; a
+    /// type HealthKit does not know resolves to nothing and is not reported either.
+    func deniedWriteTypes(identifiers: [String]) async -> Set<String> {
+        var denied: Set<String> = []
+        for identifier in identifiers {
+            guard let type = Self.quantityType(for: identifier) else { continue }
+            if healthStore.authorizationStatus(for: type) == .sharingDenied {
+                denied.insert(identifier)
+            }
+        }
+        return denied
+    }
+
     /// Saves the whole plan in one call, so a batch either reaches HealthKit or reports why not.
     func save(_ specs: [HealthKitSampleSpec]) async throws {
         let samples = try specs.map { try Self.sample(from: $0) }.compactMap { $0 }

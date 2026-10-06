@@ -187,13 +187,12 @@ already removed the protection.
 
 ### Retraction is per type
 
-A delete asks about **every** mapped type, because any of them may hold a sample this app wrote. It
-still removes everything it is authorized to remove: someone can authorize water and refuse protein,
-and aborting the whole retraction would strand the authorized water sample in Health after the journal
-entry is gone — a sample the app could never remove again, attached to an entry that no longer exists.
-
-So the retraction deletes what it may and reports `.partlyRetracted`, naming the denied type
-identifiers. Only those keep the operation queued and the projection at `needsAttention`.
+A delete classifies every mapped type as exactly one of three things, without reading the journal at
+all: **authorized**, so its samples are deleted; **explicitly denied**, so it cannot be deleted and is
+named in a partial retraction; or **never asked** (`.notDetermined`), so nothing can exist for it and
+it is silently skipped rather than counted as denied. So the retraction deletes what it may and reports
+`.partlyRetracted`, naming the denied type identifiers — only those keep the operation queued and the
+projection at `needsAttention`.
 
 ### A projection update matches the operation's action
 
