@@ -17,6 +17,16 @@ public protocol HealthSampleWriter: Sendable {
     /// grant Health access.
     func canWrite(identifiers: [String]) async -> [String: Bool]
 
+    /// The subset of these quantity types the person **explicitly denied**, as distinct from the types
+    /// this app simply may not write.
+    ///
+    /// `canWrite` answers `false` for two different situations: a type the person turned off after
+    /// granting it (`.sharingDenied`), and a type Health never asked about (`.notDetermined`). A
+    /// retraction treats them differently — a denied type cannot be deleted and keeps the operation for
+    /// a person, while a type that was never asked holds nothing and is skipped — so it asks this
+    /// question separately. A conformer that cannot tell the two apart may use the default below.
+    func deniedWriteTypes(identifiers: [String]) async -> Set<String>
+
     /// Writes the specs, replacing whatever sample carries the same sync identifier.
     ///
     /// A retry rebuilds the same specs from the stored revision, so writing them again replaces the
@@ -26,6 +36,17 @@ public protocol HealthSampleWriter: Sendable {
     /// Removes the samples carrying these sync identifiers that this app wrote, and reports how many
     /// went. A sample another app wrote is never touched.
     func deleteSamples(syncIdentifiers: [String]) async throws -> Int
+}
+
+extension HealthSampleWriter {
+    /// A conservative default for a conformer that cannot tell a denial from a type Health never asked
+    /// about: every type this app may not write is reported as denied, so a retraction keeps the
+    /// operation for a person rather than deleting a type it might have been refused. The app target's
+    /// writer and the tests' fake implement the distinction precisely instead.
+    public func deniedWriteTypes(identifiers: [String]) async -> Set<String> {
+        let allowed = await canWrite(identifiers: identifiers)
+        return Set(identifiers.filter { allowed[$0] != true })
+    }
 }
 
 /// The only two ways a write can fail, because the worker treats them differently.

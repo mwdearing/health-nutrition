@@ -19,6 +19,9 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     private final class FakeHealthSampleWriter: HealthSampleWriter, @unchecked Sendable {
         private let lock = NSLock()
         private var allowed: Set<String> = []
+        /// The types the person explicitly denied. Kept apart from "not allowed" on purpose: a type in
+        /// neither set models `.notDetermined`, which a retraction must skip rather than count denied.
+        private var denied: Set<String> = []
         // Typed as `Error`, not `HealthSampleWriterError`: the writer reports permanent failures with
         // their own type, and the worker is supposed to tell them apart by what was thrown.
         private var saveError: (any Error)?
@@ -53,12 +56,27 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             lock.withLock { order }
         }
 
+        /// Models a person turning a type off after granting it: not writable, and explicitly denied.
         func deny(_ identifier: String) {
-            lock.withLock { _ = allowed.remove(identifier) }
+            lock.withLock {
+                _ = allowed.remove(identifier)
+                denied.insert(identifier)
+            }
         }
 
         func allow(_ identifier: String) {
-            lock.withLock { _ = allowed.insert(identifier) }
+            lock.withLock {
+                _ = allowed.insert(identifier)
+                _ = denied.remove(identifier)
+            }
+        }
+
+        /// Models a type HealthKit never asked about: neither writable nor denied.
+        func neverAsked(_ identifier: String) {
+            lock.withLock {
+                _ = allowed.remove(identifier)
+                _ = denied.remove(identifier)
+            }
         }
 
         /// nil clears the failure, so a test can let a retry through.
@@ -85,6 +103,11 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         func canWrite(identifiers: [String]) async -> [String: Bool] {
             let allowed = lock.withLock { self.allowed }
             return Dictionary(uniqueKeysWithValues: identifiers.map { ($0, allowed.contains($0)) })
+        }
+
+        func deniedWriteTypes(identifiers: [String]) async -> Set<String> {
+            let denied = lock.withLock { self.denied }
+            return denied.intersection(identifiers)
         }
 
         func save(_ specs: [HealthKitSampleSpec]) async throws {
@@ -119,10 +142,6 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     private final class RecordingTotals: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [String: NutrientValue]
-        /// Totals for one specific revision, so a test can give each revision of an intake different
-        /// totals. A revision named here does not use `values`, which stays the single set the other
-        /// tests install.
-        private var byRevision: [Int: [String: NutrientValue]] = [:]
         private var failure: Error?
         private var calls: [(intakeID: String, revision: Int)] = []
 
@@ -141,14 +160,6 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             }
         }
 
-        /// The totals one specific revision contributes, overriding the single set for this test.
-        func set(_ values: [String: NutrientValue], forRevision revision: Int) {
-            lock.withLock {
-                byRevision[revision] = values
-                failure = nil
-            }
-        }
-
         /// Every later read throws until `set(_:)` or `stopFailing()` clears it.
         func fail(with error: Error) {
             lock.withLock { failure = error }
@@ -162,7 +173,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             try lock.withLock {
                 calls.append((intakeID, revision))
                 if let failure { throw failure }
-                return byRevision[revision] ?? values
+                return values
             }
         }
     }
@@ -766,8 +777,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     /// Denying one type must not strand the samples this app is authorized to delete: the authorized
     /// water sample would otherwise stay in Health after the journal entry was deleted.
     func testRetractionDeletesAuthorizedTypesEvenWhenAnotherMappedTypeIsDenied() async throws {
-        let (store, writer, _, worker) = try makeWorker(
-            totals: ["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
+        let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         try store.delete(intakeID: intakeID, now: when)
@@ -793,67 +803,82 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
     }
 
-    // MARK: - Revision 6b: a retraction only asks about the types it has samples for
+    // MARK: - Revision 6c: the three states a mapped type can be in
 
-    /// A type that was never requested is `.notDetermined` and holds nothing in Health. Asking about
-    /// every mapped type read those as denials, so a person who granted only water could not delete a
-    /// water entry: the delete parked behind 16 permissions they were never asked for. Only the types
-    /// the intake has samples for are asked about now.
-    func testADeleteOfAWaterOnlyIntakeRetractsWithTheOtherTypesUndetermined() async throws {
+    /// A type that was never requested is `.notDetermined`: nothing can exist for it and HealthKit
+    /// would refuse a delete, so it is skipped rather than counted as denied or asked about.
+    func testWaterAuthorizedTheOthersNeverAskedRetractsWaterOnly() async throws {
         let (store, writer, _, worker) = try makeWorker()
 
         for mapping in HealthKitWritePlanner.mappings
         where mapping.quantityTypeIdentifier != "HKQuantityTypeIdentifierDietaryWater" {
-            writer.deny(mapping.quantityTypeIdentifier)
+            writer.neverAsked(mapping.quantityTypeIdentifier)
         }
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         try store.delete(intakeID: intakeID, now: when)
 
         let outcomes = await worker.runOnce(now: when)
 
-        guard case .retracted(let operationID, _) = try XCTUnwrap(
+        guard case .retracted(let operationID, let samples) = try XCTUnwrap(
             outcomes.first { if case .retracted = $0 { return true } else { return false } }
         ) else {
             return XCTFail("a delete of a water-only intake must retract, got \(outcomes)")
         }
+        XCTAssertEqual(samples, 1, "only the authorized water sample is deleted")
+        XCTAssertEqual(
+            writer.deleted, [waterIdentifier(intakeID)],
+            "no delete is attempted for a type that was never asked")
         XCTAssertFalse(
             outcomes.contains { if case .partlyRetracted = $0 { return true } else { return false } },
-            "a type with no samples is nothing to delete, not a partial retraction")
+            "a never-asked type is skipped, not counted as denied")
         XCTAssertNil(
             try store.pendingOutbox().first { $0.operationID == operationID },
             "the delete is acknowledged")
+        XCTAssertNil(try healthKitOperation(store, kind: .delete))
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
         XCTAssertTrue(try store.suspendedOperationIDs().isEmpty, "nothing is left needing a person")
     }
 
-    /// The per-type behaviour that is not the defect: a type the intake has a sample for and may not
-    /// write still keeps the operation queued and leaves the projection for a person.
-    func testADeleteOfASampleForADeniedTypeIsPartlyRetractedAndNeedsAttention() async throws {
-        let (store, writer, _, worker) = try makeWorker(
-            totals: ["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
+    /// An explicitly denied type cannot be deleted, so it is named and the operation is left for a
+    /// person, while the authorized water sample still goes. Everything else was never asked and is
+    /// skipped, so the deleted set is exactly the authorized water sample.
+    func testWaterAuthorizedProteinDeniedPartlyRetractsAndNamesProtein() async throws {
+        let (store, writer, _, worker) = try makeWorker()
 
+        for mapping in HealthKitWritePlanner.mappings {
+            switch mapping.quantityTypeIdentifier {
+            case "HKQuantityTypeIdentifierDietaryWater":
+                continue
+            case "HKQuantityTypeIdentifierDietaryProtein":
+                writer.deny(mapping.quantityTypeIdentifier)
+            default:
+                writer.neverAsked(mapping.quantityTypeIdentifier)
+            }
+        }
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         try store.delete(intakeID: intakeID, now: when)
-        writer.deny("HKQuantityTypeIdentifierDietaryProtein")
 
         let outcomes = await worker.runOnce(now: when)
 
-        guard case .partlyRetracted(_, _, let denied) = try XCTUnwrap(
+        guard case .partlyRetracted(_, let samples, let denied) = try XCTUnwrap(
             outcomes.first { if case .partlyRetracted = $0 { return true } else { return false } }
         ) else {
-            return XCTFail("a denied type the intake has a sample for must partly retract, got \(outcomes)")
+            return XCTFail("an explicitly denied type must partly retract, got \(outcomes)")
         }
-        XCTAssertEqual(denied, ["HKQuantityTypeIdentifierDietaryProtein"])
-        XCTAssertTrue(writer.deleted.contains(waterIdentifier(intakeID)), "the authorized water sample goes")
-        XCTAssertFalse(writer.deleted.contains(proteinIdentifier(intakeID)), "the denied type is left alone")
+        XCTAssertEqual(denied, ["HKQuantityTypeIdentifierDietaryProtein"], "the denied type is named")
+        XCTAssertEqual(samples, 1, "only the authorized water sample is deleted")
+        XCTAssertEqual(writer.deleted, [waterIdentifier(intakeID)], "the denied protein is left alone")
+        XCTAssertFalse(writer.deleted.contains(proteinIdentifier(intakeID)), "the denied protein stays")
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
+        XCTAssertFalse(try store.suspendedOperationIDs().isEmpty, "the operation needs a person")
         let delete = try XCTUnwrap(try healthKitOperation(store, kind: .delete))
         XCTAssertNil(delete.nextAttemptAt, "a partial retraction is not retried on a timer")
+        XCTAssertNotNil(try store.suspensionReason(operationID: delete.operationID))
     }
 
-    /// Nothing was ever written for this intake, so there is nothing to ask about and nothing to
-    /// report: the delete retracts cleanly.
-    func testADeleteOfAnIntakeWithNoSamplesRetractsCleanly() async throws {
+    /// An intake that states no nutrient wrote no samples. An authorized type is still deleted, so the
+    /// retraction is acknowledged cleanly and needs no person.
+    func testAnIntakeWithNoSamplesRetractsCleanly() async throws {
         let (store, _, _, worker) = try makeWorker(totals: [:])
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
@@ -865,43 +890,36 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             outcomes.contains { if case .retracted = $0 { return true } else { return false } },
             "an intake with no samples retracts cleanly, got \(outcomes)")
         XCTAssertFalse(outcomes.contains { if case .partlyRetracted = $0 { return true } else { return false } })
+        XCTAssertNil(try healthKitOperation(store, kind: .delete), "the delete is acknowledged")
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+        XCTAssertTrue(try store.suspendedOperationIDs().isEmpty, "nothing needs a person")
     }
 
-    /// An earlier revision's nutrient is still in Health when the intake is deleted, because the upsert
-    /// that dropped it is superseded by the delete rather than run. Asking only about the current
-    /// revision's plan left the authorization question narrow enough to miss that type, so a revoked
-    /// permission for it was reported as a clean retraction while the sample stayed in Health.
-    func testARetractionAsksAboutTheTypesEveryEarlierRevisionWrote() async throws {
-        let (store, writer, totals, worker) = try makeWorker(totals: [:])
-        // Revision 1 wrote protein and water; revision 2 dropped protein and wrote water only.
-        totals.set(["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)], forRevision: 1)
-        totals.set(["water": .known(dec("300"), .mL)], forRevision: 2)
+    /// No type is authorized and none is denied: every mapped type was never asked, so nothing is
+    /// requested and the delete retracts with zero samples removed.
+    func testNoTypeAuthorizedOrDeniedRetractsWithZeroDeleted() async throws {
+        let (store, writer, _, worker) = try makeWorker(totals: [:])
 
+        for mapping in HealthKitWritePlanner.mappings {
+            writer.neverAsked(mapping.quantityTypeIdentifier)
+        }
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
-        try store.edit(
-            intakeID: intakeID, components: [component(amount: 55)], product: nil,
-            changeReason: "protein dropped", now: when)
         try store.delete(intakeID: intakeID, now: when)
-        writer.deny("HKQuantityTypeIdentifierDietaryProtein")
-        let deleteID = try XCTUnwrap(healthKitOperation(store, kind: .delete)?.operationID)
 
         let outcomes = await worker.runOnce(now: when)
 
-        guard case .partlyRetracted(let operationID, _, let denied) = try XCTUnwrap(
-            outcomes.first { if case .partlyRetracted = $0 { return true } else { return false } }
+        guard case .retracted(_, let samples) = try XCTUnwrap(
+            outcomes.first { if case .retracted = $0 { return true } else { return false } }
         ) else {
-            return XCTFail(
-                "a type an earlier revision wrote and a later one dropped must be part of the question, got \(outcomes)")
+            return XCTFail("a delete with nothing authorized must retract, got \(outcomes)")
         }
-        XCTAssertEqual(operationID, deleteID)
-        XCTAssertEqual(denied, ["HKQuantityTypeIdentifierDietaryProtein"], "the denied earlier type is named")
+        XCTAssertEqual(samples, 0, "nothing is authorized, so nothing is deleted")
+        XCTAssertTrue(writer.deleted.isEmpty, "no delete is attempted for a never-asked type")
         XCTAssertFalse(
-            writer.deleted.contains(proteinIdentifier(intakeID)),
-            "the denied protein sample is left in Health rather than acknowledged as removed")
-        XCTAssertTrue(
-            writer.deleted.contains(waterIdentifier(intakeID)),
-            "the authorized water sample is still removed")
+            outcomes.contains { if case .partlyRetracted = $0 { return true } else { return false } },
+            "a never-asked type is skipped, not counted as denied")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+        XCTAssertTrue(try store.suspendedOperationIDs().isEmpty, "nothing needs a person")
     }
 
     // MARK: - Revision 7: only water-category intakes contribute water
