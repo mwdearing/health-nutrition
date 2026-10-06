@@ -187,7 +187,9 @@ already removed the protection.
 
 ### Retraction is per type
 
-A delete asks about **every** mapped type, because any of them may hold a sample this app wrote. It
+A delete asks about **the types this intake actually has samples for**, which the plan for the revision
+being retracted names. A type that was never requested is `.notDetermined` and holds nothing in Health,
+so asking about it would read as a denial and park the delete behind a sample that does not exist. It
 still removes everything it is authorized to remove: someone can authorize water and refuse protein,
 and aborting the whole retraction would strand the authorized water sample in Health after the journal
 entry is gone — a sample the app could never remove again, attached to an entry that no longer exists.

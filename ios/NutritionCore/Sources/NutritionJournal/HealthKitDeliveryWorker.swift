@@ -99,7 +99,15 @@ public struct JournalSnapshotTotals: Sendable {
     }
 
     private func totalsNow(intakeID: String, revision: Int) throws -> [String: NutrientValue] {
-        guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
+        // A retraction reads the revision of an intake that has just been deleted, so the intake is
+        // looked for among the tombstones as well. The deleted row still carries the category, which
+        // is what decides whether a volume component counts as dietary water.
+        let active = try store.activeIntakes().first { $0.id == intakeID }
+        var resolved = active
+        if resolved == nil, let tombstones = store as? JournalTombstoneSource {
+            resolved = try tombstones.deletedIntakes().first { $0.id == intakeID }
+        }
+        guard let intake = resolved else {
             throw JournalError.unknownIntake(intakeID)
         }
         guard let entry = try store.revisions(of: intakeID).first(where: { $0.number == revision }) else {
@@ -435,11 +443,32 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     /// that no longer exists. So the retraction is per type: everything authorized goes, and only the
     /// denied types keep the operation queued, with the projection left for a person and the denied
     /// identifiers named so the app can say which ones are stranded.
+    ///
+    /// **Only the types the intake has samples for are asked about.** A type that was never requested
+    /// is `.notDetermined` and holds nothing in Health, so asking `canWrite` about it reads it as a
+    /// denial and parks the delete behind a sample that does not exist. The plan for the revision being
+    /// retracted names exactly the types this intake wrote: a nutrient an earlier revision dropped was
+    /// already deleted as stale by the upsert that dropped it, and the upsert for this revision runs —
+    /// or is superseded — before the delete. Every mapped identifier is still deleted, because a type
+    /// the current revision does not write may still hold a sample from an earlier one.
     private func retract(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome {
+        let typesWithSamples: [String]
+        do {
+            let plan = HealthKitWritePlanner.plan(
+                intakeID: operation.intakeID,
+                revision: operation.revision,
+                occurredAt: now,
+                totals: try await totals(operation.intakeID, operation.revision))
+            typesWithSamples = Array(Set(plan.map(\.quantityTypeIdentifier))).sorted()
+        } catch {
+            // The types this intake holds cannot be known, so the delivery is retried rather than
+            // guessed at: narrowing the authorization question to nothing would strand authorized
+            // samples, and widening it to every mapped type is the defect this narrows.
+            return transient(operation, now: now, reason: "the totals for this revision could not be read")
+        }
         let identifiers = HealthKitWritePlanner.deletion(intakeID: operation.intakeID, keys: Self.mappedKeys)
-        let types = HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier)
-        let allowed = await writer.canWrite(identifiers: types)
-        let denied = Set(types.filter { allowed[$0] != true })
+        let allowed = await writer.canWrite(identifiers: typesWithSamples)
+        let denied = Set(typesWithSamples.filter { allowed[$0] != true })
         let removable = identifiers.filter { !denied.contains(Self.typeIdentifier(for: $0)) }
         do {
             let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
