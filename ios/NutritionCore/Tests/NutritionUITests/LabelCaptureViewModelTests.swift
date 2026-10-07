@@ -237,6 +237,43 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertEqual(model.makeProduct()?.labelBasis, "per serving (30 g)")
     }
 
+    /// A serving size entered by hand is read with the same words a captured panel is. The registry
+    /// carries the singular symbol, while a label states the plural, so "3 gummies" and "2 pieces"
+    /// have to be accepted here too: refusing the spelling the capture path accepts would make the
+    /// two disagree about the same packet, and the person would have to translate their own label.
+    func testEnteringAServingSizeReadsTheSameCountedWordsThePanelDoes() {
+        // A screen is built per entry: a serving size can only be entered once, because after that
+        // there is one on screen to correct rather than to enter.
+        func enter(_ text: String) -> LabelCaptureViewModel {
+            let model = makeModel()
+            model.load(lines: ["Calories 180", "Total Fat 4g"])
+            XCTAssertTrue(model.enterServingSize(text: text), text)
+            XCTAssertNil(model.servingSizeError, text)
+            return model
+        }
+
+        XCTAssertEqual(enter("3 gummies").servingQuantity, Quantity(value: Decimal(3), unit: .gummy))
+
+        // The singular the registry carries still reads, and so do the counts a panel already stated.
+        for (text, unit) in [("1 gummy", MeasureUnit.gummy), ("2 pieces", MeasureUnit.piece),
+                             ("1 piece", MeasureUnit.piece), ("2 capsules", MeasureUnit.capsule),
+                             ("4 tablets", MeasureUnit.tablet), ("2 scoops", MeasureUnit.scoop)] {
+            XCTAssertEqual(enter(text).servingQuantity?.unit, unit, text)
+        }
+    }
+
+    /// A word that is not a counted unit is still refused: reading "gummies" must not turn any text
+    /// ending in an s into a count.
+    func testEnteringAServingSizeStillRefusesAWordThatIsNotACount() {
+        let model = makeModel()
+        model.load(lines: ["Calories 180", "Total Fat 4g"])
+
+        for text in ["3 gummys", "2 biscuits", "3 pieces of biscuit"] {
+            XCTAssertFalse(model.enterServingSize(text: text), text)
+            XCTAssertNotNil(model.servingSizeError, text)
+        }
+    }
+
     func testEnteringAServingSizeWantsAnAmountWithItsUnit() {
         let model = makeModel()
         model.load(lines: ["Calories 180", "Total Fat 4g"])

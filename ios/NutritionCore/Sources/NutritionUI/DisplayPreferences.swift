@@ -11,7 +11,7 @@ public enum UnitSystem: String, Sendable, CaseIterable, Equatable {
     public var label: String {
         switch self {
         case .metric: return "Metric (g, mL)"
-        case .usCustomary: return "US customary (oz, fl oz)"
+        case .usCustomary: return "US (oz, fl oz)"
         }
     }
 }

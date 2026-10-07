@@ -763,6 +763,29 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(recorded["protein"], .known(dec("48"), .g), "two servings of 24 g each")
     }
 
+    /// A recipe can yield counted things rather than servings, and "per gummy" or "per piece" is the
+    /// same shape of basis as "per serving": a count that multiplies the stated value. A basis the
+    /// encoder cannot resolve contributes nothing, so leaving the two new counted units out would mean
+    /// a logged gummy recipe states no protein in Health at all rather than the wrong amount.
+    func testSnapshotProteinPerGummyIsScaledByTheGummiesLogged() async throws {
+        for (basis, unit) in [("Per gummy; yield 30 gummy", MeasureUnit.gummy),
+                              ("Per piece; yield 30 piece", MeasureUnit.piece)] {
+            let store = try makeStore(try makeDirectory())
+            let counted = ProductDefinition(
+                snapshotID: "snap-5", productID: "product-5", name: "Sample counted product", brand: nil,
+                barcode: nil, labelBasis: basis, catalogOrigin: "recipe_calculated", catalogVersion: "1",
+                nutrients: ["protein": .known(dec("5"), .g)])
+            try store.create(
+                sampleIntake(), components: [component("counted", amount: 2, unit: unit)], product: counted,
+                now: when)
+            let totals = JournalSnapshotTotals(store: store)
+
+            let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+            XCTAssertEqual(recorded["protein"], .known(dec("10"), .g), "two of them: \(basis)")
+        }
+    }
+
     /// A basis the journal cannot resolve against what was logged - "per 100 kcal" is not a quantity
     /// an intake records, and "per 100 g or mL" says the source did not settle its own dimension -
     /// has no factor. Nothing is written then: a guess would put a wrong number in Health, and a

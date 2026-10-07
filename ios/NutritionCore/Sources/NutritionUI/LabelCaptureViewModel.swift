@@ -164,9 +164,14 @@ public enum NutrientAmountParser {
         guard let value = decimal(parts[0]) else { return nil }
         guard parts.count == 1 else {
             // A unit the registry does not carry is not resolved into one it does, so the text is
-            // refused rather than stored as an amount in a unit nobody printed.
+            // refused rather than stored as an amount in a unit nobody printed. A counted unit is the
+            // one exception: the registry carries the singular symbol, while a label states the plural
+            // ("3 gummies", "2 pieces"), and the correction path reads the same words the capture path
+            // does rather than making the person restate them in the registry's spelling.
             let symbol = parts[1].trimmingCharacters(in: .whitespaces)
-            guard let unit = try? MeasureUnit(symbol: symbol) else { return nil }
+            guard let unit = (try? MeasureUnit(symbol: symbol))
+                ?? NutritionFactsParser.countedUnit(for: symbol)
+            else { return nil }
             return Amount(value: value, unit: unit)
         }
         return Amount(value: value, unit: nil)

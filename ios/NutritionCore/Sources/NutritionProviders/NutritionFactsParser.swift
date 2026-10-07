@@ -367,6 +367,10 @@ public enum NutritionFactsParser {
     /// The measure a serving size states: the one in parentheses when the label writes one, otherwise the
     /// first amount the text carries. A household word on its own stays no amount at all.
     ///
+    /// This is the one reader that accepts a counted unit, because a supplement states its serving as a
+    /// number of things: "3 gummies", "2 pieces", "1 capsule". The count is the serving, so it is kept as
+    /// printed rather than being turned into a weight the panel never stated.
+    ///
     /// The corrections the measure needed come back with it, because the serving size scales every
     /// nutrient saved from this panel.
     private static func servingMeasure(in text: String) -> (quantity: Quantity?, review: ParsedValueReview?) {
@@ -375,11 +379,15 @@ public enum NutritionFactsParser {
            close > open
         {
             let inner = String(text[text.index(after: open)..<close])
-            if let scan = scanAmount(in: inner), let unit = scan.unit, !scan.isBound {
+            if let scan = scanAmount(in: inner, allowsCountedUnits: true), let unit = scan.unit,
+               !scan.isBound
+            {
                 return measure(from: scan, unit: unit)
             }
         }
-        if let scan = scanAmount(in: text), let unit = scan.unit, !scan.isBound {
+        if let scan = scanAmount(in: text, allowsCountedUnits: true), let unit = scan.unit,
+           !scan.isBound
+        {
             return measure(from: scan, unit: unit)
         }
         return (nil, nil)
@@ -618,7 +626,10 @@ public enum NutritionFactsParser {
     /// Nothing else becomes an amount: the number has to stand at the front of the text, and the text has
     /// to say a unit the registry carries. A unit the registry does not carry is never resolved into one
     /// it does carry, so such a row keeps no amount rather than an amount in a unit nobody printed.
-    private static func scanAmount(in rawText: String) -> ScannedAmount? {
+    private static func scanAmount(
+        in rawText: String,
+        allowsCountedUnits: Bool = false
+    ) -> ScannedAmount? {
         let text = trimmed(rawText)
         guard !text.isEmpty else { return nil }
         let characters = Array(text)
@@ -665,11 +676,14 @@ public enum NutritionFactsParser {
         }
         guard let amount = decimal(digits) else { return nil }
 
-        // The unit, which the capture may or may not have spaced away from the number.
+        // The unit, which the capture may or may not have spaced away from the number. The run is capped
+        // so a word the capture ran together with the number cannot be swallowed whole, and the cap is
+        // the length of the longest unit a label spells out, which is a counted unit in the plural:
+        // "8 capsules", "8 servings". A shorter cap would cut "capsules" to "capsul" and lose the unit.
         var unitText = ""
         var look = index
         while look < characters.count, characters[look] == " " || characters[look] == "\t" { look += 1 }
-        while look < characters.count, characters[look].isLetter, unitText.count < 6 {
+        while look < characters.count, characters[look].isLetter, unitText.count < 8 {
             unitText.append(characters[look])
             look += 1
         }
@@ -677,7 +691,7 @@ public enum NutritionFactsParser {
         var printed: MeasureUnit?
         if unitText.isEmpty {
             printed = nil
-        } else if let unit = unit(for: unitText) {
+        } else if let unit = unit(for: unitText, allowsCountedUnits: allowsCountedUnits) {
             printed = unit
             if unitText.lowercased() == "ug" || unitText.contains("\u{00B5}") || unitText.contains("\u{03BC}") {
                 reasons.insert(.normalisedMicrogramSymbol)
@@ -767,7 +781,13 @@ public enum NutritionFactsParser {
 
     /// The units a panel row may carry, and nothing else. "mcg", "µg" and "μg" are one mass and become
     /// `mcg`; a unit outside this table is never resolved into one inside it.
-    private static func unit(for text: String) -> MeasureUnit? {
+    ///
+    /// A counted unit is read only where `allowsCountedUnits` asks for one, which today is the
+    /// serving size: a supplement states "Serving size 3 gummies" or "2 pieces", and that count is
+    /// the whole of what the panel said. A nutrient row is never read in a count, because a panel
+    /// states no nutrient per gummy, and a row whose amount sits behind such a word keeps no amount
+    /// rather than one in a unit the panel never printed for it.
+    private static func unit(for text: String, allowsCountedUnits: Bool = false) -> MeasureUnit? {
         switch text.lowercased() {
         case "g": return .g
         case "mg": return .mg
@@ -776,6 +796,27 @@ public enum NutritionFactsParser {
         case "ml": return .mL
         case "l": return .L
         case "kcal": return .kcal
+        default:
+            guard allowsCountedUnits else { return nil }
+            return countedUnit(for: text)
+        }
+    }
+
+    /// The counted units a supplement label states a serving in, singular and plural, and nothing
+    /// else. Both spellings are read because the count decides the wording: a packet states
+    /// "2 pieces" and a single one states "1 gummy", and neither is a different unit.
+    ///
+    /// Public because the words on a label are the same words a person types when they correct one:
+    /// a serving size entered by hand says "3 gummies" exactly as the panel does, and refusing that
+    /// spelling while the capture path accepts it would make the two disagree about the same label.
+    public static func countedUnit(for text: String) -> MeasureUnit? {
+        switch text.lowercased() {
+        case "serving", "servings": return .serving
+        case "scoop", "scoops": return .scoop
+        case "tablet", "tablets": return .tablet
+        case "capsule", "capsules": return .capsule
+        case "piece", "pieces": return .piece
+        case "gummy", "gummies": return .gummy
         default: return nil
         }
     }

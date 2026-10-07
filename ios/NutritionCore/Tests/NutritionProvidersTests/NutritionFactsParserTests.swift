@@ -337,6 +337,43 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertNil(householdOnly.servingSize?.quantity, "a household measure with no stated amount is not guessed at")
     }
 
+    /// A supplement states its serving as a number of things rather than as a weight: "3 gummies",
+    /// "1 gummy", "2 pieces". The count is the serving, and both spellings of a counted unit are read
+    /// because the number decides the wording.
+    func testServingSizeReadsGummiesAsACountedServing() {
+        let plural = parse(["Serving size 3 gummies"])
+        XCTAssertEqual(plural.servingSize?.text, "3 gummies", "the printed text is kept as it was read")
+        XCTAssertEqual(plural.servingSize?.quantity, Quantity(value: dec("3"), unit: .gummy))
+        XCTAssertNil(plural.servingSize?.review, "a count read as printed needs no review")
+
+        let singular = parse(["Serving size 1 gummy"])
+        XCTAssertEqual(singular.servingSize?.quantity, Quantity(value: dec("1"), unit: .gummy))
+
+        let pieces = parse(["Serving size 2 pieces"])
+        XCTAssertEqual(pieces.servingSize?.quantity, Quantity(value: dec("2"), unit: .piece))
+        XCTAssertEqual(pieces.servingsPerContainer, nil)
+        // The counts a panel already stated keep reading the same way.
+        XCTAssertEqual(parse(["Serving size 2 capsules"]).servingSize?.quantity,
+                       Quantity(value: dec("2"), unit: .capsule))
+        XCTAssertEqual(parse(["Serving size 4 tablets"]).servingSize?.quantity,
+                       Quantity(value: dec("4"), unit: .tablet))
+        // A count beside a servings count on the same flattened line keeps both.
+        let flattened = parse(["Serving size 3 gummies 60 servings per container"])
+        XCTAssertEqual(flattened.servingSize?.quantity, Quantity(value: dec("3"), unit: .gummy))
+        XCTAssertEqual(flattened.servingsPerContainer, dec("60"))
+    }
+
+    /// A counted unit is a serving measure, never a nutrient row's. A panel states no nutrient per
+    /// gummy, so a row whose amount sits behind such a word keeps no amount rather than one in a unit
+    /// nobody printed for it, and an unknown word is still no unit at all.
+    func testNutrientRowsAreNeverReadInACountedUnit() {
+        let counted = parse(["Total Fat 3 gummies"])
+        XCTAssertEqual(value(.fat, counted), .unknown, "a nutrient is not stated per gummy")
+
+        let unknown = parse(["Serving size 3 widgets"])
+        XCTAssertNil(unknown.servingSize?.quantity, "a count the registry does not carry is not a measure")
+    }
+
     func testServingsPerContainerVariants() throws {
         XCTAssertEqual(parse(["8 servings per container"]).servingsPerContainer, dec("8"))
         XCTAssertEqual(parse(["Servings Per Container: 12"]).servingsPerContainer, dec("12"))

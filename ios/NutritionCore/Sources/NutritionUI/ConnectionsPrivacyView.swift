@@ -73,12 +73,19 @@ public struct ConnectionsPrivacyView: View {
                 }
                 .font(.body)
                 .accessibilityLabel(ConnectionsPrivacyViewModel.unitSystemTitle)
-                TextField(ConnectionsPrivacyViewModel.quickWaterFieldLabel, text: $model.quickWaterText)
+                TextField(model.quickWaterFieldLabel, text: $model.quickWaterText)
                     .font(.body)
-                    .accessibilityLabel(ConnectionsPrivacyViewModel.quickWaterFieldLabel)
+                    .accessibilityLabel(model.quickWaterFieldLabel)
                     .accessibilityHint(
                         "How much the Add water button on Today adds. It must be above zero.")
                     .onSubmit { model.saveQuickWaterAmount() }
+                // The field is read in the preferred unit, so the helper line is the one that says what
+                // that figure is in the other unit: a glass typed as 12 fl oz is 355 mL of stored water.
+                Text(model.quickWaterEquivalenceText)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .accessibilityLabel(
+                        "Quick-add water is \(model.quickWaterEquivalenceAccessibilityLabel)")
                 Text("Shown as \(model.quickWaterDisplay.text) on Today.")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)

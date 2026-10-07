@@ -49,7 +49,7 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(MeasureUnit.L.dimension, UnitDimension.volume)
         XCTAssertEqual(MeasureUnit.kcal.dimension, UnitDimension.energy)
         XCTAssertEqual(MeasureUnit.iu.dimension, UnitDimension.internationalUnit)
-        for unit in [MeasureUnit.serving, .scoop, .tablet, .capsule] {
+        for unit in [MeasureUnit.serving, .scoop, .tablet, .capsule, .piece, .gummy] {
             XCTAssertEqual(unit.dimension, UnitDimension.count)
         }
         XCTAssertEqual(try UnitRegistry.unit(for: "mcg"), MeasureUnit.mcg)
@@ -60,9 +60,44 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(UnitRegistry.units(in: .mass).count, 5)
         XCTAssertEqual(UnitRegistry.units(in: .volume).count, 3)
         XCTAssertEqual(UnitRegistry.units(in: .energy).count, 1)
-        XCTAssertEqual(UnitRegistry.units(in: .count).count, 4)
+        XCTAssertEqual(UnitRegistry.units(in: .count).count, 6)
         XCTAssertEqual(UnitRegistry.units(in: .internationalUnit).count, 1)
         XCTAssertEqual(Set(UnitRegistry.all.map(\.symbol)).count, UnitRegistry.all.count)
+    }
+
+    /// A gummy and a piece are counts, like a capsule or a tablet: a supplement states its serving as
+    /// a number of things, and the registry resolves each symbol and carries it in the count dimension.
+    func testGummyAndPieceAreCountedUnitsResolvedBySymbol() throws {
+        XCTAssertEqual(try MeasureUnit(symbol: "gummy"), MeasureUnit.gummy)
+        XCTAssertEqual(try MeasureUnit(symbol: "piece"), MeasureUnit.piece)
+        XCTAssertEqual(MeasureUnit.gummy.dimension, UnitDimension.count)
+        XCTAssertEqual(MeasureUnit.piece.dimension, UnitDimension.count)
+        XCTAssertEqual(try UnitRegistry.unit(for: "gummy"), MeasureUnit.gummy)
+        XCTAssertEqual(try UnitRegistry.unit(for: "piece"), MeasureUnit.piece)
+        XCTAssertTrue(UnitRegistry.units(in: .count).contains(.gummy))
+        XCTAssertTrue(UnitRegistry.units(in: .count).contains(.piece))
+        XCTAssertEqual(UnitRegistry.units(in: .count).count, 6)
+    }
+
+    /// A count never becomes a mass on its own. A packet of gummies states how much one weighs, and
+    /// only that portion definition turns three gummies into grams.
+    func testGummiesOnlyConvertToMassThroughAPortionDefinition() throws {
+        let gummies = try qty("3", .gummy)
+        XCTAssertThrowsError(try gummies.converted(to: .g)) { error in
+            XCTAssertEqual(error as? UnitError, UnitError.missingPortionDefinition(from: .gummy, to: .g))
+        }
+        let gummyPortion = try PortionDefinition(countUnit: .gummy, quantity: try qty("2.5", .g))
+        XCTAssertEqual(try gummies.converted(to: .g, portion: gummyPortion).value, try dec("7.5"))
+        // Two different counted units never mix, as two capsules never mix with two scoops.
+        let piecePortion = try PortionDefinition(countUnit: .piece, quantity: try qty("3", .g))
+        XCTAssertThrowsError(try gummies.converted(to: .piece, portion: piecePortion)) { error in
+            XCTAssertEqual(
+                error as? UnitError, UnitError.incompatibleCountUnits(from: .gummy, to: .piece))
+        }
+        // A gummy is not a mass, so it never converts to grams on a density alone either.
+        XCTAssertThrowsError(try gummies.converted(to: .mL, density: try dec("1"))) { error in
+            XCTAssertEqual(error as? UnitError, UnitError.missingPortionDefinition(from: .gummy, to: .mL))
+        }
     }
 
     func testAddSameDimensionDifferentUnits() throws {

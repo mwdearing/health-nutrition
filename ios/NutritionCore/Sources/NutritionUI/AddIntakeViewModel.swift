@@ -62,6 +62,12 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public private(set) var nameError: String?
     @Published public private(set) var amountError: String?
     @Published public private(set) var saveError: String?
+    /// Why the last tap of Save did nothing, or nil when it was not blocked.
+    ///
+    /// The same wording the field carries, kept for the line beside the Save button. A long form scrolls:
+    /// the message at the top of it is off screen by the time someone reaches the button, and a Save that
+    /// silently refused looks like a button that is broken rather than one that needs an amount.
+    @Published public private(set) var saveBlockedMessage: String?
     @Published public private(set) var lookupState: BarcodeLookupState = .idle
     /// Nutrients prefilled from the last successful lookup; a nutrient the source did not give
     /// stays `.unknown` and is never stored as zero.
@@ -86,7 +92,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     public let timeZoneIdentifier: String
     /// The units the picker offers, read through so a preference changed on another screen is
-    /// honoured the next time this form is opened. Metric offers the whole registry; US customary
+    /// honoured the next time this form is opened. Metric offers the whole registry; the US system
     /// puts ounces and fluid ounces first.
     public var units: [MeasureUnit] { UnitSelection.offered(for: preferences.unitSystem) }
     /// The unit system the offered list is built from.
@@ -137,6 +143,23 @@ public final class AddIntakeViewModel: ObservableObject {
             return "The lookup did not finish. Try again in a moment."
         }
     }
+
+    /// Whether the product the last lookup found states no nutrition facts at all: every standard key
+    /// is unknown, so there is nothing on the form to show a figure for.
+    ///
+    /// A column of nine "unknown" rows reads as a broken lookup. The one sentence below says what
+    /// actually happened and what to do instead, and the form shows it in place of the rows.
+    public var statesNoNutrients: Bool {
+        guard case .found(let product) = lookupState else { return false }
+        return LookedUpProduct.standardKeys.allSatisfy { product.value(for: $0) == .unknown }
+    }
+
+    /// What is said in place of the nutrient rows when a lookup found a product that states none.
+    ///
+    /// It names the catalog because that is the one source this build looks barcodes up in, while the
+    /// values themselves and their attribution stay source-agnostic and are shown as the source gave them.
+    public static let noStatedNutrientsMessage =
+        "Open Food Facts lists this product but states no nutrition facts; scan the label instead."
 
     /// One line explaining the values a captured panel filled in, or nil when there are none.
     public var labelMessage: String? {
@@ -315,7 +338,14 @@ public final class AddIntakeViewModel: ObservableObject {
         let amount = AmountParser.parse(amountText)
         amountError = amount == nil ? "Enter an amount greater than zero, using digits and a point." : nil
         saveError = nil
-        guard nameError == nil, let amount else { return false }
+        guard nameError == nil, let amount else {
+            // Repeated beside the Save button, because on a long form the message at the field is scrolled
+            // off by the time the button is reached. Both problems are named together: fixing one and
+            // tapping Save again would otherwise meet the same silent refusal.
+            saveBlockedMessage = [nameError, amountError].compactMap { $0 }.joined(separator: " ")
+            return false
+        }
+        saveBlockedMessage = nil
 
         let intake = Intake(
             id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier,

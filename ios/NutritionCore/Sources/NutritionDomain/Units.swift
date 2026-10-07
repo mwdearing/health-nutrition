@@ -108,10 +108,19 @@ extension MeasureUnit {
     public static let scoop = MeasureUnit(symbol: "scoop", dimension: .count, toBase: power10(0), fromBase: power10(0))
     public static let tablet = MeasureUnit(symbol: "tablet", dimension: .count, toBase: power10(0), fromBase: power10(0))
     public static let capsule = MeasureUnit(symbol: "capsule", dimension: .count, toBase: power10(0), fromBase: power10(0))
+    /// One counted piece of a supplement, as its label states it: "2 pieces" on a packet of tablets.
+    public static let piece = MeasureUnit(symbol: "piece", dimension: .count, toBase: power10(0), fromBase: power10(0))
+    /// One gummy. A counted unit like every other count, so a serving of "3 gummies" scales by the
+    /// number logged and never by a weight nobody stated.
+    public static let gummy = MeasureUnit(symbol: "gummy", dimension: .count, toBase: power10(0), fromBase: power10(0))
     public static let iu = MeasureUnit(symbol: "IU", dimension: .internationalUnit, toBase: power10(0), fromBase: power10(0))
 }
 
 /// The closed set of units the app stores, offers and converts between.
+///
+/// `piece` and `gummy` are counted units like `serving`, `scoop`, `tablet` and `capsule`: a supplement
+/// states its serving as a number of things rather than as a weight, and a count is never converted
+/// into a mass without a portion definition saying how much one of them weighs.
 ///
 /// One avoirdupois ounce (28.349523125 g) and one US fluid ounce (29.5735295625 mL) are exact in the
 /// base unit, but their reciprocals repeat forever, so no reciprocal is stored for either. A
@@ -124,7 +133,8 @@ public enum UnitRegistry: Sendable {
     public static let reciprocalFractionDigits = 10
 
     public static let all: [MeasureUnit] = [
-        .g, .mg, .mcg, .kg, .oz, .mL, .L, .flOz, .kcal, .serving, .scoop, .tablet, .capsule, .iu,
+        .g, .mg, .mcg, .kg, .oz, .mL, .L, .flOz, .kcal, .serving, .scoop, .tablet, .capsule, .piece,
+        .gummy, .iu,
     ]
 
     public static func unit(for symbol: String) throws -> MeasureUnit {

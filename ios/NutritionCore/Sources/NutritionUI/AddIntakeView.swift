@@ -138,12 +138,22 @@ public struct AddIntakeView: View {
                         LabeledContent("One serving", value: serving.label)
                             .font(.footnote)
                     }
-                    ForEach(LookedUpProduct.standardKeys, id: \.self) { key in
-                        LabeledContent(
-                            LookedUpProduct.displayNames[key] ?? key,
-                            value: Self.text(for: model.prefilledNutrients[key])
-                        )
-                        .font(.footnote)
+                    // A product the catalog lists but states no nutrition facts for is one sentence
+                    // rather than nine rows of "unknown", which reads as a failed lookup rather than as a
+                    // product with nothing stated on it. The attribution below it still travels with it.
+                    if model.statesNoNutrients {
+                        Text(AddIntakeViewModel.noStatedNutrientsMessage)
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                            .accessibilityLabel(AddIntakeViewModel.noStatedNutrientsMessage)
+                    } else {
+                        ForEach(LookedUpProduct.standardKeys, id: \.self) { key in
+                            LabeledContent(
+                                LookedUpProduct.displayNames[key] ?? key,
+                                value: Self.text(for: model.prefilledNutrients[key])
+                            )
+                            .font(.footnote)
+                        }
                     }
                     // Shown next to every value above: some sources licence their data only if the
                     // attribution travels with it. Both the wording and the link come from the
@@ -185,6 +195,15 @@ public struct AddIntakeView: View {
             }
             if let message = model.saveError {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
+            }
+            // Beside the button rather than only at the field it names: on a long form the field is far
+            // above, and a Save that refused an empty amount would otherwise look like a button that
+            // did nothing at all.
+            if let message = model.saveBlockedMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.error)
+                    .accessibilityLabel("Cannot save: \(message)")
             }
             Button {
                 if model.save(now: now()) { onSaved() }
