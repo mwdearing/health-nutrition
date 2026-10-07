@@ -1,6 +1,7 @@
 import Foundation
 import NutritionDomain
 import NutritionJournal
+import NutritionProviders
 
 /// The nutrient keys the Goals screen offers, with the unit each is counted in.
 ///
@@ -12,6 +13,16 @@ public enum NutrientGoalChoices {
     public static let keys = [
         "energy", "protein", "carbohydrate", "fiber", "fat", "sodium", "potassium", "water",
     ]
+
+    /// The fixed list plus any key the journal's own snapshots carry that it does not name — a compound
+    /// a captured supplement panel states, such as `creatine-monohydrate`. A person can then set a goal
+    /// for it, and Today shows the day's total against that goal like any other nutrient. The extras
+    /// come after the fixed list, in the order the caller gives them.
+    public static func keys(including extraKeys: [String]) -> [String] {
+        var offered = keys
+        for key in extraKeys where !offered.contains(key) { offered.append(key) }
+        return offered
+    }
 
     /// The unit a key is counted in, which is where its total is read. It comes from the canonical
     /// nutrient mapping rather than from a table written here, so it is the same unit the totals
@@ -81,6 +92,9 @@ public struct NutrientGoalRow: Equatable, Identifiable {
 @MainActor
 public final class GoalsViewModel: ObservableObject {
     @Published public private(set) var rows: [NutrientGoalRow] = []
+    /// The nutrients the change-a-goal picker offers: the fixed list plus every compound key the
+    /// journal's current snapshots carry.
+    @Published public private(set) var offeredKeys: [String] = NutrientGoalChoices.keys
     @Published public private(set) var errorMessage: String?
 
     public static let readFailedMessage = "Could not read the daily goals."
@@ -88,9 +102,13 @@ public final class GoalsViewModel: ObservableObject {
     public static let removeFailedMessage = "Could not remove that daily goal."
 
     private let store: GoalStore
+    /// The journal, read only to learn which compound keys its snapshots carry, so the screen can
+    /// offer a goal for a nutrient a captured label states but the fixed list does not name.
+    private let journal: (any JournalStore)?
 
-    public init(store: GoalStore) {
+    public init(store: GoalStore, journal: (any JournalStore)? = nil) {
         self.store = store
+        self.journal = journal
     }
 
     /// Every offered nutrient, with a target's text where one is stored.
@@ -98,7 +116,8 @@ public final class GoalsViewModel: ObservableObject {
         do {
             let stored = try store.goals()
             let byNutrient = Dictionary(stored.map { ($0.nutrient, $0) }, uniquingKeysWith: { _, last in last })
-            rows = NutrientGoalChoices.keys.map { key in
+            offeredKeys = NutrientGoalChoices.keys(including: Self.snapshotNutrientKeys(in: journal))
+            rows = offeredKeys.map { key in
                 guard let goal = byNutrient[key] else { return .withoutGoal(key) }
                 return NutrientGoalRow(
                     nutrient: key, displayName: NutrientNames.displayName(for: key),
@@ -109,6 +128,27 @@ public final class GoalsViewModel: ObservableObject {
             rows = []
             errorMessage = Self.readFailedMessage
         }
+    }
+
+    /// The compound keys the journal's current snapshots carry that the fifteen journal nutrients do
+    /// not name, sorted. A label capture stores a supplement's own compound under a slug of its name
+    /// (`creatine-monohydrate`), and that key is what a goal and the day's total are read under, so it
+    /// has to be offerable here. A read that throws is treated as no extras: the fixed list is still
+    /// offered, and the totals are unaffected.
+    static func snapshotNutrientKeys(in journal: (any JournalStore)?) -> [String] {
+        guard let journal else { return [] }
+        let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
+        var keys: Set<String> = []
+        guard let intakes = try? journal.activeIntakes() else { return [] }
+        for intake in intakes {
+            guard let revisions = try? journal.revisions(of: intake.id),
+                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+                  let snapshotID = current.productSnapshotID,
+                  let product = try? journal.product(snapshotID: snapshotID)
+            else { continue }
+            for key in product.nutrients.keys where !standard.contains(key) { keys.insert(key) }
+        }
+        return keys.sorted()
     }
 
     /// Stores `target` for `nutrient`, replacing any target already set for it.

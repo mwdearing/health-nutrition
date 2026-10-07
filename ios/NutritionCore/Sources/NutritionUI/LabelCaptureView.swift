@@ -20,14 +20,14 @@ public struct LabelCaptureView: View {
     private let onUse: (ProductDefinition) -> Void
     /// Called when the user wants another look at the panel, so the capture session can read it again.
     private let onRetake: () -> Void
-    /// The row being corrected, and the text typed for it. One row at a time, because there is one
-    /// keyboard.
-    @State private var editing: NutritionFactKey?
+    /// The text typed into whichever correction field is open. The row being corrected is held by the
+    /// view model, so beginning one row's correction closes the editor open on any other.
     @State private var draft = ""
     /// The serving size typed for a panel that stated none, or the one replacing a serving it did state.
     @State private var servingDraft = ""
-    /// The compound row being corrected. One at a time, like the nutrient rows: there is one keyboard.
-    @State private var editingAdditional: String?
+    /// The unit a compound correction is stated in, chosen from the picker beside its amount field. It
+    /// starts on the unit the label printed.
+    @State private var additionalUnit: MeasureUnit = .g
     /// Whether the field for correcting a printed serving size is open.
     @State private var editingServing = false
 
@@ -223,7 +223,7 @@ public struct LabelCaptureView: View {
                 .accessibilityLabel("\(row.name) needs your confirmation. \(row.reviewSummary)")
             }
 
-            if editing == row.key {
+            if model.editingKey == row.key {
                 correctionEditor(row)
             } else {
                 rowControls(row)
@@ -286,7 +286,7 @@ public struct LabelCaptureView: View {
                 .accessibilityLabel("\(row.name) needs your confirmation. \(row.reviewSummary)")
             }
 
-            if editingAdditional == row.key {
+            if model.editingAdditionalKey == row.key {
                 additionalCorrectionEditor(row)
             } else {
                 additionalRowControls(row)
@@ -332,21 +332,25 @@ public struct LabelCaptureView: View {
         }
     }
 
-    /// The field a compound's correction is typed into, with the unit the label printed beside it. The
-    /// unit is the one the value will be stored in, so a correction that names none keeps it.
+    /// The field a compound's correction is typed into, with a unit picker beside it. A compound has
+    /// no usual unit to fall back on, so the unit is chosen rather than typed: the picker offers the
+    /// mass units and the international unit a supplement states a compound in, and the chosen one is
+    /// what the corrected value is stored in.
     private func additionalCorrectionEditor(_ row: LabelCaptureAdditionalRow) -> some View {
-        let unit = LabelCaptureViewModel.unit(of: row.value).symbol
-        return VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 TextField("Amount", text: $draft)
                     .font(.body)
                     .amountKeyboard()
                     .accessibilityLabel("Amount for \(row.name)")
-                    .accessibilityHint("Zero or more, in \(unit)")
-                Text(unit)
-                    .font(.body)
-                    .foregroundStyle(TokenColors.textSecondary)
-                    .accessibilityLabel("Unit \(unit)")
+                    .accessibilityHint("Zero or more")
+                Picker("Unit", selection: $additionalUnit) {
+                    ForEach(LabelCaptureViewModel.additionalUnits, id: \.symbol) { candidate in
+                        Text(candidate.symbol).tag(candidate)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityLabel("Unit for \(row.name)")
             }
             if let message = model.correctionError {
                 Text(message)
@@ -358,13 +362,15 @@ public struct LabelCaptureView: View {
             // both of these become actions for the row, so tapping Cancel could save the draft as well.
             HStack {
                 Button("Save") {
-                    if model.correctAdditional(key: row.key, text: draft) { editingAdditional = nil }
+                    if model.correctAdditional(key: row.key, text: draft, unit: additionalUnit) {
+                        model.endCorrection()
+                    }
                 }
                 .font(.body)
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Save the corrected \(row.name)")
                 Button("Cancel") {
-                    editingAdditional = nil
+                    model.endCorrection()
                     draft = ""
                     // The refused correction is over, so its message goes with it rather than waiting
                     // under the next row's field.
@@ -377,12 +383,11 @@ public struct LabelCaptureView: View {
         }
     }
 
-    /// Opens the amount field for one compound row, clearing the nutrient field beside it so the two
-    /// cannot be confused for one another.
+    /// Opens the amount field for one compound row. The model closes the nutrient editor beside it, so
+    /// the two cannot be open together, and the picker starts on the unit the label printed.
     private func beginCorrection(for row: LabelCaptureAdditionalRow) {
-        model.clearCorrectionError()
-        editing = nil
-        editingAdditional = row.key
+        model.beginCorrection(forAdditional: row.key)
+        additionalUnit = model.additionalUnit(for: row.key)
         draft = describeAmount(row.value)
     }
 
@@ -449,13 +454,13 @@ public struct LabelCaptureView: View {
             // of these become actions for the row, so tapping Cancel could save the draft as well.
             HStack {
                 Button("Save") {
-                    if model.correct(key: row.key, text: draft) { editing = nil }
+                    if model.correct(key: row.key, text: draft) { model.endCorrection() }
                 }
                 .font(.body)
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Save the corrected \(row.name)")
                 Button("Cancel") {
-                    editing = nil
+                    model.endCorrection()
                     draft = ""
                     // The refused correction is over, so its message goes with it rather than waiting
                     // under the next row's field.
@@ -473,11 +478,11 @@ public struct LabelCaptureView: View {
         LabelCaptureViewModel.unit(of: row.value, for: row.key).symbol
     }
 
-    /// Opens the amount field for one row. The previous row's refused correction is forgotten on the
-    /// way, so the new field never greets the user with another row's validation failure.
+    /// Opens the amount field for one row. The model closes any compound editor beside it, and the
+    /// previous row's refused correction is forgotten on the way, so the new field never greets the
+    /// user with another row's validation failure.
     private func beginCorrection(for row: LabelCaptureRow) {
-        model.clearCorrectionError()
-        editing = row.key
+        model.beginCorrection(for: row.key)
         if case .known(let amount, _) = row.value {
             draft = NSDecimalNumber(decimal: amount).stringValue
         } else {
@@ -501,9 +506,7 @@ public struct LabelCaptureView: View {
             if model.canRetake {
                 Button("Scan another label") {
                     model.retake()
-                    editing = nil
                     draft = ""
-                    editingAdditional = nil
                     onRetake()
                 }
                 .font(.body)

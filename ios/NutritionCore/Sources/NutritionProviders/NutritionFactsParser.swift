@@ -81,6 +81,7 @@ public enum NutritionFactsParser {
         var amounts: [String: NutrientValue] = [:]
         var reviews: [String: ParsedValueReview] = [:]
         var extra: [ParsedAdditionalNutrient] = []
+        var displayNames: [String: String] = [:]
 
         var index = 0
         while index < cleaned.count {
@@ -103,8 +104,12 @@ public enum NutritionFactsParser {
             let read = absorbRows(in: residual, following: following, amounts: &amounts, reviews: &reviews)
             // Whatever the named rows left on the line may still be a row the panel printed: a
             // supplement lists compounds the table does not name, and they are read as their own rows.
-            absorbAdditionalRows(in: read.remaining, into: &extra)
-            index += read.usedNextLine ? 2 : 1
+            // A compound whose name states its chemical form (`Calcium Citrate 200mg`) is the nutrient
+            // it is built on, and keeps the printed name in `displayNames`.
+            let additionalUsedNextLine = absorbAdditionalRows(
+                in: read.remaining, next: read.usedNextLine ? nil : following, into: &extra,
+                amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
+            index += (read.usedNextLine || additionalUsedNextLine) ? 2 : 1
         }
 
         return ParsedNutritionFacts(
@@ -112,6 +117,7 @@ public enum NutritionFactsParser {
             servingsPerContainer: perContainer,
             nutrients: amounts,
             additionalNutrients: extra,
+            nutrientDisplayNames: displayNames,
             valuesNeedingReview: reviews
         )
     }
@@ -203,11 +209,22 @@ public enum NutritionFactsParser {
         // label wrote there: "Serving size: 3 Gummies". The measure is read from the amount itself,
         // which stands behind that space.
         while index < characters.count, characters[index] == " " || characters[index] == "\t" { index += 1 }
-        while index < characters.count,
-              isDigit(characters[index]) || characters[index] == "." || characters[index] == ","
-        {
-            digits.append(characters[index])
-            index += 1
+        // The amount is read with the same correction `scanAmount` applies, so a serving the capture
+        // printed with a letter O ("3O g") still ends where its measure ends and does not swallow the
+        // packaging text behind it.
+        while index < characters.count {
+            let character = characters[index]
+            if isDigit(character) || character == "." || character == "," {
+                digits.append(character)
+                index += 1
+                continue
+            }
+            if character == "O" || character == "o", isZeroLetter(characters, at: index) {
+                digits.append("0")
+                index += 1
+                continue
+            }
+            break
         }
         guard decimal(digits) != nil else { return nil }
         var look = index
@@ -496,6 +513,19 @@ public enum NutritionFactsParser {
                 cursor = scan.remaining
                 continue
             }
+            // The Calories row prints no unit, so on a flattened line its amount is scanned only up to
+            // the compound row behind it: "Calories 30 Creatine 3g" would otherwise lose its 30 to the
+            // compound's name, which the unit scan reads as one long unsupported unit.
+            if row.usualUnit == .kcal, let boundary = firstAdditionalRow(in: remainder),
+               boundary.nameStart > remainder.startIndex
+            {
+                let head = String(remainder[..<boundary.nameStart])
+                if let scan = scanAmount(in: head), statesAmount(scan, for: row) {
+                    record(scan, for: row, amounts: &amounts, reviews: &reviews)
+                    cursor = scan.remaining + String(remainder[boundary.nameStart...])
+                    continue
+                }
+            }
             // A panel states some rows with the amount in front of the name: "Includes 5g Added
             // Sugars". The rest of the line is still read, because a flattened panel runs the rows that
             // follow on the same line.
@@ -691,13 +721,20 @@ public enum NutritionFactsParser {
     // MARK: - Rows the named table does not carry
 
     /// One row of the shape `Name amount unit` that the named table did not claim, with the name the
-    /// label printed and where the text behind its amount begins.
+    /// label printed and where it and the text behind its amount begin.
     private struct AdditionalRow {
         let name: String
         let key: String
         let value: NutrientValue
         let reasons: Set<ParsedValueReview.Reason>
+        /// Where the name begins, so a caller can split a flattened line at the compound row.
+        let nameStart: String.Index
         let end: String.Index
+        /// The named table row the name is built on (`Calcium Citrate` builds on calcium), or nil when
+        /// the name is a compound the table does not carry.
+        let nutrient: PanelRow?
+        /// Whether the amount was read from the next line, which the caller must not read again.
+        let usedNextLine: Bool
     }
 
     /// Reads the rows a supplement states that the named table does not carry, as the panel's own
@@ -708,23 +745,68 @@ public enum NutritionFactsParser {
     /// printed. It is not merged into the table either: a compound has no key in the journal's own
     /// nutrients, so it is stored under a slug of its own name and reaches the snapshot that way.
     ///
+    /// A name that states its chemical form builds on the nutrient it is built from — `Calcium Citrate
+    /// 200mg` is calcium, with the form kept as the row's display name — so it is recorded as that
+    /// nutrient rather than as a compound of its own.
+    ///
     /// Only a row that states both a name and an amount is one. A line that states neither is text the
     /// panel printed — `Other Ingredients: Tapioca Syrup`, a footnote, a phone number — and never a
     /// compound, and neither is a row the table above already read as a nutrient.
-    private static func absorbAdditionalRows(in line: String, into collected: inout [ParsedAdditionalNutrient]) {
+    ///
+    /// Returns whether the next line was consumed, which happens when a column-by-column capture leaves
+    /// the name on one line and its amount on the next.
+    @discardableResult
+    private static func absorbAdditionalRows(
+        in line: String,
+        next nextLine: String?,
+        into collected: inout [ParsedAdditionalNutrient],
+        amounts: inout [String: NutrientValue],
+        reviews: inout [String: ParsedValueReview],
+        displayNames: inout [String: String]
+    ) -> Bool {
         var rest = trimmed(line)
-        while let row = firstAdditionalRow(in: rest) {
-            guard !collected.contains(where: { $0.key == row.key }) else {
+        var usedNextLine = false
+        while !rest.isEmpty {
+            guard let row = firstAdditionalRow(in: rest, next: usedNextLine ? nil : nextLine) else { break }
+            if let nutrient = row.nutrient {
+                recordCompound(row, as: nutrient, amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
+            } else if !collected.contains(where: { $0.key == row.key }) {
                 // The panel stated it twice; the first row that carried an amount is the one kept, the
                 // way a nutrient stated twice keeps its first row.
-                rest = trimmed(String(rest[row.end...]))
-                continue
+                let review = row.reasons.isEmpty ? nil : ParsedValueReview(reasons: row.reasons)
+                collected.append(
+                    ParsedAdditionalNutrient(name: row.name, key: row.key, value: row.value, review: review))
             }
-            let review = row.reasons.isEmpty ? nil : ParsedValueReview(reasons: row.reasons)
-            collected.append(
-                ParsedAdditionalNutrient(name: row.name, key: row.key, value: row.value, review: review))
+            usedNextLine = usedNextLine || row.usedNextLine
             rest = trimmed(String(rest[row.end...]))
         }
+        return usedNextLine
+    }
+
+    /// Records a compound that states its chemical form as the nutrient it is built on, keeping the
+    /// printed name as that nutrient's display name. The first row that carried an amount wins, exactly
+    /// as it does for a plainly named nutrient, so a panel that states the nutrient twice keeps one.
+    private static func recordCompound(
+        _ row: AdditionalRow,
+        as nutrient: PanelRow,
+        amounts: inout [String: NutrientValue],
+        reviews: inout [String: ParsedValueReview],
+        displayNames: inout [String: String]
+    ) {
+        let key = nutrient.key.rawValue
+        guard amounts[key] == nil else { return }
+        switch row.value {
+        case .known(let amount, let unit):
+            var reasons = row.reasons
+            if unit != nutrient.usualUnit { reasons.insert(.unexpectedUnit) }
+            amounts[key] = .known(amount, unit)
+            if !reasons.isEmpty { reviews[key] = ParsedValueReview(reasons: reasons) }
+        case .belowReportingThreshold(let unit):
+            amounts[key] = .belowReportingThreshold(unit)
+        case .unknown, .notApplicable:
+            amounts[key] = row.value
+        }
+        displayNames[key] = row.name
     }
 
     /// The first row of the shape `Name amount unit` in `text`, or nil when it states none.
@@ -732,21 +814,28 @@ public enum NutritionFactsParser {
     /// The name is one to four words of letters and digits, and the amount behind it has to carry a
     /// mass or an international unit: those are the units a supplement states a compound in, and a
     /// count is not one, because a panel states no compound per gummy. The name is also not a word the
-    /// panel prints between an amount and the row it belongs to (`Includes 3g Added Sugars`), and not a
-    /// row the named table reads, so neither the qualifiers of a row nor a nutrient is collected twice.
-    private static func firstAdditionalRow(in text: String) -> AdditionalRow? {
+    /// panel prints between an amount and the row it belongs to (`Includes 3g Added Sugars`). A name
+    /// that is built on a nutrient (`Calcium Citrate`) is returned with that nutrient, and a name that
+    /// merely contains a nutrient word somewhere other than its start is print, not a compound.
+    ///
+    /// A column-by-column capture can leave the name on one line and its amount on the next, so the
+    /// amount is read from `nextLine` when the name ends this line.
+    private static func firstAdditionalRow(in text: String, next nextLine: String? = nil) -> AdditionalRow? {
         let tokens = tokens(in: text)
-        guard tokens.count > 1 else { return nil }
-        for start in 0..<(tokens.count - 1) {
+        guard !tokens.isEmpty else { return nil }
+        for start in 0..<tokens.count {
             // The name is the words in front of the amount, longest first: "Creatine Monohydrate 3g"
             // states two words of name, and the longest reading of them is the one the label printed.
-            let longest = min(start + 4, tokens.count - 1)
-            for end in (start + 1...longest).reversed() {
-                guard let name = compoundName(tokens[start..<end]) else { continue }
-                guard let amount = additionalAmount(at: end, in: tokens) else { continue }
+            // The name is allowed to be the whole line, because its amount may sit on the next one.
+            let longest = min(start + 4, tokens.count)
+            for end in stride(from: longest, through: start + 1, by: -1) {
+                guard let named = compoundName(tokens[start..<end]) else { continue }
+                guard let amount = additionalAmount(at: end, in: tokens, line: text, next: nextLine)
+                else { continue }
                 return AdditionalRow(
-                    name: name, key: Slug.make(name), value: amount.value, reasons: amount.reasons,
-                    end: amount.end)
+                    name: named.name, key: Slug.make(named.name), value: amount.value,
+                    reasons: amount.reasons, nameStart: tokens[start].range.lowerBound, end: amount.end,
+                    nutrient: named.nutrient, usedNextLine: amount.usedNextLine)
             }
         }
         return nil
@@ -771,10 +860,13 @@ public enum NutritionFactsParser {
     /// The name a row states in front of an amount, or nil when the words there cannot be one.
     ///
     /// One to four words, each made of letters and digits, so a lot number or a date can never be read
-    /// as a compound. A name the table already reads is not one, which is what keeps `Total Fat 7g` out
-    /// of the compounds and in the nutrients, and a printed qualifier such as `Includes` is not a name
-    /// either: the row it introduces was read as the nutrient it names.
-    private static func compoundName(_ words: ArraySlice<(text: String, range: Range<String.Index>)>) -> String? {
+    /// as a compound. A name that is only a nutrient (`Total Fat`, `Fat`) is that nutrient, not a
+    /// compound, so the table's own rows are never collected twice. A name built on a nutrient —
+    /// `Calcium Citrate`, `Iron Bisglycinate` — is returned with that nutrient and the form kept in the
+    /// name, and a nutrient word anywhere else (`from fat`) is print rather than a chemical form.
+    private static func compoundName(
+        _ words: ArraySlice<(text: String, range: Range<String.Index>)>
+    ) -> (name: String, nutrient: PanelRow?)? {
         guard !words.isEmpty, words.count <= 4 else { return nil }
         for token in words {
             let lower = token.text.lowercased()
@@ -784,27 +876,43 @@ public enum NutritionFactsParser {
             guard countedUnit(for: token.text) == nil else { return nil }
         }
         let name = words.map(\.text).joined(separator: " ")
-        guard firstRow(in: name) == nil else { return nil }
-        return name
+        guard let match = firstRow(in: name) else { return (name, nil) }
+        // The whole name is one named row, so it is that nutrient and not a compound of its own.
+        if match.nameStart == name.startIndex, match.end == name.endIndex { return nil }
+        // Only a nutrient the name is built on counts, as the first word of `Calcium Citrate`.
+        guard match.nameStart == name.startIndex else { return nil }
+        return (name, match.row)
     }
 
     /// The words a panel prints that are not a compound's name: the qualifiers between an amount and
-    /// the row it belongs to, and the headings and running text of a panel.
+    /// the row it belongs to, the headings and running text of a panel, and the packaging print a
+    /// label puts beside a serving — a net weight, a lot number and a best-by date are not rows.
     private static let panelWords: Set<String> = [
         "amount", "calories", "container", "daily", "dv", "ingredients", "less", "fewer", "under", "below",
         "lt", "nutrition", "per", "questions", "serving", "servings", "size", "total", "value", "warnings",
+        "net", "wt", "weight", "lot", "best", "by",
     ]
 
     /// The value a row states behind its name, with the range the text behind that amount occupies.
     ///
     /// The unit may be printed against the number or spaced away from it, exactly as it is for a
     /// nutrient row, and the columns the label prints beside the row — a `†`, a Daily Value — are not
-    /// part of the amount: they are what is left in the text behind it.
+    /// part of the amount: they are what is left in the text behind it. When the name ends the line and
+    /// `nextLine` states an amount, that amount is the row's and the next line is marked as consumed.
     private static func additionalAmount(
         at index: Int,
-        in tokens: [(text: String, range: Range<String.Index>)]
-    ) -> (value: NutrientValue, reasons: Set<ParsedValueReview.Reason>, end: String.Index)? {
-        guard index < tokens.count else { return nil }
+        in tokens: [(text: String, range: Range<String.Index>)],
+        line: String,
+        next nextLine: String?
+    ) -> (value: NutrientValue, reasons: Set<ParsedValueReview.Reason>, end: String.Index, usedNextLine: Bool)? {
+        guard index < tokens.count else {
+            // A column-by-column capture leaves the name on one line and its amount on the next.
+            guard index == tokens.count, let nextLine,
+                  let scan = scanAmount(in: trimmed(nextLine)), let unit = scan.unit,
+                  additionalRowUnits.contains(unit), !scan.isPercentSuffixed
+            else { return nil }
+            return (value(for: scan, unit: unit), scan.reasons, line.endIndex, true)
+        }
         let here = tokens[index]
         var scan = scanAmount(in: here.text)
         var consumed = 1
@@ -819,10 +927,13 @@ public enum NutritionFactsParser {
         }
         guard let scan, let unit = scan.unit, additionalRowUnits.contains(unit), !scan.isPercentSuffixed
         else { return nil }
-        let value: NutrientValue =
-            scan.isBound ? .belowReportingThreshold(unit) : .known(scan.amount, unit)
         let end = consumed == 2 ? tokens[index + 1].range.upperBound : here.range.upperBound
-        return (value, scan.reasons, end)
+        return (value(for: scan, unit: unit), scan.reasons, end, false)
+    }
+
+    /// The value one scanned amount makes: a bound stays a bound, an amount is known in its unit.
+    private static func value(for scan: ScannedAmount, unit: MeasureUnit) -> NutrientValue {
+        scan.isBound ? .belowReportingThreshold(unit) : .known(scan.amount, unit)
     }
 
     /// The units an additional row may carry: the masses and international units a supplement states a
@@ -1019,6 +1130,8 @@ public enum NutritionFactsParser {
         case "ml": return .mL
         case "l": return .L
         case "kcal": return .kcal
+        // An international unit is how a supplement states some vitamins, as in "Vitamin A 900IU".
+        case "iu": return .iu
         default:
             guard allowsCountedUnits else { return nil }
             return countedUnit(for: text)

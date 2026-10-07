@@ -27,7 +27,7 @@ public struct GoalsView: View {
             }
             Section("Change a goal") {
                 Picker("Nutrient", selection: $editing) {
-                    ForEach(NutrientGoalChoices.keys, id: \.self) { key in
+                    ForEach(model.offeredKeys, id: \.self) { key in
                         Text(NutrientNames.displayName(for: key)).tag(key)
                     }
                 }

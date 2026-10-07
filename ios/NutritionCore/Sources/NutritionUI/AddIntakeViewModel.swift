@@ -164,6 +164,15 @@ public final class AddIntakeViewModel: ObservableObject {
     public static let noStatedNutrientsMessage =
         "Open Food Facts lists this product but states no nutrition facts; scan the label instead."
 
+    /// The compound rows a captured panel states that the fifteen journal nutrients do not name, in a
+    /// stable order. The form shows them under "Also on the label" so a compound the panel printed is
+    /// visible and, saved with the snapshot, is not lost between the review screen and the journal.
+    public var additionalLabelNutrients: [String] {
+        guard let captured = labelValues else { return [] }
+        let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
+        return captured.nutrients.keys.filter { !standard.contains($0) }.sorted()
+    }
+
     /// One line explaining the values a captured panel filled in, or nil when there are none.
     public var labelMessage: String? {
         guard let product = labelValues else { return nil }

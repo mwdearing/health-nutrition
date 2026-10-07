@@ -569,6 +569,82 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot.catalogOrigin, "label_capture")
     }
 
+    // MARK: One editor at a time
+
+    /// There is one keyboard, so opening a nutrient row's correction closes a compound row's editor and
+    /// the other way round. The model holds the open row, so the two can never both be open.
+    func testBeginningANamedCorrectionClosesTheCompoundEditorAndViceVersa() {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Creatine Monohydrate 3g",
+        ])
+
+        model.beginCorrection(forAdditional: "creatine-monohydrate")
+        XCTAssertEqual(model.editingAdditionalKey, "creatine-monohydrate")
+        XCTAssertNil(model.editingKey)
+
+        model.beginCorrection(for: .calories)
+        XCTAssertEqual(model.editingKey, .calories)
+        XCTAssertNil(model.editingAdditionalKey, "opening a nutrient editor closes the compound one")
+
+        model.beginCorrection(forAdditional: "creatine-monohydrate")
+        XCTAssertNil(model.editingKey, "opening a compound editor closes the nutrient one")
+        XCTAssertEqual(model.editingAdditionalKey, "creatine-monohydrate")
+
+        model.endCorrection()
+        XCTAssertNil(model.editingKey)
+        XCTAssertNil(model.editingAdditionalKey)
+    }
+
+    /// A compound correction is stated in the unit the picker offers, and a unit of another dimension
+    /// than the one the label printed is refused rather than stored.
+    func testACompoundCorrectionUsesTheChosenPickerUnit() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Creatine Monohydrate 3g",
+        ])
+
+        XCTAssertEqual(model.additionalUnit(for: "creatine-monohydrate"), .g)
+        XCTAssertTrue(model.correctAdditional(key: "creatine-monohydrate", text: "3000", unit: .mg))
+        XCTAssertEqual(
+            model.additionalNutrient(for: "creatine-monohydrate")?.value, .known(Decimal(3000), .mg))
+        XCTAssertNil(model.correctionError)
+
+        XCTAssertFalse(model.correctAdditional(key: "creatine-monohydrate", text: "1", unit: .iu))
+        XCTAssertNotNil(model.correctionError)
+        XCTAssertEqual(
+            model.additionalNutrient(for: "creatine-monohydrate")?.value, .known(Decimal(3000), .mg))
+    }
+
+    /// An additional row a captured panel applied to the form is shown by the form and reaches the
+    /// snapshot that is saved, rather than being lost between the review screen and the journal.
+    func testAnAppliedAdditionalRowIsShownByTheAddIntakeForm() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Creatine Monohydrate 3g",
+        ])
+        let product = try XCTUnwrap(model.makeProduct())
+
+        let intake = try makeIntakeModel()
+        intake.applyLabelProduct(product)
+
+        XCTAssertTrue(intake.additionalLabelNutrients.contains("creatine-monohydrate"))
+        XCTAssertEqual(intake.prefilledNutrients["creatine-monohydrate"], .known(Decimal(3), .g))
+
+        intake.name = "Synthetic Gummies"
+        let snapshot = try XCTUnwrap(intake.productSnapshot())
+        XCTAssertEqual(snapshot.value(for: "creatine-monohydrate"), .known(Decimal(3), .g))
+    }
+
     // MARK: Support
 
     /// A barcode product with values of its own, so a lookup that answers can be told apart from a

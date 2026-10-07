@@ -44,6 +44,10 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
     public let key: NutritionFactKey
     /// Why the parser asked about this value; empty when it read the row exactly as printed.
     public let reasons: Set<ParsedValueReview.Reason>
+    /// The name the panel printed when it stated a chemical form with the nutrient, as `Calcium
+    /// Citrate` for calcium, or nil when the panel named the nutrient plainly. It is shown instead of
+    /// the journal's own name so the screen keeps the words the label used.
+    public let displayName: String?
     /// The value and what the user has done about it. Both are mutable because a row is a value type
     /// in the view model's array: confirming or correcting one writes through `rows[index]`, which is
     /// also what republishes the array for the screen.
@@ -52,15 +56,19 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
 
     /// Written out rather than left as the memberwise initializer, so the order of the fields is not
     /// the order of the arguments and adding a field later cannot silently reorder a call site.
-    public init(key: NutritionFactKey, value: NutrientValue, reasons: Set<ParsedValueReview.Reason>, status: Status) {
+    public init(
+        key: NutritionFactKey, value: NutrientValue, reasons: Set<ParsedValueReview.Reason>,
+        status: Status, displayName: String? = nil
+    ) {
         self.key = key
         self.value = value
         self.reasons = reasons
         self.status = status
+        self.displayName = displayName
     }
 
     public var id: String { key.rawValue }
-    public var name: String { LabelCaptureRow.displayNames[key] ?? key.rawValue }
+    public var name: String { displayName ?? LabelCaptureRow.displayNames[key] ?? key.rawValue }
     public var isFlagged: Bool { !reasons.isEmpty }
     public var needsConfirmation: Bool { status == .needsConfirmation }
     /// The row still waits for the user, so nothing may be saved yet.
@@ -311,6 +319,13 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// Why the last correction was refused, or nil when the last one was accepted.
     @Published public private(set) var correctionError: String?
 
+    /// The nutrient row whose correction field is open, or nil when none is. One row at a time,
+    /// because there is one keyboard: opening a compound row's editor closes this one and the other
+    /// way round.
+    @Published public private(set) var editingKey: NutritionFactKey?
+    /// The compound row whose correction field is open, or nil when none is.
+    @Published public private(set) var editingAdditionalKey: String?
+
     /// The origin every captured product is stored with, so a later reader can tell that its values
     /// came from a panel the user read on their own device rather than from a catalog.
     public static let catalogOrigin = ProductOrigin.label_capture
@@ -338,7 +353,8 @@ public final class LabelCaptureViewModel: ObservableObject {
                     key: key,
                     value: panel.value(for: key),
                     reasons: panel.valuesNeedingReview[key.rawValue]?.reasons ?? [],
-                    status: panel.needsReview(key) ? .needsConfirmation : .read
+                    status: panel.needsReview(key) ? .needsConfirmation : .read,
+                    displayName: panel.displayName(for: key)
                 )
             )
         }
@@ -360,6 +376,8 @@ public final class LabelCaptureViewModel: ObservableObject {
         isUnreadable = panel.isUnreadable
         hasPanel = true
         correctionError = nil
+        editingKey = nil
+        editingAdditionalKey = nil
     }
 
     /// Forgets the panel on screen so the capture session can read another one.
@@ -376,6 +394,8 @@ public final class LabelCaptureViewModel: ObservableObject {
         isUnreadable = false
         hasPanel = false
         correctionError = nil
+        editingKey = nil
+        editingAdditionalKey = nil
     }
 
     // MARK: Reviewing
@@ -408,31 +428,61 @@ public final class LabelCaptureViewModel: ObservableObject {
         return true
     }
 
-    /// The user replaces a compound's amount with one they typed.
+    /// The units a compound correction may be stated in: the mass units and the international unit a
+    /// supplement states a compound in. The screen offers them as a picker beside the decimal field,
+    /// so a compound correction never relies on letters typed into the amount.
+    public static let additionalUnits: [MeasureUnit] = [.g, .mg, .mcg, .iu]
+
+    /// The unit a compound correction starts on: the one the label printed.
+    public func additionalUnit(for key: String) -> MeasureUnit {
+        guard let row = additionalRows.first(where: { $0.key == key }) else { return .g }
+        return Self.unit(of: row.value)
+    }
+
+    /// The user replaces a compound's amount with one they typed, in the unit the picker states.
     ///
-    /// Read and checked exactly like a nutrient correction, with one difference: a compound carries the
-    /// unit the label printed and has no usual one to fall back on, so a correction that names no unit
-    /// keeps the printed one and a correction that names none of its own is refused rather than stored
-    /// in a unit nothing downstream can interpret.
+    /// Read and checked like a nutrient correction, with one difference: a compound has no usual unit to
+    /// fall back on, so the unit is chosen rather than typed. A unit of another dimension than the one
+    /// the label printed is refused, because nothing downstream could interpret the value.
     @discardableResult
-    public func correctAdditional(key: String, text: String) -> Bool {
+    public func correctAdditional(key: String, text: String, unit chosen: MeasureUnit) -> Bool {
         guard let index = additionalRows.firstIndex(where: { $0.key == key }) else { return false }
         guard additionalRows[index].canBeCorrected else { return false }
         guard let parsed = NutrientAmountParser.parse(text) else {
-            correctionError = "Enter zero or more, using digits and a point, and add the unit if you want a different one."
+            correctionError = "Enter zero or more, using digits and a point."
             return false
         }
         let printed = Self.unit(of: additionalRows[index].value)
-        let unit = parsed.unit ?? printed
-        if let named = parsed.unit, named.dimension != printed.dimension {
+        guard chosen.dimension == printed.dimension else {
             correctionError =
                 "\(additionalRows[index].name) is measured \(Self.describe(printed.dimension)), so the amount has to be in a unit of that kind."
             return false
         }
-        additionalRows[index].value = .known(parsed.value, unit)
+        additionalRows[index].value = .known(parsed.value, chosen)
         additionalRows[index].status = .corrected
         correctionError = nil
         return true
+    }
+
+    /// Opens a nutrient row's correction field, closing a compound row's field beside it: there is one
+    /// keyboard, so only one editor is open at a time.
+    public func beginCorrection(for key: NutritionFactKey) {
+        correctionError = nil
+        editingAdditionalKey = nil
+        editingKey = key
+    }
+
+    /// Opens a compound row's correction field, closing a nutrient row's field beside it.
+    public func beginCorrection(forAdditional key: String) {
+        correctionError = nil
+        editingKey = nil
+        editingAdditionalKey = key
+    }
+
+    /// Closes whichever correction field is open, so the screen shows the row's controls again.
+    public func endCorrection() {
+        editingKey = nil
+        editingAdditionalKey = nil
     }
 
     /// Puts away the message from a correction that was refused.

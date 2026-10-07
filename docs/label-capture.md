@@ -50,12 +50,19 @@ camera rather than the last frame that had anything on it. `NutritionUI` sees on
   Monohydrate 3g`, `Zinc 15mg`, `Coenzyme Q10 100mg` — and they are why anyone scans one, so every
   `Name amount unit` row the fifteen journal nutrients do not name is kept as an **additional
   nutrient**, under the name the label printed and a slug of that name (`creatine-monohydrate`). The
-  name is one to four words of letters and digits and the unit has to be `g`, `mg`, `mcg` or `IU`, which
-  is what a panel states a compound in; a count is not one, because a panel states no compound per
-  gummy. The `†` and `%DV` columns the label prints beside a row are not part of its amount. Text that
-  states no amount is never a row: an ingredients line, a footnote, a lot number and a phone number are
-  print. A row the table above already read is never collected a second time — `Vitamin D3 25mcg` is
-  the journal's vitamin D, and its alias carries the `3` so it is not also stored as a compound.
+  name is one to four words of letters and digits and the unit has to be `g`, `mg`, `mcg` or `IU` (which
+  is read spelled `iu` as well), which is what a panel states a compound in; a count is not one, because
+  a panel states no compound per gummy. The `†` and `%DV` columns the label prints beside a row are not
+  part of its amount. A column-by-column capture that leaves the name on one line and its amount on the
+  next (`Creatine Monohydrate` / `3g`) is one row, exactly as a named nutrient row split across lines
+  is. Text that states no amount is never a row: an ingredients line, a footnote, a lot number and a
+  phone number are print, and a packaging quantity (`NET WT 100 g`, `Net weight`, `Lot`, `Best by`) is
+  print too. A row the table above already read is never collected a second time — `Vitamin D3 25mcg`
+  is the journal's vitamin D, and its alias carries the `3` so it is not also stored as a compound.
+  A name that states its chemical form builds on the nutrient it is built from: `Calcium Citrate 200mg`
+  is calcium and `Iron Bisglycinate 25mg` is iron, recorded as that nutrient with the printed form kept
+  as the row's display name, rather than the search restarting inside the name and inventing `Citrate`
+  or `Bisglycinate` as compounds of their own.
 - **Amounts stated in front of the name**, as `Includes 5g Added Sugars` states them. A leading amount
   states its own unit like any other amount, and a number in front of a percent sign belongs to a Daily
   Value column rather than to the row.
@@ -168,11 +175,12 @@ The rules the screen keeps are short:
   folded into the Nutrients list: they are not that list's rows, and listing them there would tell the
   user they are nutrients the journal already knows. Each one is shown under the name the label
   printed, is confirmable and correctable exactly like a nutrient row, and a flagged compound blocks
-  `canApply` the way a flagged nutrient does. A confirmed compound reaches the product's `nutrients`
-  under its own slug, so it is stored in the snapshot beside the fifteen named ones and the journal and
-  the day's totals keep it rather than losing it at the form. A correction keeps the unit the label
-  printed: a compound has no usual unit to fall back on, so a correction that names none keeps what was
-  printed and one in another dimension is refused.
+  `canApply` the way a flagged nutrient does. Only one editor is open at a time: opening a nutrient
+  row's correction closes a compound's field and the other way round, because there is one keyboard. A
+  confirmed compound reaches the product's `nutrients` under its own slug, so it is stored in the
+  snapshot beside the fifteen named ones and the journal and the day's totals keep it rather than
+  losing it at the form. A correction picks its unit rather than typing it — a compound has no usual
+  unit to fall back on — and a unit of another dimension than the one the label printed is refused.
 - **A panel with no readable amount is not turned into a product.** `isUnreadable` is true, the screen
   says the panel could not be read, nothing is filled in, and the only thing offered is another look at
   the panel.

@@ -104,6 +104,10 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
     /// The rows the panel states that the named table does not carry, in the order it printed them.
     /// Empty for a panel that names every row it states.
     public let additionalNutrients: [ParsedAdditionalNutrient]
+    /// The name the panel printed for a nutrient, keyed by `NutritionFactKey.rawValue`, when that name
+    /// carries a chemical form: `Calcium Citrate 200mg` is calcium, and the form is kept here so the
+    /// review screen can show the words the label printed rather than only the journal's own name.
+    public let nutrientDisplayNames: [String: String]
     /// Only the values that were read with less than full confidence, keyed the same way as `nutrients`.
     public let valuesNeedingReview: [String: ParsedValueReview]
 
@@ -112,6 +116,7 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         servingsPerContainer: Decimal?,
         nutrients: [String: NutrientValue],
         additionalNutrients: [ParsedAdditionalNutrient] = [],
+        nutrientDisplayNames: [String: String] = [:],
         valuesNeedingReview: [String: ParsedValueReview]
     ) {
         var complete = nutrients
@@ -122,11 +127,18 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         self.servingsPerContainer = servingsPerContainer
         self.nutrients = complete
         self.additionalNutrients = additionalNutrients
+        self.nutrientDisplayNames = nutrientDisplayNames
         self.valuesNeedingReview = valuesNeedingReview
     }
 
     public func value(for key: NutritionFactKey) -> NutrientValue {
         nutrients[key.rawValue] ?? .unknown
+    }
+
+    /// The name the panel printed for a nutrient when it states its chemical form with it, such as
+    /// `Calcium Citrate` for calcium, or nil when the panel named the nutrient plainly.
+    public func displayName(for key: NutritionFactKey) -> String? {
+        nutrientDisplayNames[key.rawValue]
     }
 
     /// The compound the panel printed under `key`, or nil when it stated no such row.

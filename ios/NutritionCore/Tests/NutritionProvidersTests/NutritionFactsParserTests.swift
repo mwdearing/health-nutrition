@@ -787,6 +787,88 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.servingSize?.text, "2 Capsules")
     }
 
+    // MARK: - The fixes the owner asked for after round two
+
+    /// Packaging print states no nutrient, so it is never collected as a compound row: a net weight, a
+    /// lot number, a best-by date and the serving metadata all read as nothing.
+    func testNetWeightAndOtherPackagingTextAreNotRows() {
+        let panels = [
+            ["NET WT 100 g"],
+            ["Net weight 100 g"],
+            ["Serving size 3 gummies"],
+            ["Servings per container", "12"],
+            ["Lot 123 Best by 2027"],
+            ["Calories from fat 9g"],
+        ]
+
+        for lines in panels {
+            let panel = parse(lines)
+            XCTAssertTrue(
+                panel.additionalNutrients.isEmpty,
+                "packaging text is not a row: \(panel.additionalNutrients.map(\.name)) from \(lines)")
+        }
+    }
+
+    /// A name that carries its chemical form is the nutrient it is built on, with the printed form kept
+    /// as the display name. The search must not restart inside the rejected name and invent "Citrate"
+    /// or "Bisglycinate" as compounds of their own.
+    func testAChemicalFormNameStaysOneNutrientRow() throws {
+        let panel = parse(["Calcium Citrate 200mg", "Iron Bisglycinate 25mg"])
+
+        XCTAssertEqual(try amount(.calcium, panel), dec("200"))
+        XCTAssertEqual(try unit(.calcium, panel), .mg)
+        XCTAssertEqual(panel.displayName(for: .calcium), "Calcium Citrate", "the form is the display name")
+
+        XCTAssertEqual(try amount(.iron, panel), dec("25"))
+        XCTAssertEqual(panel.displayName(for: .iron), "Iron Bisglycinate")
+
+        XCTAssertNil(panel.additionalNutrient(for: "citrate"))
+        XCTAssertNil(panel.additionalNutrient(for: "bisglycinate"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// An amount in international units is read, spaced or run against its number.
+    func testInternationalUnitAmountIsCaptured() throws {
+        let panel = parse(["Vitamin A 900IU", "Vitamin E 15 iu"])
+
+        let a = try XCTUnwrap(panel.additionalNutrient(for: "vitamin-a"))
+        XCTAssertEqual(a.value, .known(dec("900"), .iu))
+        let e = try XCTUnwrap(panel.additionalNutrient(for: "vitamin-e"))
+        XCTAssertEqual(e.value, .known(dec("15"), .iu))
+    }
+
+    /// A serving amount the capture printed with a letter O where a zero belongs still ends the serving
+    /// where its measure ends, so the packaging text behind it is not swallowed into the serving.
+    func testACorrectedLetterOEndsTheServingSizeBeforeTheLotNumber() {
+        let panel = parse(["Serving Size: 3O g LOT# : 123", "Calories 30"])
+
+        XCTAssertEqual(panel.servingSize?.text, "3O g", "the printed text is kept as read")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("30"), unit: .g))
+        XCTAssertEqual(panel.servingSize?.review?.reasons, [.correctedLetterO])
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "the lot number is not a row")
+        XCTAssertEqual(value(.calories, panel), .known(dec("30"), .kcal))
+    }
+
+    /// A column-by-column capture leaves a compound's name on one line and its amount on the next, and
+    /// the two are one row, exactly as a named nutrient row split across lines is.
+    func testAColumnSplitCompoundRowIsOneRow() throws {
+        let panel = parse(["Creatine Monohydrate", "3g"])
+
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine-monohydrate"))
+        XCTAssertEqual(creatine.name, "Creatine Monohydrate")
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+    }
+
+    /// A flattened line can run a unitless calorie count into a compound row. The compound is segmented
+    /// off first, so the calories keep their 30 and the compound is captured rather than lost.
+    func testAUnitlessCalorieCountAndACompoundOnOneLineAreBothRead() throws {
+        let panel = parse(["Calories 30 Creatine 3g"])
+
+        XCTAssertEqual(value(.calories, panel), .known(dec("30"), .kcal))
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine"))
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false

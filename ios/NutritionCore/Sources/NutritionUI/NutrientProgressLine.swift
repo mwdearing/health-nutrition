@@ -85,7 +85,11 @@ public enum NutrientNames {
 
     public static func displayName(for nutrient: String) -> String {
         if let name = names[nutrient] { return name }
-        guard let first = nutrient.first else { return nutrient }
-        return first.uppercased() + nutrient.dropFirst()
+        guard !nutrient.isEmpty else { return nutrient }
+        // A compound key is a slug of the printed name (`creatine-monohydrate`), so it is spelled back
+        // out rather than shown with its hyphens and one capital.
+        return nutrient.split(separator: "-")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 }

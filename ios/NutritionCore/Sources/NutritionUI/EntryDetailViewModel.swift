@@ -1,6 +1,7 @@
 import Foundation
 import NutritionDomain
 import NutritionJournal
+import NutritionProviders
 
 public struct EntryComponentRow: Equatable, Identifiable {
     public let id: String
@@ -14,6 +15,24 @@ public struct EntryComponentRow: Equatable, Identifiable {
         self.name = name
         self.amountText = amountText
         self.unit = unit
+    }
+}
+
+/// One compound the entry's product snapshot states under a name the fifteen journal nutrients do not,
+/// as the entry screen shows it. A captured supplement panel stores these under a slug of the printed
+/// name, so the slug is spelled back out for the reader.
+public struct EntryNutrientRow: Equatable, Identifiable {
+    public let key: String
+    public let name: String
+    /// Exact decimal text with its unit, or a word for a value that states no amount.
+    public let amountText: String
+
+    public var id: String { key }
+
+    public init(key: String, name: String, amountText: String) {
+        self.key = key
+        self.name = name
+        self.amountText = amountText
     }
 }
 
@@ -57,6 +76,9 @@ public final class EntryDetailViewModel: ObservableObject {
     public static let timeCorrectionReason = "Time corrected"
 
     @Published public private(set) var components: [EntryComponentRow] = []
+    /// The compounds the product snapshot states under names the fifteen journal nutrients do not, so a
+    /// scanned supplement's own rows are visible where the entry's amounts are shown.
+    @Published public private(set) var additionalNutrients: [EntryNutrientRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
     @Published public private(set) var destinations: [EntryDestinationRow] = []
     @Published public private(set) var currentRevision: Int = 0
@@ -116,6 +138,7 @@ public final class EntryDetailViewModel: ObservableObject {
 
     public func load(now: Date) {
         do {
+            additionalNutrients = []
             guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
                 isDeleted = true
                 errorMessage = "This entry is no longer available."
@@ -132,6 +155,8 @@ public final class EntryDetailViewModel: ObservableObject {
                     id: $0.componentID, name: AmountText.name($0),
                     amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit)
             }
+            let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+            additionalNutrients = Self.additionalNutrients(of: snapshot)
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
                 ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))
             })
@@ -340,6 +365,28 @@ public final class EntryDetailViewModel: ObservableObject {
             errorMessage = "Could not repeat the entry."
             return nil
         }
+    }
+
+    /// The rows a product snapshot states under a name the fifteen journal nutrients do not — a
+    /// compound a captured supplement panel stored under a slug of its printed name — sorted so the
+    /// order is stable. A snapshot with none gives no rows.
+    static func additionalNutrients(of product: ProductDefinition?) -> [EntryNutrientRow] {
+        guard let product else { return [] }
+        let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
+        return product.nutrients.keys.filter { !standard.contains($0) }
+            .sorted()
+            .map { key in
+                EntryNutrientRow(
+                    key: key, name: compoundName(for: key),
+                    amountText: LookedUpProduct.describe(product.nutrients[key] ?? .unknown))
+            }
+    }
+
+    /// A compound key spelled back out for the reader: `creatine-monohydrate` is `Creatine Monohydrate`.
+    static func compoundName(for key: String) -> String {
+        key.split(separator: "-")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 
     static func label(_ destination: JournalDestination) -> String {

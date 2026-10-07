@@ -429,6 +429,52 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(try goals.goal(for: "energy")?.unit, .kcal)
     }
 
+    /// A compound a captured supplement panel stored under its own slug is offered by the Goals screen,
+    /// so a person can set a target for it rather than only seeing the fixed list.
+    func testGoalsScreenOffersACompoundKeyTheJournalSnapshotsCarry() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let snapshot = ProductDefinition(
+            snapshotID: "snapshot-creatine", productID: "label_capture", name: "Synthetic Gummies",
+            labelBasis: "per serving (30 g)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+            nutrients: ["creatine-monohydrate": .known(Decimal(3), .g)])
+        try journal.create(
+            Intake(id: "gummies", category: "food", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "gummies", name: "Gummies", amount: Decimal(30), unit: .g)],
+            product: snapshot, now: when)
+
+        let model = GoalsViewModel(store: goals, journal: journal)
+        model.load()
+
+        XCTAssertTrue(
+            model.offeredKeys.contains("creatine-monohydrate"),
+            "a compound the snapshot carries is offerable: \(model.offeredKeys)")
+        XCTAssertTrue(model.rows.map { $0.nutrient }.contains("creatine-monohydrate"))
+        XCTAssertTrue(model.setTarget("5", for: "creatine-monohydrate"))
+        XCTAssertEqual(try goals.goal(for: "creatine-monohydrate")?.target, Decimal(5))
+    }
+
+    /// Once a compound goal is set, Today counts the day's compound from the entry's snapshot and shows
+    /// it against the target, so the goal a person set is one the screen can compare at all.
+    func testADayWithACompoundGoalShowsTheDaysCompoundTotal() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let snapshot = ProductDefinition(
+            snapshotID: "snapshot-creatine", productID: "label_capture", name: "Synthetic Gummies",
+            labelBasis: "per serving (30 g)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+            nutrients: ["creatine-monohydrate": .known(Decimal(3), .g)])
+        try journal.create(
+            Intake(id: "gummies", category: "food", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "gummies", name: "Gummies", amount: Decimal(30), unit: .g)],
+            product: snapshot, now: when)
+        try goals.setGoal(NutrientGoal(nutrient: "creatine-monohydrate", target: Decimal(5), unit: .g))
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertEqual(line(model, "creatine-monohydrate"), "Creatine Monohydrate 3 g of 5 g")
+    }
+
     // MARK: A target has to be in the nutrient's own dimension
 
     /// A target in a dimension the nutrient is never counted in is refused rather than stored: "2 g"
