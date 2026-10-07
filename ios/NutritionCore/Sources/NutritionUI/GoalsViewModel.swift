@@ -16,14 +16,14 @@ public enum NutrientGoalChoices {
     /// The unit a key is counted in, which is where its total is read. Water is a volume; every
     /// other key here is a mass or an energy, matching what the catalog states for it.
     public static func unit(forKey key: String) -> MeasureUnit {
-        key == DailyTotals.waterKey ? DailyTotals.waterUnit : .g
+        key == DailyTotalsBuilder.waterKey ? DailyTotalsBuilder.waterUnit : .g
     }
 
     /// Every unit a key may be counted in: the registry's mass and energy units for a nutrient, and
     /// the registry's volume units for water. No other unit is offered, so a target cannot be set
     /// in something the totals are not counted in.
     public static func units(forKey key: String) -> [MeasureUnit] {
-        guard key == DailyTotals.waterKey else {
+        guard key == DailyTotalsBuilder.waterKey else {
             return UnitRegistry.all.filter { $0.dimension == .mass || $0.dimension == .energy }
         }
         return UnitRegistry.all.filter { $0.dimension == .volume }
