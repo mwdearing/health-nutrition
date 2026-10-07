@@ -28,7 +28,6 @@ public struct LabelCaptureView: View {
     @State private var servingDraft = ""
     /// The compound row being corrected. One at a time, like the nutrient rows: there is one keyboard.
     @State private var editingAdditional: String?
-    @State private var servingDraft = ""
     /// Whether the field for correcting a printed serving size is open.
     @State private var editingServing = false
 
