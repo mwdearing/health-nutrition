@@ -863,7 +863,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     @discardableResult
     public func edit(
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
-        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision {
         let json = try Self.encode(components)
         return try commit { context in

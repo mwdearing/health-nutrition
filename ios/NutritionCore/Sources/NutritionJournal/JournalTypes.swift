@@ -295,7 +295,7 @@ public protocol JournalStore: AnyObject, Sendable {
     @discardableResult
     func edit(
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
-        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws
@@ -309,6 +309,19 @@ public protocol JournalStore: AnyObject, Sendable {
     func activeIntakesFromBackground() async throws -> [Intake]
     /// Releases the store; a new instance can reopen the same file.
     func close()
+}
+
+extension JournalStore {
+    /// Corrects the amounts only and leaves the entry's time as it was.
+    @discardableResult
+    public func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date
+    ) throws -> IntakeRevision {
+        try edit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: nil, timeZoneIdentifier: nil)
+    }
 }
 
 /// One intake with the whole revision history an import writes, exactly as the export carried it: the
