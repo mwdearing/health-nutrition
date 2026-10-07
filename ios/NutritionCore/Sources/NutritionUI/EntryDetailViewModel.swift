@@ -50,6 +50,12 @@ public struct EditedComponent: Equatable {
 
 @MainActor
 public final class EntryDetailViewModel: ObservableObject {
+    /// The reason a revision carries when the person did not write one.
+    public static let defaultChangeReason = "Edited"
+    /// What a correction of the entry's time alone is recorded as, because a history that reads
+    /// "Edited" for a change of time tells a reader nothing about what happened.
+    public static let timeCorrectionReason = "Time corrected"
+
     @Published public private(set) var components: [EntryComponentRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
     @Published public private(set) var destinations: [EntryDestinationRow] = []
@@ -59,7 +65,28 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var isDeleted = false
     /// Edit drafts by component id, bound to the text fields.
     @Published public var drafts: [String: String] = [:]
-    @Published public var changeReason: String = "Edited"
+    @Published public var changeReason: String = EntryDetailViewModel.defaultChangeReason
+    /// The entry's time as an editable draft, which the "When" row binds to. `load` seeds it from
+    /// the stored value, and a save writes a correction only once it differs from it.
+    @Published public var occurredAt: Date
+    /// The meal the entry states, as words, or nil when it states none.
+    @Published public private(set) var mealText: String?
+    /// The time exactly as the journal holds it, and nil until `load` has read the entry. A draft
+    /// may only correct that, so a save made before the first load cannot move an entry whose
+    /// stored time this model has not seen.
+    private var storedOccurredAt: Date?
+    /// The zone the entry's time is a wall clock in, as the view shows and edits it.
+    ///
+    /// The picker is bound to this rather than to the device zone, because the stored time is a wall
+    /// clock in **this** zone: showing it in the device's zone would display a different time of day from
+    /// the one the entry states, and a person correcting an entry would be editing the wrong reading. A
+    /// stored identifier the platform no longer resolves falls back to the current zone, so the picker
+    /// still reads rather than being given a zone that does not exist.
+    public var storedTimeZone: TimeZone {
+        guard let timeZoneIdentifier else { return .current }
+        return TimeZone(identifier: timeZoneIdentifier) ?? .current
+    }
+    private var timeZoneIdentifier: String?
 
     public let intakeID: String
     private let store: JournalStore
@@ -81,6 +108,7 @@ public final class EntryDetailViewModel: ObservableObject {
         self.store = store
         self.intakeID = intakeID
         self.preferences = preferences
+        self.occurredAt = Date()
         self.repeater = IntakeRepeater(
             store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
             makeID: makeID)
@@ -107,6 +135,10 @@ public final class EntryDetailViewModel: ObservableObject {
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
                 ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))
             })
+            occurredAt = intake.occurredAt
+            storedOccurredAt = intake.occurredAt
+            timeZoneIdentifier = intake.timeZoneIdentifier
+            mealText = MealLabel.displayName(for: intake.meal)
             revisions = all.reversed().map {
                 EntryRevisionRow(number: $0.number, createdAt: $0.createdAt, changeReason: $0.changeReason)
             }
@@ -138,37 +170,135 @@ public final class EntryDetailViewModel: ObservableObject {
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.
+    ///
+    /// A draft time that differs from the stored one is a correction of when the entry was eaten,
+    /// and goes through the same call as an amount: one new revision, the previous one kept. The
+    /// zone is the entry's own, so the day it lands on is read the same way as before.
     @discardableResult
     public func save(components edited: [EditedComponent], changeReason reason: String, now: Date) -> Bool {
-        var errors: [String: String] = [:]
-        var parsed: [IntakeComponent] = []
-        for item in edited {
-            if let amount = AmountParser.parse(item.amountText) {
-                parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: item.unit))
-            } else {
-                errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."
-            }
-        }
-        fieldErrors = errors
-        guard errors.isEmpty, !parsed.isEmpty else { return false }
         do {
             guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
+                fieldErrors = [:]
                 errorMessage = "This entry is no longer available."
                 return false
             }
-            let snapshotID = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }?.productSnapshotID
+            let current = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }
+            var errors: [String: String] = [:]
+            var parsed: [IntakeComponent] = []
+            for item in edited {
+                // A draft the person did not touch is the stored component, carried through as it stands
+                // rather than re-read as text. The parser is the right gate on what someone **typed**, and it
+                // is narrower than the store: it refuses a zero amount, which the store, the export, the
+                // importer and the encoder all accept. Validating an untouched field would therefore make
+                // such an entry unsaveable at all — a time correction included, which changes no amount and
+                // so should never have needed an amount validated at all.
+                if let untouched = Self.unchangedStoredComponent(for: item, in: current?.components ?? []) {
+                    parsed.append(untouched)
+                } else if let amount = AmountParser.parse(item.amountText) {
+                    parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: item.unit))
+                } else {
+                    errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."
+                }
+            }
+            fieldErrors = errors
+            guard errors.isEmpty, !parsed.isEmpty else { return false }
             var product: ProductDefinition?
-            if let snapshotID { product = try store.product(snapshotID: snapshotID) }
-            let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let snapshotID = current?.productSnapshotID { product = try store.product(snapshotID: snapshotID) }
+            let correctedTime: Date? = storedOccurredAt == nil || storedOccurredAt == occurredAt
+                ? nil
+                : occurredAt
+            // The time-correction reason belongs to a save that moved only the time. A save that changes the
+            // amounts and the time together is an ordinary edit, and is recorded as one.
+            let timeOnly = correctedTime != nil
+                && (current.map { Self.componentsUnchanged(from: $0.components, to: parsed) } ?? false)
             try store.edit(
                 intakeID: intakeID, components: parsed, product: product,
-                changeReason: trimmedReason.isEmpty ? "Edited" : trimmedReason, now: now)
+                changeReason: Self.recordedReason(written: reason, timeOnlyChange: timeOnly), now: now,
+                occurredAt: correctedTime,
+                timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
         } catch {
             errorMessage = "Could not save the change. The previous version is kept."
             return false
         }
         load(now: now)
         return true
+    }
+
+    /// What one revision is recorded as. A reason the person wrote is theirs and is kept as written;
+    /// an untouched field records what actually changed.
+    ///
+    /// **A time correction is named only when the amounts are untouched.** A save that changes the amounts
+    /// *and* the time is an ordinary edit of the entry, however it was reached, and labelling it "Time
+    /// corrected" would say the time was the only thing that moved when it was not: the history would read
+    /// as if the amounts had stood still through a correction that changed them. So the time-correction
+    /// reason is for the case it describes — the instant moved and the components did not.
+    static func recordedReason(written reason: String, timeOnlyChange: Bool) -> String {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return timeOnlyChange ? timeCorrectionReason : defaultChangeReason }
+        if timeOnlyChange, trimmed == defaultChangeReason { return timeCorrectionReason }
+        return trimmed
+    }
+
+    /// The stored component a draft leaves untouched, or nil when the person edited it or the revision does
+    /// not hold one under that id.
+    ///
+    /// "Untouched" is judged against the text `load` seeded the field with, so the comparison is the one
+    /// the person sees: a draft that still reads as the stored amount states the stored amount, whatever
+    /// the parser would make of that text. An entry with a zero-valued component therefore keeps it, and a
+    /// time correction of such an entry — which changes no amount — writes without ever validating one.
+    ///
+    /// A stored `unknown` **is** recognised as untouched. Its field is seeded empty, and empty is exactly
+    /// what `load` put there, so an entry carrying an unknown component is read back the same way a zero or
+    /// any other value the parser refuses is: the person changed nothing, and the save carries the component
+    /// through as it stands.
+    ///
+    /// It has to be recognised, or the only edit that changes no amount cannot be made on such an entry at
+    /// all: correcting the time of an entry with a component whose amount is unknown would fail on a field
+    /// nobody touched. The comparison is against the text `load` seeded, so an amount field the person did
+    /// clear is still empty and still refused by the parser — this recognises *untouched*, not *absent*.
+    static func unchangedStoredComponent(
+        for draft: EditedComponent, in stored: [IntakeComponent]
+    ) -> IntakeComponent? {
+        guard let existing = stored.first(where: { $0.componentID == draft.componentID }) else { return nil }
+        let text = draft.amountText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text == Self.seededAmountText(existing.amount) else { return nil }
+        return existing
+    }
+
+    /// What an amount field is seeded with: its decimal text, or empty for an `unknown`, which states no
+    /// amount and so has no text to seed. The unknown's field therefore reads as untouched exactly when it
+    /// is still empty.
+    static func seededAmountText(_ amount: Decimal) -> String {
+        amount.isNaN ? "" : DecimalFormatting.text(amount)
+    }
+
+    /// Whether the components a save writes are the ones the current revision already holds.
+    ///
+    /// This is what separates a correction of the time from an edit that happens to include one. The
+    /// comparison is by id, name, amount and unit, ignoring order: the amounts a person edits are the same
+    /// facts whatever sequence the fields are listed in, and a reordered list is not a change to them.
+    ///
+    /// Two unknowns are the same fact, so they compare equal here. `Decimal.nan == Decimal.nan` is false, which
+    /// would read an untouched unknown as a changed amount and record a save that moved only the time as an
+    /// ordinary "Edited" — telling a reader the amounts changed when they did not. Comparing the seeded text
+    /// instead gives the answer the draft actually states: unchanged while the field still reads as `load`
+    /// left it, changed as soon as a number is typed over it.
+    static func componentsUnchanged(
+        from current: [IntakeComponent], to proposed: [IntakeComponent]
+    ) -> Bool {
+        guard current.count == proposed.count else { return false }
+        return proposed.allSatisfy { candidate in
+            current.contains { existing in
+                existing.componentID == candidate.componentID && existing.name == candidate.name
+                    && existing.unit == candidate.unit && Self.sameAmount(existing.amount, candidate.amount)
+            }
+        }
+    }
+
+    /// Amount equality that treats two unknowns as one value. Any other value compares as `Decimal` does.
+    static func sameAmount(_ first: Decimal, _ second: Decimal) -> Bool {
+        if first.isNaN || second.isNaN { return first.isNaN && second.isNaN }
+        return first == second
     }
 
     /// Saves the current drafts, keeping names and units.

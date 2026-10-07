@@ -393,8 +393,11 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
 
     private func upsert(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome {
         let intake: Intake?
+        let revision: IntakeRevision?
         do {
             intake = try store.activeIntakes().first { $0.id == operation.intakeID }
+            revision = try store.revisions(of: operation.intakeID)
+                .first { $0.number == operation.revision }
         } catch {
             return transient(operation, now: now, reason: "the intake could not be read")
         }
@@ -404,6 +407,12 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             // what the delete removes.
             return acknowledge(operation, now: now, outcome: .superseded(operationID: operation.operationID))
         }
+        // The revision's own instant, not the entry's. A correction of the time moves the entry's row
+        // and writes a new revision, so an older revision still waiting in the queue would be stamped
+        // with the corrected time here — a different sample under this revision's own sync version and
+        // the same delivery identity, which a retry could then disagree with itself about. Nil is a row
+        // written before revisions carried a time and means "the entry's current time".
+        let occurredAt = revision?.occurredAt ?? intake.occurredAt
         // The totals are read before anything is written, and a failure here aborts the delivery. An
         // empty plan is not a fallback: it would mean deleting every previously written nutrient as
         // stale, saving nothing and acknowledging the operation, which records a failed read as a
@@ -413,7 +422,7 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             plan = HealthKitWritePlanner.plan(
                 intakeID: operation.intakeID,
                 revision: operation.revision,
-                occurredAt: intake.occurredAt,
+                occurredAt: occurredAt,
                 totals: try await totals(operation.intakeID, operation.revision)
             )
         } catch {

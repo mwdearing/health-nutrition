@@ -26,7 +26,10 @@ private final class StubJournalStore: JournalStore, @unchecked Sendable {
     func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision {
         throw Unsupported()
     }
-    func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date) throws -> IntakeRevision {
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+    ) throws -> IntakeRevision {
         throw Unsupported()
     }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
@@ -179,6 +182,35 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(component.componentID, "rolled-oats")
         XCTAssertEqual(component.unit, .g)
         XCTAssertNil(model.amountError)
+    }
+
+    /// The meal a person picks on the Add form is what the entry stores, as the label's own raw
+    /// value rather than as the words a screen shows.
+    func testMealPickedOnTheAddFormIsStoredAsItsRawValue() throws {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        XCTAssertNil(model.meal, "a form nobody has touched states no meal")
+        model.name = "Rolled oats"
+        model.amountText = "40"
+        model.meal = .dinner
+        XCTAssertTrue(model.save(now: now))
+        XCTAssertEqual(try store.activeIntakes().first?.meal, MealLabel.dinner.rawValue)
+        XCTAssertEqual(try store.activeIntakes().first?.meal, "dinner")
+    }
+
+    /// No label chosen means no meal stored, whatever hour the entry was logged at: a label is the
+    /// person's own answer and nothing is guessed for them.
+    func testMealStaysNilWhenNoneIsPicked() throws {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        model.name = "Rolled oats"
+        model.amountText = "40"
+        // 07:13 UTC: an hour most people would call breakfast, which is exactly why it must not
+        // become the answer for them.
+        model.occurredAt = Date(timeIntervalSince1970: 1_700_000_000 - 15 * 3600)
+        XCTAssertTrue(model.save(now: now))
+        XCTAssertNil(try store.activeIntakes().first?.meal)
+        XCTAssertNil(MealLabel.displayName(for: try store.activeIntakes().first?.meal))
     }
 
     func testTodayShowsOnlyTheLocalDayOfEachIntakeTimeZone() throws {

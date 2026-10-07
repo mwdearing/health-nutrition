@@ -5,21 +5,29 @@ project yet; the app target will wire `NutritionUI` later. Tests cover the view 
 
 ## Screens
 - **Today** (`TodayView`, `TodayViewModel`): the water total, a quick-add water button, an undo button, one coverage
-  line per tracked nutrient, and the intakes of the day.
-- **Add intake** (`AddIntakeView`, `AddIntakeViewModel`): name, amount text, unit, category, time. No catalog or
-  barcode lookup yet.
+  line per tracked nutrient, and the intakes of the day. Each entry row is a button that opens that entry in the
+  entry screen, so a row logged late on the wrong day is corrected where it is noticed.
+- **Add intake** (`AddIntakeView`, `AddIntakeViewModel`): name, amount text, unit, category, meal, time.
 
 ## Behaviour
 - **Quick water** writes one intake through `JournalStore.create` (category `water`, component `water`, the
   configured amount in mL, amount as `Decimal`). The store queues the outbox operations; this layer never
   delivers anything. The amount is configurable: see [Units and the quick-water amount](#units-and-the-quick-water-amount).
+- **Entry rows** carry the entry's meal as a secondary line when it states one, and read out as the name, the amounts
+  and then the meal. They open the entry through an `onSelect` closure; a host that passes none leaves the rows as
+  plain text.
+- **Meal** is picked next to **When** on the Add form: `None` plus the four labels of `MealLabel`. `None` is a real
+  answer and the form starts on it — no label is inferred from the hour, because the label is the person's own
+  answer and a guessed one puts a word in their record that they never gave. The choice is stored as the label's raw
+  value in `Intake.meal`, so a repeat and a favourite keep copying it.
 - **Undo** is available for 10 seconds, measured with a clock value passed in by the caller. It calls
   `JournalStore.delete(intakeID:now:)`, so history is kept and delete operations are queued. After 10 seconds it is
   gone.
 - **Amount text** is parsed with a fixed POSIX parser: digits and at most one point, greater than zero, no locale, no
   binary floating point. Invalid text sets a field error and writes nothing.
 - **Local day**: an intake is on Today when its time falls on the same calendar day as "now" in the intake's own time
-  zone. Deleted intakes are hidden.
+  zone. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
+  in the Journal as well as here.
 - **Water total** is the exact `Decimal` sum, in mL, of the volume components of intakes with category `water`. Other
   categories never contribute, whatever their unit. A component whose unit is not a volume is skipped and counted
   (`waterSkippedCount`), never treated as zero. So is a stored amount that is NaN or not above zero, checked before and

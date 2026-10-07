@@ -14,6 +14,14 @@ public struct TodayRow: Equatable, Identifiable {
     public let title: String
     public let detail: String
     public let occurredAt: Date
+    /// The meal as words, or nil when the entry states none.
+    public let meal: String?
+
+    /// What a screen reader reads for one row: the name, the amounts, and the meal when it has one.
+    public var accessibilityText: String {
+        guard let meal else { return "\(title), \(detail)" }
+        return "\(title), \(detail), \(meal)"
+    }
 }
 
 @MainActor
@@ -101,7 +109,8 @@ public final class TodayViewModel: ObservableObject {
                         title: components.map(\.name).joined(separator: ", "),
                         detail: components.map { AmountText.describe($0, unitSystem: unitSystem) }
                             .joined(separator: ", "),
-                        occurredAt: intake.occurredAt))
+                        occurredAt: intake.occurredAt,
+                        meal: MealLabel.displayName(for: intake.meal)))
             }
             rows = newRows
             waterTotalMilliliters = waterTotal

@@ -55,6 +55,10 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public var unit: MeasureUnit = .g
     @Published public var category: String = "food"
     @Published public var occurredAt: Date
+    /// Which meal of the day this entry was eaten at. Nil by default and never inferred from the
+    /// hour: the label is the person's own answer, and guessing one for them would put a word in
+    /// their record that they never gave.
+    @Published public var meal: MealLabel?
     @Published public private(set) var nameError: String?
     @Published public private(set) var amountError: String?
     @Published public private(set) var saveError: String?
@@ -314,7 +318,8 @@ public final class AddIntakeViewModel: ObservableObject {
         guard nameError == nil, let amount else { return false }
 
         let intake = Intake(
-            id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+            id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier,
+            meal: meal?.rawValue)
         let (storedAmount, storedUnit) = Self.storedMetric(amount: amount, unit: unit)
         let component = IntakeComponent(
             componentID: Self.slug(trimmedName), name: trimmedName, amount: storedAmount, unit: storedUnit)

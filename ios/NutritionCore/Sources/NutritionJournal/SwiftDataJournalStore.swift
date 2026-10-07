@@ -580,7 +580,171 @@ enum JournalSchemaV4: VersionedSchema {
     }
 }
 
-/// The store is written with V4.
+/// The time each revision was written with, added as two optional columns on the revision. V4 above is
+/// kept exactly as the build that wrote it did, so a store that build created still has a schema
+/// SwiftData can migrate from.
+///
+/// These columns exist for the same reason V4's two do: a hashed payload cannot be rebuilt from a value
+/// that has since moved. Correcting an entry's time writes a new revision and moves
+/// `IntakeRecord.occurredAt`, so before this a queued revision 1 rebuilt at delivery time named the
+/// *corrected* instant under revision 1's own `operation_id` — a different payload under one delivery
+/// identity, which the receiver reads as a conflict rather than the duplicate it is.
+///
+/// Both are optional and an existing row carries neither, so the stage that adds them is custom rather than
+/// lightweight: V4 had no way to correct a time, which makes the intake's row the one copy of the instant
+/// that was exact for **every** revision of the entry, and each revision takes it. Nil therefore means "the
+/// entry's current time" for a row nothing ever filled in, and the reads fall back to the entry's row for it.
+enum JournalSchemaV5: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [IntakeRecord.self, RevisionRecord.self, ProductRecord.self, ProjectionRecord.self, OutboxRecord.self]
+    }
+
+    @Model
+    final class IntakeRecord {
+        var intakeID: String
+        var category: String
+        var occurredAt: Date
+        var timeZoneIdentifier: String
+        var meal: String?
+        var note: String?
+        var lifecycleRaw: String
+        var currentRevision: Int
+
+        init(
+            intakeID: String, category: String, occurredAt: Date, timeZoneIdentifier: String,
+            meal: String?, note: String?, lifecycleRaw: String, currentRevision: Int
+        ) {
+            self.intakeID = intakeID
+            self.category = category
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+            self.meal = meal
+            self.note = note
+            self.lifecycleRaw = lifecycleRaw
+            self.currentRevision = currentRevision
+        }
+    }
+
+    @Model
+    final class RevisionRecord {
+        var intakeID: String
+        var number: Int
+        /// JSON array of components; amounts are decimal text.
+        var componentsJSON: String
+        var productSnapshotID: String?
+        var changeReason: String
+        var createdAt: Date
+        /// The instant this revision was written for, nil meaning "the entry's current time". The V4→V5
+        /// migration fills this in on rows written before the column existed, from the entry's own row.
+        var occurredAt: Date?
+        /// The zone `occurredAt` is a wall clock in, nil under the same rule.
+        var timeZoneIdentifier: String?
+
+        init(
+            intakeID: String, number: Int, componentsJSON: String,
+            productSnapshotID: String?, changeReason: String, createdAt: Date,
+            occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+        ) {
+            self.intakeID = intakeID
+            self.number = number
+            self.componentsJSON = componentsJSON
+            self.productSnapshotID = productSnapshotID
+            self.changeReason = changeReason
+            self.createdAt = createdAt
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+        }
+    }
+
+    @Model
+    final class ProductRecord {
+        var snapshotID: String
+        var productID: String
+        var name: String
+        var brand: String?
+        var barcode: String?
+        var labelBasis: String
+        var catalogOrigin: String
+        var catalogVersion: String
+        /// JSON of the nutrient values the product states, sorted by id.
+        var nutrientsJSON: String?
+
+        init(
+            snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
+            labelBasis: String, catalogOrigin: String, catalogVersion: String, nutrientsJSON: String? = nil
+        ) {
+            self.snapshotID = snapshotID
+            self.productID = productID
+            self.name = name
+            self.brand = brand
+            self.barcode = barcode
+            self.labelBasis = labelBasis
+            self.catalogOrigin = catalogOrigin
+            self.catalogVersion = catalogVersion
+            self.nutrientsJSON = nutrientsJSON
+        }
+    }
+
+    @Model
+    final class ProjectionRecord {
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var actionRaw: String
+        var stateRaw: String
+        var isCurrent: Bool
+
+        init(
+            intakeID: String, revision: Int, destinationRaw: String,
+            actionRaw: String, stateRaw: String, isCurrent: Bool
+        ) {
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.actionRaw = actionRaw
+            self.stateRaw = stateRaw
+            self.isCurrent = isCurrent
+        }
+    }
+
+    @Model
+    final class OutboxRecord {
+        var operationID: String
+        var kindRaw: String
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var payloadHash: String
+        var attempts: Int
+        var nextAttemptAt: Date?
+        var acknowledgedAt: Date?
+        var suspensionReason: String?
+        var deletedAt: Date?
+        var linksJSON: String?
+
+        init(
+            operationID: String, kindRaw: String, intakeID: String, revision: Int,
+            destinationRaw: String, payloadHash: String, suspensionReason: String? = nil,
+            deletedAt: Date? = nil, linksJSON: String? = nil
+        ) {
+            self.operationID = operationID
+            self.kindRaw = kindRaw
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.payloadHash = payloadHash
+            self.attempts = 0
+            self.nextAttemptAt = nil
+            self.acknowledgedAt = nil
+            self.suspensionReason = suspensionReason
+            self.deletedAt = deletedAt
+            self.linksJSON = linksJSON
+        }
+    }
+}
+
+/// The store is written with V5.
 ///
 /// The V1→V2 stage is lightweight: the only change is one optional column, so an existing file is
 /// migrated in place and its rows keep their values.
@@ -605,9 +769,21 @@ enum JournalSchemaV4: VersionedSchema {
 /// a tombstone for it is encoded from the journal's own last-revision record instead. Nothing already in
 /// the file is wrong after the upgrade, so nothing has to be rewritten — and a custom stage here would
 /// have to reach the same conclusion in more code.
+///
+/// **The V4→V5 stage is custom, because its two new columns do have a value to recover.** A revision written
+/// before them carries no instant, and the entry's own row held the only copy — but V4 had no way to correct
+/// a time, so that copy is exact for **every** revision of the entry rather than exact only for the current
+/// one. Copying it onto each row turns a file full of revisions that depend on a row that may later move into
+/// one where each states its own instant, which is what a queued delivery reads. Leaving them nil would also
+/// have been defensible — nil means "the entry's current time" — but it would leave the two readings
+/// indistinguishable, so a revision 1 still waiting in the queue would be rebuilt with whatever time the entry
+/// holds now. The reads stay nil-tolerant either way, so a row that was never filled in still falls back.
+///
+/// It runs in `didMigrate`, for the reason the V2→V3 stage does: the context there is bound to V5, where the
+/// two columns exist to write.
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self]
+        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self, JournalSchemaV5.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -620,7 +796,43 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
                     try context.save()
                 }),
             .lightweight(fromVersion: JournalSchemaV3.self, toVersion: JournalSchemaV4.self),
+            .custom(
+                fromVersion: JournalSchemaV4.self, toVersion: JournalSchemaV5.self,
+                willMigrate: nil,
+                didMigrate: { context in
+                    try backfillRevisionTimes(context: context)
+                    try context.save()
+                }),
         ]
+    }
+
+    /// Copies each entry's own time and zone onto every revision row that carries neither, which is what a
+    /// V4 file holds: the columns did not exist, so no revision states an instant of its own.
+    ///
+    /// Every revision of the entry takes the intake's values, not only the current one. V4 could not correct a
+    /// time, so the intake's row never moved away from the instant its revisions were written for, and that
+    /// single copy is exact for all of them.
+    static func backfillRevisionTimes(context: ModelContext) throws {
+        let intakes = try context.fetch(FetchDescriptor<JournalSchemaV5.IntakeRecord>())
+        guard !intakes.isEmpty else { return }
+        var timesByIntake: [String: (occurredAt: Date, timeZoneIdentifier: String)] = [:]
+        for intake in intakes {
+            // The first row for an intake wins: two rows for one id is not a shape the store writes, and
+            // preferring the first keeps this stage deterministic rather than order-dependent.
+            if timesByIntake[intake.intakeID] == nil {
+                timesByIntake[intake.intakeID] = (intake.occurredAt, intake.timeZoneIdentifier)
+            }
+        }
+        let revisions = try context.fetch(FetchDescriptor<JournalSchemaV5.RevisionRecord>())
+        for revision in revisions {
+            // A row that already states a time is left alone: this stage only fills in what is missing, so
+            // re-running it cannot overwrite a revision's own instant with the entry's current one.
+            guard revision.occurredAt == nil, revision.timeZoneIdentifier == nil,
+                let times = timesByIntake[revision.intakeID]
+            else { continue }
+            revision.occurredAt = times.occurredAt
+            revision.timeZoneIdentifier = times.timeZoneIdentifier
+        }
     }
 
     /// Copies the V2 projection state onto the V3 outbox rows, for the operations it suspended.
@@ -656,11 +868,11 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
     }
 }
 
-typealias IntakeRecord = JournalSchemaV4.IntakeRecord
-typealias RevisionRecord = JournalSchemaV4.RevisionRecord
-typealias ProductRecord = JournalSchemaV4.ProductRecord
-typealias ProjectionRecord = JournalSchemaV4.ProjectionRecord
-typealias OutboxRecord = JournalSchemaV4.OutboxRecord
+typealias IntakeRecord = JournalSchemaV5.IntakeRecord
+typealias RevisionRecord = JournalSchemaV5.RevisionRecord
+typealias ProductRecord = JournalSchemaV5.ProductRecord
+typealias ProjectionRecord = JournalSchemaV5.ProjectionRecord
+typealias OutboxRecord = JournalSchemaV5.OutboxRecord
 
 private struct StoredComponent: Codable {
     var componentID: String
@@ -703,7 +915,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV4.self)
+        let schema = Schema(versionedSchema: JournalSchemaV5.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -758,6 +970,14 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         }
     }
 
+    /// Opens a store written with the schema before the revision carried its own time, so a test can
+    /// write a file the current one has to migrate. Nothing in the app opens a store this way.
+    static func v4StoreForTesting(url: URL) throws -> ModelContainer {
+        let schema = Schema(versionedSchema: JournalSchemaV4.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        return try ModelContainer(for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+    }
+
     /// Writes one revision with the V1 model, exactly as the first build did, and commits it.
     static func writeLegacyRevisionForTesting(
         url: URL, intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
@@ -779,6 +999,38 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             intakeID: intake.id, number: 1, componentsJSON: componentsJSON,
             productSnapshotID: product?.snapshotID, changeReason: "created", createdAt: now))
         try context.save()
+    }
+
+    /// Writes one intake and two of its revisions with the V4 model, exactly as that build recorded them:
+    /// the time lives on the intake row and the revisions carry none, which is the shape the V4→V5 stage
+    /// has to migrate.
+    ///
+    /// Two revisions rather than one, because the backfill is about **every** row: a single revision cannot
+    /// tell a migration that fills each row in from one that happens to fix the one row it can see. The second
+    /// is an amounts-only edit, which is the other shape V4 could produce.
+    ///
+    /// The V4 container is released before returning, so the caller opens a **real file on disk** rather
+    /// than one still held open by this process — which is the situation a real upgrade is in.
+    static func writeV4RevisionsForTesting(
+        url: URL, intake: Intake, components: [IntakeComponent], edited: [IntakeComponent], now: Date
+    ) throws {
+        do {
+            let context = ModelContext(try v4StoreForTesting(url: url))
+            context.autosaveEnabled = false
+            let componentsJSON = try encode(components)
+            let editedJSON = try encode(edited)
+            context.insert(JournalSchemaV4.IntakeRecord(
+                intakeID: intake.id, category: intake.category, occurredAt: intake.occurredAt,
+                timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal, note: intake.note,
+                lifecycleRaw: intake.lifecycle.rawValue, currentRevision: 2))
+            context.insert(JournalSchemaV4.RevisionRecord(
+                intakeID: intake.id, number: 1, componentsJSON: componentsJSON,
+                productSnapshotID: nil, changeReason: "created", createdAt: now))
+            context.insert(JournalSchemaV4.RevisionRecord(
+                intakeID: intake.id, number: 2, componentsJSON: editedJSON,
+                productSnapshotID: nil, changeReason: "bigger bowl", createdAt: now))
+            try context.save()
+        }
     }
 
     /// Drops a stored snapshot's nutrient values, leaving the row as a store written before the column
@@ -855,13 +1107,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
                 lifecycleRaw: IntakeLifecycle.active.rawValue, currentRevision: 1))
             return try appendRevision(
                 intakeID: intake.id, number: 1, componentsJSON: json, components: components,
-                product: product, changeReason: "created", now: now, context: context)
+                product: product, changeReason: "created", now: now,
+                occurredAt: intake.occurredAt, timeZoneIdentifier: intake.timeZoneIdentifier, context: context)
         }
     }
 
     @discardableResult
     public func edit(
-        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision {
         let json = try Self.encode(components)
         return try commit { context in
@@ -873,10 +1127,19 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             }
             let number = record.currentRevision + 1
             record.currentRevision = number
+            // The corrected time moves the entry's own row, in the same save as the revision that
+            // carries it. It is read back out of the record rather than out of the arguments, so the
+            // revision is hashed and stored with the time the entry now holds: an edit given no time
+            // keeps the one it had, and one given a date without a zone keeps that zone. Storing it on
+            // the revision as well is what leaves an earlier revision's own instant recoverable after
+            // this row has moved — a delivery of that revision must not pick up the corrected time.
+            if let occurredAt { record.occurredAt = occurredAt }
+            if let timeZoneIdentifier { record.timeZoneIdentifier = timeZoneIdentifier }
             try Self.supersedeProjections(of: intakeID, in: context)
             return try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
-                product: product, changeReason: changeReason, now: now, context: context)
+                product: product, changeReason: changeReason, now: now,
+                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
         }
     }
 
@@ -939,7 +1202,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
                         intakeID: intake.id, number: revision.number,
                         componentsJSON: try Self.encode(revision.components),
                         productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
-                        createdAt: revision.createdAt))
+                        createdAt: revision.createdAt, occurredAt: revision.occurredAt,
+                        timeZoneIdentifier: revision.timeZoneIdentifier))
                 }
                 restored.append(
                     JournalRestoredIntake(
@@ -1376,21 +1640,34 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         }
     }
 
+    /// One revision, with the entry's time as it stood for that revision: the instant is hashed with
+    /// the amounts, because "40 g of oats" and "40 g of oats, eaten at 19:00" are different facts and
+    /// a receiver deduplicating on the payload hash must be able to tell them apart.
+    ///
+    /// The time is stored **on the revision** as well as hashed into the queued payload, because the
+    /// entry's own row moves on a time correction and a delivery rebuilds this revision later: without a
+    /// copy here, a revision 1 still waiting in the queue would be rebuilt with the corrected instant and
+    /// reach the receiver under revision 1's own `operation_id` with a different payload — a conflict
+    /// rather than the duplicate it is.
     private func appendRevision(
         intakeID: String, number: Int, componentsJSON: String, components: [IntakeComponent],
-        product: ProductDefinition?, changeReason: String, now: Date, context: ModelContext
+        product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date,
+        timeZoneIdentifier: String, context: ModelContext
     ) throws -> IntakeRevision {
         if let product {
             try Self.insertSnapshot(product, in: context)
         }
         context.insert(RevisionRecord(
             intakeID: intakeID, number: number, componentsJSON: componentsJSON,
-            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now))
-        let payload = "\(intakeID):\(number):\(product?.snapshotID ?? ""):\(componentsJSON)"
+            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier))
+        let payload = "\(intakeID):\(number):\(product?.snapshotID ?? "")"
+            + ":\(IntakeContextTimestamp.utc(occurredAt)):\(timeZoneIdentifier):\(componentsJSON)"
         queueWork(intakeID: intakeID, revision: number, kind: .upsert, payload: payload, context: context)
         return IntakeRevision(
             intakeID: intakeID, number: number, components: components,
-            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now)
+            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
 
     /// One projection per destination; an enabled one also gets one outbox operation.
@@ -1474,7 +1751,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         return try rows.sorted { $0.number < $1.number }.map { row in
             IntakeRevision(
                 intakeID: row.intakeID, number: row.number, components: try Self.decode(row.componentsJSON),
-                productSnapshotID: row.productSnapshotID, changeReason: row.changeReason, createdAt: row.createdAt)
+                productSnapshotID: row.productSnapshotID, changeReason: row.changeReason, createdAt: row.createdAt,
+                occurredAt: row.occurredAt, timeZoneIdentifier: row.timeZoneIdentifier)
         }
     }
 
@@ -1576,7 +1854,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
                     IntakeRevision(
                         intakeID: revision.intakeID, number: revision.number, components: components,
                         productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
-                        createdAt: revision.createdAt))
+                        createdAt: revision.createdAt, occurredAt: revision.occurredAt,
+                        timeZoneIdentifier: revision.timeZoneIdentifier))
             }
             active.append(JournalExportIntakeSnapshot(intake: intake, revisions: revisions))
         }

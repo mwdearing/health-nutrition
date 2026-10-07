@@ -267,6 +267,33 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
     }
 
+    /// A queued revision 1 is stamped with the instant **its own** revision recorded, not the entry's
+    /// current one. A time correction moves the entry's row and writes revision 2, so rebuilding revision 1
+    /// from the entry would put the corrected instant on a sample labelled sync version 1: the entry's
+    /// earlier claim would be silently rewritten, and a retry of the same revision would disagree with the
+    /// sample it had already written.
+    func testAPendingRevisionKeepsItsOwnTimeAfterALaterRevisionCorrectsTheEntry() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let corrected = when.addingTimeInterval(-86_400)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "Time corrected",
+            now: when, occurredAt: corrected, timeZoneIdentifier: "UTC")
+
+        _ = await worker.runOnce(now: when)
+
+        // One sample per revision here (the totals state one nutrient), read by sync version rather than
+        // by position, so the assertions name the revision they are about.
+        func sample(for revision: Int) throws -> HealthKitSampleSpec {
+            try XCTUnwrap(writer.saved.first { $0.syncVersion == revision })
+        }
+        XCTAssertEqual(try sample(for: 1).start, when, "revision 1 states the time it was written with")
+        XCTAssertEqual(try sample(for: 1).end, when)
+        XCTAssertEqual(try sample(for: 2).start, corrected, "revision 2 states the corrected time")
+        XCTAssertEqual(try sample(for: 2).end, corrected)
+    }
+
     func testTotalsAreAskedForWithTheIntakeAndRevisionBeingDelivered() async throws {
         let (store, _, totals, worker) = try makeWorker()
 

@@ -10,7 +10,8 @@ HealthKit, network or worker code.
   `deleted`), current revision.
 - `IntakeRevision`: numbered from 1, +1 per edit; components (slug id
   `[a-z0-9][a-z0-9._-]{0,63}`, exact decimal amount, unit), an optional product
-  snapshot id and a change reason. Revisions are never rewritten.
+  snapshot id, a change reason, and the instant and zone it was written with.
+  Revisions are never rewritten.
 - `ProductDefinition`: an immutable snapshot. Editing a product creates a new snapshot
   id; old revisions keep the snapshot they used. Re-using an id with different content
   is refused. It also carries the nutrient values the product states, on the basis
@@ -34,6 +35,18 @@ from V1 to V2, so an existing `journal.store` is migrated in place when it is ne
 has no nutrient payload reads back as a product that states nothing, and re-saving that same product
 fills the values in rather than refusing the snapshot as a conflict; every other difference under the
 same snapshot id is still a conflict.
+
+`JournalSchemaV3` adds the optional suspension reason to the outbox record, and its stage from V2 is
+**custom** because a lightweight stage cannot populate a column: the V2 store recorded a suspension only
+on the projection, so an upgrade would silently release every denied operation. The backfill runs in
+`didMigrate`, not `willMigrate`, because the context handed to `willMigrate` is still bound to the old
+schema, where the new column does not exist — fetching V3 models there fails and the container never
+finishes opening.
+
+`JournalSchemaV4` adds the deletion instant and the recorded link snapshot to the outbox record, and
+`JournalSchemaV5` adds the instant and zone to the revision record. Both stages are lightweight and need
+no backfill: every column they add is optional and describes something a row written before it cannot
+have, so nil is the honest reading rather than a value waiting to be recovered.
 
 The import path changed nothing here: a restore writes columns the existing rows already have, so V1 and V2
 stay exactly as they are and no migration stage was added. A restored tombstone carries an empty category,
@@ -68,6 +81,35 @@ describes is matched against what the store holds by identity alone: its stored 
 because the document carries none and an import must not empty the ones the journal was reading, while a
 stored row that states none is filled in from the plan. Only two sets that both state values and differ are a
 `snapshotConflict`, as is a *different* product under a snapshot id the store holds.
+
+## Correcting when an entry was eaten
+
+`edit` also takes `occurredAt` and the `timeZoneIdentifier` that goes with it. Given both, the new revision carries the
+corrected instant and the intake's own row moves with it in the same save; given neither, the time is left exactly as
+it was, so an amounts-only edit cannot move an entry by accident. Given one without the other, what was not corrected
+is kept: a new date with the entry's own zone, or a new zone with the entry's own instant. `IntakeRecord` already held
+both fields, so this part needed no schema version.
+
+**Each revision also keeps a copy of the time it was written with**, which is what `JournalSchemaV5` adds to
+`RevisionRecord`. `IntakeRecord` is the only other place the instant lives, and it moves on a correction, so
+a revision that is still queued has to be able to read its own instant back: rebuilding revision 1 from the
+entry's current row would send the corrected instant under revision 1's own `operation_id` and payload hash,
+which the receiver reads as a conflict rather than the duplicate it is. A row written before the column reads
+as nil, meaning "the entry's current time" — the only instant such a row can offer. The export format does
+not carry a time per revision, so a restored revision reads as nil for the same reason.
+
+**The correction is a new revision, never an update to a delivered one.** The encoder digests `occurred_at` per
+(intake, revision), so a revision that has already been sent describes the instant it was written for: changing the
+row underneath it would leave a delivered revision claiming a moment that is no longer true. Everything else the
+existing machinery already does therefore still holds — the previous revision is kept, the superseded projections are
+not updated, a new upsert is queued for every enabled destination, and the journal then reads the entry under its
+corrected day. Delivery scheduling, the retry policy, every threshold, the encoder and the digest rules are untouched;
+what changes is which revision is current.
+
+The upsert payload hash covers the instant and the zone as well as the amounts, because "40 g of oats" and "40 g of
+oats, eaten at 19:00" are different facts and a receiver deduplicating on that hash has to be able to tell them
+apart. The hash is a change detector, so the timestamp is written as the whole-second UTC text the contract itself
+uses.
 
 ## Usage constraints
 

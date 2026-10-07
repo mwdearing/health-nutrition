@@ -140,6 +140,22 @@ public struct IntakeRevision: Sendable, Hashable {
     public var productSnapshotID: String?
     public var changeReason: String
     public var createdAt: Date
+    /// The instant this revision says the entry was eaten, with the zone that goes with it.
+    ///
+    /// The entry's own `Intake.occurredAt` moves when the time is corrected, so a revision that is still
+    /// queued cannot read its own instant back out of it: rebuilding a revision 1 that is waiting for a
+    /// delivery would name the corrected time, and the retry would reach the receiver under the revision's
+    /// own `operation_id` with a different payload — a conflict rather than the duplicate it is. Each
+    /// revision therefore carries the time it was written with, and a delivery rebuilds the revision from
+    /// these.
+    ///
+    /// Nil means "the entry's current time". Reads are nil-tolerant rather than requiring a value, because a
+    /// row written before this column existed carries none: the V4→V5 migration fills those rows in from the
+    /// intake (which was exact for every revision, since V4 could not correct a time), so nil is now the
+    /// reading of a row nothing ever wrote rather than the normal case.
+    public var occurredAt: Date?
+    /// The zone `occurredAt` is a wall clock in. Read with `occurredAt`: nil here means the entry's own.
+    public var timeZoneIdentifier: String?
 
     public init(
         intakeID: String,
@@ -147,7 +163,9 @@ public struct IntakeRevision: Sendable, Hashable {
         components: [IntakeComponent],
         productSnapshotID: String?,
         changeReason: String,
-        createdAt: Date
+        createdAt: Date,
+        occurredAt: Date? = nil,
+        timeZoneIdentifier: String? = nil
     ) {
         self.intakeID = intakeID
         self.number = number
@@ -155,6 +173,8 @@ public struct IntakeRevision: Sendable, Hashable {
         self.productSnapshotID = productSnapshotID
         self.changeReason = changeReason
         self.createdAt = createdAt
+        self.occurredAt = occurredAt
+        self.timeZoneIdentifier = timeZoneIdentifier
     }
 }
 
@@ -284,9 +304,18 @@ public protocol JournalStore: AnyObject, Sendable {
         _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
     ) throws -> IntakeRevision
     /// Writes revision n+1 and supersedes the previous projections, in one save.
+    ///
+    /// `occurredAt`, with the `timeZoneIdentifier` that goes with it, corrects when the entry was
+    /// eaten: the new revision carries the corrected time and the intake's own row moves with it in
+    /// the same save. **It is a new revision, never an update to a delivered one** — the encoder
+    /// digests `occurred_at` per (intake, revision), so a time changed in place would leave a
+    /// delivered revision describing an instant that is no longer true. Every earlier revision is
+    /// kept, the superseded projections are not updated, and the queued upsert payload hash covers
+    /// the timestamp. Leaving both nil corrects the amounts only and leaves the time as it was.
     @discardableResult
     func edit(
-        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws
@@ -300,6 +329,19 @@ public protocol JournalStore: AnyObject, Sendable {
     func activeIntakesFromBackground() async throws -> [Intake]
     /// Releases the store; a new instance can reopen the same file.
     func close()
+}
+
+extension JournalStore {
+    /// Corrects the amounts only and leaves the entry's time as it was.
+    @discardableResult
+    public func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date
+    ) throws -> IntakeRevision {
+        try edit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: nil, timeZoneIdentifier: nil)
+    }
 }
 
 /// One intake with the whole revision history an import writes, exactly as the export carried it: the

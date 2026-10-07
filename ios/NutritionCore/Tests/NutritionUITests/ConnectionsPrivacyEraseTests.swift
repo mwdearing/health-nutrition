@@ -14,7 +14,10 @@ private final class EraseStubStore: JournalStore, @unchecked Sendable {
     func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision {
         throw Unsupported()
     }
-    func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date) throws -> IntakeRevision {
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+    ) throws -> IntakeRevision {
         throw Unsupported()
     }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
