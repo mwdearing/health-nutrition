@@ -48,6 +48,9 @@ public enum BarcodeLookupState: Sendable, Equatable {
 
 @MainActor
 public final class AddIntakeViewModel: ObservableObject {
+    /// This form's own identity, so the sheet can be bound to the model rather than to a flag beside
+    /// it. It is per instance, so a second add is always a new sheet.
+    public nonisolated let formID = UUID()
     @Published public var name: String = ""
     @Published public var brand: String = ""
     @Published public var barcode: String = ""
@@ -428,24 +431,17 @@ public final class AddIntakeViewModel: ObservableObject {
     }
 
     /// Component ids are slugs: `[a-z0-9][a-z0-9._-]{0,63}`. A pure function, so it is callable
-    /// from outside the main actor (the snapshot identity in `BarcodeLookup.swift` needs it).
+    /// from outside the main actor (the snapshot identity in `BarcodeLookup.swift` needs it). The
+    /// spelling itself is `Slug`, which the label parser reads a compound's name into as well.
     nonisolated static func slug(_ text: String) -> String {
-        var result = ""
-        var lastWasDash = false
-        for scalar in text.lowercased().unicodeScalars {
-            let isAllowed = scalar.isASCII && (("a"..."z").contains(Character(scalar)) || ("0"..."9").contains(Character(scalar)))
-            if isAllowed {
-                result.unicodeScalars.append(scalar)
-                lastWasDash = false
-            } else if !lastWasDash, !result.isEmpty {
-                result.append("-")
-                lastWasDash = true
-            }
-        }
-        while result.hasSuffix("-") { result.removeLast() }
-        if result.isEmpty { return "item" }
-        return String(result.prefix(64))
+        Slug.make(text)
     }
+}
+
+/// The sheet that presents the intake form is bound to the view model itself rather than to a flag
+/// beside it, so the model has to say which form it is: one form on screen at a time.
+extension AddIntakeViewModel: Identifiable {
+    public var id: UUID { formID }
 }
 
 extension String {

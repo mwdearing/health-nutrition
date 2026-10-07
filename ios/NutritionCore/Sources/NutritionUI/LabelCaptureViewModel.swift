@@ -101,7 +101,13 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
 
     /// The reasons the parser gave, in words a user can act on.
     public var reviewSummary: String {
-        guard isFlagged else { return "" }
+        LabelCaptureRow.summarize(reasons, name: name)
+    }
+
+    /// The reasons a row was flagged, in words a user can act on. Shared with the compound rows, which
+    /// are flagged by the same parser and have to read the same way on the screen.
+    static func summarize(_ reasons: Set<ParsedValueReview.Reason>, name: String) -> String {
+        guard !reasons.isEmpty else { return "" }
         var sentences: [String] = []
         if reasons.contains(.correctedLetterO) {
             sentences.append("a letter O was read as a zero")
@@ -128,6 +134,71 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
             return "below reporting threshold" + (unit.map { " \($0.symbol)" } ?? "")
         }
     }
+}
+
+/// One row of a captured panel that the fifteen journal nutrients do not name, as the review screen
+/// shows it.
+///
+/// A supplement states its own compounds, and they are the reason anyone scans one, so the row is shown
+/// under the name the label printed rather than dropped. It carries the key the value is stored under —
+/// a slug of that name — so the confirmation the user gives reaches the snapshot under the same key the
+/// journal stores it by.
+public struct LabelCaptureAdditionalRow: Identifiable, Equatable, Sendable {
+    /// The key the value is stored under: `creatine-monohydrate` for `Creatine Monohydrate`.
+    public let key: String
+    /// The name the label printed for the compound, which is what the screen shows.
+    public let name: String
+    /// Why the parser asked about this value; empty when it read the row exactly as printed.
+    public let reasons: Set<ParsedValueReview.Reason>
+    public var value: NutrientValue
+    public var status: LabelCaptureRow.Status
+
+    public init(
+        key: String, name: String, value: NutrientValue, reasons: Set<ParsedValueReview.Reason>,
+        status: LabelCaptureRow.Status
+    ) {
+        self.key = key
+        self.name = name
+        self.reasons = reasons
+        self.value = value
+        self.status = status
+    }
+
+    public var id: String { key }
+    public var isFlagged: Bool { !reasons.isEmpty }
+    /// The row still waits for the user, so nothing may be saved yet.
+    public var isPending: Bool { status == .needsConfirmation }
+    public var needsConfirmation: Bool { status == .needsConfirmation }
+    /// Whether the row carries an amount the user may replace. Recognition can turn one valid number
+    /// into another valid one, and the parser has no reason to flag that, so a compound the user can
+    /// read is as much theirs to change as any nutrient row.
+    public var canBeCorrected: Bool {
+        switch value {
+        case .known: return true
+        case .unknown, .notApplicable, .belowReportingThreshold: return false
+        }
+    }
+
+    public var valueText: String { LabelCaptureRow.describe(value) }
+
+    /// One sentence for VoiceOver: the value, and whether it still needs the user's answer.
+    public var accessibilityLabel: String {
+        var parts = ["\(name), \(valueText)"]
+        switch status {
+        case .read:
+            break
+        case .needsConfirmation:
+            parts.append("needs checking")
+        case .confirmed:
+            parts.append("confirmed")
+        case .corrected:
+            parts.append("corrected by you")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The reasons the parser gave, in the words the nutrient rows use.
+    public var reviewSummary: String { LabelCaptureRow.summarize(reasons, name: name) }
 }
 
 /// Reads the amount a user types to correct one captured row.
@@ -211,9 +282,17 @@ public enum NutrientAmountParser {
 /// - A panel with no amount at all is not turned into a product: it says so and offers another look.
 @MainActor
 public final class LabelCaptureViewModel: ObservableObject {
+    /// This capture's own identity, so the sheet can be bound to the model rather than to a flag beside
+    /// it. It is per instance, so a fresh capture is always a new sheet and a re-presented one is the
+    /// same panel.
+    public nonisolated let captureID = UUID()
     /// One row per nutrient the journal names, in panel order. Every row is present from the first
     /// load, so the review screen shows a nutrient the panel omits as unknown rather than hiding it.
     @Published public private(set) var rows: [LabelCaptureRow] = []
+    /// One row per compound the panel states that the fifteen journal nutrients do not name, in the
+    /// order the panel printed them. Shown under its own heading, because these rows are why anyone
+    /// scans a supplement panel at all.
+    @Published public private(set) var additionalRows: [LabelCaptureAdditionalRow] = []
     /// The serving size as the panel printed it, and the measure it stated when it stated one.
     @Published public private(set) var servingText: String?
     @Published public private(set) var servingQuantity: Quantity?
@@ -264,6 +343,11 @@ public final class LabelCaptureViewModel: ObservableObject {
             )
         }
         rows = loaded
+        additionalRows = panel.additionalNutrients.map {
+            LabelCaptureAdditionalRow(
+                key: $0.key, name: $0.name, value: $0.value, reasons: $0.review?.reasons ?? [],
+                status: $0.review == nil ? .read : .needsConfirmation)
+        }
         servingText = panel.servingSize?.text
         servingQuantity = panel.servingSize?.quantity
         servingsPerContainer = panel.servingsPerContainer
@@ -281,6 +365,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// Forgets the panel on screen so the capture session can read another one.
     public func retake() {
         rows = []
+        additionalRows = []
         servingText = nil
         servingQuantity = nil
         servingsPerContainer = nil
@@ -305,6 +390,49 @@ public final class LabelCaptureViewModel: ObservableObject {
         guard rows[index].isFlagged else { return }
         rows[index].status = .confirmed
         correctionError = nil
+    }
+
+    /// The compound row the panel printed under `key`, under the name the label used for it, or nil
+    /// when the panel stated no such row.
+    public func additionalNutrient(for key: String) -> LabelCaptureAdditionalRow? {
+        additionalRows.first { $0.key == key }
+    }
+
+    /// The user agrees with a compound row the parser flagged. Returns whether the row was there to
+    /// answer, so a caller can tell a real confirmation from a key the panel never printed.
+    @discardableResult
+    public func confirmAdditional(key: String) -> Bool {
+        guard let index = additionalRows.firstIndex(where: { $0.key == key }) else { return false }
+        additionalRows[index].status = .confirmed
+        correctionError = nil
+        return true
+    }
+
+    /// The user replaces a compound's amount with one they typed.
+    ///
+    /// Read and checked exactly like a nutrient correction, with one difference: a compound carries the
+    /// unit the label printed and has no usual one to fall back on, so a correction that names no unit
+    /// keeps the printed one and a correction that names none of its own is refused rather than stored
+    /// in a unit nothing downstream can interpret.
+    @discardableResult
+    public func correctAdditional(key: String, text: String) -> Bool {
+        guard let index = additionalRows.firstIndex(where: { $0.key == key }) else { return false }
+        guard additionalRows[index].canBeCorrected else { return false }
+        guard let parsed = NutrientAmountParser.parse(text) else {
+            correctionError = "Enter zero or more, using digits and a point, and add the unit if you want a different one."
+            return false
+        }
+        let printed = Self.unit(of: additionalRows[index].value)
+        let unit = parsed.unit ?? printed
+        if let named = parsed.unit, named.dimension != printed.dimension {
+            correctionError =
+                "\(additionalRows[index].name) is measured \(Self.describe(printed.dimension)), so the amount has to be in a unit of that kind."
+            return false
+        }
+        additionalRows[index].value = .known(parsed.value, unit)
+        additionalRows[index].status = .corrected
+        correctionError = nil
+        return true
     }
 
     /// Puts away the message from a correction that was refused.
@@ -446,10 +574,24 @@ public final class LabelCaptureViewModel: ObservableObject {
         return usualUnits[key] ?? .g
     }
 
+    /// The unit a value already carries, or grams when it carries none. A compound is stored with the
+    /// unit the label printed, so this is the unit its corrections keep.
+    static func unit(of value: NutrientValue) -> MeasureUnit {
+        switch value {
+        case .known(_, let unit):
+            return unit
+        case .belowReportingThreshold(let unit):
+            return unit ?? .g
+        case .unknown, .notApplicable:
+            return .g
+        }
+    }
+
     /// How many values are still waiting for the user: the flagged rows they have not answered, a
     /// serving size the parser corrected or the panel left out, and nothing else.
     public var pendingCount: Int {
         var pending = rows.filter(\.isPending).count
+        pending += additionalRows.filter(\.isPending).count
         if servingIsMissing || (servingNeedsReview && !isServingConfirmed) { pending += 1 }
         return pending
     }
@@ -476,7 +618,7 @@ public final class LabelCaptureViewModel: ObservableObject {
             let known = rows.filter { $0.value != .unknown }.count
             return "Read \(known) of \(rows.count) rows. A nutrient the panel does not state stays unknown."
         }
-        let pendingRows = rows.filter(\.isPending).count
+        let pendingRows = rows.filter(\.isPending).count + additionalRows.filter(\.isPending).count
         var parts: [String] = []
         if pendingRows == 1 {
             parts.append("1 value needs your confirmation")
@@ -518,6 +660,12 @@ public final class LabelCaptureViewModel: ObservableObject {
         for row in rows where row.value != .unknown && !row.isPending {
             nutrients[row.key.rawValue] = row.value
         }
+        // A compound the panel printed and the user answered is stored under its own slug, beside the
+        // fifteen named nutrients: it has no key in the journal's own table, and dropping it would
+        // lose the reason anyone scanned a supplement panel.
+        for row in additionalRows where row.value != .unknown && !row.isPending {
+            nutrients[row.key] = row.value
+        }
         let basis = Self.labelBasis(servingText: servingText, quantity: servingQuantity)
         var signature = basis
         if let servingsPerContainer {
@@ -525,6 +673,9 @@ public final class LabelCaptureViewModel: ObservableObject {
         }
         for row in rows {
             signature += "|" + row.key.rawValue + "=" + LabelCaptureRow.describe(row.value)
+        }
+        for row in additionalRows {
+            signature += "|extra:" + row.key + "=" + LabelCaptureRow.describe(row.value)
         }
         return ProductDefinition(
             snapshotID: "label-" + AddIntakeViewModel.slug(signature) + "-" + LookedUpProduct.checksum(signature),
@@ -550,4 +701,11 @@ public final class LabelCaptureViewModel: ObservableObject {
         }
         return basis
     }
+}
+
+/// The sheet that presents a capture is bound to the view model itself rather than to a flag beside it,
+/// so the model has to say which capture it is: one panel is on screen at a time, and a second capture
+/// is a different one.
+extension LabelCaptureViewModel: Identifiable {
+    public var id: UUID { captureID }
 }

@@ -13,14 +13,16 @@ struct RootView: View {
     @ObservedObject var connections: ConnectionsPrivacyViewModel
 
     @State private var selection: AppTab = .today
-    @State private var addingIntake = false
     /// Held rather than built inside the sheet, so a scanned barcode can be written into the same
-    /// form that will be saved.
+    /// form that will be saved. The sheet is presented from the model itself: a flag beside it is read
+    /// while the model's optional is still nil, so the sheet opened empty and only worked the second
+    /// time it was tapped.
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var scanningBarcode = false
-    @State private var capturingLabel = false
     /// Held so the review screen's values go into the same form the entry is saved from, and so a
-    /// retake starts from a clean panel.
+    /// retake starts from a clean panel. Presented from the model itself, for the same reason as the
+    /// intake sheet above: a flag beside it opened the scanner's review empty and made the scanner look
+    /// slow to appear.
     @State private var labelCapture: LabelCaptureViewModel?
     @State private var selectedIntakeID: String?
     /// Held rather than kept as plain view state, so the erase below closes the recipe sheet and drops
@@ -172,47 +174,48 @@ struct RootView: View {
             deliverToHealthKit()
         }
         #endif
-        .sheet(isPresented: $addingIntake) {
-            if let model = addIntakeModel {
-                AddIntakeView(
-                    model: model,
-                    now: { Date() },
-                    onSaved: {
-                        addingIntake = false
-                        addIntakeModel = nil
-                        reload()
-                    },
-                    onFromLibrary: {
-                        addingIntake = false
-                        addIntakeModel = nil
-                        selection = .library
-                    },
-                    // nil hides the button, so the form only offers scanning where the device has a
-                    // camera that can read barcodes.
-                    onScanBarcode: scanBarcode,
-                    // Label capture is offered on its own terms: it asks the camera for text rather
-                    // than for a code, and it needs no lookup source to be available.
-                    onScanLabel: scanLabel
-                )
-                // The scanner fills the field and closes itself. The lookup still runs only when
-                // the user taps Look up.
-                .sheet(isPresented: $scanningBarcode) {
-                    BarcodeScannerSheet { barcode in
-                        // Through the model, so a scan drops whatever an earlier lookup filled in.
-                        model.setScannedBarcode(barcode)
-                    }
+        // Presented from the view model rather than from a flag. A `.sheet(isPresented:)` evaluates its
+        // body on the presentation itself, which is before `addIntakeModel` has been read into the
+        // optional the body needs, so the first tap opened an empty sheet and only the second one
+        // worked. `.sheet(item:)` hands the model to the body, so the form is built from one that is
+        // there, and dismissing the sheet clears it.
+        .sheet(item: $addIntakeModel) { model in
+            AddIntakeView(
+                model: model,
+                now: { Date() },
+                onSaved: {
+                    addIntakeModel = nil
+                    reload()
+                },
+                onFromLibrary: {
+                    addIntakeModel = nil
+                    selection = .library
+                },
+                // nil hides the button, so the form only offers scanning where the device has a
+                // camera that can read barcodes.
+                onScanBarcode: scanBarcode,
+                // Label capture is offered on its own terms: it asks the camera for text rather
+                // than for a code, and it needs no lookup source to be available.
+                onScanLabel: scanLabel
+            )
+            // The scanner fills the field and closes itself. The lookup still runs only when
+            // the user taps Look up.
+            .sheet(isPresented: $scanningBarcode) {
+                BarcodeScannerSheet { barcode in
+                    // Through the model, so a scan drops whatever an earlier lookup filled in.
+                    model.setScannedBarcode(barcode)
                 }
-                // The capture sheet owns the camera and the review screen. The values are handed to
-                // the form only after the user has confirmed every value the parser was unsure about.
-                .sheet(isPresented: $capturingLabel) {
-                    if let capture = labelCapture {
-                        LabelCaptureSheet(model: capture) { product in
-                            // Through the model, so captured values are invalidated by a later barcode
-                            // or edit the same way looked-up values are.
-                            model.applyLabelProduct(product)
-                            labelCapture = nil
-                        }
-                    }
+            }
+            // The capture sheet owns the camera and the review screen. It is presented from the capture
+            // view model for the same reason as this sheet, so the scanner's review is never empty and
+            // the scanner does not look slow to appear. The values are handed to the form only after the
+            // user has confirmed every value the parser was unsure about.
+            .sheet(item: $labelCapture) { capture in
+                LabelCaptureSheet(model: capture) { product in
+                    // Through the model, so captured values are invalidated by a later barcode
+                    // or edit the same way looked-up values are.
+                    model.applyLabelProduct(product)
+                    labelCapture = nil
                 }
             }
         }
@@ -224,7 +227,6 @@ struct RootView: View {
             store: services.journalStore, now: Date(), lookup: services.barcodeLookup,
             preferences: services.displayPreferences
         )
-        addingIntake = true
     }
 
     /// The action the intake form's Scan button runs. nil where the device cannot scan barcodes,
@@ -240,8 +242,8 @@ struct RootView: View {
         guard LabelTextScanner.isAvailable else { return nil }
         return {
             // A fresh view model per capture, so a previous panel is never on screen behind this one.
+            // Setting the model is what presents the sheet; there is no flag beside it to be out of step.
             labelCapture = LabelCaptureViewModel()
-            capturingLabel = true
         }
     }
 

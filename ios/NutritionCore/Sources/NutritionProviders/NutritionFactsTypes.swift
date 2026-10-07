@@ -63,6 +63,31 @@ public struct ParsedValueReview: Sendable, Hashable {
     }
 }
 
+/// One row of a panel that the table of named nutrients does not carry.
+///
+/// A supplement states its own compounds routinely — `Creatine Monohydrate 3g`, `Zinc 15mg` — and
+/// reading them is the point of scanning one, so the row is kept under the name the label printed and
+/// a slug of that name rather than dropped for having no key in the journal's table.
+public struct ParsedAdditionalNutrient: Sendable, Hashable, Identifiable {
+    /// The name the label printed for the compound, as it printed it.
+    public let name: String
+    /// The key the value is stored under: `creatine-monohydrate` for `Creatine Monohydrate`.
+    public let key: String
+    /// The value, in the unit the row printed.
+    public let value: NutrientValue
+    /// Why the value was read with less than full confidence, or nil when it was read as printed.
+    public let review: ParsedValueReview?
+
+    public init(name: String, key: String, value: NutrientValue, review: ParsedValueReview? = nil) {
+        self.name = name
+        self.key = key
+        self.value = value
+        self.review = review
+    }
+
+    public var id: String { key }
+}
+
 /// One Nutrition Facts panel, read from the text a capture session produced.
 ///
 /// The parser is pure: text in, a panel out. Nothing here is saved anywhere, and nothing here decides
@@ -76,6 +101,9 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
     public let servingsPerContainer: Decimal?
     /// Per serving, keyed by `NutritionFactKey.rawValue`. Every key is present.
     public let nutrients: [String: NutrientValue]
+    /// The rows the panel states that the named table does not carry, in the order it printed them.
+    /// Empty for a panel that names every row it states.
+    public let additionalNutrients: [ParsedAdditionalNutrient]
     /// Only the values that were read with less than full confidence, keyed the same way as `nutrients`.
     public let valuesNeedingReview: [String: ParsedValueReview]
 
@@ -83,6 +111,7 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         servingSize: ParsedServingSize?,
         servingsPerContainer: Decimal?,
         nutrients: [String: NutrientValue],
+        additionalNutrients: [ParsedAdditionalNutrient] = [],
         valuesNeedingReview: [String: ParsedValueReview]
     ) {
         var complete = nutrients
@@ -92,11 +121,17 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         self.servingSize = servingSize
         self.servingsPerContainer = servingsPerContainer
         self.nutrients = complete
+        self.additionalNutrients = additionalNutrients
         self.valuesNeedingReview = valuesNeedingReview
     }
 
     public func value(for key: NutritionFactKey) -> NutrientValue {
         nutrients[key.rawValue] ?? .unknown
+    }
+
+    /// The compound the panel printed under `key`, or nil when it stated no such row.
+    public func additionalNutrient(for key: String) -> ParsedAdditionalNutrient? {
+        additionalNutrients.first { $0.key == key }
     }
 
     /// Whether the value was read with less than full confidence, so the confirmation screen highlights it.
@@ -114,7 +149,9 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
     }
 
     /// True when the panel stated no amount at all, so there is nothing to show for confirmation.
+    /// A panel whose only amounts are compounds it names itself still stated amounts, so a supplement
+    /// panel is not written off as unreadable.
     public var isUnreadable: Bool {
-        nutrients.values.allSatisfy { $0 == .unknown }
+        nutrients.values.allSatisfy { $0 == .unknown } && additionalNutrients.isEmpty
     }
 }

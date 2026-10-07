@@ -26,6 +26,9 @@ public struct LabelCaptureView: View {
     @State private var draft = ""
     /// The serving size typed for a panel that stated none, or the one replacing a serving it did state.
     @State private var servingDraft = ""
+    /// The compound row being corrected. One at a time, like the nutrient rows: there is one keyboard.
+    @State private var editingAdditional: String?
+    @State private var servingDraft = ""
     /// Whether the field for correcting a printed serving size is open.
     @State private var editingServing = false
 
@@ -49,6 +52,9 @@ public struct LabelCaptureView: View {
                     ForEach(model.rows) { row in
                         nutrientRow(row)
                     }
+                }
+                if !model.additionalRows.isEmpty {
+                    additionalSection
                 }
             }
             if let message = model.statusMessage {
@@ -238,6 +244,155 @@ public struct LabelCaptureView: View {
         .listRowBackground(row.needsConfirmation ? TokenColors.warning.opacity(0.12) : Color.clear)
     }
 
+    /// The rows the panel states under its own names, under a heading of their own.
+    ///
+    /// These are the compounds the fifteen journal nutrients do not name, and they are why anyone scans
+    /// a supplement panel, so they are shown like the rest: the name the label printed, the value as it
+    /// was read, Confirm where the parser asked, and Correct for a row the user may have misread. They
+    /// are kept out of the Nutrients section because they are not that list's rows and reading them as
+    /// such would tell the user they are nutrients the journal knows about.
+    private var additionalSection: some View {
+        Section("Also on the label") {
+            ForEach(model.additionalRows) { row in
+                additionalRow(row)
+            }
+        }
+    }
+
+    /// One compound row: the value as read, and the controls the row offers, in the same shape as a
+    /// nutrient row so a user who has just worked through one knows what to do with the next.
+    private func additionalRow(_ row: LabelCaptureAdditionalRow) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(row.name)
+                    .font(.body)
+                Spacer()
+                Text(row.valueText)
+                    .font(.body)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(row.accessibilityLabel)
+
+            if row.needsConfirmation {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(TokenColors.warning)
+                        .accessibilityLabel("Needs your confirmation")
+                    Text(row.reviewSummary)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.error)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(row.name) needs your confirmation. \(row.reviewSummary)")
+            }
+
+            if editingAdditional == row.key {
+                additionalCorrectionEditor(row)
+            } else {
+                additionalRowControls(row)
+            }
+
+            if !row.needsConfirmation, row.status == .confirmed || row.status == .corrected {
+                Text(row.status == .corrected ? "Corrected by you" : "Confirmed by you")
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .accessibilityLabel(
+                        "\(row.name): \(row.valueText), "
+                            + (row.status == .corrected ? "corrected by you" : "confirmed by you"))
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .listRowBackground(row.needsConfirmation ? TokenColors.warning.opacity(0.12) : Color.clear)
+    }
+
+    @ViewBuilder
+    private func additionalRowControls(_ row: LabelCaptureAdditionalRow) -> some View {
+        if row.needsConfirmation {
+            HStack {
+                Button("Confirm") { model.confirmAdditional(key: row.key) }
+                    .font(.body)
+                    // Two buttons in one form row are both row actions under the automatic style, and
+                    // tapping either can then fire both, so their hit areas have to stay apart.
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Confirm \(row.name)")
+                    .accessibilityHint("Keeps the value as the label was read")
+                Button("Correct") { beginCorrection(for: row) }
+                    .font(.body)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Correct \(row.name)")
+                    .accessibilityHint("Types a different amount for this row, zero included")
+            }
+        } else if row.canBeCorrected {
+            Button("Correct") { beginCorrection(for: row) }
+                .font(.body)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Correct \(row.name)")
+                .accessibilityHint("Types a different amount for this row, zero included")
+        }
+    }
+
+    /// The field a compound's correction is typed into, with the unit the label printed beside it. The
+    /// unit is the one the value will be stored in, so a correction that names none keeps it.
+    private func additionalCorrectionEditor(_ row: LabelCaptureAdditionalRow) -> some View {
+        let unit = LabelCaptureViewModel.unit(of: row.value).symbol
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Amount", text: $draft)
+                    .font(.body)
+                    .amountKeyboard()
+                    .accessibilityLabel("Amount for \(row.name)")
+                    .accessibilityHint("Zero or more, in \(unit)")
+                Text(unit)
+                    .font(.body)
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .accessibilityLabel("Unit \(unit)")
+            }
+            if let message = model.correctionError {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.error)
+                    .accessibilityLabel(message)
+            }
+            // Borderless for the same reason as a nutrient row's own actions: under the automatic style
+            // both of these become actions for the row, so tapping Cancel could save the draft as well.
+            HStack {
+                Button("Save") {
+                    if model.correctAdditional(key: row.key, text: draft) { editingAdditional = nil }
+                }
+                .font(.body)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Save the corrected \(row.name)")
+                Button("Cancel") {
+                    editingAdditional = nil
+                    draft = ""
+                    // The refused correction is over, so its message goes with it rather than waiting
+                    // under the next row's field.
+                    model.clearCorrectionError()
+                }
+                .font(.body)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Stop correcting \(row.name)")
+            }
+        }
+    }
+
+    /// Opens the amount field for one compound row, clearing the nutrient field beside it so the two
+    /// cannot be confused for one another.
+    private func beginCorrection(for row: LabelCaptureAdditionalRow) {
+        model.clearCorrectionError()
+        editing = nil
+        editingAdditional = row.key
+        draft = describeAmount(row.value)
+    }
+
+    /// The amount as it is typed into the correction field, or empty for a value that states none.
+    private func describeAmount(_ value: NutrientValue) -> String {
+        guard case .known(let amount, _) = value else { return "" }
+        return NSDecimalNumber(decimal: amount).stringValue
+    }
+
     /// The actions a row offers. A row still waiting for an answer gets Confirm as well as Correct; a
     /// row the user has already answered still gets Correct, because they may have read it wrong
     /// themselves; a row with no amount to correct gets nothing.
@@ -349,6 +504,7 @@ public struct LabelCaptureView: View {
                     model.retake()
                     editing = nil
                     draft = ""
+                    editingAdditional = nil
                     onRetake()
                 }
                 .font(.body)
