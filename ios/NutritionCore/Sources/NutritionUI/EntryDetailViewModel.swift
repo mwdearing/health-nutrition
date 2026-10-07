@@ -176,23 +176,32 @@ public final class EntryDetailViewModel: ObservableObject {
     /// zone is the entry's own, so the day it lands on is read the same way as before.
     @discardableResult
     public func save(components edited: [EditedComponent], changeReason reason: String, now: Date) -> Bool {
-        var errors: [String: String] = [:]
-        var parsed: [IntakeComponent] = []
-        for item in edited {
-            if let amount = AmountParser.parse(item.amountText) {
-                parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: item.unit))
-            } else {
-                errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."
-            }
-        }
-        fieldErrors = errors
-        guard errors.isEmpty, !parsed.isEmpty else { return false }
         do {
             guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
+                fieldErrors = [:]
                 errorMessage = "This entry is no longer available."
                 return false
             }
             let current = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }
+            var errors: [String: String] = [:]
+            var parsed: [IntakeComponent] = []
+            for item in edited {
+                // A draft the person did not touch is the stored component, carried through as it stands
+                // rather than re-read as text. The parser is the right gate on what someone **typed**, and it
+                // is narrower than the store: it refuses a zero amount, which the store, the export, the
+                // importer and the encoder all accept. Validating an untouched field would therefore make
+                // such an entry unsaveable at all — a time correction included, which changes no amount and
+                // so should never have needed an amount validated at all.
+                if let untouched = Self.unchangedStoredComponent(for: item, in: current?.components ?? []) {
+                    parsed.append(untouched)
+                } else if let amount = AmountParser.parse(item.amountText) {
+                    parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: item.unit))
+                } else {
+                    errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."
+                }
+            }
+            fieldErrors = errors
+            guard errors.isEmpty, !parsed.isEmpty else { return false }
             var product: ProductDefinition?
             if let snapshotID = current?.productSnapshotID { product = try store.product(snapshotID: snapshotID) }
             let correctedTime: Date? = storedOccurredAt == nil || storedOccurredAt == occurredAt
@@ -228,6 +237,28 @@ public final class EntryDetailViewModel: ObservableObject {
         if trimmed.isEmpty { return timeOnlyChange ? timeCorrectionReason : defaultChangeReason }
         if timeOnlyChange, trimmed == defaultChangeReason { return timeCorrectionReason }
         return trimmed
+    }
+
+    /// The stored component a draft leaves untouched, or nil when the person edited it or the revision does
+    /// not hold one under that id.
+    ///
+    /// "Untouched" is judged against the text `load` seeded the field with, so the comparison is the one
+    /// the person sees: a draft that still reads as the stored amount states the stored amount, whatever
+    /// the parser would make of that text. An entry with a zero-valued component therefore keeps it, and a
+    /// time correction of such an entry — which changes no amount — writes without ever validating one.
+    ///
+    /// A stored `unknown` is left out on purpose: its field is seeded empty, and empty is not a number, so
+    /// there is no untouched reading of it to recognise. An untouched unknown still fails the parser as
+    /// before, which is the honest outcome for a field that states nothing.
+    static func unchangedStoredComponent(
+        for draft: EditedComponent, in stored: [IntakeComponent]
+    ) -> IntakeComponent? {
+        guard let existing = stored.first(where: { $0.componentID == draft.componentID }),
+            !existing.amount.isNaN,
+            draft.amountText.trimmingCharacters(in: .whitespacesAndNewlines)
+                == DecimalFormatting.text(existing.amount)
+        else { return nil }
+        return existing
     }
 
     /// Whether the components a save writes are the ones the current revision already holds.

@@ -283,12 +283,15 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
         _ = await worker.runOnce(now: when)
 
-        let byVersion = Dictionary(
-            uniqueKeysWithValues: writer.saved.map { ($0.syncVersion, $0) })
-        XCTAssertEqual(byVersion[1]?.start, when, "revision 1 states the time it was written with")
-        XCTAssertEqual(byVersion[1]?.end, when)
-        XCTAssertEqual(byVersion[2]?.start, corrected, "revision 2 states the corrected time")
-        XCTAssertEqual(byVersion[2]?.end, corrected)
+        // One sample per revision here (the totals state one nutrient), read by sync version rather than
+        // by position, so the assertions name the revision they are about.
+        func sample(for revision: Int) throws -> HealthKitSampleSpec {
+            try XCTUnwrap(writer.saved.first { $0.syncVersion == revision })
+        }
+        XCTAssertEqual(try sample(for: 1).start, when, "revision 1 states the time it was written with")
+        XCTAssertEqual(try sample(for: 1).end, when)
+        XCTAssertEqual(try sample(for: 2).start, corrected, "revision 2 states the corrected time")
+        XCTAssertEqual(try sample(for: 2).end, corrected)
     }
 
     func testTotalsAreAskedForWithTheIntakeAndRevisionBeingDelivered() async throws {

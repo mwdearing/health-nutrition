@@ -1276,12 +1276,11 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             "only the batch that was refused counts as failed")
     }
 
-    /// The tombstone carries when the person deleted the entry, not when the last revision was written.
-    /// `occurred_at` and `time_zone` are hashed into all three digests, so an upsert has to carry the instant
-    /// **its own revision** recorded. A correction of the entry's time moves the entry's row, and a revision 1
-    /// still queued behind it would otherwise be encoded with the corrected instant — the same
-    /// `operation_id` arriving with a different `client_payload_hash`, which the receiver reads as a conflict
-    /// rather than the duplicate it is.
+    /// `occurred_at` and `time_zone` are hashed into all three digests, so an upsert has to carry the
+    /// instant **its own revision** recorded. A correction of the entry's time moves the entry's row, and a
+    /// revision 1 still queued behind it would otherwise be encoded with the corrected instant — the same
+    /// `operation_id` arriving with a different `client_payload_hash`, which the receiver reads as a
+    /// conflict rather than the duplicate it is.
     func testAPendingRevisionIsEncodedWithItsOwnTimeAfterALaterRevisionCorrectsTheEntry() async throws {
         let (store, transport, worker) = try makeWorker()
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
@@ -1300,11 +1299,16 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             uniqueKeysWithValues: operations.compactMap { operation in
                 operation.integer("revision").map { ($0, operation) }
             })
+        XCTAssertEqual(Set(byRevision.keys), [1, 2], "one operation per revision, as the queue offered them")
+        // Read through the same helper the encoder uses rather than formatting the stamps here: a stamp
+        // built differently would compare unequal for a reason that has nothing to do with what is tested.
+        let originalStamp = try IntakeContextTimestamp.local(when, timeZone: "UTC")
+        let correctedStamp = try IntakeContextTimestamp.local(corrected, timeZone: "UTC")
         XCTAssertEqual(
-            byRevision[1]?.string("occurred_at"), IntakeContextTimestamp.local(when, timeZone: "UTC"),
+            byRevision[1]?.string("occurred_at"), originalStamp,
             "revision 1 states the time it was written with")
         XCTAssertEqual(
-            byRevision[2]?.string("occurred_at"), IntakeContextTimestamp.local(corrected, timeZone: "UTC"),
+            byRevision[2]?.string("occurred_at"), correctedStamp,
             "revision 2 states the corrected time")
     }
 

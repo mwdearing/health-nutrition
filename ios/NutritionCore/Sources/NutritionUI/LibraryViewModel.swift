@@ -28,7 +28,7 @@ public struct RecentItemsProvider {
             guard let revisions = try? store.revisions(of: intake.id),
                 let current = revisions.first(where: { $0.number == intake.currentRevision })
             else { continue }
-            let key = Self.key(category: intake.category, revision: current)
+            let key = Self.key(category: intake.category, revision: current, meal: intake.meal)
             guard seen.insert(key).inserted else { continue }
             result.append(RecentItem(
                 id: key,
@@ -40,15 +40,31 @@ public struct RecentItemsProvider {
         return result
     }
 
-    static func key(category: String, revision: IntakeRevision) -> String {
-        identityKey(category: category, snapshotID: revision.productSnapshotID, names: revision.components.map { $0.name })
+    /// **The meal is part of the identity.** A recent item is a template to add again, and "again" means
+    /// the same thing a person last ate: the same oats at breakfast and the same oats at dinner are two
+    /// different entries they would add again separately, and a favorite is a copy of one of them.
+    ///
+    /// It was left out, and that made one entry stand in for the other in three places at once: a Dinner
+    /// entry whose Breakfast twin was favorited read as already favorited, `addFavorite` refused to save it
+    /// as a second favorite, and removing the Breakfast one removed the Dinner row too — through a key that
+    /// named only the product. Every part of the identity is spelled out, meal included, so the three agree
+    /// on which entry they are talking about.
+    static func key(category: String, revision: IntakeRevision, meal: String?) -> String {
+        identityKey(
+            category: category, snapshotID: revision.productSnapshotID,
+            names: revision.components.map { $0.name }, meal: meal)
     }
 
     /// Injective key: lengths prefix every text part, so no join character can collide.
-    static func identityKey(category: String, snapshotID: String?, names: [String]) -> String {
-        if let snapshotID { return "product:\(snapshotID.count):\(snapshotID)" }
+    ///
+    /// The meal is written as its own counted part, and a nil meal as a counted empty one, so an entry that
+    /// states no meal can never collide with one that states an empty string. A snapshot id still short
+    /// circuits: a snapshot names one product, but the meal is what the person is repeating, so it is kept.
+    static func identityKey(category: String, snapshotID: String?, names: [String], meal: String?) -> String {
+        let mealPart = "meal:\(meal?.count ?? 0):\(meal ?? "")"
+        if let snapshotID { return "product:\(snapshotID.count):\(snapshotID)|\(mealPart)" }
         let parts = names.map { $0.lowercased() }.sorted().map { "\($0.count):\($0)" }.joined()
-        return "category:\(category.count):\(category)|components:\(names.count)|\(parts)"
+        return "category:\(category.count):\(category)|components:\(names.count)|\(parts)|\(mealPart)"
     }
 }
 
@@ -141,12 +157,14 @@ public final class LibraryViewModel: ObservableObject {
 
     private static func key(of favorite: FavoriteTemplate) -> String {
         RecentItemsProvider.identityKey(
-            category: favorite.category, snapshotID: favorite.productSnapshotID, names: favorite.components.map { $0.name })
+            category: favorite.category, snapshotID: favorite.productSnapshotID,
+            names: favorite.components.map { $0.name }, meal: favorite.meal)
     }
 
     private static func key(of template: RepeatTemplate) -> String {
         RecentItemsProvider.identityKey(
-            category: template.category, snapshotID: template.productSnapshotID, names: template.components.map { $0.name })
+            category: template.category, snapshotID: template.productSnapshotID,
+            names: template.components.map { $0.name }, meal: template.meal)
     }
 
     /// Saves the item as a favorite template (a copy, not a link to the intake). Already favorited is a no-op.

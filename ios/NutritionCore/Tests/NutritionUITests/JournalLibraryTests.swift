@@ -103,10 +103,11 @@ final class JournalLibraryTests: XCTestCase {
     @discardableResult
     private func addFood(
         _ store: JournalStore, name: String = "Oats", at date: Date, zone: String = "UTC", amount: Decimal = 40,
-        category: String = "food", product: ProductDefinition? = nil
+        category: String = "food", product: ProductDefinition? = nil, meal: String? = nil
     ) throws -> String {
         let id = UUID().uuidString.lowercased()
-        let intake = Intake(id: id, category: category, occurredAt: date, timeZoneIdentifier: zone)
+        let intake = Intake(
+            id: id, category: category, occurredAt: date, timeZoneIdentifier: zone, meal: meal)
         let slug = name.lowercased().replacingOccurrences(of: " ", with: "-")
         try store.create(
             intake, components: [IntakeComponent(componentID: slug, name: name, amount: amount, unit: .g)],
@@ -326,10 +327,9 @@ final class JournalLibraryTests: XCTestCase {
         model.load(now: now)
         XCTAssertEqual(model.storedTimeZone.identifier, "America/Chicago", "the picker is bound to the entry's own zone")
 
-        // 19:00 on the day the entry was logged, as a wall clock in the entry's zone.
+        // 19:00 on the day before the entry was logged, as a wall clock in the entry's zone.
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
-        // 19:00 on the day before the entry was logged, as a wall clock in the entry's zone.
         let picked = try XCTUnwrap(
             calendar.date(from: DateComponents(
                 timeZone: calendar.timeZone, year: 2023, month: 11, day: 13, hour: 19, minute: 0)))
@@ -338,8 +338,9 @@ final class JournalLibraryTests: XCTestCase {
 
         let saved = try XCTUnwrap(try store.activeIntakes().first { $0.id == stored })
         XCTAssertEqual(saved.occurredAt, picked)
-        let readBack = Calendar(identifier: .gregorian)
-        let fields = readBack.dateComponents(in: calendar.timeZone, from: saved.occurredAt)
+        // Read back in the stored zone, which is the only reading of it that is the 19:00 that was picked.
+        let fields = Calendar(identifier: .gregorian)
+            .dateComponents(in: calendar.timeZone, from: saved.occurredAt)
         XCTAssertEqual(fields.hour, 19, "the stored instant reads as 19:00 in the entry's own zone")
         XCTAssertEqual(fields.minute, 0)
     }
@@ -351,7 +352,50 @@ final class JournalLibraryTests: XCTestCase {
         let unresolved = try addFood(store, at: now, zone: "Not/AZone")
         let model = EntryDetailViewModel(store: store, intakeID: unresolved)
         model.load(now: now)
-        XCTAssertEqual(model.storedTimeZone, .current)
+        XCTAssertEqual(
+            model.storedTimeZone.identifier, TimeZone.current.identifier,
+            "an identifier that does not resolve falls back to the zone this device is in")
+    }
+
+    /// The entry's amounts are the store's to hold, and the store accepts a zero the parser refuses: an
+    /// amount of zero is a fact about a portion, not a mistake in typing. So a time correction must not
+    /// re-read the untouched amounts as text, or such an entry could never have its time corrected at all —
+    /// the one edit on the screen that changes nothing about the amounts.
+    func testEntryDetailCorrectsTheTimeOfAnEntryWithAZeroValuedComponent() throws {
+        let store = try makeStore()
+        let id = UUID().uuidString.lowercased()
+        try store.create(
+            Intake(id: id, category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [
+                IntakeComponent(componentID: "water", name: "Water", amount: 0, unit: .mL),
+                IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g),
+            ],
+            product: nil, now: now)
+
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        XCTAssertEqual(model.drafts["water"], "0", "the stored zero is what the field shows")
+        model.occurredAt = now.addingTimeInterval(-3_600)
+        XCTAssertTrue(model.saveDrafts(now: now), "an untouched zero must not fail the save: \(model.fieldErrors)")
+        XCTAssertNil(model.fieldErrors["water"])
+
+        let revision = try XCTUnwrap(try store.revisions(of: id).last)
+        XCTAssertEqual(revision.changeReason, "Time corrected", "no amount changed, so it is a time correction")
+        XCTAssertEqual(revision.components.first { $0.componentID == "water" }?.amount, 0)
+        XCTAssertEqual(try store.activeIntakes().first { $0.id == id }?.occurredAt, now.addingTimeInterval(-3_600))
+    }
+
+    /// An amount the person **did** type is still held to the parser, zero included: the gate is on what was
+    /// typed, not on what was stored.
+    func testEntryDetailRefusesATypedZeroInAnAmountField() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        model.drafts["oats"] = "0"
+        XCTAssertFalse(model.saveDrafts(now: now))
+        XCTAssertNotNil(model.fieldErrors["oats"])
+        XCTAssertEqual(try store.revisions(of: id).count, 1, "an invalid amount writes nothing")
     }
 
     /// An amounts-only edit leaves the instant alone: nothing corrected it, so nothing may move.
@@ -614,6 +658,53 @@ final class JournalLibraryTests: XCTestCase {
         library.addFavorite(recent)
         XCTAssertEqual(try favorites.list().count, 1)
         XCTAssertEqual(library.sections.last?.items.first?.isFavorite, true)
+    }
+
+    /// The meal is part of an entry's identity in the Library. The same oats eaten at breakfast and at
+    /// dinner are two entries a person adds again separately, so one favorite must not stand in for the
+    /// other: without the meal in the key, the Dinner entry read as already favorited, `addFavorite`
+    /// refused to save it as a second favorite, and removing the Breakfast one took the Dinner row with it.
+    func testTwoMealsOfTheSameProductAreTwoRecentsAndTwoFavorites() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        try addFood(store, name: "Oats", at: now.addingTimeInterval(-60), product: product("snap-1"), meal: "breakfast")
+        try addFood(store, name: "Oats", at: now, product: product("snap-1"), meal: "dinner")
+
+        let recents = try RecentItemsProvider(store: store).recents()
+        XCTAssertEqual(
+            recents.count, 2, "the same product at two meals is two entries to add again, not one")
+
+        let library = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
+        library.load()
+        let breakfast = try XCTUnwrap(library.sections.last?.items.first { $0.template.meal == "breakfast" })
+        let dinner = try XCTUnwrap(library.sections.last?.items.first { $0.template.meal == "dinner" })
+        library.addFavorite(breakfast)
+        library.addFavorite(dinner)
+        XCTAssertEqual(
+            try favorites.list().count, 2,
+            "the Dinner entry is its own favorite, not a second write refused as a duplicate")
+        library.load()
+        XCTAssertTrue(library.sections.last?.items.allSatisfy(\.isFavorite) ?? false)
+
+        // Removing one leaves the other: they were never the same favorite to begin with. The item is read
+        // back off the reloaded sections, because `removeFavorite` only acts on one the model reports as
+        // favorited.
+        let favoritedDinner = try XCTUnwrap(
+            library.sections.last?.items.first { $0.template.meal == "dinner" })
+        XCTAssertTrue(favoritedDinner.isFavorite)
+        library.removeFavorite(favoritedDinner)
+        XCTAssertEqual(
+            try favorites.list().map(\.meal).compactMap { $0 }, ["breakfast"],
+            "removing the Dinner favorite leaves the Breakfast one: they were never one favorite")
+    }
+
+    /// An entry that states no meal keeps its own identity, and one stating none never collides with an
+    /// entry stating an empty label — the key writes the meal as a counted part either way.
+    func testAMealLessEntryIsStillItsOwnRecent() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Oats", at: now.addingTimeInterval(-60))
+        try addFood(store, name: "Oats", at: now, meal: "dinner")
+        XCTAssertEqual(try RecentItemsProvider(store: store).recents().count, 2)
     }
 
     func testRecentKeyDoesNotCollideOnPlusInNames() throws {
