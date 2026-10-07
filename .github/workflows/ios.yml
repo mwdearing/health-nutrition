@@ -9,6 +9,7 @@ on:
       - ".github/workflows/ios.yml"
       - ".github/workflows/signed-beta.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
+      - "scripts/tests/test_project_declarations.py"
   push:
     branches: [main]
     paths:
@@ -18,6 +19,7 @@ on:
       - ".github/workflows/ios.yml"
       - ".github/workflows/signed-beta.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
+      - "scripts/tests/test_project_declarations.py"
   # Manual runs only. Builds an unsigned device .ipa so it can be signed and sideloaded locally;
   # no signing material ever lives in this repository.
   workflow_dispatch:
@@ -59,6 +61,8 @@ jobs:
       # The signed-upload workflow is manual-only and reviewer-gated; these tests pin that shape.
       - name: Test the signed-upload workflow guardrails
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py
+      - name: Test the project declarations
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
 
   swift-test:
     runs-on: macos-latest

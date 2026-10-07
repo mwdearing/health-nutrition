@@ -53,6 +53,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: HealthNutrition
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Only the system's TLS and data protection: exempt encryption, declared so an uploaded build
+        # does not wait on the compliance question before it reaches testers.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
         # Both strings describe debug-only behaviour, which is the only thing that reaches Health in any
