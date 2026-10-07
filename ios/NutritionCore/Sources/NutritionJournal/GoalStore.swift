@@ -21,13 +21,27 @@ public struct NutrientGoal: Sendable, Hashable {
         self.unit = unit
     }
 
-    /// Rejects a goal a person could not act on: no nutrient, or a target that is not a positive
-    /// number. A target of zero would read as "already met" on every day, which is not a goal.
+    /// Rejects a goal a person could not act on: no nutrient, a target that is not a positive
+    /// number, or a unit that is not the dimension the nutrient's total is read in. A target of zero
+    /// would read as "already met" on every day, which is not a goal.
+    ///
+    /// The dimension check is what makes "2 g of energy" or "2000 kcal of water" impossible to store.
+    /// Such a target compares against nothing: the total on screen is in kcal for energy and mL for
+    /// water, and a number in another dimension beside it is a number the person set that the app
+    /// cannot check and cannot show as met or missed. The expected dimension comes from the canonical
+    /// nutrient mapping, so it is the same unit the totals provider and the HealthKit writer use. A
+    /// nutrient no row maps has no dimension to check against, so only its amount is checked.
     public func validate() throws {
-        guard !nutrient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let key = nutrient.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
             throw GoalStoreError.unknownNutrient
         }
         guard !target.isNaN, target > 0 else { throw GoalStoreError.invalidTarget }
+        if let expected = HealthKitWritePlanner.mapping(for: key)?.unit,
+            unit.dimension != expected.dimension
+        {
+            throw UnitError.dimensionMismatch(from: unit, to: expected)
+        }
     }
 }
 

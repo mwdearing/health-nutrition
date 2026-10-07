@@ -72,17 +72,22 @@ public final class TodayViewModel: ObservableObject {
         self.preferences = preferences
     }
 
-    /// The goals' keys with the fallback's keys added where no goal exists.
+    /// The tracked list: the fallback's own order first, then the goals' other keys alphabetically.
     ///
     /// What the screen falls back to when a nutrient has no goal: it is still tracked, because the
-    /// person logged it, but it shows a plain total rather than a comparison.
+    /// person logged it, but it shows a plain total rather than a comparison. The order is stated here
+    /// once and is not the store's, because `GoalStore.goals()` sorts by nutrient key while the
+    /// fallback has an order of its own — asking which of the two leads made the list depend on how
+    /// the store happened to return the goals. So the fallback leads in its fixed order, whether or not
+    /// those nutrients have goals, and a goal for a nutrient outside it is appended alphabetically, so
+    /// the same goals always produce the same screen.
     public static func defaultTrackedNutrientsOrGoals(
         goals: [NutrientGoal], fallback: [String] = TodayViewModel.defaultTrackedNutrients
     ) -> [String] {
-        var seen = Set(goals.map { $0.nutrient })
-        var ordered = goals.map { $0.nutrient }
-        for nutrient in fallback where !seen.contains(nutrient) {
-            seen.insert(nutrient)
+        var seen = Set<String>()
+        var ordered: [String] = []
+        let candidates = fallback + goals.map(\.nutrient).sorted()
+        for nutrient in candidates where seen.insert(nutrient).inserted {
             ordered.append(nutrient)
         }
         return ordered
@@ -92,8 +97,10 @@ public final class TodayViewModel: ObservableObject {
     ///
     /// Water is always among them and is not in the fallback list above, because a drink is logged
     /// whether or not anyone has set a target for it, and a total that only appeared once a target
-    /// existed would hide the day's water from anyone who has not set one. A goal for water moves it
-    /// to the front, because a person who set a target is asking about it first.
+    /// existed would hide the day's water from anyone who has not set one. It goes at the end rather
+    /// than to the front for a goal, because the order is the fallback's fixed one and a goal does not
+    /// reorder a day; `JournalViewModel.totalsText` is what puts a targeted nutrient first, on the
+    /// one-line summary where the order is a presentational choice.
     public static func totalsNutrients(
         goals: [NutrientGoal], fallback: [String] = TodayViewModel.defaultTrackedNutrients
     ) -> [String] {
@@ -153,16 +160,33 @@ public final class TodayViewModel: ObservableObject {
             waterTotalMilliliters = waterTotal
             waterSkippedCount = skipped
             skippedIntakeCount = skippedIntakes
-            coverage = trackedNutrients.map { nutrient in
+            // A goal store that cannot be read is not a person with no goals, so the failure is
+            // carried out to the screen rather than swallowed into an empty goal list: a target the
+            // store holds but this load cannot see would otherwise be shown as a nutrient with no
+            // goal set, which is a statement about the person rather than about the store.
+            var goalsUnreadable = false
+            let storedGoals: [NutrientGoal]
+            do {
+                storedGoals = try goals?.goals() ?? []
+            } catch {
+                storedGoals = []
+                goalsUnreadable = true
+            }
+            let tracked = Self.totalsNutrients(goals: storedGoals, fallback: trackedNutrients)
+            // Coverage is built from the same goal-expanded list the totals are, so a nutrient with
+            // a target is also a nutrient the screen says how much of the day is known about. The
+            // fixed fallback alone left a targeted nutrient out of Coverage entirely.
+            coverage = Self.defaultTrackedNutrientsOrGoals(
+                goals: storedGoals, fallback: trackedNutrients
+            ).map { nutrient in
                 CoverageLine.make(nutrient: nutrient, values: foodComponents.map {
-                    lookup.value(for: $0.component, snapshot: $0.snapshot, nutrient: nutrient)
+                    DailyTotalsBuilder.value(
+                        for: $0.component, snapshot: $0.snapshot, nutrient: nutrient, lookup: lookup)
                 })
             }
-            let storedGoals = (try? goals?.goals()) ?? []
-            let tracked = Self.totalsNutrients(goals: storedGoals, fallback: trackedNutrients)
             progress = try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup)
-            errorMessage = nil
+            errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
         } catch {
             errorMessage = "Could not read the journal."
         }

@@ -263,6 +263,122 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(40), .g))
     }
 
+    /// A barcode lookup or a label panel that knows how big a serving is stores "per serving (30 g)",
+    /// and the entry records the food as a mass. The stated serving and the amount logged together
+    /// say how many servings were eaten, so a per-count basis the log cannot answer is not left
+    /// unknown: 30 g is the stated value and 60 g is twice it.
+    func testAPerServingBasisWithAMassComponentScalesFromTheStatedServing() throws {
+        let store = try makeStore()
+        let powder = ProductDefinition(
+            snapshotID: "snapshot-powder", productID: "product-powder", name: "Protein powder",
+            labelBasis: "per serving (30 g)", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(20), .g)])
+        try addFood(store, name: "Powder", id: "powder", at: when, amount: 30, product: powder)
+        try addFood(store, name: "Powder", id: "powder", at: when, amount: 60, product: powder)
+        let intakes = try store.activeIntakes().filter { $0.category == "food" }
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+
+        // One serving and two of them: 20 g and 40 g.
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(60), .g))
+    }
+
+    /// A serving stated in a way that is not a mass — not at all, a count of biscuits, or a volume —
+    /// says nothing this can scale by, so the day stays unknown rather than being scaled by a guess.
+    func testAPerServingBasisThatStatesNoMassLeavesTheNutrientUnknown() throws {
+        let store = try makeStore()
+        for basis in ["per serving", "per serving (1 large biscuit)", "per serving (240 mL)"] {
+            let snapshot = ProductDefinition(
+                snapshotID: "snapshot-\(basis)", productID: "product-\(basis)", name: "Biscuit",
+                labelBasis: basis, catalogOrigin: "test", catalogVersion: "1",
+                nutrients: ["protein": .known(Decimal(6), .g)])
+            try addFood(store, name: "Biscuit", id: "biscuit", at: when, amount: 40, product: snapshot)
+        }
+        let intakes = try store.activeIntakes().filter { $0.category == "food" }
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
+
+    // MARK: Stored under a nutrient's other keys
+
+    /// A barcode snapshot keeps the keys `LookedUpProduct.standardKeys` names, so it stores its energy
+    /// as `energyKcal` and its carbohydrate as `carbohydrates` while a goal and Today ask for
+    /// `energy` and `carbohydrate`. Read through the canonical mapping rather than by an exact
+    /// dictionary lookup, the day is what the person actually ate.
+    func testABarcodeSnapshotIsReadThroughTheCanonicalKeysTheGoalsUse() throws {
+        let store = try makeStore()
+        let bar = ProductDefinition(
+            snapshotID: "snapshot-bar", productID: "product-bar", name: "Breakfast bar",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: [
+                "energyKcal": .known(Decimal(400), .kcal),
+                "carbohydrates": .known(Decimal(30), .g),
+                "protein": .known(Decimal(13), .g),
+            ])
+        try addFood(store, name: "Bar", id: "bar", at: when, amount: 200, product: bar)
+        let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["energy", "carbohydrate", "protein"])
+
+        // 200 g of a product stating these per 100 g, so twice each.
+        XCTAssertEqual(totals.total(for: "energy")?.value, .known(Decimal(800), .kcal))
+        XCTAssertEqual(totals.total(for: "carbohydrate")?.value, .known(Decimal(60), .g))
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(26), .g))
+    }
+
+    /// The canonical key leads, so a snapshot that states both an alias and the canonical key is read
+    /// once and never counted twice. Reading the alias first would double the day's energy.
+    func testTheCanonicalKeyIsReadBeforeItsAliasSoOneValueIsNotCountedTwice() throws {
+        let store = try makeStore()
+        let bar = ProductDefinition(
+            snapshotID: "snapshot-both", productID: "product-both", name: "Breakfast bar",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energy": .known(Decimal(400), .kcal), "energyKcal": .known(Decimal(999), .kcal)])
+        try addFood(store, name: "Bar", id: "bar", at: when, amount: 100, product: bar)
+        let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energy"])
+
+        XCTAssertEqual(totals.total(for: "energy")?.value, .known(Decimal(400), .kcal))
+    }
+
+    // MARK: Below the reporting threshold
+
+    /// One entry's value below the reporting threshold is a bound, not an amount, so added to what the
+    /// other entries stated it is still not the day's total. The sum is not printed as though it were
+    /// exact; the nutrient is uncertain, which is the same answer an unreadable entry gives.
+    func testAnEntryBelowTheReportingThresholdLeavesTheNutrientUnknownNotTheSum() throws {
+        let store = try makeStore()
+        let cereal = ProductDefinition(
+            snapshotID: "snapshot-cereal", productID: "product-cereal", name: "Breakfast cereal",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["fiber": .known(Decimal(4), .g)])
+        let seasoning = ProductDefinition(
+            snapshotID: "snapshot-seasoning", productID: "product-seasoning", name: "Seasoning",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["fiber": .belowReportingThreshold(.g)])
+        try addFood(store, name: "Cereal", id: "cereal", at: when, amount: 100, product: cereal)
+        try addFood(store, name: "Seasoning", id: "seasoning", at: when, amount: 100, product: seasoning)
+        let intakes = try store.activeIntakes().filter { $0.category == "food" }
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["fiber"])
+
+        let total = try XCTUnwrap(totals.total(for: "fiber"))
+        XCTAssertEqual(total.value, .unknown)
+        // Nothing here was unreadable, so the below-threshold entry is the whole reason.
+        XCTAssertFalse(total.coverage.hasUnknown)
+        XCTAssertTrue(total.coverage.hasBelowReportingThreshold)
+        XCTAssertEqual(total.coverage.knownCount, 1)
+    }
+
     // MARK: Water
 
     /// Water is measured on the entry itself, so its volume is the amount and needs no scaling.
@@ -312,6 +428,22 @@ final class DailyTotalsTests: XCTestCase {
             for: [intake], store: store, lookup: SnapshotOnlyFacts(), nutrients: ["water"])
 
         XCTAssertEqual(totals.total(for: "water")?.value, .unknown)
+    }
+
+    /// A food beside a drink on the same day leaves the water alone. A product states no water, so
+    /// asking it for water says nothing about what was drunk; a food answering unknown there is what
+    /// made a day with anything eaten report its water as unknown.
+    func testAFoodEntryDoesNotMakeTheDaysWaterUnknown() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Oats", id: "oats", at: when, amount: 100, product: oatsSnapshot())
+        try addWater(store, at: when, amount: 300)
+        let intakes = try store.activeIntakes()
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein", "water"])
+
+        XCTAssertEqual(totals.total(for: "water")?.value, .known(Decimal(300), .mL))
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(13), .g))
     }
 
     /// A day with nothing logged at all is unknown for every nutrient, not zero: "nothing eaten" and
@@ -377,9 +509,10 @@ final class DailyTotalsTests: XCTestCase {
 
     // MARK: Tracked order
 
-    /// The tracked list is the goals' keys with the fallback's keys added where no goal exists, so a
-    /// goal for a nutrient outside the fallback is shown and a fallback nutrient without a goal is
-    /// still tracked.
+    /// The tracked list is the fallback's own order first and then the goals' other keys, so the same
+    /// goals always produce the same screen whatever order the store returned them in, a goal for a
+    /// nutrient outside the fallback is shown, and a fallback nutrient without a goal is still
+    /// tracked.
     func testTrackedNutrientsAreTheGoalKeysPlusTheFallbackOnesWithoutAGoal() {
         let goals = [
             NutrientGoal(nutrient: "zinc", target: Decimal(11), unit: .mg),
@@ -388,9 +521,32 @@ final class DailyTotalsTests: XCTestCase {
 
         let tracked = TodayViewModel.defaultTrackedNutrientsOrGoals(goals: goals)
 
-        XCTAssertEqual(Array(tracked.prefix(2)), ["protein", "zinc"])
-        // Potassium, sodium and fiber are in the fallback and have no goal, so they are still tracked.
+        // The fallback leads in its fixed order, and protein keeps its place in it rather than being
+        // pulled to the front by its goal. Zinc is outside the fallback, so it is appended, and the
+        // goals are sorted so the store's order cannot decide where it lands.
+        XCTAssertEqual(tracked, TodayViewModel.defaultTrackedNutrients + ["zinc"])
+        XCTAssertEqual(Array(tracked.prefix(4)), TodayViewModel.defaultTrackedNutrients)
         XCTAssertEqual(Set(tracked), Set(["protein", "zinc", "potassium", "sodium", "fiber"]))
+    }
+
+    /// Two goal-only keys land in alphabetical order however the store returned them, because a
+    /// screen whose order moved with the store's would show the same day differently on two loads.
+    func testTrackedNutrientsPutTheGoalsOutsideTheFallbackInAlphabeticalOrder() {
+        let stored = [
+            NutrientGoal(nutrient: "zinc", target: Decimal(11), unit: .mg),
+            NutrientGoal(nutrient: "iron", target: Decimal(14), unit: .mg),
+        ]
+        let reversed = [
+            NutrientGoal(nutrient: "iron", target: Decimal(14), unit: .mg),
+            NutrientGoal(nutrient: "zinc", target: Decimal(11), unit: .mg),
+        ]
+
+        XCTAssertEqual(
+            TodayViewModel.defaultTrackedNutrientsOrGoals(goals: stored),
+            TodayViewModel.defaultTrackedNutrientsOrGoals(goals: reversed))
+        XCTAssertEqual(
+            Array(TodayViewModel.defaultTrackedNutrientsOrGoals(goals: stored).suffix(2)),
+            ["iron", "zinc"])
     }
 
     /// The progress line for one nutrient: with a target, without one, and when the day is unknown.

@@ -13,20 +13,27 @@ public enum NutrientGoalChoices {
         "energy", "protein", "carbohydrate", "fiber", "fat", "sodium", "potassium", "water",
     ]
 
-    /// The unit a key is counted in, which is where its total is read. Water is a volume; every
-    /// other key here is a mass or an energy, matching what the catalog states for it.
+    /// The unit a key is counted in, which is where its total is read. It comes from the canonical
+    /// nutrient mapping rather than from a table written here, so it is the same unit the totals
+    /// provider and the HealthKit writer use: energy is kcal, water is mL, and every other key here
+    /// is a mass.
+    ///
+    /// Energy in grams was a category error rather than a rounding one — a target of "60 g" of energy
+    /// compares against nothing, and nothing on the screen could convert it back, so the comparison
+    /// the person set was silently never against their day.
     public static func unit(forKey key: String) -> MeasureUnit {
-        key == DailyTotalsBuilder.waterKey ? DailyTotalsBuilder.waterUnit : .g
+        HealthKitWritePlanner.mapping(for: key)?.unit
+            ?? (key == DailyTotalsBuilder.waterKey ? DailyTotalsBuilder.waterUnit : .g)
     }
 
-    /// Every unit a key may be counted in: the registry's mass and energy units for a nutrient, and
-    /// the registry's volume units for water. No other unit is offered, so a target cannot be set
-    /// in something the totals are not counted in.
+    /// Every unit a key may be counted in: the registry's units for that one nutrient's dimension
+    /// and no others, so a target cannot be set in something its totals are not counted in.
+    ///
+    /// Offering every mass *and* energy unit for every nutrient is what let the energy-in-grams
+    /// target above be entered at all. The dimension is the one the nutrient's own unit has, so water
+    /// is offered volumes, energy energies, and the rest masses.
     public static func units(forKey key: String) -> [MeasureUnit] {
-        guard key == DailyTotalsBuilder.waterKey else {
-            return UnitRegistry.all.filter { $0.dimension == .mass || $0.dimension == .energy }
-        }
-        return UnitRegistry.all.filter { $0.dimension == .volume }
+        UnitRegistry.units(in: unit(forKey: key).dimension)
     }
 }
 

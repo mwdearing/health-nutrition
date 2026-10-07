@@ -51,6 +51,27 @@ final class DailyGoalsTests: XCTestCase {
             nutrients: ["protein": .known(Decimal(13), .g)])
     }
 
+    /// A product stored the way a barcode lookup stores one: its energy under `energyKcal`, not under
+    /// the canonical key the goals ask for.
+    private func barSnapshot() -> ProductDefinition {
+        ProductDefinition(
+            snapshotID: "snapshot-bar", productID: "product-bar", name: "Breakfast bar",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(400), .kcal)])
+    }
+
+    @discardableResult
+    private func logBar(
+        _ store: JournalStore, grams: Decimal, at date: Date = when
+    ) throws -> String {
+        let intakeID = UUID().uuidString.lowercased()
+        try store.create(
+            Intake(id: intakeID, category: "food", occurredAt: date, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "bar", name: "Breakfast bar", amount: grams, unit: .g)],
+            product: barSnapshot(), now: date)
+        return intakeID
+    }
+
     @discardableResult
     private func logOats(
         _ store: JournalStore, grams: Decimal, at date: Date = when
@@ -270,9 +291,12 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(model.progress.first { $0.nutrient == "water" }).hasGoal)
     }
 
-    /// A goal store that cannot be read leaves the totals readable, as plain totals, rather than
-    /// failing the whole screen: the day is still knowable even when the targets are not.
-    func testAnUnreadableGoalStoreStillShowsTheDaysTotals() throws {
+    /// A goal store that cannot be read leaves the totals readable, as plain totals, rather than failing
+    /// the whole screen: the day is still knowable even when the targets are not. It also says so on
+    /// the screen, because a store that cannot be read is not a person who has set no targets:
+    /// swallowing the failure left every nutrient reading as "no goal set", which is a claim about the
+    /// person rather than about the store.
+    func testAnUnreadableGoalStoreStillShowsTheDaysTotalsAndSaysSo() throws {
         let journal = try makeJournalStore()
         let refusing = InMemoryGoalStore(failNextRead: true)
         try logWater(journal, milliliters: 300)
@@ -281,7 +305,23 @@ final class DailyGoalsTests: XCTestCase {
         model.load(now: when)
 
         XCTAssertEqual(line(model, "water"), "Water 300 mL")
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+    }
+
+    /// A goal store that reads fine afterwards clears the failure, rather than leaving the message
+    /// from a load that has been superseded.
+    func testAReadableGoalStoreAgainClearsTheFailure() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try logWater(journal, milliliters: 300)
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+
+        model.load(now: when)
         XCTAssertNil(model.errorMessage)
+
+        goals.close()
+        model.load(now: when)
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
     }
 
     /// A goal for a nutrient outside the default tracked set is shown, because a target the screen
@@ -298,6 +338,91 @@ final class DailyGoalsTests: XCTestCase {
         let zinc = try XCTUnwrap(model.progress.first { $0.nutrient == "zinc" })
         XCTAssertEqual(zinc.text, "Zinc unknown")
         XCTAssertTrue(zinc.hasGoal)
+    }
+
+    /// Coverage is built from the same goal-expanded list the totals are, so a nutrient somebody set
+    /// a target for is also one the screen says how much of the day is known about. The fixed
+    /// fallback alone left it out of Coverage entirely while its progress line was on screen.
+    func testCoverageCoversTheNutrientsTheGoalsAddAsWellAsTheFallback() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "zinc", target: Decimal(11), unit: .mg))
+        try logOats(journal, grams: 100)
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertEqual(
+            model.coverage.map(\.nutrient), TodayViewModel.defaultTrackedNutrients + ["zinc"])
+        let zinc = try XCTUnwrap(model.coverage.first { $0.nutrient == "zinc" })
+        XCTAssertEqual(zinc.total, 1)
+    }
+
+    // MARK: Energy is counted in kilocalories
+
+    /// Energy is an energy, not a mass. A snapshot that came from a barcode states it under
+    /// `energyKcal`, and the day compares the total against a target in the same unit, so the line
+    /// reads like with like rather than against a goal no screen could ever show as met.
+    func testAnEnergyGoalInKilocaloriesComparesWithTheDaysEnergy() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal))
+        // 200 g of a product stating 400 kcal per 100 g carries 800 kcal.
+        try logBar(journal, grams: 200)
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertEqual(line(model, "energy"), "Energy 800 kcal of 2000 kcal")
+    }
+
+    /// The Goals screen offers and stores energy in kilocalories, so the target a person types there
+    /// is one the day's energy total can be compared against at all.
+    func testGoalsScreenOffersEnergyInKilocalories() throws {
+        let goals = try makeGoalStore()
+        let model = GoalsViewModel(store: goals)
+        model.load()
+
+        XCTAssertTrue(model.setTarget("2000", for: "energy"))
+        XCTAssertEqual(model.rows.first { $0.nutrient == "energy" }?.targetText, "2000 kcal")
+        XCTAssertEqual(try goals.goal(for: "energy")?.unit, .kcal)
+    }
+
+    // MARK: A target has to be in the nutrient's own dimension
+
+    /// A target in a dimension the nutrient is never counted in is refused rather than stored: "2 g"
+    /// of energy and "2000 kcal" of water compare against nothing, and the screen could neither show
+    /// them as met nor as missed. The expected dimension comes from the canonical nutrient mapping,
+    /// so it is the unit the totals provider and the HealthKit writer already use.
+    func testAGoalInTheWrongDimensionIsRefusedAndNothingIsStored() throws {
+        let goals = try makeGoalStore()
+
+        for goal in [
+            NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .g),
+            NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .kcal),
+            NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .kcal),
+        ] {
+            XCTAssertThrowsError(try goals.setGoal(goal), goal.nutrient) { error in
+                XCTAssertEqual(
+                    error as? UnitError,
+                    .dimensionMismatch(
+                        from: goal.unit, to: NutrientGoalChoices.unit(forKey: goal.nutrient)),
+                    goal.nutrient)
+            }
+        }
+
+        XCTAssertTrue(try goals.goals().isEmpty)
+    }
+
+    /// The screen refuses one too, rather than letting a caller pass a unit it never offered and
+    /// leaving the write to fail as a save error.
+    func testGoalsScreenRefusesATargetInTheWrongDimension() throws {
+        let goals = try makeGoalStore()
+        let model = GoalsViewModel(store: goals)
+
+        XCTAssertFalse(model.setTarget("2000", for: "energy", unit: .g))
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.saveFailedMessage)
+        XCTAssertTrue(try goals.goals().isEmpty)
     }
 
     // MARK: The goals screen
@@ -357,16 +482,21 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, GoalsViewModel.saveFailedMessage)
     }
 
-    /// Water is offered in volumes and the other nutrients in masses, so a target cannot be set in a
-    /// unit its totals are never counted in.
-    func testGoalsScreenOffersWaterInVolumesAndOtherNutrientsInMasses() throws {
+    /// Every nutrient is offered only in the units its own totals are read in, so a target cannot be
+    /// set in a dimension nothing on the screen would compare it against. Energy in grams was a
+    /// category error rather than a rounding one: it was offered, accepted and stored, and the line
+    /// then compared a kcal total against a gram target.
+    func testGoalsScreenOffersEachNutrientOnlyInItsOwnDimension() {
         XCTAssertEqual(NutrientGoalChoices.unit(forKey: "water"), .mL)
+        XCTAssertEqual(NutrientGoalChoices.unit(forKey: "energy"), .kcal)
         XCTAssertEqual(NutrientGoalChoices.unit(forKey: "protein"), .g)
-        for unit in NutrientGoalChoices.units(forKey: "water") {
-            XCTAssertEqual(unit.dimension, .volume)
-        }
-        for unit in NutrientGoalChoices.units(forKey: "protein") {
-            XCTAssertTrue(unit.dimension == .mass || unit.dimension == .energy)
+        XCTAssertEqual(NutrientGoalChoices.unit(forKey: "sodium"), .mg)
+        XCTAssertEqual(NutrientGoalChoices.units(forKey: "water"), [.mL, .L])
+        XCTAssertEqual(NutrientGoalChoices.units(forKey: "energy"), [.kcal])
+        for key in NutrientGoalChoices.keys {
+            let dimension = NutrientGoalChoices.unit(forKey: key).dimension
+            XCTAssertTrue(
+                NutrientGoalChoices.units(forKey: key).allSatisfy { $0.dimension == dimension }, key)
         }
     }
 
