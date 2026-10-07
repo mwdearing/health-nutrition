@@ -67,6 +67,63 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(try store.pendingOutbox().count, 4)
     }
 
+    /// A corrected time is a **new revision**, not an update to the one that may already have been
+    /// delivered: the encoder digests `occurred_at` per (intake, revision), so the earlier revision
+    /// keeps describing the instant it was written for and the entry's own row moves to the
+    /// corrected one.
+    func testEditWithCorrectedOccurredAtWritesANewRevisionAndKeepsTheOld() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [oats(40)], product: nil, now: when)
+        let corrected = when.addingTimeInterval(-86_400)
+        let revision = try store.edit(
+            intakeID: intakeID, components: [oats(40)], product: nil, changeReason: "Time corrected",
+            now: when, occurredAt: corrected, timeZoneIdentifier: "UTC")
+        XCTAssertEqual(revision.number, 2)
+        let intake = try XCTUnwrap(try store.activeIntakes().first)
+        XCTAssertEqual(intake.occurredAt, corrected)
+        XCTAssertEqual(intake.timeZoneIdentifier, "UTC")
+        XCTAssertEqual(intake.currentRevision, 2)
+        let revisions = try store.revisions(of: intakeID)
+        XCTAssertEqual(revisions.map(\.number), [1, 2])
+        XCTAssertEqual(revisions[0].createdAt, when)
+        XCTAssertEqual(revisions[1].changeReason, "Time corrected")
+        let projections = try store.projections(of: intakeID)
+        XCTAssertEqual(projections.filter { $0.revision == 1 }.map(\.isCurrent), [false, false])
+        XCTAssertEqual(projections.filter { $0.revision == 2 }.map(\.isCurrent), [true, true])
+    }
+
+    /// An `edit` that was not given a time corrects the amounts only: the instant the entry says it
+    /// was eaten is left exactly as it was, so the common case cannot move an entry by accident.
+    func testEditWithoutOccurredAtLeavesTheEntryTimeAlone() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [oats(40)], product: nil, now: when)
+        let revision = try store.edit(
+            intakeID: intakeID, components: [oats(55)], product: nil, changeReason: "bigger bowl", now: when)
+        XCTAssertEqual(revision.number, 2)
+        XCTAssertEqual(try store.activeIntakes().first?.occurredAt, when)
+        XCTAssertEqual(try store.activeIntakes().first?.timeZoneIdentifier, "UTC")
+    }
+
+    /// The instant is part of what a revision says, so it is hashed with it: two corrections of one
+    /// entry to different times are two different payloads even though everything else is identical.
+    func testCorrectedOccurredAtChangesTheQueuedPayloadHash() throws {
+        func hash(correctingTo corrected: Date) throws -> String {
+            let store = try makeStore(try makeDirectory())
+            try store.create(sampleIntake(), components: [oats(40)], product: nil, now: when)
+            try store.edit(
+                intakeID: intakeID, components: [oats(40)], product: nil, changeReason: "Time corrected",
+                now: when, occurredAt: corrected, timeZoneIdentifier: "UTC")
+            let queued = try store.pendingOutbox().filter { $0.revision == 2 }
+            XCTAssertEqual(queued.count, 2)
+            let hashes = Set(queued.map(\.payloadHash))
+            XCTAssertEqual(hashes.count, 1, "both destinations hash the same payload")
+            return try XCTUnwrap(hashes.first)
+        }
+        XCTAssertNotEqual(
+            try hash(correctingTo: when.addingTimeInterval(-86_400)),
+            try hash(correctingTo: when.addingTimeInterval(-3_600)))
+    }
+
     func testDeleteHidesIntakeQueuesDeleteOperationsAndKeepsHistory() throws {
         let store = try makeStore(try makeDirectory())
         try store.create(sampleIntake(), components: [oats()], product: nil, now: when)

@@ -10,6 +10,10 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
     var editCalls = 0
     var deleteCalls = 0
     var lastEditProductSnapshotID: String?
+    /// What the last `edit` was asked to correct the entry's time to, and the zone it named with
+    /// it. Nil for an edit that was not given a time, which is the amounts-only case.
+    var lastEditOccurredAt: Date?
+    var lastEditTimeZoneIdentifier: String?
 
     init(inner: SwiftDataJournalStore) { self.inner = inner }
 
@@ -219,6 +223,93 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(revisions.last?.components.first?.amount, Decimal(string: "42.25"))
     }
 
+    /// A person who logged dinner at 23:00 that they ate at 19:00 yesterday corrects it from the
+    /// entry screen. That is one `edit` call: the new revision carries the corrected instant, the
+    /// previous revision is kept, and the projections the correction supersedes are not updated.
+    func testEntryDetailCorrectsOccurredAtInOneEditCall() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let corrected = now.addingTimeInterval(-86_400)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        XCTAssertEqual(model.occurredAt, now, "load seeds the draft from the stored time")
+        model.occurredAt = corrected
+        XCTAssertTrue(model.saveDrafts(now: now))
+        XCTAssertEqual(store.editCalls, 1)
+        XCTAssertEqual(store.lastEditOccurredAt, corrected)
+        XCTAssertEqual(store.lastEditTimeZoneIdentifier, "UTC")
+        XCTAssertEqual(try store.activeIntakes().first { $0.id == id }?.occurredAt, corrected)
+        XCTAssertEqual(try store.revisions(of: id).map(\.number), [1, 2])
+        XCTAssertEqual(
+            try store.projections(of: id).filter { $0.revision == 1 }.map(\.isCurrent), [false, false])
+        XCTAssertEqual(model.occurredAt, corrected, "the draft follows the entry after the save")
+    }
+
+    /// A time-only correction is recorded as one, because a history that says "Edited" for a
+    /// change of time tells the reader nothing about what happened.
+    func testEntryDetailRecordsATimeOnlyCorrectionAsItsOwnReason() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        model.occurredAt = now.addingTimeInterval(-3_600)
+        XCTAssertTrue(model.saveDrafts(now: now))
+        XCTAssertEqual(model.revisions.first?.changeReason, "Time corrected")
+        // A reason the person wrote is kept whatever it says.
+        model.changeReason = "eaten earlier"
+        model.occurredAt = now.addingTimeInterval(-7_200)
+        XCTAssertTrue(model.saveDrafts(now: now))
+        XCTAssertEqual(model.revisions.first?.changeReason, "eaten earlier")
+    }
+
+    /// An amounts-only edit leaves the instant alone: nothing corrected it, so nothing may move.
+    func testEntryDetailSaveWithoutATimeChangeLeavesTheStoredTimeAlone() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        model.drafts["oats"] = "55"
+        XCTAssertTrue(model.saveDrafts(now: now))
+        XCTAssertNil(store.lastEditOccurredAt)
+        XCTAssertEqual(try store.activeIntakes().first { $0.id == id }?.occurredAt, now)
+        XCTAssertEqual(model.revisions.first?.changeReason, "Edited")
+    }
+
+    /// A save before the first load cannot move an entry the model has not read: the draft is only
+    /// a correction once `load` has said what the stored time was.
+    func testEntryDetailSaveWithoutLoadCorrectsNothing() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        let saved = model.save(
+            components: [EditedComponent(componentID: "oats", name: "Oats", amountText: "45", unit: .g)],
+            changeReason: "Edited", now: now)
+        XCTAssertTrue(saved)
+        XCTAssertNil(store.lastEditOccurredAt)
+        XCTAssertEqual(try store.activeIntakes().first { $0.id == id }?.occurredAt, now)
+        XCTAssertEqual(try store.revisions(of: id).count, 2)
+    }
+
+    /// The entry leaves the day it was logged on for the day it was eaten on: the journal groups
+    /// by the corrected instant, so yesterday's dinner is under yesterday.
+    func testJournalMovesToDaySectionOfTheCorrectedTime() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        journal.load(now: now)
+        XCTAssertEqual(journal.sections.map(\.id), ["2023-11-14"])
+
+        let detail = EntryDetailViewModel(store: store, intakeID: id)
+        detail.load(now: now)
+        detail.occurredAt = now.addingTimeInterval(-86_400)
+        XCTAssertTrue(detail.saveDrafts(now: now))
+
+        journal.load(now: now)
+        XCTAssertEqual(journal.sections.map(\.id), ["2023-11-13"])
+        XCTAssertEqual(journal.sections.first?.rows.map(\.id), [id])
+        XCTAssertEqual(journal.sections.first?.rows.first?.occurredAt, now.addingTimeInterval(-86_400))
+    }
+
     func testInvalidEditAmountSetsFieldErrorAndWritesNothing() throws {
         let store = try makeStore()
         let id = try addFood(store, at: now)
@@ -378,6 +469,46 @@ final class JournalLibraryTests: XCTestCase {
         let item = try XCTUnwrap(library.sections.first?.items.first)
         let newID = try XCTUnwrap(library.select(item, now: now))
         XCTAssertEqual(try store.activeIntakes().first { $0.id == newID }?.meal, "breakfast")
+    }
+
+    /// The label a person picked is carried on the two screens they read an entry on, as words:
+    /// "breakfast" is stored and "Breakfast" is what they see.
+    func testMealLabelReachesTheJournalRowAndTheEntryDetail() throws {
+        let store = try makeStore()
+        let add = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        add.name = "Rolled oats"
+        add.amountText = "40"
+        add.meal = .breakfast
+        XCTAssertTrue(add.save(now: now))
+        let id = try XCTUnwrap(try store.activeIntakes().first?.id)
+
+        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        journal.load(now: now)
+        let row = try XCTUnwrap(journal.sections.first?.rows.first)
+        XCTAssertEqual(row.meal, "Breakfast")
+        XCTAssertTrue(row.accessibilityText.contains("Breakfast"), row.accessibilityText)
+
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        XCTAssertEqual(today.rows.first?.meal, "Breakfast")
+
+        let detail = EntryDetailViewModel(store: store, intakeID: id)
+        detail.load(now: now)
+        XCTAssertEqual(detail.mealText, "Breakfast")
+    }
+
+    /// An entry with no label says nothing rather than showing an empty or invented one.
+    func testMealTextIsAbsentOnAnEntryThatStatesNoMeal() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        journal.load(now: now)
+        XCTAssertNil(journal.sections.first?.rows.first?.meal)
+        let detail = EntryDetailViewModel(store: store, intakeID: id)
+        detail.load(now: now)
+        XCTAssertNil(detail.mealText)
+        XCTAssertNil(MealLabel.displayName(for: nil))
+        XCTAssertNil(MealLabel.displayName(for: "  "))
     }
 
     func testFavoritingRecentTwiceLeavesOneFavoriteAndRecentIsMarked() throws {
