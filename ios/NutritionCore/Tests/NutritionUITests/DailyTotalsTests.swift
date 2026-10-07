@@ -4,6 +4,10 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
+/// The one instant every test logs at, unless it says otherwise. A file-scope constant so it is the
+/// same instant for every case without each one setting it up.
+private let when = Date(timeIntervalSince1970: 1_700_000_000)
+
 /// A lookup that answers from the product snapshot the component was recorded with, which is what
 /// the app injects.
 private struct SnapshotOnlyFacts: NutrientFactsLookup {
@@ -16,9 +20,8 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
     }
 }
 
+@MainActor
 final class DailyTotalsTests: XCTestCase {
-    private let when = Date(timeIntervalSince1970: 1_700_000_000)
-
     private func makeStore() throws -> SwiftDataJournalStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -121,8 +124,8 @@ final class DailyTotalsTests: XCTestCase {
     /// into both days, and neither day may show the other's water.
     func testDayTotalsUseEachIntakesOwnTimeZoneAndNeverMixTwoDays() throws {
         let store = try makeStore()
-        try addWater(store, at: when, amount: 300, zone: "UTC")
-        try addWater(store, at: when, amount: 700, zone: "Pacific/Auckland")
+        try addWater(store, at: when, zone: "UTC", amount: 300)
+        try addWater(store, at: when, zone: "Pacific/Auckland", amount: 700)
 
         let all = try store.activeIntakes()
         let utcKey = JournalViewModel.dayKey(when, zone: try XCTUnwrap(TimeZone(identifier: "UTC")))

@@ -4,6 +4,10 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
+/// A file-scope constant rather than an instance member, because a default argument cannot read an
+/// instance member and the helpers below default to this instant.
+private let when = Date(timeIntervalSince1970: 1_700_000_000)
+
 private struct SnapshotOnlyFacts: NutrientFactsLookup {
     func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
         .unknown
@@ -18,8 +22,6 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
 /// total where no target is set.
 @MainActor
 final class DailyGoalsTests: XCTestCase {
-    private let when = Date(timeIntervalSince1970: 1_700_000_000)
-
     private func makeJournalStore() throws -> SwiftDataJournalStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
