@@ -1,0 +1,180 @@
+name: Signed beta upload
+
+# Manual only. Generates the Xcode project, archives with automatic signing and an App Store Connect API key,
+# and uploads the build to App Store Connect for INTERNAL beta testing. The key, its ids and the team id live
+# only in the protected `testflight` GitHub Environment (a reviewer approves each run) and are read only by
+# the steps that need them. The bundle id is ALSO an environment secret (not an input), because a public repository
+# shows workflow inputs and step environments in its logs; secrets are masked. The job runs only from `main`, and the
+# environment must be restricted to the `main` branch in the repository settings. This workflow never runs on a pull
+# request, never uploads an artifact, keeps xcodebuild output out of the public log and always removes the key file.
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: Marketing version to stamp; empty = the MARKETING_VERSION in ios/HealthNutrition/project.yml (the build number is run number + 100)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-beta
+  cancel-in-progress: false
+
+jobs:
+  signed-beta:
+    name: Signed archive and upload
+    runs-on: macos-26
+    environment: testflight
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ios/HealthNutrition
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Check the signing secrets and write the key file
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+          MARKETING_VERSION: ${{ inputs.marketing_version }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$BUNDLE_ID" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || fail "bundle_id has characters a bundle identifier cannot have"
+          [[ -z "$MARKETING_VERSION" || "$MARKETING_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || fail "marketing_version is not 1, 1.2 or 1.2.3"
+          [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "APPLE_TEAM_ID is not 10 letters or digits"
+          [[ "$ASC_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "ASC_KEY_ID is not 10 letters or digits"
+          [[ "$ASC_ISSUER_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || fail "ASC_ISSUER_ID is not a UUID"
+          [[ "$ASC_KEY_P8" == *"BEGIN PRIVATE KEY"* ]] || fail "ASC_KEY_P8 is not a PEM private key"
+          [[ "$ASC_KEY_P8" == *"END PRIVATE KEY"* ]] || fail "ASC_KEY_P8 is cut short: no END line"
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey.p8"
+
+      - name: Archive with automatic signing
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+          MARKETING_VERSION: ${{ inputs.marketing_version }}
+        run: |
+          set -euo pipefail
+          quiet() {
+            local name="$1" log="$2"; shift 2
+            if ! "$@" > "$log" 2>&1; then
+              # The log is never printed: this repository's Actions log is public. Only a fixed category message
+              # is printed, chosen by searching the file's error lines, so nothing from the file can reach the log.
+              # Only lines xcodebuild marks as errors are searched: the rest of the log echoes the command line,
+              # whose words (team, version, authentication) would make every category fire.
+              echo "::error::$name failed. The xcodebuild output is not published."
+              errors() { grep -iE '^(error:|xcodebuild: error:|\*\* .* FAILED)' "$log" || true; }
+              errors | grep -qiE 'unable to authenticate|authentication|401|403' && echo "::error::  category: the App Store Connect key was rejected"
+              errors | grep -qiE 'no signing certificate|no certificate|certificate' && echo "::error::  category: a signing certificate problem"
+              errors | grep -qiE "doesn't include|doesn't match|no profiles for|provisioning profile" && echo "::error::  category: a provisioning profile or App ID capability mismatch"
+              errors | grep -qiE 'entitlement|capabilit' && echo "::error::  category: an entitlement or capability mismatch"
+              errors | grep -qiE 'no account|team' && echo "::error::  category: a team or account problem"
+              errors | grep -qiE 'bundle identifier|bundle id' && echo "::error::  category: a bundle identifier problem"
+              errors | grep -qiE 'build number|version' && echo "::error::  category: a version or build number problem"
+              errors | grep -qiE 'error:' && echo "::error::  category: a compile or build error"
+              exit 1
+            fi
+          }
+          if [[ -z "$MARKETING_VERSION" ]]; then
+            MARKETING_VERSION=$(python3 -c "import re; print(re.search(r'^\s*MARKETING_VERSION:\s*\"?([0-9.]+)', open('project.yml').read(), re.M).group(1))")
+          fi
+          BUILD_NUMBER=$((GITHUB_RUN_NUMBER + 100))
+          echo "Stamping version $MARKETING_VERSION build $BUILD_NUMBER"
+          quiet Archive "$RUNNER_TEMP/archive.log" xcodebuild archive \
+            -project HealthNutrition.xcodeproj \
+            -scheme HealthNutrition \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/HealthNutrition.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            "PRODUCT_BUNDLE_IDENTIFIER=$BUNDLE_ID" \
+            "MARKETING_VERSION=$MARKETING_VERSION" \
+            "CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
+
+      - name: Export and upload to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          quiet() {
+            local name="$1" log="$2"; shift 2
+            if ! "$@" > "$log" 2>&1; then
+              # Same rule as the archive step: the log stays on the runner, only fixed categories are printed.
+              echo "::error::$name failed. The xcodebuild output is not published."
+              errors() { grep -iE '^(error:|xcodebuild: error:|\*\* .* FAILED)' "$log" || true; }
+              errors | grep -qiE 'unable to authenticate|authentication|401|403' && echo "::error::  category: the App Store Connect key was rejected"
+              errors | grep -qiE 'no signing certificate|no certificate|certificate' && echo "::error::  category: a signing certificate problem"
+              errors | grep -qiE "doesn't include|doesn't match|no profiles for|provisioning profile" && echo "::error::  category: a provisioning profile or App ID capability mismatch"
+              errors | grep -qiE 'entitlement|capabilit' && echo "::error::  category: an entitlement or capability mismatch"
+              errors | grep -qiE 'no account|team' && echo "::error::  category: a team or account problem"
+              errors | grep -qiE 'bundle identifier|bundle id' && echo "::error::  category: a bundle identifier problem"
+              errors | grep -qiE 'build number|version' && echo "::error::  category: a version or build number problem"
+              errors | grep -qiE 'error:' && echo "::error::  category: an export or upload error"
+              exit 1
+            fi
+          }
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>teamID</key>
+            <string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+            <key>testFlightInternalTestingOnly</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          quiet Export "$RUNNER_TEMP/export.log" xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/HealthNutrition.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Remove the key file
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/asc/AuthKey.p8" "$RUNNER_TEMP/ExportOptions.plist" "$RUNNER_TEMP/archive.log" "$RUNNER_TEMP/export.log"
