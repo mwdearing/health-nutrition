@@ -1,8 +1,9 @@
 # Journal, entry detail and Library
 
 ## Screens
-- **Journal** lists active entries grouped by the local day of each entry's own time zone, newest first. An entry whose stored time zone is invalid or whose record cannot be read is left out and counted in a visible note; no zone is guessed. Deleted entries are hidden.
-- **Entry detail** shows the current amounts (exact decimal and unit), the revision history and the delivery state per destination. States are words plus an icon, with an accessibility value, so colour is never the only signal. A missing amount shows "unknown", never 0.
+- **Journal** lists active entries grouped by the local day of each entry's own time zone, newest first. An entry whose stored time zone is invalid or whose record cannot be read is left out and counted in a visible note; no zone is guessed. Deleted entries are hidden. An entry that states a meal lists it as a secondary line, and it opens in the entry screen.
+- **Entry detail** shows the entry's meal when it states one, the current amounts (exact decimal and unit), the revision history and the delivery state per destination. States are words plus an icon, with an accessibility value, so colour is never the only signal. A missing amount shows "unknown", never 0.
+- **When** is the entry's time, in a date picker bounded to now: nobody has eaten anything in the future, and a logged time is corrected backwards. Saving goes through the same one `edit` call as an amount, so the correction is a new revision with the previous one kept, the journal then lists the entry under the corrected day, and the History section shows the correction as a revision like any other. A change of time alone is recorded as "Time corrected" unless a reason was written; a written reason is kept as written. An edit that does not change the time writes no correction at all.
 - **Edit** parses amounts with the fixed POSIX parser (digits and one point, no locale, no sign). Invalid text gives a field error and writes nothing. A valid save makes exactly one `edit` call and a new revision; if the write fails the previous revision stays and an error is shown.
 - **Delete** asks for confirmation, then makes one `delete` call. The entry is hidden, delete operations are queued and the history is kept.
 - **Library** shows Favorites first, then Recents. Choosing an item adds a new entry now.
@@ -15,7 +16,7 @@ Repeat makes one `create` call for a NEW intake: new lowercase UUID, `occurredAt
 - **Favorites** are stored templates (display name, category, components as exact decimal text plus unit symbol, optional product snapshot id) in their own store file next to the journal file. A favorite is a copy, not a link, so deleting an entry never removes a favorite.
 
 ## Entry points
-Today has Journal and Library links, and Add intake has "From library". The Library screen also carries the only way in to the Connections and privacy screen, where the journal can be exported as versioned JSON: see [Journal export](journal-export.md). These are navigation callbacks only; the Today and Add view models are unchanged.
+Today has Journal and Library links, its own rows open the same entry screen the Journal opens, and Add intake has "From library". The Library screen also carries the only way in to the Connections and privacy screen, where the journal can be exported as versioned JSON: see [Journal export](journal-export.md). These are navigation callbacks only; the Today and Add view models are unchanged.
 
 ## Deferred
 Recipes (ingredient lines, yield and per-serving math) are deferred to NC-04b.

@@ -69,6 +69,27 @@ because the document carries none and an import must not empty the ones the jour
 stored row that states none is filled in from the plan. Only two sets that both state values and differ are a
 `snapshotConflict`, as is a *different* product under a snapshot id the store holds.
 
+## Correcting when an entry was eaten
+
+`edit` also takes `occurredAt` and the `timeZoneIdentifier` that goes with it. Given both, the new revision carries the
+corrected instant and the intake's own row moves with it in the same save; given neither, the time is left exactly as
+it was, so an amounts-only edit cannot move an entry by accident. Given one without the other, what was not corrected
+is kept: a new date with the entry's own zone, or a new zone with the entry's own instant. `IntakeRecord` already held
+both fields, so no schema version was added.
+
+**The correction is a new revision, never an update to a delivered one.** The encoder digests `occurred_at` per
+(intake, revision), so a revision that has already been sent describes the instant it was written for: changing the
+row underneath it would leave a delivered revision claiming a moment that is no longer true. Everything else the
+existing machinery already does therefore still holds — the previous revision is kept, the superseded projections are
+not updated, a new upsert is queued for every enabled destination, and the journal then reads the entry under its
+corrected day. Delivery scheduling, the retry policy, every threshold, the encoder and the digest rules are untouched;
+what changes is which revision is current.
+
+The upsert payload hash covers the instant and the zone as well as the amounts, because "40 g of oats" and "40 g of
+oats, eaten at 19:00" are different facts and a receiver deduplicating on that hash has to be able to tell them
+apart. The hash is a change detector, so the timestamp is written as the whole-second UTC text the contract itself
+uses.
+
 ## Usage constraints
 
 The app must use ONE `SwiftDataJournalStore` per database file. The write lock is per instance, so two instances on the same file are unsupported and can assign duplicate revision numbers.
