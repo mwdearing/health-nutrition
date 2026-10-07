@@ -195,7 +195,13 @@ final class HealthKitDeliveryStatus {
     /// the same stored reason. Re-arming stays something a person causes, as the store requires, and
     /// this is that person.
     func authorizationRequested(now: Date = Date()) async {
-        guard !isBusy else { return }
+        // A request answered while a pass is running is not dropped: the running pass re-arms and goes
+        // round again when it finishes, so the parked operations get their attempt.
+        guard !isBusy else {
+            authorizationPending = true
+            rerunRequested = true
+            return
+        }
         // Read the queue first: the re-arm acts on what is suspended now, not on what the last
         // refresh happened to see.
         refresh()
@@ -233,6 +239,11 @@ final class HealthKitDeliveryStatus {
         repeat {
             rerunRequested = false
             rearmSummary = nil
+            if authorizationPending {
+                authorizationPending = false
+                refresh()
+                rearmSuspended()
+            }
             let outcomes = await healthKitDelivery.runOnce(now: passTime)
             lastRunAt = passTime
             lastRunLines = outcomes.map(Self.line(for:))
@@ -242,6 +253,9 @@ final class HealthKitDeliveryStatus {
     }
 
     private var rerunRequested = false
+    /// Set when the authorization sheet was answered while a pass was running; the loop re-arms before
+    /// its next pass instead of losing the answer.
+    private var authorizationPending = false
 
     /// The suspended operation ids read by the last `refresh()`, kept so the re-arm action knows what
     /// it is clearing. Not shown: the ids are opaque, and the count on the summary line is the part a

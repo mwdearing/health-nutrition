@@ -186,12 +186,17 @@ final class HealthKitSpikeRunner {
             do {
                 // The async requestAuthorization returns nothing: it completes once the prompt is
                 // done, and HealthKit deliberately never says which types were granted.
-                try await self.store.requestAuthorization(toShare: mapped.share, read: mapped.read)
+                // Write access for every mapped type, because that is what delivery writes; read access
+                // only for the two types this screen reads back, because that is all it reads and all the
+                // usage description promises.
+                try await self.store.requestAuthorization(
+                    toShare: mapped.share, read: [Self.waterType, Self.proteinType])
                 self.authorizationSummary = "requested"
                 self.hasAuthorization = true
                 self.record(
-                    "authorization requested (write and read: "
-                        + self.requestedIdentifiers(mapped).joined(separator: ", ") + ")")
+                    "authorization requested (write: "
+                        + self.requestedIdentifiers(mapped).joined(separator: ", ")
+                        + "; read: dietaryWater, dietaryProtein)")
                 if !mapped.unresolved.isEmpty {
                     self.record(
                         "HealthKit does not know these mapped types: "
