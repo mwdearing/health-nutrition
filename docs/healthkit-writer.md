@@ -30,9 +30,13 @@ plan:
   version replaces it again (harmless, because the sample is rebuilt entirely from the stored
   revision); a lower version is silently ignored and still reports success, so the writer never
   treats a successful save as proof that the store now holds this revision.
-- **Timestamps come from the intake.** `start` and `end` are both `occurredAt`, the intake's own
-  time. Nothing here reads `Date()`: a retry has to rebuild identical metadata, or an equal-version
-  replacement would write a different sample than the one it replaces.
+- **Timestamps come from the revision.** `start` and `end` are both `occurredAt`, and the worker
+  reads it off the **revision being delivered**, falling back to the entry's own for a row written
+  before revisions carried a time. Not the entry's current value: correcting an entry's time moves the
+  entry's row and writes a new revision, so an older revision still queued would otherwise be stamped
+  with the corrected instant under its own sync version — silently rewriting what that revision said.
+  Nothing here reads `Date()` either way: a retry has to rebuild identical metadata, or an
+  equal-version replacement would write a different sample than the one it replaces.
 
 ## The mapping table
 `HealthKitWritePlanner.mappings` is the whole table. The units are the ones HealthKit accepts for
@@ -167,7 +171,7 @@ predictable: whether an operation is due, and when a retry is scheduled.
    counted. A key the mapping table has no row for is passed through untouched; the planner decides
    which keys are writeable.
 2. **Plan.** `HealthKitWritePlanner.plan(intakeID:revision:occurredAt:totals:)` turns them into
-   `[HealthKitSampleSpec]`, ordered by nutrient key, stamped with the intake's own `occurredAt`.
+   `[HealthKitSampleSpec]`, ordered by nutrient key, stamped with the revision's own `occurredAt`.
 3. **Stale deletion.** For any revision after the first, the samples for mapped nutrients **this plan
    does not write** are deleted first, then the plan is saved. The order matters: an edit can drop a
    nutrient, an unknown total plans no sample, so nothing would replace what an earlier revision left

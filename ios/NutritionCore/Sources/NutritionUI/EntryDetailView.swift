@@ -57,7 +57,12 @@ public struct EntryDetailView: View {
                 // Bounded to now: nobody has eaten anything in the future, and an entry's time is
                 // something to be corrected backwards. Saving writes a new revision like any other
                 // change here, so the old instant is kept and can be read back.
+                //
+                // The picker is given the entry's own stored zone rather than the device's, because that
+                // is the zone its time is a wall clock in: a person correcting an entry has to see and
+                // edit the time the entry states, not the same instant read somewhere else.
                 DatePicker("When", selection: $model.occurredAt, in: ...now())
+                    .environment(\.timeZone, model.storedTimeZone)
                     .accessibilityLabel("When the entry was eaten")
                     .accessibilityHint("Corrects the time. Saving adds a new revision and keeps the old one.")
                 TextField("Reason for the change", text: $model.changeReason)

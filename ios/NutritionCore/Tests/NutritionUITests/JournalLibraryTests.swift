@@ -272,6 +272,88 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(model.revisions.first?.changeReason, "eaten earlier")
     }
 
+    /// A save that moves the amounts **and** the time is an ordinary edit, and is recorded as one. Labelling
+    /// it "Time corrected" would tell a reader the time was the only thing that changed when the amounts
+    /// changed too, and the history would then misdescribe the correction.
+    func testEntryDetailRecordsATimeAndAmountChangeAsAnOrdinaryEdit() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now, amount: 40)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        model.drafts["oats"] = "55"
+        model.occurredAt = now.addingTimeInterval(-3_600)
+        XCTAssertTrue(model.saveDrafts(now: now))
+
+        XCTAssertEqual(
+            model.revisions.first?.changeReason, "Edited",
+            "both the amounts and the time moved, so this is an ordinary edit")
+        XCTAssertEqual(try store.activeIntakes().first { $0.id == id }?.occurredAt, now.addingTimeInterval(-3_600))
+        XCTAssertEqual(try store.revisions(of: id).last?.components.first?.amount, 55)
+    }
+
+    /// An amounts-only save is unchanged by this rule: the time did not move, so it is an ordinary edit for
+    /// the same reason it always was.
+    func testEntryDetailRecordsAnAmountsOnlyEditAsAnOrdinaryEdit() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now, amount: 40)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        model.drafts["oats"] = "55"
+        XCTAssertTrue(model.saveDrafts(now: now))
+        XCTAssertEqual(model.revisions.first?.changeReason, "Edited")
+    }
+
+    /// A reason the person wrote is kept whatever it says, including on a time-only correction.
+    func testEntryDetailKeepsAWrittenReasonOnATimeOnlyCorrection() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        model.changeReason = "lunch, not dinner"
+        model.occurredAt = now.addingTimeInterval(-3_600)
+        XCTAssertTrue(model.saveDrafts(now: now))
+        XCTAssertEqual(model.revisions.first?.changeReason, "lunch, not dinner")
+    }
+
+    /// The "When" picker edits the entry's time **in the zone the entry stores it in**, so a person sees and
+    /// corrects the time the entry actually states. Picking 19:00 in a stored `America/Chicago` persists as
+    /// 19:00 there, whichever zone the device happens to be in — otherwise the correction would be a
+    /// different wall clock from the one it was made against.
+    func testEntryDetailPicksTheTimeInTheEntriesStoredZoneNotTheDevices() throws {
+        let store = try makeStore()
+        let stored = try addFood(store, at: when, zone: "America/Chicago")
+        let model = EntryDetailViewModel(store: store, intakeID: stored)
+        model.load(now: now)
+        XCTAssertEqual(model.storedTimeZone.identifier, "America/Chicago", "the picker is bound to the entry's own zone")
+
+        // 19:00 on the day the entry was logged, as a wall clock in the entry's zone.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
+        // 19:00 on the day before the entry was logged, as a wall clock in the entry's zone.
+        let picked = try XCTUnwrap(
+            calendar.date(from: DateComponents(
+                timeZone: calendar.timeZone, year: 2023, month: 11, day: 13, hour: 19, minute: 0)))
+        model.occurredAt = picked
+        XCTAssertTrue(model.saveDrafts(now: now))
+
+        let saved = try XCTUnwrap(try store.activeIntakes().first { $0.id == stored })
+        XCTAssertEqual(saved.occurredAt, picked)
+        let readBack = Calendar(identifier: .gregorian)
+        let fields = readBack.dateComponents(in: calendar.timeZone, from: saved.occurredAt)
+        XCTAssertEqual(fields.hour, 19, "the stored instant reads as 19:00 in the entry's own zone")
+        XCTAssertEqual(fields.minute, 0)
+    }
+
+    /// An identifier the platform no longer resolves cannot be shown as a zone, so the picker falls back to
+    /// the current one rather than being given something that is not a zone.
+    func testEntryDetailFallsBackToTheCurrentZoneForAnIdentifierThatDoesNotResolve() throws {
+        let store = try makeStore()
+        let unresolved = try addFood(store, at: now, zone: "Not/AZone")
+        let model = EntryDetailViewModel(store: store, intakeID: unresolved)
+        model.load(now: now)
+        XCTAssertEqual(model.storedTimeZone, .current)
+    }
+
     /// An amounts-only edit leaves the instant alone: nothing corrected it, so nothing may move.
     func testEntryDetailSaveWithoutATimeChangeLeavesTheStoredTimeAlone() throws {
         let store = try makeStore()

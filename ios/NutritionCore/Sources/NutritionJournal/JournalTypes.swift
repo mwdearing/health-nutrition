@@ -140,6 +140,22 @@ public struct IntakeRevision: Sendable, Hashable {
     public var productSnapshotID: String?
     public var changeReason: String
     public var createdAt: Date
+    /// The instant this revision says the entry was eaten, with the zone that goes with it.
+    ///
+    /// The entry's own `Intake.occurredAt` moves when the time is corrected, so a revision that is still
+    /// queued cannot read its own instant back out of it: rebuilding a revision 1 that is waiting for a
+    /// delivery would name the corrected time, and the retry would reach the receiver under the revision's
+    /// own `operation_id` with a different payload — a conflict rather than the duplicate it is. Each
+    /// revision therefore carries the time it was written with, and a delivery rebuilds the revision from
+    /// these.
+    ///
+    /// Nil means "the entry's current time", which is what a row written before this column existed says.
+    /// A revision that predates the column was written when the entry's row was the only record of the
+    /// time, so nil is the honest reading of it and the corrected instant is the only one such a row can
+    /// offer.
+    public var occurredAt: Date?
+    /// The zone `occurredAt` is a wall clock in. Read with `occurredAt`: nil here means the entry's own.
+    public var timeZoneIdentifier: String?
 
     public init(
         intakeID: String,
@@ -147,7 +163,9 @@ public struct IntakeRevision: Sendable, Hashable {
         components: [IntakeComponent],
         productSnapshotID: String?,
         changeReason: String,
-        createdAt: Date
+        createdAt: Date,
+        occurredAt: Date? = nil,
+        timeZoneIdentifier: String? = nil
     ) {
         self.intakeID = intakeID
         self.number = number
@@ -155,6 +173,8 @@ public struct IntakeRevision: Sendable, Hashable {
         self.productSnapshotID = productSnapshotID
         self.changeReason = changeReason
         self.createdAt = createdAt
+        self.occurredAt = occurredAt
+        self.timeZoneIdentifier = timeZoneIdentifier
     }
 }
 

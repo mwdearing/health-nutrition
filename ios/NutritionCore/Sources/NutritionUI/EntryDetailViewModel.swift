@@ -75,6 +75,18 @@ public final class EntryDetailViewModel: ObservableObject {
     /// may only correct that, so a save made before the first load cannot move an entry whose
     /// stored time this model has not seen.
     private var storedOccurredAt: Date?
+    /// The zone the entry's time is a wall clock in, as the view shows and edits it.
+    ///
+    /// The picker is bound to this rather than to the device zone, because the stored time is a wall
+    /// clock in **this** zone: showing it in the device's zone would display a different time of day from
+    /// the one the entry states, and a person correcting an entry would be editing the wrong reading. A
+    /// stored identifier the platform no longer resolves falls back to the current zone, so the picker
+    /// still reads rather than being given a zone that does not exist.
+    public var storedTimeZone: TimeZone {
+        guard let timeZoneIdentifier else { return .current }
+        return TimeZone(identifier: timeZoneIdentifier) ?? .current
+    }
+    private var timeZoneIdentifier: String?
 
     public let intakeID: String
     private let store: JournalStore
@@ -125,6 +137,7 @@ public final class EntryDetailViewModel: ObservableObject {
             })
             occurredAt = intake.occurredAt
             storedOccurredAt = intake.occurredAt
+            timeZoneIdentifier = intake.timeZoneIdentifier
             mealText = MealLabel.displayName(for: intake.meal)
             revisions = all.reversed().map {
                 EntryRevisionRow(number: $0.number, createdAt: $0.createdAt, changeReason: $0.changeReason)
@@ -179,15 +192,19 @@ public final class EntryDetailViewModel: ObservableObject {
                 errorMessage = "This entry is no longer available."
                 return false
             }
-            let snapshotID = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }?.productSnapshotID
+            let current = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }
             var product: ProductDefinition?
-            if let snapshotID { product = try store.product(snapshotID: snapshotID) }
+            if let snapshotID = current?.productSnapshotID { product = try store.product(snapshotID: snapshotID) }
             let correctedTime: Date? = storedOccurredAt == nil || storedOccurredAt == occurredAt
                 ? nil
                 : occurredAt
+            // The time-correction reason belongs to a save that moved only the time. A save that changes the
+            // amounts and the time together is an ordinary edit, and is recorded as one.
+            let timeOnly = correctedTime != nil
+                && (current.map { Self.componentsUnchanged(from: $0.components, to: parsed) } ?? false)
             try store.edit(
                 intakeID: intakeID, components: parsed, product: product,
-                changeReason: Self.recordedReason(written: reason, correctedTime: correctedTime != nil), now: now,
+                changeReason: Self.recordedReason(written: reason, timeOnlyChange: timeOnly), now: now,
                 occurredAt: correctedTime,
                 timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
         } catch {
@@ -199,13 +216,39 @@ public final class EntryDetailViewModel: ObservableObject {
     }
 
     /// What one revision is recorded as. A reason the person wrote is theirs and is kept as written;
-    /// an untouched field records what actually changed, so a correction of the time is not filed
-    /// as an ordinary edit.
-    static func recordedReason(written reason: String, correctedTime: Bool) -> String {
+    /// an untouched field records what actually changed.
+    ///
+    /// **A time correction is named only when the amounts are untouched.** A save that changes the amounts
+    /// *and* the time is an ordinary edit of the entry, however it was reached, and labelling it "Time
+    /// corrected" would say the time was the only thing that moved when it was not: the history would read
+    /// as if the amounts had stood still through a correction that changed them. So the time-correction
+    /// reason is for the case it describes — the instant moved and the components did not.
+    static func recordedReason(written reason: String, timeOnlyChange: Bool) -> String {
         let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return correctedTime ? timeCorrectionReason : defaultChangeReason }
-        if correctedTime, trimmed == defaultChangeReason { return timeCorrectionReason }
+        if trimmed.isEmpty { return timeOnlyChange ? timeCorrectionReason : defaultChangeReason }
+        if timeOnlyChange, trimmed == defaultChangeReason { return timeCorrectionReason }
         return trimmed
+    }
+
+    /// Whether the components a save writes are the ones the current revision already holds.
+    ///
+    /// This is what separates a correction of the time from an edit that happens to include one. The
+    /// comparison is by id, name, amount and unit, ignoring order: the amounts a person edits are the same
+    /// facts whatever sequence the fields are listed in, and a reordered list is not a change to them.
+    ///
+    /// An unknown amount never compares equal to another, so a stored `unknown` reads as changed — which is
+    /// the right answer, since the parser rejects that draft outright and the only way to save such an entry
+    /// is to state a number, which is a change.
+    static func componentsUnchanged(
+        from current: [IntakeComponent], to proposed: [IntakeComponent]
+    ) -> Bool {
+        guard current.count == proposed.count else { return false }
+        return proposed.allSatisfy { candidate in
+            current.contains { existing in
+                existing.componentID == candidate.componentID && existing.name == candidate.name
+                    && existing.unit == candidate.unit && existing.amount == candidate.amount
+            }
+        }
     }
 
     /// Saves the current drafts, keeping names and units.

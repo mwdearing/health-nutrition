@@ -293,9 +293,17 @@ public struct IntakeContextEncoder: Sendable {
             "revision": .integer(String(revision.number)),
             // An upsert always opens the projection lifecycle of its revision, so it is sequence 1.
             "projection_sequence": .integer("1"),
+            // The revision's own instant and zone, not the entry's. `occurred_at` and `time_zone` are
+            // hashed into all three digests, so a revision rebuilt after a correction of the entry's time
+            // from the entry's current values would reach the receiver under the same `operation_id` with
+            // a different payload — a conflict rather than the duplicate it is. A revision written before
+            // revisions carried a time reads as nil and names the entry's own, which is all such a row can
+            // offer.
             "occurred_at": .string(
-                try IntakeContextTimestamp.local(intake.occurredAt, timeZone: intake.timeZoneIdentifier)),
-            "time_zone": .string(intake.timeZoneIdentifier),
+                try IntakeContextTimestamp.local(
+                    revision.occurredAt ?? intake.occurredAt,
+                    timeZone: revision.timeZoneIdentifier ?? intake.timeZoneIdentifier)),
+            "time_zone": .string(revision.timeZoneIdentifier ?? intake.timeZoneIdentifier),
             "recorded_at": .string(IntakeContextTimestamp.utc(revision.createdAt)),
             "category": .string(intake.category),
             "display_name": .string(displayName(intake: intake, product: snapshot)),

@@ -92,6 +92,71 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(projections.filter { $0.revision == 2 }.map(\.isCurrent), [true, true])
     }
 
+    /// Each revision keeps the instant it was written with, even after a later revision corrects the
+    /// entry's time. This is what a queued delivery rebuilds from: `IntakeRecord.occurredAt` is the only
+    /// timestamp the entry has, and it moves on a correction, so without a copy per revision a revision 1
+    /// still waiting in the queue would be rebuilt with the corrected instant and reach the receiver under
+    /// its own `operation_id` with a different payload — a conflict rather than the duplicate it is.
+    func testEachRevisionKeepsTheTimeItWasWrittenWithAcrossALaterCorrection() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [oats(40)], product: nil, now: when)
+        let corrected = when.addingTimeInterval(-86_400)
+        try store.edit(
+            intakeID: intakeID, components: [oats(40)], product: nil, changeReason: "Time corrected",
+            now: when, occurredAt: corrected, timeZoneIdentifier: "UTC")
+
+        let revisions = try store.revisions(of: intakeID)
+        XCTAssertEqual(
+            revisions.map(\.occurredAt), [when, corrected],
+            "revision 1 states the time it was written with, not the corrected one")
+        XCTAssertEqual(revisions.map(\.timeZoneIdentifier), ["UTC", "UTC"])
+        XCTAssertEqual(try store.activeIntakes().first?.occurredAt, corrected)
+    }
+
+    /// An amounts-only edit records the time the entry already had, so the revision is deliverable on its
+    /// own terms rather than depending on a later correction having not happened.
+    func testAnAmountsOnlyEditRecordsTheTimeTheEntryAlreadyHad() throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [oats(40)], product: nil, now: when)
+        try store.edit(intakeID: intakeID, components: [oats(55)], product: nil, changeReason: "bigger bowl", now: when)
+
+        XCTAssertEqual(try store.revisions(of: intakeID).last?.occurredAt, when)
+        XCTAssertEqual(try store.revisions(of: intakeID).last?.timeZoneIdentifier, "UTC")
+    }
+
+    /// A store written before the revision carried a time opens at the current schema with nil revision
+    /// times, which mean "the entry's current time" — the only instant such a row can offer, since the
+    /// entry's row held the sole copy and may since have been corrected.
+    func testAStoreWrittenAtV4OpensWithNilRevisionTimes() throws {
+        let directory = try makeDirectory()
+        try SwiftDataJournalStore.writeV4RevisionForTesting(
+            url: storeURL(directory), intake: sampleIntake(), components: [oats(40)], now: when)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: storeURL(directory).path),
+            "the fixture has to be a real V4 file on disk, or the migration stage never runs")
+
+        let store = try makeStore(directory)
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
+        let revision = try XCTUnwrap(try store.revisions(of: intakeID).first)
+        XCTAssertEqual(revision.number, 1)
+        XCTAssertNil(revision.occurredAt, "a row written before the column carried none")
+        XCTAssertNil(revision.timeZoneIdentifier)
+        XCTAssertEqual(try store.activeIntakes().first?.occurredAt, when, "the entry's own row is untouched")
+    }
+
+    /// A revision written after the upgrade carries its time through a reopen, so the row is not lost on
+    /// disk the way a migrated one never had it.
+    func testARevisionWrittenNowKeepsItsTimeAcrossAReopen() throws {
+        let directory = try makeDirectory()
+        let first = try makeStore(directory)
+        try first.create(sampleIntake(), components: [oats(40)], product: nil, now: when)
+        first.close()
+
+        let second = try makeStore(directory)
+        XCTAssertEqual(try second.revisions(of: intakeID).first?.occurredAt, when)
+        XCTAssertEqual(try second.revisions(of: intakeID).first?.timeZoneIdentifier, "UTC")
+    }
+
     /// An `edit` that was not given a time corrects the amounts only: the instant the entry says it
     /// was eaten is left exactly as it was, so the common case cannot move an entry by accident.
     func testEditWithoutOccurredAtLeavesTheEntryTimeAlone() throws {

@@ -1277,6 +1277,37 @@ final class AlternatingLinkProvider: @unchecked Sendable {
     }
 
     /// The tombstone carries when the person deleted the entry, not when the last revision was written.
+    /// `occurred_at` and `time_zone` are hashed into all three digests, so an upsert has to carry the instant
+    /// **its own revision** recorded. A correction of the entry's time moves the entry's row, and a revision 1
+    /// still queued behind it would otherwise be encoded with the corrected instant — the same
+    /// `operation_id` arriving with a different `client_payload_hash`, which the receiver reads as a conflict
+    /// rather than the duplicate it is.
+    func testAPendingRevisionIsEncodedWithItsOwnTimeAfterALaterRevisionCorrectsTheEntry() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let corrected = when.addingTimeInterval(-86_400)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "Time corrected",
+            now: when, occurredAt: corrected, timeZoneIdentifier: "UTC")
+        transport.answerEverythingAccepted()
+
+        _ = await worker.runOnce(now: when)
+
+        let operations = try XCTUnwrap(
+            IntakeContextJSONReader.read(try XCTUnwrap(transport.sentBatches.first)).array("operations"))
+        XCTAssertEqual(operations.count, 2)
+        let byRevision = Dictionary(
+            uniqueKeysWithValues: operations.compactMap { operation in
+                operation.integer("revision").map { ($0, operation) }
+            })
+        XCTAssertEqual(
+            byRevision[1]?.string("occurred_at"), IntakeContextTimestamp.local(when, timeZone: "UTC"),
+            "revision 1 states the time it was written with")
+        XCTAssertEqual(
+            byRevision[2]?.string("occurred_at"), IntakeContextTimestamp.local(corrected, timeZone: "UTC"),
+            "revision 2 states the corrected time")
+    }
+
     /// `delete(intakeID:now:)` knows, the journal records it, and it is hashed — so an approximation could
     /// never be corrected afterwards without turning the retry into a conflict.
     func testADeleteCarriesThePersistedDeletionInstantRatherThanTheRevisionsCreationTime() async throws {
