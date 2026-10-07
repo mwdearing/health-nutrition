@@ -50,6 +50,12 @@ public struct EditedComponent: Equatable {
 
 @MainActor
 public final class EntryDetailViewModel: ObservableObject {
+    /// The reason a revision carries when the person did not write one.
+    public static let defaultChangeReason = "Edited"
+    /// What a correction of the entry's time alone is recorded as, because a history that reads
+    /// "Edited" for a change of time tells a reader nothing about what happened.
+    public static let timeCorrectionReason = "Time corrected"
+
     @Published public private(set) var components: [EntryComponentRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
     @Published public private(set) var destinations: [EntryDestinationRow] = []
@@ -59,7 +65,16 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var isDeleted = false
     /// Edit drafts by component id, bound to the text fields.
     @Published public var drafts: [String: String] = [:]
-    @Published public var changeReason: String = "Edited"
+    @Published public var changeReason: String = EntryDetailViewModel.defaultChangeReason
+    /// The entry's time as an editable draft, which the "When" row binds to. `load` seeds it from
+    /// the stored value, and a save writes a correction only once it differs from it.
+    @Published public var occurredAt: Date
+    /// The meal the entry states, as words, or nil when it states none.
+    @Published public private(set) var mealText: String?
+    /// The time exactly as the journal holds it, and nil until `load` has read the entry. A draft
+    /// may only correct that, so a save made before the first load cannot move an entry whose
+    /// stored time this model has not seen.
+    private var storedOccurredAt: Date?
 
     public let intakeID: String
     private let store: JournalStore
@@ -81,6 +96,7 @@ public final class EntryDetailViewModel: ObservableObject {
         self.store = store
         self.intakeID = intakeID
         self.preferences = preferences
+        self.occurredAt = Date()
         self.repeater = IntakeRepeater(
             store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
             makeID: makeID)
@@ -107,6 +123,9 @@ public final class EntryDetailViewModel: ObservableObject {
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
                 ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))
             })
+            occurredAt = intake.occurredAt
+            storedOccurredAt = intake.occurredAt
+            mealText = MealLabel.displayName(for: intake.meal)
             revisions = all.reversed().map {
                 EntryRevisionRow(number: $0.number, createdAt: $0.createdAt, changeReason: $0.changeReason)
             }
@@ -138,6 +157,10 @@ public final class EntryDetailViewModel: ObservableObject {
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.
+    ///
+    /// A draft time that differs from the stored one is a correction of when the entry was eaten,
+    /// and goes through the same call as an amount: one new revision, the previous one kept. The
+    /// zone is the entry's own, so the day it lands on is read the same way as before.
     @discardableResult
     public func save(components edited: [EditedComponent], changeReason reason: String, now: Date) -> Bool {
         var errors: [String: String] = [:]
@@ -159,16 +182,30 @@ public final class EntryDetailViewModel: ObservableObject {
             let snapshotID = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }?.productSnapshotID
             var product: ProductDefinition?
             if let snapshotID { product = try store.product(snapshotID: snapshotID) }
-            let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            let correctedTime: Date? = storedOccurredAt == nil || storedOccurredAt == occurredAt
+                ? nil
+                : occurredAt
             try store.edit(
                 intakeID: intakeID, components: parsed, product: product,
-                changeReason: trimmedReason.isEmpty ? "Edited" : trimmedReason, now: now)
+                changeReason: Self.recordedReason(written: reason, correctedTime: correctedTime != nil), now: now,
+                occurredAt: correctedTime,
+                timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
         } catch {
             errorMessage = "Could not save the change. The previous version is kept."
             return false
         }
         load(now: now)
         return true
+    }
+
+    /// What one revision is recorded as. A reason the person wrote is theirs and is kept as written;
+    /// an untouched field records what actually changed, so a correction of the time is not filed
+    /// as an ordinary edit.
+    static func recordedReason(written reason: String, correctedTime: Bool) -> String {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return correctedTime ? timeCorrectionReason : defaultChangeReason }
+        if correctedTime, trimmed == defaultChangeReason { return timeCorrectionReason }
+        return trimmed
     }
 
     /// Saves the current drafts, keeping names and units.

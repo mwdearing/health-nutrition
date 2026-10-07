@@ -284,9 +284,18 @@ public protocol JournalStore: AnyObject, Sendable {
         _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
     ) throws -> IntakeRevision
     /// Writes revision n+1 and supersedes the previous projections, in one save.
+    ///
+    /// `occurredAt`, with the `timeZoneIdentifier` that goes with it, corrects when the entry was
+    /// eaten: the new revision carries the corrected time and the intake's own row moves with it in
+    /// the same save. **It is a new revision, never an update to a delivered one** — the encoder
+    /// digests `occurred_at` per (intake, revision), so a time changed in place would leave a
+    /// delivered revision describing an instant that is no longer true. Every earlier revision is
+    /// kept, the superseded projections are not updated, and the queued upsert payload hash covers
+    /// the timestamp. Leaving both nil corrects the amounts only and leaves the time as it was.
     @discardableResult
     func edit(
-        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
     ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws

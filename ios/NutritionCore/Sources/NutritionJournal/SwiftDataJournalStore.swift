@@ -855,13 +855,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
                 lifecycleRaw: IntakeLifecycle.active.rawValue, currentRevision: 1))
             return try appendRevision(
                 intakeID: intake.id, number: 1, componentsJSON: json, components: components,
-                product: product, changeReason: "created", now: now, context: context)
+                product: product, changeReason: "created", now: now,
+                occurredAt: intake.occurredAt, timeZoneIdentifier: intake.timeZoneIdentifier, context: context)
         }
     }
 
     @discardableResult
     public func edit(
-        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
     ) throws -> IntakeRevision {
         let json = try Self.encode(components)
         return try commit { context in
@@ -873,10 +875,17 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             }
             let number = record.currentRevision + 1
             record.currentRevision = number
+            // The corrected time moves the entry's own row, in the same save as the revision that
+            // carries it. It is read back out of the record rather than out of the arguments, so the
+            // revision is hashed and stored with the time the entry now holds: an edit given no time
+            // keeps the one it had, and one given a date without a zone keeps that zone.
+            if let occurredAt { record.occurredAt = occurredAt }
+            if let timeZoneIdentifier { record.timeZoneIdentifier = timeZoneIdentifier }
             try Self.supersedeProjections(of: intakeID, in: context)
             return try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
-                product: product, changeReason: changeReason, now: now, context: context)
+                product: product, changeReason: changeReason, now: now,
+                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
         }
     }
 
@@ -1376,9 +1385,13 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         }
     }
 
+    /// One revision, with the entry's time as it stood for that revision: the instant is hashed with
+    /// the amounts, because "40 g of oats" and "40 g of oats, eaten at 19:00" are different facts and
+    /// a receiver deduplicating on the payload hash must be able to tell them apart.
     private func appendRevision(
         intakeID: String, number: Int, componentsJSON: String, components: [IntakeComponent],
-        product: ProductDefinition?, changeReason: String, now: Date, context: ModelContext
+        product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date,
+        timeZoneIdentifier: String, context: ModelContext
     ) throws -> IntakeRevision {
         if let product {
             try Self.insertSnapshot(product, in: context)
@@ -1386,7 +1399,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         context.insert(RevisionRecord(
             intakeID: intakeID, number: number, componentsJSON: componentsJSON,
             productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now))
-        let payload = "\(intakeID):\(number):\(product?.snapshotID ?? ""):\(componentsJSON)"
+        let payload = "\(intakeID):\(number):\(product?.snapshotID ?? "")"
+            + ":\(IntakeContextTimestamp.utc(occurredAt)):\(timeZoneIdentifier):\(componentsJSON)"
         queueWork(intakeID: intakeID, revision: number, kind: .upsert, payload: payload, context: context)
         return IntakeRevision(
             intakeID: intakeID, number: number, components: components,

@@ -72,7 +72,11 @@ struct RootView: View {
                     model: services.today,
                     onAddIntake: { startAddingIntake() },
                     onOpenJournal: { selection = .journal },
-                    onOpenLibrary: { selection = .library }
+                    onOpenLibrary: { selection = .library },
+                    // Today's rows are the same entries the Journal lists, so they open the same
+                    // entry screen: an entry logged late on the wrong day is corrected from where
+                    // it is noticed rather than only from the Journal tab.
+                    onSelect: { selectedIntakeID = $0 }
                 )
                 #if DEBUG
                 // One line, because a delivery that is parked or waiting for a person should be visible
@@ -89,20 +93,6 @@ struct RootView: View {
             .tag(AppTab.today)
 
             JournalView(model: services.journal, onSelect: { selectedIntakeID = $0 })
-                .sheet(isPresented: detailSheetPresented) {
-                    if let intakeID = selectedIntakeID {
-                        EntryDetailView(
-                            model: EntryDetailViewModel(
-                                store: services.journalStore, intakeID: intakeID,
-                                preferences: services.displayPreferences),
-                            now: { Date() },
-                            onFinished: {
-                                selectedIntakeID = nil
-                                reload()
-                            }
-                        )
-                    }
-                }
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
@@ -135,6 +125,23 @@ struct RootView: View {
             .tabItem { Label("HealthKit", systemImage: "waveform.path.ecg") }
             .tag(AppTab.spike)
             #endif
+        }
+        // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
+        // name an entry into `selectedIntakeID` and one sheet presents over whichever tab is showing.
+        // Hanging it on a single tab would leave the other tab's rows dead.
+        .sheet(isPresented: detailSheetPresented) {
+            if let intakeID = selectedIntakeID {
+                EntryDetailView(
+                    model: EntryDetailViewModel(
+                        store: services.journalStore, intakeID: intakeID,
+                        preferences: services.displayPreferences),
+                    now: { Date() },
+                    onFinished: {
+                        selectedIntakeID = nil
+                        reload()
+                    }
+                )
+            }
         }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.

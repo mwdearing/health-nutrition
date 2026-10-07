@@ -8,6 +8,15 @@ public struct JournalRow: Equatable, Identifiable {
     public let detail: String
     public let occurredAt: Date
     public let timeZoneIdentifier: String
+    /// The meal as words, or nil when the entry states none. Carried on the row so the screens that
+    /// list an entry can say which meal it was without reading the journal again.
+    public let meal: String?
+
+    /// What a screen reader reads for one row: the name, the amounts, and the meal when it has one.
+    public var accessibilityText: String {
+        guard let meal else { return "\(title), \(detail)" }
+        return "\(title), \(detail), \(meal)"
+    }
 }
 
 public struct JournalDaySection: Equatable, Identifiable {
@@ -63,7 +72,8 @@ public final class JournalViewModel: ObservableObject {
                 let row = JournalRow(
                     id: intake.id, title: AmountText.title(current.components),
                     detail: AmountText.summary(current.components), occurredAt: intake.occurredAt,
-                    timeZoneIdentifier: intake.timeZoneIdentifier)
+                    timeZoneIdentifier: intake.timeZoneIdentifier,
+                    meal: MealLabel.displayName(for: intake.meal))
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
                     titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)

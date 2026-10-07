@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import NutritionJournal
 import NutritionProviders
 import SwiftUI
 
@@ -119,6 +120,14 @@ public struct AddIntakeView: View {
                 Picker("Unit", selection: $model.unit) {
                     ForEach(model.units, id: \.symbol) { unit in
                         Text(unit.symbol).tag(unit)
+                    }
+                }
+                Picker("Meal", selection: $model.meal) {
+                    // None is a real answer, not an absent one: an entry can be logged without saying
+                    // which meal it was, and the form starts there rather than on a default.
+                    Text("None").tag(MealLabel?.none)
+                    ForEach(MealLabel.allCases, id: \.self) { label in
+                        Text(label.displayName).tag(MealLabel?.some(label))
                     }
                 }
                 DatePicker("When", selection: $model.occurredAt)

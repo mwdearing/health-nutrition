@@ -26,10 +26,17 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
         createCalls += 1
         return try inner.create(intake, components: components, product: product, now: now)
     }
-    func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date) throws -> IntakeRevision {
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+    ) throws -> IntakeRevision {
         editCalls += 1
         lastEditProductSnapshotID = product?.snapshotID
-        return try inner.edit(intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now)
+        lastEditOccurredAt = occurredAt
+        lastEditTimeZoneIdentifier = timeZoneIdentifier
+        return try inner.edit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason,
+            now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
     func delete(intakeID: String, now: Date) throws {
         deleteCalls += 1
@@ -58,7 +65,10 @@ private final class CannedStore: JournalStore, @unchecked Sendable {
     private struct Unsupported: Error {}
 
     func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision { throw Unsupported() }
-    func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date) throws -> IntakeRevision { throw Unsupported() }
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+    ) throws -> IntakeRevision { throw Unsupported() }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
     func activeIntakes() throws -> [Intake] { intakes }
     func revisions(of intakeID: String) throws -> [IntakeRevision] {

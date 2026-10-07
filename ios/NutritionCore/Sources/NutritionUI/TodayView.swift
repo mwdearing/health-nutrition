@@ -6,16 +6,22 @@ public struct TodayView: View {
     private let onAddIntake: () -> Void
     private let onOpenJournal: (() -> Void)?
     private let onOpenLibrary: (() -> Void)?
+    /// Opens one entry, so what Today lists can be corrected there rather than only read. Nil hides
+    /// the affordance and leaves the rows as plain text, which is what a host that has nowhere to
+    /// route to wants.
+    private let onSelect: ((String) -> Void)?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
-        onOpenJournal: (() -> Void)? = nil, onOpenLibrary: (() -> Void)? = nil
+        onOpenJournal: (() -> Void)? = nil, onOpenLibrary: (() -> Void)? = nil,
+        onSelect: ((String) -> Void)? = nil
     ) {
         self.model = model
         self.now = now
         self.onAddIntake = onAddIntake
         self.onOpenJournal = onOpenJournal
         self.onOpenLibrary = onOpenLibrary
+        self.onSelect = onSelect
     }
 
     public var body: some View {
@@ -61,9 +67,16 @@ public struct TodayView: View {
             }
             Section("Today") {
                 ForEach(model.rows) { row in
-                    VStack(alignment: .leading) {
-                        Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
-                        Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                    if let onSelect {
+                        Button {
+                            onSelect(row.id)
+                        } label: {
+                            entryRow(row)
+                        }
+                        .accessibilityLabel(row.accessibilityText)
+                        .accessibilityHint("Opens the entry")
+                    } else {
+                        entryRow(row)
                     }
                 }
             }
@@ -106,5 +119,17 @@ public struct TodayView: View {
             }
         }
         .onAppear { model.load(now: now()) }
+    }
+
+    /// One entry: what it was, how much of it, and which meal it was for. The meal is a secondary
+    /// line because it qualifies the entry rather than being another amount of it.
+    private func entryRow(_ row: TodayRow) -> some View {
+        VStack(alignment: .leading) {
+            Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
+            Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+            if let meal = row.meal {
+                Text(meal).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+        }
     }
 }
