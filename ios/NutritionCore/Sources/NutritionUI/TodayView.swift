@@ -25,7 +25,7 @@ public struct TodayView: View {
                     Image(systemName: "drop.fill")
                         .foregroundStyle(TokenColors.accent)
                         .accessibilityLabel("Water")
-                    Text("\(DecimalFormatting.text(model.waterTotalMilliliters)) mL")
+                    Text(model.waterTotalDisplay.text)
                         .font(.title2)
                         .foregroundStyle(TokenColors.textPrimary)
                         .accessibilityValue(model.waterAccessibilityValue)
@@ -33,9 +33,9 @@ public struct TodayView: View {
                 Button {
                     model.quickAddWater(now: now())
                 } label: {
-                    Text("Add 250 mL water").font(.headline)
+                    Text(model.quickWaterLabel).font(.headline)
                 }
-                .accessibilityLabel("Add 250 millilitres of water")
+                .accessibilityLabel(model.quickWaterAccessibilityLabel)
                 .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
                 if model.isUndoAvailable(now: now()) {
                     Button {

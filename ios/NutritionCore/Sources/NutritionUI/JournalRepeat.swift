@@ -87,10 +87,13 @@ struct IntakeRepeater {
 }
 
 /// Text for amounts: a missing or invalid amount is "unknown", never 0.
+///
+/// `unitSystem` only decides which unit the amount is SHOWN in. The value is never changed, so the
+/// stored number stays the number that was entered.
 enum AmountText {
-    static func describe(_ component: IntakeComponent) -> String {
+    static func describe(_ component: IntakeComponent, unitSystem: UnitSystem = .metric) -> String {
         guard !component.amount.isNaN else { return "unknown" }
-        return "\(DecimalFormatting.text(component.amount)) \(component.unit.symbol)"
+        return AmountDisplay.display(component, system: unitSystem).text
     }
 
     static func name(_ component: IntakeComponent) -> String {

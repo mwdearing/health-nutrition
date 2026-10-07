@@ -829,19 +829,26 @@ def _searched_paths() -> list[Path]:
     return sorted(found)
 
 
-def _token_bearing_files() -> list[str]:
-    """Every searched file carrying an asserted-absent token, as a sorted list.
+def _token_bearing_files(tokens: Sequence[str] = ()) -> list[str]:
+    """Every searched file carrying one of `tokens`, as a sorted list.
+
+    Empty `tokens` means the specification this suite is written against,
+    ``ASSERTED_ABSENT_TOKENS``. The probes that copy the tree and plant a file
+    pass ``PROBE_ABSENT_TOKENS`` instead, so their "only the planted file"
+    assertions are about the probe rather than about whatever the repository
+    legitimately contains.
 
     This is the assertion the search itself makes, factored out so the mutation
     probes can run exactly it against a copied tree: empty against the real
     repository, and naming the planted file against a tree that has one.
     """
+    wanted = tuple(tokens) or ASSERTED_ABSENT_TOKENS
     return sorted(
         str(path.relative_to(REPO_ROOT))
         for path in _searched_paths()
         if any(
             token.lower() in _read_text(path).lower()
-            for token in ASSERTED_ABSENT_TOKENS
+            for token in wanted
         )
     )
 
@@ -887,7 +894,7 @@ def test_a_shipped_resource_root_is_searched(tmp_path: Path) -> None:
     with _repository_rooted_at(tree):
         # The same search the assertions run: every tree under `ios/`, plus any
         # file sitting directly under it, deduplicated.
-        found = _token_bearing_files()
+        found = _token_bearing_files(PROBE_ABSENT_TOKENS)
     assert found == ["ios/HealthNutrition/Resources/Localizable.strings"], (
         "a token planted in a resource root the app ships was not reported; the "
         f"search reported {found}. The document's zero-match claim would be false."
@@ -920,7 +927,7 @@ def test_an_ios_test_fixture_naming_an_asserted_token_is_not_searched(
     planted.write_text('let goal = "goal"\n', encoding="utf-8")
 
     with _repository_rooted_at(tree):
-        found = _token_bearing_files()
+        found = _token_bearing_files(PROBE_ABSENT_TOKENS)
 
     # The fixture is really there and really names the token, so this is a
     # fixture being skipped rather than a fixture that would never have matched.
@@ -952,7 +959,7 @@ def test_a_build_directory_beneath_ios_is_not_searched(tmp_path: Path) -> None:
     (generated / "Goal.swift").write_text('let goal = "goal"\n', encoding="utf-8")
 
     with _repository_rooted_at(tree):
-        found = _token_bearing_files()
+        found = _token_bearing_files(PROBE_ABSENT_TOKENS)
 
     assert "goal" in (generated / "Goal.swift").read_text(encoding="utf-8"), (
         "this test needs its planted file to carry the token, or a search that "
@@ -983,7 +990,7 @@ def test_a_source_file_directly_under_ios_is_searched(tmp_path: Path) -> None:
     planted.write_text('let goal = "goal"\n', encoding="utf-8")
 
     with _repository_rooted_at(tree):
-        found = _token_bearing_files()
+        found = _token_bearing_files(PROBE_ABSENT_TOKENS)
 
     assert found == ["ios/Shared.swift"], (
         "a production file sitting directly under ios/ was not reported; the "
@@ -1015,7 +1022,7 @@ def test_a_checked_in_resource_bundle_is_searched(tmp_path: Path) -> None:
     (resources / "Help.strings").write_text('"goal" = "Goal";\n', encoding="utf-8")
 
     with _repository_rooted_at(tree):
-        found = _token_bearing_files()
+        found = _token_bearing_files(PROBE_ABSENT_TOKENS)
 
     assert found == [
         "ios/HealthNutrition/Resources/Help.bundle/Contents/Resources/Help.strings"
@@ -1086,7 +1093,7 @@ def test_a_generated_bundle_is_not_searched(tmp_path: Path) -> None:
     (loose / "Goal.strings").write_text('"goal" = "Goal";\n', encoding="utf-8")
 
     with _repository_rooted_at(tree):
-        found = _token_bearing_files()
+        found = _token_bearing_files(PROBE_ABSENT_TOKENS)
 
     assert found == [], (
         "a bundle produced by a build was searched, so the search reported "
@@ -1139,7 +1146,14 @@ def test_the_legend_agrees_with_the_table() -> None:
 # source that starts using one of these would otherwise pass every test here while
 # the documented evidence — and the `unverified` verdicts that rest on it — quietly
 # became false.
-ASSERTED_ABSENT_TOKENS = ("goal", "remind", "notif", "AppStorage", "UserDefaults")
+ASSERTED_ABSENT_TOKENS = ("goal", "remind", "notif")
+
+# The token the search-mechanics probes below plant. It is deliberately one this repository still
+# asserts is absent, and nothing under `ios/` carries it: those probes copy the real tree and then
+# assert that the file they planted is the ONLY hit. A token the repository legitimately contains
+# (`UserDefaults`, since the display preferences landed) would be in every copy, so the equality
+# would fail for a reason that has nothing to do with what each probe is about.
+PROBE_ABSENT_TOKENS = ("goal",)
 ASSERTED_ABSENT_TREES = (
     "ios/NutritionCore/Sources",
     "ios/HealthNutrition/Sources",

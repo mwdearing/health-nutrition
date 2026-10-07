@@ -276,4 +276,42 @@ final class RecipeEditorViewModelTests: XCTestCase {
         XCTAssertEqual(saved.ingredients.first?.perUnit["potassium"], .known(400, .mg))
         XCTAssertEqual(saved.ingredients.first?.perUnit["fiber"], .known(10, .g))
     }
+
+    /// The recipe editor must not offer the ounces. A recipe yield becomes the component of a logged
+    /// entry through `RecipeLogger.portionQuantity`, with no normalisation step of its own, so an
+    /// ounce yield would be stored as an ounce and reach the export, which Add intake never does.
+    func testTheRecipeEditorOffersNoOunceUnits() throws {
+        let store = try makeStore()
+        let model = RecipeEditorViewModel(store: store)
+
+        XCTAssertFalse(model.unitSymbols.contains("oz"))
+        XCTAssertFalse(model.unitSymbols.contains("fl oz"))
+        XCTAssertEqual(Set(model.unitSymbols), Set(UnitRegistry.all.map(\.symbol)).subtracting(["oz", "fl oz"]))
+        // The units a recipe does offer are all metric, so a saved yield is stored as one of them.
+        for symbol in model.unitSymbols {
+            let unit = try XCTUnwrap(try? MeasureUnit(symbol: symbol), symbol)
+            XCTAssertNotEqual(unit, .oz, symbol)
+            XCTAssertNotEqual(unit, .flOz, symbol)
+        }
+        XCTAssertEqual(RecipeEditorViewModel.unitSymbols, model.unitSymbols)
+    }
+
+    /// A total yield saved from the editor is stored in the metric unit it was entered in, which is
+    /// what makes the logged component metric too.
+    func testARecipeYieldIsSavedInAMetricUnit() throws {
+        let store = try makeStore()
+        let model = filledModel(store)
+        model.yieldKind = .total
+        model.yieldAmountText = "500"
+        model.yieldUnitSymbol = "g"
+        XCTAssertTrue(model.save(now: when), "\(model.messages)")
+
+        let saved = try XCTUnwrap(try store.version(recipeID: "recipe-new", number: 1))
+        guard case .total(let quantity) = try XCTUnwrap(saved.yield) else {
+            return XCTFail("the yield was not saved as a total")
+        }
+        XCTAssertEqual(quantity.unit, .g)
+        XCTAssertEqual(quantity.value, Decimal(500))
+        XCTAssertTrue(model.unitSymbols.contains(quantity.unit.symbol))
+    }
 }

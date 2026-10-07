@@ -81,9 +81,15 @@ public final class AddIntakeViewModel: ObservableObject {
     private var filledBrand: String?
 
     public let timeZoneIdentifier: String
-    public let units: [MeasureUnit] = UnitRegistry.all
+    /// The units the picker offers, read through so a preference changed on another screen is
+    /// honoured the next time this form is opened. Metric offers the whole registry; US customary
+    /// puts ounces and fluid ounces first.
+    public var units: [MeasureUnit] { UnitSelection.offered(for: preferences.unitSystem) }
+    /// The unit system the offered list is built from.
+    public var unitSystem: UnitSystem { preferences.unitSystem }
 
     private let store: JournalStore
+    private let preferences: DisplayPreferences
     private let makeID: () -> String
     private let lookup: BarcodeProductLookup?
     /// Counts the lookups this form has started. A reply is applied only if it is still the newest
@@ -97,13 +103,15 @@ public final class AddIntakeViewModel: ObservableObject {
         now: Date,
         timeZoneIdentifier: String = TimeZone.current.identifier,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
-        lookup: BarcodeProductLookup? = nil
+        lookup: BarcodeProductLookup? = nil,
+        preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
         self.store = store
         self.occurredAt = now
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
         self.lookup = lookup
+        self.preferences = preferences
     }
 
     /// One line explaining the last lookup, or nil when there is nothing to say.
@@ -307,14 +315,30 @@ public final class AddIntakeViewModel: ObservableObject {
 
         let intake = Intake(
             id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+        let (storedAmount, storedUnit) = Self.storedMetric(amount: amount, unit: unit)
         let component = IntakeComponent(
-            componentID: Self.slug(trimmedName), name: trimmedName, amount: amount, unit: unit)
+            componentID: Self.slug(trimmedName), name: trimmedName, amount: storedAmount, unit: storedUnit)
         do {
             try store.create(intake, components: [component], product: productSnapshot(), now: now)
             return true
         } catch {
             saveError = "Could not save the intake."
             return false
+        }
+    }
+
+    /// What is actually stored for an amount entered in `unit`: ounces become the metric unit they
+    /// stand for, everything else is stored as entered.
+    ///
+    /// The ounces are INPUT and DISPLAY units only. One ounce is exactly 28.349523125 g and one fluid
+    /// ounce is exactly 29.5735295625 mL, so this multiplication is exact in a `Decimal` and nothing is
+    /// lost. Storage, the journal export, the digests and the relay encoder therefore never see `oz`
+    /// or `fl oz`, and an entry logged in ounces exports as the same grams a metric entry would.
+    static func storedMetric(amount: Decimal, unit: MeasureUnit) -> (amount: Decimal, unit: MeasureUnit) {
+        switch unit {
+        case .oz: return (amount * Decimal(string: "28.349523125", locale: AmountParser.locale)!, .g)
+        case .flOz: return (amount * Decimal(string: "29.5735295625", locale: AmountParser.locale)!, .mL)
+        default: return (amount, unit)
         }
     }
 

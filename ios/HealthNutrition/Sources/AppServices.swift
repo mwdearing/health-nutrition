@@ -30,23 +30,31 @@ final class AppServices {
     /// the store below enables `.healthKit` only under `#if DEBUG`, so a release build's `runOnce`
     /// always finds an empty queue (see `docs/healthkit-writer.md`).
     let healthKitDelivery: HealthKitDeliveryWorker
+    /// The display settings, shared by every screen that offers or shows units. One instance for the
+    /// app's lifetime, so a unit system changed on the settings screen is the one the Today screen
+    /// reads on the next reload rather than one screen's private copy.
+    let displayPreferences: UserDefaultsDisplayPreferences
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
-        recipeStore: SwiftDataRecipeStore
+        recipeStore: SwiftDataRecipeStore,
+        displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences()
     ) {
+        self.displayPreferences = displayPreferences
         self.journalStore = journalStore
         self.favoritesStore = favoritesStore
         self.recipeStore = recipeStore
         // Today's coverage reads the nutrient values each entry's product snapshot carries, so a
         // logged recipe or a looked-up product contributes what it states. An entry typed by hand has
         // no snapshot and stays unknown, never zero.
-        today = TodayViewModel(store: journalStore, lookup: SnapshotNutrientFacts())
+        today = TodayViewModel(
+            store: journalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         journal = JournalViewModel(store: journalStore)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore,
-            appVersion: Self.appVersion, erasers: [journalStore, favoritesStore, recipeStore])
+            appVersion: Self.appVersion, erasers: [journalStore, favoritesStore, recipeStore],
+            preferences: displayPreferences)
         barcodeLookup = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         let totals = JournalSnapshotTotals(store: journalStore)
@@ -67,7 +75,12 @@ final class AppServices {
     ///
     /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
     /// real Application Support ones. The default is the app's own directory, unchanged.
-    static func make(directory: URL = defaultDirectory) throws -> AppServices {
+    /// - Parameter displayPreferences: where the display settings live. A parameter so a test can pass
+    ///   its own store rather than writing into the standard defaults domain.
+    static func make(
+        directory: URL = defaultDirectory,
+        displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences()
+    ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.
         //
@@ -106,7 +119,8 @@ final class AppServices {
         do {
             let recipeStore = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
             return AppServices(
-                journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore)
+                journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
+                displayPreferences: displayPreferences)
         } catch {
             favoritesStore.close()
             journalStore.close()

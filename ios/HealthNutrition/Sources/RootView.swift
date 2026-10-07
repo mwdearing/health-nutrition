@@ -92,7 +92,9 @@ struct RootView: View {
                 .sheet(isPresented: detailSheetPresented) {
                     if let intakeID = selectedIntakeID {
                         EntryDetailView(
-                            model: EntryDetailViewModel(store: services.journalStore, intakeID: intakeID),
+                            model: EntryDetailViewModel(
+                                store: services.journalStore, intakeID: intakeID,
+                                preferences: services.displayPreferences),
                             now: { Date() },
                             onFinished: {
                                 selectedIntakeID = nil
@@ -104,10 +106,16 @@ struct RootView: View {
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
-            LibraryView(
-                model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
-                connections: connections
-            )
+            // In a navigation stack like the other two tabs: the Connections and privacy screen, which carries
+            // the Units settings, is reached from here by a NavigationLink, and a link with no stack
+            // behind it can never be pushed on a device.
+            NavigationStack {
+                LibraryView(
+                    model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
+                    connections: connections
+                )
+                .navigationTitle("Library")
+            }
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
                 .sheet(isPresented: $recipeNavigation.showingRecipes) {
@@ -205,7 +213,8 @@ struct RootView: View {
     /// Opens the intake form with a fresh model, so a scan and the save that follows share one form.
     private func startAddingIntake() {
         addIntakeModel = AddIntakeViewModel(
-            store: services.journalStore, now: Date(), lookup: services.barcodeLookup
+            store: services.journalStore, now: Date(), lookup: services.barcodeLookup,
+            preferences: services.displayPreferences
         )
         addingIntake = true
     }

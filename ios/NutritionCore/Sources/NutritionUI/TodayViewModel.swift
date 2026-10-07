@@ -37,19 +37,24 @@ public final class TodayViewModel: ObservableObject {
     private let trackedNutrients: [String]
     private let timeZoneIdentifier: String
     private let makeID: () -> String
+    /// Read on every quick add and every label, rather than copied into this model, so a preference
+    /// changed on another screen is honoured by the next tap rather than by the next launch.
+    private let preferences: DisplayPreferences
 
     public init(
         store: JournalStore,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         trackedNutrients: [String] = TodayViewModel.defaultTrackedNutrients,
         timeZoneIdentifier: String = TimeZone.current.identifier,
-        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+        makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
+        preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
         self.store = store
         self.lookup = lookup
         self.trackedNutrients = trackedNutrients
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
+        self.preferences = preferences
     }
 
     /// Reloads Today: active intakes on the local day of each intake's own time zone.
@@ -94,7 +99,8 @@ public final class TodayViewModel: ObservableObject {
                     TodayRow(
                         id: intake.id,
                         title: components.map(\.name).joined(separator: ", "),
-                        detail: components.map { Self.describe($0) }.joined(separator: ", "),
+                        detail: components.map { AmountText.describe($0, unitSystem: unitSystem) }
+                            .joined(separator: ", "),
                         occurredAt: intake.occurredAt))
             }
             rows = newRows
@@ -112,9 +118,20 @@ public final class TodayViewModel: ObservableObject {
         }
     }
 
+    /// The quick-water amount the preference holds, in millilitres. Read through on every call, so a
+    /// glass size changed elsewhere is used by the next tap.
+    public var quickWaterMilliliters: Decimal { preferences.quickWaterMilliliters }
+
+    /// The unit the reader sees amounts in.
+    public var unitSystem: UnitSystem { preferences.unitSystem }
+
     /// Writes one water intake (one `create`) and returns the undo handle, valid for 10 seconds.
+    ///
+    /// `milliliters` defaults to the stored preference rather than to a literal, so the amount is
+    /// configured in one place instead of being pinned here.
     @discardableResult
-    public func quickAddWater(milliliters: Decimal = 250, now: Date) -> UndoHandle? {
+    public func quickAddWater(milliliters: Decimal? = nil, now: Date) -> UndoHandle? {
+        let milliliters = milliliters ?? preferences.quickWaterMilliliters
         guard !milliliters.isNaN, milliliters > 0 else {
             errorMessage = "Enter a water amount above zero."
             return nil
@@ -157,9 +174,33 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// Spoken summary of the water total for assistive technology.
+    /// The water total in the unit the reader chose, as it is shown on screen.
+    public var waterTotalDisplay: DisplayAmount {
+        AmountDisplay.display(waterTotalMilliliters, unit: .mL, system: preferences.unitSystem)
+    }
+
+    /// The quick-water amount in the unit the reader chose.
+    public var quickWaterDisplay: DisplayAmount {
+        AmountDisplay.display(quickWaterMilliliters, unit: .mL, system: unitSystem)
+    }
+
+    /// One line for the quick-add button, naming the amount it adds and in the unit shown.
+    public var quickWaterLabel: String {
+        "Add \(quickWaterDisplay.text) water"
+    }
+
+    /// The same line, spelled out for a screen reader: "Add 250 millilitres of water".
+    public var quickWaterAccessibilityLabel: String {
+        "Add \(quickWaterDisplay.spokenAmount) "
+            + "\(AmountDisplay.spokenName(for: quickWaterDisplay.unit)) of water"
+    }
+
+    /// Spoken summary of the water total for assistive technology. Built from the same bound-aware
+    /// figures as the label, so an amount too small for the shown unit is spoken as less than that
+    /// rather than as a zero that is not there.
     public var waterAccessibilityValue: String {
-        "\(DecimalFormatting.text(waterTotalMilliliters)) millilitres today"
+        "\(waterTotalDisplay.spokenAmount) "
+            + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
     }
 
     private static func isPositive(_ value: Decimal) -> Bool {
@@ -186,10 +227,7 @@ public final class TodayViewModel: ObservableObject {
         return calendar.isDate(intake.occurredAt, inSameDayAs: now)
     }
 
-    private static func describe(_ component: IntakeComponent) -> String {
-        "\(DecimalFormatting.text(component.amount)) \(component.unit.symbol)"
     }
-}
 
 /// Locale-independent decimal text.
 enum DecimalFormatting {

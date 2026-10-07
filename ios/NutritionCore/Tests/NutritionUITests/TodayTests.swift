@@ -68,7 +68,12 @@ final class TodayTests: XCTestCase {
 
     func testQuickAddWaterCreatesOneIntakeAtRevisionOneAndQueuesOutbox() throws {
         let store = try makeStore()
-        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        // The amount is read from the preference rather than a literal, so this pins the writing of one
+        // intake and the configured amount together, not the number 250.
+        let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(250))
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC", preferences: preferences)
+        let amount = model.quickWaterMilliliters
+        XCTAssertEqual(amount, Decimal(250))
         let handle = model.quickAddWater(now: now)
         let intakes = try store.activeIntakes()
         XCTAssertEqual(intakes.count, 1)
@@ -76,11 +81,11 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(intakes.first?.category, "water")
         XCTAssertEqual(handle?.intakeID, intakes.first?.id)
         let revisions = try store.revisions(of: intakes[0].id)
-        XCTAssertEqual(revisions.first?.components.first?.amount, Decimal(250))
+        XCTAssertEqual(revisions.first?.components.first?.amount, amount)
         XCTAssertEqual(revisions.first?.components.first?.unit, .mL)
         XCTAssertFalse(try store.pendingOutbox().isEmpty)
         XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.kind == .upsert })
-        XCTAssertEqual(model.waterTotalMilliliters, Decimal(250))
+        XCTAssertEqual(model.waterTotalMilliliters, amount)
     }
 
     func testQuickAddWaterUsesGivenAmountOnce() throws {

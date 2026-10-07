@@ -75,7 +75,16 @@ public final class RecipeEditorViewModel: ObservableObject {
     @Published public private(set) var messages: [String] = []
     @Published public private(set) var savedVersion: RecipeVersion?
 
-    public let unitSymbols: [String] = UnitRegistry.all.map { $0.symbol }
+    /// The units the ingredient and yield pickers offer: the registry without the two ounces.
+    ///
+    /// `oz` and `fl oz` are input and display units for Add intake, which normalises them to grams and
+    /// millilitres on the way in. A recipe has no such step: its yield becomes the component of a
+    /// logged entry through `RecipeLogger.portionQuantity`, so an ounce yield would be stored as an
+    /// ounce and skip that normalisation. Keeping them out here is what makes a recipe metric.
+    public static let unitSymbols: [String] =
+        UnitRegistry.all.filter { $0 != .oz && $0 != .flOz }.map { $0.symbol }
+
+    public let unitSymbols = RecipeEditorViewModel.unitSymbols
     public let nutrientFields = RecipeNutrientField.all
 
     private let store: RecipeStore
