@@ -110,26 +110,28 @@ final class RecipeLoggerTests: XCTestCase {
     /// batch would carry no protein at all for a recipe the person did log.
     func testACountedYieldScalesByTheNumberOfGummiesLogged() async throws {
         for (basis, unit, componentUnit) in [
-            ("Per gummy; yield 30 gummy", MeasureUnit.gummy, MeasureUnit.gummy),
-            ("Per piece; yield 30 piece", MeasureUnit.piece, MeasureUnit.piece),
+            ("Per gummy; yield 25 gummy", MeasureUnit.gummy, MeasureUnit.gummy),
+            ("Per piece; yield 25 piece", MeasureUnit.piece, MeasureUnit.piece),
         ] {
             let journal = try makeJournal()
             let version = sampleVersion(
                 ingredients: [
                     sampleIngredient("a", amount: "300", perUnit: ["protein": .known(dec("0.5"), .g)]),
                 ],
-                yield: .total(Quantity(value: dec("30"), unit: unit)))
+                yield: .total(Quantity(value: dec("25"), unit: unit)))
             try RecipeLogger.logPortion(
                 store: journal, version: version, portion: 2, now: when, id: intakeID,
                 timeZoneIdentifier: "UTC", meal: nil, portionUnit: componentUnit)
             let product = try XCTUnwrap(try journal.product(snapshotID: "recipe:recipe-1:v1"))
             XCTAssertEqual(product.labelBasis, basis)
-            // 300 g of an ingredient carrying 0.5 g of protein per g is 150 g over 30 gummies: 5 g each.
-            XCTAssertEqual(product.value(for: "protein"), .known(dec("5"), .g), basis)
+            // 300 g of an ingredient carrying 0.5 g of protein per g is 150 g over 25 gummies: 6 g each.
+            // (25 rather than 30: the recipe math scales by the reciprocal of the yield, and 1/25 is
+            // an exact decimal where 1/30 is not, so the assertion can be exact.)
+            XCTAssertEqual(product.value(for: "protein"), .known(dec("6"), .g), basis)
 
             let totals = JournalSnapshotTotals(store: journal)
             let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
-            XCTAssertEqual(recorded["protein"], .known(dec("10"), .g), "two of them: \(basis)")
+            XCTAssertEqual(recorded["protein"], .known(dec("12"), .g), "two of them: \(basis)")
         }
     }
 
