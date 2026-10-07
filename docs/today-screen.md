@@ -138,7 +138,16 @@ holds, so a target is always one a person can correct. Each is offered **only in
 canonical mapping: water in volumes, energy in kilocalories, and the rest in masses. Energy in grams was a category
 error rather than a rounding one — it was offered, accepted and stored, and the line then compared a kcal total
 against a gram target. No count or international unit is offered either, so a target cannot be set in a unit its
-totals are never counted in. Text that is not a positive number is refused rather than rounded or guessed at.
+totals are never counted in.
+
+The two ounces are excluded as well, by the same rule the recipe editor applies
+(`RecipeEditorViewModel.unitSymbols`). `oz` and `fl oz` are input and display units that Add intake normalises to
+grams and millilitres on the way in; a target has no such step, because the progress line shows the day's total in
+its own unit beside the target as it was set rather than converting one to the other. An ounce target would therefore
+read "Protein 52 g of 2 oz" — two numbers not in the same unit. `UnitRegistry` grew the ounces for display, and what
+a nutrient is offered is the units its total is stored in, not the units a person may type.
+
+Text that is not a positive number is refused rather than rounded or guessed at.
 
 ## Behaviour
 - **Quick water** writes one intake through `JournalStore.create` (category `water`, component `water`, the

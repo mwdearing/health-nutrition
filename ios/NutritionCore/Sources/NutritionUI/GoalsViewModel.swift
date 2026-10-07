@@ -26,14 +26,28 @@ public enum NutrientGoalChoices {
             ?? (key == DailyTotalsBuilder.waterKey ? DailyTotalsBuilder.waterUnit : .g)
     }
 
-    /// Every unit a key may be counted in: the registry's units for that one nutrient's dimension
-    /// and no others, so a target cannot be set in something its totals are not counted in.
+    /// Every unit a key may be counted in: the registry's metric units for that one nutrient's
+    /// dimension and no others, so a target cannot be set in something its totals are not counted in.
     ///
     /// Offering every mass *and* energy unit for every nutrient is what let the energy-in-grams
     /// target above be entered at all. The dimension is the one the nutrient's own unit has, so water
     /// is offered volumes, energy energies, and the rest masses.
+    ///
+    /// The two ounces are excluded as well, by the same rule the recipe editor applies. `oz` and
+    /// `fl oz` are input and display units that Add intake normalises to grams and millilitres on the
+    /// way in; a target has no such step, because `NutrientProgressLine` shows the day's total in
+    /// its own unit beside the target as it was set rather than converting one to the other. An
+    /// ounce target would sit on screen next to a gram total — "Protein 52 g of 2 oz" — comparing two
+    /// numbers that are not in the same unit. A goal's whole job is to be compared against the day's
+    /// total, so what it is offered is the metric units that total is counted in.
     public static func units(forKey key: String) -> [MeasureUnit] {
-        UnitRegistry.units(in: unit(forKey: key).dimension)
+        UnitRegistry.units(in: unit(forKey: key).dimension).filter(isMetric)
+    }
+
+    /// Whether a unit is one a stored target may be counted in: everything the registry holds except
+    /// the two ounces, which are normalised away at the input boundary and so are never stored.
+    private static func isMetric(_ unit: MeasureUnit) -> Bool {
+        unit != .oz && unit != .flOz
     }
 }
 

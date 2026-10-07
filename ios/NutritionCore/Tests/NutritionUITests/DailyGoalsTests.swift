@@ -527,6 +527,12 @@ final class DailyGoalsTests: XCTestCase {
     /// set in a dimension nothing on the screen would compare it against. Energy in grams was a
     /// category error rather than a rounding one: it was offered, accepted and stored, and the line
     /// then compared a kcal total against a gram target.
+    ///
+    /// The two ounces are excluded too, by the same rule the recipe editor applies. They are input and
+    /// display units that Add intake normalises to grams and millilitres; a target is not normalised
+    /// anywhere, so an ounce target would sit beside a gram total and the comparison would be between
+    /// two numbers in different units. `UnitRegistry` grew them for display, and a nutrient's units
+    /// are the ones its total is stored in, not the ones a person may type.
     func testGoalsScreenOffersEachNutrientOnlyInItsOwnDimension() {
         XCTAssertEqual(NutrientGoalChoices.unit(forKey: "water"), .mL)
         XCTAssertEqual(NutrientGoalChoices.unit(forKey: "energy"), .kcal)
@@ -534,10 +540,13 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(NutrientGoalChoices.unit(forKey: "sodium"), .mg)
         XCTAssertEqual(NutrientGoalChoices.units(forKey: "water"), [.mL, .L])
         XCTAssertEqual(NutrientGoalChoices.units(forKey: "energy"), [.kcal])
+        XCTAssertEqual(NutrientGoalChoices.units(forKey: "protein"), [.g, .mg, .mcg, .kg])
         for key in NutrientGoalChoices.keys {
+            let offered = NutrientGoalChoices.units(forKey: key)
             let dimension = NutrientGoalChoices.unit(forKey: key).dimension
-            XCTAssertTrue(
-                NutrientGoalChoices.units(forKey: key).allSatisfy { $0.dimension == dimension }, key)
+            XCTAssertTrue(offered.allSatisfy { $0.dimension == dimension }, key)
+            XCTAssertFalse(offered.contains(.oz), key)
+            XCTAssertFalse(offered.contains(.flOz), key)
         }
     }
 
