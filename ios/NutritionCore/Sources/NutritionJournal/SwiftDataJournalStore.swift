@@ -792,6 +792,17 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         try context.save()
     }
 
+    /// Removes a stored snapshot row outright, leaving a revision that still points at it: the shape of a
+    /// store whose product table was lost or truncated.
+    func deleteSnapshotForTesting(snapshotID: String) throws {
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<ProductRecord>(
+            predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
+        guard let row = rows.first else { throw JournalError.corruptRecord(snapshotID) }
+        context.delete(row)
+        try context.save()
+    }
+
     private func openContainer() throws -> ModelContainer {
         try lock.withLock {
             guard let container else { throw JournalError.closed }

@@ -815,6 +815,25 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(recorded, [:], "there is no snapshot to scale, and that is not a failure")
     }
 
+    func testARevisionWhoseSnapshotIsMissingThrowsInsteadOfStatingNothing() async throws {
+        let store = try makeStore(try makeDirectory())
+        let oats = ProductDefinition(
+            snapshotID: "snap-gone", productID: "product-1", name: "Sample oats", brand: nil, barcode: nil,
+            labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["protein": .known(dec("13"), .g)])
+        try store.create(
+            sampleIntake(), components: [component("oats", amount: 40, unit: .g)], product: oats, now: when)
+        try store.deleteSnapshotForTesting(snapshotID: "snap-gone")
+        let totals = JournalSnapshotTotals(store: store)
+
+        do {
+            _ = try await totals.totals(intakeID: intakeID, revision: 1)
+            XCTFail("a revision that names a snapshot the store cannot find must throw, not report empty totals")
+        } catch let error as JournalError {
+            XCTAssertEqual(error, .corruptRecord("missing product snapshot snap-gone"))
+        }
+    }
+
     /// The arithmetic is exact decimal, because the journal stores amounts as decimal text and a
     /// binary float would state 0.8999... where the label says 0.9. Exactness is what lets a person
     /// check the number against the packaging.

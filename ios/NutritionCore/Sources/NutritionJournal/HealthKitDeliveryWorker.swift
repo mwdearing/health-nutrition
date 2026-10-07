@@ -131,11 +131,14 @@ public struct JournalSnapshotTotals: Sendable {
     /// **Nothing is returned when the basis cannot be applied**, rather than the unscaled value or a
     /// guess: the snapshot states the product, not the portion, so a number that reaches Health
     /// unscaled is the wrong number. A revision with no product snapshot — an entry logged by hand —
-    /// has nothing to scale and returns nothing, which is an answer and not a failed read.
+    /// has nothing to scale and returns nothing, which is an answer and not a failed read. A revision
+    /// that names a snapshot the store cannot find is a failed read and throws: empty totals there
+    /// would let the worker retract the earlier samples and acknowledge the operation as delivered.
     private func scaledSnapshotNutrients(of revision: IntakeRevision) throws -> [String: NutrientValue] {
-        guard let snapshotID = revision.productSnapshotID,
-            let product = try store.product(snapshotID: snapshotID)
-        else { return [:] }
+        guard let snapshotID = revision.productSnapshotID else { return [:] }
+        guard let product = try store.product(snapshotID: snapshotID) else {
+            throw JournalError.corruptRecord("missing product snapshot \(snapshotID)")
+        }
         guard let factor = IntakeContextSnapshotBasis.scalingFactor(
             labelBasis: product.labelBasis, logged: revision.components)
         else { return [:] }
