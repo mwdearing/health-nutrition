@@ -859,6 +859,30 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(creatine.value, .known(dec("3"), .g))
     }
 
+    /// A compound's amount can land on the next line beside the rows that follow it, and those rows
+    /// are still read rather than being skipped with the line the amount came from: the split read
+    /// consumes the amount, not the whole of the line behind it.
+    func testASplitCompoundAmountStillReadsTheRowsBesideIt() throws {
+        let panel = parse(["Creatine", "3g Protein 2g Choline 5g"])
+
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine"))
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"), "the named row behind the amount is read")
+        XCTAssertEqual(try unit(.protein, panel), .g)
+        let choline = try XCTUnwrap(panel.additionalNutrient(for: "choline"))
+        XCTAssertEqual(choline.value, .known(dec("5"), .g))
+    }
+
+    /// A compound row states a bound the same way a named row does, so "Less than 1 g" is captured
+    /// as a below-reporting-threshold value rather than lost between the name and the number.
+    func testACompoundBoundIsCapturedAsBelowReportingThreshold() throws {
+        let panel = parse(["Creatine Monohydrate Less than 1 g"])
+
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine-monohydrate"))
+        XCTAssertEqual(creatine.name, "Creatine Monohydrate")
+        XCTAssertEqual(creatine.value, .belowReportingThreshold(.g))
+    }
+
     /// A flattened line can run a unitless calorie count into a compound row. The compound is segmented
     /// off first, so the calories keep their 30 and the compound is captured rather than lost.
     func testAUnitlessCalorieCountAndACompoundOnOneLineAreBothRead() throws {

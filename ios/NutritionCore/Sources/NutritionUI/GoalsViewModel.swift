@@ -32,9 +32,15 @@ public enum NutrientGoalChoices {
     /// Energy in grams was a category error rather than a rounding one — a target of "60 g" of energy
     /// compares against nothing, and nothing on the screen could convert it back, so the comparison
     /// the person set was silently never against their day.
-    public static func unit(forKey key: String) -> MeasureUnit {
-        HealthKitWritePlanner.mapping(for: key)?.unit
-            ?? (key == DailyTotalsBuilder.waterKey ? DailyTotalsBuilder.waterUnit : .g)
+    ///
+    /// A compound the mapping does not name has no canonical unit, so its dimension is read from the
+    /// value a capture stored for it: a label that states `Vitamin A 900IU` is counted in IU and a
+    /// target in milligrams would compare against nothing. The canonical mapping still wins where it
+    /// exists, so a captured `Protein 500mg` is still grams.
+    public static func unit(forKey key: String, snapshotUnit: MeasureUnit? = nil) -> MeasureUnit {
+        if let mapped = HealthKitWritePlanner.mapping(for: key)?.unit { return mapped }
+        if key == DailyTotalsBuilder.waterKey { return DailyTotalsBuilder.waterUnit }
+        return snapshotUnit ?? .g
     }
 
     /// Every unit a key may be counted in: the registry's metric units for that one nutrient's
@@ -51,8 +57,8 @@ public enum NutrientGoalChoices {
     /// ounce target would sit on screen next to a gram total — "Protein 52 g of 2 oz" — comparing two
     /// numbers that are not in the same unit. A goal's whole job is to be compared against the day's
     /// total, so what it is offered is the metric units that total is counted in.
-    public static func units(forKey key: String) -> [MeasureUnit] {
-        UnitRegistry.units(in: unit(forKey: key).dimension).filter(isMetric)
+    public static func units(forKey key: String, snapshotUnit: MeasureUnit? = nil) -> [MeasureUnit] {
+        UnitRegistry.units(in: unit(forKey: key, snapshotUnit: snapshotUnit).dimension).filter(isMetric)
     }
 
     /// Whether a unit is one a stored target may be counted in: everything the registry holds except
@@ -106,6 +112,10 @@ public final class GoalsViewModel: ObservableObject {
     /// The journal, read only to learn which compound keys its snapshots carry, so the screen can
     /// offer a goal for a nutrient a captured label states but the fixed list does not name.
     private let journal: (any JournalStore)?
+    /// The unit each captured key was stored in, keyed by nutrient, read from the same snapshots the
+    /// keys come from. A compound the canonical mapping does not name takes its dimension from here,
+    /// so a label's `Vitamin A 900IU` is offered and stored in IU rather than as a mass.
+    private var snapshotUnits: [String: MeasureUnit] = [:]
 
     public init(store: GoalStore, journal: (any JournalStore)? = nil) {
         self.store = store
@@ -114,6 +124,7 @@ public final class GoalsViewModel: ObservableObject {
 
     /// Every offered nutrient, with a target's text where one is stored.
     public func load() {
+        snapshotUnits = Self.snapshotValueUnits(in: journal)
         do {
             let stored = try store.goals()
             let byNutrient = Dictionary(stored.map { ($0.nutrient, $0) }, uniquingKeysWith: { _, last in last })
@@ -181,13 +192,42 @@ public final class GoalsViewModel: ObservableObject {
         return names
     }
 
+    /// The unit each captured key was stored in, keyed by nutrient. A compound a captured supplement
+    /// panel states has no canonical unit, so the dimension its goal may be set in is the dimension
+    /// the capture recorded: `Vitamin A 900IU` is an international-unit value, and a target in grams
+    /// would compare against nothing. A read that throws is treated as no units: those keys fall back
+    /// to the mass the screen assumed before.
+    static func snapshotValueUnits(in journal: (any JournalStore)?) -> [String: MeasureUnit] {
+        guard let journal else { return [:] }
+        var units: [String: MeasureUnit] = [:]
+        guard let intakes = try? journal.activeIntakes() else { return [:] }
+        for intake in intakes {
+            guard let revisions = try? journal.revisions(of: intake.id),
+                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+                  let snapshotID = current.productSnapshotID,
+                  let product = try? journal.product(snapshotID: snapshotID)
+            else { continue }
+            guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
+            for (key, value) in product.nutrients where units[key] == nil {
+                let unit: MeasureUnit?
+                switch value {
+                case .known(_, let stored): unit = stored
+                case .belowReportingThreshold(let stored): unit = stored
+                case .unknown, .notApplicable: unit = nil
+                }
+                if let unit { units[key] = unit }
+            }
+        }
+        return units
+    }
+
     /// Stores `target` for `nutrient`, replacing any target already set for it.
     ///
     /// Returns whether it was written. Invalid text is refused rather than rounded or guessed at, and
     /// leaves whatever was stored before untouched.
     @discardableResult
     public func setTarget(_ targetText: String, for nutrient: String, unit: MeasureUnit? = nil) -> Bool {
-        let chosen = unit ?? NutrientGoalChoices.unit(forKey: nutrient)
+        let chosen = unit ?? self.unit(for: nutrient)
         guard let target = AmountParser.parse(targetText) else {
             errorMessage = "Enter a target above zero."
             return false
@@ -219,5 +259,17 @@ public final class GoalsViewModel: ObservableObject {
     /// carries them, otherwise the name the key spells out.
     public func displayName(for key: String) -> String {
         rows.first { $0.nutrient == key }?.displayName ?? NutrientNames.displayName(for: key)
+    }
+
+    /// The unit a key's goal is counted in, read from the captured value's dimension for a compound
+    /// the canonical mapping does not name, and from the mapping otherwise.
+    public func unit(for key: String) -> MeasureUnit {
+        NutrientGoalChoices.unit(forKey: key, snapshotUnit: snapshotUnits[key])
+    }
+
+    /// Every unit the key's goal may be set in: the registry's metric units for the dimension
+    /// `unit(for:)` reads, and no others.
+    public func units(for key: String) -> [MeasureUnit] {
+        NutrientGoalChoices.units(forKey: key, snapshotUnit: snapshotUnits[key])
     }
 }

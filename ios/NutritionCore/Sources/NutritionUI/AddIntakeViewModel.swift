@@ -431,6 +431,12 @@ public final class AddIntakeViewModel: ObservableObject {
             for key in captured.nutrients.keys.sorted() {
                 signature += "|" + key + "=" + LookedUpProduct.describe(captured.nutrients[key] ?? .unknown)
             }
+            // The printed spelling is part of what the capture recorded, so two panels that state the
+            // same values under the same keys but print one of them differently are two products. The
+            // snapshot id has to say so, or the second save collides with the first.
+            for key in captured.nutrientDisplayNames.keys.sorted() {
+                signature += "|display:" + key + "=" + (captured.nutrientDisplayNames[key] ?? "")
+            }
             return ProductDefinition(
                 snapshotID: "label-" + Self.slug(signature) + "-" + LookedUpProduct.checksum(signature),
                 productID: captured.productID,

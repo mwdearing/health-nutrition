@@ -1,6 +1,7 @@
 import Foundation
 import NutritionDomain
 import NutritionJournal
+import NutritionProviders
 import XCTest
 @testable import NutritionUI
 
@@ -537,6 +538,40 @@ final class DailyGoalsTests: XCTestCase {
         let row = try XCTUnwrap(model.rows.first { $0.nutrient == "dha" })
         XCTAssertEqual(row.displayName, "DHA")
         XCTAssertEqual(model.displayName(for: "dha"), "DHA")
+    }
+
+    /// A compound the canonical mapping does not name takes its goal's dimension from the value the
+    /// capture stored: a label that states "Vitamin A 900IU" is counted in international units, so the
+    /// screen offers and stores that goal in IU rather than in a mass that would compare against
+    /// nothing. A captured mass stays a mass.
+    func testACapturedCompoundsGoalUnitFollowsItsValuesDimension() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        // The value the parser reads from the panel, so the test is the one the finding names.
+        let parsed = NutritionFactsParser.parse(lines: ["Vitamin A 900IU"])
+        let vitaminA = try XCTUnwrap(parsed.additionalNutrient(for: "vitamin-a")?.value)
+        XCTAssertEqual(vitaminA, .known(Decimal(900), .iu))
+        let snapshot = ProductDefinition(
+            snapshotID: "snapshot-vitamin-a", productID: "label_capture", name: "Synthetic Gummies",
+            labelBasis: "per serving (30 g)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+            nutrients: ["vitamin-a": vitaminA, "creatine-monohydrate": .known(Decimal(3), .mg)])
+        let intakeID = UUID().uuidString.lowercased()
+        try journal.create(
+            Intake(id: intakeID, category: "food", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "gummies", name: "Gummies", amount: Decimal(30), unit: .g)],
+            product: snapshot, now: when)
+
+        let model = GoalsViewModel(store: goals, journal: journal)
+        model.load()
+
+        XCTAssertTrue(model.offeredKeys.contains("vitamin-a"))
+        XCTAssertEqual(model.unit(for: "vitamin-a"), .iu)
+        XCTAssertEqual(model.units(for: "vitamin-a"), [.iu])
+        XCTAssertTrue(model.setTarget("900", for: "vitamin-a"))
+        XCTAssertEqual(try goals.goal(for: "vitamin-a")?.unit, .iu)
+
+        // A compound stated as a mass stays in the mass dimension, not international units.
+        XCTAssertEqual(model.unit(for: "creatine-monohydrate").dimension, .mass)
     }
 
     // MARK: A target has to be in the nutrient's own dimension

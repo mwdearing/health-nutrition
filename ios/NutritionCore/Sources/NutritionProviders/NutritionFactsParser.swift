@@ -733,7 +733,10 @@ public enum NutritionFactsParser {
         let reasons: Set<ParsedValueReview.Reason>
         /// Where the name begins, so a caller can split a flattened line at the compound row.
         let nameStart: String.Index
-        let end: String.Index
+        /// The text behind the row's amount, with the label's own punctuation and Daily Value column
+        /// stepped over, so the rows beside it are still read. When the amount was read from the next
+        /// line this is the tail of *that* line, so a row the split left behind it is not lost.
+        let remaining: String
         /// The named table row the name is built on (`Calcium Citrate` builds on calcium), or nil when
         /// the name is a compound the table does not carry.
         let nutrient: PanelRow?
@@ -781,8 +784,16 @@ public enum NutritionFactsParser {
                 collected.append(
                     ParsedAdditionalNutrient(name: row.name, key: row.key, value: row.value, review: review))
             }
-            usedNextLine = usedNextLine || row.usedNextLine
-            rest = trimmed(String(rest[row.end...]))
+            if row.usedNextLine {
+                // The compound's name ended this line and its amount was the next one, so the text
+                // behind that amount on the next line has not been read yet. It may hold named rows
+                // as well as further compounds — "3g Protein 2g" states protein behind the creatine
+                // — so the named rows are read first and whatever they leave is scanned for compounds.
+                usedNextLine = true
+                rest = absorbRows(in: row.remaining, following: nil, amounts: &amounts, reviews: &reviews).remaining
+            } else {
+                rest = trimmed(row.remaining)
+            }
         }
         return usedNextLine
     }
@@ -838,7 +849,8 @@ public enum NutritionFactsParser {
                 else { continue }
                 return AdditionalRow(
                     name: named.name, key: Slug.make(named.name), value: amount.value,
-                    reasons: amount.reasons, nameStart: tokens[start].range.lowerBound, end: amount.end,
+                    reasons: amount.reasons, nameStart: tokens[start].range.lowerBound,
+                    remaining: amount.remaining,
                     nutrient: named.nutrient, usedNextLine: amount.usedNextLine)
             }
         }
@@ -915,42 +927,37 @@ public enum NutritionFactsParser {
         "net", "wt", "weight", "lot", "best", "by",
     ]
 
-    /// The value a row states behind its name, with the range the text behind that amount occupies.
+    /// The value a row states behind its name, with the text behind that amount.
     ///
     /// The unit may be printed against the number or spaced away from it, exactly as it is for a
-    /// nutrient row, and the columns the label prints beside the row — a `†`, a Daily Value — are not
-    /// part of the amount: they are what is left in the text behind it. When the name ends the line and
-    /// `nextLine` states an amount, that amount is the row's and the next line is marked as consumed.
+    /// nutrient row, and the amount may be written as a bound ("Less than 1 g"). The columns the label
+    /// prints beside the row — a `†`, a Daily Value — are not part of the amount: they are what is left
+    /// in the text behind it. When the name ends the line and `nextLine` states an amount, that amount
+    /// is the row's, and the text left behind it on that line comes back as `remaining` so the rows
+    /// beside it — named or compound — are still read.
     private static func additionalAmount(
         at index: Int,
         in tokens: [(text: String, range: Range<String.Index>)],
         line: String,
         next nextLine: String?
-    ) -> (value: NutrientValue, reasons: Set<ParsedValueReview.Reason>, end: String.Index, usedNextLine: Bool)? {
+    ) -> (value: NutrientValue, reasons: Set<ParsedValueReview.Reason>, remaining: String, usedNextLine: Bool)? {
         guard index < tokens.count else {
             // A column-by-column capture leaves the name on one line and its amount on the next.
             guard index == tokens.count, let nextLine,
                   let scan = scanAmount(in: trimmed(nextLine)), let unit = scan.unit,
                   additionalRowUnits.contains(unit), !scan.isPercentSuffixed
             else { return nil }
-            return (value(for: scan, unit: unit), scan.reasons, line.endIndex, true)
+            return (value(for: scan, unit: unit), scan.reasons, scan.remaining, true)
         }
-        let here = tokens[index]
-        var scan = scanAmount(in: here.text)
-        var consumed = 1
-        // A capture can space the unit away from the number, so the token behind it belongs to the
-        // amount rather than to whatever the panel printed next.
-        if scan?.unit == nil, index + 1 < tokens.count {
-            let spaced = here.text + " " + tokens[index + 1].text
-            if let withUnit = scanAmount(in: spaced), withUnit.unit != nil {
-                scan = withUnit
-                consumed = 2
-            }
-        }
-        guard let scan, let unit = scan.unit, additionalRowUnits.contains(unit), !scan.isPercentSuffixed
+        // The amount is the text that starts at this token: the number, its unit spaced away from it
+        // or run against it, and a bound written over several words ("Less than 1 g"). Scanning the
+        // run rather than the one token is what lets a bound through, and its own `remaining` keeps
+        // the rows that share the line.
+        let tail = String(line[tokens[index].range.lowerBound...])
+        guard let scan = scanAmount(in: tail), let unit = scan.unit,
+              additionalRowUnits.contains(unit), !scan.isPercentSuffixed
         else { return nil }
-        let end = consumed == 2 ? tokens[index + 1].range.upperBound : here.range.upperBound
-        return (value(for: scan, unit: unit), scan.reasons, end, false)
+        return (value(for: scan, unit: unit), scan.reasons, scan.remaining, false)
     }
 
     /// The value one scanned amount makes: a bound stays a bound, an amount is known in its unit.

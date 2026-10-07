@@ -669,6 +669,34 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot.displayName(for: "dha"), "DHA")
     }
 
+    /// Two captures that state the same values but print one row differently are two products: the
+    /// rebuilt snapshot id hashes the printed names as well as the values, so the second save does not
+    /// collide with the first and fail as a snapshot conflict.
+    func testTwoCapturesDifferingOnlyInADisplayNameGetDifferentSnapshotIds() throws {
+        func product(displayName: String) -> ProductDefinition {
+            ProductDefinition(
+                snapshotID: "label-synthetic", productID: "label_capture", name: "Synthetic Gummies",
+                labelBasis: "per serving (30 g)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+                nutrients: ["dha": .known(Decimal(500), .mg)],
+                nutrientDisplayNames: ["dha": displayName])
+        }
+
+        let first = try makeIntakeModel()
+        first.applyLabelProduct(product(displayName: "DHA"))
+        first.name = "Synthetic Gummies"
+        let second = try makeIntakeModel()
+        second.applyLabelProduct(product(displayName: "D.H.A."))
+        second.name = "Synthetic Gummies"
+
+        let firstID = try XCTUnwrap(first.productSnapshot()?.snapshotID)
+        let secondID = try XCTUnwrap(second.productSnapshot()?.snapshotID)
+
+        XCTAssertNotEqual(firstID, secondID, "the printed spelling is part of the snapshot's identity")
+        // The values themselves are unchanged, so only the name separates the two.
+        XCTAssertEqual(first.productSnapshot()?.value(for: "dha"), .known(Decimal(500), .mg))
+        XCTAssertEqual(second.productSnapshot()?.value(for: "dha"), .known(Decimal(500), .mg))
+    }
+
     // MARK: Support
 
     /// A barcode product with values of its own, so a lookup that answers can be told apart from a

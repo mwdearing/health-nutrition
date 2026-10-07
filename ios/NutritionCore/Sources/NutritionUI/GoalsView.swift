@@ -36,11 +36,11 @@ public struct GoalsView: View {
                     .decimalKeyboard()
                     .accessibilityLabel("Daily target for \(model.displayName(for: editing))")
                 Picker("Unit", selection: $unit) {
-                    ForEach(NutrientGoalChoices.units(forKey: editing), id: \.symbol) { candidate in
+                    ForEach(model.units(for: editing), id: \.symbol) { candidate in
                         Text(candidate.symbol).tag(candidate)
                     }
                 }
-                .onChange(of: editing) { _, _ in unit = NutrientGoalChoices.unit(forKey: editing) }
+                .onChange(of: editing) { _, _ in unit = model.unit(for: editing) }
                 Button("Save goal") {
                     if model.setTarget(targetText, for: editing, unit: unit) { targetText = "" }
                 }
