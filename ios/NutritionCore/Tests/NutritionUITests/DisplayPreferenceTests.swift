@@ -82,9 +82,10 @@ final class DisplayPreferenceTests: XCTestCase {
         XCTAssertEqual(model.unitSystem, .usCustomary)
         XCTAssertEqual(model.quickWaterMilliliters, Decimal(250))
         // Both button strings come from the same model properties, so neither can drift from the
-        // amount the button writes.
-        XCTAssertEqual(model.quickWaterLabel, "Add 8.5 fl oz water")
-        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 8.5 fluid ounces of water")
+        // amount the button writes. Below ten ounces the converted figure carries two fraction digits,
+        // so 250 mL reads as 8.45 fl oz rather than 8.5.
+        XCTAssertEqual(model.quickWaterLabel, "Add 8.45 fl oz water")
+        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 8.45 fluid ounces of water")
 
         let add = AddIntakeViewModel(
             store: RecordingStore(makeID: { "intake" }), now: now, timeZoneIdentifier: "UTC",
@@ -146,6 +147,162 @@ final class DisplayPreferenceTests: XCTestCase {
         let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("units-exact"))
         preferences.setQuickWaterMilliliters(Decimal(string: "333.5")!)
         XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "333.5")!)
+    }
+}
+
+/// How a stored amount is read under a unit system.
+final class AmountDisplayPreferenceTests: XCTestCase {
+    private func text(_ amount: Decimal, _ unit: MeasureUnit, _ system: UnitSystem) -> String {
+        AmountDisplay.display(amount, unit: unit, system: system).text
+    }
+
+    /// Metric shows what is stored, so a small amount is not scaled away into a different unit: 10 mg
+    /// reads "10 mg", never a fraction of a gram.
+    func testMetricShowsTheStoredUnitUnchangedForEveryUnit() {
+        XCTAssertEqual(text(Decimal(10), .mg, .metric), "10 mg")
+        XCTAssertEqual(text(Decimal(10), .mcg, .metric), "10 mcg")
+        XCTAssertEqual(text(Decimal(0.5), .g, .metric), "0.5 g")
+        XCTAssertEqual(text(Decimal(40), .kcal, .metric), "40 kcal")
+        XCTAssertEqual(text(Decimal(2), .serving, .metric), "2 serving")
+        XCTAssertEqual(text(Decimal(400), .iu, .metric), "400 IU")
+        for unit in UnitRegistry.all {
+            XCTAssertEqual(AmountDisplay.displayUnit(for: unit, system: .metric), unit, unit.symbol)
+        }
+    }
+
+    /// US customary converts only the base-scale mass and volume units, and leaves milligrams and
+    /// micrograms alone: nobody measures a kitchen ingredient in thousandths of an ounce.
+    func testUSCustomaryConvertsOnlyBaseScaleMassAndVolume() {
+        XCTAssertEqual(text(Decimal(500), .g, .usCustomary), "17.6 oz")
+        XCTAssertEqual(text(Decimal(1), .kg, .usCustomary), "35.3 oz")
+        XCTAssertEqual(text(Decimal(300), .mL, .usCustomary), "10.1 fl oz")
+        XCTAssertEqual(text(Decimal(2), .L, .usCustomary), "67.6 fl oz")
+        XCTAssertEqual(text(Decimal(10), .mg, .usCustomary), "10 mg")
+        XCTAssertEqual(text(Decimal(10), .mcg, .usCustomary), "10 mcg")
+        XCTAssertEqual(text(Decimal(40), .kcal, .usCustomary), "40 kcal")
+        XCTAssertEqual(text(Decimal(2), .tablet, .usCustomary), "2 tablet")
+        XCTAssertEqual(text(Decimal(400), .iu, .usCustomary), "400 IU")
+    }
+
+    /// The converted figure carries enough digits to be read: one at or above ten, two above one, and
+    /// enough below one that 0.5 g is not rounded away to nothing.
+    func testConvertedPrecisionKeepsSmallAmountsReadable() {
+        XCTAssertEqual(text(Decimal(string: "0.5")!, .g, .usCustomary), "0.0176 oz")
+        XCTAssertEqual(text(Decimal(string: "0.05")!, .L, .usCustomary), "1.69 fl oz")
+        // Below one the digits are enough to carry the figure: 20 g is 0.7055 oz, not 0.7 and not 0.
+        XCTAssertEqual(text(Decimal(20), .g, .usCustomary), "0.7055 oz")
+        XCTAssertEqual(text(Decimal(10), .g, .usCustomary), "0.3527 oz")
+        XCTAssertEqual(AmountDisplay.fractionDigits(for: Decimal(17)), AmountDisplay.largeFractionDigits)
+        XCTAssertEqual(AmountDisplay.fractionDigits(for: Decimal(string: "1.5")!), AmountDisplay.mediumFractionDigits)
+        XCTAssertEqual(
+            AmountDisplay.fractionDigits(for: Decimal(string: "0.0176")!), AmountDisplay.smallFractionDigits)
+        // A figure that lands on a round number is not padded out with zeros.
+        XCTAssertEqual(text(Decimal(1000), .g, .usCustomary), "35.3 oz")
+    }
+
+    /// An amount so small the shown unit cannot name it says so, rather than reading as zero.
+    func testAnAmountBelowTheSmallestShownFigureIsNotShownAsZero() {
+        let shown = AmountDisplay.display(Decimal(string: "0.001")!, unit: .g, system: .usCustomary)
+        XCTAssertTrue(shown.isBelowSmallest)
+        XCTAssertEqual(shown.text, "< 0.0001 oz")
+        // A stored zero is zero, and stays zero.
+        let zero = AmountDisplay.display(Decimal(0), unit: .g, system: .usCustomary)
+        XCTAssertFalse(zero.isBelowSmallest)
+        XCTAssertEqual(zero.text, "0 oz")
+    }
+
+    /// An amount that is not a number is shown as stored, never as a converted figure.
+    func testAnUnknownAmountIsShownAsStoredAndNeverConverted() {
+        XCTAssertEqual(text(Decimal.nan, .g, .usCustomary), "NaN g")
+        XCTAssertEqual(AmountDisplay.display(Decimal.nan, unit: .g, system: .usCustomary).unit, .g)
+    }
+}
+
+/// The entry detail line that reads an amount in the reader's unit.
+@MainActor
+final class EntryDetailDisplayPreferenceTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func model(_ preferences: DisplayPreferences, amount: Decimal, unit: MeasureUnit = .g) throws
+        -> EntryDetailViewModel
+    {
+        let store = RecordingStore(makeID: { "intake" })
+        try store.create(
+            Intake(id: "intake", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "oats", name: "Oats", amount: amount, unit: unit)],
+            product: nil, now: now)
+        let model = EntryDetailViewModel(
+            store: store, intakeID: "intake", timeZoneIdentifier: "UTC", preferences: preferences)
+        model.load(now: now)
+        return model
+    }
+
+    /// An amount stored as unknown has no figure to convert, so the converted line is hidden rather
+    /// than shown as "NaN oz".
+    func testAnUnknownAmountHidesTheConvertedLine() throws {
+        let model = try model(InMemoryDisplayPreferences(unitSystem: .usCustomary), amount: Decimal.nan)
+        XCTAssertEqual(model.components.first?.amountText, "unknown")
+        XCTAssertNil(model.convertedText(for: "oats"))
+    }
+
+    /// The converted line follows the draft in the text field, so it never sits there showing the
+    /// value that was loaded while a different one is being typed.
+    func testTheConvertedLineIsRecomputedFromTheDraft() throws {
+        let model = try model(InMemoryDisplayPreferences(unitSystem: .usCustomary), amount: Decimal(40))
+        XCTAssertEqual(model.convertedText(for: "oats"), "1.41 oz")
+        model.drafts["oats"] = "500"
+        XCTAssertEqual(model.convertedText(for: "oats"), "17.6 oz")
+        // A draft that is not yet a number has nothing to read.
+        model.drafts["oats"] = ""
+        XCTAssertNil(model.convertedText(for: "oats"))
+        model.drafts["oats"] = "abc"
+        XCTAssertNil(model.convertedText(for: "oats"))
+    }
+}
+
+/// Ounces are an input and a display unit; what is stored is metric.
+@MainActor
+final class AddIntakeOuncePreferenceTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func stored(_ amountText: String, _ unit: MeasureUnit) throws -> IntakeComponent {
+        let store = RecordingStore(makeID: { "intake" })
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC", makeID: { "intake" },
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        model.name = "Rolled oats"
+        model.amountText = amountText
+        model.unit = unit
+        XCTAssertTrue(model.save(now: now))
+        return try XCTUnwrap(store.revisions(of: "intake").first?.components.first)
+    }
+
+    /// One ounce entered is stored as the exact number of grams it stands for, so storage, the export
+    /// and the relay encoder never see an ounce.
+    func testAnOunceEnteredInAddIntakeIsStoredAsExactGrams() throws {
+        let ounces = try stored("1", .oz)
+        XCTAssertEqual(ounces.unit, .g)
+        XCTAssertEqual(ounces.amount, Decimal(string: "28.349523125")!)
+
+        let quarter = try stored("0.25", .oz)
+        XCTAssertEqual(quarter.unit, .g)
+        XCTAssertEqual(quarter.amount, Decimal(string: "7.08738078125")!)
+    }
+
+    /// A fluid ounce entered is stored as the exact number of millilitres it stands for.
+    func testAFluidOunceEnteredInAddIntakeIsStoredAsExactMillilitres() throws {
+        let component = try stored("2", .flOz)
+        XCTAssertEqual(component.unit, .mL)
+        XCTAssertEqual(component.amount, Decimal(string: "59.147059125")!)
+    }
+
+    /// Every other unit is stored as entered: the conversion is only for the two ounces.
+    func testMetricUnitsAreStoredUnchanged() throws {
+        for (text, unit) in [("250", MeasureUnit.mL), ("40", .g), ("10", .mg), ("120", .kcal)] {
+            let component = try stored(text, unit)
+            XCTAssertEqual(component.unit, unit, unit.symbol)
+            XCTAssertEqual(component.amount, Decimal(string: text)!, unit.symbol)
+        }
     }
 }
 

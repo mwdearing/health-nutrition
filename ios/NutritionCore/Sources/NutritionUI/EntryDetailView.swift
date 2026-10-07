@@ -26,11 +26,14 @@ public struct EntryDetailView: View {
                         }
                         // The same amount in the unit the reader chose, shown beside the field that
                         // edits the stored one. Saving writes the field back in the stored unit, so
-                        // this line is a reading of the value and never an edit to it.
-                        Text("\(component.displayText) with your unit preference")
-                            .font(.footnote)
-                            .foregroundStyle(TokenColors.textSecondary)
-                            .accessibilityLabel("Shown as \(component.displayText)")
+                        // this line is a reading of the value and never an edit to it. It follows the
+                        // draft as it is typed, and is hidden when there is no amount to read.
+                        if let converted = model.convertedText(for: component.id) {
+                            Text("\(converted) with your unit preference")
+                                .font(.footnote)
+                                .foregroundStyle(TokenColors.textSecondary)
+                                .accessibilityLabel("Shown as \(converted)")
+                        }
                         if component.amountText == "unknown" {
                             Text("Amount: \(component.amountText)")
                                 .font(.footnote)

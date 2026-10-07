@@ -44,7 +44,7 @@ public struct Quantity: Sendable, Hashable, Codable {
             case .count:
                 throw UnitError.incompatibleCountUnits(from: unit, to: target)
             case .mass, .volume, .energy, .internationalUnit:
-                return Quantity(value: value * unit.toBase * target.fromBase, unit: target)
+                return Quantity(value: target.amount(fromBase: value * unit.toBase), unit: target)
             }
         }
 
@@ -68,11 +68,11 @@ public struct Quantity: Sendable, Hashable, Codable {
         case (.mass, .volume):
             let gramsPerMilliliter = try validDensity(density, target: target)
             let milliliters = value * unit.toBase / gramsPerMilliliter
-            return Quantity(value: milliliters * target.fromBase, unit: target)
+            return Quantity(value: target.amount(fromBase: milliliters), unit: target)
         case (.volume, .mass):
             let gramsPerMilliliter = try validDensity(density, target: target)
             let grams = value * unit.toBase * gramsPerMilliliter
-            return Quantity(value: grams * target.fromBase, unit: target)
+            return Quantity(value: target.amount(fromBase: grams), unit: target)
         default:
             throw UnitError.dimensionMismatch(from: unit, to: target)
         }

@@ -4,8 +4,9 @@ import NutritionJournal
 
 /// Which units the Add-intake picker offers, and in what order.
 ///
-/// This is about what a person is OFFERED. What they choose is stored as entered, in the unit they
-/// chose, so changing this list never rewrites anything already logged.
+/// This is about what a person is OFFERED. A unit chosen here decides the unit an amount is read in;
+/// the ounces are converted to the metric unit they stand for before anything is stored, so changing
+/// this list never rewrites anything already logged.
 public enum UnitSelection {
     /// Every unit the picker offers under `system`, the system's own units first.
     public static func offered(for system: UnitSystem) -> [MeasureUnit] {
@@ -28,45 +29,83 @@ public enum UnitSelection {
 public struct DisplayAmount: Equatable {
     public let amount: Decimal
     public let unit: MeasureUnit
+    /// True when the amount is real but below the smallest figure the shown unit can carry, so it is
+    /// read as "less than" rather than rounded to a zero.
+    public let isBelowSmallest: Bool
 
-    public init(amount: Decimal, unit: MeasureUnit) {
+    public init(amount: Decimal, unit: MeasureUnit, isBelowSmallest: Bool = false) {
         self.amount = amount
         self.unit = unit
+        self.isBelowSmallest = isBelowSmallest
     }
 
-    /// The amount and its symbol, as one line of text.
+    /// The amount and its symbol, as one line of text. An amount too small to name says so instead of
+    /// showing a zero, because a non-zero stored amount must never read as none of it.
     public var text: String {
-        "\(DecimalFormatting.text(amount)) \(unit.symbol)"
+        guard isBelowSmallest else {
+            return "\(DecimalFormatting.text(amount)) \(unit.symbol)"
+        }
+        return "< \(DecimalFormatting.text(AmountDisplay.smallestShown)) \(unit.symbol)"
     }
 }
 
 /// How a stored amount is shown under a unit system.
 ///
-/// Only mass and volume are converted. Energy, counts and international units have no customary
-/// counterpart here, so they are shown exactly as they were stored.
+/// Metric shows what is stored: the stored unit is shown unchanged, so 10 mg reads "10 mg" and is
+/// never scaled into grams. US customary converts only the two base-scale units a customary kitchen
+/// measure uses, grams and kilograms into ounces and millilitres and litres into fluid ounces.
+/// Milligrams and micrograms are too small to be anyone's kitchen measure, and energy, counts and
+/// international units have no customary counterpart here, so all of them are shown as stored.
 public enum AmountDisplay {
-    /// Fraction digits a converted amount carries. A converted ounce is a kitchen measure, and a
-    /// hundredth of one says nothing the reader can act on, so the value is rounded for showing.
-    public static let convertedFractionDigits = 1
+    /// Fraction digits a converted amount carries at or above ten. A converted ounce is a kitchen
+    /// measure, and a hundredth of one says nothing the reader can act on.
+    public static let largeFractionDigits = 1
+    /// Fraction digits a converted amount carries between one and ten.
+    public static let mediumFractionDigits = 2
+    /// The most fraction digits a converted amount carries below one, so a small ounce still says
+    /// something the reader can act on.
+    public static let smallFractionDigits = 4
+    /// The smallest converted amount shown as a number rather than as "less than".
+    public static let smallestShown = Decimal(string: "0.0001", locale: AmountParser.locale)!
 
-    /// The mass unit a system shows weights in.
+    /// The mass unit a system shows weights in. Only US customary has one, because a metric reader is
+    /// shown what is stored.
     public static func massUnit(for system: UnitSystem) -> MeasureUnit {
         system == .usCustomary ? .oz : .g
     }
 
-    /// The volume unit a system shows volumes in.
+    /// The volume unit a system shows volumes in, for the same reason as `massUnit(for:)`.
     public static func volumeUnit(for system: UnitSystem) -> MeasureUnit {
         system == .usCustomary ? .flOz : .mL
     }
 
-    /// The unit a stored unit is shown in, or the stored unit itself when the dimension has no
-    /// customary counterpart.
+    /// The unit a stored unit is shown in. Metric shows the stored unit itself; US customary converts
+    /// grams and kilograms to ounces and millilitres and litres to fluid ounces, and leaves every
+    /// other stored unit alone.
     public static func displayUnit(for stored: MeasureUnit, system: UnitSystem) -> MeasureUnit {
-        switch stored.dimension {
-        case .mass: return massUnit(for: system)
-        case .volume: return volumeUnit(for: system)
+        guard system == .usCustomary else { return stored }
+        switch stored {
+        case .g, .kg: return massUnit(for: system)
+        case .mL, .L: return volumeUnit(for: system)
         default: return stored
         }
+    }
+
+    /// The fraction digits a converted amount is shown with: one at or above ten, two above one, and
+    /// below one enough of them to carry the figure, up to four.
+    ///
+    /// Trailing zeros are dropped by choosing the fewest digits that still hold the same value, so
+    /// 8.5 fl oz does not read as 8.4500.
+    public static func fractionDigits(for amount: Decimal) -> Int {
+        let magnitude = abs(amount)
+        if magnitude >= 10 { return largeFractionDigits }
+        if magnitude >= 1 { return mediumFractionDigits }
+        let rounded = DisplayRounding.rounded(amount, fractionDigits: smallFractionDigits)
+        for digits in stride(from: smallFractionDigits - 1, through: 0, by: -1)
+        where DisplayRounding.rounded(amount, fractionDigits: digits) == rounded {
+            return digits
+        }
+        return smallFractionDigits
     }
 
     /// The stored amount, converted and rounded for showing. A value that is not a number, or an
@@ -80,9 +119,13 @@ public enum AmountDisplay {
         else {
             return DisplayAmount(amount: amount, unit: unit)
         }
-        return DisplayAmount(
-            amount: DisplayRounding.rounded(converted.value, fractionDigits: convertedFractionDigits),
-            unit: target)
+        let rounded = DisplayRounding.rounded(
+            converted.value, fractionDigits: fractionDigits(for: converted.value))
+        // A real amount must never be shown as none of it, so one too small for the unit's digits is
+        // shown as a bound instead. The test is on the converted figure itself rather than on what
+        // survived rounding.
+        let tooSmall = converted.value != 0 && abs(rounded) < smallestShown
+        return DisplayAmount(amount: rounded, unit: target, isBelowSmallest: tooSmall)
     }
 
     /// The stored component's amount, shown under `system`.

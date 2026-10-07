@@ -169,43 +169,50 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(capsules.value, try dec("2"))
     }
 
-    /// One avoirdupois ounce is exactly 28.349523125 g. Multiplying by that factor is exact, so a
-    /// weight in ounces lands on the gram exactly.
-    func testOuncesConvertExactlyBothWays() throws {
+    /// One avoirdupois ounce is exactly 28.349523125 g, so converting out of ounces is an exact
+    /// multiplication. Converting into ounces divides by that factor and rounds to the precision the
+    /// registry documents, so nothing here claims an exactness the factor cannot give.
+    func testOuncesConvertFromTheExactFactorAndIntoTheDocumentedPrecision() throws {
         XCTAssertEqual(MeasureUnit.oz.dimension, UnitDimension.mass)
         XCTAssertEqual(try MeasureUnit(symbol: "oz"), MeasureUnit.oz)
 
         let grams = try qty("8", .oz).converted(to: .g)
         XCTAssertEqual(grams.value, try dec("226.796185"))
         XCTAssertEqual(grams.unit, MeasureUnit.g)
+        XCTAssertEqual(try qty("1", .oz).converted(to: .g).value, try dec("28.349523125"))
         XCTAssertEqual(try qty("1", .oz).converted(to: .mg).value, try dec("28349.523125"))
         XCTAssertEqual(try qty("1", .kg).converted(to: .g).value, try dec("1000"))
 
-        // Grams to ounces divides by the same factor. The reciprocal is carried at the full precision
-        // a Decimal holds, so the quotient is exact to beyond anything displayed and a round trip
-        // returns the number that was converted.
+        // Grams to ounces is the divided direction. The quotient carries the documented number of
+        // fraction digits, so exactly one ounce of grams comes back as one ounce.
+        XCTAssertEqual(UnitRegistry.reciprocalFractionDigits, 10)
         let ounces = try qty("226.796185", .g).converted(to: .oz)
         XCTAssertEqual(ounces.unit, MeasureUnit.oz)
-        XCTAssertEqual(DisplayRounding.rounded(ounces.value, fractionDigits: 10), try dec("8"))
+        XCTAssertEqual(ounces.value, try dec("8"))
+        XCTAssertEqual(try qty("28.349523125", .g).converted(to: .oz).value, try dec("1"))
     }
 
-    /// A round trip through grams or ounces returns the amount that went in, for sizes a person
-    /// actually enters. This is the guarantee the display conversion rests on: a value converted for
-    /// showing and converted back does not drift.
-    func testOuncesRoundTripExactlyBothWays() throws {
+    /// A round trip through grams or ounces returns the amount that went in, at the precision the
+    /// registry documents. This is the guarantee the display conversion rests on: a value converted
+    /// for showing and converted back does not drift at the six digits a person can read.
+    func testOuncesRoundTripBothWaysToTheDocumentedPrecision() throws {
+        let compared = 6
         for text in ["0.25", "1", "16", "1000"] {
             let grams = try qty(text, .g)
-            XCTAssertEqual(try grams.converted(to: .oz).converted(to: .g).value, try dec(text), text)
+            let back = try grams.converted(to: .oz).converted(to: .g)
+            XCTAssertEqual(DisplayRounding.rounded(back.value, fractionDigits: compared), try dec(text), text)
         }
         for text in ["0.5", "1", "2", "16", "40", "250", "300"] {
             let ounces = try qty(text, .oz)
-            XCTAssertEqual(try ounces.converted(to: .g).converted(to: .oz).value, try dec(text), text)
+            let back = try ounces.converted(to: .g).converted(to: .oz)
+            XCTAssertEqual(DisplayRounding.rounded(back.value, fractionDigits: compared), try dec(text), text)
         }
     }
 
-    /// One US fluid ounce is exactly 29.5735295625 mL. `fl oz` is a separate symbol from `oz`, so a
-    /// measure is never read as a weight.
-    func testFluidOuncesConvertExactlyBothWays() throws {
+    /// One US fluid ounce is exactly 29.5735295625 mL, exact out of millilitres and rounded into them,
+    /// exactly like the weight ounce. `fl oz` is a separate symbol from `oz`, so a measure is never
+    /// read as a weight.
+    func testFluidOuncesConvertFromTheExactFactorAndIntoTheDocumentedPrecision() throws {
         XCTAssertEqual(MeasureUnit.flOz.dimension, UnitDimension.volume)
         XCTAssertEqual(try MeasureUnit(symbol: "fl oz"), MeasureUnit.flOz)
         XCTAssertNotEqual(MeasureUnit.flOz.symbol, MeasureUnit.oz.symbol)
@@ -213,18 +220,23 @@ final class UnitsTests: XCTestCase {
         let milliliters = try qty("8", .flOz).converted(to: .mL)
         XCTAssertEqual(milliliters.value, try dec("236.5882365"))
         XCTAssertEqual(milliliters.unit, MeasureUnit.mL)
+        XCTAssertEqual(try qty("1", .flOz).converted(to: .mL).value, try dec("29.5735295625"))
 
         let fluidOunces = try qty("236.5882365", .mL).converted(to: .flOz)
         XCTAssertEqual(fluidOunces.unit, MeasureUnit.flOz)
-        XCTAssertEqual(DisplayRounding.rounded(fluidOunces.value, fractionDigits: 10), try dec("8"))
+        XCTAssertEqual(fluidOunces.value, try dec("8"))
+        XCTAssertEqual(try qty("29.5735295625", .mL).converted(to: .flOz).value, try dec("1"))
 
+        let compared = 6
         for text in ["0.25", "1", "16", "1000"] {
             let millilitersOf = try qty(text, .mL)
-            XCTAssertEqual(try millilitersOf.converted(to: .flOz).converted(to: .mL).value, try dec(text), text)
+            let back = try millilitersOf.converted(to: .flOz).converted(to: .mL)
+            XCTAssertEqual(DisplayRounding.rounded(back.value, fractionDigits: compared), try dec(text), text)
         }
         for text in ["0.5", "1", "2", "16", "250", "300"] {
             let ouncesOf = try qty(text, .flOz)
-            XCTAssertEqual(try ouncesOf.converted(to: .mL).converted(to: .flOz).value, try dec(text), text)
+            let back = try ouncesOf.converted(to: .mL).converted(to: .flOz)
+            XCTAssertEqual(DisplayRounding.rounded(back.value, fractionDigits: compared), try dec(text), text)
         }
     }
 

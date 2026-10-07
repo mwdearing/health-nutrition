@@ -47,12 +47,22 @@ What the preference changes, and what it does not:
 
 - **Offered**: the Add-intake `Picker("Unit")` lists the registry's whole set for metric, and `oz` and
   `fl oz` first for US customary. Both are always available.
-- **Displayed**: mass and volume amounts on the Today lines, the water total, both quick-water button
-  strings and the entry detail amounts are converted (`g`→`oz`, `mL`→`fl oz`) and rounded to one
-  fraction digit with `DisplayRounding`. Energy, counts and international units are shown as stored.
-- **Not stored, not exported, not delivered**: storage, the journal export and HealthKit delivery stay
-  metric. The quick-add button writes the configured amount in mL whatever the unit system, so an
-  export of a US-customary journal is byte-identical to a metric one.
+- **Input**: `AddIntakeViewModel.save` converts an amount entered in `oz` or `fl oz` to the metric unit
+  it stands for before storing it, by the exact factor (× 28.349523125 or × 29.5735295625, exact in a
+  `Decimal`), and stores the metric unit. So one ounce entered is stored as 28.349523125 g. The ounces
+  are input and display units only.
+- **Displayed**: metric shows the stored unit unchanged, so 10 mg reads `10 mg` and is never scaled
+  into grams. US customary converts only base-scale mass and volume (`g`/`kg`→`oz`, `mL`/`L`→`fl oz`)
+  on the Today lines, the water total, both quick-water button strings and the entry detail amounts.
+  `mg`, `mcg`, energy, counts and international units are shown as stored. A converted amount carries
+  one fraction digit at or above ten, two above one, and up to four below one, so 0.5 g reads
+  `0.0176 oz` and 500 g reads `17.6 oz`. An amount too small for the unit's digits reads
+  `< 0.0001 oz` rather than zero. The entry detail line is recomputed from the draft in the text field
+  and is hidden for an amount stored as unknown.
+- **Not stored, not exported, not delivered**: because `oz` and `fl oz` never reach storage, the journal
+  export, the digests, HealthKit delivery and the relay encoder are metric whatever the unit system.
+  The quick-add button writes the configured amount in mL whatever the unit system, so an export of a
+  US-customary journal is byte-identical to a metric one.
 
 The button text and its accessibility label both come from `TodayViewModel.quickWaterLabel` and
 `quickWaterAccessibilityLabel`, so they cannot drift from the amount the button writes.

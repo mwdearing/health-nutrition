@@ -8,16 +8,12 @@ public struct EntryComponentRow: Equatable, Identifiable {
     /// Exact decimal text, or "unknown".
     public let amountText: String
     public let unit: MeasureUnit
-    /// The same amount in the unit system the reader chose, as "12.3 oz". For showing only: the field
-    /// above it edits the stored value in the stored unit, and saving writes that unit back.
-    public let displayText: String
 
-    public init(id: String, name: String, amountText: String, unit: MeasureUnit, displayText: String) {
+    public init(id: String, name: String, amountText: String, unit: MeasureUnit) {
         self.id = id
         self.name = name
         self.amountText = amountText
         self.unit = unit
-        self.displayText = displayText
     }
 }
 
@@ -103,12 +99,10 @@ public final class EntryDetailViewModel: ObservableObject {
                 return
             }
             currentRevision = current.number
-            let system = preferences.unitSystem
             components = current.components.map {
                 EntryComponentRow(
                     id: $0.componentID, name: AmountText.name($0),
-                    amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit,
-                    displayText: AmountDisplay.display($0, system: system).text)
+                    amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit)
             }
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
                 ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))
@@ -127,6 +121,20 @@ public final class EntryDetailViewModel: ObservableObject {
         } catch {
             errorMessage = "Could not read this entry."
         }
+    }
+
+    /// The same amount in the unit the reader chose, recomputed from what is in the text field rather
+    /// than left at the value that was loaded, so the line under the field follows the edit being made.
+    ///
+    /// Nil when there is nothing to show: an amount stored as unknown has no figure to convert, and a
+    /// draft that is empty or not yet a number has none either. The line is then hidden rather than
+    /// showing a converted "NaN" or a stale figure.
+    public func convertedText(for componentID: String) -> String? {
+        guard let row = components.first(where: { $0.id == componentID }),
+              row.amountText != "unknown",
+              let draft = drafts[componentID], let amount = AmountParser.parse(draft)
+        else { return nil }
+        return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem).text
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.
