@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 import NutritionJournal
 
 /// One external connection. Apple Health and HealthRelay are shown from the start but cannot be switched on
@@ -195,13 +196,19 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// The unit system shown on screen. Written through to the preference store as soon as it is
     /// changed, so a unit chosen here is the unit the other screens read on the next reload.
+    ///
+    /// The typed quick-water amount moves with it: the field reads in one unit at a time, so the same
+    /// figure has to be restated in the new one. An amount already typed as a number is converted; one
+    /// that is not a number is left as it is, because there is nothing to convert and the field's own
+    /// error says why.
     @Published public var unitSystem: UnitSystem {
         didSet {
             guard unitSystem != oldValue, !isPublishingStoredPreference else { return }
+            convertQuickWaterText(from: oldValue)
             preferences.setUnitSystem(unitSystem)
         }
     }
-    /// The quick-water amount as typed, in millilitres.
+    /// The quick-water amount as typed, in the unit the screen is showing.
     @Published public var quickWaterText: String
     /// Why the typed quick-water amount was refused, or nil when it is acceptable.
     @Published public private(set) var quickWaterError: String?
@@ -210,11 +217,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// again as though they had just been chosen.
     private var isPublishingStoredPreference = false
 
-    /// What the quick-water field refuses, in the words a person can act on.
+    /// What the quick-water field refuses, in the words a person can act on. It names no unit, because
+    /// the field's own label says which one the amount is read in.
     public static let quickWaterInvalidMessage =
         "Enter a water amount above zero, using digits and a point."
     public static let quickWaterTitle = "Quick-add water amount"
-    public static let quickWaterFieldLabel = "Quick-add water amount in millilitres"
     public static let unitsSectionTitle = "Units"
     public static let unitSystemTitle = "Show amounts in"
 
@@ -277,22 +284,62 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.remover = remover
         self.preferences = preferences
         self.unitSystem = preferences.unitSystem
-        self.quickWaterText = DecimalFormatting.text(preferences.quickWaterMilliliters)
+        // Computed from the store rather than read back through `quickWaterDraftAmount`: an initializer
+        // cannot read itself before every stored property is set, and this is the last one.
+        self.quickWaterText = DecimalFormatting.text(
+            AmountDisplay.display(
+                preferences.quickWaterMilliliters, unit: .mL, system: preferences.unitSystem).amount)
     }
 
-    /// Checks the typed quick-water amount and stores it when it is above zero. An amount that is not
-    /// a positive decimal is refused with a message and the stored value is left alone, so a bad
-    /// entry cannot become the amount the Today button adds.
+    /// Checks the typed quick-water amount and stores it in millilitres when it is above zero. An amount
+    /// that is not a positive decimal is refused with a message and the stored value is left alone, so a
+    /// bad entry cannot become the amount the Today button adds.
+    ///
+    /// The field is read in the unit it is labelled in, and converted here: what is stored stays
+    /// millilitres, so the ounces are an input and a display unit and never reach the journal, the export
+    /// or the digests.
     @discardableResult
     public func saveQuickWaterAmount() -> Bool {
         guard let amount = AmountParser.parse(quickWaterText) else {
             quickWaterError = Self.quickWaterInvalidMessage
             return false
         }
-        preferences.setQuickWaterMilliliters(amount)
+        preferences.setQuickWaterMilliliters(milliliters(for: amount, in: quickWaterUnit))
         quickWaterError = nil
-        quickWaterText = DecimalFormatting.text(preferences.quickWaterMilliliters)
+        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
         return true
+    }
+
+    /// The unit the quick-water field is read in: fluid ounces under the US system, millilitres under
+    /// metric. Water is a volume either way, so the two are the same measure at two scales.
+    public var quickWaterUnit: MeasureUnit {
+        AmountDisplay.volumeUnit(for: unitSystem)
+    }
+
+    /// The symbol that unit is written with, for the field's label and its helper line.
+    public var quickWaterUnitSymbol: String { quickWaterUnit.symbol }
+
+    /// The field's label, which names the unit the amount is read in rather than assuming one.
+    public var quickWaterFieldLabel: String {
+        "Quick-add water amount in \(quickWaterUnitSymbol)"
+    }
+
+    /// The typed amount as the screen shows it, in `quickWaterUnit`.
+    ///
+    /// Converted through the display rules and then rounded to the digits a reader of this unit gets, so
+    /// the figure in the field is the same one the button on Today will say and no more precise than
+    /// that: a person who saves what they can read stores what they meant. The rounding is the display
+    /// rounding, so it never turns a non-zero stored amount into a zero in the field.
+    public var quickWaterDraftAmount: Decimal {
+        let shown = AmountDisplay.display(preferences.quickWaterMilliliters, unit: .mL, system: unitSystem)
+        return roundedForReading(shown.amount, fractionDigits: AmountDisplay.fractionDigits(for: shown.amount))
+    }
+
+    /// A figure rounded to the digits it is shown with, except that an amount too small for those digits
+    /// keeps them all rather than reading as none of it.
+    private func roundedForReading(_ amount: Decimal, fractionDigits: Int) -> Decimal {
+        let rounded = DisplayRounding.rounded(amount, fractionDigits: fractionDigits)
+        return rounded == 0 && amount != 0 ? amount : rounded
     }
 
     /// The quick-water amount as it is currently stored.
@@ -301,6 +348,50 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// The quick-water amount in the unit system shown on screen.
     public var quickWaterDisplay: DisplayAmount {
         AmountDisplay.display(preferences.quickWaterMilliliters, unit: .mL, system: unitSystem)
+    }
+
+    /// The same amount in the unit the screen is NOT showing, for the helper line under the field.
+    ///
+    /// Millilitres are read as whole figures there, because a glass size is the thing being set and
+    /// "354.9 mL" is a precision nobody asked for; a fluid ounce keeps the digits it is shown with
+    /// everywhere else, since 8 fl oz and 8.45 fl oz are different glasses.
+    public var quickWaterOtherUnitDisplay: DisplayAmount {
+        let other: UnitSystem = unitSystem == .usCustomary ? .metric : .usCustomary
+        let shown = AmountDisplay.display(preferences.quickWaterMilliliters, unit: .mL, system: other)
+        let digits = shown.unit == .mL ? 0 : AmountDisplay.fractionDigits(for: shown.amount)
+        return DisplayAmount(
+            amount: DisplayRounding.rounded(shown.amount, fractionDigits: digits), unit: shown.unit,
+            isBelowSmallest: shown.isBelowSmallest)
+    }
+
+    /// The helper line: what the typed amount is in the other unit, e.g. "= 355 mL".
+    public var quickWaterEquivalenceText: String {
+        "= \(quickWaterOtherUnitDisplay.text)"
+    }
+
+    /// The same figure read aloud, because "fl oz" is nothing to a screen reader.
+    public var quickWaterEquivalenceAccessibilityLabel: String {
+        "= \(quickWaterOtherUnitDisplay.spokenAmount) "
+            + "\(AmountDisplay.spokenName(for: quickWaterOtherUnitDisplay.unit))"
+    }
+
+    /// The volume in millilitres an amount typed in `unit` stands for. One fluid ounce is exactly
+    /// 29.5735295625 mL, so this multiplication is exact in a `Decimal` and nothing is lost.
+    private func milliliters(for amount: Decimal, in unit: MeasureUnit) -> Decimal {
+        guard unit == .flOz else { return amount }
+        return amount * Decimal(string: "29.5735295625", locale: AmountParser.locale)!
+    }
+
+    /// Restates a typed quick-water amount in the unit the screen has moved to.
+    ///
+    /// Nothing happens to an amount that is not a number: a half-typed entry has no value to convert,
+    /// and the field's own error already says what is wrong with it.
+    private func convertQuickWaterText(from oldSystem: UnitSystem) {
+        guard let typed = AmountParser.parse(quickWaterText) else { return }
+        let milliliters = milliliters(
+            for: typed, in: AmountDisplay.volumeUnit(for: oldSystem))
+        quickWaterText = DecimalFormatting.text(
+            AmountDisplay.display(milliliters, unit: .mL, system: unitSystem).amount)
     }
 
     /// The unit systems offered, in a stable order.
@@ -441,7 +532,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         preferences.resetToDefaults()
         isPublishingStoredPreference = true
         unitSystem = preferences.unitSystem
-        quickWaterText = DecimalFormatting.text(preferences.quickWaterMilliliters)
+        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
         quickWaterError = nil
         isPublishingStoredPreference = false
     }

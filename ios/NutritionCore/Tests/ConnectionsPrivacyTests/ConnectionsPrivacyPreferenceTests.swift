@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 import NutritionJournal
 import XCTest
 @testable import NutritionUI
@@ -34,7 +35,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
         XCTAssertEqual(model.unitSystem, .metric)
         XCTAssertEqual(model.unitSystems, [.metric, .usCustomary])
-        XCTAssertEqual(model.unitSystems.map(ConnectionsPrivacyViewModel.label(for:)), ["Metric (g, mL)", "US customary (oz, fl oz)"])
+        XCTAssertEqual(model.unitSystems.map(ConnectionsPrivacyViewModel.label(for:)), ["Metric (g, mL)", "US (oz, fl oz)"])
 
         model.unitSystem = .usCustomary
         XCTAssertEqual(preferences.unitSystem, .usCustomary)
@@ -73,6 +74,82 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
             XCTAssertEqual(model.quickWaterError, ConnectionsPrivacyViewModel.quickWaterInvalidMessage, text)
             XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(300), text)
         }
+    }
+
+    /// The field is read in the preferred unit, so typing 12 under the US system means twelve fluid
+    /// ounces and not twelve millilitres. What is stored stays millilitres, so the entry the Today
+    /// button writes is the same water either way.
+    func testQuickWaterFieldIsEnteredInThePreferredUnit() throws {
+        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-us"))
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+
+        XCTAssertEqual(model.quickWaterUnit, .mL)
+        XCTAssertEqual(model.quickWaterUnitSymbol, "mL")
+        XCTAssertEqual(model.quickWaterFieldLabel, "Quick-add water amount in mL")
+
+        model.unitSystem = .usCustomary
+
+        XCTAssertEqual(model.quickWaterUnit, .flOz)
+        XCTAssertEqual(model.quickWaterUnitSymbol, "fl oz")
+        XCTAssertEqual(model.quickWaterFieldLabel, "Quick-add water amount in fl oz")
+
+        model.quickWaterText = "12"
+        XCTAssertTrue(model.saveQuickWaterAmount())
+        // One fluid ounce is exactly 29.5735295625 mL, so the stored figure is exact.
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "354.88235475", locale: AmountParser.locale))
+        XCTAssertNil(model.quickWaterError)
+        // And it reads back as the twelve fluid ounces that were typed.
+        XCTAssertEqual(model.quickWaterDisplay.text, "12 fl oz")
+        XCTAssertEqual(model.quickWaterText, "12")
+    }
+
+    /// The helper line says what the typed figure is in the other unit, so a glass entered in one system
+    /// is never a mystery in the other. It is the conversion, not a restatement of the field.
+    func testQuickWaterUnitHelperShowsTheEquivalentInTheOtherUnit() throws {
+        let preferences = InMemoryDisplayPreferences(
+            unitSystem: .usCustomary, quickWaterMilliliters: Decimal(354.88235475))
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+
+        XCTAssertEqual(model.quickWaterEquivalenceText, "= 355 mL")
+        XCTAssertEqual(model.quickWaterEquivalenceAccessibilityLabel, "= 355 millilitres")
+
+        // Under metric the same line speaks in the other system's unit.
+        model.unitSystem = .metric
+        XCTAssertEqual(model.quickWaterEquivalenceText, "= 12 fl oz")
+    }
+
+    /// Switching the unit system restates a typed amount rather than leaving it to be read as a
+    /// different measure: the same glass, in the unit the field is now labelled in.
+    func testQuickWaterUnitConversionFollowsTheUnitSystemChange() throws {
+        let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(250))
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+        XCTAssertEqual(model.quickWaterText, "250")
+
+        model.unitSystem = .usCustomary
+        XCTAssertEqual(model.quickWaterText, "8.45")
+        // Saving without touching the field stores the same glass of water, not 8.45 mL. The figure goes
+        // through the digits the field can show, so it is compared at that precision.
+        XCTAssertTrue(model.saveQuickWaterAmount())
+        XCTAssertEqual(
+            DisplayRounding.rounded(preferences.quickWaterMilliliters, fractionDigits: 1),
+            DisplayRounding.rounded(Decimal(250), fractionDigits: 1))
+        XCTAssertNotEqual(preferences.quickWaterMilliliters, Decimal(string: "8.45", locale: AmountParser.locale))
+
+        model.unitSystem = .metric
+        XCTAssertEqual(model.quickWaterText, "250")
+    }
+
+    /// An amount that is not a number is left alone when the system changes: there is nothing to convert,
+    /// and the field's own error is what says so.
+    func testQuickWaterUnitConversionLeavesAnUnusableEntryAlone() throws {
+        let preferences = InMemoryDisplayPreferences()
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+
+        model.quickWaterText = "abc"
+        model.unitSystem = .usCustomary
+
+        XCTAssertEqual(model.quickWaterText, "abc")
+        XCTAssertEqual(model.quickWaterFieldLabel, "Quick-add water amount in fl oz")
     }
 
     /// The amount shown on the settings screen follows the unit system, so a US reader sees what the

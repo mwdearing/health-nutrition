@@ -61,7 +61,7 @@ public struct DisplayAmount: Equatable {
 /// How a stored amount is shown under a unit system.
 ///
 /// Metric shows what is stored: the stored unit is shown unchanged, so 10 mg reads "10 mg" and is
-/// never scaled into grams. US customary converts only the two base-scale units a customary kitchen
+/// never scaled into grams. The US system converts only the two base-scale units a customary kitchen
 /// measure uses, grams and kilograms into ounces and millilitres and litres into fluid ounces.
 /// Milligrams and micrograms are too small to be anyone's kitchen measure, and energy, counts and
 /// international units have no customary counterpart here, so all of them are shown as stored.
@@ -77,7 +77,7 @@ public enum AmountDisplay {
     /// The smallest converted amount shown as a number rather than as "less than".
     public static let smallestShown = Decimal(string: "0.0001", locale: AmountParser.locale)!
 
-    /// The mass unit a system shows weights in. Only US customary has one, because a metric reader is
+    /// The mass unit a system shows weights in. Only the US system has one, because a metric reader is
     /// shown what is stored.
     public static func massUnit(for system: UnitSystem) -> MeasureUnit {
         system == .usCustomary ? .oz : .g
@@ -88,7 +88,7 @@ public enum AmountDisplay {
         system == .usCustomary ? .flOz : .mL
     }
 
-    /// The unit a stored unit is shown in. Metric shows the stored unit itself; US customary converts
+    /// The unit a stored unit is shown in. Metric shows the stored unit itself; the US system converts
     /// grams and kilograms to ounces and millilitres and litres to fluid ounces, and leaves every
     /// other stored unit alone.
     public static func displayUnit(for stored: MeasureUnit, system: UnitSystem) -> MeasureUnit {

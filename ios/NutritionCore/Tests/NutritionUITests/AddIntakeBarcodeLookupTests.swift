@@ -475,6 +475,79 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertEqual(try store.product(snapshotID: snapshotID)?.brand, "Example Foods (corrected)")
     }
 
+    /// A tap of Save that refused an entry says so beside the Save button, not only at the field it
+    /// names. On a long form the field is scrolled out of sight by the time someone reaches the button,
+    /// and a refusal with nothing next to it reads as a button that does nothing at all.
+    func testSaveBlockedMessageNamesTheFieldsNextToSave() throws {
+        let model = try makeModel(nil)
+
+        // Nothing filled in at all: both problems are named together, so fixing one and tapping Save
+        // again does not meet the same silent refusal.
+        XCTAssertFalse(model.save(now: now))
+        XCTAssertNotNil(model.saveBlockedMessage)
+        XCTAssertEqual(model.saveBlockedMessage, model.nameError)
+        XCTAssertEqual(model.saveBlockedMessage, model.amountError)
+
+        // One field fixed leaves the other named, and the fixed one is not repeated.
+        model.name = "Rolled oats"
+        XCTAssertFalse(model.save(now: now))
+        XCTAssertEqual(model.saveBlockedMessage, model.amountError)
+        XCTAssertNil(model.nameError)
+
+        // A save that succeeds clears it, so a stale refusal never follows a good entry.
+        model.amountText = "40"
+        XCTAssertTrue(model.save(now: now))
+        XCTAssertNil(model.saveBlockedMessage)
+    }
+
+    /// A product the catalog lists but states no nutrition facts for is one sentence rather than a
+    /// column of unknowns: the lookup worked, there is simply nothing on the record, and scanning the
+    /// label is what would fill the form in.
+    func testProductThatStatesNoNutrientsIsExplainedInOneSentence() async throws {
+        let bare = LookedUpProduct(
+            barcode: validBarcode, name: "Sample Bar", brand: "Example Foods", basis: .per100g,
+            nutrients: [:], attribution: attribution, version: "2024-05-01")
+        let model = try makeModel(FakeBarcodeLookup(result: .found(bare)))
+        model.barcode = validBarcode
+
+        await model.lookUpBarcode()
+
+        XCTAssertTrue(model.statesNoNutrients)
+        XCTAssertEqual(AddIntakeViewModel.noStatedNutrientsMessage,
+                       "Open Food Facts lists this product but states no nutrition facts; scan the label instead.")
+        // The attribution still travels with it, whatever the values turned out to be.
+        XCTAssertEqual(model.attribution?.text, attribution.text)
+        // And the entry can still be saved: the person knows what they ate.
+        model.amountText = "40"
+        XCTAssertTrue(model.save(now: now))
+    }
+
+    /// A product that states even one nutrient is shown as rows, not as the "states nothing" sentence.
+    func testProductThatStatesAnyNutrientIsStillShownAsRows() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
+        model.barcode = validBarcode
+
+        await model.lookUpBarcode()
+
+        XCTAssertFalse(model.statesNoNutrients)
+        XCTAssertEqual(
+            model.prefilledNutrients[LookedUpProduct.energyKcal], .known(Decimal(45), .kcal))
+    }
+
+    /// Nothing but a failed or empty lookup carries no product, so neither state can claim the
+    /// "states no nutrition facts" sentence: a lookup that found nothing is a different message.
+    func testNoProductMeansNoStatedNutrientsSentence() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .notFound))
+        XCTAssertFalse(model.statesNoNutrients)
+
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
+
+        XCTAssertFalse(model.statesNoNutrients)
+        XCTAssertEqual(
+            model.lookupMessage, "No product found for that barcode. Fill in the details yourself.")
+    }
+
     func testHandTypedEntryStoresNoProduct() throws {
         let store = try makeStore()
         let model = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")

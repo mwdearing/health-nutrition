@@ -179,22 +179,28 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 ## Units and the quick-water amount
 
 Two display preferences live in `ios/NutritionCore/Sources/NutritionUI/DisplayPreferences.swift`:
-`UnitSystem` (metric or US customary) and the quick-water amount in mL. The defaults are metric and
-250 mL. `UserDefaultsDisplayPreferences` persists them under namespaced `display.` keys, written
-synchronously; `InMemoryDisplayPreferences` is the in-memory implementation for tests. The app builds
-one `UserDefaultsDisplayPreferences` in `AppServices` and passes it to every screen, so a change made
-on one screen is read by the next.
+`UnitSystem` (metric, or the US system offering `oz` and `fl oz`) and the quick-water amount, stored in
+mL. The defaults are metric and 250 mL. `UserDefaultsDisplayPreferences` persists them under namespaced
+`display.` keys, written synchronously; `InMemoryDisplayPreferences` is the in-memory implementation for
+tests. The app builds one `UserDefaultsDisplayPreferences` in `AppServices` and passes it to every screen,
+so a change made on one screen is read by the next.
 
 Where they are set: the **Units** section on the Connections and privacy screen
 (`ConnectionsPrivacyView`), reachable from the Library tab's Connections section. It offers a
-unit-system picker and a quick-water amount field. The amount is validated with the same POSIX parser
-as Add intake and must be above zero; anything else is refused with a message and the stored value is
-left alone.
+unit-system picker and a quick-water amount field. The field is **read in the preferred unit** —
+`fl oz` under the US system, `mL` under metric — and its label says which one, so twelve means twelve
+fluid ounces and not twelve millilitres. The helper line under it states the same amount in the other
+unit (`= 355 mL`). Changing the unit system restates an amount already typed in the new unit. The amount
+is validated with the same POSIX parser as Add intake and must be above zero; anything else is refused
+with a message and the stored value is left alone. What is **stored** stays millilitres: `save` converts
+a typed fluid-ounce figure by the exact factor (× 29.5735295625, exact in a `Decimal`), so 12 fl oz is
+stored as 354.88235475 mL and the Today button reads back `12 fl oz`.
 
 What the preference changes, and what it does not:
 
 - **Offered**: the Add-intake `Picker("Unit")` lists the registry's whole set for metric, and `oz` and
-  `fl oz` first for US customary. Both are always available.
+  `fl oz` first for the US system. Both are always available. The counted units are the registry's too, so
+  a supplement can be logged in `gummy` or `piece` alongside `capsule`, `tablet`, `scoop` and `serving`.
 - **Input**: `AddIntakeViewModel.save` converts an amount entered in `oz` or `fl oz` to the metric unit
   it stands for before storing it, by the exact factor (× 28.349523125 or × 29.5735295625, exact in a
   `Decimal`), and stores the metric unit. So one ounce entered is stored as 28.349523125 g. The ounces
