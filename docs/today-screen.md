@@ -189,12 +189,17 @@ Where they are set: the **Units** section on the Connections and privacy screen
 (`ConnectionsPrivacyView`), reachable from the Library tab's Connections section. It offers a
 unit-system picker and a quick-water amount field. The field is **read in the preferred unit** —
 `fl oz` under the US system, `mL` under metric — and its label says which one, so twelve means twelve
-fluid ounces and not twelve millilitres. The helper line under it states the same amount in the other
-unit (`= 355 mL`). Changing the unit system restates an amount already typed in the new unit. The amount
+fluid ounces and not twelve millilitres. The helper line under it states the amount **in the field** in
+the other unit (`= 355 mL`), read from the draft rather than from what was last saved, so a figure typed
+and not yet stored already says what it is worth. Changing the unit system restates an amount already
+typed in the new unit. The amount
 is validated with the same POSIX parser as Add intake and must be above zero; anything else is refused
 with a message and the stored value is left alone. What is **stored** stays millilitres: `save` converts
 a typed fluid-ounce figure by the exact factor (× 29.5735295625, exact in a `Decimal`), so 12 fl oz is
-stored as 354.88235475 mL and the Today button reads back `12 fl oz`.
+stored as 354.88235475 mL and the Today button reads back `12 fl oz`. A converted draft is rounded to the
+digits the field shows before it is written back, so 250 mL shown as `8.45 fl oz` and saved stores
+249.896324803125 mL — the glass those digits stand for. Metric shows the stored millilitres unrounded,
+so `400.55` stays `400.55` in the field.
 
 What the preference changes, and what it does not:
 

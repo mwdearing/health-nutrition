@@ -805,7 +805,11 @@ public enum NutritionFactsParser {
     /// The counted units a supplement label states a serving in, singular and plural, and nothing
     /// else. Both spellings are read because the count decides the wording: a packet states
     /// "2 pieces" and a single one states "1 gummy", and neither is a different unit.
-    private static func countedUnit(for text: String) -> MeasureUnit? {
+    ///
+    /// Public because the words on a label are the same words a person types when they correct one:
+    /// a serving size entered by hand says "3 gummies" exactly as the panel does, and refusing that
+    /// spelling while the capture path accepts it would make the two disagree about the same label.
+    public static func countedUnit(for text: String) -> MeasureUnit? {
         switch text.lowercased() {
         case "serving", "servings": return .serving
         case "scoop", "scoops": return .scoop

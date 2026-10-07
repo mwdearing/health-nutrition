@@ -104,6 +104,35 @@ final class RecipeLoggerTests: XCTestCase {
         XCTAssertEqual(component.unit, .kg)
     }
 
+    /// A recipe can yield a counted thing rather than a serving — a batch of 30 gummies — and the
+    /// snapshot states its values per gummy. The basis has to resolve to a count for that to scale:
+    /// an unresolved basis states nothing at all, so the day totals, the Health samples and the relay
+    /// batch would carry no protein at all for a recipe the person did log.
+    func testACountedYieldScalesByTheNumberOfGummiesLogged() async throws {
+        for (basis, unit, componentUnit) in [
+            ("Per gummy; yield 30 gummy", MeasureUnit.gummy, MeasureUnit.gummy),
+            ("Per piece; yield 30 piece", MeasureUnit.piece, MeasureUnit.piece),
+        ] {
+            let journal = try makeJournal()
+            let version = sampleVersion(
+                ingredients: [
+                    sampleIngredient("a", amount: "300", perUnit: ["protein": .known(dec("0.5"), .g)]),
+                ],
+                yield: .total(Quantity(value: dec("30"), unit: unit)))
+            try RecipeLogger.logPortion(
+                store: journal, version: version, portion: 2, now: when, id: intakeID,
+                timeZoneIdentifier: "UTC", meal: nil, portionUnit: componentUnit)
+            let product = try XCTUnwrap(try journal.product(snapshotID: "recipe:recipe-1:v1"))
+            XCTAssertEqual(product.labelBasis, basis)
+            // 300 g of an ingredient carrying 0.5 g of protein per g is 150 g over 30 gummies: 5 g each.
+            XCTAssertEqual(product.value(for: "protein"), .known(dec("5"), .g), basis)
+
+            let totals = JournalSnapshotTotals(store: journal)
+            let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+            XCTAssertEqual(recorded["protein"], .known(dec("10"), .g), "two of them: \(basis)")
+        }
+    }
+
     func testNothingKnownThrowsAndWritesNothing() throws {
         let journal = try makeJournal()
         let version = sampleVersion(ingredients: [sampleIngredient("a", amount: "10", perUnit: [:])])

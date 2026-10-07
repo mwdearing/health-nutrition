@@ -326,12 +326,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// The typed amount as the screen shows it, in `quickWaterUnit`.
     ///
-    /// Converted through the display rules and then rounded to the digits a reader of this unit gets, so
-    /// the figure in the field is the same one the button on Today will say and no more precise than
-    /// that: a person who saves what they can read stores what they meant. The rounding is the display
-    /// rounding, so it never turns a non-zero stored amount into a zero in the field.
+    /// A converted figure is rounded to the digits a reader of the unit gets, so the figure in the field
+    /// is the same one the button on Today will say and no more precise than that: a person who saves
+    /// what they can read stores what they meant. The rounding is the display rounding, so it never
+    /// turns a non-zero stored amount into a zero in the field.
+    ///
+    /// Metric shows the millilitres that are stored, so nothing is rounded there: 400.55 mL was typed at
+    /// that precision and rounding it to the digit a converted ounce carries would restate it as 400.6
+    /// in the very field the person is editing.
     public var quickWaterDraftAmount: Decimal {
         let shown = AmountDisplay.display(preferences.quickWaterMilliliters, unit: .mL, system: unitSystem)
+        guard shown.unit != .mL else { return shown.amount }
         return roundedForReading(shown.amount, fractionDigits: AmountDisplay.fractionDigits(for: shown.amount))
     }
 
@@ -340,6 +345,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private func roundedForReading(_ amount: Decimal, fractionDigits: Int) -> Decimal {
         let rounded = DisplayRounding.rounded(amount, fractionDigits: fractionDigits)
         return rounded == 0 && amount != 0 ? amount : rounded
+    }
+
+    /// The millilitres the typed draft stands for, or the stored amount when the field holds something
+    /// that is not a number.
+    ///
+    /// The helper line is about the figure in the field, so it follows the draft rather than the stored
+    /// value: a glass entered but not yet saved is still a glass, and the line describing the previous
+    /// one while a new one is typed would be answering about the wrong amount.
+    private var quickWaterTypedMilliliters: Decimal {
+        guard let typed = AmountParser.parse(quickWaterText) else { return preferences.quickWaterMilliliters }
+        return milliliters(for: typed, in: quickWaterUnit)
     }
 
     /// The quick-water amount as it is currently stored.
@@ -352,12 +368,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// The same amount in the unit the screen is NOT showing, for the helper line under the field.
     ///
+    /// It is read from the typed draft rather than from what is stored, so the line answers for the
+    /// figure in the field the moment it is typed: typing ten under the US system says "= 296 mL"
+    /// before Save is tapped. A field holding something that is not a number has nothing to convert,
+    /// so it falls back to the stored amount rather than showing nothing.
+    ///
     /// Millilitres are read as whole figures there, because a glass size is the thing being set and
     /// "354.9 mL" is a precision nobody asked for; a fluid ounce keeps the digits it is shown with
     /// everywhere else, since 8 fl oz and 8.45 fl oz are different glasses.
     public var quickWaterOtherUnitDisplay: DisplayAmount {
         let other: UnitSystem = unitSystem == .usCustomary ? .metric : .usCustomary
-        let shown = AmountDisplay.display(preferences.quickWaterMilliliters, unit: .mL, system: other)
+        let shown = AmountDisplay.display(quickWaterTypedMilliliters, unit: .mL, system: other)
         let digits = shown.unit == .mL ? 0 : AmountDisplay.fractionDigits(for: shown.amount)
         return DisplayAmount(
             amount: DisplayRounding.rounded(shown.amount, fractionDigits: digits), unit: shown.unit,

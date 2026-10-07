@@ -484,9 +484,9 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         // Nothing filled in at all: both problems are named together, so fixing one and tapping Save
         // again does not meet the same silent refusal.
         XCTAssertFalse(model.save(now: now))
-        XCTAssertNotNil(model.saveBlockedMessage)
-        XCTAssertEqual(model.saveBlockedMessage, model.nameError)
-        XCTAssertEqual(model.saveBlockedMessage, model.amountError)
+        let both = try XCTUnwrap(model.saveBlockedMessage)
+        XCTAssertTrue(both.contains(try XCTUnwrap(model.nameError)), both)
+        XCTAssertTrue(both.contains(try XCTUnwrap(model.amountError)), both)
 
         // One field fixed leaves the other named, and the fixed one is not repeated.
         model.name = "Rolled oats"

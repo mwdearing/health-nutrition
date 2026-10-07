@@ -127,6 +127,11 @@ The rules the screen keeps are short:
   amount-with-its-unit form (`30 g`), has no dimension to agree with — a serving may be weighed, poured or
   counted — and stands as an answer: the parser's question about it is answered either way. The control is
   hidden when there is no serving to correct, which is the case for a panel that stated none.
+- **A counted serving reads with the words a label uses, on both paths.** `Serving size 3 gummies` and
+  `Serving size 2 pieces` become counts, singular or plural, because the number decides the wording and
+  neither spelling is a different unit. A serving size **entered by hand** is read with the same table
+  (`NutritionFactsParser.countedUnit(for:)`), so `3 gummies` typed into the field means what it means on the
+  panel; a word outside the table is still refused.
 - **Every row the parser read an amount for can be corrected, not only a flagged one.** Recognition can
   read one valid number as another valid one — `180` as `130` — and then the parser records no reason,
   because the transcript is perfectly well formed. The row is still wrong, so the screen offers the same

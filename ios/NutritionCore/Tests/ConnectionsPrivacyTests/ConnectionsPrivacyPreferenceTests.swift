@@ -128,15 +128,55 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         model.unitSystem = .usCustomary
         XCTAssertEqual(model.quickWaterText, "8.45")
         // Saving without touching the field stores the same glass of water, not 8.45 mL. The figure goes
-        // through the digits the field can show, so it is compared at that precision.
+        // through the digits the field can show, so what is stored is what 8.45 fl oz stands for and not
+        // exactly the 250 mL it started as: 250 mL is 8.4535... fl oz, and the field carries two digits.
         XCTAssertTrue(model.saveQuickWaterAmount())
         XCTAssertEqual(
-            DisplayRounding.rounded(preferences.quickWaterMilliliters, fractionDigits: 1),
-            DisplayRounding.rounded(Decimal(250), fractionDigits: 1))
+            preferences.quickWaterMilliliters,
+            Decimal(string: "249.896324803125", locale: AmountParser.locale))
         XCTAssertNotEqual(preferences.quickWaterMilliliters, Decimal(string: "8.45", locale: AmountParser.locale))
+        // Close enough to the original glass to be that glass, at the precision the field shows.
+        XCTAssertEqual(
+            DisplayRounding.rounded(preferences.quickWaterMilliliters, fractionDigits: 0), Decimal(250))
 
+        // And back under metric the field states that stored figure rather than the 250 it began as,
+        // because the round trip went through a rounded figure and rounding is not undone by switching.
         model.unitSystem = .metric
-        XCTAssertEqual(model.quickWaterText, "250")
+        XCTAssertEqual(
+            AmountParser.parse(model.quickWaterText), preferences.quickWaterMilliliters,
+            "the field states the stored millilitres, not the 250 mL the round trip started from")
+        XCTAssertNotEqual(model.quickWaterText, "250")
+    }
+
+    /// The helper line answers for the figure in the field, not for the one last saved: a glass typed
+    /// in fluid ounces says what it is in millilitres straight away, before Save is tapped at all.
+    /// Reading the stored value instead would leave the line describing the previous glass while the
+    /// field showed a different one.
+    func testQuickWaterEquivalenceFollowsTheTypedDraftBeforeItIsSaved() throws {
+        let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(250))
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+        model.unitSystem = .usCustomary
+
+        model.quickWaterText = "10"
+
+        // Ten fluid ounces is 295.735295625 mL, read as whole millilitres. Nothing is stored yet.
+        XCTAssertEqual(model.quickWaterEquivalenceText, "= 296 mL")
+        XCTAssertEqual(model.quickWaterEquivalenceAccessibilityLabel, "= 296 millilitres")
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(250))
+    }
+
+    /// Metric shows the millilitres that are stored, so the field states them at the digits they were
+    /// entered with. The ounce display's rounding belongs to a converted figure, and applying it to an
+    /// unconverted one would restate 400.55 mL as 400.6 in the field the person is still editing.
+    func testQuickWaterDraftKeepsTheMillilitresAsTypedUnderMetric() throws {
+        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-metric"))
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+
+        model.quickWaterText = "400.55"
+        XCTAssertTrue(model.saveQuickWaterAmount())
+
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "400.55", locale: AmountParser.locale))
+        XCTAssertEqual(model.quickWaterText, "400.55")
     }
 
     /// An amount that is not a number is left alone when the system changes: there is nothing to convert,
@@ -196,10 +236,14 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         let store = try makeStore()
         let model = ConnectionsPrivacyViewModel(store: store, erasers: [store], preferences: preferences)
         model.unitSystem = .usCustomary
+        // Six hundred fluid ounces, which is what the field reads in under the US system, stored as the
+        // millilitres they stand for.
         model.quickWaterText = "600"
         XCTAssertTrue(model.saveQuickWaterAmount())
         XCTAssertEqual(preferences.unitSystem, .usCustomary)
-        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(600))
+        XCTAssertEqual(
+            preferences.quickWaterMilliliters,
+            Decimal(string: "17744.1177375", locale: AmountParser.locale))
 
         XCTAssertTrue(model.eraseAllData())
 
@@ -228,9 +272,13 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
             unitSystem: .usCustomary, quickWaterMilliliters: Decimal(600))
         let store = try makeStore()
         let model = ConnectionsPrivacyViewModel(store: store, erasers: [store], preferences: preferences)
+        // The screen opens in the US system it was given, so the field reads fluid ounces and the
+        // stored millilitres are what those ounces stand for.
         model.quickWaterText = "750"
         XCTAssertTrue(model.saveQuickWaterAmount())
-        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(750))
+        XCTAssertEqual(
+            preferences.quickWaterMilliliters,
+            Decimal(string: "22180.147171875", locale: AmountParser.locale))
 
         XCTAssertTrue(model.eraseAllData())
 

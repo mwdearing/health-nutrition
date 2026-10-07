@@ -38,7 +38,10 @@ public enum IntakeContextSnapshotBasis: Equatable {
         if compact.contains("per100g") { return .perHundred(.g) }
         // Any other "per 100 <something>" is a basis the journal cannot resolve against a logged quantity.
         if compact.contains("per100") { return nil }
-        for unit in [MeasureUnit.serving, .scoop, .tablet, .capsule] {
+        // `piece` and `gummy` are counted units like the rest, so "per gummy" scales exactly as
+        // "per serving" does. They are checked after the ambiguous spellings above, which none of them
+        // contains.
+        for unit in [MeasureUnit.serving, .scoop, .tablet, .capsule, .piece, .gummy] {
             if compact.contains("per" + unit.symbol.lowercased()) { return .perCount(unit) }
         }
         return nil

@@ -263,6 +263,28 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(40), .g))
     }
 
+    /// A recipe can yield counted things rather than servings, so "per gummy" and "per piece" are
+    /// per-count bases like "per serving". They scale by the number logged here too: a basis the
+    /// builder cannot resolve would leave the day's protein unknown, and a person who logged two
+    /// gummies would see their recipe contribute nothing at all.
+    func testACountedBasisOtherThanAServingMultipliesByTheNumberLogged() throws {
+        for (basis, unit) in [("Per gummy; yield 30 gummy", MeasureUnit.gummy),
+                              ("Per piece; yield 30 piece", MeasureUnit.piece)] {
+            let store = try makeStore()
+            let counted = ProductDefinition(
+                snapshotID: "snapshot-counted", productID: "product-counted", name: "Sample gummies",
+                labelBasis: basis, catalogOrigin: "test", catalogVersion: "1",
+                nutrients: ["protein": .known(Decimal(5), .g)])
+            try addFood(store, name: "Gummies", id: "gummies", at: when, amount: 2, unit: unit, product: counted)
+            let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+            let totals = try DailyTotalsBuilder.totals(
+                for: [intake], store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+
+            XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(10), .g), basis)
+        }
+    }
+
     /// A barcode lookup or a label panel that knows how big a serving is stores "per serving (30 g)",
     /// and the entry records the food as an amount. The stated serving and the amount logged together
     /// say how many servings were eaten, so a per-count basis the log cannot answer is not left
