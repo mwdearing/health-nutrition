@@ -32,6 +32,12 @@ public protocol DisplayPreferencesWriting: DisplayPreferences {
     func setUnitSystem(_ system: UnitSystem)
     /// Ignores an amount that is not a positive decimal, so a bad value can never be stored.
     func setQuickWaterMilliliters(_ milliliters: Decimal)
+    /// Puts both settings back to the defaults a person has before changing anything, removing what
+    /// was stored rather than writing the defaults over it.
+    ///
+    /// Erase all data needs this: it promises to remove everything this app stores on the device, and
+    /// a unit system and a glass size are stored values like any other.
+    func resetToDefaults()
 }
 
 /// The defaults a person has before they change anything: metric, and a 250 mL glass.
@@ -92,6 +98,13 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting {
         defaults.set(
             NSDecimalNumber(decimal: milliliters).stringValue, forKey: quickWaterKey)
     }
+
+    /// Removes both keys, so nothing of this app's remains in the domain. The getters already read an
+    /// absent key as the default, so removing is enough and the defaults are not written back.
+    public func resetToDefaults() {
+        defaults.removeObject(forKey: unitSystemKey)
+        defaults.removeObject(forKey: quickWaterKey)
+    }
 }
 
 /// The preferences held in memory. For tests and for previews, so neither needs a defaults domain.
@@ -114,5 +127,10 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting {
     public func setQuickWaterMilliliters(_ milliliters: Decimal) {
         guard !milliliters.isNaN, milliliters > 0 else { return }
         quickWaterMilliliters = milliliters
+    }
+
+    public func resetToDefaults() {
+        unitSystem = DisplayPreferenceDefaults.unitSystem
+        quickWaterMilliliters = DisplayPreferenceDefaults.quickWaterMilliliters
     }
 }

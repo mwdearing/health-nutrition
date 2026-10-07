@@ -28,6 +28,10 @@ Plus, on the screen that offers the action:
   be terminated after an export and relaunched into a screen that has no URL for the file it left, so
   the erase sweeps the directory. A file it cannot delete is reported as a failed erase rather than
   quietly skipped. See [journal export](journal-export.md).
+- The display preferences: the unit system and the quick-water amount are stored values like any other,
+  so both `display.` keys are removed from the defaults domain rather than overwritten with their
+  defaults, and the screen is put back to what a fresh install shows. See
+  [today-screen.md](today-screen.md).
 - The screen's own state: the entry count goes back to zero and the export is no longer offered.
 
 The stores stay open afterwards. The app carries on with an empty journal, and a new entry, favorite
@@ -71,3 +75,6 @@ of reporting a successful erase.
 injected store runs, every export file in the temporary directory is removed including one the screen
 never wrote, a file that cannot be deleted is reported as a failed erase, and a store that fails is
 reported while the rest still run.
+`ios/NutritionCore/Tests/ConnectionsPrivacyTests/ConnectionsPrivacyPreferenceTests.swift` covers the
+display preferences: both keys are removed from the defaults domain by the erase, the screen goes back
+to the defaults, and the in-memory implementation clears the same way.

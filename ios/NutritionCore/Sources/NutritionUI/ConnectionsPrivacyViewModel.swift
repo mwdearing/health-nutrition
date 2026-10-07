@@ -197,7 +197,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// changed, so a unit chosen here is the unit the other screens read on the next reload.
     @Published public var unitSystem: UnitSystem {
         didSet {
-            guard unitSystem != oldValue else { return }
+            guard unitSystem != oldValue, !isPublishingStoredPreference else { return }
             preferences.setUnitSystem(unitSystem)
         }
     }
@@ -205,6 +205,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public var quickWaterText: String
     /// Why the typed quick-water amount was refused, or nil when it is acceptable.
     @Published public private(set) var quickWaterError: String?
+    /// True while the screen is taking its published values FROM the preference store rather than from
+    /// a person, so putting the store back to its defaults does not write those defaults straight out
+    /// again as though they had just been chosen.
+    private var isPublishingStoredPreference = false
 
     /// What the quick-water field refuses, in the words a person can act on.
     public static let quickWaterInvalidMessage =
@@ -417,11 +421,29 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // The handle this screen was holding is one of those files, or is already gone. Clearing it
         // cannot fail: the sweep above has removed whatever was still there.
         forgetExportFile()
+        // The unit system and the glass size are stored values like any other, so they go with
+        // everything else. Clearing them cannot fail either, and the screen is put back to the
+        // defaults rather than left showing settings the erase has removed.
+        forgetDisplayPreferences()
         entryCount = 0
         exportState = .idle
         errorMessage = failed ? Self.eraseFailedMessage : nil
         eraseGeneration += 1
         return !failed
+    }
+
+    /// Puts the display preferences back to their defaults and republishes that state, so the screen
+    /// shows what a person sees on a fresh install rather than the settings just erased.
+    ///
+    /// The published values are read back from the store rather than set to literals, so an
+    /// implementation that refuses to clear something would be visible here rather than papered over.
+    private func forgetDisplayPreferences() {
+        preferences.resetToDefaults()
+        isPublishingStoredPreference = true
+        unitSystem = preferences.unitSystem
+        quickWaterText = DecimalFormatting.text(preferences.quickWaterMilliliters)
+        quickWaterError = nil
+        isPublishingStoredPreference = false
     }
 
     /// Removes every `journal-export-*.json` in the temporary directory and reports whether all of them

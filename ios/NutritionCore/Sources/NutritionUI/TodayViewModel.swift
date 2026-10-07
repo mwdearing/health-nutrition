@@ -191,13 +191,15 @@ public final class TodayViewModel: ObservableObject {
 
     /// The same line, spelled out for a screen reader: "Add 250 millilitres of water".
     public var quickWaterAccessibilityLabel: String {
-        "Add \(DecimalFormatting.text(quickWaterDisplay.amount)) "
+        "Add \(quickWaterDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: quickWaterDisplay.unit)) of water"
     }
 
-    /// Spoken summary of the water total for assistive technology.
+    /// Spoken summary of the water total for assistive technology. Built from the same bound-aware
+    /// figures as the label, so an amount too small for the shown unit is spoken as less than that
+    /// rather than as a zero that is not there.
     public var waterAccessibilityValue: String {
-        "\(DecimalFormatting.text(waterTotalDisplay.amount)) "
+        "\(waterTotalDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
     }
 

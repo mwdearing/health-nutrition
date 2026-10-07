@@ -109,4 +109,57 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertTrue(model.saveQuickWaterAmount())
         XCTAssertEqual(model.quickWaterMilliliters, Decimal(350))
     }
+
+    /// Erase all data promises to remove everything this app stores on the device, and a unit system
+    /// and a glass size are stored values like any other: both keys are removed from the defaults
+    /// domain, not overwritten, and the screen is put back to what a fresh install shows.
+    func testEraseAllDataRemovesTheStoredUnitPreferencesAndResetsTheScreen() throws {
+        let defaults = makeSuite("erase-units")
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        let store = try makeStore()
+        let model = ConnectionsPrivacyViewModel(store: store, erasers: [store], preferences: preferences)
+        model.unitSystem = .usCustomary
+        model.quickWaterText = "600"
+        XCTAssertTrue(model.saveQuickWaterAmount())
+        XCTAssertEqual(preferences.unitSystem, .usCustomary)
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(600))
+
+        XCTAssertTrue(model.eraseAllData())
+
+        // The keys themselves are gone, so nothing of this app's is left in the domain.
+        let unitKey = UserDefaultsDisplayPreferences.keyPrefix + "unitSystem"
+        let waterKey = UserDefaultsDisplayPreferences.keyPrefix + "quickWaterMilliliters"
+        XCTAssertNil(defaults.object(forKey: unitKey))
+        XCTAssertNil(defaults.object(forKey: waterKey))
+        XCTAssertEqual(preferences.unitSystem, DisplayPreferenceDefaults.unitSystem)
+        XCTAssertEqual(preferences.quickWaterMilliliters, DisplayPreferenceDefaults.quickWaterMilliliters)
+        // The screen shows the defaults rather than the settings that were just erased.
+        XCTAssertEqual(model.unitSystem, .metric)
+        XCTAssertEqual(model.quickWaterText, "250")
+        XCTAssertNil(model.quickWaterError)
+        // A screen built after the erase reads the same defaults, not the erased settings.
+        let reopened = ConnectionsPrivacyViewModel(
+            store: store, erasers: [store], preferences: UserDefaultsDisplayPreferences(defaults: defaults))
+        XCTAssertEqual(reopened.unitSystem, .metric)
+        XCTAssertEqual(reopened.quickWaterText, "250")
+    }
+
+    /// The in-memory implementation clears the same way, so the two cannot disagree about what an
+    /// erase leaves behind.
+    func testEraseAllDataClearsTheInMemoryPreferencesToo() throws {
+        let preferences = InMemoryDisplayPreferences(
+            unitSystem: .usCustomary, quickWaterMilliliters: Decimal(600))
+        let store = try makeStore()
+        let model = ConnectionsPrivacyViewModel(store: store, erasers: [store], preferences: preferences)
+        model.quickWaterText = "750"
+        XCTAssertTrue(model.saveQuickWaterAmount())
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(750))
+
+        XCTAssertTrue(model.eraseAllData())
+
+        XCTAssertEqual(preferences.unitSystem, DisplayPreferenceDefaults.unitSystem)
+        XCTAssertEqual(preferences.quickWaterMilliliters, DisplayPreferenceDefaults.quickWaterMilliliters)
+        XCTAssertEqual(model.unitSystem, .metric)
+        XCTAssertEqual(model.quickWaterText, "250")
+    }
 }

@@ -312,9 +312,13 @@ final class QuickWaterPreferenceTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
     func testQuickWaterPreferenceAmountIsWhatTheButtonAddsAndSays() throws {
-        let store = RecordingStore(makeID: { "water-1" })
+        let store = RecordingStore(makeID: { "unused" })
         let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(300))
-        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC", preferences: preferences)
+        // The id is the model's to make, so it is given to the model; the store double only records
+        // what the model wrote. Reading the id back from the store, as the Today tests do, would pin
+        // nothing about the preference these tests are about.
+        let model = TodayViewModel(
+            store: store, timeZoneIdentifier: "UTC", makeID: { "water-1" }, preferences: preferences)
 
         XCTAssertEqual(model.quickWaterLabel, "Add 300 mL water")
         XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 300 millilitres of water")
@@ -329,10 +333,11 @@ final class QuickWaterPreferenceTests: XCTestCase {
 
     /// Under US customary the stored amount is still millilitres and the label follows the preference.
     func testQuickWaterPreferenceUnderUSCustomarySaysFluidOuncesAndStoresMillilitres() throws {
-        let store = RecordingStore(makeID: { "water-1" })
+        let store = RecordingStore(makeID: { "unused" })
         let preferences = InMemoryDisplayPreferences(
             unitSystem: .usCustomary, quickWaterMilliliters: Decimal(300))
-        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC", preferences: preferences)
+        let model = TodayViewModel(
+            store: store, timeZoneIdentifier: "UTC", makeID: { "water-1" }, preferences: preferences)
 
         XCTAssertEqual(model.quickWaterLabel, "Add 10.1 fl oz water")
         XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 10.1 fluid ounces of water")
@@ -346,9 +351,10 @@ final class QuickWaterPreferenceTests: XCTestCase {
 
     /// A preference changed after the model was built is used by the next tap, not by the next launch.
     func testQuickWaterPreferenceChangedAfterBuildIsUsedByTheNextTap() throws {
-        let store = RecordingStore(makeID: { "water-1" })
+        let store = RecordingStore(makeID: { "unused" })
         let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(250))
-        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC", preferences: preferences)
+        let model = TodayViewModel(
+            store: store, timeZoneIdentifier: "UTC", makeID: { "water-1" }, preferences: preferences)
         XCTAssertEqual(model.quickWaterLabel, "Add 250 mL water")
 
         preferences.setQuickWaterMilliliters(Decimal(500))
@@ -356,5 +362,40 @@ final class QuickWaterPreferenceTests: XCTestCase {
         _ = model.quickAddWater(now: now)
         let component = try XCTUnwrap(store.revisions(of: "water-1").first?.components.first)
         XCTAssertEqual(component.amount, Decimal(500))
+    }
+
+    /// The spoken strings are built from the same figures as the visible ones, so a volume too small
+    /// for fluid ounces is spoken as less than that rather than as a zero that is not there.
+    func testQuickWaterSpokenStringsHonourTheSmallestShownBound() throws {
+        let store = RecordingStore(makeID: { "unused" })
+        let preferences = InMemoryDisplayPreferences(
+            unitSystem: .usCustomary, quickWaterMilliliters: Decimal(string: "0.001")!)
+        let model = TodayViewModel(
+            store: store, timeZoneIdentifier: "UTC", makeID: { "water-1" }, preferences: preferences)
+
+        XCTAssertEqual(model.quickWaterDisplay.text, "< 0.0001 fl oz")
+        XCTAssertEqual(model.quickWaterLabel, "Add < 0.0001 fl oz water")
+        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add less than 0.0001 fluid ounces of water")
+
+        XCTAssertNotNil(model.quickAddWater(now: now))
+        XCTAssertEqual(model.waterTotalDisplay.text, "< 0.0001 fl oz")
+        XCTAssertEqual(model.waterAccessibilityValue, "less than 0.0001 fluid ounces today")
+        // What was written is still the exact stored amount: nothing was rounded on the way in.
+        let component = try XCTUnwrap(store.revisions(of: "water-1").first?.components.first)
+        XCTAssertEqual(component.amount, Decimal(string: "0.001")!)
+        XCTAssertEqual(component.unit, .mL)
+    }
+
+    /// A volume that reads as a number is still spoken as that number.
+    func testQuickWaterSpokenStringsStillUseTheFiguresThemselves() throws {
+        let store = RecordingStore(makeID: { "unused" })
+        let preferences = InMemoryDisplayPreferences(
+            unitSystem: .usCustomary, quickWaterMilliliters: Decimal(300))
+        let model = TodayViewModel(
+            store: store, timeZoneIdentifier: "UTC", makeID: { "water-1" }, preferences: preferences)
+
+        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 10.1 fluid ounces of water")
+        XCTAssertNotNil(model.quickAddWater(now: now))
+        XCTAssertEqual(model.waterAccessibilityValue, "10.1 fluid ounces today")
     }
 }

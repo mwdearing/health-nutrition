@@ -47,6 +47,15 @@ public struct DisplayAmount: Equatable {
         }
         return "< \(DecimalFormatting.text(AmountDisplay.smallestShown)) \(unit.symbol)"
     }
+
+    /// The figures alone, for a sentence that spells the unit out in words.
+    ///
+    /// Built from the same bound as `text`, because a screen reader hearing "0 fluid ounces" for an
+    /// amount that is not zero is the same wrong figure in a different voice.
+    public var spokenAmount: String {
+        guard isBelowSmallest else { return DecimalFormatting.text(amount) }
+        return "less than \(DecimalFormatting.text(AmountDisplay.smallestShown))"
+    }
 }
 
 /// How a stored amount is shown under a unit system.

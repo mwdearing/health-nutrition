@@ -62,7 +62,17 @@ What the preference changes, and what it does not:
 - **Not stored, not exported, not delivered**: because `oz` and `fl oz` never reach storage, the journal
   export, the digests, HealthKit delivery and the relay encoder are metric whatever the unit system.
   The quick-add button writes the configured amount in mL whatever the unit system, so an export of a
-  US-customary journal is byte-identical to a metric one.
+  US-customary journal is byte-identical to a metric one. The recipe editor is metric for the same
+  reason and offers neither ounce: a recipe yield becomes the component of a logged entry through
+  `RecipeLogger.portionQuantity`, which has no normalisation step of its own, so an ounce yield would
+  be stored as an ounce.
+- **Erased with everything else**: the unit system and the quick-water amount are stored values, so
+  **Erase all data** removes both `display.` keys rather than overwriting them with the defaults. See
+  [erase-all-data.md](erase-all-data.md).
+
+The spoken strings are built from the same figures as the visible ones, through
+`DisplayAmount.spokenAmount`, so an amount too small for the unit is read as "less than 0.0001" rather
+than announced as a zero that is not there.
 
 The button text and its accessibility label both come from `TodayViewModel.quickWaterLabel` and
 `quickWaterAccessibilityLabel`, so they cannot drift from the amount the button writes.
