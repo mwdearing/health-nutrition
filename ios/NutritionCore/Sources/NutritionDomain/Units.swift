@@ -25,7 +25,22 @@ private func power10(_ exponent: Int) -> Decimal {
     Decimal(sign: .plus, exponent: exponent, significand: 1)
 }
 
-/// A unit from the canonical registry. Factors are exact powers of ten, so conversion never uses division.
+/// A unit whose factor is written out in full rather than as a power of ten, with its reciprocal
+/// computed to the full precision a `Decimal` carries.
+///
+/// Both directions are then exact decimals, so converting stays two multiplications: one ounce is
+/// exactly 28.349523125 g, and that many grams is exactly one ounce again.
+private func fixedFactorUnit(symbol: String, dimension: UnitDimension, _ text: String) -> MeasureUnit {
+    let toBase = Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))!
+    return MeasureUnit(symbol: symbol, dimension: dimension, toBase: toBase, fromBase: 1 / toBase)
+}
+
+/// A unit from the canonical registry.
+///
+/// `toBase` and `fromBase` are exact decimals, so a conversion is two multiplications and never a
+/// division of the amount being converted. Most factors are exact powers of ten; the US customary ones
+/// are exact decimals of their own, and their reciprocal is carried to full decimal precision, so a
+/// round trip through the base unit is exact for the values a person enters.
 public struct MeasureUnit: Sendable, Hashable, Codable {
     public let symbol: String
     public let dimension: UnitDimension
@@ -60,8 +75,14 @@ extension MeasureUnit {
     public static let mg = MeasureUnit(symbol: "mg", dimension: .mass, toBase: power10(-3), fromBase: power10(3))
     public static let mcg = MeasureUnit(symbol: "mcg", dimension: .mass, toBase: power10(-6), fromBase: power10(6))
     public static let kg = MeasureUnit(symbol: "kg", dimension: .mass, toBase: power10(3), fromBase: power10(-3))
+    /// One avoirdupois ounce: exactly 28.349523125 g. A weight, so it never converts to a volume without
+    /// a density, exactly like `g` itself.
+    public static let oz = fixedFactorUnit(symbol: "oz", dimension: .mass, "28.349523125")
     public static let mL = MeasureUnit(symbol: "mL", dimension: .volume, toBase: power10(0), fromBase: power10(0))
     public static let L = MeasureUnit(symbol: "L", dimension: .volume, toBase: power10(3), fromBase: power10(-3))
+    /// One US fluid ounce: exactly 29.5735295625 mL. A distinct symbol from `oz`, so a weight is never
+    /// read as a measure.
+    public static let flOz = fixedFactorUnit(symbol: "fl oz", dimension: .volume, "29.5735295625")
     public static let kcal = MeasureUnit(symbol: "kcal", dimension: .energy, toBase: power10(0), fromBase: power10(0))
     public static let serving = MeasureUnit(symbol: "serving", dimension: .count, toBase: power10(0), fromBase: power10(0))
     public static let scoop = MeasureUnit(symbol: "scoop", dimension: .count, toBase: power10(0), fromBase: power10(0))
@@ -72,7 +93,7 @@ extension MeasureUnit {
 
 public enum UnitRegistry: Sendable {
     public static let all: [MeasureUnit] = [
-        .g, .mg, .mcg, .kg, .mL, .L, .kcal, .serving, .scoop, .tablet, .capsule, .iu,
+        .g, .mg, .mcg, .kg, .oz, .mL, .L, .flOz, .kcal, .serving, .scoop, .tablet, .capsule, .iu,
     ]
 
     public static func unit(for symbol: String) throws -> MeasureUnit {

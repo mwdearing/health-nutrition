@@ -55,8 +55,10 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(try UnitRegistry.unit(for: "mcg"), MeasureUnit.mcg)
         XCTAssertEqual(try UnitRegistry.unit(for: "IU"), MeasureUnit.iu)
         XCTAssertEqual(try MeasureUnit(symbol: "mL"), MeasureUnit.mL)
-        XCTAssertEqual(UnitRegistry.units(in: .mass).count, 4)
-        XCTAssertEqual(UnitRegistry.units(in: .volume).count, 2)
+        XCTAssertEqual(try MeasureUnit(symbol: "oz"), MeasureUnit.oz)
+        XCTAssertEqual(try MeasureUnit(symbol: "fl oz"), MeasureUnit.flOz)
+        XCTAssertEqual(UnitRegistry.units(in: .mass).count, 5)
+        XCTAssertEqual(UnitRegistry.units(in: .volume).count, 3)
         XCTAssertEqual(UnitRegistry.units(in: .energy).count, 1)
         XCTAssertEqual(UnitRegistry.units(in: .count).count, 4)
         XCTAssertEqual(UnitRegistry.units(in: .internationalUnit).count, 1)
@@ -167,6 +169,84 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(capsules.value, try dec("2"))
     }
 
+    /// One avoirdupois ounce is exactly 28.349523125 g. Multiplying by that factor is exact, so a
+    /// weight in ounces lands on the gram exactly.
+    func testOuncesConvertExactlyBothWays() throws {
+        XCTAssertEqual(MeasureUnit.oz.dimension, UnitDimension.mass)
+        XCTAssertEqual(try MeasureUnit(symbol: "oz"), MeasureUnit.oz)
+
+        let grams = try qty("8", .oz).converted(to: .g)
+        XCTAssertEqual(grams.value, try dec("226.796185"))
+        XCTAssertEqual(grams.unit, MeasureUnit.g)
+        XCTAssertEqual(try qty("1", .oz).converted(to: .mg).value, try dec("28349.523125"))
+        XCTAssertEqual(try qty("1", .kg).converted(to: .g).value, try dec("1000"))
+
+        // Grams to ounces divides by the same factor. The reciprocal is carried at the full precision
+        // a Decimal holds, so the quotient is exact to beyond anything displayed and a round trip
+        // returns the number that was converted.
+        let ounces = try qty("226.796185", .g).converted(to: .oz)
+        XCTAssertEqual(ounces.unit, MeasureUnit.oz)
+        XCTAssertEqual(DisplayRounding.rounded(ounces.value, fractionDigits: 10), try dec("8"))
+    }
+
+    /// A round trip through grams or ounces returns the amount that went in, for sizes a person
+    /// actually enters. This is the guarantee the display conversion rests on: a value converted for
+    /// showing and converted back does not drift.
+    func testOuncesRoundTripExactlyBothWays() throws {
+        for text in ["0.25", "1", "16", "1000"] {
+            let grams = try qty(text, .g)
+            XCTAssertEqual(try grams.converted(to: .oz).converted(to: .g).value, try dec(text), text)
+        }
+        for text in ["0.5", "1", "2", "16", "40", "250", "300"] {
+            let ounces = try qty(text, .oz)
+            XCTAssertEqual(try ounces.converted(to: .g).converted(to: .oz).value, try dec(text), text)
+        }
+    }
+
+    /// One US fluid ounce is exactly 29.5735295625 mL. `fl oz` is a separate symbol from `oz`, so a
+    /// measure is never read as a weight.
+    func testFluidOuncesConvertExactlyBothWays() throws {
+        XCTAssertEqual(MeasureUnit.flOz.dimension, UnitDimension.volume)
+        XCTAssertEqual(try MeasureUnit(symbol: "fl oz"), MeasureUnit.flOz)
+        XCTAssertNotEqual(MeasureUnit.flOz.symbol, MeasureUnit.oz.symbol)
+
+        let milliliters = try qty("8", .flOz).converted(to: .mL)
+        XCTAssertEqual(milliliters.value, try dec("236.5882365"))
+        XCTAssertEqual(milliliters.unit, MeasureUnit.mL)
+
+        let fluidOunces = try qty("236.5882365", .mL).converted(to: .flOz)
+        XCTAssertEqual(fluidOunces.unit, MeasureUnit.flOz)
+        XCTAssertEqual(DisplayRounding.rounded(fluidOunces.value, fractionDigits: 10), try dec("8"))
+
+        for text in ["0.25", "1", "16", "1000"] {
+            let millilitersOf = try qty(text, .mL)
+            XCTAssertEqual(try millilitersOf.converted(to: .flOz).converted(to: .mL).value, try dec(text), text)
+        }
+        for text in ["0.5", "1", "2", "16", "250", "300"] {
+            let ouncesOf = try qty(text, .flOz)
+            XCTAssertEqual(try ouncesOf.converted(to: .mL).converted(to: .flOz).value, try dec(text), text)
+        }
+    }
+
+    /// The two new units do not widen the registry's shape: mass and volume gain one each, and an
+    /// ounce still never converts to a volume without a density.
+    func testOuncesKeepTheRegistryShapeAndStillNeedADensityAcrossDimensions() throws {
+        XCTAssertEqual(UnitRegistry.units(in: .mass).count, 5)
+        XCTAssertEqual(UnitRegistry.units(in: .volume).count, 3)
+        XCTAssertTrue(UnitRegistry.units(in: .mass).contains(.oz))
+        XCTAssertTrue(UnitRegistry.units(in: .volume).contains(.flOz))
+        XCTAssertEqual(Set(UnitRegistry.all.map(\.symbol)).count, UnitRegistry.all.count)
+        XCTAssertThrowsError(try qty("1", .oz).converted(to: .mL)) { error in
+            XCTAssertEqual(error as? UnitError, UnitError.missingDensity(from: .oz, to: .mL))
+        }
+        XCTAssertThrowsError(try qty("100", .mL).converted(to: .oz)) { error in
+            XCTAssertEqual(error as? UnitError, UnitError.missingDensity(from: .mL, to: .oz))
+        }
+        // A fluid ounce is a volume, so it converts across to mass with a density like any other.
+        let grams = try qty("1", .flOz).converted(to: .g, density: try dec("1"))
+        XCTAssertEqual(grams.value, try dec("29.5735295625"))
+    }
+
     func testUnknownUnitSymbolRejected() throws {
         XCTAssertThrowsError(try MeasureUnit(symbol: "furlong")) { error in
             XCTAssertEqual(error as? UnitError, UnitError.unknownSymbol("furlong"))
@@ -178,5 +258,12 @@ final class UnitsTests: XCTestCase {
             XCTAssertEqual(error as? UnitError, UnitError.unknownSymbol("kJ"))
         }
         XCTAssertEqual(try MeasureUnit(symbol: "kcal"), MeasureUnit.kcal)
+        // Ounces are in the registry now, so the near misses are what a person would still be refused.
+        XCTAssertThrowsError(try MeasureUnit(symbol: "lb")) { error in
+            XCTAssertEqual(error as? UnitError, UnitError.unknownSymbol("lb"))
+        }
+        XCTAssertThrowsError(try MeasureUnit(symbol: "oz ")) { error in
+            XCTAssertEqual(error as? UnitError, UnitError.unknownSymbol("oz "))
+        }
     }
 }

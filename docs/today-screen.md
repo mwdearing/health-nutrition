@@ -10,8 +10,9 @@ project yet; the app target will wire `NutritionUI` later. Tests cover the view 
   barcode lookup yet.
 
 ## Behaviour
-- **Quick water** writes one intake through `JournalStore.create` (category `water`, component `water`, 250 mL by
-  default, amount as `Decimal`). The store queues the outbox operations; this layer never delivers anything.
+- **Quick water** writes one intake through `JournalStore.create` (category `water`, component `water`, the
+  configured amount in mL, amount as `Decimal`). The store queues the outbox operations; this layer never
+  delivers anything. The amount is configurable: see [Units and the quick-water amount](#units-and-the-quick-water-amount).
 - **Undo** is available for 10 seconds, measured with a clock value passed in by the caller. It calls
   `JournalStore.delete(intakeID:now:)`, so history is kept and delete operations are queued. After 10 seconds it is
   gone.
@@ -26,6 +27,35 @@ project yet; the app target will wire `NutritionUI` later. Tests cover the view 
 - **Invalid time zone**: a stored intake whose time zone identifier is not a valid time zone is left out of Today (no
   row, not in the water total or coverage) and counted in `skippedIntakeCount`, which is reset on each load. There is no
   fallback to the current time zone for stored intakes.
+
+## Units and the quick-water amount
+
+Two display preferences live in `ios/NutritionCore/Sources/NutritionUI/DisplayPreferences.swift`:
+`UnitSystem` (metric or US customary) and the quick-water amount in mL. The defaults are metric and
+250 mL. `UserDefaultsDisplayPreferences` persists them under namespaced `display.` keys, written
+synchronously; `InMemoryDisplayPreferences` is the in-memory implementation for tests. The app builds
+one `UserDefaultsDisplayPreferences` in `AppServices` and passes it to every screen, so a change made
+on one screen is read by the next.
+
+Where they are set: the **Units** section on the Connections and privacy screen
+(`ConnectionsPrivacyView`), reachable from the Library tab's Connections section. It offers a
+unit-system picker and a quick-water amount field. The amount is validated with the same POSIX parser
+as Add intake and must be above zero; anything else is refused with a message and the stored value is
+left alone.
+
+What the preference changes, and what it does not:
+
+- **Offered**: the Add-intake `Picker("Unit")` lists the registry's whole set for metric, and `oz` and
+  `fl oz` first for US customary. Both are always available.
+- **Displayed**: mass and volume amounts on the Today lines, the water total, both quick-water button
+  strings and the entry detail amounts are converted (`g`→`oz`, `mL`→`fl oz`) and rounded to one
+  fraction digit with `DisplayRounding`. Energy, counts and international units are shown as stored.
+- **Not stored, not exported, not delivered**: storage, the journal export and HealthKit delivery stay
+  metric. The quick-add button writes the configured amount in mL whatever the unit system, so an
+  export of a US-customary journal is byte-identical to a metric one.
+
+The button text and its accessibility label both come from `TodayViewModel.quickWaterLabel` and
+`quickWaterAccessibilityLabel`, so they cannot drift from the amount the button writes.
 
 ## Coverage wording
 Each tracked nutrient (potassium, sodium, protein, fiber by default) shows `"<missing> of <total> foods lack <nutrient>"`,

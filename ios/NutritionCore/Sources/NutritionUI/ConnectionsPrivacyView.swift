@@ -65,6 +65,37 @@ public struct ConnectionsPrivacyView: View {
                         .accessibilityLabel(message)
                 }
             }
+            Section(ConnectionsPrivacyViewModel.unitsSectionTitle) {
+                Picker(ConnectionsPrivacyViewModel.unitSystemTitle, selection: $model.unitSystem) {
+                    ForEach(model.unitSystems, id: \.self) { system in
+                        Text(ConnectionsPrivacyViewModel.label(for: system)).tag(system)
+                    }
+                }
+                .font(.body)
+                .accessibilityLabel(ConnectionsPrivacyViewModel.unitSystemTitle)
+                TextField(ConnectionsPrivacyViewModel.quickWaterFieldLabel, text: $model.quickWaterText)
+                    .font(.body)
+                    .accessibilityLabel(ConnectionsPrivacyViewModel.quickWaterFieldLabel)
+                    .accessibilityHint(
+                        "How much the Add water button on Today adds. It must be above zero.")
+                    .onSubmit { model.saveQuickWaterAmount() }
+                Text("Shown as \(model.quickWaterDisplay.text) on Today.")
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .accessibilityLabel("Quick-add water is shown as \(model.quickWaterDisplay.text)")
+                if let message = model.quickWaterError {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.error)
+                        .accessibilityLabel(message)
+                }
+                Button("Save water amount") {
+                    model.saveQuickWaterAmount()
+                }
+                .font(.body)
+                .accessibilityLabel("Save the quick-add water amount")
+                .accessibilityHint("Checks the amount and uses it for the Add water button on Today")
+            }
             Section("Connections") {
                 Toggle(isOn: $model.appleHealthEnabled) {
                     connectionRow(

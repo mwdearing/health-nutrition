@@ -193,6 +193,28 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public var appleHealthEnabled = false
     @Published public var healthRelayEnabled = false
 
+    /// The unit system shown on screen. Written through to the preference store as soon as it is
+    /// changed, so a unit chosen here is the unit the other screens read on the next reload.
+    @Published public var unitSystem: UnitSystem {
+        didSet {
+            guard unitSystem != oldValue else { return }
+            preferences.setUnitSystem(unitSystem)
+        }
+    }
+    /// The quick-water amount as typed, in millilitres.
+    @Published public var quickWaterText: String
+    /// Why the typed quick-water amount was refused, or nil when it is acceptable.
+    @Published public private(set) var quickWaterError: String?
+
+    /// What the quick-water field refuses, in the words a person can act on.
+    public static let quickWaterInvalidMessage =
+        "Enter a water amount above zero, using digits and a point."
+    public static let quickWaterTitle = "Quick-add water amount"
+    public static let quickWaterFieldLabel = "Quick-add water amount in millilitres"
+    public static let unitsSectionTitle = "Units"
+    public static let unitSystemTitle = "Show amounts in"
+
+    private let preferences: DisplayPreferencesWriting
     private let store: JournalStore
     private let favorites: FavoritesStore?
     private let appVersion: String
@@ -232,12 +254,16 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         try FileManager.default.removeItem(at: url)
     }
 
+    /// - Parameter preferences: where the display settings are read from and written to. An in-memory one
+    ///   is the default, so a host that does not persist anything still gets a working screen and a
+    ///   test needs no defaults domain.
     public init(
         store: JournalStore, favorites: FavoritesStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
         erasers: [JournalErasing] = [],
-        remover: @escaping ConnectionsPrivacyExportRemover = ConnectionsPrivacyViewModel.removeExport
+        remover: @escaping ConnectionsPrivacyExportRemover = ConnectionsPrivacyViewModel.removeExport,
+        preferences: DisplayPreferencesWriting = InMemoryDisplayPreferences()
     ) {
         self.store = store
         self.favorites = favorites
@@ -245,7 +271,39 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.writer = writer
         self.erasers = erasers
         self.remover = remover
+        self.preferences = preferences
+        self.unitSystem = preferences.unitSystem
+        self.quickWaterText = DecimalFormatting.text(preferences.quickWaterMilliliters)
     }
+
+    /// Checks the typed quick-water amount and stores it when it is above zero. An amount that is not
+    /// a positive decimal is refused with a message and the stored value is left alone, so a bad
+    /// entry cannot become the amount the Today button adds.
+    @discardableResult
+    public func saveQuickWaterAmount() -> Bool {
+        guard let amount = AmountParser.parse(quickWaterText) else {
+            quickWaterError = Self.quickWaterInvalidMessage
+            return false
+        }
+        preferences.setQuickWaterMilliliters(amount)
+        quickWaterError = nil
+        quickWaterText = DecimalFormatting.text(preferences.quickWaterMilliliters)
+        return true
+    }
+
+    /// The quick-water amount as it is currently stored.
+    public var quickWaterMilliliters: Decimal { preferences.quickWaterMilliliters }
+
+    /// The quick-water amount in the unit system shown on screen.
+    public var quickWaterDisplay: DisplayAmount {
+        AmountDisplay.display(preferences.quickWaterMilliliters, unit: .mL, system: unitSystem)
+    }
+
+    /// The unit systems offered, in a stable order.
+    public var unitSystems: [UnitSystem] { UnitSystem.allCases }
+
+    /// The label for a unit system in the picker.
+    public static func label(for system: UnitSystem) -> String { system.label }
 
     public var privacyText: String { Self.privacySummary }
 

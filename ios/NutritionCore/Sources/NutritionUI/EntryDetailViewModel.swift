@@ -8,6 +8,17 @@ public struct EntryComponentRow: Equatable, Identifiable {
     /// Exact decimal text, or "unknown".
     public let amountText: String
     public let unit: MeasureUnit
+    /// The same amount in the unit system the reader chose, as "12.3 oz". For showing only: the field
+    /// above it edits the stored value in the stored unit, and saving writes that unit back.
+    public let displayText: String
+
+    public init(id: String, name: String, amountText: String, unit: MeasureUnit, displayText: String) {
+        self.id = id
+        self.name = name
+        self.amountText = amountText
+        self.unit = unit
+        self.displayText = displayText
+    }
 }
 
 public struct EntryRevisionRow: Equatable, Identifiable {
@@ -57,16 +68,23 @@ public final class EntryDetailViewModel: ObservableObject {
     public let intakeID: String
     private let store: JournalStore
     private let repeater: IntakeRepeater
+    /// Read on each load, so a preference changed on another screen is honoured here too.
+    private let preferences: DisplayPreferences
+
+    /// The unit system the displayed amounts are shown in.
+    public var unitSystem: UnitSystem { preferences.unitSystem }
 
     public init(
         store: JournalStore,
         intakeID: String,
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
-        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+        makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
+        preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
         self.store = store
         self.intakeID = intakeID
+        self.preferences = preferences
         self.repeater = IntakeRepeater(
             store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
             makeID: makeID)
@@ -85,10 +103,12 @@ public final class EntryDetailViewModel: ObservableObject {
                 return
             }
             currentRevision = current.number
+            let system = preferences.unitSystem
             components = current.components.map {
                 EntryComponentRow(
                     id: $0.componentID, name: AmountText.name($0),
-                    amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit)
+                    amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit,
+                    displayText: AmountDisplay.display($0, unitSystem: system).text)
             }
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
                 ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))

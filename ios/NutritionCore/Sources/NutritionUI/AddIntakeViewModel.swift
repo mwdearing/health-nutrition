@@ -81,9 +81,15 @@ public final class AddIntakeViewModel: ObservableObject {
     private var filledBrand: String?
 
     public let timeZoneIdentifier: String
-    public let units: [MeasureUnit] = UnitRegistry.all
+    /// The units the picker offers, read through so a preference changed on another screen is
+    /// honoured the next time this form is opened. Metric offers the whole registry; US customary
+    /// puts ounces and fluid ounces first.
+    public var units: [MeasureUnit] { UnitSelection.offered(for: preferences.unitSystem) }
+    /// The unit system the offered list is built from.
+    public var unitSystem: UnitSystem { preferences.unitSystem }
 
     private let store: JournalStore
+    private let preferences: DisplayPreferences
     private let makeID: () -> String
     private let lookup: BarcodeProductLookup?
     /// Counts the lookups this form has started. A reply is applied only if it is still the newest
@@ -97,13 +103,15 @@ public final class AddIntakeViewModel: ObservableObject {
         now: Date,
         timeZoneIdentifier: String = TimeZone.current.identifier,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
-        lookup: BarcodeProductLookup? = nil
+        lookup: BarcodeProductLookup? = nil,
+        preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
         self.store = store
         self.occurredAt = now
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
         self.lookup = lookup
+        self.preferences = preferences
     }
 
     /// One line explaining the last lookup, or nil when there is nothing to say.

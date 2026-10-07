@@ -65,7 +65,9 @@ struct RootView: View {
                 .sheet(isPresented: detailSheetPresented) {
                     if let intakeID = selectedIntakeID {
                         EntryDetailView(
-                            model: EntryDetailViewModel(store: services.journalStore, intakeID: intakeID),
+                            model: EntryDetailViewModel(
+                                store: services.journalStore, intakeID: intakeID,
+                                preferences: services.displayPreferences),
                             now: { Date() },
                             onFinished: {
                                 selectedIntakeID = nil
@@ -157,7 +159,8 @@ struct RootView: View {
     /// Opens the intake form with a fresh model, so a scan and the save that follows share one form.
     private func startAddingIntake() {
         addIntakeModel = AddIntakeViewModel(
-            store: services.journalStore, now: Date(), lookup: services.barcodeLookup
+            store: services.journalStore, now: Date(), lookup: services.barcodeLookup,
+            preferences: services.displayPreferences
         )
         addingIntake = true
     }

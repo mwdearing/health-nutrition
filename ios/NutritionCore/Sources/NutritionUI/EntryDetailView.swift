@@ -24,6 +24,13 @@ public struct EntryDetailView: View {
                                 .accessibilityLabel("Amount of \(component.name)")
                             Text(component.unit.symbol).font(.body).foregroundStyle(TokenColors.textSecondary)
                         }
+                        // The same amount in the unit the reader chose, shown beside the field that
+                        // edits the stored one. Saving writes the field back in the stored unit, so
+                        // this line is a reading of the value and never an edit to it.
+                        Text("\(component.displayText) with your unit preference")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                            .accessibilityLabel("Shown as \(component.displayText)")
                         if component.amountText == "unknown" {
                             Text("Amount: \(component.amountText)")
                                 .font(.footnote)
