@@ -2,6 +2,7 @@
 import Foundation
 import HealthKit
 import NutritionCore
+import NutritionJournal
 import Observation
 import SwiftUI
 import UIKit
@@ -86,6 +87,14 @@ final class HealthKitSpikeRunner {
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "HealthKitSpike")
 
+    /// The real delivery status, told once access has been asked for. Optional so the spike can be run
+    /// on its own; the app hands it the one status the debug section also shows.
+    private let deliveryStatus: HealthKitDeliveryStatus?
+
+    init(deliveryStatus: HealthKitDeliveryStatus? = nil) {
+        self.deliveryStatus = deliveryStatus
+    }
+
     /// The namespace for the spike's sync identifiers. Fixed, so a re-run targets the same samples.
     /// Synthetic amounts only: nothing here is anyone's real intake.
     private static let syncIdentifierNamespace = "dev.example.healthnutrition.spike.nc06"
@@ -155,30 +164,54 @@ final class HealthKitSpikeRunner {
 
     // MARK: - Steps
 
-    /// Ask for write access to the two spike types and read access to the same two, so the spike
-    /// can query back what it wrote.
+    /// Ask for write and read access to **every** type the planner maps, not only the two this spike
+    /// writes.
+    ///
+    /// The spike measures sync-identifier behaviour using water and protein, but the real writer
+    /// writes whatever the planner maps, and a request that names only the spike's two leaves the
+    /// rest `.notDetermined`: the writer reads that as denied, the worker parks those operations, and
+    /// nothing re-arms them — which is exactly what the owner's device run saw, with only water and
+    /// protein ever written. Read access is asked for the same set so the spike can still query back
+    /// what it wrote.
+    ///
+    /// On success the real delivery status is told, so anything parked for the missing request is
+    /// re-armed and one pass runs rather than waiting for the next app trigger.
     func requestAuthorization() async {
         await run {
             guard HKHealthStore.isHealthDataAvailable() else {
                 self.record("HealthKit is not available on this device.")
                 return
             }
+            let mapped = HealthKitDeliveryStatus.mappedTypes()
             do {
                 // The async requestAuthorization returns nothing: it completes once the prompt is
                 // done, and HealthKit deliberately never says which types were granted.
-                try await self.store.requestAuthorization(
-                    toShare: [Self.waterType, Self.proteinType],
-                    read: [Self.waterType, Self.proteinType]
-                )
+                try await self.store.requestAuthorization(toShare: mapped.share, read: mapped.read)
                 self.authorizationSummary = "requested"
                 self.hasAuthorization = true
                 self.record(
-                    "authorization requested (write and read: dietaryWater, dietaryProtein)")
+                    "authorization requested (write and read: "
+                        + self.requestedIdentifiers(mapped).joined(separator: ", ") + ")")
+                if !mapped.unresolved.isEmpty {
+                    self.record(
+                        "HealthKit does not know these mapped types: "
+                            + mapped.unresolved.sorted().joined(separator: ", "))
+                }
+                await self.deliveryStatus?.authorizationRequested()
                 await self.openRun(clearTranscript: false)
             } catch {
                 self.authorizationSummary = "failed"
                 self.record("authorization failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// The identifiers asked for, in the order the planner's table lists them, so the transcript says
+    /// exactly what Health was shown rather than a count.
+    private func requestedIdentifiers(_ mapped: HealthKitDeliveryStatus.MappedTypes) -> [String] {
+        let resolved = Set(mapped.share.map(\.identifier))
+        return HealthKitWritePlanner.mappings.compactMap { mapping in
+            resolved.contains(mapping.quantityTypeIdentifier) ? mapping.quantityTypeIdentifier : nil
         }
     }
 

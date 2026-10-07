@@ -32,8 +32,9 @@ struct RootView: View {
     /// Today's view model, observed so this body is re-evaluated when its values change. Read only for
     /// the water total below, which is the one journal write that does not go through `reload()`.
     @ObservedObject var todayModel: TodayViewModel
-    // One runner for the app's lifetime, so the transcript survives tab switches.
-    @State private var healthKitSpike = HealthKitSpikeRunner()
+    // One runner for the app's lifetime, so the transcript survives tab switches. It is handed the
+    // same delivery status the debug section shows, so a request made here reaches the real writer.
+    @State private var healthKitSpike: HealthKitSpikeRunner
     // The delivery status the debug section reads and the delivery runs below write into. Held here
     // rather than built in the section, so the counts and the last run's outcome list survive tab
     // switches and are the same state the one-line summary on Today reads.
@@ -48,9 +49,10 @@ struct RootView: View {
         _todayModel = ObservedObject(wrappedValue: services.today)
         // The app's own worker, not a second one: two workers over one store would each try to deliver
         // the same queued operation.
-        _healthKitDeliveryStatus = State(
-            initialValue: HealthKitDeliveryStatus(
-                healthKitDelivery: services.healthKitDelivery, store: services.journalStore))
+        let deliveryStatus = HealthKitDeliveryStatus(
+            healthKitDelivery: services.healthKitDelivery, store: services.journalStore)
+        _healthKitDeliveryStatus = State(initialValue: deliveryStatus)
+        _healthKitSpike = State(initialValue: HealthKitSpikeRunner(deliveryStatus: deliveryStatus))
         #endif
     }
 

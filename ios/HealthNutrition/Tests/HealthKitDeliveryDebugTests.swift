@@ -128,6 +128,70 @@ final class HealthKitDeliveryDebugTests: XCTestCase {
         XCTAssertEqual(status.counts.suspended, 0)
     }
 
+    /// A partial request must not open the gate. HealthKit only clears `.notDetermined` for the types
+    /// the sheet showed, so the ones it left out read as denied to the writer and the worker parks
+    /// them for good — which is what the owner's device run hit, with only water and protein ever
+    /// written. An automatic run therefore waits and leaves the queue exactly as it was.
+    func testPartialAuthorizationHoldsTheQueueUntilEveryMappedTypeIsAsked() async throws {
+        let services = try makeServices()
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: services.healthKitDelivery, store: services.journalStore,
+            authorizationProbe: { .partial })
+        try services.journalStore.create(sampleIntake(), components: [sampleComponent()], product: nil, now: when)
+
+        await status.run(now: when, automatic: true)
+
+        XCTAssertNil(status.lastRunAt, "an automatic run must not start before every mapped type is asked")
+        XCTAssertEqual(status.lastRunLines, [])
+        XCTAssertEqual(status.counts.pending, 1, "the queue is left untouched, not drained")
+        XCTAssertEqual(status.counts.suspended, 0, "nothing is parked for a request that has not happened")
+        XCTAssertEqual(try services.journalStore.pendingOutbox().count, 1)
+    }
+
+    /// The same queue with every mapped type asked for: the automatic run goes ahead, which is what
+    /// makes the gate a wait rather than a block.
+    func testFullAuthorizationLetsTheAutomaticRunProceed() async throws {
+        let services = try makeServices()
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: services.healthKitDelivery, store: services.journalStore,
+            authorizationProbe: { .requested })
+        try services.journalStore.create(sampleIntake(), components: [sampleComponent()], product: nil, now: when)
+
+        await status.run(now: when, automatic: true)
+
+        XCTAssertEqual(status.lastRunAt, when, "a full request is what the automatic run was waiting for")
+        XCTAssertEqual(status.lastRunLines.count, 1, "the one queued operation was handled by that pass")
+    }
+
+    /// Answering the sheet has to un-park what the missing request parked, or the entries behind it
+    /// wait for the next launch forever. The pass runs in the same action rather than at the next app
+    /// trigger, and the outcome line naming the operation is the proof it was attempted rather than
+    /// skipped as suspended.
+    func testAuthorizationRequestedRearmsASuspendedOperationAndRunsAPass() async throws {
+        let services = try makeServices()
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: services.healthKitDelivery, store: services.journalStore,
+            authorizationProbe: { .requested })
+        try services.journalStore.create(sampleIntake(), components: [sampleComponent()], product: nil, now: when)
+
+        let operation = try XCTUnwrap(try services.journalStore.pendingOutbox().first)
+        try services.journalStore.recordFailure(
+            operationID: operation.operationID, retryAt: nil, needsAttention: true,
+            reason: "HealthKit access is not granted, so it cannot be written")
+        status.refresh()
+        XCTAssertEqual(status.counts.suspended, 1)
+
+        await status.authorizationRequested(now: when)
+
+        XCTAssertEqual(status.lastRunAt, when, "the pass runs now, not at the next app trigger")
+        XCTAssertEqual(
+            status.lastRunLines.count, 1,
+            "a re-armed operation is attempted; a still-suspended one would be skipped silently")
+        XCTAssertTrue(
+            status.lastRunLines[0].contains(operation.operationID),
+            "the outcome names the re-armed operation: \(status.lastRunLines)")
+    }
+
     /// Every outcome is reported in plain text naming the operation, so a device run's failures and
     /// retries are readable on screen and a copied transcript says what happened.
     func testEveryOutcomeIsReportedInPlainText() {

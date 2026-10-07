@@ -35,6 +35,49 @@ final class HealthKitDeliveryStatus {
 
         static let none = Counts()
     }
+    /// What Health has been asked about, for every type in the planner's table.
+    ///
+    /// `partial` is the case that broke the first device run: a request covering only some of the
+    /// mapped types leaves the rest `.notDetermined`, which a `contains` gate reads as "asked" and
+    /// the worker reads as a denial it then parks forever.
+    enum AuthorizationState: Equatable {
+        /// Health has not been asked, or cannot be asked on this device.
+        case notRequested
+        /// Some mapped types are still `.notDetermined`.
+        case partial
+        /// Every mapped type that resolves has left `.notDetermined`.
+        case requested
+    }
+
+    /// The mapped types a request covers, resolved from the planner's table so a row added there is
+    /// requested and checked without anything here being edited.
+    struct MappedTypes {
+        /// Every mapped type that resolves, for writing.
+        var share = Set<HKSampleType>()
+        /// The same types, for reading: a request asks for both so the spike can query back what it
+        /// wrote and the app can see its own samples.
+        var read = Set<HKObjectType>()
+        /// Mapping keys whose identifier HealthKit does not resolve, named rather than dropped.
+        var unresolved: [String] = []
+    }
+
+    /// The mapped types HealthKit resolves, read once so the request, the gate and the spike all
+    /// agree on what "every mapped type" means.
+    static func mappedTypes() -> MappedTypes {
+        var mapped = MappedTypes()
+        for mapping in HealthKitWritePlanner.mappings {
+            guard
+                let type = HKObjectType.quantityType(
+                    forIdentifier: HKQuantityTypeIdentifier(rawValue: mapping.quantityTypeIdentifier))
+            else {
+                mapped.unresolved.append(mapping.nutrientKey)
+                continue
+            }
+            mapped.share.insert(type)
+            mapped.read.insert(type)
+        }
+        return mapped
+    }
 
     private(set) var counts: Counts = .none
     /// When the last run started, or nil when this launch has not run one.
@@ -57,10 +100,35 @@ final class HealthKitDeliveryStatus {
     private let healthKitDelivery: HealthKitDeliveryWorker
     private let store: any JournalDeliverySuspension
     private let healthStore = HKHealthStore()
+    /// How the gate reads Health's answer. Injectable so the app tests can drive it without a device;
+    /// production reads `HKHealthStore`, which is the only authority on what was granted.
+    private let authorizationProbe: () -> AuthorizationState
 
-    init(healthKitDelivery: HealthKitDeliveryWorker, store: any JournalDeliverySuspension) {
+    init(
+        healthKitDelivery: HealthKitDeliveryWorker,
+        store: any JournalDeliverySuspension,
+        authorizationProbe: @escaping () -> AuthorizationState = HealthKitDeliveryStatus.readHealthKitAuthorization
+    ) {
         self.healthKitDelivery = healthKitDelivery
         self.store = store
+        self.authorizationProbe = authorizationProbe
+    }
+
+    /// Whether every mapped type that resolves has been asked about, read from Health itself rather
+    /// than remembered: a type that has been through the request sheet is no longer `.notDetermined`,
+    /// whatever the person chose. Asking Health keeps the answer true across relaunches and
+    /// reinstalls without storing anything of our own, and requiring **all** of them is what stops a
+    /// partial request from parking the types it left out.
+    ///
+    /// A mapped type that does not resolve is not counted as undetermined, because Health cannot
+    /// answer for it and the request reports it by name instead.
+    static func readHealthKitAuthorization() -> AuthorizationState {
+        guard HKHealthStore.isHealthDataAvailable() else { return .notRequested }
+        let mapped = mappedTypes()
+        guard !mapped.share.isEmpty else { return .notRequested }
+        let store = HKHealthStore()
+        let undetermined = mapped.share.contains { store.authorizationStatus(for: $0) == .notDetermined }
+        return undetermined ? .partial : .requested
     }
 
     /// The one line Today shows: how much is queued, waiting for a person and parked.
@@ -82,47 +150,76 @@ final class HealthKitDeliveryStatus {
     /// row added to the table is requested too. An identifier HealthKit does not know is named on
     /// screen instead of being dropped, because a mapping the planner uses and this request cannot
     /// reach would fail every delivery with a denial nobody can fix.
+    /// Answering the sheet also re-arms what was suspended and runs a pass, for the same reason the
+    /// spike's request does: a request is the person's answer to a denial, and the queue should not
+    /// have to wait for the next launch to act on it.
     func requestAuthorizationForMappedTypes() async {
-        guard !isBusy else { return }
+        guard await requestAuthorizationSheet() else { return }
+        await authorizationRequested()
+    }
+
+    /// The request itself, reporting what it asked for. Returns whether the sheet was answered: only
+    /// then is there a new authorization to act on, and `isBusy` is down by the time it returns so
+    /// the re-arm and the pass that follow are not refused as a run already in flight.
+    private func requestAuthorizationSheet() async -> Bool {
+        guard !isBusy else { return false }
         isBusy = true
         defer { isBusy = false }
         guard HKHealthStore.isHealthDataAvailable() else {
             authorizationSummary = "HealthKit is not available on this device"
-            return
+            return false
         }
-        var share = Set<HKSampleType>()
-        var unresolved: [String] = []
-        for mapping in HealthKitWritePlanner.mappings {
-            if let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: mapping.quantityTypeIdentifier)) {
-                share.insert(type)
-            } else {
-                unresolved.append(mapping.nutrientKey)
-            }
-        }
+        let mapped = Self.mappedTypes()
         do {
             // The async request returns nothing: it completes once the sheet is done and HealthKit
             // deliberately never says which types were granted.
-            try await healthStore.requestAuthorization(toShare: share, read: [])
-            var summary = "requested write access for \(share.count) mapped type(s), no read access"
-            if !unresolved.isEmpty {
-                summary += "; HealthKit does not know \(unresolved.sorted().joined(separator: ", "))"
+            try await healthStore.requestAuthorization(toShare: mapped.share, read: [])
+            var summary = "requested write access for \(mapped.share.count) mapped type(s), no read access"
+            if !mapped.unresolved.isEmpty {
+                summary += "; HealthKit does not know \(mapped.unresolved.sorted().joined(separator: ", "))"
             }
             authorizationSummary = summary
+            return true
         } catch {
             authorizationSummary = "request failed: \(error.localizedDescription)"
+            return false
         }
+    }
+
+    /// The request sheet has been answered, so anything parked for the missing request is worth
+    /// another attempt and one pass is worth running now rather than at the next app trigger.
+    ///
+    /// **Every suspended operation is re-armed, not only the ones parked for a denial.** The
+    /// suspension does not record which cause parked it, and a single person's answer to the sheet is
+    /// a reasonable moment to retry the lot: a rejected sample either passes now or parks again with
+    /// the same stored reason. Re-arming stays something a person causes, as the store requires, and
+    /// this is that person.
+    func authorizationRequested(now: Date = Date()) async {
+        guard !isBusy else { return }
+        // Read the queue first: the re-arm acts on what is suspended now, not on what the last
+        // refresh happened to see.
+        refresh()
+        rearmSuspended()
+        let rearmed = rearmSummary
+        await run(now: now, automatic: false)
+        // The pass clears `rearmSummary` as it starts; what this action re-armed is still what the
+        // person needs to read afterwards.
+        rearmSummary = rearmed
     }
 
     /// One delivery pass, then the counts and the outcome list are read again so the screen shows what
     /// this run did rather than what the one before it did.
     ///
-    /// `automatic` is true for the runs the app starts itself (foreground, add, edit, delete). Those wait until
-    /// the operator has asked for Health access once: a worker that runs first would find no permission, suspend
-    /// the very first entry and report a denial that is only the missing request. The "Run now" button is never
-    /// automatic. A run requested while another is in flight is remembered and repeated when that one ends, so a
-    /// change made after the running pass read the queue is not left waiting for the next trigger.
+    /// `automatic` is true for the runs the app starts itself (foreground, add, edit, delete). Those wait
+    /// until Health has been asked about **every** mapped type: a worker that runs first would find no
+    /// permission, suspend the very first entry and report a denial that is only the missing request,
+    /// and a partial request is the same trap with more types in it — the types it never mentioned stay
+    /// `.notDetermined`, which the writer reads as denied and the worker then parks for good. The "Run
+    /// now" button is never automatic. A run requested while another is in flight is remembered and
+    /// repeated when that one ends, so a change made after the running pass read the queue is not left
+    /// waiting for the next trigger.
     func run(now: Date = Date(), automatic: Bool = false) async {
-        if automatic && !Self.authorizationWasRequested {
+        if automatic && authorizationProbe() != .requested {
             refresh()
             return
         }
@@ -142,21 +239,6 @@ final class HealthKitDeliveryStatus {
             refresh()
             passTime = Date()
         } while rerunRequested
-    }
-
-    /// Whether Health has been asked for access at all, read from Health itself: once the request sheet has
-    /// been answered, no mapped type is `.notDetermined` any more. Asking Health rather than remembering it
-    /// keeps the answer true across relaunches and reinstalls without storing anything of our own.
-    private static var authorizationWasRequested: Bool {
-        guard HKHealthStore.isHealthDataAvailable() else { return false }
-        let store = HKHealthStore()
-        return HealthKitWritePlanner.mappings.contains { mapping in
-            guard
-                let type = HKObjectType.quantityType(
-                    forIdentifier: HKQuantityTypeIdentifier(rawValue: mapping.quantityTypeIdentifier))
-            else { return false }
-            return store.authorizationStatus(for: type) != .notDetermined
-        }
     }
 
     private var rerunRequested = false

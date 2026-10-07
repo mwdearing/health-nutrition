@@ -367,6 +367,17 @@ needing-attention and suspended counts plus the last run's outcome list. Today c
 same counts. It changes no behaviour in the worker, the writer or the journal, and the whole file is
 behind `#if DEBUG`.
 
+### The automatic-run gate
+
+An automatic run — one the app starts itself after a journal change or on foreground — waits until
+**every** mapped type that resolves has been asked about; a partial request does not open the gate,
+because the types it left out stay `.notDetermined`, which the writer reads as denied and the worker
+then parks for good. The debug tab's request asks for the whole `mappings` table, share and read, not
+only the two types the spike writes, and the spike's transcript lists exactly which identifiers were
+requested. Answering that sheet also re-arms every suspended operation and runs one delivery pass
+immediately, so an operation parked for a missing request is retried in the same action rather than
+at the next launch.
+
 The relay destination stays off in every build, debug included.
 
 Outside a debug build the journal store keeps the `disabled` projection for HealthKit, so entries do not
