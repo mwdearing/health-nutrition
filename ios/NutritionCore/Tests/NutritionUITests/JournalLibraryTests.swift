@@ -343,7 +343,7 @@ final class JournalLibraryTests: XCTestCase {
     /// different wall clock from the one it was made against.
     func testEntryDetailPicksTheTimeInTheEntriesStoredZoneNotTheDevices() throws {
         let store = try makeStore()
-        let stored = try addFood(store, at: when, zone: "America/Chicago")
+        let stored = try addFood(store, at: now, zone: "America/Chicago")
         let model = EntryDetailViewModel(store: store, intakeID: stored)
         model.load(now: now)
         XCTAssertEqual(model.storedTimeZone.identifier, "America/Chicago", "the picker is bound to the entry's own zone")

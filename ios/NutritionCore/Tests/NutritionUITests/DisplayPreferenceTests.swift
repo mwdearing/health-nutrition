@@ -28,7 +28,8 @@ private final class RecordingStore: JournalStore, @unchecked Sendable {
     }
 
     func edit(
-        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision { throw Unsupported() }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
     func activeIntakes() throws -> [Intake] { intakes }

@@ -122,6 +122,14 @@ public final class LibraryViewModel: ObservableObject {
             makeID: makeID)
     }
 
+    /// The amounts, then the meal when the template states one: two rows that differ only by meal
+    /// (a Breakfast and a Dinner of the same food) have to be told apart on the row itself.
+    static func detail(_ template: RepeatTemplate) -> String {
+        let amounts = AmountText.summary(template.components)
+        guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
+        return "\(amounts) · \(meal)"
+    }
+
     public func load() {
         do {
             let stored = try favorites.list()
@@ -133,12 +141,12 @@ public final class LibraryViewModel: ObservableObject {
                     productSnapshotID: favorite.productSnapshotID)
                 return LibraryItem(
                     id: "favorite:\(favorite.id)", title: favorite.displayName,
-                    detail: AmountText.summary(template.components), isFavorite: true, template: template)
+                    detail: Self.detail(template), isFavorite: true, template: template)
             }
             let recentItems = try RecentItemsProvider(store: store).recents().map { recent in
                 LibraryItem(
                     id: "recent:\(recent.id)", title: recent.template.displayName,
-                    detail: AmountText.summary(recent.template.components),
+                    detail: Self.detail(recent.template),
                     isFavorite: favoriteKeys.contains(recent.id), template: recent.template)
             }
             sections = [
