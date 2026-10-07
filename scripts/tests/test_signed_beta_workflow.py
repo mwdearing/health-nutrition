@@ -121,7 +121,7 @@ def test_the_dispatch_inputs_are_validated_before_they_reach_the_build() -> None
     assert env["MARKETING_VERSION"] == "${{ inputs.marketing_version }}"
     run = str(check["run"])
     assert r"^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$" in run
-    assert r"^[0-9]+(\.[0-9]+){0,2}$" in run
+    assert r"^[0-9]+\.[0-9]+\.[0-9]+$" in run  # Apple requires three components
 
 
 def test_it_generates_the_project_before_signing() -> None:
@@ -220,7 +220,7 @@ def test_xcodebuild_output_stays_out_of_the_public_log() -> None:
 
 def test_the_failure_categories_search_only_error_lines() -> None:
     text = WORKFLOW.read_text()
-    assert "grep -iE '^(error:|xcodebuild: error:|\\*\\* .* FAILED)' \"$log\"" in text
+    assert "grep -iE '(^|: )error: |\\*\\* .* FAILED' \"$log\"" in text
 
 
 def test_the_default_marketing_version_is_the_recorded_one() -> None:

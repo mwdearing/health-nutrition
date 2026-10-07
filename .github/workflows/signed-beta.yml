@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       marketing_version:
-        description: Marketing version to stamp; empty = the MARKETING_VERSION in ios/HealthNutrition/project.yml (the build number is run number + 100)
+        description: Marketing version to stamp (three parts, like 0.1.0); empty = the MARKETING_VERSION in ios/HealthNutrition/project.yml (the build number is run number + 100)
         required: false
         default: ""
 
@@ -69,7 +69,7 @@ jobs:
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
           [[ "$BUNDLE_ID" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || fail "bundle_id has characters a bundle identifier cannot have"
-          [[ -z "$MARKETING_VERSION" || "$MARKETING_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || fail "marketing_version is not 1, 1.2 or 1.2.3"
+          [[ -z "$MARKETING_VERSION" || "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "marketing_version must have three parts, like 1.2.3"
           [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "APPLE_TEAM_ID is not 10 letters or digits"
           [[ "$ASC_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "ASC_KEY_ID is not 10 letters or digits"
           [[ "$ASC_ISSUER_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || fail "ASC_ISSUER_ID is not a UUID"
@@ -96,7 +96,7 @@ jobs:
               # Only lines xcodebuild marks as errors are searched: the rest of the log echoes the command line,
               # whose words (team, version, authentication) would make every category fire.
               echo "::error::$name failed. The xcodebuild output is not published."
-              errors() { grep -iE '^(error:|xcodebuild: error:|\*\* .* FAILED)' "$log" || true; }
+              errors() { grep -iE '(^|: )error: |\*\* .* FAILED' "$log" || true; }
               errors | grep -qiE 'unable to authenticate|authentication|401|403' && echo "::error::  category: the App Store Connect key was rejected"
               errors | grep -qiE 'no signing certificate|no certificate|certificate' && echo "::error::  category: a signing certificate problem"
               errors | grep -qiE "doesn't include|doesn't match|no profiles for|provisioning profile" && echo "::error::  category: a provisioning profile or App ID capability mismatch"
@@ -141,7 +141,7 @@ jobs:
             if ! "$@" > "$log" 2>&1; then
               # Same rule as the archive step: the log stays on the runner, only fixed categories are printed.
               echo "::error::$name failed. The xcodebuild output is not published."
-              errors() { grep -iE '^(error:|xcodebuild: error:|\*\* .* FAILED)' "$log" || true; }
+              errors() { grep -iE '(^|: )error: |\*\* .* FAILED' "$log" || true; }
               errors | grep -qiE 'unable to authenticate|authentication|401|403' && echo "::error::  category: the App Store Connect key was rejected"
               errors | grep -qiE 'no signing certificate|no certificate|certificate' && echo "::error::  category: a signing certificate problem"
               errors | grep -qiE "doesn't include|doesn't match|no profiles for|provisioning profile" && echo "::error::  category: a provisioning profile or App ID capability mismatch"

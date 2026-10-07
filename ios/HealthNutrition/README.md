@@ -42,7 +42,7 @@ worker code does not mean delivery has been enabled or accepted on a device.
 - `Sources/BarcodeLookup.swift`: the adapter between the nutrition-data client and the lookup protocol
   the screens depend on. The screens never see the client or the source; this file fills in the
   attribution and serving definition that a licensed source requires.
-- `Resources/Assets.xcassets`: an empty `AppIcon` and an `AccentColor`.
+- `Resources/Assets.xcassets`: an `AccentColor` and a placeholder `AppIcon` (a single 1024-point image, the accent colour with a plain mark) so a signed archive can be uploaded; replace it with the real icon when there is one.
 - `Tests/`: the app target's own XCTest bundle, hosted by the app so `@testable import HealthNutrition`
   works. See [Running the tests](#running-the-tests).
 
