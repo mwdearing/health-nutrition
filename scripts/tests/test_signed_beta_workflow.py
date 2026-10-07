@@ -126,10 +126,27 @@ def test_the_dispatch_inputs_are_validated_before_they_reach_the_build() -> None
 
 def test_it_generates_the_project_before_signing() -> None:
     names = [str(step.get("name", "")) for step in _steps()]
+    install = next(name for name in names if name.startswith("Install XcodeGen"))
     assert names.index("Generate the Xcode project") < names.index(
         "Check the signing secrets and write the key file"
     )
-    assert names.index("Install XcodeGen") < names.index("Generate the Xcode project")
+    assert names.index(install) < names.index("Generate the Xcode project")
+
+
+def test_xcodegen_is_a_pinned_release_verified_by_checksum() -> None:
+    text = WORKFLOW.read_text()
+    assert "brew install" not in text
+    assert "mint " not in text
+    install = next(s for s in _steps() if str(s["name"]).startswith("Install XcodeGen"))
+    env = cast("dict[str, str]", install["env"])
+    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", env["XCODEGEN_VERSION"])
+    assert re.fullmatch(r"[0-9a-f]{64}", env["XCODEGEN_SHA256"])
+    run = str(install["run"])
+    assert "releases/download/$XCODEGEN_VERSION/xcodegen.zip" in run
+    assert "shasum -a 256 -c -" in run
+    assert run.index("shasum") < run.index("unzip")
+    generate = next(s for s in _steps() if s["name"] == "Generate the Xcode project")
+    assert "xcodegen-dist/xcodegen/bin/xcodegen" in str(generate["run"])
 
 
 def test_it_signs_with_the_api_key_and_uploads_directly() -> None:
