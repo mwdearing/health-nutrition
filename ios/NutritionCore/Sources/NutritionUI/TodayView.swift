@@ -58,6 +58,13 @@ public struct TodayView: View {
                         .foregroundStyle(TokenColors.warning)
                 }
             }
+            Section("Totals") {
+                ForEach(model.progress) { line in
+                    Text(line.text)
+                        .font(.body)
+                        .foregroundStyle(TokenColors.textPrimary)
+                }
+            }
             Section("Coverage") {
                 ForEach(model.coverage) { line in
                     Text(line.text)

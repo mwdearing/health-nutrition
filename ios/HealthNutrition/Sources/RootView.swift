@@ -102,7 +102,7 @@ struct RootView: View {
             NavigationStack {
                 LibraryView(
                     model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
-                    connections: connections
+                    connections: connections, goals: services.goals
                 )
                 .navigationTitle("Library")
             }
@@ -156,6 +156,7 @@ struct RootView: View {
             recipeNavigation.reset()
             reload()
             recipeList.load()
+            services.goals.load()
         }
         #if DEBUG
         // A restore on the Connections and privacy screen writes the journal without going through

@@ -7,20 +7,26 @@ import NutritionUI
 ///
 /// The journal store holds a write lock per instance, so the app creates exactly one store per
 /// database file and keeps it for its whole lifetime (see `docs/journal-store.md`). Favorites
-/// live in a second file next to the journal file, and recipes in a third.
+/// live in a second file next to the journal file, recipes in a third, and the daily nutrient
+/// targets in a fourth.
 @MainActor
 final class AppServices {
     let journalStore: SwiftDataJournalStore
     let favoritesStore: SwiftDataFavoritesStore
     /// Personal recipes, in their own file. Never shared or synced.
     let recipeStore: SwiftDataRecipeStore
+    /// The daily nutrient targets, in their own file. Goals are data, not settings, so they are
+    /// stored beside the journal and erased with it.
+    let goalStore: SwiftDataGoalStore
 
     let today: TodayViewModel
     let journal: JournalViewModel
     let library: LibraryViewModel
     /// The Connections and privacy screen. It reads the same stores and, for its "Erase all data"
-    /// action, holds all three as erasers, so one action empties every file the app keeps.
+    /// action, holds all four as erasers, so one action empties every file the app keeps.
     let connections: ConnectionsPrivacyViewModel
+    /// The Daily goals screen, reached from the Library screen's Connections section.
+    let goals: GoalsViewModel
     /// Barcode lookups in Add intake. One client for the app's lifetime, so its rolling rate-limit
     /// window is shared and never reset by opening the form again.
     let barcodeLookup: BarcodeProductLookup
@@ -37,23 +43,25 @@ final class AppServices {
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
-        recipeStore: SwiftDataRecipeStore,
+        recipeStore: SwiftDataRecipeStore, goalStore: SwiftDataGoalStore,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences()
     ) {
         self.displayPreferences = displayPreferences
         self.journalStore = journalStore
         self.favoritesStore = favoritesStore
         self.recipeStore = recipeStore
+        self.goalStore = goalStore
         // Today's coverage reads the nutrient values each entry's product snapshot carries, so a
         // logged recipe or a looked-up product contributes what it states. An entry typed by hand has
         // no snapshot and stays unknown, never zero.
         today = TodayViewModel(
-            store: journalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
-        journal = JournalViewModel(store: journalStore)
+            store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
+        journal = JournalViewModel(store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts())
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
+        goals = GoalsViewModel(store: goalStore)
         connections = ConnectionsPrivacyViewModel(
-            store: journalStore, favorites: favoritesStore,
-            appVersion: Self.appVersion, erasers: [journalStore, favoritesStore, recipeStore],
+            store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
+            erasers: [journalStore, favoritesStore, recipeStore, goalStore],
             preferences: displayPreferences)
         barcodeLookup = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
@@ -71,7 +79,7 @@ final class AppServices {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// Opens all three store files in `directory`, creating the directory and the files if needed.
+    /// Opens all four store files in `directory`, creating the directory and the files if needed.
     ///
     /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
     /// real Application Support ones. The default is the app's own directory, unchanged.
@@ -116,15 +124,24 @@ final class AppServices {
             journalStore.close()
             throw StoreStartupError.favorites(error)
         }
+        let recipeStore: SwiftDataRecipeStore
         do {
-            let recipeStore = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
-            return AppServices(
-                journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
-                displayPreferences: displayPreferences)
+            recipeStore = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
         } catch {
             favoritesStore.close()
             journalStore.close()
             throw StoreStartupError.recipes(error)
+        }
+        do {
+            let goalStore = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+            return AppServices(
+                journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
+                goalStore: goalStore, displayPreferences: displayPreferences)
+        } catch {
+            recipeStore.close()
+            favoritesStore.close()
+            journalStore.close()
+            throw StoreStartupError.goals(error)
         }
     }
 
@@ -133,6 +150,7 @@ final class AppServices {
         case journal(Error)
         case favorites(Error)
         case recipes(Error)
+        case goals(Error)
 
         var errorDescription: String? {
             switch self {
@@ -142,6 +160,8 @@ final class AppServices {
                 return "The favorites store file could not be opened: \(error.localizedDescription)"
             case .recipes(let error):
                 return "The recipes store file could not be opened: \(error.localizedDescription)"
+            case .goals(let error):
+                return "The daily goals store file could not be opened: \(error.localizedDescription)"
             }
         }
     }

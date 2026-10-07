@@ -37,11 +37,16 @@ public final class TodayViewModel: ObservableObject {
     /// Stored intakes left out of Today because their time zone identifier is not a valid time zone.
     @Published public private(set) var skippedIntakeCount: Int = 0
     @Published public private(set) var coverage: [CoverageLine] = []
+    /// One line per tracked nutrient: what the day has reached, against a target where one is set.
+    @Published public private(set) var progress: [NutrientProgressLine] = []
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
 
     private let store: JournalStore
     private let lookup: NutrientFactsLookup
+    /// The goals this screen compares the day against. Optional so a caller with nowhere to keep
+    /// goals still gets the totals, which are the larger half of the line.
+    private let goals: GoalStore?
     private let trackedNutrients: [String]
     private let timeZoneIdentifier: String
     private let makeID: () -> String
@@ -51,6 +56,7 @@ public final class TodayViewModel: ObservableObject {
 
     public init(
         store: JournalStore,
+        goals: GoalStore? = nil,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         trackedNutrients: [String] = TodayViewModel.defaultTrackedNutrients,
         timeZoneIdentifier: String = TimeZone.current.identifier,
@@ -58,11 +64,42 @@ public final class TodayViewModel: ObservableObject {
         preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
         self.store = store
+        self.goals = goals
         self.lookup = lookup
         self.trackedNutrients = trackedNutrients
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
         self.preferences = preferences
+    }
+
+    /// The goals' keys with the fallback's keys added where no goal exists.
+    ///
+    /// What the screen falls back to when a nutrient has no goal: it is still tracked, because the
+    /// person logged it, but it shows a plain total rather than a comparison.
+    public static func defaultTrackedNutrientsOrGoals(
+        goals: [NutrientGoal], fallback: [String] = TodayViewModel.defaultTrackedNutrients
+    ) -> [String] {
+        var seen = Set(goals.map { $0.nutrient })
+        var ordered = goals.map { $0.nutrient }
+        for nutrient in fallback where !seen.contains(nutrient) {
+            seen.insert(nutrient)
+            ordered.append(nutrient)
+        }
+        return ordered
+    }
+
+    /// The nutrients a day's totals are summed for: the tracked ones, plus water.
+    ///
+    /// Water is always among them and is not in the fallback list above, because a drink is logged
+    /// whether or not anyone has set a target for it, and a total that only appeared once a target
+    /// existed would hide the day's water from anyone who has not set one. A goal for water moves it
+    /// to the front, because a person who set a target is asking about it first.
+    public static func totalsNutrients(
+        goals: [NutrientGoal], fallback: [String] = TodayViewModel.defaultTrackedNutrients
+    ) -> [String] {
+        let tracked = defaultTrackedNutrientsOrGoals(goals: goals, fallback: fallback)
+        guard !tracked.contains(DailyTotalsBuilder.waterKey) else { return tracked }
+        return tracked + [DailyTotalsBuilder.waterKey]
     }
 
     /// Reloads Today: active intakes on the local day of each intake's own time zone.
@@ -121,6 +158,10 @@ public final class TodayViewModel: ObservableObject {
                     lookup.value(for: $0.component, snapshot: $0.snapshot, nutrient: nutrient)
                 })
             }
+            let storedGoals = (try? goals?.goals()) ?? []
+            let tracked = Self.totalsNutrients(goals: storedGoals, fallback: trackedNutrients)
+            progress = try Self.progressLines(
+                tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup)
             errorMessage = nil
         } catch {
             errorMessage = "Could not read the journal."
@@ -214,6 +255,24 @@ public final class TodayViewModel: ObservableObject {
 
     private static func isPositive(_ value: Decimal) -> Bool {
         !value.isNaN && value > 0
+    }
+
+    /// The lines Today shows, one per tracked nutrient and in the order they are tracked.
+    ///
+    /// Throwing rather than swallowing: the totals are built from the same intakes the rows above
+    /// were built from, so a store that cannot be read has already failed the load and there is
+    /// nothing honest left to show.
+    private static func progressLines(
+        tracked: [String], goals: [NutrientGoal], intakes: [Intake], store: JournalStore,
+        lookup: NutrientFactsLookup
+    ) throws -> [NutrientProgressLine] {
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: lookup, nutrients: tracked)
+        return tracked.map { nutrient in
+            NutrientProgressLine.make(
+                nutrient: nutrient, total: totals.total(for: nutrient),
+                goal: goals.first { $0.nutrient == nutrient })
+        }
     }
 
     /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that

@@ -9,7 +9,12 @@ import NutritionDomain
 /// values have to be scaled before they are hashed. Sending them unscaled would state the whole package rather
 /// than the portion eaten, which is the same reason `JournalSnapshotTotals` scales a snapshot with
 /// this factor rather than carrying the stated value.
-enum IntakeContextSnapshotBasis: Equatable {
+///
+/// The type is public because a third caller needs the same factor the encoder and the HealthKit totals
+/// use: the daily totals in `NutritionUI` sum a day's snapshot nutrients, and summing the product's own
+/// stated values would state the whole package rather than the portion eaten. Nothing else about the
+/// basis changed.
+public enum IntakeContextSnapshotBasis: Equatable {
     /// Per 100 of the given unit, the shape a barcode lookup states.
     case perHundred(MeasureUnit)
     /// Per one of a counted unit, the shape a recipe states: one serving, one scoop.
@@ -21,7 +26,7 @@ enum IntakeContextSnapshotBasis: Equatable {
     /// several shapes: "per 100 g", "per100g", "per_serving" and "Per serving; yield 4 servings" all name a
     /// basis this can scale. An unresolved basis is nil rather than a guess: "per 100 g or mL" says the source
     /// did not resolve its own dimension, and "per 100 kcal" is not a quantity the journal records.
-    static func parse(_ labelBasis: String) -> IntakeContextSnapshotBasis? {
+    public static func parse(_ labelBasis: String) -> IntakeContextSnapshotBasis? {
         var compact = ""
         for character in labelBasis.lowercased() {
             if character == " " || character == "_" || character == "-" { continue }
@@ -45,7 +50,7 @@ enum IntakeContextSnapshotBasis: Equatable {
     /// A per-100 basis is the logged quantity in that unit over 100: 40 g logged of a product stated per 100 g
     /// is 0.4 of it, which carries 5.2 g out of 13 g. A per-count basis is the number logged, and only when
     /// exactly one component was counted in that unit, so two servings multiply a per-serving value.
-    func factor(forLogged components: [IntakeComponent]) -> Decimal? {
+    public func factor(forLogged components: [IntakeComponent]) -> Decimal? {
         switch self {
         case .perHundred(let unit):
             var total = Decimal(0)
@@ -69,7 +74,11 @@ enum IntakeContextSnapshotBasis: Equatable {
 
     /// The factor for a snapshot's basis and the logged components, or nil when the basis is unresolved or the
     /// components cannot answer it.
-    static func scalingFactor(labelBasis: String, logged components: [IntakeComponent]) -> Decimal? {
+    ///
+    /// Public because the day totals scale the same way the encoder does: a snapshot states its values for the
+    /// amount its basis names, so a reader that adds up a day has to scale them to what was logged rather than
+    /// count the whole package.
+    public static func scalingFactor(labelBasis: String, logged components: [IntakeComponent]) -> Decimal? {
         guard let basis = parse(labelBasis) else { return nil }
         return basis.factor(forLogged: components)
     }

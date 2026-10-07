@@ -15,6 +15,10 @@ public struct JournalView: View {
         List {
             ForEach(model.sections) { section in
                 Section(section.title) {
+                    Text(section.totalsText)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                        .accessibilityLabel("Totals: \(section.totalsText)")
                     ForEach(section.rows) { row in
                         Button {
                             onSelect(row.id)

@@ -25,6 +25,11 @@ public struct JournalDaySection: Equatable, Identifiable {
     /// Locale-formatted day (medium date style) in the intakes' own time zone.
     public let title: String
     public let rows: [JournalRow]
+    /// What this day adds up to, summed from the same intakes as the rows above and never from
+    /// another day.
+    public let totals: DailyTotals
+    /// One compact line for the day: each tracked nutrient against its target where one is set.
+    public let totalsText: String
 }
 
 @MainActor
@@ -35,17 +40,25 @@ public final class JournalViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
 
     private let store: JournalStore
+    private let lookup: NutrientFactsLookup
+    /// The goals each day's line compares against. Optional, so a caller with no goal store still
+    /// gets the per-day totals.
+    private let goals: GoalStore?
     private let repeater: IntakeRepeater
     private let locale: Locale
 
     public init(
         store: JournalStore,
+        goals: GoalStore? = nil,
+        lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         locale: Locale = .current,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
     ) {
         self.store = store
+        self.lookup = lookup
+        self.goals = goals
         self.locale = locale
         self.repeater = IntakeRepeater(
             store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
@@ -58,6 +71,9 @@ public final class JournalViewModel: ObservableObject {
             var skipped = 0
             var groups: [String: [JournalRow]] = [:]
             var titles: [String: String] = [:]
+            // The intakes of each day, kept beside the rows so the day's totals are summed from
+            // exactly the entries the rows below were built from. Nothing here ever sees two days.
+            var intakesByDay: [String: [Intake]] = [:]
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
                 guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else {
                     skipped += 1
@@ -79,9 +95,18 @@ public final class JournalViewModel: ObservableObject {
                     titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
                 }
                 groups[key, default: []].append(row)
+                intakesByDay[key, default: []].append(intake)
             }
-            sections = groups.keys.sorted(by: >).map { key in
-                JournalDaySection(id: key, title: titles[key] ?? key, rows: (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt })
+            let storedGoals = (try? goals?.goals()) ?? []
+            let tracked = TodayViewModel.totalsNutrients(goals: storedGoals)
+            sections = try groups.keys.sorted(by: >).map { key in
+                let totals = try DailyTotalsBuilder.totals(
+                    for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: tracked)
+                return JournalDaySection(
+                    id: key, title: titles[key] ?? key,
+                    rows: (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt },
+                    totals: totals,
+                    totalsText: Self.totalsText(totals: totals, tracked: tracked, goals: storedGoals))
             }
             skippedCount = skipped
             errorMessage = nil
@@ -108,6 +133,26 @@ public final class JournalViewModel: ObservableObject {
             errorMessage = "Could not repeat the entry."
             return nil
         }
+    }
+
+    /// The day's whole figure on one line, the nutrients with a target first.
+    ///
+    /// A nutrient the day cannot answer for is left out rather than written as "unknown": this is a
+    /// summary line over a list of entries, and the entries below it say which ones could not be
+    /// read. A day where nothing at all is known says so on its own.
+    static func totalsText(totals: DailyTotals, tracked: [String], goals: [NutrientGoal]) -> String {
+        let withTarget = goals.map { $0.nutrient }
+        let ordered = withTarget + tracked.filter { !withTarget.contains($0) }
+        let parts = ordered.compactMap { nutrient -> String? in
+            let line = NutrientProgressLine.make(
+                nutrient: nutrient, total: totals.total(for: nutrient),
+                goal: goals.first { $0.nutrient == nutrient })
+            // A nutrient the day cannot answer for is left off rather than written as "unknown": this
+            // is a summary over a list of entries, and the entries below it say which could not be read.
+            guard line.hasKnownAmount else { return nil }
+            return line.text
+        }
+        return parts.isEmpty ? "No totals for this day." : parts.joined(separator: ", ")
     }
 
     static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale) -> String {

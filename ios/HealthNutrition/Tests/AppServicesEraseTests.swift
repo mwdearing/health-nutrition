@@ -53,17 +53,23 @@ final class AppServicesEraseTests: XCTestCase {
             yield: .servings(4), createdAt: when)
     }
 
-    /// One journal entry, one favorite and one recipe, so the erase below has something in every store.
+    private func sampleGoal() -> NutrientGoal {
+        NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)
+    }
+
+    /// One journal entry, one favorite, one recipe and one daily goal, so the erase below has
+    /// something in every store the app keeps.
     private func fill(_ services: AppServices) throws {
         try services.journalStore.create(sampleIntake(), components: [oats()], product: nil, now: when)
         try services.favoritesStore.add(sampleFavorite())
         try services.recipeStore.saveNewVersion(sampleRecipe())
+        try services.goalStore.setGoal(sampleGoal())
     }
 
-    /// The erase empties the journal, the favorites and the recipes: every store the app keeps holds
-    /// nothing afterwards, and the screen reports that it worked rather than leaving a person to
-    /// believe data was deleted when it was not.
-    func testEraseEmptiesTheJournalTheFavoritesAndTheRecipes() throws {
+    /// The erase empties the journal, the favorites, the recipes and the daily goals: every store
+    /// the app keeps holds nothing afterwards, and the screen reports that it worked rather than
+    /// leaving a person to believe data was deleted when it was not.
+    func testEraseEmptiesTheJournalTheFavoritesTheRecipesAndTheGoals() throws {
         let (services, _) = try makeServices()
         try fill(services)
 
@@ -74,6 +80,7 @@ final class AppServicesEraseTests: XCTestCase {
         XCTAssertTrue(try services.journalStore.activeIntakes().isEmpty)
         XCTAssertTrue(try services.favoritesStore.list().isEmpty)
         XCTAssertTrue(try services.recipeStore.list().recipes.isEmpty)
+        XCTAssertTrue(try services.goalStore.goals().isEmpty)
     }
 
     /// An erase is a new start rather than a broken store: the same store instances take a write
@@ -86,10 +93,12 @@ final class AppServicesEraseTests: XCTestCase {
         try services.journalStore.create(sampleIntake(), components: [oats()], product: nil, now: when)
         try services.favoritesStore.add(sampleFavorite())
         try services.recipeStore.saveNewVersion(sampleRecipe())
+        try services.goalStore.setGoal(sampleGoal())
 
         XCTAssertEqual(try services.journalStore.activeIntakes().map(\.id), [intakeID])
         XCTAssertEqual(try services.favoritesStore.list().map(\.id), ["favorite-oats"])
         XCTAssertEqual(try services.recipeStore.list().recipes.map(\.recipeID), ["recipe-oats"])
+        XCTAssertEqual(try services.goalStore.goals().map(\.nutrient), ["protein"])
     }
 
     /// The stores are opened where they were asked for, so a test never writes into the app's own
@@ -98,7 +107,7 @@ final class AppServicesEraseTests: XCTestCase {
         let (services, directory) = try makeServices()
         try fill(services)
 
-        for name in ["journal.store", "favorites.store", "recipes.store"] {
+        for name in ["journal.store", "favorites.store", "recipes.store", "goals.store"] {
             XCTAssertTrue(
                 FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path),
                 "\(name) is not in the given directory")
