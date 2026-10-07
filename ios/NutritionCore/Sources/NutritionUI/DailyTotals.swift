@@ -32,8 +32,8 @@ public struct DailyTotals: Equatable {
 ///   values are scaled by the factor `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`
 ///   gives — the same factor the intake-context encoder uses — and summed exactly. 40 g of a product
 ///   stating 13 g of protein per 100 g contributes 5.2 g, not 13 g. A per-serving basis that also
-///   states its serving as a mass is scaled from that serving and the amount logged, because an entry
-///   recorded as a mass cannot be scaled by a count; see `scalingFactor(labelBasis:logged:)`.
+///   states its serving as a quantity is scaled from that serving and the amount logged, because an
+///   entry recorded as an amount cannot be scaled by a count; see `scalingFactor(labelBasis:logged:)`.
 ///
 /// The nutrient a value is read under is resolved through the canonical mapping
 /// `HealthKitWritePlanner` holds, so a snapshot storing `energyKcal` is read for `energy` and one
@@ -130,13 +130,14 @@ public enum DailyTotalsBuilder {
     ///
     /// This is `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`, plus one case it
     /// cannot reach. A barcode lookup or a label panel that knows how big a serving is stores
-    /// "per serving (30 g)", and the entry records the food as a mass — 30 g, 60 g — rather than as a
-    /// counted serving, so a per-count basis alone cannot be scaled from the log and the day's total
-    /// for that product read unknown. The two together do say how much was eaten: the serving the
-    /// panel stated against the amount logged. It is deliberately here and not in the basis type
-    /// itself, because the intake-context encoder answers the same basis as unresolvable and its
-    /// contract with the relay receiver says so; changing what that basis means is a contract change,
-    /// while reading it here is one reader being able to answer a question the data can answer.
+    /// "per serving (30 g)" or "per serving (240 mL)", and the entry records the food as an amount
+    /// rather than as a counted serving, so a per-count basis alone cannot be scaled from the log
+    /// and the day's total for that product read unknown. The two together do say how much was
+    /// eaten: the serving the panel stated against the amount logged, in whichever dimension both
+    /// are stated. It is deliberately here and not in the basis type itself, because the
+    /// intake-context encoder answers the same basis as unresolvable and its contract with the relay
+    /// receiver says so; changing what that basis means is a contract change, while reading it here
+    /// is one reader being able to answer a question the data can answer.
     private static func scalingFactor(
         labelBasis: String, logged components: [IntakeComponent]
     ) -> Decimal? {
@@ -148,36 +149,46 @@ public enum DailyTotalsBuilder {
         return statedServingFactor(labelBasis: labelBasis, logged: components)
     }
 
-    /// How much of a stated serving was logged, when the basis names the serving as a mass and the
-    /// entry is recorded as one. 30 g logged of a "per serving (30 g)" product is one serving, 60 g is
-    /// two, and a basis that states no serving — "per serving", "per serving (1 large biscuit)" — is
-    /// nil rather than a guess, because nothing in it says what one serving weighs.
+    /// How much of a stated serving was logged, when the basis names the serving and the entry is
+    /// recorded in the same dimension. 30 g logged of a "per serving (30 g)" product is one serving, 60 g
+    /// is two; 480 mL logged of a "per serving (240 mL)" product is two of those. A basis that states
+    /// no serving — "per serving", "per serving (1 large biscuit)" — is nil rather than a guess,
+    /// because nothing in it says how big one serving is.
+    ///
+    /// The dimension has to match on both sides, and that is the only requirement on it: a panel that
+    /// states a serving in millilitres and an entry logged in millilitres say the same thing about how
+    /// much was eaten, and so does the gram case. A mass serving and a logged volume do not, so they
+    /// are nil rather than a number — the day stays unknown, which is what an unscalable basis has
+    /// always meant.
     private static func statedServingFactor(
         labelBasis: String, logged components: [IntakeComponent]
     ) -> Decimal? {
         guard let basis = IntakeContextSnapshotBasis.parse(labelBasis), case .perCount = basis else {
             return nil
         }
-        guard let serving = statedServingMass(labelBasis) else { return nil }
-        var loggedMass = Decimal(0)
+        guard let serving = statedServingQuantity(labelBasis) else { return nil }
+        var loggedAmount = Decimal(0)
         var found = false
-        for component in components where component.unit.dimension == .mass {
+        for component in components where component.unit.dimension == serving.unit.dimension {
             guard let converted = try? Quantity(
                 value: component.amount, unit: component.unit).converted(to: serving.unit)
             else { continue }
-            loggedMass += converted.value
+            loggedAmount += converted.value
             found = true
         }
         guard found else { return nil }
-        return loggedMass / serving.value
+        return loggedAmount / serving.value
     }
 
-    /// The mass one serving weighs, from a basis that states it: "per serving (30 g)" is 30 g.
+    /// The quantity one serving is, from a basis that states it: "per serving (30 g)" is 30 g and
+    /// "per serving (240 mL)" is 240 mL.
     ///
-    /// Only a number and a registry mass unit are read. A serving stated any other way — "1 large
-    /// biscuit", "240 mL" — is not a mass this can scale by, so it is nil and the nutrient stays
-    /// unknown rather than being scaled by a quantity of the wrong dimension.
-    private static func statedServingMass(_ labelBasis: String) -> (value: Decimal, unit: MeasureUnit)? {
+    /// Only a number and a registry unit are read, in any dimension the registry holds. A serving
+    /// stated any other way — "1 large biscuit", "a handful" — is not a quantity this can scale by, so
+    /// it is nil and the nutrient stays unknown rather than being scaled by something guessed at.
+    private static func statedServingQuantity(
+        _ labelBasis: String
+    ) -> (value: Decimal, unit: MeasureUnit)? {
         guard let open = labelBasis.firstIndex(of: "("),
             let close = labelBasis.firstIndex(of: ")"), close > open
         else { return nil }
@@ -186,7 +197,7 @@ public enum DailyTotalsBuilder {
         let digits = stated.prefix { $0.isASCII && ($0.isNumber || $0 == ".") }
         let symbol = stated.dropFirst(digits.count).trimmingCharacters(in: .whitespaces)
         guard let amount = AmountParser.parse(String(digits)),
-            let unit = try? UnitRegistry.unit(for: symbol), unit.dimension == .mass
+            let unit = try? UnitRegistry.unit(for: symbol)
         else { return nil }
         return (amount, unit)
     }

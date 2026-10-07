@@ -45,14 +45,19 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         }
     }
 
-    /// Every readable target, ordered by nutrient key. A row that cannot be read is left out rather
-    /// than reported as a target the person can trust: an unreadable decimal or an unknown unit is not
-    /// a number, and a progress line against one would be a number of the wrong kind.
+    /// Every readable target, ordered by nutrient key.
+    ///
+    /// A row that cannot be read fails the whole read rather than being left out. `goal(for:)` already
+    /// throws for such a row, and dropping one here made the two disagree about the same store: this
+    /// returned a shorter list that looked complete, so a corrupt row read as "no goal set for this
+    /// nutrient" rather than as a store that needs attention. A caller that cannot get a trustworthy
+    /// list cannot tell that one, and its own read-failure state is the only honest place for it to
+    /// land — the goals screen already shows one, and Today reports the store as unreadable.
     public func goals() throws -> [NutrientGoal] {
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
             sortBy: [SortDescriptor(\.nutrient)]))
-        return rows.compactMap { try? Self.decode($0) }
+        return try rows.map(Self.decode)
     }
 
     public func goal(for nutrient: String) throws -> NutrientGoal? {
@@ -112,5 +117,24 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
             throw GoalStoreError.corruptRecord(row.nutrient)
         }
         return NutrientGoal(nutrient: row.nutrient, target: target, unit: unit)
+    }
+
+    /// Rewrites a stored target into a shape the read path cannot decode: an unparseable decimal, or a
+    /// unit symbol the registry does not hold.
+    ///
+    /// `setGoal` validates before it writes, so the store's own API cannot produce such a row and a
+    /// test of the read path needs to plant one. This is the same shape of hook the journal store
+    /// exposes for rows its writer could not have written — a truncated write, a store written by a
+    /// build that stored a unit this registry no longer holds.
+    func writeCorruptTargetForTesting(
+        nutrient: String, targetText: String? = nil, unitSymbol: String? = nil
+    ) throws {
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
+            predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == nutrient }))
+        guard let row = rows.first else { throw GoalStoreError.corruptRecord(nutrient) }
+        if let targetText { row.targetText = targetText }
+        if let unitSymbol { row.unitSymbol = unitSymbol }
+        try context.save()
     }
 }

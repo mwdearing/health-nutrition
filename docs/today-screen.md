@@ -31,14 +31,18 @@ Where an amount comes from is decided by two rules, because those are the two th
   with no snapshot asks the injected `NutrientFactsLookup` about each component, so a food the catalog can still answer
   still contributes.
 
-A **per-serving basis that also states its serving as a mass** — "per serving (30 g)", which is what a barcode
-lookup or a label panel writes when it knows how big a serving is — is scaled from that stated serving and the
-amount logged, because the entry records the food as a mass and a count cannot be scaled from a log that states none.
-30 g is one serving and 60 g is two. That is done by the totals builder and not by the basis type itself: the
-intake-context encoder answers the same basis as unresolvable and its contract with the relay receiver says so, so
-changing what the basis means would be a contract change rather than one reader being able to answer a question the data
-can answer. A serving stated any other way — "per serving", "per serving (1 large biscuit)", "per serving (240
-mL)" — is not a mass to scale by, so the nutrient stays unknown rather than being scaled by a guess.
+A **per-serving basis that also states its serving as a quantity** — "per serving (30 g)" or "per serving (240
+mL)", which is what a barcode lookup or a label panel writes when it knows how big a serving is — is scaled from
+that stated serving and the amount logged, because the entry records the food as an amount and a count cannot be scaled
+from a log that states none. 30 g of a 30 g serving is one serving and 60 g is two; 480 mL of a 240 mL serving is two.
+The requirement is that **the two agree in dimension**, not that they are masses: a panel that states a serving in
+millilitres and an entry logged in millilitres say the same thing about how much was eaten, so it scales too. The
+logged amount is converted into the stated serving's unit first, so 0.48 L counts as the 480 mL it is. A mass serving
+against a logged volume does not agree and is nil, as is a serving stated no quantity at all — "per serving",
+"per serving (1 large biscuit)", "per serving (a handful)" — so the nutrient stays unknown rather than being scaled by
+a guess. That is done by the totals builder and not by the basis type itself: the intake-context encoder answers the
+same basis as unresolvable and its contract with the relay receiver says so, so changing what the basis means would be
+a contract change rather than one reader being able to answer a question the data can answer.
 
 The key a value is read under is resolved through the **canonical nutrient mapping** `HealthKitWritePlanner` holds,
 not by an exact dictionary lookup. A barcode snapshot keeps the keys `LookedUpProduct.standardKeys` names —
@@ -101,6 +105,12 @@ amount is checked.
 `errorMessage` rather than swallowed into an empty goal list: a store that cannot be read is not a person who has set
 no targets, and showing every nutrient as "no goal set" would be a claim about the person rather than about the store.
 The day itself is still knowable without the targets, so the totals remain as plain totals.
+
+A stored row that cannot be decoded — an unparseable decimal, a target that is not above zero, or a unit symbol this
+registry does not hold — **fails the whole read**, `goals()` and `goal(for:)` alike. Leaving it out returned a
+shorter list that looked complete, so a corrupt row read as "no goal set for this nutrient" rather than as a store
+that needs attention, and a caller had no way to tell the two apart. Repairing the row, or an erase, makes the store
+read again: the failure was the row, not the store.
 
 **Tracked nutrients** are the existing `defaultTrackedNutrients` in their own fixed order, whether or not those
 nutrients have goals, followed by the goals' keys that are outside it, alphabetically — the constant is a fallback
@@ -209,6 +219,12 @@ The button text and its accessibility label both come from `TodayViewModel.quick
 ## Coverage wording
 Each tracked nutrient (potassium, sodium, protein, fiber by default, plus every nutrient with a goal) shows
 `"<missing> of <total> foods lack <nutrient>"`, for example "2 of 5 foods lack potassium".
+
+**Water is never given a Coverage line**, so a water target adds a Totals line and nothing here. The line counts
+*foods*, and its values come from the day's food components, which a drink never joins: a water line counted against
+them would read "2 of 3 foods lack water" for a day whose water was known exactly, while ignoring the drinks that are
+the only entries that could have said anything about it. How much of the day's water could not be counted is reported
+by `waterSkippedCount` on the water row instead, and the water total itself is in the water row above.
 
 ## Unknown is not zero
 Values come from an injected `NutrientFactsLookup`. The default, `UnknownNutrientFacts`, always answers `.unknown`

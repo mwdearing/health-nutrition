@@ -358,6 +358,47 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(zinc.total, 1)
     }
 
+    /// Coverage is about the day's **foods**, so a water target gets a line in Totals and none in
+    /// Coverage. Counting the day's foods against water would read "1 of 1 foods lack water" for a day
+    /// whose water was known exactly, because a drink never joins the food components coverage counts
+    /// — and the drinks are the only entries that could have said anything about water.
+    func testACoverageLineIsNeverBuiltForWaterWhoseEntriesAreNotFoods() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
+        try logWater(journal, milliliters: 750)
+        try logOats(journal, grams: 100)
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertFalse(model.coverage.contains { $0.nutrient == "water" })
+        // The line the water target does belong to, and the day's water is still what was drunk.
+        XCTAssertEqual(line(model, "water"), "Water 750 mL of 2000 mL")
+        // Every food line still counts the day's food.
+        XCTAssertEqual(model.coverage.count, TodayViewModel.defaultTrackedNutrients.count)
+        let protein = try XCTUnwrap(model.coverage.first { $0.nutrient == "protein" })
+        XCTAssertEqual(protein.total, 1)
+        XCTAssertEqual(model.waterSkippedCount, 0)
+    }
+
+    /// The foods a drink cannot be counted against are the same ones whether or not water has a
+    /// target, so a water goal changes the Totals section and nothing in Coverage.
+    func testACoverageIsTheSameWithAndWithoutAWaterGoal() throws {
+        let journal = try makeJournalStore()
+        try logWater(journal, milliliters: 750)
+        try logOats(journal, grams: 100)
+        let withoutGoal = TodayViewModel(store: journal, lookup: SnapshotOnlyFacts())
+        withoutGoal.load(now: when)
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
+        let withGoal = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        withGoal.load(now: when)
+
+        XCTAssertEqual(withGoal.coverage.map(\.nutrient), withoutGoal.coverage.map(\.nutrient))
+        XCTAssertTrue(withGoal.coverage.map(\.nutrient).contains("protein"))
+    }
+
     // MARK: Energy is counted in kilocalories
 
     /// Energy is an energy, not a mass. A snapshot that came from a barcode states it under

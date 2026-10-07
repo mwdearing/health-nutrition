@@ -176,9 +176,18 @@ public final class TodayViewModel: ObservableObject {
             // Coverage is built from the same goal-expanded list the totals are, so a nutrient with
             // a target is also a nutrient the screen says how much of the day is known about. The
             // fixed fallback alone left a targeted nutrient out of Coverage entirely.
+            //
+            // **Water is left out of Coverage**, which is the section that says how much of what was
+            // eaten could not be read: its line counts *foods*, and the values here come from the
+            // day's food components, which a drink never joins. A water goal therefore gets a line in
+            // Totals, where the day's millilitres are compared with the target, and no line here —
+            // counting the day's foods against water would read "2 of 3 foods lack water" for a day
+            // whose water was known exactly, and would ignore the drinks that are the only entries
+            // that could have said anything. How much of the day's water could not be counted is
+            // reported by `waterSkippedCount` on the water row instead.
             coverage = Self.defaultTrackedNutrientsOrGoals(
                 goals: storedGoals, fallback: trackedNutrients
-            ).map { nutrient in
+            ).filter { $0 != DailyTotalsBuilder.waterKey }.map { nutrient in
                 CoverageLine.make(nutrient: nutrient, values: foodComponents.map {
                     DailyTotalsBuilder.value(
                         for: $0.component, snapshot: $0.snapshot, nutrient: nutrient, lookup: lookup)

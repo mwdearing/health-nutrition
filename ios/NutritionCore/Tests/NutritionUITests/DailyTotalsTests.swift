@@ -264,7 +264,7 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     /// A barcode lookup or a label panel that knows how big a serving is stores "per serving (30 g)",
-    /// and the entry records the food as a mass. The stated serving and the amount logged together
+    /// and the entry records the food as an amount. The stated serving and the amount logged together
     /// say how many servings were eaten, so a per-count basis the log cannot answer is not left
     /// unknown: 30 g is the stated value and 60 g is twice it.
     func testAPerServingBasisWithAMassComponentScalesFromTheStatedServing() throws {
@@ -284,11 +284,68 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(60), .g))
     }
 
-    /// A serving stated in a way that is not a mass — not at all, a count of biscuits, or a volume —
-    /// says nothing this can scale by, so the day stays unknown rather than being scaled by a guess.
-    func testAPerServingBasisThatStatesNoMassLeavesTheNutrientUnknown() throws {
+    /// A serving stated in millilitres scales exactly as one stated in grams: what matters is that the
+    /// serving and the amount logged are in the same dimension, not which one that is. A label
+    /// capture of a liquid supplement records "per serving (240 mL)" and the entry is logged in mL.
+    func testAPerServingBasisWithAVolumeComponentScalesFromTheStatedServing() throws {
         let store = try makeStore()
-        for basis in ["per serving", "per serving (1 large biscuit)", "per serving (240 mL)"] {
+        let broth = ProductDefinition(
+            snapshotID: "snapshot-broth", productID: "product-broth", name: "Broth",
+            labelBasis: "per serving (240 mL)", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(6), .g)])
+        // 240 mL is one serving and 480 mL is two, whatever the nutrient itself is weighed in.
+        try addFood(store, name: "Broth", id: "broth", at: when, amount: 240, unit: .mL, product: broth)
+        try addFood(store, name: "Broth", id: "broth", at: when, amount: 480, unit: .mL, product: broth)
+        let intakes = try store.activeIntakes().filter { $0.category == "food" }
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(18), .g))
+    }
+
+    /// The logged amount is converted into the stated serving's unit rather than compared in whatever
+/// unit it was written: 0.48 L is 480 mL, which is two of a 240 mL serving. Taking the 0.48 as if it
+/// were millilitres would give a thousandth of the answer.
+    func testAPerServingBasisConvertsTheLoggedAmountIntoTheStatedServing() throws {
+        let store = try makeStore()
+        let broth = ProductDefinition(
+            snapshotID: "snapshot-broth", productID: "product-broth", name: "Broth",
+            labelBasis: "per serving (240 mL)", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(6), .g)])
+        try addFood(
+            store, name: "Broth", id: "broth", at: when, amount: Decimal(string: "0.48")!, unit: .L,
+            product: broth)
+        let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(12), .g))
+    }
+
+    /// A serving stated one way and the amount logged in another say nothing comparable, so the day
+    /// stays unknown rather than being scaled by a ratio of two different dimensions.
+    func testAPerServingBasisWhoseDimensionTheLogDoesNotMatchLeavesTheNutrientUnknown() throws {
+        let store = try makeStore()
+        let broth = ProductDefinition(
+            snapshotID: "snapshot-broth", productID: "product-broth", name: "Broth",
+            labelBasis: "per serving (240 mL)", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(6), .g)])
+        try addFood(store, name: "Broth", id: "broth", at: when, amount: 40, unit: .g, product: broth)
+        let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
+
+    /// A serving stated in a way that is not a quantity — not at all, or a count of biscuits — says
+    /// nothing this can scale by, so the day stays unknown rather than being scaled by a guess.
+    func testAPerServingBasisThatStatesNoQuantityLeavesTheNutrientUnknown() throws {
+        let store = try makeStore()
+        for basis in ["per serving", "per serving (1 large biscuit)", "per serving (a handful)"] {
             let snapshot = ProductDefinition(
                 snapshotID: "snapshot-\(basis)", productID: "product-\(basis)", name: "Biscuit",
                 labelBasis: basis, catalogOrigin: "test", catalogVersion: "1",
