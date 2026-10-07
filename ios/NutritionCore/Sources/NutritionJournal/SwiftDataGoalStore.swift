@@ -111,7 +111,9 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
     }
 
     private static func decode(_ row: NutrientGoalRecord) throws -> NutrientGoal {
-        guard let target = DecimalText.decode(row.targetText), !target.isNaN, target > 0,
+        // `Decimal(string:)` reads a leading number out of "6O g"; the stored text must be a whole decimal.
+        guard DecimalText.isValidDecimalText(row.targetText), let target = DecimalText.decode(row.targetText),
+            !target.isNaN, target > 0,
             let unit = try? UnitRegistry.unit(for: row.unitSymbol)
         else {
             throw GoalStoreError.corruptRecord(row.nutrient)
