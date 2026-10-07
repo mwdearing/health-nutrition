@@ -198,6 +198,30 @@ public enum HealthKitWritePlanner {
         mappings.first { $0.acceptedKeys.contains(key) }?.nutrientKey ?? key
     }
 
+    /// The row one nutrient key resolves to, whether the key was the canonical one or an alias, or
+    /// nil when no row maps it.
+    ///
+    /// This is the one place a nutrient's aliases and the unit its total is read in are answered, so
+    /// a reader that has to accept both keys and a writer that has to know the unit ask this table
+    /// rather than each keeping its own copy of it. A key no row maps has no row to ask about, which
+    /// is nil rather than a row invented for it.
+    public static func mapping(for key: String) -> HealthKitNutrientMapping? {
+        let canonical = canonicalKey(for: key)
+        return mappings.first { $0.nutrientKey == canonical }
+    }
+
+    /// Every key one nutrient's value may be stored under, in the order a reader resolves them: the
+    /// canonical key first, then the aliases.
+    ///
+    /// A barcode snapshot keeps the keys `LookedUpProduct.standardKeys` names (`energyKcal`,
+    /// `carbohydrates`, `sugars`) verbatim, while a goal and the Today screen name the canonical
+    /// keys (`energy`, `carbohydrate`, `sugar`). A reader that looked the requested key up alone
+    /// would find nothing where the data does say something. The canonical key is read first so a
+    /// value stored under both is never counted twice, and the aliases follow it.
+    public static func acceptedKeys(for key: String) -> [String] {
+        mapping(for: key)?.acceptedKeys ?? [canonicalKey(for: key)]
+    }
+
     /// ADR 0002: one sync identifier per (intake, nutrient), `"intake:<intakeID>:<nutrientKey>"`. The
     /// `intake:<id>:<key>` shape is the one the HealthRelay intake-context v1 receiver contract and its
     /// golden vectors use, so the writer and the receiver name the same samples.

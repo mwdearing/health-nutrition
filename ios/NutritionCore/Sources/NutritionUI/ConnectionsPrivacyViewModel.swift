@@ -124,7 +124,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
     public static let eraseConfirmationMessage =
-        "Every entry, favorite and recipe this app stores on this device is deleted, along with any export "
+        "Every entry, favorite, recipe and daily goal this app stores on this device is deleted, along with any export "
         + "file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
         + "it there yourself."
@@ -132,7 +132,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
     /// only in the dialog that follows.
     public static let eraseFooterMessage =
-        "Erases the journal, favorites and recipes this app stores on this device, plus any export file "
+        "Erases the journal, favorites, recipes and daily goals this app stores on this device, plus any export file "
         + "it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
         + "or in another app — is not erased: delete it there yourself."
     public static let eraseFailedMessage =

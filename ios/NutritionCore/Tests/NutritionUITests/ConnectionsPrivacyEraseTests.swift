@@ -70,7 +70,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let journal = RecordingEraser()
         let favorites = RecordingEraser()
         let recipes = RecordingEraser()
-        let model = makeModel([journal, favorites, recipes])
+        let goals = RecordingEraser()
+        let model = makeModel([journal, favorites, recipes, goals])
         XCTAssertTrue(model.canEraseAll)
 
         XCTAssertTrue(model.eraseAllData())
@@ -78,6 +79,9 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(journal.eraseCount, 1)
         XCTAssertEqual(favorites.eraseCount, 1)
         XCTAssertEqual(recipes.eraseCount, 1)
+        // A daily goal is what the person is aiming at every day, so it goes with the entries it
+        // was measured against rather than outliving them.
+        XCTAssertEqual(goals.eraseCount, 1)
         XCTAssertNil(model.errorMessage)
         XCTAssertEqual(model.entryCount, 0)
     }
@@ -228,6 +232,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertTrue(message.contains("entry"))
         XCTAssertTrue(message.contains("favorite"))
         XCTAssertTrue(message.contains("recipe"))
+        XCTAssertTrue(message.contains("goal"), "goals are erased too, so the warning says so")
+        XCTAssertTrue(ConnectionsPrivacyViewModel.eraseFooterMessage.lowercased().contains("goal"))
         XCTAssertTrue(message.contains("cannot be undone"))
         XCTAssertEqual(ConnectionsPrivacyViewModel.eraseButtonTitle, "Erase all data")
     }

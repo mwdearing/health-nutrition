@@ -127,7 +127,7 @@ public struct ConnectionsPrivacyView: View {
                         Text(ConnectionsPrivacyViewModel.eraseButtonTitle).font(.headline)
                     }
                     .accessibilityLabel(ConnectionsPrivacyViewModel.eraseButtonTitle)
-                    .accessibilityHint("Asks first. Deletes every entry, favorite and recipe on this device")
+                    .accessibilityHint("Asks first. Deletes every entry, favorite, recipe and daily goal on this device")
                 } footer: {
                     Text(ConnectionsPrivacyViewModel.eraseFooterMessage)
                         .font(.footnote)

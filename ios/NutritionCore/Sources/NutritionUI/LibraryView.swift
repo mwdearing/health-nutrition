@@ -8,16 +8,20 @@ public struct LibraryView: View {
     private let onOpenRecipes: (() -> Void)?
     /// When given, the Library screen offers the way in to Connections and privacy. It is the only entry point.
     private let connections: ConnectionsPrivacyViewModel?
+    /// When given, the Library screen offers the way in to the daily goals.
+    private let goals: GoalsViewModel?
 
     public init(
         model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void,
-        onOpenRecipes: (() -> Void)? = nil, connections: ConnectionsPrivacyViewModel? = nil
+        onOpenRecipes: (() -> Void)? = nil, connections: ConnectionsPrivacyViewModel? = nil,
+        goals: GoalsViewModel? = nil
     ) {
         self.model = model
         self.now = now
         self.onAdded = onAdded
         self.onOpenRecipes = onOpenRecipes
         self.connections = connections
+        self.goals = goals
     }
 
     public var body: some View {
@@ -75,6 +79,17 @@ public struct LibraryView: View {
                     }
                     .accessibilityLabel("Connections and privacy")
                     .accessibilityHint("Export your journal and read what data leaves this device")
+                    if let goals {
+                        NavigationLink {
+                            GoalsView(model: goals)
+                        } label: {
+                            Text("Daily goals")
+                                .font(.body)
+                                .foregroundStyle(TokenColors.textPrimary)
+                        }
+                        .accessibilityLabel("Daily goals")
+                        .accessibilityHint("Set what you are aiming for in protein, sugar, salt and the rest")
+                    }
                 }
             }
         }
