@@ -108,7 +108,7 @@ public final class EntryDetailViewModel: ObservableObject {
                 EntryComponentRow(
                     id: $0.componentID, name: AmountText.name($0),
                     amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit,
-                    displayText: AmountDisplay.display($0, unitSystem: system).text)
+                    displayText: AmountDisplay.display($0, system: system).text)
             }
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
                 ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))

@@ -93,7 +93,7 @@ struct IntakeRepeater {
 enum AmountText {
     static func describe(_ component: IntakeComponent, unitSystem: UnitSystem = .metric) -> String {
         guard !component.amount.isNaN else { return "unknown" }
-        return AmountDisplay.display(component, unitSystem: unitSystem).text
+        return AmountDisplay.display(component, system: unitSystem).text
     }
 
     static func name(_ component: IntakeComponent) -> String {
