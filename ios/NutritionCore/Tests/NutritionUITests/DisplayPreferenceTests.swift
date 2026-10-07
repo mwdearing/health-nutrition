@@ -55,7 +55,6 @@ private func makeSuite(_ label: String) -> UserDefaults {
         return UserDefaults(suiteName: "healthnutrition.tests.\(label).fallback.\(UUID().uuidString)")!
     }
     defaults.removePersistentDomain(forName: name)
-    addTeardownBlock { defaults.removePersistentDomain(forName: name) }
     return defaults
 }
 
