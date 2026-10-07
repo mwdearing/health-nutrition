@@ -44,6 +44,9 @@ final class HealthKitDeliveryStatus {
     /// What the authorization request reported. HealthKit never says which types it granted, so this
     /// says what was asked for rather than pretending to know the answer.
     private(set) var authorizationSummary = "not requested"
+    /// What the last re-arm reported. Separate from `authorizationSummary` so that field keeps
+    /// answering only what it is named for; a denial and a re-arm are different events.
+    private(set) var rearmSummary: String?
     /// True while a request or a delivery run is in flight, so a second tap cannot start a second one.
     private(set) var isBusy = false
     /// Why the counts could not be read, when they could not be.
@@ -132,6 +135,7 @@ final class HealthKitDeliveryStatus {
         var passTime = now
         repeat {
             rerunRequested = false
+            rearmSummary = nil
             let outcomes = await healthKitDelivery.runOnce(now: passTime)
             lastRunAt = passTime
             lastRunLines = outcomes.map(Self.line(for:))
@@ -157,16 +161,54 @@ final class HealthKitDeliveryStatus {
 
     private var rerunRequested = false
 
-    /// Re-reads the queue, so the counts are correct after a change made anywhere in the app.
+    /// The suspended operation ids read by the last `refresh()`, kept so the re-arm action knows what
+    /// it is clearing. Not shown: the ids are opaque, and the count on the summary line is the part a
+    /// person reads.
+    private var suspendedIDs: Set<String> = []
+
+    /// Whether the re-arm action has anything to do. False while a run is in flight, so a re-arm cannot
+    /// race the pass that is deciding the same operations' fate.
+    var canRearmSuspended: Bool { !isBusy && !suspendedIDs.isEmpty }
+
+    /// Clears every suspension, making those operations due again.
+    ///
+    /// The store's own `rearmDelivery(operationID:)` does the work and is already covered by the
+    /// package's tests; this only exposes it, because without it the acceptance run stops at the first
+    /// denial with nothing on screen that can clear it (health-nutrition #103). Re-arming is
+    /// deliberately a person pressing a button rather than something a run does on its own, which is
+    /// the same reasoning the store gives for making the call explicit.
+    func rearmSuspended() {
+        guard !isBusy, !suspendedIDs.isEmpty else { return }
+        let targets = suspendedIDs.sorted()
+        var failures: [String] = []
+        for operationID in targets {
+            do {
+                try store.rearmDelivery(operationID: operationID)
+            } catch {
+                failures.append("\(operationID): \(error.localizedDescription)")
+            }
+        }
+        if failures.isEmpty {
+            rearmSummary = "Re-armed \(targets.count) suspended operation(s); run delivery again."
+        } else {
+            rearmSummary = "Re-arm failed for \(failures.count) of \(targets.count): "
+                + failures.joined(separator: "; ")
+        }
+        refresh()
+    }
+
+    /// Re-read the queue, so the counts are correct after a change made anywhere in the app.
     func refresh() {
         do {
             let operations = try store.pendingOutbox().filter { $0.destination == .healthKit }
             let needingAttention = try Self.needsAttentionCount(store: store, operations: operations)
-            let parked = try store.suspendedOperationIDs().count
-            counts = Counts(pending: operations.count, needsAttention: needingAttention, suspended: parked)
+            let parked = try store.suspendedOperationIDs()
+            suspendedIDs = parked
+            counts = Counts(pending: operations.count, needsAttention: needingAttention, suspended: parked.count)
             readError = nil
         } catch {
             counts = .none
+            suspendedIDs = []
             readError = "the queue could not be read: \(error.localizedDescription)"
         }
     }
@@ -266,6 +308,18 @@ struct HealthKitDeliveryDebugSection: View {
                 Task { await status.run() }
             }
             .disabled(!status.canAct)
+            if status.canRearmSuspended {
+                Button("Re-arm suspended deliveries") {
+                    Task { status.rearmSuspended() }
+                }
+                .disabled(!status.canAct)
+                Text("A suspended delivery is not retried by any run. Clear it, then run delivery again.")
+                    .font(.footnote)
+            }
+            if let rearmSummary = status.rearmSummary {
+                Text(rearmSummary)
+                    .font(.footnote)
+            }
             Text(status.authorizationSummary)
                 .font(.footnote)
         }

@@ -84,6 +84,50 @@ final class HealthKitDeliveryDebugTests: XCTestCase {
         XCTAssertEqual(status.counts.suspended, 1)
     }
 
+    /// The parked case above has to be recoverable from this screen, or the device run stops at the
+    /// first denial with nothing on screen that can clear it (health-nutrition #103). Re-arming calls
+    /// the store's own `rearmDelivery(operationID:)`, so the operation stops being suspended and the
+    /// action disappears once there is nothing left to clear.
+    func testReArmingClearsASuspendedOperationAndTheActionDisappears() throws {
+        let services = try makeServices()
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: services.healthKitDelivery, store: services.journalStore)
+        try services.journalStore.create(sampleIntake(), components: [sampleComponent()], product: nil, now: when)
+
+        let operation = try XCTUnwrap(try services.journalStore.pendingOutbox().first)
+        try services.journalStore.recordFailure(
+            operationID: operation.operationID, retryAt: nil, needsAttention: true,
+            reason: "HealthKit access is not granted, so it cannot be written")
+
+        status.refresh()
+        XCTAssertEqual(status.counts.suspended, 1)
+        XCTAssertTrue(status.canRearmSuspended, "a parked operation must offer the re-arm action")
+
+        status.rearmSuspended()
+
+        XCTAssertTrue(try services.journalStore.suspendedOperationIDs().isEmpty)
+        XCTAssertFalse(status.canRearmSuspended, "nothing left to clear means no action to press")
+        XCTAssertEqual(status.counts.suspended, 0)
+        XCTAssertNotNil(status.rearmSummary, "the person who pressed it is told what happened")
+    }
+
+    /// Re-arming with nothing suspended is a no-op rather than an error, so a double tap on the button
+    /// cannot fail a run that was already fine.
+    func testReArmingWithNothingSuspendedDoesNothing() throws {
+        let services = try makeServices()
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: services.healthKitDelivery, store: services.journalStore)
+
+        status.refresh()
+        XCTAssertFalse(status.canRearmSuspended)
+
+        status.rearmSuspended()
+
+        XCTAssertNil(status.readError)
+        XCTAssertNil(status.rearmSummary, "nothing was re-armed, so nothing is reported")
+        XCTAssertEqual(status.counts.suspended, 0)
+    }
+
     /// Every outcome is reported in plain text naming the operation, so a device run's failures and
     /// retries are readable on screen and a copied transcript says what happened.
     func testEveryOutcomeIsReportedInPlainText() {
