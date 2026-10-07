@@ -532,6 +532,43 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertFalse(model.canApply)
     }
 
+    /// A supplement panel lists compounds the fifteen journal nutrients do not name, and they are why
+    /// anyone scans one. Each is shown under its own heading, confirmable like any other row, and a
+    /// confirmed one reaches the saved snapshot under its own slug, so the journal keeps it.
+    func testAConfirmedAdditionalRowReachesTheSavedSnapshot() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Total Carbohydrate 5g 2%",
+            "Creatine Monohydrate 3g",
+        ])
+
+        // The compound is on screen under the name the label printed, alongside the rows the table names.
+        let creatine = model.additionalNutrient(for: "creatine-monohydrate")
+        XCTAssertEqual(creatine?.name, "Creatine Monohydrate")
+        XCTAssertEqual(creatine?.value, .known(Decimal(3), .g))
+        // A compound the panel states plainly is read, not flagged, so it does not hold the values back.
+        XCTAssertFalse(creatine?.isPending == true)
+        XCTAssertTrue(model.canApply)
+        XCTAssertTrue(model.confirmAdditional(key: "creatine-monohydrate"))
+
+        let product = try XCTUnwrap(model.makeProduct())
+        XCTAssertEqual(product.value(for: "creatine-monohydrate"), .known(Decimal(3), .g))
+        XCTAssertEqual(product.nutrients["creatine-monohydrate"], .known(Decimal(3), .g))
+
+        // The snapshot that is stored with the entry carries it too, so the journal and the day's
+        // totals keep the compound rather than losing it at the form.
+        let intake = try makeIntakeModel()
+        intake.applyLabelProduct(product)
+        XCTAssertEqual(intake.prefilledNutrients["creatine-monohydrate"], .known(Decimal(3), .g))
+        intake.name = "Synthetic Gummies"
+        let snapshot = try XCTUnwrap(intake.productSnapshot())
+        XCTAssertEqual(snapshot.value(for: "creatine-monohydrate"), .known(Decimal(3), .g))
+        XCTAssertEqual(snapshot.catalogOrigin, "label_capture")
+    }
+
     // MARK: Support
 
     /// A barcode product with values of its own, so a lookup that answers can be told apart from a

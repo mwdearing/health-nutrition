@@ -691,6 +691,102 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("6"))
     }
 
+    // MARK: - The round the owner read on a phone
+
+    /// A supplement panel prints its lot number and its best-by date on the same line as the serving,
+    /// because that is where the space is. Neither belongs to the serving, so the measure ends where the
+    /// measure ends: "3 Gummies", with the packaging text behind it left where it was printed.
+    func testTheServingSizeStopsAfterTheMeasureAndNotAfterTheLotNumber() {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving Size: 3 Gummies LOT# : 260628007 Best",
+            "Amount Per Serving",
+            "Calories 30",
+        ])
+
+        XCTAssertEqual(panel.servingSize?.text, "3 Gummies", "the lot number is not part of the serving")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("3"), unit: .gummy))
+        // The packaging text behind it states no row, so it is nothing the panel has to answer for.
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "a lot number is not a nutrient row")
+        XCTAssertEqual(value(.calories, panel), .known(dec("30"), .kcal))
+    }
+
+    /// A panel may print a colon after the name it prints an amount behind. It is the label's own
+    /// punctuation, so "Calories: 30" states thirty calories exactly as "Calories 30" does.
+    func testCaloriesWithAColonAfterTheNameIsRead() throws {
+        let panel = parse(["Calories: 30", "Total Fat: 0g", "Sodium: 180 mg"])
+
+        XCTAssertEqual(value(.calories, panel), .known(dec("30"), .kcal))
+        XCTAssertEqual(value(.fat, panel), .known(dec("0"), .g))
+        XCTAssertEqual(try amount(.sodium, panel), dec("180"))
+        XCTAssertEqual(try unit(.sodium, panel), .mg)
+    }
+
+    /// Added sugars is stated inside the total sugars row, with the amount in front of the name, as
+    /// "Includes 3g Added Sugars". The row the table names is the one the label printed there.
+    func testIncludesAddedSugarsWithTheAmountInFrontIsRead() throws {
+        let panel = parse([
+            "Total Sugars 4g",
+            "Includes 3g Added Sugars",
+        ])
+
+        XCTAssertEqual(try amount(.sugars, panel), dec("4"))
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("3"))
+        XCTAssertEqual(try unit(.addedSugars, panel), .g)
+    }
+
+    /// A supplement states compounds the fifteen journal nutrients do not name, and reading them is the
+    /// point of scanning one. Such a row is kept under the label's own name and a slug of it, with its
+    /// own amount and unit, and the rows the table does name are left alone.
+    func testACreatineRowIsCollectedAsAnAdditionalNutrient() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Total Carbohydrate 5g 2%",
+            "Creatine Monohydrate 3g",
+            "Vitamin D3 25mcg 15%",
+            "Zinc 15mg 15% DV",
+            "Coenzyme Q10 100mg †",
+        ])
+
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine-monohydrate"))
+        XCTAssertEqual(creatine.name, "Creatine Monohydrate", "the row keeps the name the label printed")
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+
+        // The columns the label prints beside a row are not part of its amount.
+        let zinc = try XCTUnwrap(panel.additionalNutrient(for: "zinc"))
+        XCTAssertEqual(zinc.value, .known(dec("15"), .mg))
+        let q10 = try XCTUnwrap(panel.additionalNutrient(for: "coenzyme-q10"))
+        XCTAssertEqual(q10.value, .known(dec("100"), .mg))
+
+        // A row the table already names is a nutrient row, never a second copy of one as a compound.
+        XCTAssertNil(panel.additionalNutrient(for: "vitamin-d"))
+        XCTAssertNil(panel.additionalNutrient(for: "carbohydrates"))
+        XCTAssertNil(panel.additionalNutrient(for: "calories"))
+        XCTAssertEqual(try amount(.calories, panel), dec("30"))
+    }
+
+    /// The rows a panel collects are the ones that state a name and an amount. A line that states
+    /// neither is text the panel printed, not a compound the parser made up: an ingredients line has
+    /// no amount on it, and neither does the footnote.
+    func testALineThatStatesNoAmountIsNotAnAdditionalNutrient() {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving Size: 2 Capsules",
+            "Calories 10",
+            "Other Ingredients: Tapioca Syrup",
+            "* The % Daily Value tells you how much a nutrient contributes to a daily diet.",
+            "Questions? Call 1-800-555-0100",
+        ])
+
+        XCTAssertTrue(
+            panel.additionalNutrients.isEmpty,
+            "only a name with an amount is a row: \(panel.additionalNutrients.map(\.name))"
+        )
+        XCTAssertEqual(panel.servingSize?.text, "2 Capsules")
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false
