@@ -147,6 +147,9 @@ public struct JournalSnapshotTotals: Sendable {
             // Only a stated amount can be scaled. The other cases say the product states no amount for
             // this nutrient, and passing one on would state a value the label declined to state.
             guard case .known(let amount, let unit) = value else { continue }
+            // A product's own water is its moisture content, not something that was drunk: dietary
+            // water comes only from the components of a drink, the same rule `recordedWater` applies.
+            guard key != "water" else { continue }
             scaled[key] = .known(amount * factor, unit)
         }
         return scaled

@@ -815,6 +815,22 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(recorded, [:], "there is no snapshot to scale, and that is not a failure")
     }
 
+    func testASnapshotWaterNutrientIsNeverWrittenAsDietaryWater() async throws {
+        let store = try makeStore(try makeDirectory())
+        let soup = ProductDefinition(
+            snapshotID: "snap-soup", productID: "product-1", name: "Sample soup", brand: nil, barcode: nil,
+            labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["water": .known(dec("90"), .mL), "sodium": .known(dec("300"), .mg)])
+        try store.create(
+            sampleIntake(), components: [component("soup", amount: 200, unit: .g)], product: soup, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertNil(recorded["water"], "a food's moisture content is not water that was drunk")
+        XCTAssertEqual(recorded["sodium"], .known(dec("600"), .mg), "the other snapshot nutrients still scale")
+    }
+
     func testARevisionWhoseSnapshotIsMissingThrowsInsteadOfStatingNothing() async throws {
         let store = try makeStore(try makeDirectory())
         let oats = ProductDefinition(
