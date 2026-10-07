@@ -61,10 +61,26 @@ public struct RecentItemsProvider {
     /// states no meal can never collide with one that states an empty string. A snapshot id still short
     /// circuits: a snapshot names one product, but the meal is what the person is repeating, so it is kept.
     static func identityKey(category: String, snapshotID: String?, names: [String], meal: String?) -> String {
-        let mealPart = "meal:\(meal?.count ?? 0):\(meal ?? "")"
+        let mealPart = Self.mealIdentityPart(meal)
         if let snapshotID { return "product:\(snapshotID.count):\(snapshotID)|\(mealPart)" }
         let parts = names.map { $0.lowercased() }.sorted().map { "\($0.count):\($0)" }.joined()
         return "category:\(category.count):\(category)|components:\(names.count)|\(parts)|\(mealPart)"
+    }
+
+    /// The counted meal part of a key, with the stored value normalised first.
+    ///
+    /// The value is free text in the export, so it reaches the store spelled however a person or another
+    /// tool wrote it: `"Breakfast "` and `"breakfast"` are one meal, and keying them verbatim gave one
+    /// favorite two identities — the second one added as if the first were not there, and a recent reading
+    /// as un-favorited while a favorite stood in for it. Normalising through `MealLabel.identityKeyPart` is
+    /// the same rule `MealLabel.displayName(for:)` shows a meal by, so what a screen calls one meal is one
+    /// entry in the Library.
+    ///
+    /// A value that states no meal still keys as a counted empty part rather than as nothing, so an entry
+    /// stating none can never collide with one stating an empty string.
+    static func mealIdentityPart(_ meal: String?) -> String {
+        let normalized = MealLabel.identityKeyPart(for: meal)
+        return "meal:\(normalized?.count ?? 0):\(normalized ?? "")"
     }
 }
 

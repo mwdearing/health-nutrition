@@ -124,28 +124,36 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: intakeID).last?.timeZoneIdentifier, "UTC")
     }
 
-    /// A store written before the revision carried a time opens at the current schema with nil revision
-    /// times, which mean "the entry's current time" — the only instant such a row can offer, since the
-    /// entry's row held the sole copy and may since have been corrected.
-    func testAStoreWrittenAtV4OpensWithNilRevisionTimes() throws {
+    /// A store written before the revision carried a time of its own opens at the current schema with that
+    /// time **filled in on every revision**, copied from the entry's own row.
+    ///
+    /// V4 had no way to correct a time, so the intake's row held one value that was exact for all of its
+    /// revisions rather than only for the current one. Two revisions are migrated, because a backfill that
+    /// touched only the row it could see would pass a single-revision fixture: revision 1 is the one a queued
+    /// delivery still rebuilds from, and it is the one that must not depend on a row that may later move.
+    func testAStoreWrittenAtV4OpensWithTheEntriesTimeOnEveryRevision() throws {
         let directory = try makeDirectory()
-        try SwiftDataJournalStore.writeV4RevisionForTesting(
-            url: storeURL(directory), intake: sampleIntake(), components: [oats(40)], now: when)
+        try SwiftDataJournalStore.writeV4RevisionsForTesting(
+            url: storeURL(directory), intake: sampleIntake(), components: [oats(40)],
+            edited: [oats(55)], now: when)
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: storeURL(directory).path),
             "the fixture has to be a real V4 file on disk, or the migration stage never runs")
 
         let store = try makeStore(directory)
         XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
-        let revision = try XCTUnwrap(try store.revisions(of: intakeID).first)
-        XCTAssertEqual(revision.number, 1)
-        XCTAssertNil(revision.occurredAt, "a row written before the column carried none")
-        XCTAssertNil(revision.timeZoneIdentifier)
-        XCTAssertEqual(try store.activeIntakes().first?.occurredAt, when, "the entry's own row is untouched")
+        let revisions = try store.revisions(of: intakeID)
+        XCTAssertEqual(revisions.map(\.number), [1, 2])
+        XCTAssertEqual(
+            revisions.map(\.occurredAt), [when, when],
+            "each revision states the time the entry was written with, not nil")
+        XCTAssertEqual(revisions.map(\.timeZoneIdentifier), ["UTC", "UTC"])
+        XCTAssertEqual(
+            try store.activeIntakes().first?.occurredAt, when, "the entry's own row is untouched")
     }
 
-    /// A revision written after the upgrade carries its time through a reopen, so the row is not lost on
-    /// disk the way a migrated one never had it.
+    /// A revision written after the upgrade carries its own time through a reopen, from disk rather than from the
+    /// migration: the backfill and the write path have to agree on where a revision's instant comes from.
     func testARevisionWrittenNowKeepsItsTimeAcrossAReopen() throws {
         let directory = try makeDirectory()
         let first = try makeStore(directory)

@@ -247,18 +247,29 @@ public final class EntryDetailViewModel: ObservableObject {
     /// the parser would make of that text. An entry with a zero-valued component therefore keeps it, and a
     /// time correction of such an entry — which changes no amount — writes without ever validating one.
     ///
-    /// A stored `unknown` is left out on purpose: its field is seeded empty, and empty is not a number, so
-    /// there is no untouched reading of it to recognise. An untouched unknown still fails the parser as
-    /// before, which is the honest outcome for a field that states nothing.
+    /// A stored `unknown` **is** recognised as untouched. Its field is seeded empty, and empty is exactly
+    /// what `load` put there, so an entry carrying an unknown component is read back the same way a zero or
+    /// any other value the parser refuses is: the person changed nothing, and the save carries the component
+    /// through as it stands.
+    ///
+    /// It has to be recognised, or the only edit that changes no amount cannot be made on such an entry at
+    /// all: correcting the time of an entry with a component whose amount is unknown would fail on a field
+    /// nobody touched. The comparison is against the text `load` seeded, so an amount field the person did
+    /// clear is still empty and still refused by the parser — this recognises *untouched*, not *absent*.
     static func unchangedStoredComponent(
         for draft: EditedComponent, in stored: [IntakeComponent]
     ) -> IntakeComponent? {
-        guard let existing = stored.first(where: { $0.componentID == draft.componentID }),
-            !existing.amount.isNaN,
-            draft.amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-                == DecimalFormatting.text(existing.amount)
-        else { return nil }
+        guard let existing = stored.first(where: { $0.componentID == draft.componentID }) else { return nil }
+        let text = draft.amountText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text == Self.seededAmountText(existing.amount) else { return nil }
         return existing
+    }
+
+    /// What an amount field is seeded with: its decimal text, or empty for an `unknown`, which states no
+    /// amount and so has no text to seed. The unknown's field therefore reads as untouched exactly when it
+    /// is still empty.
+    static func seededAmountText(_ amount: Decimal) -> String {
+        amount.isNaN ? "" : DecimalFormatting.text(amount)
     }
 
     /// Whether the components a save writes are the ones the current revision already holds.
@@ -267,9 +278,11 @@ public final class EntryDetailViewModel: ObservableObject {
     /// comparison is by id, name, amount and unit, ignoring order: the amounts a person edits are the same
     /// facts whatever sequence the fields are listed in, and a reordered list is not a change to them.
     ///
-    /// An unknown amount never compares equal to another, so a stored `unknown` reads as changed — which is
-    /// the right answer, since the parser rejects that draft outright and the only way to save such an entry
-    /// is to state a number, which is a change.
+    /// Two unknowns are the same fact, so they compare equal here. `Decimal.nan == Decimal.nan` is false, which
+    /// would read an untouched unknown as a changed amount and record a save that moved only the time as an
+    /// ordinary "Edited" — telling a reader the amounts changed when they did not. Comparing the seeded text
+    /// instead gives the answer the draft actually states: unchanged while the field still reads as `load`
+    /// left it, changed as soon as a number is typed over it.
     static func componentsUnchanged(
         from current: [IntakeComponent], to proposed: [IntakeComponent]
     ) -> Bool {
@@ -277,9 +290,15 @@ public final class EntryDetailViewModel: ObservableObject {
         return proposed.allSatisfy { candidate in
             current.contains { existing in
                 existing.componentID == candidate.componentID && existing.name == candidate.name
-                    && existing.unit == candidate.unit && existing.amount == candidate.amount
+                    && existing.unit == candidate.unit && Self.sameAmount(existing.amount, candidate.amount)
             }
         }
+    }
+
+    /// Amount equality that treats two unknowns as one value. Any other value compares as `Decimal` does.
+    static func sameAmount(_ first: Decimal, _ second: Decimal) -> Bool {
+        if first.isNaN || second.isNaN { return first.isNaN && second.isNaN }
+        return first == second
     }
 
     /// Saves the current drafts, keeping names and units.

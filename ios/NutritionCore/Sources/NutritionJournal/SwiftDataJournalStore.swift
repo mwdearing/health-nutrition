@@ -590,9 +590,10 @@ enum JournalSchemaV4: VersionedSchema {
 /// *corrected* instant under revision 1's own `operation_id` — a different payload under one delivery
 /// identity, which the receiver reads as a conflict rather than the duplicate it is.
 ///
-/// Both are optional and an existing row carries neither: the revision table had no time of its own
-/// before, so nil is the honest reading and means "the entry's current time", which is the only instant
-/// such a row can offer.
+/// Both are optional and an existing row carries neither, so the stage that adds them is custom rather than
+/// lightweight: V4 had no way to correct a time, which makes the intake's row the one copy of the instant
+/// that was exact for **every** revision of the entry, and each revision takes it. Nil therefore means "the
+/// entry's current time" for a row nothing ever filled in, and the reads fall back to the entry's row for it.
 enum JournalSchemaV5: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     static var models: [any PersistentModel.Type] {
@@ -634,8 +635,8 @@ enum JournalSchemaV5: VersionedSchema {
         var productSnapshotID: String?
         var changeReason: String
         var createdAt: Date
-        /// The instant this revision was written for, nil for a row written before this column existed
-        /// and therefore meaning "the entry's current time".
+        /// The instant this revision was written for, nil meaning "the entry's current time". The V4→V5
+        /// migration fills this in on rows written before the column existed, from the entry's own row.
         var occurredAt: Date?
         /// The zone `occurredAt` is a wall clock in, nil under the same rule.
         var timeZoneIdentifier: String?
@@ -769,11 +770,17 @@ enum JournalSchemaV5: VersionedSchema {
 /// the file is wrong after the upgrade, so nothing has to be rewritten — and a custom stage here would
 /// have to reach the same conclusion in more code.
 ///
-/// **The V4→V5 stage is lightweight for the same reason.** Its two new columns describe the instant a
-/// revision was written with, and a row written before them has none to recover: the entry's own row held
-/// the only copy, and it may since have been corrected, so inventing one would put an instant in the file
-/// that was never written. Nil is the honest reading of such a row and means "the entry's current time",
-/// which is the only reading a row like that can support.
+/// **The V4→V5 stage is custom, because its two new columns do have a value to recover.** A revision written
+/// before them carries no instant, and the entry's own row held the only copy — but V4 had no way to correct
+/// a time, so that copy is exact for **every** revision of the entry rather than exact only for the current
+/// one. Copying it onto each row turns a file full of revisions that depend on a row that may later move into
+/// one where each states its own instant, which is what a queued delivery reads. Leaving them nil would also
+/// have been defensible — nil means "the entry's current time" — but it would leave the two readings
+/// indistinguishable, so a revision 1 still waiting in the queue would be rebuilt with whatever time the entry
+/// holds now. The reads stay nil-tolerant either way, so a row that was never filled in still falls back.
+///
+/// It runs in `didMigrate`, for the reason the V2→V3 stage does: the context there is bound to V5, where the
+/// two columns exist to write.
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self, JournalSchemaV5.self]
@@ -789,8 +796,43 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
                     try context.save()
                 }),
             .lightweight(fromVersion: JournalSchemaV3.self, toVersion: JournalSchemaV4.self),
-            .lightweight(fromVersion: JournalSchemaV4.self, toVersion: JournalSchemaV5.self),
+            .custom(
+                fromVersion: JournalSchemaV4.self, toVersion: JournalSchemaV5.self,
+                willMigrate: nil,
+                didMigrate: { context in
+                    try backfillRevisionTimes(context: context)
+                    try context.save()
+                }),
         ]
+    }
+
+    /// Copies each entry's own time and zone onto every revision row that carries neither, which is what a
+    /// V4 file holds: the columns did not exist, so no revision states an instant of its own.
+    ///
+    /// Every revision of the entry takes the intake's values, not only the current one. V4 could not correct a
+    /// time, so the intake's row never moved away from the instant its revisions were written for, and that
+    /// single copy is exact for all of them.
+    static func backfillRevisionTimes(context: ModelContext) throws {
+        let intakes = try context.fetch(FetchDescriptor<JournalSchemaV5.IntakeRecord>())
+        guard !intakes.isEmpty else { return }
+        var timesByIntake: [String: (occurredAt: Date, timeZoneIdentifier: String)] = [:]
+        for intake in intakes {
+            // The first row for an intake wins: two rows for one id is not a shape the store writes, and
+            // preferring the first keeps this stage deterministic rather than order-dependent.
+            if timesByIntake[intake.intakeID] == nil {
+                timesByIntake[intake.intakeID] = (intake.occurredAt, intake.timeZoneIdentifier)
+            }
+        }
+        let revisions = try context.fetch(FetchDescriptor<JournalSchemaV5.RevisionRecord>())
+        for revision in revisions {
+            // A row that already states a time is left alone: this stage only fills in what is missing, so
+            // re-running it cannot overwrite a revision's own instant with the entry's current one.
+            guard revision.occurredAt == nil, revision.timeZoneIdentifier == nil,
+                let times = timesByIntake[revision.intakeID]
+            else { continue }
+            revision.occurredAt = times.occurredAt
+            revision.timeZoneIdentifier = times.timeZoneIdentifier
+        }
     }
 
     /// Copies the V2 projection state onto the V3 outbox rows, for the operations it suspended.
@@ -959,26 +1001,34 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         try context.save()
     }
 
-    /// Writes one intake and its first revision with the V4 model, exactly as that build recorded them:
-    /// the time lives on the intake row and the revision carries none, which is the shape the V4→V5 stage
+    /// Writes one intake and two of its revisions with the V4 model, exactly as that build recorded them:
+    /// the time lives on the intake row and the revisions carry none, which is the shape the V4→V5 stage
     /// has to migrate.
+    ///
+    /// Two revisions rather than one, because the backfill is about **every** row: a single revision cannot
+    /// tell a migration that fills each row in from one that happens to fix the one row it can see. The second
+    /// is an amounts-only edit, which is the other shape V4 could produce.
     ///
     /// The V4 container is released before returning, so the caller opens a **real file on disk** rather
     /// than one still held open by this process — which is the situation a real upgrade is in.
-    static func writeV4RevisionForTesting(
-        url: URL, intake: Intake, components: [IntakeComponent], now: Date
+    static func writeV4RevisionsForTesting(
+        url: URL, intake: Intake, components: [IntakeComponent], edited: [IntakeComponent], now: Date
     ) throws {
         do {
             let context = ModelContext(try v4StoreForTesting(url: url))
             context.autosaveEnabled = false
             let componentsJSON = try encode(components)
+            let editedJSON = try encode(edited)
             context.insert(JournalSchemaV4.IntakeRecord(
                 intakeID: intake.id, category: intake.category, occurredAt: intake.occurredAt,
                 timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal, note: intake.note,
-                lifecycleRaw: intake.lifecycle.rawValue, currentRevision: 1))
+                lifecycleRaw: intake.lifecycle.rawValue, currentRevision: 2))
             context.insert(JournalSchemaV4.RevisionRecord(
                 intakeID: intake.id, number: 1, componentsJSON: componentsJSON,
                 productSnapshotID: nil, changeReason: "created", createdAt: now))
+            context.insert(JournalSchemaV4.RevisionRecord(
+                intakeID: intake.id, number: 2, componentsJSON: editedJSON,
+                productSnapshotID: nil, changeReason: "bigger bowl", createdAt: now))
             try context.save()
         }
     }

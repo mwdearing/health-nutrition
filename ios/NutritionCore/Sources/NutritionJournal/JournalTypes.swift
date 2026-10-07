@@ -149,10 +149,10 @@ public struct IntakeRevision: Sendable, Hashable {
     /// revision therefore carries the time it was written with, and a delivery rebuilds the revision from
     /// these.
     ///
-    /// Nil means "the entry's current time", which is what a row written before this column existed says.
-    /// A revision that predates the column was written when the entry's row was the only record of the
-    /// time, so nil is the honest reading of it and the corrected instant is the only one such a row can
-    /// offer.
+    /// Nil means "the entry's current time". Reads are nil-tolerant rather than requiring a value, because a
+    /// row written before this column existed carries none: the V4→V5 migration fills those rows in from the
+    /// intake (which was exact for every revision, since V4 could not correct a time), so nil is now the
+    /// reading of a row nothing ever wrote rather than the normal case.
     public var occurredAt: Date?
     /// The zone `occurredAt` is a wall clock in. Read with `occurredAt`: nil here means the entry's own.
     public var timeZoneIdentifier: String?

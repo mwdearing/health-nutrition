@@ -36,4 +36,21 @@ public enum MealLabel: String, Sendable, Hashable, Codable, CaseIterable {
         if let label = MealLabel(rawValue: trimmed.lowercased()) { return label.displayName }
         return trimmed
     }
+
+    /// What one stored `Intake.meal` is **keyed** as, or nil when it states no meal.
+    ///
+    /// This is the same normalisation `displayName(for:)` applies, exposed for the places that compare two
+    /// stored meals rather than show one. A stored value is free text in the export, so `"Breakfast "`,
+    /// `"breakfast"` and a meal typed in another case are all spellings of one meal, and keying them
+    /// verbatim would make one entry stand in for the others as a favorite or a recent.
+    ///
+    /// A value this vocabulary does not name is returned trimmed and lowercased rather than dropped: the
+    /// column is free text, so an imported entry may carry words this build has no case for, and its own
+    /// wording is still the identity it has.
+    public static func identityKeyPart(for stored: String?) -> String? {
+        guard let stored else { return nil }
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed.lowercased()
+    }
 }

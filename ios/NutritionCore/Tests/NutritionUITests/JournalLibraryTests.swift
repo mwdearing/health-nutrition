@@ -52,10 +52,19 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
 }
 
 /// Serves canned records so tests can hold stored values the real store would refuse to create.
+///
+/// An `edit` is recorded and applied rather than refused, so a test can also hold a stored value the real
+/// store cannot write — a missing amount is one — and then save over it. `SwiftDataJournalStore` cannot be
+/// used for that: it refuses a not-a-number amount outright, so such a row can only reach a screen through a
+/// store that already has it. Tests that only read are unaffected: they never call `edit`.
 private final class CannedStore: JournalStore, @unchecked Sendable {
     var failNextSaveForTesting = false
-    let intakes: [Intake]
-    let components: [String: [IntakeComponent]]
+    var intakes: [Intake]
+    var components: [String: [IntakeComponent]]
+    var changeReason = "test"
+    var editCalls = 0
+    /// What the last `edit` was asked to write, which is the only way a test reads back what a save carried.
+    var lastEditedComponents: [IntakeComponent]?
 
     init(intakes: [Intake], components: [String: [IntakeComponent]]) {
         self.intakes = intakes
@@ -68,14 +77,26 @@ private final class CannedStore: JournalStore, @unchecked Sendable {
     func edit(
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
-    ) throws -> IntakeRevision { throw Unsupported() }
+    ) throws -> IntakeRevision {
+        editCalls += 1
+        lastEditedComponents = components
+        self.changeReason = changeReason
+        self.components[intakeID] = components
+        if let occurredAt, let index = intakes.firstIndex(where: { $0.id == intakeID }) {
+            intakes[index].occurredAt = occurredAt
+        }
+        return IntakeRevision(
+            intakeID: intakeID, number: 1, components: components, productSnapshotID: nil,
+            changeReason: changeReason, createdAt: Date(timeIntervalSince1970: 0),
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+    }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
     func activeIntakes() throws -> [Intake] { intakes }
     func revisions(of intakeID: String) throws -> [IntakeRevision] {
         guard let list = components[intakeID] else { throw Unsupported() }
         return [IntakeRevision(
             intakeID: intakeID, number: 1, components: list, productSnapshotID: nil,
-            changeReason: "test", createdAt: Date(timeIntervalSince1970: 0))]
+            changeReason: changeReason, createdAt: Date(timeIntervalSince1970: 0))]
     }
     func projections(of intakeID: String) throws -> [DestinationProjection] { [] }
     func pendingOutbox() throws -> [OutboxOperation] { [] }
@@ -383,6 +404,52 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(revision.changeReason, "Time corrected", "no amount changed, so it is a time correction")
         XCTAssertEqual(revision.components.first { $0.componentID == "water" }?.amount, 0)
         XCTAssertEqual(try store.activeIntakes().first { $0.id == id }?.occurredAt, now.addingTimeInterval(-3_600))
+    }
+
+    /// A stored `unknown` is the same case one step further on: the amount is not a number the parser accepts,
+    /// so a save that changed only the time would fail on the field nobody touched and the entry could never
+    /// be re-timed at all. The unknown is carried through as it stands, and since no amount changed the save
+    /// is recorded as what it is.
+    func testEntryDetailCorrectsTheTimeOfAnEntryWithAnUnknownAmount() throws {
+        let id = "entry-unknown"
+        let store = CannedStore(
+            intakes: [Intake(id: id, category: "food", occurredAt: now, timeZoneIdentifier: "UTC")],
+            components: [id: [
+                IntakeComponent(componentID: "seeds", name: "Seeds", amount: Decimal.nan, unit: .g),
+                IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g),
+            ]])
+
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        XCTAssertEqual(model.drafts["seeds"], "", "an unknown amount seeds an empty field")
+        model.occurredAt = now.addingTimeInterval(-3_600)
+        XCTAssertTrue(model.saveDrafts(now: now), "an untouched unknown must not fail the save: \(model.fieldErrors)")
+        XCTAssertNil(model.fieldErrors["seeds"])
+
+        XCTAssertEqual(
+            model.revisions.first?.changeReason, "Time corrected", "no amount changed, so it is a time correction")
+        let written = try XCTUnwrap(store.lastEditedComponents)
+        XCTAssertTrue(
+            try XCTUnwrap(written.first { $0.componentID == "seeds" }).amount.isNaN,
+            "the unknown is carried through unchanged, not dropped and not read as zero")
+        XCTAssertEqual(try store.activeIntakes().first { $0.id == id }?.occurredAt, now.addingTimeInterval(-3_600))
+    }
+
+    /// Stating a number over an unknown is still a change, so the same save is an ordinary edit: the person
+    /// said something the entry did not before.
+    func testEntryDetailRecordsTypingOverAnUnknownAmountAsAnOrdinaryEdit() throws {
+        let id = "entry-typed"
+        let store = CannedStore(
+            intakes: [Intake(id: id, category: "food", occurredAt: now, timeZoneIdentifier: "UTC")],
+            components: [id: [IntakeComponent(componentID: "seeds", name: "Seeds", amount: Decimal.nan, unit: .g)]])
+
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        model.drafts["seeds"] = "30"
+        model.occurredAt = now.addingTimeInterval(-3_600)
+        XCTAssertTrue(model.saveDrafts(now: now))
+        XCTAssertEqual(model.revisions.first?.changeReason, "Edited")
+        XCTAssertEqual(try store.revisions(of: id).last?.components.first?.amount, 30)
     }
 
     /// An amount the person **did** type is still held to the parser, zero included: the gate is on what was
@@ -705,6 +772,32 @@ final class JournalLibraryTests: XCTestCase {
         try addFood(store, name: "Oats", at: now.addingTimeInterval(-60))
         try addFood(store, name: "Oats", at: now, meal: "dinner")
         XCTAssertEqual(try RecentItemsProvider(store: store).recents().count, 2)
+    }
+
+    /// A meal spelled differently is still the same meal, so it is one identity. The stored column is free
+    /// text in the export, so `"Breakfast "` reaches the store beside `"breakfast"` and the two must not
+    /// become two recents and two favorites of one entry — the same failure the meal was added to the key to
+    /// fix, reached by spelling rather than by value.
+    func testTwoSpellingsOfOneMealAreOneIdentity() throws {
+        let store = try makeStore()
+        try addFood(
+            store, name: "Oats", at: now.addingTimeInterval(-60), product: product("snap-1"), meal: "Breakfast ")
+        try addFood(store, name: "Oats", at: now, product: product("snap-1"), meal: "breakfast")
+
+        XCTAssertEqual(
+            try RecentItemsProvider(store: store).recents().count, 1,
+            "one meal spelled two ways is one entry to add again")
+
+        let favorites = try makeFavorites()
+        let library = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
+        library.load()
+        let recent = try XCTUnwrap(library.sections.last?.items.first)
+        library.addFavorite(recent)
+        XCTAssertEqual(try favorites.list().count, 1)
+        library.load()
+        XCTAssertTrue(
+            library.sections.last?.items.first?.isFavorite ?? false,
+            "the recent reads as already favorited, as the row that shares its identity does")
     }
 
     func testRecentKeyDoesNotCollideOnPlusInNames() throws {
