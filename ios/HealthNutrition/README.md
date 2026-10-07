@@ -10,12 +10,17 @@ reads a single product from Open Food Facts and nothing is sent back; see
 [docs/providers/open-food-facts.md](../../docs/providers/open-food-facts.md) for the fields read, the
 rate limits honoured and the attribution the licence requires.
 
-The target includes the journal's HealthKit planner and delivery worker, but `AppServices` keeps
-both HealthKit and HealthRelay destinations disabled. Normal journal saves therefore queue no external
-delivery. See the [writer lifecycle](../../docs/healthkit-writer.md) for retry and deletion behavior.
-The separate debug-only spike (`Sources/Debug/HealthKitSpikeView.swift`) records the device observations
-in [ADR 0002](../../docs/adr/0002-healthkit-sync.md). Release builds do not expose that spike; implemented
-worker code does not mean delivery has been enabled or accepted on a device.
+The target includes the journal's HealthKit planner and delivery worker. A release build's
+`AppServices` keeps both HealthKit and HealthRelay destinations disabled, so a normal journal save
+queues no external delivery at all. See the [writer lifecycle](../../docs/healthkit-writer.md) for retry
+and deletion behavior.
+
+A debug build enables the HealthKit destination only, so the real worker can be exercised on a device
+against real entries (`Sources/Debug/HealthKitDeliveryDebug.swift`): a section that requests write access
+for every mapped type, runs one delivery pass, and reports the queue and the last run's outcomes. The
+HealthRelay destination stays off in every build. The separate debug-only spike
+(`Sources/Debug/HealthKitSpikeView.swift`) records the device observations in
+[ADR 0002](../../docs/adr/0002-healthkit-sync.md). Release builds contain neither surface.
 
 ## What the target contains
 
@@ -34,9 +39,16 @@ worker code does not mean delivery has been enabled or accepted on a device.
 - `Sources/RecipeNavigation.swift`: the recipe sheet's presentation and navigation stack on one small
   `@MainActor` object, so the erase on the Connections and privacy screen can close the sheet and drop
   its routes without a UI test.
+- `Sources/Debug/HealthKitDeliveryDebug.swift`: the debug-only driver for the real HealthKit delivery
+  worker, whole file inside `#if DEBUG`. It asks HealthKit for write access to every type in
+  `HealthKitWritePlanner.mappings`, runs `healthKitDelivery.runOnce(now:)` on the app becoming active
+  and after every journal change, and shows the pending, needing-attention and suspended counts plus
+  the last run's outcome list. Today shows the same counts as one line. Nothing here changes the
+  worker, the writer or any journal behaviour.
 - `Sources/Debug/HealthKitSpikeView.swift`: the debug-only HealthKit write spike, whole file inside
   `#if DEBUG`. It writes synthetic samples to measure how HealthKit resolves a repeated sync
-  identifier, and deletes them again.
+  identifier, and deletes them again. Its sections share the HealthKit tab with the delivery driver
+  above.
 - `Sources/AppServices.swift`: the store and view model setup, including the barcode lookup client the
   app shares for its lifetime.
 - `Sources/BarcodeLookup.swift`: the adapter between the nutrition-data client and the lookup protocol

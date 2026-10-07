@@ -2,6 +2,7 @@
 import Foundation
 import HealthKit
 import NutritionCore
+import NutritionJournal
 import Observation
 import SwiftUI
 import UIKit
@@ -86,6 +87,14 @@ final class HealthKitSpikeRunner {
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "HealthKitSpike")
 
+    /// The real delivery status, told once access has been asked for. Optional so the spike can be run
+    /// on its own; the app hands it the one status the debug section also shows.
+    private let deliveryStatus: HealthKitDeliveryStatus?
+
+    init(deliveryStatus: HealthKitDeliveryStatus? = nil) {
+        self.deliveryStatus = deliveryStatus
+    }
+
     /// The namespace for the spike's sync identifiers. Fixed, so a re-run targets the same samples.
     /// Synthetic amounts only: nothing here is anyone's real intake.
     private static let syncIdentifierNamespace = "dev.example.healthnutrition.spike.nc06"
@@ -155,30 +164,59 @@ final class HealthKitSpikeRunner {
 
     // MARK: - Steps
 
-    /// Ask for write access to the two spike types and read access to the same two, so the spike
-    /// can query back what it wrote.
+    /// Ask for write and read access to **every** type the planner maps, not only the two this spike
+    /// writes.
+    ///
+    /// The spike measures sync-identifier behaviour using water and protein, but the real writer
+    /// writes whatever the planner maps, and a request that names only the spike's two leaves the
+    /// rest `.notDetermined`: the writer reads that as denied, the worker parks those operations, and
+    /// nothing re-arms them — which is exactly what the owner's device run saw, with only water and
+    /// protein ever written. Read access is asked for the same set so the spike can still query back
+    /// what it wrote.
+    ///
+    /// On success the real delivery status is told, so anything parked for the missing request is
+    /// re-armed and one pass runs rather than waiting for the next app trigger.
     func requestAuthorization() async {
         await run {
             guard HKHealthStore.isHealthDataAvailable() else {
                 self.record("HealthKit is not available on this device.")
                 return
             }
+            let mapped = HealthKitDeliveryStatus.mappedTypes()
             do {
                 // The async requestAuthorization returns nothing: it completes once the prompt is
                 // done, and HealthKit deliberately never says which types were granted.
+                // Write access for every mapped type, because that is what delivery writes; read access
+                // only for the two types this screen reads back, because that is all it reads and all the
+                // usage description promises.
                 try await self.store.requestAuthorization(
-                    toShare: [Self.waterType, Self.proteinType],
-                    read: [Self.waterType, Self.proteinType]
-                )
+                    toShare: mapped.share, read: [Self.waterType, Self.proteinType])
                 self.authorizationSummary = "requested"
                 self.hasAuthorization = true
                 self.record(
-                    "authorization requested (write and read: dietaryWater, dietaryProtein)")
+                    "authorization requested (write: "
+                        + self.requestedIdentifiers(mapped).joined(separator: ", ")
+                        + "; read: dietaryWater, dietaryProtein)")
+                if !mapped.unresolved.isEmpty {
+                    self.record(
+                        "HealthKit does not know these mapped types: "
+                            + mapped.unresolved.sorted().joined(separator: ", "))
+                }
+                await self.deliveryStatus?.authorizationRequested()
                 await self.openRun(clearTranscript: false)
             } catch {
                 self.authorizationSummary = "failed"
                 self.record("authorization failed: \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// The identifiers asked for, in the order the planner's table lists them, so the transcript says
+    /// exactly what Health was shown rather than a count.
+    private func requestedIdentifiers(_ mapped: HealthKitDeliveryStatus.MappedTypes) -> [String] {
+        let resolved = Set(mapped.share.map(\.identifier))
+        return HealthKitWritePlanner.mappings.compactMap { mapping in
+            resolved.contains(mapping.quantityTypeIdentifier) ? mapping.quantityTypeIdentifier : nil
         }
     }
 
@@ -479,9 +517,14 @@ final class HealthKitSpikeRunner {
     }
 }
 
-/// The DEBUG-only spike screen: authorization, reset, one button per step, the transcript, and a
+/// The DEBUG-only spike sections: authorization, reset, one button per step, the transcript, and a
 /// way to copy it. Each step is enabled only once its prerequisite has succeeded.
-struct HealthKitSpikeView: View {
+///
+/// Sections rather than a screen of its own, so the HealthKit tab can show the real delivery driver
+/// (`HealthKitDeliveryDebugSection`) above these synthetic-sample steps in one list. Nothing about the
+/// experiment changed: it still writes its own two samples under its own sync identifiers, separate from
+/// anything the app's real writer does with real entries.
+struct HealthKitSpikeSteps: View {
     let runner: HealthKitSpikeRunner
 
     @State private var copied = false
@@ -499,63 +542,60 @@ struct HealthKitSpikeView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Health") {
-                    Text("Authorization: \(runner.authorizationSummary)")
-                    Text("Next: \(nextStep)")
-                    Button("Request authorization") {
-                        Task { await runner.requestAuthorization() }
-                    }
-                    .disabled(!runner.canRequestAuthorization)
+        Group {
+            Section("Health") {
+                Text("Authorization: \(runner.authorizationSummary)")
+                Text("Next: \(nextStep)")
+                Button("Request authorization") {
+                    Task { await runner.requestAuthorization() }
                 }
+                .disabled(!runner.canRequestAuthorization)
+            }
 
-                Section("Steps (synthetic samples)") {
-                    Button("Reset: clear the transcript and delete leftover samples") {
-                        Task { await runner.resetForNewRun() }
-                    }
-                    .disabled(!runner.canReset)
-
-                    Button("1. Save water 250 mL and protein 10 g") {
-                        Task { await runner.saveInitialSamples() }
-                    }
-                    .disabled(!runner.canSaveInitialSamples)
-
-                    Button("2. Save again with a higher sync version") {
-                        Task { await runner.saveHigherVersion() }
-                    }
-                    .disabled(!runner.canSaveHigherVersion)
-
-                    Button("3. Save again with the equal, then the lower, sync version") {
-                        Task { await runner.saveEqualAndLowerVersions() }
-                    }
-                    .disabled(!runner.canSaveEqualAndLowerVersions)
-
-                    Button("4. Delete the samples this app wrote") {
-                        Task { await runner.deleteOwnSamples() }
-                    }
-                    .disabled(!runner.canDeleteOwnSamples)
+            Section("Steps (synthetic samples)") {
+                Button("Reset: clear the transcript and delete leftover samples") {
+                    Task { await runner.resetForNewRun() }
                 }
+                .disabled(!runner.canReset)
 
-                Section("Results") {
-                    if runner.entries.isEmpty {
-                        Text("No results yet.").foregroundStyle(.secondary)
-                    }
-                    ForEach(runner.entries) { entry in
-                        Text(entry.text).font(.footnote.monospaced())
-                    }
-                    Button("Copy results (redacted)") {
-                        UIPasteboard.general.string = runner.transcript
-                        copied = true
-                    }
-                    if copied {
-                        Text("Copied, with the bundle id and device name redacted.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                Button("1. Save water 250 mL and protein 10 g") {
+                    Task { await runner.saveInitialSamples() }
+                }
+                .disabled(!runner.canSaveInitialSamples)
+
+                Button("2. Save again with a higher sync version") {
+                    Task { await runner.saveHigherVersion() }
+                }
+                .disabled(!runner.canSaveHigherVersion)
+
+                Button("3. Save again with the equal, then the lower, sync version") {
+                    Task { await runner.saveEqualAndLowerVersions() }
+                }
+                .disabled(!runner.canSaveEqualAndLowerVersions)
+
+                Button("4. Delete the samples this app wrote") {
+                    Task { await runner.deleteOwnSamples() }
+                }
+                .disabled(!runner.canDeleteOwnSamples)
+            }
+
+            Section("Results") {
+                if runner.entries.isEmpty {
+                    Text("No results yet.").foregroundStyle(.secondary)
+                }
+                ForEach(runner.entries) { entry in
+                    Text(entry.text).font(.footnote.monospaced())
+                }
+                Button("Copy results (redacted)") {
+                    UIPasteboard.general.string = runner.transcript
+                    copied = true
+                }
+                if copied {
+                    Text("Copied, with the bundle id and device name redacted.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("HealthKit spike")
         }
     }
 }

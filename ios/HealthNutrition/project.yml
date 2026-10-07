@@ -38,9 +38,10 @@ targets:
       # lookup protocol the UI depends on; NutritionUI itself never links a networking framework.
       - package: NutritionCore
         product: NutritionProviders
-    # HealthKit capability. Nothing in the app calls HealthKit outside #if DEBUG
-    # (see Sources/Debug/HealthKitSpikeView.swift), but the entitlement and the usage strings
-    # have to be in the target for the debug spike to run on a device.
+    # HealthKit capability. Nothing in the app reaches HealthKit except the writer
+    # (Sources/HealthKitSampleWriter.swift) and the two debug surfaces under Sources/Debug, and no Health
+    # authorization is requested outside #if DEBUG. The entitlement and the usage strings still have to be
+    # in the target for a debug build to run on a device.
     entitlements:
       path: HealthNutrition.entitlements
     settings:
@@ -54,7 +55,10 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
-        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "The debug HealthKit spike writes a few test water and protein samples so their sync behaviour can be measured. You delete them again from the spike screen."
+        # Both strings describe debug-only behaviour, which is the only thing that reaches Health in any
+        # build. The delivery driver on the HealthKit tab writes the nutrients of the entries you log, and
+        # removes them again when you delete an entry; the spike writes its own two test samples.
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "In a debug build, the HealthKit tab writes the nutrients of the entries you log to Health, and removes them again when you delete an entry. It also writes a few test water and protein samples you can delete from that screen. No release build writes anything to Health."
         # The camera in Add intake. It is used for two things and nothing else: reading the barcode
         # printed on a package, and reading the text of a Nutrition Facts panel so the values can be
         # checked before they are filled in. Text recognition runs on the device; the picture is never

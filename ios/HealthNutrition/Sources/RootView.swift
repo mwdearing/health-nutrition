@@ -29,14 +29,31 @@ struct RootView: View {
     @State private var recipeList: RecipeListViewModel
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
-    // One runner for the app's lifetime, so the transcript survives tab switches.
-    @State private var healthKitSpike = HealthKitSpikeRunner()
+    /// Today's view model, observed so this body is re-evaluated when its values change. Read only for
+    /// the water total below, which is the one journal write that does not go through `reload()`.
+    @ObservedObject var todayModel: TodayViewModel
+    // One runner for the app's lifetime, so the transcript survives tab switches. It is handed the
+    // same delivery status the debug section shows, so a request made here reaches the real writer.
+    @State private var healthKitSpike: HealthKitSpikeRunner
+    // The delivery status the debug section reads and the delivery runs below write into. Held here
+    // rather than built in the section, so the counts and the last run's outcome list survive tab
+    // switches and are the same state the one-line summary on Today reads.
+    @State private var healthKitDeliveryStatus: HealthKitDeliveryStatus
     #endif
 
     init(services: AppServices) {
         self.services = services
         _connections = ObservedObject(wrappedValue: services.connections)
         _recipeList = State(initialValue: RecipeListViewModel(store: services.recipeStore))
+        #if DEBUG
+        _todayModel = ObservedObject(wrappedValue: services.today)
+        // The app's own worker, not a second one: two workers over one store would each try to deliver
+        // the same queued operation.
+        let deliveryStatus = HealthKitDeliveryStatus(
+            healthKitDelivery: services.healthKitDelivery, store: services.journalStore)
+        _healthKitDeliveryStatus = State(initialValue: deliveryStatus)
+        _healthKitSpike = State(initialValue: HealthKitSpikeRunner(deliveryStatus: deliveryStatus))
+        #endif
     }
 
     private enum AppTab: Hashable {
@@ -57,6 +74,16 @@ struct RootView: View {
                     onOpenJournal: { selection = .journal },
                     onOpenLibrary: { selection = .library }
                 )
+                #if DEBUG
+                // One line, because a delivery that is parked or waiting for a person should be visible
+                // where the entries it belongs to are, not only on the debug tab. Debug builds only.
+                .safeAreaInset(edge: .bottom) {
+                    Text(healthKitDeliveryStatus.summaryLine)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                }
+                #endif
             }
             .tabItem { Label("Today", systemImage: "sun.max") }
             .tag(AppTab.today)
@@ -88,10 +115,17 @@ struct RootView: View {
                 }
 
             #if DEBUG
-            // Debug builds only: measures how HealthKit resolves a repeated sync identifier.
-            HealthKitSpikeView(runner: healthKitSpike)
-                .tabItem { Label("HealthKit", systemImage: "waveform.path.ecg") }
-                .tag(AppTab.spike)
+            // Debug builds only: the real HealthKit delivery driver, then the spike that measured how
+            // HealthKit resolves a repeated sync identifier.
+            NavigationStack {
+                List {
+                    HealthKitDeliveryDebugSection(status: healthKitDeliveryStatus)
+                    HealthKitSpikeSteps(runner: healthKitSpike)
+                }
+                .navigationTitle("HealthKit")
+            }
+            .tabItem { Label("HealthKit", systemImage: "waveform.path.ecg") }
+            .tag(AppTab.spike)
             #endif
         }
         // Today's totals depend on the local day: recompute them when the app comes back to the
@@ -108,6 +142,20 @@ struct RootView: View {
             reload()
             recipeList.load()
         }
+        #if DEBUG
+        // A restore on the Connections and privacy screen writes the journal without going through
+        // `reload()`, so it is watched here. The restore queues nothing of its own; this is here so a
+        // restore that follows a parked delivery is delivered like any other journal change.
+        .onChange(of: connections.importState) { _, _ in
+            deliverToHealthKit()
+        }
+        // The water button on Today writes through its own view model and does not reload the tabs, so
+        // it is the one journal change `reload()` never sees. Watching the total covers it and its undo.
+        // Observed rather than read through `services`, so the change is actually delivered to this body.
+        .onChange(of: todayModel.waterTotalMilliliters) { _, _ in
+            deliverToHealthKit()
+        }
+        #endif
         .sheet(isPresented: $addingIntake) {
             if let model = addIntakeModel {
                 AddIntakeView(
@@ -237,7 +285,23 @@ struct RootView: View {
         services.today.load(now: now)
         services.journal.load(now: now)
         services.library.load()
+        #if DEBUG
+        deliverToHealthKit(now: now)
+        #endif
     }
+
+    #if DEBUG
+    /// Runs one HealthKit delivery pass. Debug builds only: a release build queues nothing for Health,
+    /// so there would be nothing to deliver.
+    ///
+    /// Called wherever the journal may have changed — the app coming to the foreground, an add, an
+    /// edit, a delete, a restore, an erase — because `reload()` is already the point every one of those
+    /// goes through. That is also why there is no timer: a queue that changed is delivered as it
+    /// changes, and a retry that is not due yet is left to the next foreground rather than polled.
+    private func deliverToHealthKit(now: Date = Date()) {
+        Task { await healthKitDeliveryStatus.run(now: now, automatic: true) }
+    }
+    #endif
 }
 
 /// Shown when a store file cannot be opened at all.
