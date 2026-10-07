@@ -134,7 +134,10 @@ unit is shown as the person set it rather than silently converted, so the compar
 entered.
 
 The Goals screen offers a fixed list of nutrients (`NutrientGoalChoices.keys`) rather than whatever the catalog
-holds, so a target is always one a person can correct. Each is offered **only in its own dimension**, from the same
+holds, so a target is always one a person can correct. In addition to that list it offers every compound key the
+journal's current snapshots carry — a captured supplement panel stores `creatine-monohydrate`, and the screen adds
+it once an entry holds it, so a creatine goal can be set and the day's creatine total appears on Today. Each is
+offered **only in its own dimension**, from the same
 canonical mapping: water in volumes, energy in kilocalories, and the rest in masses. Energy in grams was a category
 error rather than a rounding one — it was offered, accepted and stored, and the line then compared a kcal total
 against a gram target. No count or international unit is offered either, so a target cannot be set in a unit its

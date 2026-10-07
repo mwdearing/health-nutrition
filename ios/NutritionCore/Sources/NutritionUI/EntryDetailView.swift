@@ -54,6 +54,21 @@ public struct EntryDetailView: View {
                         }
                     }
                 }
+                // The compounds the entry's product snapshot states under names the fifteen journal
+                // nutrients do not, shown with the amounts above rather than hidden: a scanned
+                // supplement's own rows are part of what the entry records.
+                if !model.additionalNutrients.isEmpty {
+                    Text("Also on the label")
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                        .accessibilityLabel("Also on the label")
+                    ForEach(model.additionalNutrients) { row in
+                        LabeledContent(row.name, value: row.amountText)
+                            .font(.footnote)
+                            .accessibilityLabel("\(row.name)")
+                            .accessibilityValue(row.amountText)
+                    }
+                }
                 // Bounded to now: nobody has eaten anything in the future, and an entry's time is
                 // something to be corrected backwards. Saving writes a new revision like any other
                 // change here, so the old instant is kept and can be read back.

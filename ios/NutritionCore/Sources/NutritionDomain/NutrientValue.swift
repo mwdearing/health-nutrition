@@ -13,6 +13,13 @@ public enum NutrientValue: Sendable, Hashable, Codable {
         return Quantity(value: amount, unit: unit)
     }
 
+    /// Whether this value states an amount, as opposed to unknown or a bound. A row the parser did
+    /// not read states no amount, so it is not a row that was captured with a value.
+    public var isKnown: Bool {
+        if case .known = self { return true }
+        return false
+    }
+
     public func scaled(by factor: Decimal) -> NutrientValue {
         guard case .known(let amount, let unit) = self else {
             return self

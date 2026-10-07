@@ -48,6 +48,9 @@ public enum BarcodeLookupState: Sendable, Equatable {
 
 @MainActor
 public final class AddIntakeViewModel: ObservableObject {
+    /// This form's own identity, so the sheet can be bound to the model rather than to a flag beside
+    /// it. It is per instance, so a second add is always a new sheet.
+    public nonisolated let formID = UUID()
     @Published public var name: String = ""
     @Published public var brand: String = ""
     @Published public var barcode: String = ""
@@ -160,6 +163,37 @@ public final class AddIntakeViewModel: ObservableObject {
     /// values themselves and their attribution stay source-agnostic and are shown as the source gave them.
     public static let noStatedNutrientsMessage =
         "Open Food Facts lists this product but states no nutrition facts; scan the label instead."
+
+    /// The compound rows a captured panel states that the fifteen journal nutrients do not name, in a
+    /// stable order. The form shows them under "Also on the label" so a compound the panel printed is
+    /// visible and, saved with the snapshot, is not lost between the review screen and the journal.
+    ///
+    /// Only a row the panel captured with a known amount is listed. A key a barcode snapshot completed
+    /// as unknown (its `salt`, say) is not a row the label stated and never appears here.
+    public var additionalLabelNutrients: [String] {
+        guard let captured = labelValues else { return [] }
+        let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
+        return captured.nutrients
+            .filter { !standard.contains($0.key) && $0.value.isKnown }
+            .map(\.key)
+            .sorted()
+    }
+
+    /// The name a captured panel row is shown under: the words the label printed for it when the
+    /// snapshot carries them, otherwise the name the key itself spells out.
+    public func displayName(forCaptured key: String) -> String {
+        if let printed = labelValues?.displayName(for: key) { return printed }
+        guard let fact = NutritionFactKey(rawValue: key) else { return key }
+        return LabelCaptureRow.displayNames[fact] ?? LookedUpProduct.displayNames[key] ?? key
+    }
+
+    /// The name a compound row is shown under, preferring the words the label printed for it.
+    public func displayName(forAdditional key: String) -> String {
+        if let printed = labelValues?.displayName(for: key) { return printed }
+        return key.split(separator: "-")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
 
     /// One line explaining the values a captured panel filled in, or nil when there are none.
     public var labelMessage: String? {
@@ -397,6 +431,12 @@ public final class AddIntakeViewModel: ObservableObject {
             for key in captured.nutrients.keys.sorted() {
                 signature += "|" + key + "=" + LookedUpProduct.describe(captured.nutrients[key] ?? .unknown)
             }
+            // The printed spelling is part of what the capture recorded, so two panels that state the
+            // same values under the same keys but print one of them differently are two products. The
+            // snapshot id has to say so, or the second save collides with the first.
+            for key in captured.nutrientDisplayNames.keys.sorted() {
+                signature += "|display:" + key + "=" + (captured.nutrientDisplayNames[key] ?? "")
+            }
             return ProductDefinition(
                 snapshotID: "label-" + Self.slug(signature) + "-" + LookedUpProduct.checksum(signature),
                 productID: captured.productID,
@@ -406,7 +446,8 @@ public final class AddIntakeViewModel: ObservableObject {
                 labelBasis: captured.labelBasis,
                 catalogOrigin: captured.catalogOrigin,
                 catalogVersion: captured.catalogVersion,
-                nutrients: captured.nutrients
+                nutrients: captured.nutrients,
+                nutrientDisplayNames: captured.nutrientDisplayNames
             )
         }
         guard let lookedUp else { return nil }
@@ -428,24 +469,17 @@ public final class AddIntakeViewModel: ObservableObject {
     }
 
     /// Component ids are slugs: `[a-z0-9][a-z0-9._-]{0,63}`. A pure function, so it is callable
-    /// from outside the main actor (the snapshot identity in `BarcodeLookup.swift` needs it).
+    /// from outside the main actor (the snapshot identity in `BarcodeLookup.swift` needs it). The
+    /// spelling itself is `Slug`, which the label parser reads a compound's name into as well.
     nonisolated static func slug(_ text: String) -> String {
-        var result = ""
-        var lastWasDash = false
-        for scalar in text.lowercased().unicodeScalars {
-            let isAllowed = scalar.isASCII && (("a"..."z").contains(Character(scalar)) || ("0"..."9").contains(Character(scalar)))
-            if isAllowed {
-                result.unicodeScalars.append(scalar)
-                lastWasDash = false
-            } else if !lastWasDash, !result.isEmpty {
-                result.append("-")
-                lastWasDash = true
-            }
-        }
-        while result.hasSuffix("-") { result.removeLast() }
-        if result.isEmpty { return "item" }
-        return String(result.prefix(64))
+        Slug.make(text)
     }
+}
+
+/// The sheet that presents the intake form is bound to the view model itself rather than to a flag
+/// beside it, so the model has to say which form it is: one form on screen at a time.
+extension AddIntakeViewModel: Identifiable {
+    public var id: UUID { formID }
 }
 
 extension String {

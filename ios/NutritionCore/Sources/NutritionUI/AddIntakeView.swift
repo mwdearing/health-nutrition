@@ -180,10 +180,26 @@ public struct AddIntakeView: View {
                     }
                     ForEach(Self.capturedKeys, id: \.self) { key in
                         LabeledContent(
-                            Self.displayName(forCaptured: key),
+                            model.displayName(forCaptured: key),
                             value: Self.text(for: model.prefilledNutrients[key])
                         )
                         .font(.footnote)
+                    }
+                    // The compounds the panel states under its own names, which the fifteen journal
+                    // nutrients do not. They are shown apart from that list but with the same values,
+                    // so a scanned supplement's own rows are visible on the form rather than dropped.
+                    if !model.additionalLabelNutrients.isEmpty {
+                        Text("Also on the label")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                            .accessibilityLabel("Also on the label")
+                        ForEach(model.additionalLabelNutrients, id: \.self) { key in
+                            LabeledContent(
+                                model.displayName(forAdditional: key),
+                                value: Self.text(for: model.prefilledNutrients[key])
+                            )
+                            .font(.footnote)
+                        }
                     }
                     if let message = model.labelMessage {
                         Text(message)
@@ -229,6 +245,15 @@ public struct AddIntakeView: View {
     static func displayName(forCaptured key: String) -> String {
         guard let fact = NutritionFactKey(rawValue: key) else { return key }
         return LabelCaptureRow.displayNames[fact] ?? LookedUpProduct.displayNames[key] ?? key
+    }
+
+    /// The name a compound row is shown under, spelled out from its slug: `creatine-monohydrate` reads
+    /// as `Creatine Monohydrate`. A captured snapshot carries the key, not the printed words, so the
+    /// words are restored from it rather than the row going unnamed.
+    static func displayName(forAdditional key: String) -> String {
+        key.split(separator: "-")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 
     /// A nutrient the source did not give reads as unknown, never as zero.

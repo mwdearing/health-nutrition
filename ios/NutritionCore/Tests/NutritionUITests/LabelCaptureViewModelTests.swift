@@ -532,6 +532,171 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertFalse(model.canApply)
     }
 
+    /// A supplement panel lists compounds the fifteen journal nutrients do not name, and they are why
+    /// anyone scans one. Each is shown under its own heading, confirmable like any other row, and a
+    /// confirmed one reaches the saved snapshot under its own slug, so the journal keeps it.
+    func testAConfirmedAdditionalRowReachesTheSavedSnapshot() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Total Carbohydrate 5g 2%",
+            "Creatine Monohydrate 3g",
+        ])
+
+        // The compound is on screen under the name the label printed, alongside the rows the table names.
+        let creatine = model.additionalNutrient(for: "creatine-monohydrate")
+        XCTAssertEqual(creatine?.name, "Creatine Monohydrate")
+        XCTAssertEqual(creatine?.value, .known(Decimal(3), .g))
+        // A compound the panel states plainly is read, not flagged, so it does not hold the values back.
+        XCTAssertFalse(creatine?.isPending == true)
+        XCTAssertTrue(model.canApply)
+        XCTAssertTrue(model.confirmAdditional(key: "creatine-monohydrate"))
+
+        let product = try XCTUnwrap(model.makeProduct())
+        XCTAssertEqual(product.value(for: "creatine-monohydrate"), .known(Decimal(3), .g))
+        XCTAssertEqual(product.nutrients["creatine-monohydrate"], .known(Decimal(3), .g))
+
+        // The snapshot that is stored with the entry carries it too, so the journal and the day's
+        // totals keep the compound rather than losing it at the form.
+        let intake = try makeIntakeModel()
+        intake.applyLabelProduct(product)
+        XCTAssertEqual(intake.prefilledNutrients["creatine-monohydrate"], .known(Decimal(3), .g))
+        intake.name = "Synthetic Gummies"
+        let snapshot = try XCTUnwrap(intake.productSnapshot())
+        XCTAssertEqual(snapshot.value(for: "creatine-monohydrate"), .known(Decimal(3), .g))
+        XCTAssertEqual(snapshot.catalogOrigin, "label_capture")
+    }
+
+    // MARK: One editor at a time
+
+    /// There is one keyboard, so opening a nutrient row's correction closes a compound row's editor and
+    /// the other way round. The model holds the open row, so the two can never both be open.
+    func testBeginningANamedCorrectionClosesTheCompoundEditorAndViceVersa() {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Creatine Monohydrate 3g",
+        ])
+
+        model.beginCorrection(forAdditional: "creatine-monohydrate")
+        XCTAssertEqual(model.editingAdditionalKey, "creatine-monohydrate")
+        XCTAssertNil(model.editingKey)
+
+        model.beginCorrection(for: .calories)
+        XCTAssertEqual(model.editingKey, .calories)
+        XCTAssertNil(model.editingAdditionalKey, "opening a nutrient editor closes the compound one")
+
+        model.beginCorrection(forAdditional: "creatine-monohydrate")
+        XCTAssertNil(model.editingKey, "opening a compound editor closes the nutrient one")
+        XCTAssertEqual(model.editingAdditionalKey, "creatine-monohydrate")
+
+        model.endCorrection()
+        XCTAssertNil(model.editingKey)
+        XCTAssertNil(model.editingAdditionalKey)
+    }
+
+    /// A compound correction is stated in the unit the picker offers, and a unit of another dimension
+    /// than the one the label printed is refused rather than stored.
+    func testACompoundCorrectionUsesTheChosenPickerUnit() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Creatine Monohydrate 3g",
+        ])
+
+        XCTAssertEqual(model.additionalUnit(for: "creatine-monohydrate"), .g)
+        XCTAssertTrue(model.correctAdditional(key: "creatine-monohydrate", text: "3000", unit: .mg))
+        XCTAssertEqual(
+            model.additionalNutrient(for: "creatine-monohydrate")?.value, .known(Decimal(3000), .mg))
+        XCTAssertNil(model.correctionError)
+
+        XCTAssertFalse(model.correctAdditional(key: "creatine-monohydrate", text: "1", unit: .iu))
+        XCTAssertNotNil(model.correctionError)
+        XCTAssertEqual(
+            model.additionalNutrient(for: "creatine-monohydrate")?.value, .known(Decimal(3000), .mg))
+    }
+
+    /// An additional row a captured panel applied to the form is shown by the form and reaches the
+    /// snapshot that is saved, rather than being lost between the review screen and the journal.
+    func testAnAppliedAdditionalRowIsShownByTheAddIntakeForm() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "Creatine Monohydrate 3g",
+        ])
+        let product = try XCTUnwrap(model.makeProduct())
+
+        let intake = try makeIntakeModel()
+        intake.applyLabelProduct(product)
+
+        XCTAssertTrue(intake.additionalLabelNutrients.contains("creatine-monohydrate"))
+        XCTAssertEqual(intake.prefilledNutrients["creatine-monohydrate"], .known(Decimal(3), .g))
+
+        intake.name = "Synthetic Gummies"
+        let snapshot = try XCTUnwrap(intake.productSnapshot())
+        XCTAssertEqual(snapshot.value(for: "creatine-monohydrate"), .known(Decimal(3), .g))
+    }
+
+    /// The words a label printed for its own compound are stored beside the slug and used on the form,
+    /// so `DHA 500mg` reads `DHA` rather than the `Dha` its slug spells back out.
+    func testAPrintedCompoundNameIsKeptBesideItsSlugAndShown() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "DHA 500mg",
+        ])
+        let product = try XCTUnwrap(model.makeProduct())
+        XCTAssertEqual(product.value(for: "dha"), .known(Decimal(500), .mg))
+        XCTAssertEqual(product.displayName(for: "dha"), "DHA")
+
+        let intake = try makeIntakeModel()
+        intake.applyLabelProduct(product)
+        XCTAssertTrue(intake.additionalLabelNutrients.contains("dha"))
+        XCTAssertEqual(intake.displayName(forAdditional: "dha"), "DHA")
+
+        intake.name = "Synthetic Gummies"
+        let snapshot = try XCTUnwrap(intake.productSnapshot())
+        XCTAssertEqual(snapshot.displayName(for: "dha"), "DHA")
+    }
+
+    /// Two captures that state the same values but print one row differently are two products: the
+    /// rebuilt snapshot id hashes the printed names as well as the values, so the second save does not
+    /// collide with the first and fail as a snapshot conflict.
+    func testTwoCapturesDifferingOnlyInADisplayNameGetDifferentSnapshotIds() throws {
+        func product(displayName: String) -> ProductDefinition {
+            ProductDefinition(
+                snapshotID: "label-synthetic", productID: "label_capture", name: "Synthetic Gummies",
+                labelBasis: "per serving (30 g)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+                nutrients: ["dha": .known(Decimal(500), .mg)],
+                nutrientDisplayNames: ["dha": displayName])
+        }
+
+        let first = try makeIntakeModel()
+        first.applyLabelProduct(product(displayName: "DHA"))
+        first.name = "Synthetic Gummies"
+        let second = try makeIntakeModel()
+        second.applyLabelProduct(product(displayName: "D.H.A."))
+        second.name = "Synthetic Gummies"
+
+        let firstID = try XCTUnwrap(first.productSnapshot()?.snapshotID)
+        let secondID = try XCTUnwrap(second.productSnapshot()?.snapshotID)
+
+        XCTAssertNotEqual(firstID, secondID, "the printed spelling is part of the snapshot's identity")
+        // The values themselves are unchanged, so only the name separates the two.
+        XCTAssertEqual(first.productSnapshot()?.value(for: "dha"), .known(Decimal(500), .mg))
+        XCTAssertEqual(second.productSnapshot()?.value(for: "dha"), .known(Decimal(500), .mg))
+    }
+
     // MARK: Support
 
     /// A barcode product with values of its own, so a lookup that answers can be told apart from a

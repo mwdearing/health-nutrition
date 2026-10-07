@@ -58,7 +58,7 @@ final class AppServices {
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         journal = JournalViewModel(store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts())
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
-        goals = GoalsViewModel(store: goalStore)
+        goals = GoalsViewModel(store: goalStore, journal: journalStore)
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
             erasers: [journalStore, favoritesStore, recipeStore, goalStore],
