@@ -707,14 +707,20 @@ public final class LabelCaptureViewModel: ObservableObject {
     public func makeProduct() -> ProductDefinition? {
         guard canApply else { return nil }
         var nutrients: [String: NutrientValue] = [:]
+        var displayNames: [String: String] = [:]
         for row in rows where row.value != .unknown && !row.isPending {
             nutrients[row.key.rawValue] = row.value
+            // The panel may have printed a chemical form for a named nutrient (`Calcium Citrate`),
+            // which is kept as that row's display name so the screens keep the label's own words.
+            if let name = row.displayName { displayNames[row.key.rawValue] = name }
         }
         // A compound the panel printed and the user answered is stored under its own slug, beside the
         // fifteen named nutrients: it has no key in the journal's own table, and dropping it would
-        // lose the reason anyone scanned a supplement panel.
+        // lose the reason anyone scanned a supplement panel. The label's own words travel with it, so
+        // a slug that does not spell back to them (`dha` -> `DHA`) still reads right.
         for row in additionalRows where row.value != .unknown && !row.isPending {
             nutrients[row.key] = row.value
+            displayNames[row.key] = row.name
         }
         let basis = Self.labelBasis(servingText: servingText, quantity: servingQuantity)
         var signature = basis
@@ -723,9 +729,11 @@ public final class LabelCaptureViewModel: ObservableObject {
         }
         for row in rows {
             signature += "|" + row.key.rawValue + "=" + LabelCaptureRow.describe(row.value)
+            if let name = row.displayName { signature += "|name:" + row.key.rawValue + "=" + name }
         }
         for row in additionalRows {
             signature += "|extra:" + row.key + "=" + LabelCaptureRow.describe(row.value)
+            signature += "|extra-name:" + row.key + "=" + row.name
         }
         return ProductDefinition(
             snapshotID: "label-" + AddIntakeViewModel.slug(signature) + "-" + LookedUpProduct.checksum(signature),
@@ -734,7 +742,8 @@ public final class LabelCaptureViewModel: ObservableObject {
             labelBasis: basis,
             catalogOrigin: Self.catalogOrigin,
             catalogVersion: "unknown",
-            nutrients: nutrients
+            nutrients: nutrients,
+            nutrientDisplayNames: displayNames
         )
     }
 

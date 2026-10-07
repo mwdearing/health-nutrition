@@ -869,6 +869,36 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(creatine.value, .known(dec("3"), .g))
     }
 
+    /// A flattened line can run a compound in front of the first named row, and the text a named row
+    /// does not claim on either side of it is still read: "Creatine 3g Protein 2g Choline 5g" gives all
+    /// three, rather than dropping the compound before the named row.
+    func testACompoundBeforeAndAfterANamedRowOnAFlattenedLineIsKept() throws {
+        let panel = parse(["Creatine 3g Protein 2g Choline 5g"])
+
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine"))
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+        let choline = try XCTUnwrap(panel.additionalNutrient(for: "choline"))
+        XCTAssertEqual(choline.value, .known(dec("5"), .g))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"))
+        XCTAssertEqual(try unit(.protein, panel), .g)
+    }
+
+    /// A name that merely begins with a nutrient is not that nutrient. Only a name whose remaining word
+    /// states a known chemical form is the nutrient it is built on, so "Iron Support Blend 25mg" stays
+    /// a compound of its own rather than being pulled into iron.
+    func testANameThatOnlyStartsWithANutrientStaysItsOwnCompound() throws {
+        let panel = parse(["Iron Support Blend 25mg", "Calcium Citrate 200mg"])
+
+        let blend = try XCTUnwrap(panel.additionalNutrient(for: "iron-support-blend"))
+        XCTAssertEqual(blend.value, .known(dec("25"), .mg))
+        XCTAssertNil(panel.additionalNutrient(for: "iron"))
+        XCTAssertEqual(value(.iron, panel), .unknown, "the blend is not iron")
+
+        // The form list still promotes a name that does state one.
+        XCTAssertEqual(try amount(.calcium, panel), dec("200"))
+        XCTAssertEqual(panel.displayName(for: .calcium), "Calcium Citrate")
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false

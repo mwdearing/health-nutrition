@@ -26,18 +26,18 @@ public struct NutrientProgressLine: Equatable, Identifiable {
 
     public var id: String { nutrient }
 
-    public init(nutrient: String, amount: NutrientValue, goal: NutrientGoal?) {
+    public init(nutrient: String, amount: NutrientValue, goal: NutrientGoal?, displayName: String? = nil) {
         self.nutrient = nutrient
-        self.label = NutrientNames.displayName(for: nutrient)
+        self.label = displayName ?? NutrientNames.displayName(for: nutrient)
         self.amount = amount
         self.goal = goal
     }
 
     public static func make(
-        nutrient: String, total: NutrientTotal?, goal: NutrientGoal?
+        nutrient: String, total: NutrientTotal?, goal: NutrientGoal?, displayName: String? = nil
     ) -> NutrientProgressLine {
         NutrientProgressLine(
-            nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal)
+            nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName)
     }
 
     /// True where a target is set, so a caller can tell a comparison from a plain total.
@@ -53,12 +53,12 @@ public struct NutrientProgressLine: Equatable, Identifiable {
     public var text: String {
         switch amount {
         case .known(let value, let unit):
-            let figure = "\(NutrientNames.displayName(for: nutrient)) "
+            let figure = "\(label) "
                 + "\(DecimalFormatting.text(value)) \(unit.symbol)"
             guard let goal else { return figure }
             return "\(figure) of \(DecimalFormatting.text(goal.target)) \(goal.unit.symbol)"
         case .unknown, .notApplicable, .belowReportingThreshold:
-            return "\(NutrientNames.displayName(for: nutrient)) unknown"
+            return "\(label) unknown"
         }
     }
 }
@@ -91,5 +91,12 @@ public enum NutrientNames {
         return nutrient.split(separator: "-")
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
+    }
+
+    /// The name a nutrient key is shown under, preferring the words the label printed for it when the
+    /// snapshots this screen read carry them. A key with no printed name falls back to the name it
+    /// spells out.
+    public static func displayName(for nutrient: String, displayNames: [String: String]) -> String {
+        displayNames[nutrient] ?? displayName(for: nutrient)
     }
 }

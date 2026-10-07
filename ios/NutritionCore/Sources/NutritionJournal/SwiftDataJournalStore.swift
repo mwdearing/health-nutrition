@@ -889,6 +889,9 @@ private struct StoredNutrient: Codable {
     var state: String
     var valueText: String?
     var unitSymbol: String?
+    /// The words the label printed for a key that is a slug of them (`dha` -> `DHA`), when it printed
+    /// any other than the slug spells back out. Nil for a key stored under the journal's own name.
+    var displayName: String?
 }
 
 /// `RelayDeliveryStore` is named rather than left implied: the relay worker reads the queue, its
@@ -1294,11 +1297,12 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
                 snapshotID: product.snapshotID, productID: product.productID, name: product.name,
                 brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
                 catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
-                nutrientsJSON: Self.encodeNutrients(product.nutrients)))
+                nutrientsJSON: Self.encodeNutrients(
+                    product.nutrients, displayNames: product.nutrientDisplayNames)))
             return true
         }
         let stored = snapshot(from: row)
-        guard stored.withNutrients([:]) == product.withNutrients([:]) else {
+        guard stored.identity == product.identity else {
             throw JournalError.snapshotConflict(id)
         }
         // The values are compared as decoded `[String: NutrientValue]`, never as the stored JSON text, so
@@ -1313,7 +1317,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         // products that state different things.
         guard !product.nutrients.isEmpty, stored.nutrients != product.nutrients else { return false }
         guard stored.nutrients.isEmpty else { throw JournalError.snapshotConflict(id) }
-        row.nutrientsJSON = Self.encodeNutrients(product.nutrients)
+        row.nutrientsJSON = Self.encodeNutrients(
+            product.nutrients, displayNames: product.nutrientDisplayNames)
         return false
     }
 
@@ -1718,17 +1723,19 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         if let row = existing.first {
             let stored = snapshot(from: row)
             if stored == product { return }
-            guard stored.nutrients.isEmpty, stored.withNutrients(product.nutrients) == product else {
+            guard stored.nutrients.isEmpty, stored.identity == product.identity else {
                 throw JournalError.snapshotConflict(id)
             }
-            row.nutrientsJSON = Self.encodeNutrients(product.nutrients)
+            row.nutrientsJSON = Self.encodeNutrients(
+                product.nutrients, displayNames: product.nutrientDisplayNames)
             return
         }
         context.insert(ProductRecord(
             snapshotID: product.snapshotID, productID: product.productID, name: product.name,
             brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
             catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
-            nutrientsJSON: Self.encodeNutrients(product.nutrients)))
+            nutrientsJSON: Self.encodeNutrients(
+                product.nutrients, displayNames: product.nutrientDisplayNames)))
     }
 
     // MARK: Reads
@@ -1892,31 +1899,53 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         ProductDefinition(
             snapshotID: row.snapshotID, productID: row.productID, name: row.name, brand: row.brand,
             barcode: row.barcode, labelBasis: row.labelBasis, catalogOrigin: row.catalogOrigin,
-            catalogVersion: row.catalogVersion, nutrients: Self.decodeNutrients(row.nutrientsJSON))
+            catalogVersion: row.catalogVersion, nutrients: Self.decodeNutrients(row.nutrientsJSON),
+            nutrientDisplayNames: Self.decodeDisplayNames(row.nutrientsJSON))
     }
 
     /// The nutrient values a product states, sorted by id so the same values always write the same
-    /// text. Values that cannot be encoded are left out rather than stored as something else.
-    static func encodeNutrients(_ values: [String: NutrientValue]) -> String {
+    /// text. Values that cannot be encoded are left out rather than stored as something else. The
+    /// printed names travel with the values in the same payload, so a key that is a slug of the
+    /// label's own wording keeps that wording through a store round trip.
+    static func encodeNutrients(
+        _ values: [String: NutrientValue], displayNames: [String: String] = [:]
+    ) -> String {
         let stored = values.keys.sorted().compactMap { id -> StoredNutrient? in
             guard let value = values[id] else { return nil }
+            let displayName = displayNames[id]
             switch value {
             case .known(let amount, let unit):
                 return StoredNutrient(
-                    id: id, state: "known", valueText: DecimalText.encode(amount), unitSymbol: unit.symbol)
+                    id: id, state: "known", valueText: DecimalText.encode(amount), unitSymbol: unit.symbol,
+                    displayName: displayName)
             case .unknown:
-                return StoredNutrient(id: id, state: "unknown", valueText: nil, unitSymbol: nil)
+                return StoredNutrient(id: id, state: "unknown", valueText: nil, unitSymbol: nil, displayName: displayName)
             case .notApplicable:
-                return StoredNutrient(id: id, state: "notApplicable", valueText: nil, unitSymbol: nil)
+                return StoredNutrient(id: id, state: "notApplicable", valueText: nil, unitSymbol: nil, displayName: displayName)
             case .belowReportingThreshold(let unit):
                 return StoredNutrient(
-                    id: id, state: "belowThreshold", valueText: nil, unitSymbol: unit?.symbol)
+                    id: id, state: "belowThreshold", valueText: nil, unitSymbol: unit?.symbol,
+                    displayName: displayName)
             }
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(stored) else { return "[]" }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The printed names stored beside the values, keyed the same way. A payload written before the
+    /// names existed carries none, so every key falls back to the name its slug spells out.
+    static func decodeDisplayNames(_ json: String?) -> [String: String] {
+        guard let json, let data = json.data(using: .utf8),
+            let stored = try? JSONDecoder().decode([StoredNutrient].self, from: data)
+        else { return [:] }
+        var names: [String: String] = [:]
+        for item in stored {
+            guard let name = item.displayName, !name.isEmpty else { continue }
+            names[item.id] = name
+        }
+        return names
     }
 
     /// Reads the stored values. An entry that cannot be read is left out, so it reads as unknown

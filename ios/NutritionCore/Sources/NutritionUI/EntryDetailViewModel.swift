@@ -370,14 +370,20 @@ public final class EntryDetailViewModel: ObservableObject {
     /// The rows a product snapshot states under a name the fifteen journal nutrients do not — a
     /// compound a captured supplement panel stored under a slug of its printed name — sorted so the
     /// order is stable. A snapshot with none gives no rows.
+    ///
+    /// Only a row a captured panel stated with a known amount is shown. A barcode snapshot completes
+    /// its own standard keys (`salt`, say) as unknown, and those are not rows a label captured, so they
+    /// are left out rather than listed as "Salt unknown". The name the label printed is preferred over
+    /// the one the slug spells back out, so `dha` reads `DHA`.
     static func additionalNutrients(of product: ProductDefinition?) -> [EntryNutrientRow] {
-        guard let product else { return [] }
+        guard let product, product.catalogOrigin == ProductOrigin.label_capture else { return [] }
         let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
-        return product.nutrients.keys.filter { !standard.contains($0) }
+        return product.nutrients.filter { !standard.contains($0.key) && $0.value.isKnown }
+            .map(\.key)
             .sorted()
             .map { key in
                 EntryNutrientRow(
-                    key: key, name: compoundName(for: key),
+                    key: key, name: product.displayName(for: key) ?? compoundName(for: key),
                     amountText: LookedUpProduct.describe(product.nutrients[key] ?? .unknown))
             }
     }

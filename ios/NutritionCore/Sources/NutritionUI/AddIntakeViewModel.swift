@@ -167,10 +167,32 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The compound rows a captured panel states that the fifteen journal nutrients do not name, in a
     /// stable order. The form shows them under "Also on the label" so a compound the panel printed is
     /// visible and, saved with the snapshot, is not lost between the review screen and the journal.
+    ///
+    /// Only a row the panel captured with a known amount is listed. A key a barcode snapshot completed
+    /// as unknown (its `salt`, say) is not a row the label stated and never appears here.
     public var additionalLabelNutrients: [String] {
         guard let captured = labelValues else { return [] }
         let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
-        return captured.nutrients.keys.filter { !standard.contains($0) }.sorted()
+        return captured.nutrients
+            .filter { !standard.contains($0.key) && $0.value.isKnown }
+            .map(\.key)
+            .sorted()
+    }
+
+    /// The name a captured panel row is shown under: the words the label printed for it when the
+    /// snapshot carries them, otherwise the name the key itself spells out.
+    public func displayName(forCaptured key: String) -> String {
+        if let printed = labelValues?.displayName(for: key) { return printed }
+        guard let fact = NutritionFactKey(rawValue: key) else { return key }
+        return LabelCaptureRow.displayNames[fact] ?? LookedUpProduct.displayNames[key] ?? key
+    }
+
+    /// The name a compound row is shown under, preferring the words the label printed for it.
+    public func displayName(forAdditional key: String) -> String {
+        if let printed = labelValues?.displayName(for: key) { return printed }
+        return key.split(separator: "-")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 
     /// One line explaining the values a captured panel filled in, or nil when there are none.
@@ -418,7 +440,8 @@ public final class AddIntakeViewModel: ObservableObject {
                 labelBasis: captured.labelBasis,
                 catalogOrigin: captured.catalogOrigin,
                 catalogVersion: captured.catalogVersion,
-                nutrients: captured.nutrients
+                nutrients: captured.nutrients,
+                nutrientDisplayNames: captured.nutrientDisplayNames
             )
         }
         guard let lookedUp else { return nil }

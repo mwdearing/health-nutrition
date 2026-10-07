@@ -104,10 +104,14 @@ public enum NutritionFactsParser {
             let read = absorbRows(in: residual, following: following, amounts: &amounts, reviews: &reviews)
             // Whatever the named rows left on the line may still be a row the panel printed: a
             // supplement lists compounds the table does not name, and they are read as their own rows.
-            // A compound whose name states its chemical form (`Calcium Citrate 200mg`) is the nutrient
-            // it is built on, and keeps the printed name in `displayNames`.
+            // The whole line is scanned, not only the text behind the last named row, because a
+            // flattened line can carry a compound in front of the first named row as well as behind it
+            // ("Creatine 3g Protein 2g Choline 5g"). A compound whose name states its chemical form
+            // (`Calcium Citrate 200mg`) is the nutrient it is built on, and keeps the printed name in
+            // `displayNames`. A name that is a named row itself is never collected twice, so scanning
+            // the named rows' own text here is safe.
             let additionalUsedNextLine = absorbAdditionalRows(
-                in: read.remaining, next: read.usedNextLine ? nil : following, into: &extra,
+                in: residual, next: read.usedNextLine ? nil : following, into: &extra,
                 amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
             index += (read.usedNextLine || additionalUsedNextLine) ? 2 : 1
         }
@@ -881,8 +885,26 @@ public enum NutritionFactsParser {
         if match.nameStart == name.startIndex, match.end == name.endIndex { return nil }
         // Only a nutrient the name is built on counts, as the first word of `Calcium Citrate`.
         guard match.nameStart == name.startIndex else { return nil }
+        // A name that merely begins with a nutrient is not that nutrient: `Iron Support Blend` is a
+        // compound of its own, and promoting it to iron would drop the label's own row. Only a name
+        // whose remaining word states a known chemical form (`Iron Bisglycinate`) is the nutrient it
+        // is built on.
+        let rest = String(name[match.end...])
+        let forms = rest.split(whereSeparator: \.isWhitespace).map { $0.lowercased() }
+        guard !forms.isEmpty, forms.allSatisfy({ knownForms.contains($0) }) else { return (name, nil) }
         return (name, match.row)
     }
+
+    /// The chemical forms a supplement prints after a nutrient's name. A name that carries one is that
+    /// nutrient with the form kept as its display name (`Calcium Citrate` is calcium); a name built on
+    /// something else (`Iron Support Blend`) stays a compound of its own rather than being pulled into
+    /// the nutrient it merely starts with.
+    private static let knownForms: Set<String> = [
+        "citrate", "bisglycinate", "glycinate", "gluconate", "picolinate", "oxide", "carbonate",
+        "chelate", "monohydrate", "dihydrate", "hcl", "hydrochloride", "sulfate", "sulphate",
+        "fumarate", "malate", "ascorbate", "chloride", "lactate", "phosphate", "bisulfate",
+        "succinate", "tartrate", "aspartate", "orotate", "iodide", "selenate", "selenite",
+    ]
 
     /// The words a panel prints that are not a compound's name: the qualifiers between an amount and
     /// the row it belongs to, the headings and running text of a panel, and the packaging print a

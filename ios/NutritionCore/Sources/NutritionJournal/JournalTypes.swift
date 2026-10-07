@@ -197,6 +197,12 @@ public struct ProductDefinition: Sendable, Hashable {
     /// `labelBasis` itself.
     public var nutrients: [String: NutrientValue]
 
+    /// The printed names of the rows whose key is a slug of the label's own wording, so a screen can
+    /// show the words the label used (`dha` reads `DHA`, never the `Dha` a slug spells back out). The
+    /// key is the same key `nutrients` stores the value under, so a reader looks the name up by the
+    /// key it already has. A key with no entry is shown under the name spelled out from its slug.
+    public var nutrientDisplayNames: [String: String]
+
     public init(
         snapshotID: String,
         productID: String,
@@ -206,7 +212,8 @@ public struct ProductDefinition: Sendable, Hashable {
         labelBasis: String,
         catalogOrigin: String,
         catalogVersion: String,
-        nutrients: [String: NutrientValue] = [:]
+        nutrients: [String: NutrientValue] = [:],
+        nutrientDisplayNames: [String: String] = [:]
     ) {
         self.snapshotID = snapshotID
         self.productID = productID
@@ -217,6 +224,7 @@ public struct ProductDefinition: Sendable, Hashable {
         self.catalogOrigin = catalogOrigin
         self.catalogVersion = catalogVersion
         self.nutrients = nutrients
+        self.nutrientDisplayNames = nutrientDisplayNames
     }
 
     /// The value for one nutrient; a nutrient this product does not state is unknown, never zero.
@@ -230,6 +238,23 @@ public struct ProductDefinition: Sendable, Hashable {
         var copy = self
         copy.nutrients = values
         return copy
+    }
+
+    /// This snapshot with its stated values and their printed names cleared: what two snapshots under
+    /// one id have to agree on, whether or not either of them states any values. A document carries a
+    /// product's identity and origin, not what it states, so comparing identity alone is what lets a
+    /// restore fill values into a snapshot the store already knew.
+    public var identity: ProductDefinition {
+        var copy = self
+        copy.nutrients = [:]
+        copy.nutrientDisplayNames = [:]
+        return copy
+    }
+
+    /// The name a key is shown under: the words the label printed for it when the snapshot carries
+    /// them, otherwise nil so the reader falls back to the name the key spells out.
+    public func displayName(for nutrient: String) -> String? {
+        nutrientDisplayNames[nutrient]
     }
 }
 

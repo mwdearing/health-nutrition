@@ -78,9 +78,10 @@ public struct NutrientGoalRow: Equatable, Identifiable {
     }
 
     /// The row for a nutrient with no target, which is still listed so the screen can offer it.
-    public static func withoutGoal(_ nutrient: String) -> NutrientGoalRow {
+    public static func withoutGoal(_ nutrient: String, displayName: String? = nil) -> NutrientGoalRow {
         NutrientGoalRow(
-            nutrient: nutrient, displayName: NutrientNames.displayName(for: nutrient), targetText: nil)
+            nutrient: nutrient,
+            displayName: displayName ?? NutrientNames.displayName(for: nutrient), targetText: nil)
     }
 }
 
@@ -116,11 +117,17 @@ public final class GoalsViewModel: ObservableObject {
         do {
             let stored = try store.goals()
             let byNutrient = Dictionary(stored.map { ($0.nutrient, $0) }, uniquingKeysWith: { _, last in last })
-            offeredKeys = NutrientGoalChoices.keys(including: Self.snapshotNutrientKeys(in: journal))
+            // Every key that has a stored goal is offered even when no current snapshot carries it, so
+            // an existing compound goal can still be changed or removed after the entry that named it
+            // is gone. The snapshot keys add the compounds a live capture states.
+            let snapshotKeys = Self.snapshotNutrientKeys(in: journal)
+            offeredKeys = NutrientGoalChoices.keys(including: snapshotKeys + stored.map(\.nutrient))
+            let displayNames = Self.snapshotDisplayNames(in: journal)
             rows = offeredKeys.map { key in
-                guard let goal = byNutrient[key] else { return .withoutGoal(key) }
+                let name = displayNames[key] ?? NutrientNames.displayName(for: key)
+                guard let goal = byNutrient[key] else { return .withoutGoal(key, displayName: name) }
                 return NutrientGoalRow(
-                    nutrient: key, displayName: NutrientNames.displayName(for: key),
+                    nutrient: key, displayName: name,
                     targetText: "\(DecimalFormatting.text(goal.target)) \(goal.unit.symbol)")
             }
             errorMessage = nil
@@ -146,9 +153,32 @@ public final class GoalsViewModel: ObservableObject {
                   let snapshotID = current.productSnapshotID,
                   let product = try? journal.product(snapshotID: snapshotID)
             else { continue }
+            guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
             for key in product.nutrients.keys where !standard.contains(key) { keys.insert(key) }
         }
         return keys.sorted()
+    }
+
+    /// The printed names the journal's current snapshots carry, keyed by nutrient. A captured
+    /// supplement panel stores a compound under a slug and keeps the label's own words beside it, so a
+    /// goal for `dha` is shown as `DHA` rather than as the `Dha` the slug spells back out. A read that
+    /// throws is treated as no names: the keys are still offered under the names they spell out.
+    static func snapshotDisplayNames(in journal: (any JournalStore)?) -> [String: String] {
+        guard let journal else { return [:] }
+        var names: [String: String] = [:]
+        guard let intakes = try? journal.activeIntakes() else { return [:] }
+        for intake in intakes {
+            guard let revisions = try? journal.revisions(of: intake.id),
+                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+                  let snapshotID = current.productSnapshotID,
+                  let product = try? journal.product(snapshotID: snapshotID)
+            else { continue }
+            guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
+            for (key, name) in product.nutrientDisplayNames {
+                names[key] = name
+            }
+        }
+        return names
     }
 
     /// Stores `target` for `nutrient`, replacing any target already set for it.
@@ -183,5 +213,11 @@ public final class GoalsViewModel: ObservableObject {
             errorMessage = Self.removeFailedMessage
             return false
         }
+    }
+
+    /// The name an offered key is shown under: the words the label printed for it when a snapshot
+    /// carries them, otherwise the name the key spells out.
+    public func displayName(for key: String) -> String {
+        rows.first { $0.nutrient == key }?.displayName ?? NutrientNames.displayName(for: key)
     }
 }

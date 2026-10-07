@@ -28,13 +28,13 @@ public struct GoalsView: View {
             Section("Change a goal") {
                 Picker("Nutrient", selection: $editing) {
                     ForEach(model.offeredKeys, id: \.self) { key in
-                        Text(NutrientNames.displayName(for: key)).tag(key)
+                        Text(model.displayName(for: key)).tag(key)
                     }
                 }
                 TextField("Target", text: $targetText)
                     .font(.body)
                     .decimalKeyboard()
-                    .accessibilityLabel("Daily target for \(NutrientNames.displayName(for: editing))")
+                    .accessibilityLabel("Daily target for \(model.displayName(for: editing))")
                 Picker("Unit", selection: $unit) {
                     ForEach(NutrientGoalChoices.units(forKey: editing), id: \.symbol) { candidate in
                         Text(candidate.symbol).tag(candidate)

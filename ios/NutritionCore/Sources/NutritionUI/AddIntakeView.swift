@@ -180,7 +180,7 @@ public struct AddIntakeView: View {
                     }
                     ForEach(Self.capturedKeys, id: \.self) { key in
                         LabeledContent(
-                            Self.displayName(forCaptured: key),
+                            model.displayName(forCaptured: key),
                             value: Self.text(for: model.prefilledNutrients[key])
                         )
                         .font(.footnote)
@@ -195,7 +195,7 @@ public struct AddIntakeView: View {
                             .accessibilityLabel("Also on the label")
                         ForEach(model.additionalLabelNutrients, id: \.self) { key in
                             LabeledContent(
-                                Self.displayName(forAdditional: key),
+                                model.displayName(forAdditional: key),
                                 value: Self.text(for: model.prefilledNutrients[key])
                             )
                             .font(.footnote)

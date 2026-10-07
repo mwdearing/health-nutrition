@@ -645,6 +645,30 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertEqual(snapshot.value(for: "creatine-monohydrate"), .known(Decimal(3), .g))
     }
 
+    /// The words a label printed for its own compound are stored beside the slug and used on the form,
+    /// so `DHA 500mg` reads `DHA` rather than the `Dha` its slug spells back out.
+    func testAPrintedCompoundNameIsKeptBesideItsSlugAndShown() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts",
+            "Serving Size: 3 Gummies",
+            "Calories 30",
+            "DHA 500mg",
+        ])
+        let product = try XCTUnwrap(model.makeProduct())
+        XCTAssertEqual(product.value(for: "dha"), .known(Decimal(500), .mg))
+        XCTAssertEqual(product.displayName(for: "dha"), "DHA")
+
+        let intake = try makeIntakeModel()
+        intake.applyLabelProduct(product)
+        XCTAssertTrue(intake.additionalLabelNutrients.contains("dha"))
+        XCTAssertEqual(intake.displayName(forAdditional: "dha"), "DHA")
+
+        intake.name = "Synthetic Gummies"
+        let snapshot = try XCTUnwrap(intake.productSnapshot())
+        XCTAssertEqual(snapshot.displayName(for: "dha"), "DHA")
+    }
+
     // MARK: Support
 
     /// A barcode product with values of its own, so a lookup that answers can be told apart from a

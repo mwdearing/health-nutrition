@@ -194,7 +194,8 @@ public final class TodayViewModel: ObservableObject {
                 })
             }
             progress = try Self.progressLines(
-                tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup)
+                tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
+                displayNames: Self.printedNames(in: snapshots))
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
         } catch {
             errorMessage = "Could not read the journal."
@@ -297,15 +298,26 @@ public final class TodayViewModel: ObservableObject {
     /// nothing honest left to show.
     private static func progressLines(
         tracked: [String], goals: [NutrientGoal], intakes: [Intake], store: JournalStore,
-        lookup: NutrientFactsLookup
+        lookup: NutrientFactsLookup, displayNames: [String: String]
     ) throws -> [NutrientProgressLine] {
         let totals = try DailyTotalsBuilder.totals(
             for: intakes, store: store, lookup: lookup, nutrients: tracked)
         return tracked.map { nutrient in
             NutrientProgressLine.make(
                 nutrient: nutrient, total: totals.total(for: nutrient),
-                goal: goals.first { $0.nutrient == nutrient })
+                goal: goals.first { $0.nutrient == nutrient },
+                displayName: NutrientNames.displayName(for: nutrient, displayNames: displayNames))
         }
+    }
+
+    /// The printed names the day's snapshots carry, keyed by nutrient, so a compound reads under the
+    /// words the label used (`DHA`, never `Dha`).
+    private static func printedNames(in snapshots: [String: ProductDefinition?]) -> [String: String] {
+        var names: [String: String] = [:]
+        for product in snapshots.values.compactMap({ $0 }) {
+            for (key, name) in product.nutrientDisplayNames { names[key] = name }
+        }
+        return names
     }
 
     /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that
