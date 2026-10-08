@@ -100,6 +100,19 @@ A **NutrientGoal** (`ios/NutritionCore/Sources/NutritionJournal/GoalStore.swift`
 `Decimal` target and a `MeasureUnit`. Goals are data rather than settings: they are stored, not `UserDefaults` or
 `@AppStorage`, and "Erase all data" clears them with everything else.
 
+`GoalsViewModel.sections` presents **Energy and macros** (Energy, Protein, Carbohydrate, Fat, Fiber),
+**Water**, **Minerals** (Sodium, Potassium), and **From your labels**. Label compounds retain their printed
+names and show "Added by a scanned label". Each row has an inline target field and a unit menu restricted
+to its nutrient's dimension. `commitTarget(for:)` saves on submit or focus loss; a blank field removes
+the goal and displays "None". Invalid numbers show "Enter a number above zero." beneath the field,
+without changing the saved goal. Store failures remain notices.
+
+**Clear all goals** asks for confirmation before `clearAllGoals()` removes every stored target,
+including compound goals. Targets use primary text colour, with no rating implied by colour.
+The footer states: "A goal is a number you set. The app compares your day against it and gives no advice or rating."
+Each **Show on Today** switch is disabled, with a Later badge and accessibility value "Not available yet";
+it does not change the tracked list.
+
 `GoalStore` is the protocol; `SwiftDataGoalStore` persists it in its own `goals.store`, opened in `AppServices.make`
 next to the journal, favorites and recipe files and listed in the `erasers:` array; `InMemoryGoalStore` is the
 in-memory implementation tests use, which can also be told to refuse a write or fail a read. There is **one goal per
