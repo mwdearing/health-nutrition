@@ -88,10 +88,16 @@ The team is a local setting in Xcode and is deliberately not committed: `project
 `DEVELOPMENT_TEAM`, so every developer signs with their own account. If you do add a team id to
 the generated project, keep it there and do not copy it into `project.yml` or any committed file.
 
-## Getting an unsigned build to install
+## Getting a build to install
 
-Builds are unsigned until App Store release time. Nothing in this repository holds signing
-material, and CI never signs anything.
+Most people should ask for a signed beta build instead of building one: open a
+[Beta access request](https://github.com/mwdearing/health-nutrition/issues/new?template=beta_access.yml)
+issue. Signed uploads come from the manual `signed-beta` workflow, which runs only on `main`
+behind a reviewer-approved environment; the key material lives in that environment's secrets
+and never in the repository. GitHub Releases do not carry IPA files.
+
+The rest of this section is the self-build path. Nothing in this repository holds signing
+material, and the regular CI jobs never sign anything.
 
 To get a device build, run the workflow by hand: **Actions > ios > Run workflow**. Inputs:
 
