@@ -96,6 +96,9 @@ struct RootView: View {
                 }
                 #endif
             }
+            // The Add capsule goes inside each tab's own stack: an inset on the tab view itself is
+            // laid out against the bottom of the screen and covers the tab bar.
+            .safeAreaInset(edge: .bottom) { addCapsule }
             .tabItem { Label("Today", systemImage: "sun.max") }
             .tag(AppTab.today)
 
@@ -103,6 +106,7 @@ struct RootView: View {
                 JournalView(model: services.journal, onSelect: { selectedIntakeID = $0 })
                     .toolbar { settingsToolbar }
             }
+                .safeAreaInset(edge: .bottom) { addCapsule }
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
@@ -115,6 +119,7 @@ struct RootView: View {
                 .navigationTitle("Library")
                 .toolbar { settingsToolbar }
             }
+                .safeAreaInset(edge: .bottom) { addCapsule }
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
                 .sheet(isPresented: $recipeNavigation.showingRecipes) {
@@ -136,11 +141,6 @@ struct RootView: View {
                 .tag(AppTab.spike)
             }
             #endif
-        }
-        // One Add capsule for the whole shell, above the tab bar on all three tabs. It is the only filled
-        // action on screen, and the tab bar stays for navigation.
-        .safeAreaInset(edge: .bottom) {
-            addCapsule
         }
         // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
         // name an entry into `selectedIntakeID` and one sheet presents over whichever tab is showing.
