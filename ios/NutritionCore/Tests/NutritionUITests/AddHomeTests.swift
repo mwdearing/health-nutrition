@@ -82,7 +82,7 @@ final class AddHomeTests: XCTestCase {
                 recipeID: sample.recipeID, number: sample.number, title: sample.title,
                 ingredients: sample.ingredients, yield: yield, createdAt: sample.createdAt)
             let details = try home.makeDetails(recipe: recipe, now: now)
-            let product = try XCTUnwrap(details.labelValues)
+            let product = try XCTUnwrap(details.productSnapshot())
             XCTAssertEqual(product.labelBasis, RecipeLogger.basisText(yield))
         }
     }
