@@ -1663,11 +1663,13 @@ def _cited_paths(text: str) -> set[str]:
 
 
 def _repository_paths() -> set[str]:
-    """Every path under the repository root, relative and posix-shaped."""
+    """Repository paths, excluding Git metadata and local acceptance scratch fixtures."""
     found: set[str] = set()
     for path in REPO_ROOT.rglob("*"):
         parts = path.relative_to(REPO_ROOT).parts
         if parts and parts[0] == ".git":
+            continue
+        if parts[:2] == (".acceptance", "scratch"):
             continue
         found.add("/".join(parts))
     return found

@@ -4,15 +4,17 @@ These screens live in the SwiftPM library target `NutritionUI` (package `ios/Nut
 read live in `NutritionJournal`. The app target wires them together. Tests cover the view models only.
 
 ## Screens
-- **Today** (`TodayView`, `TodayViewModel`): the water total, a quick-add water button, an undo button, a **Totals**
-  section with one line per tracked nutrient, a **Coverage** section with one line per tracked nutrient, and the
-  intakes of the day. Totals sit above Coverage because a total is the answer and coverage says how much of it is
-  known. Each entry row is a button that opens that entry in the entry screen, so a row logged late on the wrong
-  day is corrected where it is noticed.
+- **Today** (`TodayView`, `TodayViewModel`): the date, a **Daily goals** card with one goal bar per tracked
+  nutrient (see "Goal bars" below) and an "Edit goals" link, a **Water** card with the total, the quick-add water
+  capsule and its undo, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then
+  Other), and one footer line when entries state no nutrition values. Each entry row opens that entry in the entry
+  screen, so a row logged late on the wrong day is corrected where it is noticed. Add is the "Add food or drink"
+  capsule the app shell holds above the tab bar on every tab; Today has no Journal or Library link and no toolbar
+  plus. Settings (and through it the daily goals and the privacy screen) is the gear on every tab.
 - **Add intake** (`AddIntakeView`, `AddIntakeViewModel`): name, amount text, unit, category, meal, time.
 - **Daily goals** (`GoalsView`, `GoalsViewModel`): the target for each offered nutrient, and the way to change or
-  clear it. Reached from the Library screen's existing Connections section, which is the only place a person is told
-  what the app stores and where they reach what it stores.
+  clear it. Reached from Today's "Edit goals" link or from Settings; the Library no longer holds a Connections section.
+  Dismissing Settings reloads Today and Journal, so changed goals immediately update both screens.
 
 ## Totals
 A **DailyTotals** (`ios/NutritionCore/Sources/NutritionUI/DailyTotals.swift`) is what one day adds up to, one entry
@@ -164,9 +166,9 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Quick water** writes one intake through `JournalStore.create` (category `water`, component `water`, the
   configured amount in mL, amount as `Decimal`). The store queues the outbox operations; this layer never
   delivers anything. The amount is configurable: see [Units and the quick-water amount](#units-and-the-quick-water-amount).
-- **Entry rows** carry the entry's meal as a secondary line when it states one, and read out as the name, the amounts
-  and then the meal. They open the entry through an `onSelect` closure; a host that passes none leaves the rows as
-  plain text.
+- **Entry rows** carry the entry's meal as a secondary line when it states one, and read out as the name, amounts,
+  time in the entry's stored zone, and then the meal. They open the entry through an `onSelect` closure; a host that
+  passes none leaves the rows as plain text.
 - **Meal** is picked next to **When** on the Add form: `None` plus the four labels of `MealLabel`. `None` is a real
   answer and the form starts on it — no label is inferred from the hour, because the label is the person's own
   answer and a guessed one puts a word in their record that they never gave. The choice is stored as the label's raw
@@ -179,6 +181,10 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Local day**: an intake is on Today when its time falls on the same calendar day as "now" in the intake's own time
   zone. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
   in the Journal as well as here.
+- **Date subtitle** uses the current device time zone on every reload, including after a zone change.
+- **Missing values**: a food snapshot with only unknown tracked nutrients counts as having no nutrition values.
+  Goal-bar reasons count intakes, not components. An entry whose nutrient is not applicable does not make that
+  nutrient logged; a day containing only such entries reads "Nothing logged yet" for that nutrient.
 - **Water total** is the exact `Decimal` sum, in mL, of the volume components of intakes with category `water`. Other
   categories never contribute, whatever their unit. A component whose unit is not a volume is skipped and counted
   (`waterSkippedCount`), never treated as zero. So is a stored amount that is NaN or not above zero, checked before and
@@ -247,15 +253,35 @@ than announced as a zero that is not there.
 The button text and its accessibility label both come from `TodayViewModel.quickWaterLabel` and
 `quickWaterAccessibilityLabel`, so they cannot drift from the amount the button writes.
 
-## Coverage wording
-Each tracked nutrient (potassium, sodium, protein, fiber by default, plus every nutrient with a goal) shows
-`"<missing> of <total> foods lack <nutrient>"`, for example "2 of 5 foods lack potassium".
+## Goal bars
+`TodayViewModel.goalBars` holds one `GoalBarModel` per tracked nutrient except water, in tracked order, and
+`waterBar` holds water's when a water goal is set. `NutrientProgressLine.text` and `CoverageLine.text` still exist
+and are still tested, but Today no longer prints them. A bar is in one of five states, decided from what the day
+holds because an empty day and an unreadable one are both `.unknown`:
 
-**Water is never given a Coverage line**, so a water target adds a Totals line and nothing here. The line counts
-*foods*, and its values come from the day's food components, which a drink never joins: a water line counted against
-them would read "2 of 3 foods lack water" for a day whose water was known exactly, while ignoring the drinks that are
-the only entries that could have said anything about it. How much of the day's water could not be counted is reported
-by `waterSkippedCount` on the water row instead, and the water total itself is in the water row above.
+| State | When | Figure | Bar |
+|---|---|---|---|
+| progress | known total, goal not exceeded | "52 g of 60 g" | accent fill to the fraction |
+| overGoal | known total above the goal | the real figure, "262 g of 230 g" | full bar with a notch at goal over total |
+| noGoal | known total, no goal | "1150 mg" | none |
+| cannotTotal | entries exist and the total is unknown | "Can't total yet" | hatched track, never a fraction |
+| nothingLogged | no food or drink entry could contribute (for water, no water entry) | "Nothing logged yet" | empty track |
+
+Nothing logged is not a total of zero: a known zero reads "0 g of 60 g" with an empty fill. Fractions are `Decimal`,
+clamped to 0 through 1; `GoalBar.drawingWidth` is the one place one becomes a `Double`. The bar is a single
+accessibility element and never colour alone. Progress is always the accent colour: green and red belong to the
+state of the app, not of the day.
+
+The reason line under a cannot-total bar says "N entries have no <nutrient> value" only where `CoverageLine`
+reports missing entries for that nutrient, and otherwise "Some entries can't be added up for <nutrient>" (a
+below-threshold bound, an unresolvable basis). For water it is the sentence about entries that are not a volume.
+
+## Missing values line
+The Coverage section is gone from Today. `missingValuesSummary` is one line, "2 entries have no nutrition values",
+counting food and drink entries whose product snapshot states nothing and whose components the lookup knows nothing
+about for any tracked nutrient. Supplements and water are never counted: stating no macros is what a supplement is.
+Nil when there are none. Water is left out of the per-nutrient reason lines for the same reason it was left out of
+Coverage: its entries are the only ones that could say anything about it.
 
 ## Unknown is not zero
 Values come from an injected `NutrientFactsLookup`. The default, `UnknownNutrientFacts`, always answers `.unknown`

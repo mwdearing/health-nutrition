@@ -18,6 +18,15 @@ public enum TokenColors {
     public static var success: Color { color(named: "success") }
     public static var warning: Color { color(named: "warning") }
     public static var error: Color { color(named: "error") }
+    public static var mint: Color { color(named: "RelayMint") }
+    public static var onMint: Color { color(named: "RelayOnMint") }
+    public static var accentInk: Color { color(named: "RelayAccentInk") }
+    public static var waitingTint: Color { color(named: "RelayWaitingTint") }
+    public static var waitingInk: Color { color(named: "RelayWaitingInk") }
+    public static var failedTint: Color { color(named: "RelayFailedTint") }
+    public static var failedInk: Color { color(named: "RelayFailedInk") }
+    public static var track: Color { color(named: "track") }
+    public static var accentTint: Color { color(named: "accentTint") }
 
     private static func color(named name: String) -> Color {
         guard let token = NutritionTokens.token(named: name) else {
