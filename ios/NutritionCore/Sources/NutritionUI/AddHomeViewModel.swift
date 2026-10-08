@@ -62,6 +62,34 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     public func makeDetails(prefill: RepeatTemplate, now: Date) throws -> AddIntakeViewModel {
         let model = makeDetails(now: now)
         guard let component = prefill.components.first else { throw JournalError.corruptRecord("empty template") }
+        if prefill.components.count > 1 {
+            // The current Details form has one amount. Present the whole recorded combination as
+            // one serving, spelling out all original amounts rather than silently dropping any.
+            model.name = prefill.components.map {
+                "\($0.name) (\(AmountText.describe($0)))"
+            }.joined(separator: ", ")
+            model.category = prefill.category
+            model.amountText = "1"
+            model.unit = .serving
+            if let snapshotID = prefill.productSnapshotID {
+                guard let product = try store.product(snapshotID: snapshotID) else {
+                    throw IntakeRepeatError.productUnavailable
+                }
+                let factor = IntakeContextSnapshotBasis.scalingFactor(
+                    labelBasis: product.labelBasis, logged: prefill.components)
+                let nutrients = product.nutrients.mapValues { value in
+                    factor.map { value.scaled(by: $0) } ?? .unknown
+                }
+                model.applyLabelProduct(ProductDefinition(
+                    snapshotID: UUID().uuidString.lowercased(), productID: product.productID,
+                    name: model.name, brand: product.brand, barcode: product.barcode,
+                    labelBasis: "per serving", catalogOrigin: product.catalogOrigin,
+                    catalogVersion: product.catalogVersion, kind: product.kind,
+                    nutrients: nutrients, nutrientDisplayNames: product.nutrientDisplayNames))
+                model.brand = product.brand ?? ""
+            }
+            return model
+        }
         if let snapshotID = prefill.productSnapshotID {
             guard let product = try store.product(snapshotID: snapshotID) else { throw IntakeRepeatError.productUnavailable }
             model.applyLabelProduct(product)
@@ -74,6 +102,28 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         return model
     }
 
+    /// Prefills one portion without logging it; Save remains the only write.
+    public func makeDetails(recipe: RecipeVersion, now: Date) throws -> AddIntakeViewModel {
+        try recipe.validate()
+        let values = try RecipeMath.perPortion(RecipeMath.totals(of: recipe), yield: recipe.yield, portion: 1)
+        let model = makeDetails(now: now)
+        let unit: MeasureUnit
+        switch recipe.yield {
+        case .servings: unit = .serving
+        case .total(let quantity): unit = quantity.unit
+        }
+        let product = ProductDefinition(
+            snapshotID: RecipeLogger.snapshotID(recipeID: recipe.recipeID, number: recipe.number),
+            productID: recipe.recipeID, name: recipe.title,
+            labelBasis: unit == .serving ? "per serving" : "per \(unit.symbol)",
+            catalogOrigin: RecipeLogger.catalogOrigin, catalogVersion: String(recipe.number), nutrients: values)
+        model.applyLabelProduct(product)
+        model.name = recipe.title
+        model.category = RecipeLogger.category
+        model.amountText = "1"
+        model.unit = unit
+        return model
+    }
     public func scannedBarcode(_ barcode: String, into model: AddIntakeViewModel) async {
         model.setScannedBarcode(barcode)
         await model.lookUpBarcode()

@@ -1,12 +1,20 @@
 import Foundation
 import NutritionUI
 
-/// Prefill is held by identity: the form itself is owned by RootView for the whole pushed route.
+/// Carries the exact prefilled form; identity keeps editable models out of value equality.
+struct AddPrefill: Hashable {
+    let model: AddIntakeViewModel
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model.formID == rhs.model.formID }
+    func hash(into hasher: inout Hasher) { hasher.combine(model.formID) }
+}
+
+/// The methods and their prefilled details inside the Add stack.
 enum AddRoute: Hashable {
     case barcodeScanner
     case labelScanner
     case library
-    case details(UUID?)
+    case details(AddPrefill?)
 }
 
 @MainActor

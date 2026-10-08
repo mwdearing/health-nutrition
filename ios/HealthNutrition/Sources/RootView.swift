@@ -290,35 +290,48 @@ struct RootView: View {
             if let model = self.addIntakeModel {
                 AddBarcodeDestination(model: model,
                     onScanned: { barcode in
-                        model.setScannedBarcode(barcode)
+                        await home.scannedBarcode(barcode, into: model)
                     },
-                    onFound: { self.addNavigation.path.append(.details(model.formID)) },
+                    onFound: { self.addNavigation.path.append(.details(AddPrefill(model: model))) },
                     onLabel: { self.openAddRoute(.labelScanner, home: home) },
-                    onType: { self.addNavigation.path.append(.details(model.formID)) })
+                    onType: { self.addNavigation.path.append(.details(AddPrefill(model: model))) })
             }
         case .labelScanner:
             if let capture = self.labelCapture, let model = self.addIntakeModel {
                 LabelCaptureSheet(model: capture) { product in
                     model.applyLabelProduct(product)
-                    self.addNavigation.path.append(.details(model.formID))
+                    self.addNavigation.path.append(.details(AddPrefill(model: model)))
                 }
             }
         case .library:
-            LibraryView(model: self.services.library, onAdded: { self.reload() },
+            AddLibraryPicker(library: self.services.library, recipes: self.recipeList,
                 onPick: { template in
                     do {
                         let model = try home.makeDetails(prefill: template, now: Date())
                         self.addIntakeModel = model
-                        self.addNavigation.path.append(.details(model.formID))
+                        self.addNavigation.path.append(.details(AddPrefill(model: model)))
                     } catch {
                         self.addFlowError = "Could not open this item. Its saved product may no longer be available."
+                    }
+                }, onRecipe: { item in
+                    do {
+                        guard let version = try self.services.recipeStore.version(
+                            recipeID: item.id, number: item.versionNumber) else {
+                            self.addFlowError = "This recipe is no longer available."
+                            return
+                        }
+                        let model = try home.makeDetails(recipe: version, now: Date())
+                        self.addIntakeModel = model
+                        self.addNavigation.path.append(.details(AddPrefill(model: model)))
+                    } catch {
+                        self.addFlowError = "Could not read this recipe."
                     }
                 })
                 .overlay(alignment: .bottom) {
                     if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                 }
-        case .details:
-            if let model = self.addIntakeModel {
+        case .details(let prefill):
+            if let model = prefill?.model ?? self.addIntakeModel {
                 AddIntakeView(model: model, now: { Date() }, onSaved: { self.finishAdding() })
             }
         }

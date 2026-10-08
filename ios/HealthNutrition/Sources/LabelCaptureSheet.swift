@@ -13,8 +13,8 @@ import VisionKit
 
 /// Whether this device can read a Nutrition Facts panel with the camera right now. `isSupported` is
 /// a build-time answer, `isAvailable` the runtime one: a device may support the scanner and still
-/// have it unavailable (no camera, or the camera in use by something else). Both have to hold,
-/// otherwise Add intake shows no Scan label entry at all and the values are typed instead.
+/// have it unavailable (no camera, or the camera in use by something else). Both have to hold;
+/// Add home keeps an unavailable tile visible with an explanation.
 enum LabelTextScanner {
     // Both properties are main-actor isolated, so this is too. It is read from the form's Scan label
     // action, which runs on the main actor like the rest of the view.
@@ -206,16 +206,9 @@ struct LabelCaptureSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle(model.isReviewing ? "Check the label" : "Scan the label")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
-                    }
-                }
-        }
+        content
+            .navigationTitle(model.isReviewing ? "Check the label" : "Scan the label")
+            .navigationBarTitleDisplayMode(.inline)
     }
 
     /// The camera while it reads, the review screen once the Capture button has handed it the lines. A
@@ -233,8 +226,7 @@ struct LabelCaptureSheet: View {
             LabelCaptureView(
                 model: model,
                 onUse: { product in
-                    onUse(product)
-                    dismiss()
+                    self.onUse(product)
                 },
                 onRetake: {},
                 onAddPhoto: {}

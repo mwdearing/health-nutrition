@@ -58,6 +58,36 @@ final class AddHomeTests: XCTestCase {
         await home.scannedBarcode("4006381333931", into: scanned)
         XCTAssertEqual(scanned.lookupState, .notFound)
     }
+
+    func testMealPresetIsCarriedFromRecipeAndItsValuesSurviveSave() throws {
+        let store = try makeStore()
+        let home = AddHomeViewModel(store: store, meal: .lunch)
+        let details = try home.makeDetails(recipe: uiSampleVersion(), now: now)
+        XCTAssertEqual(details.meal, .lunch)
+        XCTAssertEqual(details.unit, .serving)
+        XCTAssertEqual(details.prefilledNutrients["energy"], .known(215, .kcal))
+        XCTAssertTrue(details.save(now: now))
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        XCTAssertEqual(intake.meal, "lunch")
+        let revision = try XCTUnwrap(store.revisions(of: intake.id).first)
+        let product = try XCTUnwrap(store.product(snapshotID: try XCTUnwrap(revision.productSnapshotID)))
+        XCTAssertEqual(product.nutrients["energy"], .known(215, .kcal))
+    }
+
+    func testLibraryPickKeepsEveryAmountInAMixedUnitTemplate() throws {
+        let home = AddHomeViewModel(store: try makeStore(), meal: .lunch)
+        let template = RepeatTemplate(displayName: "Oats and milk", category: "food",
+            components: [
+                IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g),
+                IntakeComponent(componentID: "milk", name: "Milk", amount: 100, unit: .mL)
+            ])
+        let details = try home.makeDetails(prefill: template, now: now)
+        XCTAssertEqual(details.unit, .serving)
+        XCTAssertEqual(details.amountText, "1")
+        XCTAssertTrue(details.name.contains("40 g"))
+        XCTAssertTrue(details.name.contains("100 mL"))
+        XCTAssertEqual(details.meal, .lunch)
+    }
 }
 
 private struct MissingProductLookup: BarcodeProductLookup {

@@ -12,8 +12,8 @@ import VisionKit
 
 /// Whether this device can scan barcodes with the camera right now. `isSupported` is a build-time
 /// answer, `isAvailable` the runtime one: a device may support the scanner and still have it
-/// unavailable (no camera, or the camera in use by something else). Both have to hold, otherwise
-/// Add intake shows no Scan button at all and the barcode is typed.
+/// unavailable (no camera, or the camera in use by something else). Both have to hold; the Add
+/// home keeps an unavailable tile visible with an explanation.
 enum BarcodeScanner {
     // Both properties are main-actor isolated, so this is too. It is read from the form's Scan
     // action, which runs on the main actor like the rest of the view.
@@ -23,29 +23,17 @@ enum BarcodeScanner {
     }
 }
 
-/// The scanner sheet: the live camera, a way out, and nothing else.
-///
-/// Scanning never looks anything up. The first payload the UI package accepts as a barcode fills
-/// the field and closes the sheet; the request to the source still waits for the user to tap Look
-/// up (see `docs/providers/open-food-facts.md`). Once the camera becomes unavailable the sheet
-/// says so once, with a Close button, and never asks again.
+/// A pushed camera destination. The parent starts a lookup as soon as a code is accepted.
 struct BarcodeScannerSheet: View {
     let onScanned: (String) -> Void
+    let onType: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var failureMessage: String?
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Scan barcode")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(failureMessage == nil ? "Cancel" : "Close") { dismiss() }
-                    }
-                }
-        }
+        content
+            .navigationTitle("Scan barcode")
+            .navigationBarTitleDisplayMode(.inline)
     }
 
     /// The camera while it works, the notice once it cannot. A terminal failure takes the scanner
@@ -62,20 +50,25 @@ struct BarcodeScannerSheet: View {
     }
 
     private var hint: some View {
-        Text("Hold the barcode inside the frame. The field is filled in; nothing is looked up until you tap Look up.")
-            .font(.footnote)
-            .multilineTextAlignment(.center)
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(.thinMaterial)
+        VStack(spacing: DesignSpacing.s) {
+            Text("Hold the barcode inside the frame.")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+            Button("Type the digits instead", action: onType)
+                .font(.headline)
+                .foregroundStyle(TokenColors.accent)
+        }
+        .padding(DesignSpacing.m)
+        .frame(maxWidth: .infinity)
+        .background(.thinMaterial)
     }
 
     private func failureNotice(_ message: String) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: DesignSpacing.m) {
             Text(message)
                 .font(.body)
                 .multilineTextAlignment(.center)
-            Button("Close") { dismiss() }
+            Button("Type the digits instead", action: onType)
                 .font(.headline)
         }
         .padding()
@@ -85,7 +78,6 @@ struct BarcodeScannerSheet: View {
 
     private func accept(_ barcode: String) {
         onScanned(barcode)
-        dismiss()
     }
 
     private func fail(_ message: String) {

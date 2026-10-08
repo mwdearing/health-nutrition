@@ -171,9 +171,9 @@ public struct TodayView: View {
                     }
                 }
             }
-            if let onAddToMeal {
+            if self.onAddToMeal != nil {
                 Button("Add to \(section.title)") {
-                    onAddToMeal(MealLabel(rawValue: section.title.lowercased()))
+                    self.onAddToMeal?(MealLabel(rawValue: section.title.lowercased()))
                 }
                 .font(.subheadline)
                 .foregroundStyle(TokenColors.accent)
