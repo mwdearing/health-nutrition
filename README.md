@@ -18,7 +18,7 @@ See the [documentation index](docs/README.md) for behavior, limitations and arch
 
 ## Getting the app
 
-Health Nutrition is not on the App Store. Signed beta builds go out through Apple's beta-testing program: open a [Beta access request](https://github.com/mwdearing/health-nutrition/issues/new?template=beta_access.yml) and you will get the next step in that issue. GitHub Releases do not carry IPA files. If you would rather build it yourself, the manual `unsigned-ipa` workflow job and the Xcode instructions in the [app target guide](ios/HealthNutrition/README.md) remain available.
+Health Nutrition is not on the App Store. Signed beta builds go out through TestFlight: open a [Beta access request](https://github.com/mwdearing/health-nutrition/issues/new?template=beta_access.yml) and you will get the next step in that issue. GitHub Releases do not carry IPA files. If you would rather build it yourself, the manual `unsigned-ipa` workflow job and the Xcode instructions in the [app target guide](ios/HealthNutrition/README.md) remain available.
 
 ## Integration and release status
 
