@@ -10,6 +10,7 @@ on:
       - ".github/workflows/signed-beta.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
       - "scripts/tests/test_project_declarations.py"
+      - "scripts/tests/test_ios_workflow.py"
   push:
     branches: [main]
     paths:
@@ -20,6 +21,7 @@ on:
       - ".github/workflows/signed-beta.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
       - "scripts/tests/test_project_declarations.py"
+      - "scripts/tests/test_ios_workflow.py"
   # Manual runs only. Builds an unsigned device .ipa so it can be signed and sideloaded locally;
   # no signing material ever lives in this repository.
   workflow_dispatch:
@@ -63,6 +65,8 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py
       - name: Test the project declarations
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
+      - name: Check the CI release build keeps its shape
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_ios_workflow.py
 
   swift-test:
     runs-on: macos-latest
@@ -88,6 +92,23 @@ jobs:
       - name: Build the app for the iOS Simulator
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+
+  # A Release build for a real device, unsigned. The signed upload archives in Release and cannot show its
+  # log (the Actions log is public), so an error that only the optimizer raises (for example a view body the
+  # compiler cannot type-check in reasonable time) would otherwise be invisible. This job shows it here.
+  release-build:
+    # The same image as signed-beta.yml, so this job sees the compiler the upload uses.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: xcodegen generate
+      - name: Build the app in Release for a generic iOS device
+        working-directory: ios/HealthNutrition
+        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
 
   # The app target's own unit tests. Same shape as app-build: regenerate the project, then run the
   # HealthNutritionTests bundle, which is hosted by the app so @testable import HealthNutrition works.
