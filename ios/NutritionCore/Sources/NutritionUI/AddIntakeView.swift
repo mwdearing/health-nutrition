@@ -154,8 +154,8 @@ public struct AddIntakeView: View {
                             Text(source).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                         }
                         if let attribution = model.attribution,
-                            let title = model.attributionTitle, let url = URL(string: attribution.url) {
-                            Link(title, destination: url)
+                            let attributionTitle = model.attributionTitle, let url = URL(string: attribution.url) {
+                            Link(attributionTitle, destination: url)
                                 .font(.footnote)
                                 .accessibilityLabel("Read the licence for these nutrition facts")
                         }
