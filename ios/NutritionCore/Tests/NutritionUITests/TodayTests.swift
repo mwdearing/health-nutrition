@@ -5,8 +5,9 @@ import XCTest
 
 private struct FixedFacts: NutrientFactsLookup {
     let values: [String: NutrientValue]
+    var missingNutrients: Set<String> = []
     func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
-        values[component.componentID] ?? .unknown
+        missingNutrients.contains(nutrient) ? .unknown : values[component.componentID] ?? .unknown
     }
 }
 
@@ -69,10 +70,10 @@ final class TodayTests: XCTestCase {
         return intakeID
     }
 
-    /// An intake recorded against a product of a given kind. A supplement snapshot carries none of the
-    /// nutrients coverage counts, which is the point of the test that uses this.
+    /// An intake recorded against a supplement, with only the nutrients its panel declares.
     private func addSupplement(
-        _ store: JournalStore, name: String, id: String, at date: Date, zone: String = "UTC"
+        _ store: JournalStore, name: String, id: String, at date: Date, zone: String = "UTC",
+        nutrients: [String: NutrientValue] = [:]
     ) throws -> String {
         let intakeID = UUID().uuidString.lowercased()
         let intake = Intake(id: intakeID, category: "food", occurredAt: date, timeZoneIdentifier: zone)
@@ -81,7 +82,7 @@ final class TodayTests: XCTestCase {
             product: ProductDefinition(
                 snapshotID: "snap-\(id)", productID: "label_capture", name: name,
                 labelBasis: "per serving (1 tablet)", catalogOrigin: "label_capture", catalogVersion: "unknown",
-                kind: .supplement),
+                kind: .supplement, nutrients: nutrients),
             now: date)
         return intakeID
     }
@@ -372,8 +373,11 @@ final class TodayTests: XCTestCase {
     func testASupplementIsLeftOutOfCoverageButStillCountsTowardsTotals() throws {
         let store = try makeStore()
         _ = try addFood(store, name: "Oats", id: "oats", at: now)
-        _ = try addSupplement(store, name: "Sample daily multi", id: "multi", at: now)
-        let facts = FixedFacts(values: ["oats": .known(Decimal(300), .mg)])
+        _ = try addSupplement(
+            store, name: "Sample daily multi", id: "multi", at: now,
+            nutrients: ["potassium": .known(Decimal(50), .mg)])
+        let facts = FixedFacts(
+            values: ["oats": .known(Decimal(250), .mg)], missingNutrients: ["fiber", "fibre"])
 
         let model = TodayViewModel(
             store: store, lookup: facts, trackedNutrients: ["potassium", "fiber"], timeZoneIdentifier: "UTC")

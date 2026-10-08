@@ -69,7 +69,10 @@ public final class AddIntakeViewModel: ObservableObject {
     /// supplement keeps it; and the day's coverage counts only the kinds that are foods and drinks. An
     /// typed non-food entry carries a minimal manual snapshot so its kind survives saving.
     /// A typed food without a snapshot keeps the existing food default.
-    @Published public var kind: ProductKind = .food
+    @Published public var kind: ProductKind = .food {
+        didSet { hasChosenKind = true }
+    }
+    private var hasChosenKind = false
     @Published public private(set) var nameError: String?
     @Published public private(set) var amountError: String?
     @Published public private(set) var saveError: String?
@@ -297,7 +300,10 @@ public final class AddIntakeViewModel: ObservableObject {
         labelValues = product
         // The panel already said what it is: a Supplement Facts panel is a supplement. The review
         // screen lets the user change it before the product reaches this form at all.
-        kind = product.kind
+        if !hasChosenKind {
+            kind = product.kind
+            hasChosenKind = false
+        }
         // Every panel row is filled in, so a nutrient the panel did not state reads as unknown on the
         // form rather than missing from it. A known zero is never written for a missing row.
         var filled: [String: NutrientValue] = [:]
@@ -352,10 +358,12 @@ public final class AddIntakeViewModel: ObservableObject {
     /// they actually ate.
     private func apply(_ product: LookedUpProduct) {
         labelValues = nil
-        // A barcode lookup fills the form as a food, which is what every product behind a barcode is
-        // until a source says otherwise: none of them states a kind today, and guessing one from the
-        // name would put an entry into a coverage count nobody chose.
-        kind = .food
+        // The source has no kind. Only a source-derived default may be replaced; an explicit
+        // selection made before or during the request stays the user's.
+        if !hasChosenKind {
+            kind = .food
+            hasChosenKind = false
+        }
         if let productName = product.name?.trimmingCharacters(in: .whitespacesAndNewlines),
            !productName.isEmpty
         {

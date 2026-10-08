@@ -141,7 +141,7 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
     }
 
     /// `brand` and `barcode` are required-but-nullable in the schema, so both are always written, as `null`
-    /// when the product has neither. `kind` is required from version 2 on, so it is always written.
+    /// when the product has neither. `kind` is written only for version 2 and later.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(snapshotID, forKey: .snapshotID)
@@ -152,7 +152,9 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
         try container.encode(labelBasis, forKey: .labelBasis)
         try container.encode(catalogOrigin, forKey: .catalogOrigin)
         try container.encode(catalogVersion, forKey: .catalogVersion)
-        try container.encode(kind, forKey: .kind)
+        if (encoder.userInfo[exportSchemaVersionKey] as? Int ?? JournalExport.currentSchemaVersion) >= 2 {
+            try container.encode(kind, forKey: .kind)
+        }
     }
 }
 
@@ -543,6 +545,7 @@ public enum JournalExporter {
     public static func encode(_ export: JournalExport) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        encoder.userInfo[exportSchemaVersionKey] = export.schemaVersion
         // One formatter for the whole run: building a `DateFormatter` is the expensive part of formatting a
         // date, and encoding is synchronous on the calling thread, so this one is only ever used here.
         let formatter = dateFormatter()

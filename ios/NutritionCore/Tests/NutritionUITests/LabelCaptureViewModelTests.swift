@@ -224,6 +224,8 @@ final class LabelCaptureViewModelTests: XCTestCase {
     func testAFoodPanelIsCapturedAsAFoodAndTheKindCanBeCorrected() throws {
         let model = makeModel()
         model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+        XCTAssertTrue(model.canApply)
         XCTAssertEqual(model.kind, .food)
 
         // A bottle of powder that prints a Nutrition Facts panel anyway is a supplement the user knows

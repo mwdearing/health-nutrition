@@ -36,8 +36,9 @@ the backup.
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
 **Both version 1 and version 2 are read**, so a backup taken before the kind existed still restores;
-`decode(_:)` reads the version off the document and hands it to the matching `init(from:)`. This build
-writes version 2.
+`decode(_:)` reads the version off the document and hands it to the matching `init(from:)`. New exports
+write version 2. Re-encoding a decoded version 1 document preserves version 1 and omits `kind` from
+both revision provenance and the products list, so the strict importer still accepts it.
 
 ## Importing
 

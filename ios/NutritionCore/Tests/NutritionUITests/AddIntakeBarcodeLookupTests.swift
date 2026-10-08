@@ -116,6 +116,29 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertEqual(model.amountText, "")
     }
 
+    func testLookupKeepsChosenKindBeforeTheRequest() async throws {
+        for kind in [ProductKind.drink, .supplement, .food] {
+            let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
+            model.kind = kind
+            model.barcode = validBarcode
+            await model.lookUpBarcode()
+            XCTAssertEqual(model.kind, kind)
+        }
+    }
+
+    func testLookupKeepsChosenKindDuringTheRequest() async throws {
+        let lookup = GatedBarcodeLookup(result: .found(oatMilk()))
+        let model = try makeModel(lookup)
+        model.barcode = validBarcode
+        let task = Task { await model.lookUpBarcode() }
+        for _ in 0..<1000 where lookup.requestedBarcodes.isEmpty { await Task.yield() }
+        XCTAssertEqual(lookup.requestedBarcodes, [validBarcode])
+        model.kind = .supplement
+        lookup.answer()
+        await task.value
+        XCTAssertEqual(model.kind, .supplement)
+    }
+
     func testFoundCarriesTheAttributionTextAndLink() async throws {
         let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
         model.barcode = validBarcode

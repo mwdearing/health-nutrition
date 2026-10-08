@@ -168,7 +168,9 @@ public final class TodayViewModel: ObservableObject {
                         }
                     }
                 } else {
-                    for component in components { foodComponents.append((component, snapshot, kind)) }
+                    if kind != .supplement {
+                        for component in components { foodComponents.append((component, snapshot, kind)) }
+                    }
                 }
                 newRows.append(
                     TodayRow(
