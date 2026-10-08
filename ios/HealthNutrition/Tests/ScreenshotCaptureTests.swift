@@ -227,6 +227,36 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
+    // The add flow's first screen and the library picker, as RootView presents them, with the Cancel item.
+    func testAddHomeView() throws {
+        let services = try makeSeededServices()
+        let home = AddHomeViewModel(store: services.journalStore, meal: .lunch,
+                                    lookup: services.barcodeLookup, preferences: services.displayPreferences)
+        try capture("AddHomeView") {
+            NavigationStack {
+                AddHomeView(model: home, onBarcode: {}, onLabel: {}, onLibrary: {}, onType: {}, onChanged: {})
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                    }
+            }
+        }
+    }
+
+    func testAddLibraryPicker() throws {
+        let services = try makeSeededServices()
+        try services.recipeStore.saveNewVersion(sampleRecipe())
+        let recipes = RecipeListViewModel(store: services.recipeStore)
+        recipes.load()
+        try capture("AddLibraryPicker") {
+            NavigationStack {
+                AddLibraryPicker(library: services.library, recipes: recipes, onPick: { _ in }, onRecipe: { _ in })
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                    }
+            }
+        }
+    }
+
     func testRecipeDetailView() throws {
         let services = try makeSeededServices()
         let version = sampleRecipe()

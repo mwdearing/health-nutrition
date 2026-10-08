@@ -388,8 +388,9 @@ def esc(text):
     return html.escape(text, quote=True)
 
 
-# The camera cannot run on the simulator, so these sheets keep their outline.
-SCREENSHOT_EXEMPT = {"BarcodeScannerSheet", "LabelCaptureSheet"}
+# The camera cannot run on the simulator, so these sheets keep their outline. AddBarcodeDestination
+# opens straight onto the camera scanner, so its picture would be a blank camera.
+SCREENSHOT_EXEMPT = {"BarcodeScannerSheet", "LabelCaptureSheet", "AddBarcodeDestination"}
 
 
 def find_screenshots(directory):
