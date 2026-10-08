@@ -50,13 +50,33 @@ final class LabelCaptureSession: ObservableObject {
     /// Replaces the held lines with the ones the scanner recognizes now. Called for every change to the
     /// recognized set — an item added, changed or taken away — so what is held is the frame in front of
     /// the camera and not the last frame that had anything on it.
-    func update(with items: [RecognizedItem]) {
-        lines = LabelCaptureSession.linesInReadingOrder(items)
+    ///
+    /// The lines arrive already in reading order, which is what `linesInReadingOrder(_:)` is for, so
+    /// the transcript can also be handed over directly: a test drives the session by handing it the
+    /// lines a frame recognised rather than by standing a camera up.
+    func update(withLines lines: [String]) {
+        self.lines = lines
     }
+
+    func update(with items: [RecognizedItem]) {
+        update(withLines: LabelCaptureSession.linesInReadingOrder(items))
+    }
+
+    /// Whether the camera is holding a transcript that a Capture would submit.
+    ///
+    /// Nothing downstream reads this, so it is here for the tests: a session that has been cancelled
+    /// and reopened must hold nothing, or the next Capture merges the photo the user backed out of.
+    var hasHeldLines: Bool { !lines.isEmpty }
 
     /// Hands the lines to the parser and stops the camera, so the review screen is not competing with
     /// a live preview. An empty capture is still handed over: the parser then says the panel was
     /// unreadable, which is a clearer answer than a Capture button that does nothing.
+    ///
+    /// The lines go to `LabelCaptureViewModel.capture(lines:)`, which decides what this capture is for:
+    /// the first photo of a panel loads the draft, and a photo taken while the user asked to add
+    /// another one is merged into the draft already on screen. Both go through this same session and
+    /// this same recogniser — the second half of a panel is read by the camera that read the first,
+    /// not by a second one the user has to find.
     ///
     /// Main actor, because it loads the parser's rows into the view model, and because it is only ever
     /// reached from the Capture button.
@@ -65,7 +85,23 @@ final class LabelCaptureSession: ObservableObject {
         let collected = lines
         lines = []
         controller?.stopScanning()
-        model.load(lines: collected)
+        model.capture(lines: collected)
+    }
+
+    /// Puts the reviewed draft back on screen without adding a photo, and forgets what the camera
+    /// read while the user was looking for the rest of the panel.
+    ///
+    /// Clearing the transcript is the point: the recogniser replaces the held lines only when it
+    /// recognises something, so a camera reopened for another photo still holds the lines the
+    /// cancelled one saw. A Capture taken before the camera read anything new would then merge the
+    /// photo the user backed out of, which is not what they asked for.
+    ///
+    /// Main actor, because it puts rows back on the view model.
+    @MainActor
+    func cancelAddingPhoto() {
+        lines = []
+        controller?.stopScanning()
+        model.cancelAddingPhoto()
     }
 
     /// The recognized items as lines of text in the order a person reads them: top to bottom, and
@@ -102,6 +138,48 @@ final class LabelCaptureSession: ObservableObject {
     private static let bandHeight: CGFloat = 0.02
 }
 
+/// The capture sheet's failure state: why the camera stopped, and the way back to a draft the user
+/// had already reviewed.
+///
+/// The sheet needs one of these rather than a bare `@State` message, because the decision the failure
+/// screen has to make — is there a reviewed draft behind this failure, or is there nothing to go back
+/// to — is a question about the draft and the session, not about a string. A camera that fails while
+/// the user is adding another photo is not the end of their work: the rows they have already checked
+/// are still there, and offering only Close would throw them away over a camera that stopped.
+@MainActor
+final class LabelCaptureSheetState: ObservableObject {
+    /// Why the camera stopped, or nil while it is still reading.
+    @Published private(set) var failureMessage: String?
+    private let model: LabelCaptureViewModel
+    private let session: LabelCaptureSession
+
+    init(model: LabelCaptureViewModel, session: LabelCaptureSession) {
+        self.model = model
+        self.session = session
+    }
+
+    /// Whether a draft the user had already reviewed is behind this failure, so the failure screen can
+    /// offer the way back to it rather than only closing the sheet.
+    var canReturnToValues: Bool { failureMessage != nil && model.isAddingPhoto && model.hasPanel }
+
+    /// Called when the camera cannot keep scanning. The failure is recorded once and never cleared by
+    /// another report, because reporting changes the sheet's state, which sends SwiftUI back through
+    /// the view that starts the scanner.
+    func report(_ message: String) {
+        failureMessage = message
+    }
+
+    /// Goes back to the reviewed draft, keeping every value already on screen and forgetting what the
+    /// camera had read in the photo that failed. Returns whether there was a draft to return to.
+    @discardableResult
+    func backToValues() -> Bool {
+        guard canReturnToValues else { return false }
+        failureMessage = nil
+        session.cancelAddingPhoto()
+        return true
+    }
+}
+
 /// The capture sheet: the live camera with a Capture button, and the review screen once there is
 /// something to review.
 ///
@@ -117,18 +195,20 @@ struct LabelCaptureSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session: LabelCaptureSession
-    @State private var failureMessage: String?
+    @StateObject private var state: LabelCaptureSheetState
 
     init(model: LabelCaptureViewModel, onUse: @escaping (ProductDefinition) -> Void) {
         _model = ObservedObject(wrappedValue: model)
         self.onUse = onUse
-        _session = StateObject(wrappedValue: LabelCaptureSession(model: model))
+        let session = LabelCaptureSession(model: model)
+        _session = StateObject(wrappedValue: session)
+        _state = StateObject(wrappedValue: LabelCaptureSheetState(model: model, session: session))
     }
 
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle(model.hasPanel ? "Check the label" : "Scan the label")
+                .navigationTitle(model.isReviewing ? "Check the label" : "Scan the label")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -140,18 +220,24 @@ struct LabelCaptureSheet: View {
 
     /// The camera while it reads, the review screen once the Capture button has handed it the lines. A
     /// terminal failure takes the camera out of the tree, so nothing asks it to start again.
+    ///
+    /// The camera also comes back after the review screen's "Add another photo": the same session, the
+    /// same recogniser and the same Capture button read the second half of a panel, and the draft on
+    /// screen is kept so its rows can be merged with whatever this photo reads. A failure while that
+    /// camera is open offers the way back to that draft rather than only closing the sheet.
     @ViewBuilder
     private var content: some View {
-        if let failureMessage {
+        if let failureMessage = state.failureMessage {
             failureNotice(failureMessage)
-        } else if model.hasPanel {
+        } else if model.hasPanel && !model.isAddingPhoto {
             LabelCaptureView(
                 model: model,
                 onUse: { product in
                     onUse(product)
                     dismiss()
                 },
-                onRetake: {}
+                onRetake: {},
+                onAddPhoto: {}
             )
         } else {
             camera
@@ -159,16 +245,24 @@ struct LabelCaptureSheet: View {
     }
 
     private var camera: some View {
-        LabelCaptureDataScanner(session: session, onFailure: { failureMessage = $0 })
+        LabelCaptureDataScanner(session: session, onFailure: { state.report($0) })
             .ignoresSafeArea(edges: .bottom)
             .overlay(alignment: .bottom) { captureBar }
     }
 
     /// The Capture button. It collects the lines the camera has read so far, in reading order, and
     /// hands them to the parser; nothing is parsed and nothing is saved while the camera is open.
+    ///
+    /// While another photo is being added it says so: the panel on the table often does not fit in one
+    /// frame, and the same Capture button reads the column that was missing last time.
     private var captureBar: some View {
         VStack(spacing: 8) {
-            Text("Hold the Nutrition Facts panel inside the frame, then tap Capture. Nothing is saved until you have checked what was read.")
+            Text(
+                model.isAddingPhoto
+                    ? "Frame the rest of the panel, including any other column and the other ingredients, "
+                        + "then tap Capture. The values already checked are kept and added to."
+                    : "Hold the Nutrition Facts panel inside the frame, then tap Capture. "
+                        + "Nothing is saved until you have checked what was read.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
             Button {
@@ -178,19 +272,37 @@ struct LabelCaptureSheet: View {
             }
             .accessibilityLabel("Capture the panel")
             .accessibilityHint("Reads the text of the panel in front of the camera and shows it for checking")
+            if model.isAddingPhoto {
+                Button("Back to the values") { session.cancelAddingPhoto() }
+                    .font(.body)
+                    .accessibilityLabel("Back to the values you checked")
+                    .accessibilityHint("Goes back to the review screen without adding a photo")
+            }
         }
         .padding()
         .frame(maxWidth: .infinity)
         .background(.thinMaterial)
     }
 
+    /// Why the camera stopped, and the way out of it.
+    ///
+    /// A failure that arrived while the user was adding another photo sits in front of a draft they
+    /// had already checked, so it offers the way back to it as well as closing. Closing alone would
+    /// throw away the rows they had spent the scan on because a camera stopped.
     private func failureNotice(_ message: String) -> some View {
         VStack(spacing: 12) {
             Text(message)
                 .font(.body)
                 .multilineTextAlignment(.center)
+            if state.canReturnToValues {
+                Button("Back to the values") { state.backToValues() }
+                    .font(.headline)
+                    .accessibilityLabel("Back to the values you checked")
+                    .accessibilityHint("Goes back to the review screen and keeps what you have checked")
+            }
             Button("Close") { dismiss() }
-                .font(.headline)
+                .font(state.canReturnToValues ? .body : .headline)
+                .accessibilityHint("Closes label capture and throws the values on screen away")
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -20,6 +20,9 @@ public struct LabelCaptureView: View {
     private let onUse: (ProductDefinition) -> Void
     /// Called when the user wants another look at the panel, so the capture session can read it again.
     private let onRetake: () -> Void
+    /// Called when the user wants to photograph the rest of the panel, so the capture session can read
+    /// it again without throwing the values already on screen away.
+    private let onAddPhoto: () -> Void
     /// The text typed into whichever correction field is open. The row being corrected is held by the
     /// view model, so beginning one row's correction closes the editor open on any other.
     @State private var draft = ""
@@ -34,15 +37,20 @@ public struct LabelCaptureView: View {
     public init(
         model: LabelCaptureViewModel,
         onUse: @escaping (ProductDefinition) -> Void,
-        onRetake: @escaping () -> Void = {}
+        onRetake: @escaping () -> Void = {},
+        onAddPhoto: @escaping () -> Void = {}
     ) {
         self.model = model
         self.onUse = onUse
         self.onRetake = onRetake
+        self.onAddPhoto = onAddPhoto
     }
 
     public var body: some View {
         Form {
+            if let header = model.photoHeader {
+                photoHeader(header)
+            }
             if model.isUnreadable {
                 unreadableSection
             } else {
@@ -93,6 +101,18 @@ public struct LabelCaptureView: View {
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)
                 .accessibilityLabel(model.kindExplanation)
+        }
+    }
+
+    /// Where the values came from, once more than one photo has been merged into them: a panel that
+    /// does not fit in one frame is read in several, and saying so tells the user why a row they did
+    /// not point the camera at is on the screen.
+    private func photoHeader(_ text: String) -> some View {
+        Section {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(TokenColors.textSecondary)
+                .accessibilityLabel(text)
         }
     }
 
@@ -235,6 +255,10 @@ public struct LabelCaptureView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(row.accessibilityLabel)
 
+            if row.hasConflict {
+                conflictNotice(row)
+            }
+
             if row.needsConfirmation {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -265,7 +289,76 @@ public struct LabelCaptureView: View {
         }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .listRowBackground(row.needsConfirmation ? TokenColors.warning.opacity(0.12) : Color.clear)
+        .listRowBackground(rowWarningBackground(for: row))
+    }
+
+    /// A row the photos read differently: every reading is shown and the user picks one.
+    ///
+    /// Nothing here chooses for them. A photo that saw a column at an angle can turn one printed digit
+    /// into another, and the row on screen cannot tell which photo was the clearer one, so it shows
+    /// what each of them said and lets the answer come from the bottle in the user's hand.
+    ///
+    /// A panel read across three photos can be read three ways rather than two, so every candidate is
+    /// listed rather than only the first disagreement: dropping a third reading would decide for the
+    /// user that two photos outvote one. A reading more than one photo agrees on says so, which is
+    /// worth knowing before choosing and is not itself a reason to choose.
+    @ViewBuilder
+    private func conflictNotice(_ row: LabelCaptureRow) -> some View {
+        if row.hasConflict {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(TokenColors.error)
+                        .accessibilityLabel("The photos read this row differently")
+                    Text("Conflict: tap to choose")
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.error)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(row.name) was read differently in \(row.candidates.count + 1) photos. Tap to choose.")
+                Text(row.displayedCandidate.summary)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .accessibilityLabel(row.displayedCandidate.summary)
+                Button("Keep photo \(row.frameIndex)") { model.confirm(row.key) }
+                    .font(.body)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Keep \(row.valueText) for \(row.name), from photo \(row.frameIndex)")
+                ForEach(row.candidates) { candidate in
+                    candidateRow(
+                        candidate,
+                        rowName: row.name,
+                        keep: { model.chooseConflict(key: row.key, taking: candidate.frameIndex) })
+                }
+            }
+        }
+    }
+
+    /// One reading of a conflicted row: what the photo read, and the button that keeps it.
+    ///
+    /// The button is labelled by the value it keeps rather than by its position, because there can be
+    /// any number of them and "the other one" is no longer a thing the screen can say.
+    private func candidateRow(
+        _ candidate: LabelCaptureCandidate, rowName: String, keep: @escaping () -> Void
+    ) -> some View {
+        let value = LabelCaptureRow.describe(candidate.value)
+        return HStack {
+            Text(candidate.summary)
+                .font(.footnote)
+                .foregroundStyle(TokenColors.textSecondary)
+            Spacer()
+            Button("Keep \(value)") { keep() }
+                .font(.body)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Keep \(value) for \(rowName), from photo \(candidate.frameIndex)")
+        }
+    }
+
+    /// The tinted background of one row: a row that needs the user's answer is called out, whether the
+    /// parser flagged it or two photos disagreed about it.
+    private func rowWarningBackground(for row: LabelCaptureRow) -> Color {
+        row.isPending ? TokenColors.warning.opacity(0.12) : Color.clear
     }
 
     /// The rows the panel states under its own names, under a heading of their own.
@@ -298,6 +391,10 @@ public struct LabelCaptureView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(row.accessibilityLabel)
 
+            if row.hasConflict {
+                additionalConflictNotice(row)
+            }
+
             if row.needsConfirmation {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -328,7 +425,47 @@ public struct LabelCaptureView: View {
         }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .listRowBackground(row.needsConfirmation ? TokenColors.warning.opacity(0.12) : Color.clear)
+        .listRowBackground(row.isPending ? TokenColors.warning.opacity(0.12) : Color.clear)
+    }
+
+    /// The same choice a named nutrient row offers, for a compound the photos read differently.
+    /// A compound is stored under the slug of its printed name, so every reading has to reach the same
+    /// row for the choice to be possible at all, and a third photo's reading is kept beside the first
+    /// two rather than dropped.
+    @ViewBuilder
+    private func additionalConflictNotice(_ row: LabelCaptureAdditionalRow) -> some View {
+        if row.hasConflict {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(TokenColors.error)
+                        .accessibilityLabel("The photos read this row differently")
+                    Text("Conflict: tap to choose")
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.error)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(row.name) was read differently in \(row.candidates.count + 1) photos. Tap to choose.")
+                Text(row.displayedCandidate.summary)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .accessibilityLabel(row.displayedCandidate.summary)
+                Button("Keep photo \(row.frameIndex)") { model.confirmAdditional(key: row.key) }
+                    .font(.body)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(
+                        "Keep \(row.valueText) for \(row.name), from photo \(row.frameIndex)")
+                ForEach(row.candidates) { candidate in
+                    candidateRow(
+                        candidate,
+                        rowName: row.name,
+                        keep: {
+                            model.chooseConflict(additionalKey: row.key, taking: candidate.frameIndex)
+                        })
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -515,9 +652,10 @@ public struct LabelCaptureView: View {
         }
     }
 
-    /// The one button that hands values on, and the way back to the camera. The button stays disabled
-    /// while any flagged value is unanswered, so a value the parser was unsure about can never be
-    /// saved on the parser's word.
+    /// The one button that hands values on, the way to photograph the rest of the panel, and the way back
+    /// to the camera. The hand-off button stays disabled while any flagged value is unanswered and
+    /// while any row is still a conflict, so a value the parser was unsure about, or a row two photos
+    /// read differently, can never be saved on the parser's word alone.
     private var actions: some View {
         Section {
             Button {
@@ -528,6 +666,25 @@ public struct LabelCaptureView: View {
             .disabled(!model.canApply)
             .accessibilityLabel("Use these values")
             .accessibilityHint("Fills the intake form with the values you checked")
+            if model.canAddPhoto {
+                Button("Add another photo") {
+                    // The model flips first, so the sheet is already showing the camera by the time the
+                    // host is told, however it chooses to react to the request.
+                    model.beginAddingPhoto()
+                    // The camera takes the screen away, and a draft held here would not come back with
+                    // it: an editor left open would return against the value it was opened for, and a
+                    // half-typed amount would look like an answer the user never gave. So the edit is
+                    // closed here, on the way out, and only what was already saved on the model is kept.
+                    draft = ""
+                    servingDraft = ""
+                    editingServing = false
+                    model.clearCorrectionError()
+                    onAddPhoto()
+                }
+                .font(.body)
+                .accessibilityLabel("Add another photo")
+                .accessibilityHint("Goes back to the camera to read the rest of the panel into these values")
+            }
             if model.canRetake {
                 Button("Scan another label") {
                     model.retake()
@@ -536,7 +693,7 @@ public struct LabelCaptureView: View {
                 }
                 .font(.body)
                 .accessibilityLabel("Scan another label")
-                .accessibilityHint("Goes back to the camera to read the panel again")
+                .accessibilityHint("Throws these values away and goes back to the camera to read a new panel")
             }
         }
     }
