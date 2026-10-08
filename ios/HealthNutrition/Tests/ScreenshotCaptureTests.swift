@@ -159,6 +159,95 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
+    private func sampleRecipe() -> RecipeVersion {
+        RecipeVersion(
+            recipeID: "recipe-oat-bake", number: 1, title: "Oat bake",
+            ingredients: [
+                RecipeIngredient(
+                    id: "oat-flour", name: "Oat flour",
+                    quantity: Quantity(value: Decimal(string: "200")!, unit: .g),
+                    perUnit: ["energy": .known(Decimal(string: "3.6")!, .kcal)]),
+                RecipeIngredient(
+                    id: "yoghurt", name: "Plain yoghurt",
+                    quantity: Quantity(value: Decimal(string: "150")!, unit: .g),
+                    perUnit: ["energy": .known(Decimal(string: "0.6")!, .kcal)]),
+            ],
+            yield: .servings(4), createdAt: Date())
+    }
+
+    func testAddIntakeView() throws {
+        let services = try makeSeededServices()
+        try capture("AddIntakeView") {
+            NavigationStack {
+                AddIntakeView(
+                    model: AddIntakeViewModel(
+                        store: services.journalStore, now: Date(), lookup: services.barcodeLookup,
+                        preferences: services.displayPreferences),
+                    onSaved: {}, onFromLibrary: {}, onScanBarcode: {}, onScanLabel: {})
+            }
+        }
+    }
+
+    func testGoalsView() throws {
+        let services = try makeSeededServices()
+        services.goals.load()
+        try capture("GoalsView") { NavigationStack { GoalsView(model: services.goals) } }
+    }
+
+    func testConnectionsPrivacyView() throws {
+        let services = try makeSeededServices()
+        try capture("ConnectionsPrivacyView") {
+            NavigationStack { ConnectionsPrivacyView(model: services.connections) }
+        }
+    }
+
+    func testRecipeListView() throws {
+        let services = try makeSeededServices()
+        try services.recipeStore.saveNewVersion(sampleRecipe())
+        let model = RecipeListViewModel(store: services.recipeStore)
+        model.load()
+        try capture("RecipeListView") {
+            NavigationStack { RecipeListView(model: model, onNew: {}, onOpen: { _ in }) }
+        }
+    }
+
+    func testRecipeDetailView() throws {
+        let services = try makeSeededServices()
+        let version = sampleRecipe()
+        try services.recipeStore.saveNewVersion(version)
+        try capture("RecipeDetailView") {
+            NavigationStack {
+                RecipeDetailView(
+                    model: RecipeDetailViewModel(version: version, journal: services.journalStore),
+                    onEdit: {}, onLogged: {})
+            }
+        }
+    }
+
+    func testRecipeEditorView() throws {
+        let services = try makeSeededServices()
+        let version = sampleRecipe()
+        try services.recipeStore.saveNewVersion(version)
+        try capture("RecipeEditorView") {
+            NavigationStack {
+                RecipeEditorView(
+                    model: RecipeEditorViewModel(store: services.recipeStore, editing: version), onSaved: {})
+            }
+        }
+    }
+
+    /// An invented Nutrition Facts panel, read the way recognised camera text arrives: one string per line.
+    func testLabelCaptureView() throws {
+        let model = LabelCaptureViewModel()
+        model.load(lines: [
+            "Nutrition Facts", "Serving size 40 g", "Calories 150", "Total Fat 3 g", "Sodium 5 mg",
+            "Total Carbohydrate 27 g", "Dietary Fiber 4 g", "Total Sugars 1 g", "Protein 5 g",
+        ])
+        try capture("LabelCaptureView") {
+            NavigationStack { LabelCaptureView(model: model, onUse: { _ in }) }
+        }
+    }
+
     func testStartupFailureView() throws {
         try capture("StartupFailureView") {
             StartupFailureView(message: "The journal store file could not be opened.")
