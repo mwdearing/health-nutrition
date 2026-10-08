@@ -164,7 +164,7 @@ def test_it_signs_with_the_api_key_and_uploads_directly() -> None:
         "<string>upload</string>",
         "<key>method</key>",
         "app-store-connect",
-        "<key>testFlightInternalTestingOnly</key>",
+        "<key>testFlightInternalTestingOnly</key>\n            <false/>",
         "CURRENT_PROJECT_VERSION=$BUILD_NUMBER",
         "BUILD_NUMBER=$((GITHUB_RUN_NUMBER + 100))",
     ):
