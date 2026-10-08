@@ -275,14 +275,18 @@ struct RootView: View {
             self.addIntakeModel = home.makeDetails(now: Date())
         case .labelScanner:
             self.labelCapture = LabelCaptureViewModel()
-            if self.addIntakeModel == nil {
-                self.addIntakeModel = home.makeDetails(now: Date())
-            }
+            self.addIntakeModel = home.makeDetails(now: Date())
         case .details:
             self.addIntakeModel = home.makeDetails(now: Date())
         case .library: break
         }
         self.addNavigation.path.append(route)
+    }
+
+    private func pushLabelScanner(keeping model: AddIntakeViewModel) {
+        self.addIntakeModel = model
+        self.labelCapture = LabelCaptureViewModel()
+        self.addNavigation.path.append(.labelScanner)
     }
 
     @ViewBuilder
@@ -295,7 +299,7 @@ struct RootView: View {
                         await home.scannedBarcode(barcode, into: model)
                     },
                     onFound: { self.addNavigation.path.append(.details(AddPrefill(model: model))) },
-                    onLabel: { self.openAddRoute(.labelScanner, home: home) },
+                    onLabel: { self.pushLabelScanner(keeping: model) },
                     onType: { self.addNavigation.path.append(.details(AddPrefill(model: model))) })
             }
         case .labelScanner:
@@ -325,6 +329,8 @@ struct RootView: View {
                         let model = try home.makeDetails(recipe: version, now: Date())
                         self.addIntakeModel = model
                         self.addNavigation.path.append(.details(AddPrefill(model: model)))
+                    } catch RecipeError.nothingToLog {
+                        self.addFlowError = "No nutrient value is known, so nothing was logged."
                     } catch {
                         self.addFlowError = "Could not read this recipe."
                     }
@@ -336,10 +342,9 @@ struct RootView: View {
             if let model = prefill?.model ?? self.addIntakeModel {
                 AddIntakeView(model: model, now: { Date() },
                     onSaved: { self.finishAdding() },
-                    onScanLabel: {
-                        self.addIntakeModel = model
-                        self.openAddRoute(.labelScanner, home: home)
-                    })
+                    onScanLabel: home.scannerAvailability.label ? {
+                        self.pushLabelScanner(keeping: model)
+                    } : nil)
             }
         }
     }

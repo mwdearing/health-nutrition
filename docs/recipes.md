@@ -37,6 +37,10 @@ resolves a barcode-looked-up product, through `SnapshotNutrientFacts`. A nutrien
 this version is stored as `.unknown` in the snapshot, never as zero; a known zero stays a zero in the
 snapshot and never becomes a component of its own. If no nutrient is known at all, nothing is logged.
 
+Add's recipe picker applies the same rule before opening Details: at least one per-portion
+nutrient must be known, including a known zero. Otherwise it shows
+"No nutrient value is known, so nothing was logged." Save remains the only write from Details.
+
 Later edits create a new snapshot id, so older entries keep the version they used. The frozen version
 itself stays in the recipe store. The export contract carries the snapshot's identity and basis but
 not its nutrient values, so an export says which version an entry used rather than restating the

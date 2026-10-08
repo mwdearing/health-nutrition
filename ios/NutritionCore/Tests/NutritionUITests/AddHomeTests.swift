@@ -101,6 +101,60 @@ final class AddHomeTests: XCTestCase {
         XCTAssertTrue(details.name.contains("100 mL"))
         XCTAssertEqual(details.meal, .lunch)
     }
+
+    func testLibraryPickKeepsTheProductSnapshot() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "stored-oats", productID: "4006381333931", name: "Oats",
+            brand: "Example", barcode: "4006381333931", labelBasis: "per 100 g",
+            catalogOrigin: "example-catalog", catalogVersion: "1",
+            nutrients: ["energy": .known(380, .kcal)])
+        let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
+        try store.create(
+            Intake(id: "seed-oats", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [component], product: product, now: now)
+        let template = RepeatTemplate(displayName: "Oats", category: "food",
+            components: [component], productSnapshotID: product.snapshotID)
+        let home = AddHomeViewModel(store: store)
+        for edited in [false, true] {
+            let details = try home.makeDetails(prefill: template, now: now)
+            if edited { details.name = "Edited oats" }
+            let existingIDs = Set(try store.activeIntakes().map(\.id))
+            XCTAssertTrue(details.save(now: now))
+            let intake = try XCTUnwrap(store.activeIntakes().first { !existingIDs.contains($0.id) })
+            let revision = try XCTUnwrap(store.revisions(of: intake.id).first)
+            if edited {
+                XCTAssertNotEqual(revision.productSnapshotID, product.snapshotID)
+                let saved = try XCTUnwrap(store.product(snapshotID: try XCTUnwrap(revision.productSnapshotID)))
+                XCTAssertEqual(saved.name, "Edited oats")
+                XCTAssertEqual(saved.nutrients, product.nutrients)
+            } else {
+                XCTAssertEqual(revision.productSnapshotID, product.snapshotID)
+            }
+        }
+    }
+
+    func testRecipeWithNoKnownNutrientsIsRefused() throws {
+        let home = AddHomeViewModel(store: try makeStore())
+        for known in [false, true] {
+            let recipe = RecipeVersion(
+                recipeID: "example-oats", number: 1, title: "Oats",
+                ingredients: [RecipeIngredient(
+                    id: "oats", name: "Oats", quantity: Quantity(value: 40, unit: .g),
+                    perUnit: ["energy": known ? .known(0, .kcal) : .unknown])],
+                yield: .servings(1), createdAt: now)
+            if known {
+                let details = try home.makeDetails(recipe: recipe, now: now)
+                XCTAssertEqual(details.prefilledNutrients["energy"], .known(0, .kcal))
+            } else {
+                XCTAssertThrowsError(try home.makeDetails(recipe: recipe, now: now)) { error in
+                    guard case RecipeError.nothingToLog = error else {
+                        return XCTFail("Expected nothingToLog, got \(error)")
+                    }
+                }
+            }
+        }
+    }
 }
 
 private struct MissingProductLookup: BarcodeProductLookup {

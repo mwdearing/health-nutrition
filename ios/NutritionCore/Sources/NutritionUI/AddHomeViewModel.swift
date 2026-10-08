@@ -92,7 +92,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         }
         if let snapshotID = prefill.productSnapshotID {
             guard let product = try store.product(snapshotID: snapshotID) else { throw IntakeRepeatError.productUnavailable }
-            model.applyLabelProduct(product)
+            model.applyStoredProduct(product)
             model.brand = product.brand ?? ""
         }
         model.name = prefill.displayName
@@ -106,6 +106,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     public func makeDetails(recipe: RecipeVersion, now: Date) throws -> AddIntakeViewModel {
         try recipe.validate()
         let values = try RecipeMath.perPortion(RecipeMath.totals(of: recipe), yield: recipe.yield, portion: 1)
+        guard values.values.contains(where: { $0.isKnown }) else { throw RecipeError.nothingToLog }
         let model = makeDetails(now: now)
         let unit: MeasureUnit
         switch recipe.yield {

@@ -12,6 +12,12 @@
 ## Repeat semantics
 Repeat makes one `create` call for a NEW intake: new lowercase UUID, `occurredAt` is now, the current time zone, the same category and meal, the same components (names, amounts, units) and the same product snapshot if there was one. The original entry is not touched.
 
+In Add, a single-component Library pick opens Details before Save. Keeping the product's name,
+brand and kind preserves its stored snapshot identity; editing any of those creates a derived
+snapshot with the original nutrient values and provenance. Combined entries keep a separate,
+per-serving snapshot. Add home's Scan label starts a fresh form; scanning from Details or the
+barcode screen keeps that screen's form. Details offers Scan label only on a device that can scan.
+
 ## Favorites and recents
 - **Recents** are derived, not stored: the 20 most recent distinct active entries, distinct by product snapshot id **and the meal**, otherwise by category, component names and the meal.
 - **Favorites** are stored templates (display name, category, components as exact decimal text plus unit symbol, optional product snapshot id) in their own store file next to the journal file. A favorite is a copy, not a link, so deleting an entry never removes a favorite.
