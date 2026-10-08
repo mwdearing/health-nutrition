@@ -147,6 +147,18 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(line(model, "protein"), "Protein 39 g of 39 g")
     }
 
+    func testUnchangedWaterDraftDoesNotRewriteTheGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        model.load()
+        XCTAssertEqual(model.draftText["water"], "67.6")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(2000))
+        XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
+    }
+
     /// Water has a target too, in mL, and its own line compares the day's water against it.
     func testAWaterGoalComparesTheDaysWaterInMillilitres() throws {
         let journal = try makeJournalStore()
@@ -722,5 +734,80 @@ final class DailyGoalsTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(90), unit: .g))
 
         XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(90))
+    }
+
+    func testGoalSectionsKeepTheirOrderAndGroupCompoundKeys() throws {
+        let goals = InMemoryGoalStore(goals: [
+            NutrientGoal(nutrient: "creatine-monohydrate", target: 3, unit: .g),
+        ])
+        let model = GoalsViewModel(store: goals)
+        model.load()
+        XCTAssertEqual(model.sections.map(\.title),
+            ["Energy and macros", "Water", "Minerals", "From your labels"])
+        XCTAssertEqual(model.sections[0].rows.map(\.nutrient),
+            ["energy", "protein", "carbohydrate", "fat", "fiber"])
+        XCTAssertEqual(model.sections[1].rows.map(\.nutrient), ["water"])
+        XCTAssertEqual(model.sections[2].rows.map(\.nutrient), ["sodium", "potassium"])
+        XCTAssertEqual(model.sections[3].rows.map(\.nutrient), ["creatine-monohydrate"])
+        XCTAssertEqual(model.sections[3].rows.first?.detail, "Added by a scanned label")
+    }
+
+    func testBlankTargetRemovesTheGoal() throws {
+        let goals = InMemoryGoalStore(goals: [
+            NutrientGoal(nutrient: "protein", target: 60, unit: .g),
+        ])
+        let model = GoalsViewModel(store: goals)
+        model.load()
+        model.draftText["protein"] = "  "
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+        XCTAssertNil(try goals.goal(for: "protein"))
+        XCTAssertEqual(model.sections[0].rows.first { $0.nutrient == "protein" }?.targetText, "None")
+    }
+
+    func testClearAllGoalsAlsoRemovesStoredCompoundGoals() throws {
+        let goals = InMemoryGoalStore(goals: [
+            NutrientGoal(nutrient: "protein", target: 60, unit: .g),
+            NutrientGoal(nutrient: "dha", target: 1, unit: .g),
+        ])
+        let model = GoalsViewModel(store: goals)
+        model.load()
+        XCTAssertTrue(model.clearAllGoals())
+        XCTAssertTrue(try goals.goals().isEmpty)
+        XCTAssertTrue(model.sections.flatMap(\.rows).allSatisfy { $0.targetText == "None" })
+    }
+
+    func testInlineTargetsMustBeAboveZero() throws {
+        let goals = InMemoryGoalStore()
+        let model = GoalsViewModel(store: goals)
+        model.load()
+        for text in ["0", "-5", "abc"] {
+            model.draftText["protein"] = text
+            XCTAssertFalse(model.commitTarget(for: "protein"))
+            XCTAssertEqual(model.rowError["protein"], "Enter a number above zero.")
+            XCTAssertTrue(try goals.goals().isEmpty)
+        }
+        model.draftText["protein"] = "75.5"
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(string: "75.5"))
+        XCTAssertNil(model.rowError["protein"])
+    }
+
+    func testCommittingOneTargetKeepsAnotherUncommittedDraft() throws {
+        let model = GoalsViewModel(store: InMemoryGoalStore())
+        model.load()
+        model.draftText["water"] = "1500"
+        model.draftText["protein"] = "60"
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+        XCTAssertEqual(model.draftText["water"], "1500")
+    }
+
+    func testInlineStoreFailuresStayNoticesAndKeepTheDraft() {
+        let model = GoalsViewModel(store: InMemoryGoalStore(refusesWrites: true))
+        model.load()
+        model.draftText["protein"] = "60"
+        XCTAssertFalse(model.commitTarget(for: "protein"))
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.saveFailedMessage)
+        XCTAssertEqual(model.draftText["protein"], "60")
+        XCTAssertNil(model.rowError["protein"])
     }
 }

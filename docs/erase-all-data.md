@@ -2,7 +2,7 @@
 
 Status: Current. Reviewed whenever a store is added or a connection starts writing anywhere.
 
-The Connections and privacy screen has an **Erase all data** action. It removes everything this app
+**Settings > Your data**, reached from the gear on every tab, has an **Erase all data** action. It removes everything this app
 stores on the device, after a confirmation that says what goes and that it cannot be undone. Nothing
 is sent anywhere by the erase itself, and no other app on the device is touched.
 

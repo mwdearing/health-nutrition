@@ -1,18 +1,11 @@
 import SwiftUI
 import NutritionDomain
 
-/// The daily goals screen: the target for each nutrient a person can set, and how to change or
-/// clear it.
-///
-/// Text styles only, colours from the tokens, and every control named for VoiceOver. The amounts
-/// are typed rather than stepped, because a target is a number the person has in mind - a dietitian's
-/// figure, a package label - and a stepper would only make that harder to enter.
+/// Inline editing of the daily targets a person sets.
 public struct GoalsView: View {
     @ObservedObject var model: GoalsViewModel
-    /// The nutrient currently being edited, and the text and unit its target is typed into.
-    @State private var editing: String = NutrientGoalChoices.keys.first ?? "energy"
-    @State private var targetText: String = ""
-    @State private var unit: MeasureUnit = NutrientGoalChoices.unit(forKey: NutrientGoalChoices.keys.first ?? "energy")
+    @FocusState private var focusedNutrient: String?
+    @State private var showingClearConfirmation = false
 
     public init(model: GoalsViewModel) {
         self.model = model
@@ -20,73 +13,95 @@ public struct GoalsView: View {
 
     public var body: some View {
         List {
-            Section("Daily goals") {
-                ForEach(model.rows) { row in
-                    goalRow(row)
+            Section {
+                Text("Set your own daily targets, or leave them empty.")
+                    .font(.body)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
+            ForEach(model.sections) { section in
+                Section(section.title) {
+                    ForEach(section.rows) { row in
+                        self.goalRow(row)
+                    }
                 }
             }
-            Section("Change a goal") {
-                Picker("Nutrient", selection: $editing) {
-                    ForEach(model.offeredKeys, id: \.self) { key in
-                        Text(model.displayName(for: key)).tag(key)
-                    }
+            Section {
+                Text(model.footerText)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                Button("Clear all goals", role: .destructive) {
+                    self.focusedNutrient = nil
+                    self.showingClearConfirmation = true
                 }
-                TextField("Target", text: $targetText)
-                    .font(.body)
-                    .decimalKeyboard()
-                    .accessibilityLabel("Daily target for \(model.displayName(for: editing))")
-                Picker("Unit", selection: $unit) {
-                    ForEach(model.units(for: editing), id: \.symbol) { candidate in
-                        Text(candidate.symbol).tag(candidate)
-                    }
-                }
-                .onChange(of: editing) { _, _ in unit = model.unit(for: editing) }
-                Button("Save goal") {
-                    if model.setTarget(targetText, for: editing, unit: unit) { targetText = "" }
-                }
-                .font(.headline)
-                .foregroundStyle(TokenColors.accent)
-                .accessibilityLabel("Save the daily goal")
-                .accessibilityHint("Stores the target for the chosen nutrient")
             }
             if let message = model.errorMessage {
-                Text(message).font(.footnote).foregroundStyle(TokenColors.error)
+                InlineNotice(message, tone: .failed)
             }
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Daily goals")
-        .onAppear { model.load() }
+        .onAppear { self.model.load() }
+        .onChange(of: focusedNutrient) { previous, _ in
+            if let previous { self.model.commitTarget(for: previous) }
+        }
+        .confirmationDialog("Clear all goals?", isPresented: $showingClearConfirmation, titleVisibility: .visible) {
+            Button("Clear all goals", role: .destructive) {
+                self.model.clearAllGoals()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your daily totals will still be shown without targets.")
+        }
     }
 
-    /// One nutrient: its name, the target it has or the fact that it has none, and the way to clear
-    /// it. A nutrient without a target says so rather than showing an empty amount, so an unset
-    /// goal does not read as a target of nothing.
-    private func goalRow(_ row: NutrientGoalRow) -> some View {
-        VStack(alignment: .leading) {
+    private func goalRow(_ row: GoalSectionRow) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             Text(row.displayName).font(.headline).foregroundStyle(TokenColors.textPrimary)
-            Text(row.targetText ?? "No goal set")
-                .font(.subheadline)
-                .foregroundStyle(row.targetText == nil ? TokenColors.textSecondary : TokenColors.success)
-                .accessibilityLabel(row.targetText == nil
-                    ? "No goal set for \(row.displayName)" : "\(row.displayName) goal \(row.targetText ?? "")")
-            if row.targetText != nil {
-                Button {
-                    model.removeTarget(for: row.nutrient)
-                } label: {
-                    Label("Remove goal", systemImage: "trash")
-                        .font(.footnote)
-                        .foregroundStyle(TokenColors.error)
-                }
-                .accessibilityLabel("Remove the goal for \(row.displayName)")
-                .accessibilityHint("The nutrient falls back to a plain total on Today")
+            if let detail = row.detail {
+                Text(detail).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
+            Text(row.targetText).font(.subheadline).foregroundStyle(TokenColors.textPrimary)
+            HStack {
+                TextField("None", text: Binding(
+                    get: { self.model.draftText[row.nutrient] ?? "" },
+                    set: { self.model.draftText[row.nutrient] = $0 }))
+                    .font(.body)
+                    .foregroundStyle(TokenColors.textPrimary)
+                    .decimalKeyboard()
+                    .focused($focusedNutrient, equals: row.nutrient)
+                    .onSubmit { self.model.commitTarget(for: row.nutrient) }
+                    .accessibilityLabel("Daily target for \(row.displayName)")
+                    .accessibilityHint("Leave blank to remove the goal")
+                Picker("Unit", selection: Binding(
+                    get: { self.model.selectedUnits[row.nutrient] ?? row.unit },
+                    set: { self.model.selectedUnits[row.nutrient] = $0 })) {
+                    ForEach(model.units(for: row.nutrient), id: \.symbol) { candidate in
+                        Text(candidate.symbol).tag(candidate)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityLabel("Unit for \(row.displayName)")
+                .onChange(of: row.unit) { _, _ in
+                    self.model.commitTarget(for: row.nutrient)
+                }
+            }
+            if let error = row.rowError {
+                Text(error).font(.footnote).foregroundStyle(TokenColors.error)
+            }
+            Toggle(isOn: .constant(false)) {
+                HStack {
+                    Text("Show on Today").font(.body)
+                    LaterBadge()
+                }
+            }
+            .disabled(true)
+            .accessibilityLabel("Show \(row.displayName) on Today")
+            .accessibilityValue("Not available yet")
         }
     }
 }
 
-/// The keyboard is only set where the platform has one. This package also builds for macOS, where
-/// `keyboardType` does not exist, so it stays behind this one door, as it does in `AddIntakeView`.
 private extension View {
     @ViewBuilder
     func decimalKeyboard() -> some View {

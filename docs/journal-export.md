@@ -151,7 +151,7 @@ predicate inside the same `commit` closure as the inserts, under the same write 
 `JournalImportError.notEmpty` from there. A separate check before the save would leave a window in which
 another write creates an entry and the restore joins it, which is the merge this refuses.
 
-The action on the Connections and privacy screen is a file picker (`fileImporter`, JSON only) that reads the
+The **Restore from an export** action under **Settings > Your data** is a file picker (`fileImporter`, JSON only) that reads the
 bytes and hands them to the model, which shows the summary line or the reason the file was refused. A picker
 that was cancelled returns the screen to its empty import state, while a file that cannot be read at all is
 reported as a failed import: the person asked for it and nothing happened. A successful import also removes
@@ -222,13 +222,13 @@ version 2 document outright instead of importing it with the kind quietly droppe
   cleared, when the screen is left (`onDisappear` calls `clearExport()`), when an export attempt fails, and
   when a new export replaces it in another second. At most one copy of the journal is ever left in the
   temporary directory.
-- Apple Health and HealthRelay are listed on that screen as **shown but disabled**: the switches cannot be
-  turned on until those work packages ship, so the screen never implies that data is already leaving the
-  device.
+- Apple Health and HealthRelay appear under **Settings > Connections** as disabled rows with
+  "Not connected" state text and Later badges. Neither can be enabled, so Settings never implies
+  that data is already leaving the device.
 
 ## Entry point
-The Library screen is the only way in: `LibraryView(connections:)` shows a "Connections and privacy" row
-that pushes `ConnectionsPrivacyView`. Today and Add intake have no entry to it, on purpose.
+The gear on every tab opens `AppSettingsView`. **Settings > Your data** contains **Export journal**
+(then **Share the export**) and **Restore from an export**, using the existing `ConnectionsPrivacyViewModel` paths.
 
 ## Follow-ups
 - No merge. An import restores into an empty journal only; a later version may add a merge, and the

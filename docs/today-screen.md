@@ -100,6 +100,37 @@ A **NutrientGoal** (`ios/NutritionCore/Sources/NutritionJournal/GoalStore.swift`
 `Decimal` target and a `MeasureUnit`. Goals are data rather than settings: they are stored, not `UserDefaults` or
 `@AppStorage`, and "Erase all data" clears them with everything else.
 
+`GoalsViewModel.sections` presents **Energy and macros** (Energy, Protein, Carbohydrate, Fat, Fiber),
+**Water**, **Minerals** (Sodium, Potassium), and **From your labels**. Label compounds retain their printed
+names and show "Added by a scanned label". Each row has an inline target field and a unit menu restricted
+to its nutrient's dimension. `commitTarget(for:)` saves on submit or focus loss; a blank field removes
+the goal and displays "None". Invalid numbers show "Enter a number above zero." beneath the field,
+without changing the saved goal. Store failures remain notices.
+
+Water targets use the shared display preferences: fl oz under US and whole mL under metric.
+The water unit menu offers volumes only. Input is converted through `Quantity` and stored as an
+exact `Decimal` in mL; an existing goal is converted back for the field and target text.
+An unchanged water draft in the same display unit is not written back on submit or focus loss:
+2,000 mL shown as 67.6 fl oz remains exactly 2,000 mL until the field is edited.
+The Today water card and Journal water totals use `AmountDisplay.water`: a 12 fl oz intake against
+a 64 fl oz goal reads `12 fl oz of 64 fl oz`, or `355 mL of 1,893 mL` under metric.
+Bar fractions and goal comparisons still use the exact stored amounts, not the rounded display.
+Positive water amounts rounded to zero are shown as a bound, `< 1 mL` or `< 0.0001 fl oz`.
+The US bound uses `AmountDisplay.smallestShown`, matching quick-water strings.
+The same bound is spoken for accessibility; an actual zero still displays as zero.
+Settings' quick-water equivalence and entry detail's converted line use `AmountDisplay` as well.
+
+Entry rows choose their decorative SF Symbol from the intake category and product kind:
+water uses `drop.fill`, drinks `cup.and.saucer.fill`, supplements `pills.fill`, and food `fork.knife`.
+Today and Journal carry the water category separately from product kind; water takes precedence.
+Icons are hidden from accessibility, and the row's accessibility text includes its kind word.
+
+**Clear all goals** asks for confirmation before `clearAllGoals()` removes every stored target,
+including compound goals. Targets use primary text colour, with no rating implied by colour.
+The footer states: "A goal is a number you set. The app compares your day against it and gives no advice or rating."
+Each **Show on Today** switch is disabled, with a Later badge and accessibility value "Not available yet";
+it does not change the tracked list.
+
 `GoalStore` is the protocol; `SwiftDataGoalStore` persists it in its own `goals.store`, opened in `AppServices.make`
 next to the journal, favorites and recipe files and listed in the `erasers:` array; `InMemoryGoalStore` is the
 in-memory implementation tests use, which can also be told to refuse a write or fail a read. There is **one goal per
@@ -202,9 +233,9 @@ mL. The defaults are metric and 250 mL. `UserDefaultsDisplayPreferences` persist
 tests. The app builds one `UserDefaultsDisplayPreferences` in `AppServices` and passes it to every screen,
 so a change made on one screen is read by the next.
 
-Where they are set: the **Units** section on the Connections and privacy screen
-(`ConnectionsPrivacyView`), reachable from the Library tab's Connections section. It offers a
-unit-system picker and a quick-water amount field. The field is **read in the preferred unit** —
+Where they are set: **Settings > Units and logging**, reached from the gear on every tab.
+`AppSettingsView` composes `AppSettingsViewModel` and the existing `ConnectionsPrivacyViewModel`.
+The segmented unit-system picker and inline quick-water field save on submit or focus loss, without a Save button. The field is **read in the preferred unit** —
 `fl oz` under the US system, `mL` under metric — and its label says which one, so twelve means twelve
 fluid ounces and not twelve millilitres. The helper line under it states the amount **in the field** in
 the other unit (`= 355 mL`), read from the draft rather than from what was last saved, so a figure typed

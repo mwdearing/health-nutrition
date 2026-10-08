@@ -50,13 +50,9 @@ public enum NutrientGoalChoices {
     /// target above be entered at all. The dimension is the one the nutrient's own unit has, so water
     /// is offered volumes, energy energies, and the rest masses.
     ///
-    /// The two ounces are excluded as well, by the same rule the recipe editor applies. `oz` and
-    /// `fl oz` are input and display units that Add intake normalises to grams and millilitres on the
-    /// way in; a target has no such step, because `NutrientProgressLine` shows the day's total in
-    /// its own unit beside the target as it was set rather than converting one to the other. An
-    /// ounce target would sit on screen next to a gram total — "Protein 52 g of 2 oz" — comparing two
-    /// numbers that are not in the same unit. A goal's whole job is to be compared against the day's
-    /// total, so what it is offered is the metric units that total is counted in.
+    /// The two ounces are excluded for these metric goal choices. Water is the exception at the
+    /// view-model boundary: its volume menu includes fl oz, and input is normalised to mL before
+    /// storage. Other nutrient goals retain the metric units their totals are counted in.
     public static func units(forKey key: String, snapshotUnit: MeasureUnit? = nil) -> [MeasureUnit] {
         UnitRegistry.units(in: unit(forKey: key, snapshotUnit: snapshotUnit).dimension).filter(isMetric)
     }
@@ -91,6 +87,24 @@ public struct NutrientGoalRow: Equatable, Identifiable {
     }
 }
 
+/// Editable presentation beside the existing persisted-goal rows.
+public struct GoalSectionRow: Identifiable {
+    public let nutrient: String
+    public let displayName: String
+    public let targetText: String
+    public let draftText: String
+    public let unit: MeasureUnit
+    public let detail: String?
+    public let rowError: String?
+    public var id: String { nutrient }
+}
+
+public struct GoalSection: Identifiable {
+    public let title: String
+    public let rows: [GoalSectionRow]
+    public var id: String { title }
+}
+
 /// Backs the Goals screen: the targets a person set, and the writes that change them.
 ///
 /// The keys come from `NutrientGoalChoices` rather than from the store, so the screen lists the same
@@ -103,6 +117,31 @@ public final class GoalsViewModel: ObservableObject {
     /// journal's current snapshots carry.
     @Published public private(set) var offeredKeys: [String] = NutrientGoalChoices.keys
     @Published public private(set) var errorMessage: String?
+    @Published public var draftText: [String: String] = [:]
+    @Published public var selectedUnits: [String: MeasureUnit] = [:]
+    @Published public private(set) var rowError: [String: String] = [:]
+
+    public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
+
+    public var sections: [GoalSection] {
+        let groups: [(String, [String])] = [
+            ("Energy and macros", ["energy", "protein", "carbohydrate", "fat", "fiber"]),
+            ("Water", ["water"]),
+            ("Minerals", ["sodium", "potassium"]),
+            ("From your labels", self.offeredKeys.filter { !NutrientGoalChoices.keys.contains($0) }),
+        ]
+        return groups.map { title, keys in
+            GoalSection(title: title, rows: keys.compactMap { key in
+                guard let row = self.rows.first(where: { $0.nutrient == key }) else { return nil }
+                return GoalSectionRow(
+                    nutrient: key, displayName: row.displayName, targetText: row.targetText ?? "None",
+                    draftText: self.draftText[key] ?? "",
+                    unit: self.selectedUnits[key] ?? self.unit(for: key),
+                    detail: title == "From your labels" ? "Added by a scanned label" : nil,
+                    rowError: self.rowError[key])
+            })
+        }
+    }
 
     public static let readFailedMessage = "Could not read the daily goals."
     public static let saveFailedMessage = "Could not save that daily goal."
@@ -116,10 +155,18 @@ public final class GoalsViewModel: ObservableObject {
     /// keys come from. A compound the canonical mapping does not name takes its dimension from here,
     /// so a label's `Vitamin A 900IU` is offered and stored in IU rather than as a mass.
     private var snapshotUnits: [String: MeasureUnit] = [:]
+    private let preferences: DisplayPreferences
+    private var loadedUnitSystem: UnitSystem?
+    private var storedWaterDraft: String?
+    private var storedWaterUnit: MeasureUnit?
 
-    public init(store: GoalStore, journal: (any JournalStore)? = nil) {
+    public init(
+        store: GoalStore, journal: (any JournalStore)? = nil,
+        preferences: DisplayPreferences = InMemoryDisplayPreferences()
+    ) {
         self.store = store
         self.journal = journal
+        self.preferences = preferences
     }
 
     /// Every offered nutrient, with a target's text where one is stored.
@@ -139,8 +186,23 @@ public final class GoalsViewModel: ObservableObject {
                 guard let goal = byNutrient[key] else { return .withoutGoal(key, displayName: name) }
                 return NutrientGoalRow(
                     nutrient: key, displayName: name,
-                    targetText: "\(DecimalFormatting.text(goal.target)) \(goal.unit.symbol)")
+                    targetText: self.displayGoal(goal).text)
             }
+            self.storedWaterDraft = byNutrient[DailyTotalsBuilder.waterKey].map {
+                DecimalFormatting.text(self.displayGoal($0).amount)
+            }
+            self.storedWaterUnit = byNutrient[DailyTotalsBuilder.waterKey].map { self.displayGoal($0).unit }
+            for key in offeredKeys {
+                let waterUnitChanged = key == DailyTotalsBuilder.waterKey
+                    && self.loadedUnitSystem != self.preferences.unitSystem
+                if draftText[key] == nil || waterUnitChanged {
+                    draftText[key] = byNutrient[key].map { DecimalFormatting.text(self.displayGoal($0).amount) } ?? ""
+                }
+                if selectedUnits[key] == nil || waterUnitChanged {
+                    selectedUnits[key] = byNutrient[key].map { self.displayGoal($0).unit } ?? self.unit(for: key)
+                }
+            }
+            self.loadedUnitSystem = self.preferences.unitSystem
             errorMessage = nil
         } catch {
             rows = []
@@ -233,7 +295,14 @@ public final class GoalsViewModel: ObservableObject {
             return false
         }
         do {
-            try store.setGoal(NutrientGoal(nutrient: nutrient, target: target, unit: chosen))
+            // Water entered in fl oz or another volume is always stored as exact mL.
+            let stored: Quantity
+            if nutrient == DailyTotalsBuilder.waterKey {
+                stored = try Quantity(value: target, unit: chosen).converted(to: .mL)
+            } else {
+                stored = Quantity(value: target, unit: chosen)
+            }
+            try store.setGoal(NutrientGoal(nutrient: nutrient, target: stored.value, unit: stored.unit))
             load()
             return true
         } catch {
@@ -255,21 +324,72 @@ public final class GoalsViewModel: ObservableObject {
         }
     }
 
+    /// Commits one inline field without discarding drafts in other fields.
+    @discardableResult
+    public func commitTarget(for nutrient: String) -> Bool {
+        let text = (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        rowError[nutrient] = nil
+        if nutrient == DailyTotalsBuilder.waterKey,
+           text == self.storedWaterDraft, selectedUnits[nutrient] == self.storedWaterUnit {
+            return true
+        }
+        if text.isEmpty {
+            guard removeTarget(for: nutrient) else { return false }
+            draftText[nutrient] = ""
+            return true
+        }
+        guard let target = AmountParser.parse(text), !target.isNaN, target > 0 else {
+            rowError[nutrient] = "Enter a number above zero."
+            return false
+        }
+        guard setTarget(text, for: nutrient, unit: selectedUnits[nutrient]) else { return false }
+        draftText[nutrient] = DecimalFormatting.text(target)
+        return true
+    }
+
+    @discardableResult
+    public func clearAllGoals() -> Bool {
+        do {
+            for goal in try store.goals() {
+                try store.removeGoal(nutrient: goal.nutrient)
+            }
+            draftText = [:]
+            selectedUnits = [:]
+            rowError = [:]
+            load()
+            return errorMessage == nil
+        } catch {
+            errorMessage = Self.removeFailedMessage
+            return false
+        }
+    }
+
     /// The name an offered key is shown under: the words the label printed for it when a snapshot
     /// carries them, otherwise the name the key spells out.
     public func displayName(for key: String) -> String {
         rows.first { $0.nutrient == key }?.displayName ?? NutrientNames.displayName(for: key)
     }
 
-    /// The unit a key's goal is counted in, read from the captured value's dimension for a compound
-    /// the canonical mapping does not name, and from the mapping otherwise.
-    public func unit(for key: String) -> MeasureUnit {
-        NutrientGoalChoices.unit(forKey: key, snapshotUnit: snapshotUnits[key])
+    private func displayGoal(_ goal: NutrientGoal) -> DisplayAmount {
+        guard goal.nutrient == DailyTotalsBuilder.waterKey else {
+            return DisplayAmount(amount: goal.target, unit: goal.unit)
+        }
+        return AmountDisplay.water(goal.target, unit: goal.unit, system: self.preferences.unitSystem)
     }
 
-    /// Every unit the key's goal may be set in: the registry's metric units for the dimension
-    /// `unit(for:)` reads, and no others.
+    /// Water uses the preferred volume unit; other nutrients use their canonical dimension.
+    public func unit(for key: String) -> MeasureUnit {
+        if key == DailyTotalsBuilder.waterKey {
+            return AmountDisplay.volumeUnit(for: self.preferences.unitSystem)
+        }
+        return NutrientGoalChoices.unit(forKey: key, snapshotUnit: self.snapshotUnits[key])
+    }
+
+    /// Only volumes for water, including fl oz; other nutrients retain their metric unit menus.
     public func units(for key: String) -> [MeasureUnit] {
-        NutrientGoalChoices.units(forKey: key, snapshotUnit: snapshotUnits[key])
+        if key == DailyTotalsBuilder.waterKey {
+            return UnitSelection.offered(for: self.preferences.unitSystem).filter { $0.dimension == .volume }
+        }
+        return NutrientGoalChoices.units(forKey: key, snapshotUnit: self.snapshotUnits[key])
     }
 }

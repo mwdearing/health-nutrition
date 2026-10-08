@@ -53,12 +53,24 @@ public struct GoalBarModel: Equatable, Identifiable {
     ///     the generic reason, because a gap the coverage model does not report is not claimed.
     ///   - skippedWaterCount: for water, the entries left out for not being a volume.
     public static func make(
-        line: NutrientProgressLine, hasEntries: Bool, missingCount: Int, skippedWaterCount: Int = 0
+        line: NutrientProgressLine, hasEntries: Bool, missingCount: Int, skippedWaterCount: Int = 0,
+        unitSystem: UnitSystem = .metric
     ) -> GoalBarModel {
         let label = line.label
+        let isWater = line.nutrient == DailyTotalsBuilder.waterKey
+        func shown(_ amount: Decimal, _ unit: MeasureUnit) -> DisplayAmount {
+            isWater ? AmountDisplay.water(amount, unit: unit, system: unitSystem)
+                : DisplayAmount(amount: amount, unit: unit)
+        }
+        func spokenDisplay(_ amount: DisplayAmount) -> String {
+            "\(amount.spokenAmount) \(AmountDisplay.spokenName(for: amount.unit))"
+        }
         guard hasEntries else {
             var spoken = "\(label), nothing logged yet"
-            if let goal = line.goal { spoken += ", goal \(spokenAmount(goal.target, goal.unit))" }
+            if let goal = line.goal {
+                let displayGoal = shown(goal.target, goal.unit)
+                spoken += ", goal \(spokenDisplay(displayGoal))"
+            }
             return GoalBarModel(
                 id: line.id, label: label, valueText: "Nothing logged yet", state: .nothingLogged,
                 fraction: nil, goalMarker: nil, accessibilityText: spoken, reason: nil)
@@ -70,15 +82,17 @@ public struct GoalBarModel: Equatable, Identifiable {
                 fraction: nil, goalMarker: nil,
                 accessibilityText: "\(label), can't total yet, \(reason)", reason: reason)
         }
-        let figure = "\(DecimalFormatting.text(total)) \(unit.symbol)"
-        let spokenFigure = spokenAmount(total, unit)
+        let displayTotal = shown(total, unit)
+        let figure = displayTotal.text
+        let spokenFigure = spokenDisplay(displayTotal)
         guard let goal = line.goal else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: figure, state: .noGoal, fraction: nil,
                 goalMarker: nil, accessibilityText: "\(label), \(spokenFigure)", reason: nil)
         }
-        let valueText = "\(figure) of \(DecimalFormatting.text(goal.target)) \(goal.unit.symbol)"
-        let spoken = "\(label), \(spokenFigure) of \(spokenAmount(goal.target, goal.unit))"
+        let displayGoal = shown(goal.target, goal.unit)
+        let valueText = "\(figure) of \(displayGoal.text)"
+        let spoken = "\(label), \(spokenFigure) of \(spokenDisplay(displayGoal))"
         // The comparison is made in the unit the total is stated in, so a target set in another metric
         // unit is compared exactly while still being shown as it was set.
         let comparable: Decimal?
@@ -101,10 +115,6 @@ public struct GoalBarModel: Equatable, Identifiable {
         return GoalBarModel(
             id: line.id, label: label, valueText: valueText, state: .progress, fraction: fraction,
             goalMarker: nil, accessibilityText: spoken, reason: nil)
-    }
-
-    private static func spokenAmount(_ value: Decimal, _ unit: MeasureUnit) -> String {
-        "\(DecimalFormatting.text(value)) \(AmountDisplay.spokenName(for: unit))"
     }
 
     /// The nutrient's name inside a sentence: lower case, except a name that is all capitals.

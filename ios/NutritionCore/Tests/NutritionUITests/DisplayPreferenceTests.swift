@@ -212,6 +212,24 @@ final class AmountDisplayPreferenceTests: XCTestCase {
         XCTAssertEqual(zero.text, "0 oz")
     }
 
+    func testTinyWaterAmountShowsBelowSmallest() {
+        for system in [UnitSystem.metric, .usCustomary] {
+            let smallest = system == .metric ? Decimal(1) : AmountDisplay.smallestShown
+            let bound = DecimalFormatting.text(smallest)
+            let shown = AmountDisplay.water(Decimal(string: "0.0001")!, system: system)
+            XCTAssertTrue(shown.isBelowSmallest)
+            XCTAssertEqual(shown.text, "< \(bound) \(shown.unit.symbol)")
+            XCTAssertEqual(shown.spokenAmount, "less than \(bound)")
+            let zero = AmountDisplay.water(0, system: system)
+            XCTAssertFalse(zero.isBelowSmallest)
+            XCTAssertEqual(zero.text, system == .metric ? "0 mL" : "0 fl oz")
+        }
+        let metric = AmountDisplay.water(Decimal(string: "0.49")!, system: .metric)
+        XCTAssertTrue(metric.isBelowSmallest)
+        XCTAssertEqual(metric.text, "< 1 mL")
+        XCTAssertEqual(AmountDisplay.water(1, system: .metric).text, "1 mL")
+    }
+
     /// An amount that is not a number is shown as stored, never as a converted figure.
     func testAnUnknownAmountIsShownAsStoredAndNeverConverted() {
         XCTAssertEqual(text(Decimal.nan, .g, .usCustomary), "NaN g")

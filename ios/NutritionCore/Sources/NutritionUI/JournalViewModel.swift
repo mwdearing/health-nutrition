@@ -14,10 +14,13 @@ public struct JournalRow: Equatable, Identifiable {
     /// What kind of product the entry was recorded with, read from the same snapshot its amounts come
     /// from. Food unless that snapshot says otherwise, which is what an entry typed by hand is.
     public let kind: ProductKind
+    public let isWater: Bool
+
+    public var iconName: String { EntryRow.symbol(for: self.kind, isWater: self.isWater) }
 
     public init(
         id: String, title: String, detail: String, occurredAt: Date, timeZoneIdentifier: String,
-        meal: String?, kind: ProductKind = .food
+        meal: String?, kind: ProductKind = .food, isWater: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -26,14 +29,15 @@ public struct JournalRow: Equatable, Identifiable {
         self.timeZoneIdentifier = timeZoneIdentifier
         self.meal = meal
         self.kind = kind
+        self.isWater = isWater
     }
 
     /// What a screen reader reads for one row: the name, the amounts, and the meal when it has one.
-    /// A supplement says so, because the amounts of a supplement say nothing about what it is.
+    /// The kind is spoken because the row's icon is decorative.
     public var accessibilityText: String {
         var parts = [title, detail]
         if let meal { parts.append(meal) }
-        if kind == .supplement { parts.append(ProductKind.supplement.displayName) }
+        parts.append(self.isWater ? "Water" : self.kind.displayName)
         return parts.joined(separator: ", ")
     }
 }
@@ -65,6 +69,7 @@ public final class JournalViewModel: ObservableObject {
     private let goals: GoalStore?
     private let repeater: IntakeRepeater
     private let locale: Locale
+    private let preferences: DisplayPreferences
 
     public init(
         store: JournalStore,
@@ -73,12 +78,14 @@ public final class JournalViewModel: ObservableObject {
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         locale: Locale = .current,
-        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+        makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
+        preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
         self.store = store
         self.lookup = lookup
         self.goals = goals
         self.locale = locale
+        self.preferences = preferences
         self.repeater = IntakeRepeater(
             store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
             makeID: makeID)
@@ -108,10 +115,18 @@ public final class JournalViewModel: ObservableObject {
                 }
                 let row = JournalRow(
                     id: intake.id, title: AmountText.title(current.components),
-                    detail: AmountText.summary(current.components), occurredAt: intake.occurredAt,
+                    detail: current.components.isEmpty ? "unknown" : current.components.map { component in
+                        guard intake.category == "water", !component.amount.isNaN else {
+                            return AmountText.describe(component)
+                        }
+                        return AmountDisplay.water(
+                            component.amount, unit: component.unit, system: self.preferences.unitSystem).text
+                    }.joined(separator: ", "),
+                    occurredAt: intake.occurredAt,
                     timeZoneIdentifier: intake.timeZoneIdentifier,
                     meal: MealLabel.displayName(for: intake.meal),
-                    kind: Self.snapshot(of: current, in: &snapshots, using: store)?.kind ?? .food)
+                    kind: Self.snapshot(of: current, in: &snapshots, using: store)?.kind ?? .food,
+                    isWater: intake.category == "water")
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
                     titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
@@ -128,7 +143,8 @@ public final class JournalViewModel: ObservableObject {
                     id: key, title: titles[key] ?? key,
                     rows: (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt },
                     totals: totals,
-                    totalsText: Self.totalsText(totals: totals, tracked: tracked, goals: storedGoals))
+                    totalsText: Self.totalsText(
+                        totals: totals, tracked: tracked, goals: storedGoals, unitSystem: self.preferences.unitSystem))
             }
             skippedCount = skipped
             errorMessage = nil
@@ -162,7 +178,9 @@ public final class JournalViewModel: ObservableObject {
     /// A nutrient the day cannot answer for is left out rather than written as "unknown": this is a
     /// summary line over a list of entries, and the entries below it say which ones could not be
     /// read. A day where nothing at all is known says so on its own.
-    static func totalsText(totals: DailyTotals, tracked: [String], goals: [NutrientGoal]) -> String {
+    static func totalsText(
+        totals: DailyTotals, tracked: [String], goals: [NutrientGoal], unitSystem: UnitSystem = .metric
+    ) -> String {
         let withTarget = goals.map { $0.nutrient }
         let ordered = withTarget + tracked.filter { !withTarget.contains($0) }
         let parts = ordered.compactMap { nutrient -> String? in
@@ -172,6 +190,11 @@ public final class JournalViewModel: ObservableObject {
             // A nutrient the day cannot answer for is left off rather than written as "unknown": this
             // is a summary over a list of entries, and the entries below it say which could not be read.
             guard line.hasKnownAmount else { return nil }
+            if nutrient == DailyTotalsBuilder.waterKey, case .known(let amount, let unit) = line.amount {
+                let totalText = "\(line.label) \(AmountDisplay.water(amount, unit: unit, system: unitSystem).text)"
+                guard let goal = line.goal else { return totalText }
+                return "\(totalText) of \(AmountDisplay.water(goal.target, unit: goal.unit, system: unitSystem).text)"
+            }
             return line.text
         }
         return parts.isEmpty ? "No totals for this day." : parts.joined(separator: ", ")
