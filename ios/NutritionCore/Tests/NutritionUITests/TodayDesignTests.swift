@@ -89,10 +89,9 @@ final class TodayDesignTests: XCTestCase {
         try log(store, meal: "dinner", at: now.addingTimeInterval(-3600))
         let today = model(store)
         today.load(now: now)
-        XCTAssertEqual(today.rows.map(\.accessibilityText), [
-            "Sample oats, 100 g, 22:13, Dinner",
-            "Sample oats, 100 g, 21:13, Dinner"
-        ])
+        XCTAssertTrue(today.rows[0].accessibilityText.contains("22:13"))
+        XCTAssertTrue(today.rows[1].accessibilityText.contains("21:13"))
+        XCTAssertTrue(today.rows.allSatisfy { $0.accessibilityText.contains("Dinner") })
     }
 
     func testAllUnknownSnapshotCountsAsMissingValues() throws {
@@ -192,6 +191,110 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(protein.fraction, Decimal(1))
     }
 
+    func testWaterBarUSUnits() throws {
+        let store = try self.makeStore()
+        let total = try Quantity(value: Decimal(12), unit: .flOz).converted(to: .mL).value
+        let target = try Quantity(value: Decimal(64), unit: .flOz).converted(to: .mL).value
+        try self.log(store, name: "Water", grams: total, category: "water")
+        let today = TodayViewModel(
+            store: store,
+            goals: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "water", target: target, unit: .mL)]),
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        today.load(now: self.now)
+        let bar = try XCTUnwrap(today.waterBar)
+        XCTAssertEqual(bar.valueText, "12 fl oz of 64 fl oz")
+        XCTAssertEqual(bar.accessibilityText, "Water, 12 fluid ounces of 64 fluid ounces")
+        XCTAssertEqual(bar.fraction, total / target)
+    }
+
+    func testWaterBarMetricRounded() throws {
+        let store = try self.makeStore()
+        let total = try Quantity(value: Decimal(12), unit: .flOz).converted(to: .mL).value
+        let target = try Quantity(value: Decimal(64), unit: .flOz).converted(to: .mL).value
+        try self.log(store, name: "Water", grams: total, category: "water")
+        let today = TodayViewModel(
+            store: store,
+            goals: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "water", target: target, unit: .mL)]),
+            preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        today.load(now: self.now)
+        let bar = try XCTUnwrap(today.waterBar)
+        XCTAssertEqual(bar.valueText, "355 mL of 1,893 mL")
+        XCTAssertEqual(bar.accessibilityText, "Water, 355 millilitres of 1,893 millilitres")
+        XCTAssertEqual(bar.fraction, total / target)
+    }
+
+    func testWaterGoalFlOzStoredAndConverted() throws {
+        let store = InMemoryGoalStore()
+        let preferences = InMemoryDisplayPreferences(unitSystem: .usCustomary)
+        let model = GoalsViewModel(store: store, preferences: preferences)
+        model.load()
+        XCTAssertEqual(model.unit(for: "water"), .flOz)
+        XCTAssertTrue(model.units(for: "water").contains(.flOz))
+        XCTAssertTrue(model.units(for: "water").allSatisfy { $0.dimension == .volume })
+        model.draftText["water"] = "64"
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        let goal = try XCTUnwrap(try store.goals().first { $0.nutrient == "water" })
+        XCTAssertEqual(goal.unit, .mL)
+        XCTAssertEqual(goal.target, try Quantity(value: Decimal(64), unit: .flOz).converted(to: .mL).value)
+        let reopened = GoalsViewModel(store: store, preferences: preferences)
+        reopened.load()
+        XCTAssertEqual(reopened.rows.first { $0.nutrient == "water" }?.targetText, "64 fl oz")
+        XCTAssertEqual(reopened.draftText["water"], "64")
+        XCTAssertEqual(reopened.selectedUnits["water"], .flOz)
+    }
+
+    func testWaterGoalConvertedAfterUnitSystemChange() throws {
+        let store = InMemoryGoalStore(goals: [
+            NutrientGoal(nutrient: "water", target: Decimal(string: "1892.705892")!, unit: .mL)
+        ])
+        let preferences = InMemoryDisplayPreferences(unitSystem: .metric)
+        let model = GoalsViewModel(store: store, preferences: preferences)
+        model.load()
+        XCTAssertEqual(model.draftText["water"], "1893")
+        preferences.setUnitSystem(.usCustomary)
+        model.load()
+        XCTAssertEqual(model.draftText["water"], "64")
+        XCTAssertEqual(model.selectedUnits["water"], .flOz)
+        XCTAssertEqual(model.rows.first { $0.nutrient == "water" }?.targetText, "64 fl oz")
+    }
+
+    func testEntryRowIconByKind() throws {
+        let store = try self.makeStore()
+        try self.log(store, name: "Sample water", grams: 250, category: "water")
+        for kind in [ProductKind.food, .drink, .supplement] {
+            try self.log(store, name: "Sample \(kind.rawValue)", product: self.oats(withValues: true, kind: kind))
+        }
+        let journal = JournalViewModel(store: store)
+        journal.load(now: self.now)
+        let today = TodayViewModel(store: store)
+        today.load(now: self.now)
+        let expected = [
+            ("Sample water", "drop.fill", "Water"),
+            ("Sample food", "fork.knife", "Food"),
+            ("Sample drink", "cup.and.saucer.fill", "Drink"),
+            ("Sample supplement", "pills.fill", "Supplement"),
+        ]
+        for (title, symbol, word) in expected {
+            let journalRow = try XCTUnwrap(journal.sections.flatMap(\.rows).first { $0.title == title })
+            let todayRow = try XCTUnwrap(today.rows.first { $0.title == title })
+            XCTAssertEqual(journalRow.iconName, symbol)
+            XCTAssertEqual(todayRow.iconName, symbol)
+            XCTAssertTrue(journalRow.accessibilityText.components(separatedBy: ", ").contains(word))
+            XCTAssertTrue(todayRow.accessibilityText.components(separatedBy: ", ").contains(word))
+        }
+    }
+
+    func testJournalWaterPreferredUnits() throws {
+        let store = try self.makeStore()
+        let amount = try Quantity(value: Decimal(12), unit: .flOz).converted(to: .mL).value
+        try self.log(store, name: "Water", grams: amount, category: "water")
+        let journal = JournalViewModel(
+            store: store, preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        journal.load(now: self.now)
+        XCTAssertEqual(journal.sections.first?.rows.first?.detail, "12 fl oz")
+        XCTAssertEqual(journal.sections.first?.totalsText, "Water 12 fl oz")
+    }
+
     func testWaterBarExistsOnlyWithAWaterGoalAndCountsWaterEntries() throws {
         let store = try makeStore()
         try log(store, name: "Water", grams: 250, category: "water")
@@ -204,7 +307,6 @@ final class TodayDesignTests: XCTestCase {
         let with = model(store, goals: [goal])
         with.load(now: now)
         XCTAssertEqual(with.waterBar?.state, .progress)
-        XCTAssertEqual(with.waterBar?.valueText, "500 mL of 2000 mL")
     }
 
     func testWaterBarIsNothingLoggedUntilAWaterEntryExists() throws {

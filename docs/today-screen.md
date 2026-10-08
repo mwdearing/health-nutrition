@@ -107,6 +107,19 @@ to its nutrient's dimension. `commitTarget(for:)` saves on submit or focus loss;
 the goal and displays "None". Invalid numbers show "Enter a number above zero." beneath the field,
 without changing the saved goal. Store failures remain notices.
 
+Water targets use the shared display preferences: fl oz under US and whole mL under metric.
+The water unit menu offers volumes only. Input is converted through `Quantity` and stored as an
+exact `Decimal` in mL; an existing goal is converted back for the field and target text.
+The Today water card and Journal water totals use `AmountDisplay.water`: a 12 fl oz intake against
+a 64 fl oz goal reads `12 fl oz of 64 fl oz`, or `355 mL of 1,893 mL` under metric.
+Bar fractions and goal comparisons still use the exact stored amounts, not the rounded display.
+Settings' quick-water equivalence and entry detail's converted line use `AmountDisplay` as well.
+
+Entry rows choose their decorative SF Symbol from the intake category and product kind:
+water uses `drop.fill`, drinks `cup.and.saucer.fill`, supplements `pills.fill`, and food `fork.knife`.
+Today and Journal carry the water category separately from product kind; water takes precedence.
+Icons are hidden from accessibility, and the row's accessibility text includes its kind word.
+
 **Clear all goals** asks for confirmation before `clearAllGoals()` removes every stored target,
 including compound goals. Targets use primary text colour, with no rating implied by colour.
 The footer states: "A goal is a number you set. The app compares your day against it and gives no advice or rating."

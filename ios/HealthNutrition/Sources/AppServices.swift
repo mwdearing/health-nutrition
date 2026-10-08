@@ -56,9 +56,10 @@ final class AppServices {
         // no snapshot and stays unknown, never zero.
         today = TodayViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
-        journal = JournalViewModel(store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts())
+        journal = JournalViewModel(
+            store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
-        goals = GoalsViewModel(store: goalStore, journal: journalStore)
+        goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
             erasers: [journalStore, favoritesStore, recipeStore, goalStore],

@@ -32,18 +32,23 @@ public struct DisplayAmount: Equatable {
     /// True when the amount is real but below the smallest figure the shown unit can carry, so it is
     /// read as "less than" rather than rounded to a zero.
     public let isBelowSmallest: Bool
+    private let groupsWholeAmount: Bool
 
-    public init(amount: Decimal, unit: MeasureUnit, isBelowSmallest: Bool = false) {
+    public init(
+        amount: Decimal, unit: MeasureUnit, isBelowSmallest: Bool = false,
+        groupsWholeAmount: Bool = false
+    ) {
         self.amount = amount
         self.unit = unit
         self.isBelowSmallest = isBelowSmallest
+        self.groupsWholeAmount = groupsWholeAmount
     }
 
     /// The amount and its symbol, as one line of text. An amount too small to name says so instead of
     /// showing a zero, because a non-zero stored amount must never read as none of it.
     public var text: String {
         guard isBelowSmallest else {
-            return "\(DecimalFormatting.text(amount)) \(unit.symbol)"
+            return "\(self.numberText) \(unit.symbol)"
         }
         return "< \(DecimalFormatting.text(AmountDisplay.smallestShown)) \(unit.symbol)"
     }
@@ -53,8 +58,14 @@ public struct DisplayAmount: Equatable {
     /// Built from the same bound as `text`, because a screen reader hearing "0 fluid ounces" for an
     /// amount that is not zero is the same wrong figure in a different voice.
     public var spokenAmount: String {
-        guard isBelowSmallest else { return DecimalFormatting.text(amount) }
+        guard isBelowSmallest else { return self.numberText }
         return "less than \(DecimalFormatting.text(AmountDisplay.smallestShown))"
+    }
+
+    private var numberText: String {
+        guard self.groupsWholeAmount else { return DecimalFormatting.text(self.amount) }
+        return self.amount.formatted(
+            .number.locale(Locale(identifier: "en_US")).precision(.fractionLength(0)))
     }
 }
 
@@ -135,6 +146,19 @@ public enum AmountDisplay {
         // survived rounding.
         let tooSmall = converted.value != 0 && abs(rounded) < smallestShown
         return DisplayAmount(amount: rounded, unit: target, isBelowSmallest: tooSmall)
+    }
+
+    /// Water cards and goals show whole, grouped mL or the existing rounded fl oz.
+    public static func water(
+        _ amount: Decimal, unit: MeasureUnit = .mL, system: UnitSystem
+    ) -> DisplayAmount {
+        guard let milliliters = try? Quantity(value: amount, unit: unit).converted(to: .mL).value
+        else { return display(amount, unit: unit, system: system) }
+        let shown = display(milliliters, unit: .mL, system: system)
+        guard system == .metric else { return shown }
+        return DisplayAmount(
+            amount: DisplayRounding.rounded(shown.amount, fractionDigits: 0), unit: .mL,
+            groupsWholeAmount: true)
     }
 
     /// The stored component's amount, shown under `system`.

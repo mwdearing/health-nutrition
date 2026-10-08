@@ -51,6 +51,6 @@ public struct JournalView: View {
     /// A supplement and a drink carry their tag; a food carries none.
     private func entryRow(_ row: JournalRow) -> some View {
         let detail = [row.detail, row.meal].compactMap { $0 }.joined(separator: " · ")
-        return EntryRow(title: row.title, detail: detail, kind: row.kind)
+        return EntryRow(title: row.title, detail: detail, kind: row.kind, isWater: row.isWater)
     }
 }
