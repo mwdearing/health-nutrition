@@ -189,12 +189,40 @@ def nested_colors(name, bodies, aliases, seen=frozenset()):
     return colors
 
 
+def strip_debug_blocks(text):
+    """Drop `#if DEBUG` branches (keeping any `#else` branch), so debug-only UI never reaches the pages."""
+    out, stack = [], []  # stack entries: [is_debug_branch, in_else]
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        if s.startswith("#if"):
+            stack.append([s == "#if DEBUG", False])
+        elif s.startswith("#else") and stack and stack[-1][0]:
+            stack[-1][1] = True
+            continue
+        elif s.startswith("#endif") and stack:
+            if stack.pop()[0]:
+                continue
+        if any(is_debug and not in_else for is_debug, in_else in stack):
+            continue
+        out.append(line)
+    return "".join(out)
+
+
+def screen_text(name, bodies, private_names, seen=frozenset()):
+    """A view's body plus the private helper views it delegates to, which are part of the same screen."""
+    text = bodies[name]
+    for other in sorted(private_names):
+        if other != name and other not in seen and re.search(rf"\b{other}\(", text):
+            text += "\n" + screen_text(other, bodies, private_names, seen | {name})
+    return text
+
+
 def scan_screens(root=ROOT):
     """Return (screens, fonts, spacings). A screen is a non-private struct conforming to View."""
-    screens, fonts, spacings, bodies = {}, set(), set(), {}
+    fonts, spacings, bodies, private_names, sources = set(), set(), {}, set(), {}
     aliases = scan_color_aliases(root)
     for path in swift_files(root):
-        text = path.read_text()
+        text = strip_debug_blocks(path.read_text())
         fonts.update(FONT_RE.findall(text))
         spacings.update(SPACING_RE.findall(text))
         spacings.update(PADDING_RE.findall(text))
@@ -206,20 +234,25 @@ def scan_screens(root=ROOT):
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             name = m.group("name")
             bodies[name] = text[m.start():end]
+            sources[name] = path
             if m.group("vis") in ("private ", "fileprivate "):
-                continue
-            body = bodies[name]
-            elements = element_list(body)
-            has_page_chrome = any(e[0] in ("title", "section") for e in elements)
-            screens[name] = {
-                "name": name,
-                "source": str(path.relative_to(root)),
-                "group": ("App" if "HealthNutrition/Sources" in str(path)
-                          else "Screens" if has_page_chrome or len(elements) >= 3 else "Components"),
-                "elements": elements,
-                "fonts": sorted(set(FONT_RE.findall(body)), key=lambda f: STYLE_ORDER.index(f) if f in STYLE_ORDER else 99),
-                "colors": [],
-            }
+                private_names.add(name)
+    screens = {}
+    for name, path in sources.items():
+        if name in private_names:
+            continue
+        body = screen_text(name, bodies, private_names)
+        elements = element_list(body)
+        has_page_chrome = any(e[0] in ("title", "section") for e in elements)
+        screens[name] = {
+            "name": name,
+            "source": str(path.relative_to(root)),
+            "group": ("App" if "HealthNutrition/Sources" in str(path)
+                      else "Screens" if has_page_chrome or len(elements) >= 3 else "Components"),
+            "elements": elements,
+            "fonts": sorted(set(FONT_RE.findall(body)), key=lambda f: STYLE_ORDER.index(f) if f in STYLE_ORDER else 99),
+            "colors": [],
+        }
     for name, screen in screens.items():
         screen["colors"] = sorted(nested_colors(name, bodies, aliases))
     return screens, fonts, spacings

@@ -212,3 +212,33 @@ def test_pages_for_removed_screens_are_deleted(tmp_path):
     assert done.returncode == 0, done.stderr
     assert not (out / "project/components/GoneView").exists()
     assert "removed screens: GoneView" in done.stdout
+
+
+def test_debug_only_blocks_are_not_in_screen_metadata(tmp_path):
+    write_view(tmp_path, "RootShell", 'public struct RootShell: View {\n'
+               '    public var body: some View {\n'
+               '        List {\n'
+               '            Text("Shown")\n'
+               '#if DEBUG\n'
+               '            Text("Debug only")\n'
+               '#else\n'
+               '            Text("Release")\n'
+               '#endif\n'
+               '        }\n    }\n}\n')
+    elements = bds.scan_screens(tmp_path)[0]["RootShell"]["elements"]
+    assert ("text", "Shown") in elements
+    assert ("text", "Debug only") not in elements
+    assert ("text", "Release") in elements
+
+
+def test_private_helper_views_delegated_to_are_part_of_the_screen(tmp_path):
+    write_view(tmp_path, "SettingsShell", 'public struct SettingsShell: View {\n'
+               '    public var body: some View {\n'
+               '        SettingsContent(model: model)\n    }\n}\n'
+               'private struct SettingsContent: View {\n'
+               '    public var body: some View {\n'
+               '        Form { Section("Units") { Text("Ounces") } }\n    }\n}\n')
+    screen = bds.scan_screens(tmp_path)[0]["SettingsShell"]
+    assert ("section", "Units") in screen["elements"]
+    assert ("text", "Ounces") in screen["elements"]
+    assert "SettingsContent" not in bds.scan_screens(tmp_path)[0]

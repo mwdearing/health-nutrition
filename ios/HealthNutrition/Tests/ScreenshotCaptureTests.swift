@@ -148,12 +148,10 @@ final class ScreenshotCaptureTests: XCTestCase {
 
     func testAppSettingsView() throws {
         let services = try makeSeededServices()
+        // AppSettingsView installs its own Done item, as it does in RootView, so the capture adds none.
         try capture("AppSettingsView") {
             NavigationStack {
                 AppSettingsView(goals: services.goals, connections: services.connections)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) { Button("Done") {} }
-                    }
             }
         }
     }
