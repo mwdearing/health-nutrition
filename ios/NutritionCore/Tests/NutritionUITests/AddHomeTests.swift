@@ -111,7 +111,7 @@ final class AddHomeTests: XCTestCase {
             nutrients: ["energy": .known(380, .kcal)])
         let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
         try store.create(
-            Intake(id: "seed-oats", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            Intake(id: "0a6f1c1e-5b0e-4f7a-9c35-2d1e8f4b7a10", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
             components: [component], product: product, now: now)
         let template = RepeatTemplate(displayName: "Oats", category: "food",
             components: [component], productSnapshotID: product.snapshotID)
