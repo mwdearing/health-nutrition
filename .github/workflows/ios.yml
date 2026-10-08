@@ -93,7 +93,8 @@ jobs:
   # log (the Actions log is public), so an error that only the optimizer raises (for example a view body the
   # compiler cannot type-check in reasonable time) would otherwise be invisible. This job shows it here.
   release-build:
-    runs-on: macos-latest
+    # The same image as signed-beta.yml, so this job sees the compiler the upload uses.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install XcodeGen
