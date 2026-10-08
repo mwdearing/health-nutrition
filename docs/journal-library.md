@@ -18,6 +18,12 @@ snapshot with the original nutrient values and provenance. Combined entries keep
 per-serving snapshot. Add home's Scan label starts a fresh form; scanning from Details or the
 barcode screen keeps that screen's form. Details offers Scan label only on a device that can scan.
 
+Scanning a label from Library Details preserves the chosen name and brand while replacing the
+nutrient values. "This adds" scales stated nutrients to the typed amount, including potassium
+when stated; an unstated extra nutrient is omitted. Products with no known nutrition values show
+the existing no-stated-nutrients sentence instead of a preview of unknown rows. Canonical journal
+keys and label aliases are excluded from "Also on the label", leaving only additional compounds.
+
 ## Favorites and recents
 - **Recents** are derived, not stored: the 20 most recent distinct active entries, distinct by product snapshot id **and the meal**, otherwise by category, component names and the meal.
 - **Favorites** are stored templates (display name, category, components as exact decimal text plus unit symbol, optional product snapshot id) in their own store file next to the journal file. A favorite is a copy, not a link, so deleting an entry never removes a favorite.

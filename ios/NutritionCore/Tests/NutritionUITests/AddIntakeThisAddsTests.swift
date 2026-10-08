@@ -30,6 +30,47 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertTrue(model.thisAdds.isEmpty)
     }
 
+    func testThisAddsIsEmptyWhenNothingIsStated() async throws {
+        let product = LookedUpProduct(barcode: "4006381333931", name: "Example oats", brand: nil,
+            basis: .per100g, nutrients: [:])
+        let model = AddIntakeViewModel(store: try makeStore(), now: now, lookup: PreviewLookup(product: product))
+        model.barcode = product.barcode
+        await model.lookUpBarcode()
+        model.amountText = "50"
+        XCTAssertFalse(model.hasPrefilledValues)
+        XCTAssertTrue(model.thisAdds.isEmpty)
+        XCTAssertTrue(model.statesNoNutrients)
+    }
+
+    func testThisAddsIncludesPotassium() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        model.applyStoredProduct(ProductDefinition(snapshotID: "example-potassium", productID: "example-oats",
+            name: "Example oats", labelBasis: "per 100 g", catalogOrigin: "example", catalogVersion: "1",
+            nutrients: ["potassium": .known(400, .mg)]))
+        model.amountText = "50"
+        let line = try XCTUnwrap(model.thisAdds.first { $0.key == "potassium" })
+        XCTAssertEqual(line.displayName, "Potassium")
+        XCTAssertEqual(line.value, .known(200, .mg))
+        model.applyLabelProduct(ProductDefinition(snapshotID: "example-protein", productID: "example-oats",
+            name: "", labelBasis: "per 100 g", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g)]))
+        XCTAssertFalse(model.thisAdds.contains { $0.key == "potassium" })
+    }
+
+    func testLabelScanKeepsTheLibraryName() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        let product = ProductDefinition(snapshotID: "example-library", productID: "example-oats",
+            name: "Example oats", brand: "Example brand", labelBasis: "per 100 g",
+            catalogOrigin: "example", catalogVersion: "1", nutrients: ["protein": .known(13, .g)])
+        model.applyStoredProduct(product)
+        XCTAssertEqual(model.productSnapshot(), product)
+        model.applyLabelProduct(ProductDefinition(snapshotID: "example-label", productID: "example-oats",
+            name: "", labelBasis: "per 100 g", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(14, .g)]))
+        XCTAssertEqual(model.name, "Example oats")
+        XCTAssertEqual(model.brand, "Example brand")
+    }
+
     func testThisAddsIsUnknownForAnUnresolvableBasis() throws {
         let model = AddIntakeViewModel(store: try makeStore(), now: now)
         for basis in ["per serving", "per serving (30 g)"] {

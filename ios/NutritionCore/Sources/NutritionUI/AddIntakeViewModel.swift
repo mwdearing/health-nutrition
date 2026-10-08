@@ -148,7 +148,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     private var prefilledProduct: ProductDefinition? { storedProduct ?? labelValues }
 
-    public var hasPrefilledValues: Bool { !prefilledNutrients.isEmpty }
+    public var hasPrefilledValues: Bool { prefilledNutrients.values.contains { $0.isKnown } }
 
     public var sourceLine: String? {
         if storedProduct != nil { return "From your Library" }
@@ -171,6 +171,18 @@ public final class AddIntakeViewModel: ObservableObject {
         return .unknown
     }
 
+    static let thisAddsKeys: [String] = {
+        var keys = LookedUpProduct.standardKeys
+        var covered = Set(keys.flatMap { HealthKitWritePlanner.acceptedKeys(for: $0) })
+        for key in TodayViewModel.defaultTrackedNutrients {
+            let accepted = HealthKitWritePlanner.acceptedKeys(for: key)
+            guard covered.isDisjoint(with: accepted) else { continue }
+            keys.append(key)
+            covered.formUnion(accepted)
+        }
+        return keys
+    }()
+
     /// Recomputed from the same metric components and basis rules used for the saved total.
     public var thisAdds: [ThisAddsLine] {
         guard hasPrefilledValues, let amount = AmountParser.parse(amountText),
@@ -180,10 +192,11 @@ public final class AddIntakeViewModel: ObservableObject {
         let components = [IntakeComponent(
             componentID: Self.slug(name), name: name, amount: stored.amount, unit: stored.unit)]
         let factor = DailyTotalsBuilder.scalingFactor(labelBasis: basis, logged: components)
-        return LookedUpProduct.standardKeys.map { key in
+        return Self.thisAddsKeys.compactMap { key in
             let value = self.prefilledValue(for: key)
+            guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { return nil }
             return ThisAddsLine(
-                key: key, displayName: LookedUpProduct.displayNames[key] ?? key,
+                key: key, displayName: LookedUpProduct.displayNames[key] ?? key.capitalized,
                 value: factor.map { value.scaled(by: $0) } ?? .unknown)
         }
     }
@@ -233,9 +246,16 @@ public final class AddIntakeViewModel: ObservableObject {
     /// as unknown (its `salt`, say) is not a row the label stated and never appears here.
     public var additionalLabelNutrients: [String] {
         guard let captured = prefilledProduct else { return [] }
-        let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
+        var excluded = Set<String>()
+        for key in NutritionFactKey.allCases.map(\.rawValue) + LookedUpProduct.standardKeys {
+            excluded.insert(key)
+            excluded.formUnion(HealthKitWritePlanner.acceptedKeys(for: key))
+        }
         return captured.nutrients
-            .filter { !standard.contains($0.key) && $0.value.isKnown }
+            .filter {
+                $0.value.isKnown && !excluded.contains($0.key)
+                    && excluded.isDisjoint(with: HealthKitWritePlanner.acceptedKeys(for: $0.key))
+            }
             .map(\.key)
             .sorted()
     }
@@ -359,8 +379,8 @@ public final class AddIntakeViewModel: ObservableObject {
         storedProduct = product
         name = product.name
         brand = product.brand ?? ""
-        filledName = name
-        filledBrand = brand
+        filledName = nil
+        filledBrand = nil
         fillProductValues(product)
     }
 
