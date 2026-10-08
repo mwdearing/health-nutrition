@@ -110,7 +110,7 @@ final class TodayDesignTests: XCTestCase {
     func testMissingValueReasonCountsEntriesNotComponents() throws {
         let store = try makeStore()
         try store.create(
-            Intake(id: "mixed-food", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            Intake(id: "0e3c8b4a-6d1f-4c2b-9a7e-1b2c3d4e5f60", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
             components: [
                 IntakeComponent(componentID: "first", name: "Sample toast", amount: 50, unit: .g),
                 IntakeComponent(componentID: "second", name: "Sample spread", amount: 10, unit: .g)
