@@ -71,11 +71,13 @@ final class ScreenshotCaptureTests: XCTestCase {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return true }
-        context.interpolationQuality = .none
+        context.interpolationQuality = .high
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
-        let first = Array(pixels[0..<4])
-        for offset in stride(from: 4, to: pixels.count, by: 4) where Array(pixels[offset..<offset + 4]) != first {
-            return false
+        // Averaged down, so thin text still moves some of the 256 samples away from the background.
+        for offset in stride(from: 4, to: pixels.count, by: 4) {
+            for channel in 0..<3 where abs(Int(pixels[offset + channel]) - Int(pixels[channel])) > 1 {
+                return false
+            }
         }
         return true
     }
@@ -96,9 +98,9 @@ final class ScreenshotCaptureTests: XCTestCase {
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
             window.isHidden = true
-            XCTAssertFalse(isUniform(image), "\(name)-\(suffix) rendered as one flat colour")
             let png = try XCTUnwrap(image.pngData())
             try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
+            XCTAssertFalse(isUniform(image), "\(name)-\(suffix) rendered as one flat colour")
         }
     }
 
