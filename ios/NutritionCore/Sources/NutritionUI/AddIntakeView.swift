@@ -112,25 +112,32 @@ public struct AddIntakeView: View {
                 DatePicker("When", selection: $model.occurredAt)
             }
 
+            // A product the catalog lists but states no nutrition facts for is one sentence rather than
+            // rows of "unknown". Its attribution still travels with it.
+            if model.statesNoNutrients {
+                Section {
+                    Text(AddIntakeViewModel.noStatedNutrientsMessage)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                        .accessibilityLabel(AddIntakeViewModel.noStatedNutrientsMessage)
+                    sourceAndLicence
+                }
+            }
             if model.hasPrefilledValues {
                 Section("This adds") {
                     ForEach(model.thisAdds, id: \.key) { line in
                         LabeledContent(line.displayName, value: line.text)
                     }
+                    // Beside the values, not inside the collapsed list: some sources licence their data
+                    // only if the attribution is shown wherever the values are.
+                    sourceAndLicence
                     DisclosureGroup("All values") {
-                        if model.statesNoNutrients {
-                            Text(AddIntakeViewModel.noStatedNutrientsMessage)
-                                .font(.footnote)
-                                .foregroundStyle(TokenColors.textSecondary)
-                                .accessibilityLabel(AddIntakeViewModel.noStatedNutrientsMessage)
-                        } else {
-                            ForEach(model.labelValues != nil || model.lookedUp == nil
-                                ? Self.capturedKeys : LookedUpProduct.standardKeys, id: \.self) { key in
-                                LabeledContent(
-                                    model.displayName(forCaptured: key),
-                                    value: Self.text(for: model.prefilledValue(for: key)))
-                                .font(.footnote)
-                            }
+                        ForEach(model.labelValues != nil || model.lookedUp == nil
+                            ? Self.capturedKeys : LookedUpProduct.standardKeys, id: \.self) { key in
+                            LabeledContent(
+                                model.displayName(forCaptured: key),
+                                value: Self.text(for: model.prefilledValue(for: key)))
+                            .font(.footnote)
                         }
                         if !model.additionalLabelNutrients.isEmpty {
                             Text("Also on the label")
@@ -149,15 +156,6 @@ public struct AddIntakeView: View {
                                 .font(.footnote)
                                 .foregroundStyle(TokenColors.textSecondary)
                                 .accessibilityLabel(message)
-                        }
-                        if let source = model.sourceLine {
-                            Text(source).font(.footnote).foregroundStyle(TokenColors.textSecondary)
-                        }
-                        if let attribution = model.attribution,
-                            let attributionTitle = model.attributionTitle, let url = URL(string: attribution.url) {
-                            Link(attributionTitle, destination: url)
-                                .font(.footnote)
-                                .accessibilityLabel("Read the licence for these nutrition facts")
                         }
                     }
                 }
@@ -207,6 +205,20 @@ public struct AddIntakeView: View {
             .disabled(true)
             .accessibilityElement(children: .combine)
             .accessibilityValue("Not available yet")
+        }
+    }
+
+    /// Where the values came from and, when the source requires it, a titled link to its licence.
+    @ViewBuilder
+    private var sourceAndLicence: some View {
+        if let source = model.sourceLine {
+            Text(source).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+        }
+        if let attribution = model.attribution,
+            let attributionTitle = model.attributionTitle, let url = URL(string: attribution.url) {
+            Link(attributionTitle, destination: url)
+                .font(.footnote)
+                .accessibilityLabel("Read the licence for these nutrition facts")
         }
     }
 
