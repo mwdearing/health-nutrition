@@ -1,0 +1,114 @@
+import Foundation
+import NutritionDomain
+import NutritionJournal
+
+public struct AddScannerAvailability {
+    public let barcode: Bool
+    public let label: Bool
+    public var barcodeExplanation: String { "This device can't scan barcodes. Type the digits instead." }
+    public var labelExplanation: String { "This device can't scan labels. Type the values instead." }
+    public init(barcode: Bool = false, label: Bool = false) {
+        self.barcode = barcode
+        self.label = label
+    }
+}
+
+public struct AddUndoToken: Equatable {
+    public let intakeID: String
+    public let message: String
+    public let expiresAt: Date
+}
+
+@MainActor
+public final class AddHomeViewModel: ObservableObject, Identifiable {
+    public let id = UUID()
+    @Published public var meal: MealLabel?
+    @Published public private(set) var recents: [RecentItem] = []
+    @Published public private(set) var undoToken: AddUndoToken?
+    @Published public private(set) var errorMessage: String?
+    public let scannerAvailability: AddScannerAvailability
+    public let emptyRecentsText = "Things you log will show up here."
+    private let store: JournalStore
+    private let lookup: BarcodeProductLookup?
+    private let preferences: DisplayPreferences
+    private let now: () -> Date
+
+    public init(store: JournalStore, meal: MealLabel? = nil,
+        scannerAvailability: AddScannerAvailability = AddScannerAvailability(),
+        lookup: BarcodeProductLookup? = nil,
+        preferences: DisplayPreferences = InMemoryDisplayPreferences(),
+        now: @escaping () -> Date = { Date() }) {
+        self.store = store
+        self.meal = meal
+        self.scannerAvailability = scannerAvailability
+        self.lookup = lookup
+        self.preferences = preferences
+        self.now = now
+    }
+
+    public func load() {
+        do {
+            recents = try RecentItemsProvider(store: store).recents(limit: 5)
+            errorMessage = nil
+        } catch { errorMessage = "Could not read recent items." }
+    }
+
+    public func makeDetails(now: Date) -> AddIntakeViewModel {
+        let model = AddIntakeViewModel(store: store, now: now, lookup: lookup, preferences: preferences)
+        model.meal = meal
+        return model
+    }
+
+    public func makeDetails(prefill: RepeatTemplate, now: Date) throws -> AddIntakeViewModel {
+        let model = makeDetails(now: now)
+        guard let component = prefill.components.first else { throw JournalError.corruptRecord("empty template") }
+        if let snapshotID = prefill.productSnapshotID {
+            guard let product = try store.product(snapshotID: snapshotID) else { throw IntakeRepeatError.productUnavailable }
+            model.applyLabelProduct(product)
+            model.brand = product.brand ?? ""
+        }
+        model.name = prefill.displayName
+        model.category = prefill.category
+        model.amountText = DecimalFormatting.text(component.amount)
+        model.unit = component.unit
+        return model
+    }
+
+    public func scannedBarcode(_ barcode: String, into model: AddIntakeViewModel) async {
+        model.setScannedBarcode(barcode)
+        await model.lookUpBarcode()
+    }
+
+    @discardableResult
+    public func quickAdd(_ recent: RecentItem) -> AddUndoToken? {
+        var template = recent.template
+        template.meal = meal?.rawValue
+        let date = now()
+        do {
+            let repeater = IntakeRepeater(store: store, timeZoneProvider: { TimeZone.current.identifier },
+                makeID: { UUID().uuidString.lowercased() })
+            let id = try repeater.create(from: template, now: date)
+            let token = AddUndoToken(intakeID: id,
+                message: "Added \(template.displayName), \(AmountText.summary(template.components))",
+                expiresAt: date.addingTimeInterval(10))
+            undoToken = token
+            load()
+            return token
+        } catch { errorMessage = "Could not add the item."; return nil }
+    }
+
+    @discardableResult
+    public func undo() -> Bool {
+        guard let token = undoToken, now() < token.expiresAt else { undoToken = nil; return false }
+        do {
+            try store.delete(intakeID: token.intakeID, now: now())
+            undoToken = nil
+            load()
+            return true
+        } catch { errorMessage = "Could not undo."; return false }
+    }
+
+    public func expireUndo(_ token: AddUndoToken) {
+        if undoToken == token { undoToken = nil }
+    }
+}
