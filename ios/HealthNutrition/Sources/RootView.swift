@@ -35,6 +35,9 @@ struct RootView: View {
     @State private var recipeList: RecipeListViewModel
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
+    /// The design-system screenshots run a debug build with `SCREENSHOT_DIR` set. They leave out the
+    /// debug-only HealthKit tab and delivery line so the pictures show the app's own screens.
+    private static let isCapturingScreenshots = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"] != nil
     /// Today's view model, observed so this body is re-evaluated when its values change. Read only for
     /// the water total below, which is the one journal write that does not go through `reload()`.
     @ObservedObject var todayModel: TodayViewModel
@@ -88,8 +91,7 @@ struct RootView: View {
                 // One line, because a delivery that is parked or waiting for a person should be visible
                 // where the entries it belongs to are, not only on the debug tab. Debug builds only.
                 .safeAreaInset(edge: .bottom) {
-                    // Left out of the design-system screenshots, which are taken in a debug build.
-                    if ProcessInfo.processInfo.environment["SCREENSHOT_DIR"] == nil {
+                    if !Self.isCapturingScreenshots {
                         Text(healthKitDeliveryStatus.summaryLine)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -125,16 +127,18 @@ struct RootView: View {
 
             #if DEBUG
             // Debug builds only: the real HealthKit delivery driver, then the spike that measured how
-            // HealthKit resolves a repeated sync identifier.
-            NavigationStack {
-                List {
-                    HealthKitDeliveryDebugSection(status: healthKitDeliveryStatus)
-                    HealthKitSpikeSteps(runner: healthKitSpike)
+            // HealthKit resolves a repeated sync identifier. Not in the screenshots.
+            if !Self.isCapturingScreenshots {
+                NavigationStack {
+                    List {
+                        HealthKitDeliveryDebugSection(status: healthKitDeliveryStatus)
+                        HealthKitSpikeSteps(runner: healthKitSpike)
+                    }
+                    .navigationTitle("HealthKit")
                 }
-                .navigationTitle("HealthKit")
+                .tabItem { Label("HealthKit", systemImage: "waveform.path.ecg") }
+                .tag(AppTab.spike)
             }
-            .tabItem { Label("HealthKit", systemImage: "waveform.path.ecg") }
-            .tag(AppTab.spike)
             #endif
         }
         // One Add capsule for the whole shell, above the tab bar on all three tabs. It is the only filled

@@ -130,3 +130,70 @@ def test_generated_tokens_json_is_readable_json(tmp_path):
     assert done.returncode == 0, done.stderr
     tokens = json.loads((tmp_path / "project/tokens.json").read_text())
     assert len(tokens["color"]["tokens"]) >= 20
+
+
+def write_view(root: Path, name: str, body: str) -> None:
+    ui = root / "ios/NutritionCore/Sources/NutritionUI"
+    ui.mkdir(parents=True, exist_ok=True)
+    (ui / f"{name}.swift").write_text(body)
+
+
+def test_generic_views_are_found(tmp_path):
+    write_view(tmp_path, "Card", 'public struct Card<Content: View>: View {\n'
+               '    public var body: some View { Text("Inside") }\n}\n')
+    assert "Card" in bds.scan_screens(tmp_path)[0]
+
+
+def test_closure_label_buttons_are_controls_with_their_label_text(tmp_path):
+    write_view(tmp_path, "AddView", 'public struct AddView: View {\n'
+               '    public var body: some View {\n'
+               '        Button { save() } label: { Text("Save") }\n'
+               '        Text("Other")\n    }\n}\n')
+    elements = bds.scan_screens(tmp_path)[0]["AddView"]["elements"]
+    assert ("button", "Save") in elements
+    assert ("text", "Save") not in elements
+    assert ("text", "Other") in elements
+
+
+def test_colour_accessors_resolve_to_their_token_names(tmp_path):
+    write_view(tmp_path, "TokenColors", 'public enum TokenColors {\n'
+               '    public static var mint: Color { color(named: "RelayMint") }\n}\n')
+    write_view(tmp_path, "CapsuleView", 'public struct CapsuleView: View {\n'
+               '    public var body: some View { Text("x").foregroundStyle(TokenColors.mint) }\n}\n')
+    assert bds.scan_screens(tmp_path)[0]["CapsuleView"]["colors"] == ["RelayMint"]
+
+
+def test_colours_of_rendered_components_are_included(tmp_path):
+    write_view(tmp_path, "Pill", 'public struct Pill: View {\n'
+               '    public var body: some View { Text("p").foregroundStyle(TokenColors.accent) }\n}\n')
+    write_view(tmp_path, "PageView", 'public struct PageView: View {\n'
+               '    public var body: some View {\n        VStack { Pill() }\n'
+               '        .foregroundStyle(TokenColors.border)\n    }\n}\n')
+    assert bds.scan_screens(tmp_path)[0]["PageView"]["colors"] == ["accent", "border"]
+
+
+def test_cover_escapes_the_title_and_splits_it_across_two_lines():
+    page = bds.cover('Acme "Well" <b>')
+    assert 'aria-label="Acme &quot;Well&quot; &lt;b&gt;"' in page
+    assert '>Acme</text>' in page and '&quot;Well&quot; &lt;b&gt;</text>' in page
+    assert "Health" not in bds.cover("Acme Wellness")
+
+
+def test_outline_wording_changes_when_a_picture_is_used():
+    screen = {"name": "TodayView", "source": "a.swift", "group": "Screens", "elements": [("title", "Today")],
+              "fonts": [], "colors": []}
+    assert "outline built" in bds.screen_readme(screen)
+    assert "simulator capture" in bds.screen_readme(screen, pictured=True)
+    assert "simulator capture" not in bds.screen_readme(screen, pictured=True).replace("simulator capture of", "")
+
+
+def test_pages_for_removed_screens_are_deleted(tmp_path):
+    out = tmp_path / "out"
+    (out / "project/components/GoneView").mkdir(parents=True)
+    (out / "project/components/GoneView/README.md").write_text("old")
+    (out / "screens.json").write_text(json.dumps({"GoneView": {"source": "x", "elements": 0, "digest": "d"}}))
+    done = subprocess.run([sys.executable, str(SCRIPT), str(out), "--no-index"],
+                          capture_output=True, text=True, check=False)
+    assert done.returncode == 0, done.stderr
+    assert not (out / "project/components/GoneView").exists()
+    assert "removed screens: GoneView" in done.stdout

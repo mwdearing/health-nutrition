@@ -34,6 +34,7 @@ import datetime
 import html
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -85,7 +86,8 @@ IOS_TEXT_STYLES = {
 }
 STYLE_ORDER = list(IOS_TEXT_STYLES)
 
-STRUCT_RE = re.compile(r"^(?P<vis>public |internal |private |fileprivate )?struct (?P<name>\w+)\s*:\s*(?P<conf>[^{]*)\{", re.M)
+STRUCT_RE = re.compile(
+    r"^(?P<vis>public |internal |private |fileprivate )?struct (?P<name>\w+)(?:<[^\n{]*>)?\s*:\s*(?P<conf>[^{]*)\{", re.M)
 STRING = r'"(?:[^"\\]|\\.)*"'
 ELEMENT_RE = re.compile(
     "|".join(
@@ -103,6 +105,10 @@ FONT_RE = re.compile(r"\.font\(\.(\w+)")
 COLOR_RE = re.compile(r"TokenColors\.(\w+)")
 SPACING_RE = re.compile(r"\bspacing:\s*(\d+(?:\.\d+)?)")
 PADDING_RE = re.compile(r"\.padding\((?:[^)]*,\s*)?(\d+(?:\.\d+)?)\)")
+# `Button { action } label: { Text("...") }`: the label is the button's text.
+CLOSURE_LABEL_RE = re.compile(r"\blabel:\s*\{\s*Text\((?P<text>" + STRING + r")\)\s*\}")
+# `public static var mint: Color { color(named: "RelayMint") }` maps a TokenColors accessor to its token.
+ACCESSOR_RE = re.compile(r'static var (\w+):\s*Color\s*\{\s*color\(named:\s*"(\w+)"\)')
 
 
 def unq(text):
@@ -143,9 +149,49 @@ def scan_design_scales(root=ROOT):
     return scales
 
 
+def scan_color_aliases(root=ROOT):
+    """TokenColors accessor name -> the colour token it returns (`mint` -> `RelayMint`)."""
+    path = root / "ios/NutritionCore/Sources/NutritionUI/TokenColors.swift"
+    return dict(ACCESSOR_RE.findall(path.read_text())) if path.exists() else {}
+
+
+def element_list(body):
+    """The outline elements in a view body, in source order."""
+    labels = [(m.start(), m.end(), unq(m.group("text"))) for m in CLOSURE_LABEL_RE.finditer(body)]
+    found = []
+    for e in ELEMENT_RE.finditer(body):
+        if any(a <= e.start() < b for a, b, _ in labels):
+            continue  # the text inside a closure label is recorded as the button below
+        g = e.groupdict()
+        if g["nav"]:
+            found.append((e.start(), ("title", unq(g["nav"]))))
+        elif g["sec"]:
+            found.append((e.start(), ("section", unq(g["sec"]))))
+        elif g["lab"]:
+            found.append((e.start(), ("label", unq(g["lab"]), unq(g["labi"]))))
+        elif g["ctl"] is not None:
+            found.append((e.start(), (g["ctlk"].lower(), unq(g["ctl"]))))
+        elif g["txt"]:
+            found.append((e.start(), ("text", unq(g["txt"]))))
+        elif g["img"]:
+            found.append((e.start(), ("symbol", unq(g["img"]))))
+    found += [(a, ("button", text)) for a, _, text in labels]
+    return [el for _, el in sorted(found, key=lambda item: item[0])]
+
+
+def nested_colors(name, bodies, aliases, seen=frozenset()):
+    """Token colours a view uses, including those of the views it renders (`QuietCapsule(...)`)."""
+    colors = {aliases.get(c, c) for c in COLOR_RE.findall(bodies[name])}
+    for other in bodies:
+        if other != name and other not in seen and re.search(rf"\b{other}\(", bodies[name]):
+            colors |= nested_colors(other, bodies, aliases, seen | {name})
+    return colors
+
+
 def scan_screens(root=ROOT):
     """Return (screens, fonts, spacings). A screen is a non-private struct conforming to View."""
-    screens, fonts, spacings = {}, set(), set()
+    screens, fonts, spacings, bodies = {}, set(), set(), {}
+    aliases = scan_color_aliases(root)
     for path in swift_files(root):
         text = path.read_text()
         fonts.update(FONT_RE.findall(text))
@@ -154,26 +200,15 @@ def scan_screens(root=ROOT):
         matches = list(STRUCT_RE.finditer(text))
         for i, m in enumerate(matches):
             conf = [c.strip() for c in m.group("conf").split(",")]
-            if "View" not in conf or m.group("vis") in ("private ", "fileprivate "):
+            if "View" not in conf:
                 continue
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-            body = text[m.start():end]
-            elements = []
-            for e in ELEMENT_RE.finditer(body):
-                g = e.groupdict()
-                if g["nav"]:
-                    elements.append(("title", unq(g["nav"])))
-                elif g["sec"]:
-                    elements.append(("section", unq(g["sec"])))
-                elif g["lab"]:
-                    elements.append(("label", unq(g["lab"]), unq(g["labi"])))
-                elif g["ctl"] is not None:
-                    elements.append((g["ctlk"].lower(), unq(g["ctl"])))
-                elif g["txt"]:
-                    elements.append(("text", unq(g["txt"])))
-                elif g["img"]:
-                    elements.append(("symbol", unq(g["img"])))
             name = m.group("name")
+            bodies[name] = text[m.start():end]
+            if m.group("vis") in ("private ", "fileprivate "):
+                continue
+            body = bodies[name]
+            elements = element_list(body)
             has_page_chrome = any(e[0] in ("title", "section") for e in elements)
             screens[name] = {
                 "name": name,
@@ -182,8 +217,10 @@ def scan_screens(root=ROOT):
                           else "Screens" if has_page_chrome or len(elements) >= 3 else "Components"),
                 "elements": elements,
                 "fonts": sorted(set(FONT_RE.findall(body)), key=lambda f: STYLE_ORDER.index(f) if f in STYLE_ORDER else 99),
-                "colors": sorted(set(COLOR_RE.findall(body))),
+                "colors": [],
             }
+    for name, screen in screens.items():
+        screen["colors"] = sorted(nested_colors(name, bodies, aliases))
     return screens, fonts, spacings
 
 
@@ -236,8 +273,12 @@ def tokens_json(tokens, title, fonts, spacings, scales=None):
     }
 
 
-def readme(title, screens):
+def readme(title, screens, pictured=frozenset()):
     names = ", ".join(humanize(n) for n in screens)
+    outline = ("The previews are outlines generated from the Swift source, not renders of the app."
+               if not pictured else
+               "Screens with a simulator capture show the rendered screen in light and dark. The others are "
+               "outlines generated from the Swift source, not renders of the app.")
     return f"""# {title}
 
 A white, clean light layout with teal and mint accents, and a dark mode designed to match it
@@ -264,7 +305,7 @@ the app repo rejects them.
 ## Screens
 
 {names}. Each has a page under Components with its source file, sections, text, controls and the
-tokens it uses. The previews are outlines generated from the Swift source, not renders of the app.
+tokens it uses. {outline}
 See the Screens section for the full table.
 
 ## Not synced
@@ -284,7 +325,7 @@ def screens_md(screens):
     return "\n".join(lines) + "\n"
 
 
-def screen_readme(s):
+def screen_readme(s, pictured=False):
     out = [f"{humanize(s['name'])} is a {'sheet or root view in the app target' if s['group'] == 'App' else 'screen'} defined in `{s['source']}`.", ""]
     title = [e[1] for e in s["elements"] if e[0] == "title"]
     if title:
@@ -302,7 +343,10 @@ def screen_readme(s):
         out += ["## Text styles", "", ", ".join(f"`{x}`" for x in s["fonts"]), ""]
     if s["colors"]:
         out += ["## Token colours", "", ", ".join(f"`{x}`" for x in s["colors"]), ""]
-    out += ["The preview is an outline built from the source text, not a render.", ""]
+    if pictured:
+        out += ["The preview is a simulator capture of this screen in light and dark.", ""]
+    else:
+        out += ["The preview is an outline built from the source text, not a render.", ""]
     return "\n".join(out)
 
 
@@ -393,6 +437,8 @@ def screen_preview(s, blobs=None):
 
 
 def cover(title):
+    words = title.split()
+    line1, line2 = (words[0], " ".join(words[1:])) if len(words) > 1 else (title, "")
     return f"""<!-- @dsCard height=288 -->
 <style>
   html, body {{ margin: 0; background: var(--background); }}
@@ -405,7 +451,7 @@ def cover(title):
   .name {{ font: 600 76px/0.95 var(--font-sans); fill: var(--textPrimary); }}
   .tag {{ font: 400 14px var(--font-sans); fill: var(--textSecondary); }}
 </style>
-<svg viewBox="0 0 960 288" role="img" aria-label="{title}">
+<svg viewBox="0 0 960 288" role="img" aria-label="{esc(title)}">
   <!-- derivation: blocks AccentColor slab 192, RelayMint disc 96, RelayAccentInk pill 288x96,
        RelayReadyTint disc 96, RelayWaitingTint disc 48. Arrangement: staggered cluster right of
        x=480 bleeding off the right edge. Pattern: discs and pills, soft rounded iOS controls.
@@ -416,8 +462,8 @@ def cover(title):
   <circle class="ready" cx="600" cy="48" r="48"/>
   <circle class="wait" cx="912" cy="24" r="24"/>
   <circle class="mint" cx="504" cy="240" r="24"/>
-  <text class="name" x="32" y="170">Health</text>
-  <text class="name" x="32" y="240">Nutrition</text>
+  <text class="name" x="32" y="170">{esc(line1)}</text>
+  <text class="name" x="32" y="240">{esc(line2)}</text>
   <text class="tag" x="32" y="268">Daily nutrition log for iOS</text>
 </svg>
 """
@@ -425,7 +471,7 @@ def cover(title):
 
 def summarize(screens):
     return {n: {"source": s["source"], "elements": len(s["elements"]),
-                "digest": json.dumps([s["elements"], s["fonts"], s["colors"]], sort_keys=True)}
+                "digest": json.dumps([s["elements"], s["fonts"], s["colors"], s["source"], s["group"]], sort_keys=True)}
             for n, s in screens.items()}
 
 
@@ -452,8 +498,10 @@ def main():
     blobs = json.loads(Path(args.blobs).read_text()) if args.blobs else {}
     unknown = sorted(f for f in fonts if f not in IOS_TEXT_STYLES)
     empty = sorted(n for n, s in screens.items() if not s["elements"] and s["group"] != "Components")
+    unmapped = sorted({c for s in screens.values() for c in s["colors"]} - set(tokens))
     shots = find_screenshots(args.screenshots)
     uncovered = missing_screenshots(screens, shots) if args.screenshots else []
+    pictured = frozenset(n for n in screens if f"{n}-light.png" in blobs and f"{n}-dark.png" in blobs)
     if args.check:
         for n in uncovered:
             print(f"screen with no screenshot: {n}")
@@ -461,27 +509,34 @@ def main():
             print(f"screen with no extractable content: {n}")
         for f in unknown:
             print(f"unknown font style: {f}")
+        for c in unmapped:
+            print(f"colour used but not in the tokens: {c}")
         print(f"{len(screens)} screens, {len(tokens)} colour tokens, {len(fonts)} text styles")
-        sys.exit(1 if empty or unknown or uncovered else 0)
+        sys.exit(1 if empty or unknown or uncovered or unmapped else 0)
     if unknown:
         print(f"warning: unknown font styles skipped: {', '.join(unknown)}", file=sys.stderr)
+    if unmapped:
+        print(f"warning: colours not in the tokens, left out of the pages: {', '.join(unmapped)}", file=sys.stderr)
 
     out = Path(args.out_dir)
     project = out / "project"
+    state = out / "screens.json"
+    old = json.loads(state.read_text()) if state.exists() else {}
+    new = summarize(screens)
     (project / "components/Cover").mkdir(parents=True, exist_ok=True)
+    # Pages for screens the last run wrote and this one no longer finds are removed, not left behind.
+    for gone in sorted(set(old) - set(screens)):
+        shutil.rmtree(project / "components" / gone, ignore_errors=True)
     (project / "tokens.json").write_text(json.dumps(tokens_json(tokens, args.title, fonts, spacings, scan_design_scales()), indent=2) + "\n")
-    (project / "README.md").write_text(readme(args.title, screens))
+    (project / "README.md").write_text(readme(args.title, screens, pictured))
     (project / "Screens.md").write_text(screens_md(screens))
     (project / "components/Cover/preview.html").write_text(cover(args.title))
     for n, s in screens.items():
         d = project / "components" / n
         d.mkdir(parents=True, exist_ok=True)
-        (d / "README.md").write_text(screen_readme(s))
+        (d / "README.md").write_text(screen_readme(s, n in pictured))
         (d / "preview.html").write_text(screen_preview(s, blobs))
 
-    state = out / "screens.json"
-    old = json.loads(state.read_text()) if state.exists() else {}
-    new = summarize(screens)
     report_changes(old, new)
     state.write_text(json.dumps(new, indent=2, sort_keys=True) + "\n")
 

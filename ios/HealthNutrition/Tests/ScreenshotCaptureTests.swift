@@ -22,6 +22,15 @@ final class ScreenshotCaptureTests: XCTestCase {
         "8b3d4e5f-6071-4c8d-8e9f-1a2b3c4d5e6f",
     ]
 
+    /// Skips every capture before its fixtures are built when the screenshots workflow has not set
+    /// `SCREENSHOT_DIR`, so the normal test run does no store work for these.
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        guard ProcessInfo.processInfo.environment["SCREENSHOT_DIR"]?.isEmpty == false else {
+            throw XCTSkip("SCREENSHOT_DIR is not set; screenshots are captured by the screenshots workflow.")
+        }
+    }
+
     private func outputDirectory() throws -> URL {
         guard let path = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"], !path.isEmpty else {
             throw XCTSkip("SCREENSHOT_DIR is not set; screenshots are captured by the screenshots workflow.")
@@ -142,6 +151,9 @@ final class ScreenshotCaptureTests: XCTestCase {
         try capture("AppSettingsView") {
             NavigationStack {
                 AppSettingsView(goals: services.goals, connections: services.connections)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") {} }
+                    }
             }
         }
     }
@@ -155,6 +167,9 @@ final class ScreenshotCaptureTests: XCTestCase {
                         store: services.journalStore, intakeID: intakeIDs[0],
                         preferences: services.displayPreferences),
                     now: { Date() }, onFinished: {})
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Close") {} }
+                    }
             }
         }
     }
@@ -184,6 +199,9 @@ final class ScreenshotCaptureTests: XCTestCase {
                         store: services.journalStore, now: Date(), lookup: services.barcodeLookup,
                         preferences: services.displayPreferences),
                     onSaved: {}, onFromLibrary: {}, onScanBarcode: {}, onScanLabel: {})
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                    }
             }
         }
     }
@@ -244,7 +262,15 @@ final class ScreenshotCaptureTests: XCTestCase {
             "Total Carbohydrate 27 g", "Dietary Fiber 4 g", "Total Sugars 1 g", "Protein 5 g",
         ])
         try capture("LabelCaptureView") {
-            NavigationStack { LabelCaptureView(model: model, onUse: { _ in }) }
+            // Mirrors LabelCaptureSheet, which wraps the view in its own stack, title and Cancel.
+            NavigationStack {
+                LabelCaptureView(model: model, onUse: { _ in })
+                    .navigationTitle(model.isReviewing ? "Check the label" : "Scan the label")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                    }
+            }
         }
     }
 
