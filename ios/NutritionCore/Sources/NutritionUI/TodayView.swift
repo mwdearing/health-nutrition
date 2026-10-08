@@ -1,5 +1,6 @@
 import SwiftUI
 import NutritionDomain
+import NutritionJournal
 
 /// Today: how the day stands against its goals, the water, and what was logged by meal.
 ///
@@ -15,16 +16,19 @@ public struct TodayView: View {
     /// the affordance and leaves the rows as plain content, which is what a host that has nowhere to
     /// route to wants.
     private let onSelect: ((String) -> Void)?
+    private let onAddToMeal: ((MealLabel?) -> Void)?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
-        onEditGoals: (() -> Void)? = nil, onSelect: ((String) -> Void)? = nil
+        onEditGoals: (() -> Void)? = nil, onSelect: ((String) -> Void)? = nil,
+        onAddToMeal: ((MealLabel?) -> Void)? = nil
     ) {
         self.model = model
         self.now = now
         self.onAddIntake = onAddIntake
         self.onEditGoals = onEditGoals
         self.onSelect = onSelect
+        self.onAddToMeal = onAddToMeal
     }
 
     public var body: some View {
@@ -167,13 +171,13 @@ public struct TodayView: View {
                     }
                 }
             }
-            HStack(spacing: DesignSpacing.s) {
-                Text("Add to \(section.title)").font(.subheadline)
-                LaterBadge()
+            if let onAddToMeal {
+                Button("Add to \(section.title)") {
+                    onAddToMeal(MealLabel(rawValue: section.title.lowercased()))
+                }
+                .font(.subheadline)
+                .foregroundStyle(TokenColors.accent)
             }
-            .foregroundStyle(TokenColors.textSecondary)
-            .accessibilityElement(children: .combine)
-            .laterPlaceholder()
         }
     }
 

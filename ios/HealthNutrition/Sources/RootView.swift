@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import NutritionJournal
+import NutritionDomain
 import NutritionUI
 
 /// The tab shell: Today, Journal and Library, all reading the same store.
@@ -13,17 +14,11 @@ struct RootView: View {
     @ObservedObject var connections: ConnectionsPrivacyViewModel
 
     @State private var selection: AppTab = .today
-    /// Held rather than built inside the sheet, so a scanned barcode can be written into the same
-    /// form that will be saved. The sheet is presented from the model itself: a flag beside it is read
-    /// while the model's optional is still nil, so the sheet opened empty and only worked the second
-    /// time it was tapped.
+    @State private var addHome: AddHomeViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
-    @State private var scanningBarcode = false
-    /// Held so the review screen's values go into the same form the entry is saved from, and so a
-    /// retake starts from a clean panel. Presented from the model itself, for the same reason as the
-    /// intake sheet above: a flag beside it opened the scanner's review empty and made the scanner look
-    /// slow to appear.
     @State private var labelCapture: LabelCaptureViewModel?
+    @StateObject private var addNavigation = AddNavigationModel()
+    @State private var addFlowError: String?
     @State private var selectedIntakeID: String?
     /// Whether the settings sheet is up, and whether it opens straight onto the daily goals (Today's
     /// "Edit goals" link) rather than onto the settings list.
@@ -81,7 +76,8 @@ struct RootView: View {
                     // Today's rows are the same entries the Journal lists, so they open the same
                     // entry screen: an entry logged late on the wrong day is corrected from where
                     // it is noticed rather than only from the Journal tab.
-                    onSelect: { selectedIntakeID = $0 }
+                    onSelect: { selectedIntakeID = $0 },
+                    onAddToMeal: { meal in self.startAddingIntake(meal: meal) }
                 )
                 .toolbar { settingsToolbar }
                 #if DEBUG
@@ -184,6 +180,7 @@ struct RootView: View {
             // A recipe detail or editor holds its own copy of the recipe, so close those routes too:
             // otherwise an erased recipe stays on screen and can still be logged.
             recipeNavigation.reset()
+            self.finishAdding()
             reload()
             recipeList.load()
             services.goals.load()
@@ -202,55 +199,23 @@ struct RootView: View {
             deliverToHealthKit()
         }
         #endif
-        // Presented from the view model rather than from a flag. A `.sheet(isPresented:)` evaluates its
-        // body on the presentation itself, which is before `addIntakeModel` has been read into the
-        // optional the body needs, so the first tap opened an empty sheet and only the second one
-        // worked. `.sheet(item:)` hands the model to the body, so the form is built from one that is
-        // there, and dismissing the sheet clears it.
-        .sheet(item: $addIntakeModel) { model in
-            NavigationStack {
-                AddIntakeView(
-                    model: model,
-                    now: { Date() },
-                    onSaved: {
-                        addIntakeModel = nil
-                        reload()
-                    },
-                    onFromLibrary: {
-                        addIntakeModel = nil
-                        selection = .library
-                    },
-                    // nil hides the button, so the form only offers scanning where the device has a
-                    // camera that can read barcodes.
-                    onScanBarcode: scanBarcode,
-                    // Label capture is offered on its own terms: it asks the camera for text rather
-                    // than for a code, and it needs no lookup source to be available.
-                    onScanLabel: scanLabel
+        .fullScreenCover(item: $addHome, onDismiss: { self.addNavigation.reset(); self.reload() }) { home in
+            NavigationStack(path: self.$addNavigation.path) {
+                AddHomeView(
+                    model: home,
+                    onBarcode: { self.openAddRoute(.barcodeScanner, home: home) },
+                    onLabel: { self.openAddRoute(.labelScanner, home: home) },
+                    onLibrary: { self.openAddRoute(.library, home: home) },
+                    onType: { self.openAddRoute(.details(nil), home: home) },
+                    onChanged: { self.reload() }
                 )
+                .navigationDestination(for: AddRoute.self) { route in
+                    self.addDestination(route, home: home)
+                }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { addIntakeModel = nil }
+                        Button("Cancel") { self.finishAdding() }
                     }
-                }
-            }
-            // The scanner fills the field and closes itself. The lookup still runs only when
-            // the user taps Look up.
-            .sheet(isPresented: $scanningBarcode) {
-                BarcodeScannerSheet { barcode in
-                    // Through the model, so a scan drops whatever an earlier lookup filled in.
-                    model.setScannedBarcode(barcode)
-                }
-            }
-            // The capture sheet owns the camera and the review screen. It is presented from the capture
-            // view model for the same reason as this sheet, so the scanner's review is never empty and
-            // the scanner does not look slow to appear. The values are handed to the form only after the
-            // user has confirmed every value the parser was unsure about.
-            .sheet(item: $labelCapture) { capture in
-                LabelCaptureSheet(model: capture) { product in
-                    // Through the model, so captured values are invalidated by a later barcode
-                    // or edit the same way looked-up values are.
-                    model.applyLabelProduct(product)
-                    labelCapture = nil
                 }
             }
         }
@@ -286,29 +251,76 @@ struct RootView: View {
         showingSettings = true
     }
 
-    /// Opens the intake form with a fresh model, so a scan and the save that follows share one form.
-    private func startAddingIntake() {
-        addIntakeModel = AddIntakeViewModel(
-            store: services.journalStore, now: Date(), lookup: services.barcodeLookup,
-            preferences: services.displayPreferences
-        )
+    private func startAddingIntake(meal: MealLabel? = nil) {
+        self.addNavigation.reset()
+        self.addFlowError = nil
+        self.addHome = AddHomeViewModel(
+            store: self.services.journalStore, meal: meal,
+            scannerAvailability: AddScannerAvailability(
+                barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
+            lookup: self.services.barcodeLookup, preferences: self.services.displayPreferences)
     }
 
-    /// The action the intake form's Scan button runs. nil where the device cannot scan barcodes,
-    /// which hides the button instead of offering something that would not work.
-    private var scanBarcode: (() -> Void)? {
-        guard BarcodeScanner.isAvailable else { return nil }
-        return { scanningBarcode = true }
+    private func finishAdding() {
+        self.addNavigation.reset()
+        self.addHome = nil
+        self.addIntakeModel = nil
+        self.labelCapture = nil
+        self.reload()
     }
 
-    /// The action the intake form's Scan label entry runs. nil where the device cannot read text with
-    /// the camera, which hides the entry rather than offering something that would not work.
-    private var scanLabel: (() -> Void)? {
-        guard LabelTextScanner.isAvailable else { return nil }
-        return {
-            // A fresh view model per capture, so a previous panel is never on screen behind this one.
-            // Setting the model is what presents the sheet; there is no flag beside it to be out of step.
-            labelCapture = LabelCaptureViewModel()
+    private func openAddRoute(_ route: AddRoute, home: AddHomeViewModel) {
+        switch route {
+        case .barcodeScanner:
+            self.addIntakeModel = home.makeDetails(now: Date())
+        case .labelScanner:
+            self.labelCapture = LabelCaptureViewModel()
+            self.addIntakeModel = home.makeDetails(now: Date())
+        case .details:
+            self.addIntakeModel = home.makeDetails(now: Date())
+        case .library: break
+        }
+        self.addNavigation.path.append(route)
+    }
+
+    @ViewBuilder
+    private func addDestination(_ route: AddRoute, home: AddHomeViewModel) -> some View {
+        switch route {
+        case .barcodeScanner:
+            if let model = self.addIntakeModel {
+                AddBarcodeDestination(model: model,
+                    onScanned: { barcode in
+                        model.setScannedBarcode(barcode)
+                    },
+                    onFound: { self.addNavigation.path.append(.details(model.formID)) },
+                    onLabel: { self.openAddRoute(.labelScanner, home: home) },
+                    onType: { self.addNavigation.path.append(.details(model.formID)) })
+            }
+        case .labelScanner:
+            if let capture = self.labelCapture, let model = self.addIntakeModel {
+                LabelCaptureSheet(model: capture) { product in
+                    model.applyLabelProduct(product)
+                    self.addNavigation.path.append(.details(model.formID))
+                }
+            }
+        case .library:
+            LibraryView(model: self.services.library, onAdded: { self.reload() },
+                onPick: { template in
+                    do {
+                        let model = try home.makeDetails(prefill: template, now: Date())
+                        self.addIntakeModel = model
+                        self.addNavigation.path.append(.details(model.formID))
+                    } catch {
+                        self.addFlowError = "Could not open this item. Its saved product may no longer be available."
+                    }
+                })
+                .overlay(alignment: .bottom) {
+                    if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
+                }
+        case .details:
+            if let model = self.addIntakeModel {
+                AddIntakeView(model: model, now: { Date() }, onSaved: { self.finishAdding() })
+            }
         }
     }
 
