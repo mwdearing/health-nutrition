@@ -7,27 +7,33 @@ public struct EntryRow: View {
     private let title: String
     private let detail: String
     private let kind: ProductKind
+    private let isWater: Bool
     private let showsChevron: Bool
 
-    public init(title: String, detail: String, kind: ProductKind = .food, showsChevron: Bool = true) {
+    public init(
+        title: String, detail: String, kind: ProductKind = .food, isWater: Bool = false,
+        showsChevron: Bool = true
+    ) {
         self.title = title
         self.detail = detail
         self.kind = kind
+        self.isWater = isWater
         self.showsChevron = showsChevron
     }
 
     /// The symbol in the icon well for a kind.
-    static func symbol(for kind: ProductKind) -> String {
+    nonisolated static func symbol(for kind: ProductKind, isWater: Bool = false) -> String {
+        if isWater { return "drop.fill" }
         switch kind {
         case .food: return "fork.knife"
-        case .drink: return "cup.and.saucer"
-        case .supplement: return "pills"
+        case .drink: return "cup.and.saucer.fill"
+        case .supplement: return "pills.fill"
         }
     }
 
     public var body: some View {
         HStack(spacing: DesignSpacing.m) {
-            Image(systemName: Self.symbol(for: kind))
+            Image(systemName: Self.symbol(for: self.kind, isWater: self.isWater))
                 .foregroundStyle(TokenColors.accent)
                 .frame(width: 40, height: 40)
                 .background(TokenColors.accentTint, in: Circle())
@@ -47,5 +53,7 @@ public struct EntryRow: View {
                     .accessibilityHidden(true)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(self.title), \(self.detail), \(self.isWater ? "Water" : self.kind.displayName)")
     }
 }

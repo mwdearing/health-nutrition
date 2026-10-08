@@ -185,14 +185,16 @@ public struct TodayView: View {
             Button {
                 onSelect(row.id)
             } label: {
-                EntryRow(title: row.title, detail: row.detailLine, kind: row.kind)
+                EntryRow(title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(row.accessibilityText)
             .accessibilityHint("Opens the entry")
         } else {
-            EntryRow(title: row.title, detail: row.detailLine, kind: row.kind, showsChevron: false)
+            EntryRow(
+                title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater, showsChevron: false)
                 .accessibilityElement(children: .combine)
+                .accessibilityLabel(row.accessibilityText)
         }
     }
 }

@@ -38,6 +38,7 @@ public struct TodayRow: Equatable, Identifiable {
         self.isWater = isWater
         self.timeText = timeText
     }
+    public var iconName: String { EntryRow.symbol(for: self.kind, isWater: self.isWater) }
 
     /// The amounts and the time on one line: "100 g · 22:13". The amounts alone where no time is known.
     public var detailLine: String {
@@ -45,12 +46,12 @@ public struct TodayRow: Equatable, Identifiable {
     }
 
     /// What a screen reader reads for one row: the name, amounts, time, and meal when it has one.
-    /// A supplement says so, because its rows say nothing that would tell a reader otherwise.
+    /// The kind is spoken because the row's icon is decorative.
     public var accessibilityText: String {
         var parts = [title, detail]
         if !timeText.isEmpty { parts.append(timeText) }
         if let meal { parts.append(meal) }
-        if kind == .supplement { parts.append(ProductKind.supplement.displayName) }
+        parts.append(self.isWater ? "Water" : self.kind.displayName)
         return parts.joined(separator: ", ")
     }
 }
@@ -298,7 +299,8 @@ public final class TodayViewModel: ObservableObject {
             }
             waterBar = progress.first { $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal }.map { line in
                 GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped)
+                    line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped,
+                    unitSystem: self.preferences.unitSystem)
             }
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
@@ -366,7 +368,7 @@ public final class TodayViewModel: ObservableObject {
 
     /// The water total in the unit the reader chose, as it is shown on screen.
     public var waterTotalDisplay: DisplayAmount {
-        AmountDisplay.display(waterTotalMilliliters, unit: .mL, system: preferences.unitSystem)
+        AmountDisplay.water(self.waterTotalMilliliters, system: self.preferences.unitSystem)
     }
 
     /// The quick-water amount in the unit the reader chose.

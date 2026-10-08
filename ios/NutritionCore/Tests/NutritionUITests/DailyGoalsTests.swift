@@ -147,6 +147,18 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(line(model, "protein"), "Protein 39 g of 39 g")
     }
 
+    func testUnchangedWaterDraftDoesNotRewriteTheGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        model.load()
+        XCTAssertEqual(model.draftText["water"], "67.6")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(2000))
+        XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
+    }
+
     /// Water has a target too, in mL, and its own line compares the day's water against it.
     func testAWaterGoalComparesTheDaysWaterInMillilitres() throws {
         let journal = try makeJournalStore()
