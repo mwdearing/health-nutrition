@@ -7,22 +7,18 @@ public struct LibraryView: View {
     private let onAdded: () -> Void
 /// When given, the Library screen offers the way in to personal recipes.
     private let onOpenRecipes: (() -> Void)?
-    /// When given, the Library screen offers the way in to Connections and privacy. It is the only entry point.
-    private let connections: ConnectionsPrivacyViewModel?
-    /// When given, the Library screen offers the way in to the daily goals.
-    private let goals: GoalsViewModel?
 
     public init(
         model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void,
-        onOpenRecipes: (() -> Void)? = nil, connections: ConnectionsPrivacyViewModel? = nil,
-        goals: GoalsViewModel? = nil
+        onOpenRecipes: (() -> Void)? = nil,
+        // Kept so existing callers still compile. Goals and the privacy screen are reached from Settings
+        // now, and the Library no longer shows either, so both are ignored.
+        connections: ConnectionsPrivacyViewModel? = nil, goals: GoalsViewModel? = nil
     ) {
         self.model = model
         self.now = now
         self.onAdded = onAdded
         self.onOpenRecipes = onOpenRecipes
-        self.connections = connections
-        self.goals = goals
     }
 
     public var body: some View {
@@ -46,30 +42,6 @@ public struct LibraryView: View {
             }
             if let message = model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
-            }
-            if let connections {
-                Section("Connections") {
-                    NavigationLink {
-                        ConnectionsPrivacyView(model: connections, now: now)
-                    } label: {
-                        Text("Connections and privacy")
-                            .font(.body)
-                            .foregroundStyle(TokenColors.textPrimary)
-                    }
-                    .accessibilityLabel("Connections and privacy")
-                    .accessibilityHint("Export your journal and read what data leaves this device")
-                    if let goals {
-                        NavigationLink {
-                            GoalsView(model: goals)
-                        } label: {
-                            Text("Daily goals")
-                                .font(.body)
-                                .foregroundStyle(TokenColors.textPrimary)
-                        }
-                        .accessibilityLabel("Daily goals")
-                        .accessibilityHint("Set what you are aiming for in protein, sugar, salt and the rest")
-                    }
-                }
             }
         }
         .scrollContentBackground(.hidden)

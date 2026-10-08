@@ -81,13 +81,13 @@ public struct GoalBarModel: Equatable, Identifiable {
         let spoken = "\(label), \(spokenFigure) of \(spokenAmount(goal.target, goal.unit))"
         // The comparison is made in the unit the total is stated in, so a target set in another metric
         // unit is compared exactly while still being shown as it was set.
-        let target: Decimal?
+        let comparable: Decimal?
         if goal.unit == unit {
-            target = goal.target
+            comparable = goal.target
         } else {
-            target = (try? Quantity(value: goal.target, unit: goal.unit).converted(to: unit))?.value
+            comparable = (try? Quantity(value: goal.target, unit: goal.unit).converted(to: unit))?.value
         }
-        guard let target, target > 0 else {
+        guard let target = comparable, target > 0 else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: valueText, state: .progress, fraction: nil,
                 goalMarker: nil, accessibilityText: spoken, reason: nil)

@@ -17,12 +17,14 @@ Repeat makes one `create` call for a NEW intake: new lowercase UUID, `occurredAt
 - **Favorites** are stored templates (display name, category, components as exact decimal text plus unit symbol, optional product snapshot id) in their own store file next to the journal file. A favorite is a copy, not a link, so deleting an entry never removes a favorite.
 
 ## Entry points
-Today has Journal and Library links, its own rows open the same entry screen the Journal opens, and Add intake has "From library". The Library screen also carries the only way in to the Connections and privacy screen, where the journal can be exported as versioned JSON: see [Journal export](journal-export.md). These are navigation callbacks only; the Today and Add view models are unchanged.
+Every tab (Today, Journal, Library) has a gear at the top right that opens **Settings**, and the same "Add food or drink" capsule above the tab bar. Today's rows open the same entry screen the Journal opens, in a sheet with a navigation bar and a Close button. Settings (`AppSettingsView`) holds the way in to the daily goals and to the units, data and privacy screen, where the journal can be exported as versioned JSON: see [Journal export](journal-export.md). Today's "Edit goals" link opens Settings straight onto the goals. The Library no longer carries a Connections section, and Today no longer carries Journal and Library links. These are navigation callbacks only; the Today and Add view models keep their roles.
+
+Settings is an interim shell until its own package: besides those two links it lists the features the product intends and this build lacks (Daily prompts, Apple Health, HealthRelay, Community sharing, Keep history for) as disabled rows with a "Later" badge.
 
 ## Deferred
 Recipes (ingredient lines, yield and per-serving math) are deferred to NC-04b.
 
 ## Follow-ups
 
-- The navigation hooks (`onOpenJournal`, `onOpenLibrary`, `onFromLibrary`) are optional closures that no host supplies yet. Connect them when the app shell exists.
+- `onFromLibrary` on the Add form is the one navigation hook left; the shell supplies it and switches to the Library tab.
 - Unknown amount handling: "unknown" is shown only for a NaN amount, an empty component list or a blank name, because `Decimal` cannot otherwise represent a missing amount. Revisit when the model can.

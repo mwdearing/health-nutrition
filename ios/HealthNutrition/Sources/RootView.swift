@@ -25,6 +25,10 @@ struct RootView: View {
     /// slow to appear.
     @State private var labelCapture: LabelCaptureViewModel?
     @State private var selectedIntakeID: String?
+    /// Whether the settings sheet is up, and whether it opens straight onto the daily goals (Today's
+    /// "Edit goals" link) rather than onto the settings list.
+    @State private var showingSettings = false
+    @State private var settingsOpensGoals = false
     /// Held rather than kept as plain view state, so the erase below closes the recipe sheet and drops
     /// its routes through one method a test can call.
     @StateObject private var recipeNavigation = RecipeNavigation()
@@ -73,13 +77,13 @@ struct RootView: View {
                 TodayView(
                     model: services.today,
                     onAddIntake: { startAddingIntake() },
-                    onOpenJournal: { selection = .journal },
-                    onOpenLibrary: { selection = .library },
+                    onEditGoals: { openSettings(goals: true) },
                     // Today's rows are the same entries the Journal lists, so they open the same
                     // entry screen: an entry logged late on the wrong day is corrected from where
                     // it is noticed rather than only from the Journal tab.
                     onSelect: { selectedIntakeID = $0 }
                 )
+                .toolbar { settingsToolbar }
                 #if DEBUG
                 // One line, because a delivery that is parked or waiting for a person should be visible
                 // where the entries it belongs to are, not only on the debug tab. Debug builds only.
@@ -94,19 +98,21 @@ struct RootView: View {
             .tabItem { Label("Today", systemImage: "sun.max") }
             .tag(AppTab.today)
 
-            JournalView(model: services.journal, onSelect: { selectedIntakeID = $0 })
+            NavigationStack {
+                JournalView(model: services.journal, onSelect: { selectedIntakeID = $0 })
+                    .toolbar { settingsToolbar }
+            }
                 .tabItem { Label("Journal", systemImage: "list.bullet") }
                 .tag(AppTab.journal)
 
-            // In a navigation stack like the other two tabs: the Connections and privacy screen, which carries
-            // the Units settings, is reached from here by a NavigationLink, and a link with no stack
-            // behind it can never be pushed on a device.
+            // In a navigation stack like the other two tabs. Settings, goals and the privacy screen are
+            // reached from the gear on every tab, not from here.
             NavigationStack {
                 LibraryView(
-                    model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
-                    connections: connections, goals: services.goals
+                    model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() }
                 )
                 .navigationTitle("Library")
+                .toolbar { settingsToolbar }
             }
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
                 .tag(AppTab.library)
@@ -128,21 +134,48 @@ struct RootView: View {
             .tag(AppTab.spike)
             #endif
         }
+        // One Add capsule for the whole shell, above the tab bar on all three tabs. It is the only filled
+        // action on screen, and the tab bar stays for navigation.
+        .safeAreaInset(edge: .bottom) {
+            addCapsule
+        }
         // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
         // name an entry into `selectedIntakeID` and one sheet presents over whichever tab is showing.
         // Hanging it on a single tab would leave the other tab's rows dead.
         .sheet(isPresented: detailSheetPresented) {
-            if let intakeID = selectedIntakeID {
-                EntryDetailView(
-                    model: EntryDetailViewModel(
-                        store: services.journalStore, intakeID: intakeID,
-                        preferences: services.displayPreferences),
-                    now: { Date() },
-                    onFinished: {
-                        selectedIntakeID = nil
-                        reload()
+            NavigationStack {
+                if let intakeID = selectedIntakeID {
+                    EntryDetailView(
+                        model: EntryDetailViewModel(
+                            store: services.journalStore, intakeID: intakeID,
+                            preferences: services.displayPreferences),
+                        now: { Date() },
+                        onFinished: {
+                            selectedIntakeID = nil
+                            reload()
+                        }
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { selectedIntakeID = nil }
+                        }
                     }
+                }
+            }
+        }
+        // Settings from the gear on any tab, in its own navigation stack so the goals and the privacy
+        // screen push inside it.
+        .sheet(isPresented: $showingSettings) {
+            NavigationStack {
+                AppSettingsView(
+                    goals: services.goals, connections: connections, now: { Date() },
+                    opensGoals: settingsOpensGoals
                 )
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showingSettings = false }
+                    }
+                }
             }
         }
         // Today's totals depend on the local day: recompute them when the app comes back to the
@@ -180,24 +213,31 @@ struct RootView: View {
         // worked. `.sheet(item:)` hands the model to the body, so the form is built from one that is
         // there, and dismissing the sheet clears it.
         .sheet(item: $addIntakeModel) { model in
-            AddIntakeView(
-                model: model,
-                now: { Date() },
-                onSaved: {
-                    addIntakeModel = nil
-                    reload()
-                },
-                onFromLibrary: {
-                    addIntakeModel = nil
-                    selection = .library
-                },
-                // nil hides the button, so the form only offers scanning where the device has a
-                // camera that can read barcodes.
-                onScanBarcode: scanBarcode,
-                // Label capture is offered on its own terms: it asks the camera for text rather
-                // than for a code, and it needs no lookup source to be available.
-                onScanLabel: scanLabel
-            )
+            NavigationStack {
+                AddIntakeView(
+                    model: model,
+                    now: { Date() },
+                    onSaved: {
+                        addIntakeModel = nil
+                        reload()
+                    },
+                    onFromLibrary: {
+                        addIntakeModel = nil
+                        selection = .library
+                    },
+                    // nil hides the button, so the form only offers scanning where the device has a
+                    // camera that can read barcodes.
+                    onScanBarcode: scanBarcode,
+                    // Label capture is offered on its own terms: it asks the camera for text rather
+                    // than for a code, and it needs no lookup source to be available.
+                    onScanLabel: scanLabel
+                )
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { addIntakeModel = nil }
+                    }
+                }
+            }
             // The scanner fills the field and closes itself. The lookup still runs only when
             // the user taps Look up.
             .sheet(isPresented: $scanningBarcode) {
@@ -219,6 +259,36 @@ struct RootView: View {
                 }
             }
         }
+    }
+
+    /// The gear on every tab. Opens Settings.
+    @ToolbarContentBuilder
+    private var settingsToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                openSettings(goals: false)
+            } label: {
+                Image(systemName: "gearshape")
+                    .accessibilityLabel("Settings")
+            }
+            .accessibilityLabel("Settings")
+        }
+    }
+
+    /// The shared "Add food or drink" capsule, laid over the bottom of every tab.
+    private var addCapsule: some View {
+        PrimaryCapsule("Add food or drink", systemImage: "plus") {
+            startAddingIntake()
+        }
+        .accessibilityLabel("Add food or drink")
+        .padding(.horizontal, DesignSpacing.m)
+        .padding(.bottom, DesignSpacing.s)
+    }
+
+    /// Opens Settings, onto the daily goals where Today's "Edit goals" asked for them.
+    private func openSettings(goals: Bool) {
+        settingsOpensGoals = goals
+        showingSettings = true
     }
 
     /// Opens the intake form with a fresh model, so a scan and the save that follows share one form.
