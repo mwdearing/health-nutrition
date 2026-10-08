@@ -7,18 +7,23 @@ public struct LibraryView: View {
     private let onAdded: () -> Void
 /// When given, the Library screen offers the way in to personal recipes.
     private let onOpenRecipes: (() -> Void)?
+    private let onPick: ((RepeatTemplate) -> Void)?
+    private let sectionTitle: String?
 
     public init(
         model: LibraryViewModel, now: @escaping () -> Date = { Date() }, onAdded: @escaping () -> Void,
         onOpenRecipes: (() -> Void)? = nil,
         // Kept so existing callers still compile. Goals and the privacy screen are reached from Settings
         // now, and the Library no longer shows either, so both are ignored.
-        connections: ConnectionsPrivacyViewModel? = nil, goals: GoalsViewModel? = nil
+        connections: ConnectionsPrivacyViewModel? = nil, goals: GoalsViewModel? = nil,
+        onPick: ((RepeatTemplate) -> Void)? = nil, sectionTitle: String? = nil
     ) {
         self.model = model
         self.now = now
         self.onAdded = onAdded
         self.onOpenRecipes = onOpenRecipes
+        self.onPick = onPick
+        self.sectionTitle = sectionTitle
     }
 
     public var body: some View {
@@ -30,7 +35,7 @@ public struct LibraryView: View {
                     .accessibilityLabel(RecipeLabels.recipesRow)
                     .accessibilityHint("Opens your personal recipes")
             }
-            ForEach(model.sections) { section in
+            ForEach(model.sections.filter { self.sectionTitle == nil || $0.title == self.sectionTitle }) { section in
                 Section(section.title) {
                     if section.items.isEmpty {
                         Text("Nothing here yet.").font(.footnote).foregroundStyle(TokenColors.textSecondary)
@@ -54,7 +59,11 @@ public struct LibraryView: View {
     private func libraryRow(_ item: LibraryItem) -> some View {
         HStack {
             Button {
-                if self.model.select(item, now: self.now()) != nil { self.onAdded() }
+                if let onPick = self.onPick {
+                    onPick(item.template)
+                } else if self.model.select(item, now: self.now()) != nil {
+                    self.onAdded()
+                }
             } label: {
                 VStack(alignment: .leading) {
                     Text(item.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
@@ -70,8 +79,8 @@ public struct LibraryView: View {
                 }
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel(item.accessibilityLabel)
-            .accessibilityHint("Adds a new entry now with the same amounts")
+            .accessibilityLabel(item.accessibilityLabel(forPick: onPick != nil))
+            .accessibilityHint(onPick == nil ? "Adds a new entry now with the same amounts" : "Opens details without adding an entry")
             Spacer()
             Button {
                 if item.isFavorite { self.model.removeFavorite(item) } else { self.model.addFavorite(item) }

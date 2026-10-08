@@ -99,6 +99,12 @@ public struct LibraryItem: Equatable, Identifiable {
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
+    public func accessibilityLabel(forPick: Bool) -> String {
+        guard forPick else { return accessibilityLabel }
+        let label = "\(title), opens details"
+        return kind == .supplement ? label + ", " + kind.displayName : label
+    }
+
     public init(
         id: String, title: String, detail: String, isFavorite: Bool, template: RepeatTemplate,
         kind: ProductKind = .food

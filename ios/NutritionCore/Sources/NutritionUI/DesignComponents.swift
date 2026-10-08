@@ -202,3 +202,25 @@ public struct EmptyState: View {
         }
     }
 }
+
+/// A recent journal write and its short-lived undo action.
+public struct UndoToast: View {
+    private let message: String
+    private let onUndo: () -> Void
+
+    public init(_ message: String, onUndo: @escaping () -> Void) {
+        self.message = message
+        self.onUndo = onUndo
+    }
+
+    public var body: some View {
+        HStack(spacing: DesignSpacing.m) {
+            Text(message).font(.body)
+            Spacer(minLength: DesignSpacing.s)
+            QuietCapsule("Undo", action: onUndo)
+        }
+        .foregroundStyle(TokenColors.textPrimary)
+        .padding(DesignSpacing.m)
+        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control))
+    }
+}

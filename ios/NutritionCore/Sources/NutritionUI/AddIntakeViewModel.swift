@@ -99,6 +99,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// looking a barcode up. It is written as the snapshot on save, with `catalogOrigin` naming the
     /// capture, and it is nil again as soon as anything else puts values into the form.
     @Published public private(set) var labelValues: ProductDefinition?
+    private var storedProduct: ProductDefinition?
     /// The name and brand the last successful lookup filled in, so a later lookup can tell an edited
     /// field from one it filled itself.
     private var filledName: String?
@@ -298,6 +299,19 @@ public final class AddIntakeViewModel: ObservableObject {
         invalidateLookup()
         lookupState = .idle
         labelValues = product
+        fillProductValues(product)
+    }
+
+    /// Prefills a Library product without changing its saved snapshot identity.
+    public func applyStoredProduct(_ product: ProductDefinition) {
+        lookupGeneration += 1
+        invalidateLookup()
+        lookupState = .idle
+        storedProduct = product
+        fillProductValues(product)
+    }
+
+    private func fillProductValues(_ product: ProductDefinition) {
         // The panel already said what it is: a Supplement Facts panel is a supplement. The review
         // screen lets the user change it before the product reaches this form at all.
         if !hasChosenKind {
@@ -352,6 +366,7 @@ public final class AddIntakeViewModel: ObservableObject {
         attribution = nil
         lookedUp = nil
         labelValues = nil
+        storedProduct = nil
     }
 
     /// Fills the form from a looked-up product. The amount is left alone: the user confirms how much
@@ -445,7 +460,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// the name and brand the user settled on. The snapshot id is rebuilt from those, so two captures
     /// of the same panel under two names stay two different records.
     func productSnapshot() -> ProductDefinition? {
-        if let captured = labelValues {
+        if let stored = storedProduct,
+           name.trimmingCharacters(in: .whitespacesAndNewlines) == stored.name,
+           brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty == stored.brand,
+           kind == stored.kind {
+            return stored
+        }
+        if let captured = storedProduct ?? labelValues {
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             var signature = captured.labelBasis + "|origin=" + captured.catalogOrigin

@@ -76,7 +76,7 @@ public enum RecipeLogger {
         "recipe:\(recipeID):v\(number)"
     }
 
-    static func basisText(_ yield: RecipeYield) -> String {
+    public static func basisText(_ yield: RecipeYield) -> String {
         switch yield {
         case .servings(let count):
             return "Per serving; yield \(DecimalText.encode(count)) servings"
