@@ -118,7 +118,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
             productID: recipe.recipeID, name: recipe.title,
             labelBasis: RecipeLogger.basisText(recipe.yield),
             catalogOrigin: RecipeLogger.catalogOrigin, catalogVersion: String(recipe.number), nutrients: values)
-        model.applyLabelProduct(product)
+        model.applyStoredProduct(product)
         model.name = recipe.title
         model.category = RecipeLogger.category
         model.amountText = "1"

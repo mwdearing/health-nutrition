@@ -196,7 +196,7 @@ final class ScreenshotCaptureTests: XCTestCase {
                     model: AddIntakeViewModel(
                         store: services.journalStore, now: Date(), lookup: services.barcodeLookup,
                         preferences: services.displayPreferences),
-                    onSaved: {}, onFromLibrary: {}, onScanBarcode: {}, onScanLabel: {})
+                    onSaved: {}, onScanLabel: {})
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
                     }

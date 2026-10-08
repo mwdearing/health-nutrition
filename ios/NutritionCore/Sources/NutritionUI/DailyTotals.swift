@@ -141,7 +141,7 @@ public enum DailyTotalsBuilder {
     /// intake-context encoder answers the same basis as unresolvable and its contract with the relay
     /// receiver says so; changing what that basis means is a contract change, while reading it here
     /// is one reader being able to answer a question the data can answer.
-    private static func scalingFactor(
+    static func scalingFactor(
         labelBasis: String, logged components: [IntakeComponent]
     ) -> Decimal? {
         if let factor = IntakeContextSnapshotBasis.scalingFactor(
@@ -163,7 +163,7 @@ public enum DailyTotalsBuilder {
     /// much was eaten, and so does the gram case. A mass serving and a logged volume do not, so they
     /// are nil rather than a number — the day stays unknown, which is what an unscalable basis has
     /// always meant.
-    private static func statedServingFactor(
+    static func statedServingFactor(
         labelBasis: String, logged components: [IntakeComponent]
     ) -> Decimal? {
         guard let basis = IntakeContextSnapshotBasis.parse(labelBasis), case .perCount = basis else {
@@ -189,7 +189,7 @@ public enum DailyTotalsBuilder {
     /// Only a number and a registry unit are read, in any dimension the registry holds. A serving
     /// stated any other way — "1 large biscuit", "a handful" — is not a quantity this can scale by, so
     /// it is nil and the nutrient stays unknown rather than being scaled by something guessed at.
-    private static func statedServingQuantity(
+    static func statedServingQuantity(
         _ labelBasis: String
     ) -> (value: Decimal, unit: MeasureUnit)? {
         guard let open = labelBasis.firstIndex(of: "("),

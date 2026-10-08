@@ -46,6 +46,13 @@ public enum BarcodeLookupState: Sendable, Equatable {
     }
 }
 
+public struct ThisAddsLine: Equatable {
+    public let key: String
+    public let displayName: String
+    public let value: NutrientValue?
+    public var text: String { LookedUpProduct.describe(value ?? .unknown) }
+}
+
 @MainActor
 public final class AddIntakeViewModel: ObservableObject {
     /// This form's own identity, so the sheet can be bound to the model rather than to a flag beside
@@ -139,6 +146,61 @@ public final class AddIntakeViewModel: ObservableObject {
         self.preferences = preferences
     }
 
+    private var prefilledProduct: ProductDefinition? { storedProduct ?? labelValues }
+
+    public var hasPrefilledValues: Bool { prefilledNutrients.values.contains { $0.isKnown } }
+
+    public var sourceLine: String? {
+        if storedProduct != nil { return "From your Library" }
+        if let lookedUp { return "From the barcode, \(lookedUp.labelBasis)." }
+        if let labelValues { return "From the label, \(labelValues.labelBasis)." }
+        return nil
+    }
+
+    public var servingHint: String? {
+        guard let serving, !serving.isEmpty else { return nil }
+        return "1 serving = \(serving.label)"
+    }
+
+    public var attributionTitle: String? { attribution?.text }
+
+    public func prefilledValue(for key: String) -> NutrientValue {
+        for accepted in HealthKitWritePlanner.acceptedKeys(for: key) {
+            if let value = prefilledNutrients[accepted], value != .unknown { return value }
+        }
+        return .unknown
+    }
+
+    static let thisAddsKeys: [String] = {
+        var keys = LookedUpProduct.standardKeys
+        var covered = Set(keys.flatMap { HealthKitWritePlanner.acceptedKeys(for: $0) })
+        for key in TodayViewModel.defaultTrackedNutrients {
+            let accepted = HealthKitWritePlanner.acceptedKeys(for: key)
+            guard covered.isDisjoint(with: accepted) else { continue }
+            keys.append(key)
+            covered.formUnion(accepted)
+        }
+        return keys
+    }()
+
+    /// Recomputed from the same metric components and basis rules used for the saved total.
+    public var thisAdds: [ThisAddsLine] {
+        guard hasPrefilledValues, let amount = AmountParser.parse(amountText),
+            let basis = lookedUp?.labelBasis ?? prefilledProduct?.labelBasis
+        else { return [] }
+        let stored = Self.storedMetric(amount: amount, unit: unit)
+        let components = [IntakeComponent(
+            componentID: Self.slug(name), name: name, amount: stored.amount, unit: stored.unit)]
+        let factor = DailyTotalsBuilder.scalingFactor(labelBasis: basis, logged: components)
+        return Self.thisAddsKeys.compactMap { key in
+            let value = self.prefilledValue(for: key)
+            guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { return nil }
+            return ThisAddsLine(
+                key: key, displayName: LookedUpProduct.displayNames[key] ?? key.capitalized,
+                value: factor.map { value.scaled(by: $0) } ?? .unknown)
+        }
+    }
+
     /// One line explaining the last lookup, or nil when there is nothing to say.
     public var lookupMessage: String? {
         switch lookupState {
@@ -183,10 +245,17 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Only a row the panel captured with a known amount is listed. A key a barcode snapshot completed
     /// as unknown (its `salt`, say) is not a row the label stated and never appears here.
     public var additionalLabelNutrients: [String] {
-        guard let captured = labelValues else { return [] }
-        let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
+        guard let captured = prefilledProduct else { return [] }
+        var excluded = Set<String>()
+        for key in NutritionFactKey.allCases.map(\.rawValue) + LookedUpProduct.standardKeys {
+            excluded.insert(key)
+            excluded.formUnion(HealthKitWritePlanner.acceptedKeys(for: key))
+        }
         return captured.nutrients
-            .filter { !standard.contains($0.key) && $0.value.isKnown }
+            .filter {
+                $0.value.isKnown && !excluded.contains($0.key)
+                    && excluded.isDisjoint(with: HealthKitWritePlanner.acceptedKeys(for: $0.key))
+            }
             .map(\.key)
             .sorted()
     }
@@ -194,14 +263,14 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The name a captured panel row is shown under: the words the label printed for it when the
     /// snapshot carries them, otherwise the name the key itself spells out.
     public func displayName(forCaptured key: String) -> String {
-        if let printed = labelValues?.displayName(for: key) { return printed }
+        if let printed = prefilledProduct?.displayName(for: key) { return printed }
         guard let fact = NutritionFactKey(rawValue: key) else { return key }
         return LabelCaptureRow.displayNames[fact] ?? LookedUpProduct.displayNames[key] ?? key
     }
 
     /// The name a compound row is shown under, preferring the words the label printed for it.
     public func displayName(forAdditional key: String) -> String {
-        if let printed = labelValues?.displayName(for: key) { return printed }
+        if let printed = prefilledProduct?.displayName(for: key) { return printed }
         return key.split(separator: "-")
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
@@ -308,6 +377,10 @@ public final class AddIntakeViewModel: ObservableObject {
         invalidateLookup()
         lookupState = .idle
         storedProduct = product
+        name = product.name
+        brand = product.brand ?? ""
+        filledName = nil
+        filledBrand = nil
         fillProductValues(product)
     }
 
@@ -429,7 +502,7 @@ public final class AddIntakeViewModel: ObservableObject {
             try store.create(intake, components: [component], product: productSnapshot(), now: now)
             return true
         } catch {
-            saveError = "Could not save the intake."
+            saveError = "Could not save the entry."
             return false
         }
     }
@@ -470,6 +543,9 @@ public final class AddIntakeViewModel: ObservableObject {
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             var signature = captured.labelBasis + "|origin=" + captured.catalogOrigin
+            if let storedProduct {
+                signature += "|storedSnapshot=" + storedProduct.snapshotID
+            }
             signature += "|name=" + trimmedName
             signature += "|brand=" + (trimmedBrand ?? "")
             // The kind is part of what the capture recorded, so the same panel saved once as a drink and
