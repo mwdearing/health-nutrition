@@ -1,54 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// A setting the product intends and this build does not have yet. Shown as a disabled row with a
-/// "Later" badge so the design is present; it has no handler and no stored state.
-public enum SettingsPlaceholder: CaseIterable, Equatable, Sendable {
-    case dailyPrompts, appleHealth, healthRelay, communitySharing, keepHistory
-
-    public var title: String {
-        switch self {
-        case .dailyPrompts: return "Daily prompts"
-        case .appleHealth: return "Apple Health"
-        case .healthRelay: return "HealthRelay"
-        case .communitySharing: return "Community sharing"
-        case .keepHistory: return "Keep history for"
-        }
-    }
-
-    public var detail: String {
-        switch self {
-        case .dailyPrompts: return "A gentle prompt to log a meal"
-        case .appleHealth: return "Write entries to Apple Health"
-        case .healthRelay: return "Send entries to your own HealthRelay"
-        case .communitySharing: return "Share foods you have checked"
-        case .keepHistory: return "Choose how long old entries are kept"
-        }
-    }
-
-    public var systemImage: String {
-        switch self {
-        case .dailyPrompts: return "clock"
-        case .appleHealth: return "heart"
-        case .healthRelay: return "arrow.triangle.2.circlepath"
-        case .communitySharing: return "person.2"
-        case .keepHistory: return "calendar"
-        }
-    }
-
-    /// Always false: a placeholder is never available in this build.
-    public var isAvailable: Bool { false }
-}
-
-/// Settings, interim shell: the way to the daily goals and to the units, data and privacy screen, and
-/// the placeholder rows the design lists. A later package replaces the two links with real sections.
 public struct AppSettingsView: View {
     private let goals: GoalsViewModel?
     private let connections: ConnectionsPrivacyViewModel?
     private let now: () -> Date
-    @State private var showingGoals: Bool
+    private let opensGoals: Bool
 
-    /// - Parameter opensGoals: opens the daily goals as soon as the screen appears, which is how Today's
-    ///   "Edit goals" link gets there.
     public init(
         goals: GoalsViewModel? = nil, connections: ConnectionsPrivacyViewModel? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false
@@ -56,75 +14,200 @@ public struct AppSettingsView: View {
         self.goals = goals
         self.connections = connections
         self.now = now
-        _showingGoals = State(initialValue: opensGoals && goals != nil)
+        self.opensGoals = opensGoals
     }
 
     public var body: some View {
-        List {
-            if goals != nil {
-                Section("Your goals") {
-                    Button {
-                        showingGoals = true
-                    } label: {
-                        linkLabel("Daily goals")
+        if let connections {
+            SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals),
+                            now: now, opensGoals: opensGoals)
+        }
+    }
+}
+
+private struct SettingsContent: View {
+    @StateObject private var model: AppSettingsViewModel
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var waterFocused: Bool
+    @State private var showingGoals: Bool
+    @State private var isImporting = false
+    @State private var confirmingErase = false
+    private let now: () -> Date
+
+    init(model: AppSettingsViewModel, now: @escaping () -> Date, opensGoals: Bool) {
+        _model = StateObject(wrappedValue: model)
+        _showingGoals = State(initialValue: opensGoals && model.goals != nil)
+        self.now = now
+    }
+
+    private var connections: ConnectionsPrivacyViewModel { model.connections }
+
+    var body: some View {
+        Form {
+            Section {
+                if model.goals != nil {
+                    Button { self.showingGoals = true } label: {
+                        HStack {
+                            Text("Daily goals")
+                            Spacer()
+                            Text(model.goalsSetText).foregroundStyle(TokenColors.textSecondary)
+                            Image(systemName: "chevron.right").accessibilityHidden(true)
+                        }
                     }
-                    .accessibilityLabel("Daily goals")
-                    .accessibilityHint("Set what you are aiming for in protein, sugar, salt and the rest")
                 }
             }
-            if let connections {
-                Section("Units, data and privacy") {
-                    NavigationLink {
-                        ConnectionsPrivacyView(model: connections, now: now)
-                    } label: {
-                        Text("Units, data and privacy")
-                            .font(.body)
-                            .foregroundStyle(TokenColors.textPrimary)
-                    }
-                    .accessibilityLabel("Units, data and privacy")
-                    .accessibilityHint("Choose units, export your journal and read what data leaves this device")
+            Section("Units and logging") {
+                Picker("Units", selection: $model.unitSystem) {
+                    Text("Metric").tag(UnitSystem.metric)
+                    Text("US").tag(UnitSystem.usCustomary)
                 }
+                .pickerStyle(.segmented)
+                HStack {
+                    Text("Quick water amount")
+                    TextField(connections.quickWaterUnitSymbol, text: $model.quickWaterText)
+                        .multilineTextAlignment(.trailing)
+                        .focused($waterFocused)
+                        .accessibilityLabel("Quick water amount in \(connections.quickWaterUnitSymbol)")
+                        .onSubmit { self.model.commitQuickWater() }
+                        #if os(iOS)
+                        .keyboardType(.decimalPad)
+                        #endif
+                    Text(connections.quickWaterUnitSymbol)
+                }
+                Text(model.quickWaterHelper).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                if let error = model.quickWaterError {
+                    InlineNotice(error, tone: .failed)
+                }
+                HStack { placeholderText(0); Spacer(); LaterBadge() }
+                    .disabled(true).accessibilityValue("Not available yet")
             }
-            Section("Coming later") {
-                ForEach(SettingsPlaceholder.allCases, id: \.title) { placeholder in
-                    placeholderRow(placeholder)
+            Section("Connections") {
+                HStack { placeholderText(1); Spacer(); LaterBadge() }
+                    .disabled(true).accessibilityValue("Not available yet")
+                HStack { placeholderText(2); Spacer(); LaterBadge() }
+                    .disabled(true).accessibilityValue("Not available yet")
+            }
+            Section("Privacy") {
+                NavigationLink {
+                    ConnectionsPrivacyView(model: connections, now: now)
+                } label: {
+                    Text(model.privacyStatement)
+                }
+                Toggle(isOn: .constant(false)) {
+                    VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                        HStack { Text("Share product labels with the community"); LaterBadge() }
+                        Text(model.placeholderRows[3].detail)
+                            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                    }
+                }
+                .disabled(true).accessibilityValue("Not available yet")
+                Link("Privacy policy", destination: URL(string: "https://github.com/mwdearing/health-nutrition/blob/main/PRIVACY.md")!)
+            }
+            Section {
+                Button(ConnectionsPrivacyViewModel.exportButtonTitle) {
+                    self.connections.export(now: self.now())
+                }
+                .disabled(!connections.canExport)
+                .accessibilityHint("Writes a copy on this device. Nothing is sent until you share it.")
+                if let url = connections.exportFileURL {
+                    ShareLink(ConnectionsPrivacyViewModel.shareButtonTitle, item: url)
+                    Text("Exported \(connections.entryCount) entries.").font(.footnote)
+                }
+                Button("Restore from an export") { self.isImporting = true }
+                    .accessibilityHint("Restores an export only while this phone's journal is empty.")
+                if let message = connections.importMessage {
+                    Text(message).font(.footnote)
+                        .foregroundStyle(connections.importState == .failed ? TokenColors.error : TokenColors.textSecondary)
+                }
+                HStack { placeholderText(4); Spacer(); LaterBadge() }
+                    .disabled(true).accessibilityValue("Not available yet")
+                if connections.canEraseAll {
+                    Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
+                        self.confirmingErase = true
+                    }
+                }
+                if let error = connections.errorMessage {
+                    Text(error).font(.footnote).foregroundStyle(TokenColors.error)
+                }
+            } header: {
+                Text("Your data")
+            } footer: {
+                Text(ConnectionsPrivacyViewModel.eraseFooterMessage).font(.footnote)
+            }
+            Section("About") {
+                HStack { Text("Version"); Spacer(); Text(model.versionText) }
+                HStack { Text("Show welcome again"); Spacer(); LaterBadge() }
+                    .disabled(true).accessibilityValue("Not available yet")
+                NavigationLink("Licences") {
+                    Form {
+                        Text(model.openFoodFactsAttribution)
+                        Link("Open Database Licence", destination: URL(string: "https://opendatacommons.org/licenses/odbl/1-0/")!)
+                    }
+                    .navigationTitle("Licences")
                 }
             }
         }
+        .font(.body)
+        .foregroundStyle(TokenColors.textPrimary)
+        .tint(TokenColors.accent)
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Settings")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.large)
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { self.dismiss() }
+            }
+        }
         .navigationDestination(isPresented: $showingGoals) {
-            if let goals {
-                GoalsView(model: goals)
+            if let goals = model.goals { GoalsView(model: goals) }
+        }
+        .onAppear { self.model.load() }
+        .onChange(of: waterFocused) { _, focused in
+            if !focused { self.model.commitQuickWater() }
+        }
+        .onChange(of: connections.eraseGeneration) { _, _ in self.model.load() }
+        .confirmationDialog(
+            ConnectionsPrivacyViewModel.eraseConfirmationTitle, isPresented: $confirmingErase,
+            titleVisibility: .visible
+        ) {
+            Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
+                self.connections.eraseAllData()
             }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(ConnectionsPrivacyViewModel.eraseConfirmationMessage)
+        }
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json], allowsMultipleSelection: false) {
+            self.importPickedFile($0)
+        }
+        .onDisappear {
+            self.connections.clearExport()
+            self.connections.clearImport()
         }
     }
 
-    private func linkLabel(_ title: String) -> some View {
-        HStack {
-            Text(title).font(.body).foregroundStyle(TokenColors.textPrimary)
-            Spacer(minLength: DesignSpacing.s)
-            Image(systemName: "chevron.right")
-                .font(.footnote)
-                .foregroundStyle(TokenColors.textSecondary)
-                .accessibilityHidden(true)
+    private func placeholderText(_ index: Int) -> some View {
+        let row = model.placeholderRows[index]
+        return VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+            Text(row.title)
+            Text(row.detail).font(.footnote).foregroundStyle(TokenColors.textSecondary)
         }
     }
 
-    private func placeholderRow(_ placeholder: SettingsPlaceholder) -> some View {
-        HStack(spacing: DesignSpacing.m) {
-            Image(systemName: placeholder.systemImage)
-                .foregroundStyle(TokenColors.textSecondary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-                Text(placeholder.title).font(.body).foregroundStyle(TokenColors.textPrimary)
-                Text(placeholder.detail).font(.footnote).foregroundStyle(TokenColors.textSecondary)
-            }
-            Spacer(minLength: DesignSpacing.s)
-            LaterBadge()
+    private func importPickedFile(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else {
+            connections.clearImport()
+            return
         }
-        .accessibilityElement(children: .combine)
-        .laterPlaceholder()
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            connections.importCouldNotReadFile()
+            return
+        }
+        connections.importJournal(data: data)
     }
 }

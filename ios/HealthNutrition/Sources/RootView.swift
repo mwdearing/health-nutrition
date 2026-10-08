@@ -171,11 +171,6 @@ struct RootView: View {
                     goals: services.goals, connections: connections, now: { Date() },
                     opensGoals: settingsOpensGoals
                 )
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showingSettings = false }
-                    }
-                }
             }
         }
         // Today's totals depend on the local day: recompute them when the app comes back to the
@@ -183,7 +178,7 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { reload() }
         }
-        // An erase on the Connections and privacy screen empties the stores these tabs read, so their
+        // An erase in Settings empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.
         .onChange(of: connections.eraseGeneration) { _, _ in
             // A recipe detail or editor holds its own copy of the recipe, so close those routes too:
