@@ -209,6 +209,16 @@ Text that is not a positive number is refused rather than rounded or guessed at.
   gone.
 - **Amount text** is parsed with a fixed POSIX parser: digits and at most one point, greater than zero, no locale, no
   binary floating point. Invalid text sets a field error and writes nothing.
+- **This adds** scales prefilled barcode, label or Library nutrients live from the typed amount, using the
+  totals builder's basis rules and the same metric components Save stores. Energy comes first. A basis that
+  cannot be resolved leaves every line unknown; zero is never shown for unknown. Invalid amount text shows
+  no preview lines, and a form without prefilled nutrients hides the section.
+- **Details layout** uses a header card for Name, known Brand, Kind and the typed barcode lookup; Amount
+  and Unit share a row, followed by the serving hint, Meal and When. All values is collapsed initially and
+  contains the full prefilled list, additional label rows and source text with a titled licence link when
+  available. Library products say "From your Library"; an unedited recipe keeps its version snapshot.
+  Save stays enabled in the bottom inset, with save errors and blocked-field messages above it. Serving
+  chips and Log to several days are disabled placeholders with Later badges and "Not available yet".
 - **Local day**: an intake is on Today when its time falls on the same calendar day as "now" in the intake's own time
   zone. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
   in the Journal as well as here.
