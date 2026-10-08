@@ -44,5 +44,5 @@ body:
           required: true
         - label: I understand beta builds change between versions, have no support guarantee.
           required: true
-        - label: I will report problems through the Bug report form with synthetic data.
+        - label: I will report problems as a new issue with synthetic data only.
           required: true
