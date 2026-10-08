@@ -335,11 +335,11 @@ struct RootView: View {
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {
                 AddIntakeView(model: model, now: { Date() },
+                    onSaved: { self.finishAdding() },
                     onScanLabel: {
                         self.addIntakeModel = model
                         self.openAddRoute(.labelScanner, home: home)
-                    },
-                    onSaved: { self.finishAdding() })
+                    })
             }
         }
     }
