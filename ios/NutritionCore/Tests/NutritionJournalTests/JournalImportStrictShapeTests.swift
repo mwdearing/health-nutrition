@@ -3,10 +3,12 @@ import NutritionDomain
 import XCTest
 @testable import NutritionJournal
 
-/// The strict shape pass: a version 1 document has to have exactly the keys the schema gives each object,
+/// The strict shape pass: a version 2 document has to have exactly the keys the schema gives each object,
 /// with the required-but-nullable ones present as an explicit `null` rather than left out. An ordinary
 /// decoder ignores both kinds of difference, so a file that violates the contract would otherwise import,
 /// and whatever it carried that this build does not understand would quietly disappear on the next export.
+/// The version 1 documents this build still reads are held to their own schema in the same way, because
+/// a field a version 1 build could not write is as unknown to a version 1 reader as any other.
 final class JournalImportStrictShapeTests: XCTestCase {
     private let intakeID = "1f0c9d2a-6b3e-4a7f-9c5d-0e2b6f8a1d33"
     private let exportedAt = Date(timeIntervalSince1970: 1_705_310_100)
@@ -127,6 +129,63 @@ final class JournalImportStrictShapeTests: XCTestCase {
             XCTAssertEqual(Set(properties.keys), entry.keys, "the schema and the importer disagree on the keys")
             XCTAssertEqual(Set(required), entry.keys, "every property the schema lists has to be required")
         }
+    }
+
+    /// Version 2 is version 1 with the product's kind, so the sets are held to the committed version 2
+    /// schema in the same way, and the one that differs is the provenance.
+    func testTheVersion2KeySetsAreExactlyWhatTheCommittedSchemaStates() throws {
+        let schema = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: try Data(contentsOf: try schemaURL(version: 2))) as? [String: Any])
+        let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
+        let expected: [(definition: String?, keys: Set<String>)] = [
+            (nil, JournalImportV2Keys.root),
+            ("intake", JournalImportV2Keys.intake),
+            ("revision", JournalImportV2Keys.revision),
+            ("provenance", JournalImportV2Keys.provenance),
+            ("component", JournalImportV2Keys.component),
+            ("tombstone", JournalImportV2Keys.tombstone),
+            ("favorite", JournalImportV2Keys.favorite),
+        ]
+        for entry in expected {
+            var shape = schema
+            if let definition = entry.definition {
+                shape = try XCTUnwrap(definitions[definition] as? [String: Any], definition)
+            }
+            let properties = try XCTUnwrap(shape["properties"] as? [String: Any], "\(entry.keys)")
+            let required = try XCTUnwrap(shape["required"] as? [String], "\(entry.keys)")
+            XCTAssertEqual(Set(properties.keys), entry.keys)
+            XCTAssertEqual(Set(required), entry.keys)
+        }
+        XCTAssertEqual(
+            JournalImportV2Keys.provenance.difference(JournalImportV1Keys.provenance), ["kind"],
+            "version 2 adds the kind and changes nothing else")
+    }
+
+    /// The kind is required from version 2 on: a document that declares version 2 and leaves it out is
+    /// not a version 2 document, whatever a decoder would make of it.
+    func testAMissingKindInAVersion2ProvenanceIsRefused() throws {
+        var fields = try fields(
+            document(
+                intakes: [intake(revisions: [revision(snapshotID: "snap-oats-1", product: provenance())])],
+                products: [provenance()]))
+        var products = try XCTUnwrap(fields["products"] as? [[String: Any]])
+        products[0].removeValue(forKey: "kind")
+        fields["products"] = products
+        try assertRefusedAsMalformed(fields)
+    }
+
+    /// And in a version 1 document it is an unknown key, because that build had no such field: a reader
+    /// that ignored it would drop the kind on the next export without saying so.
+    func testAKindInAVersion1ProvenanceIsRefused() throws {
+        var fields = try fields(
+            document(
+                intakes: [intake(revisions: [revision(snapshotID: "snap-oats-1", product: provenance())])],
+                products: [provenance()]))
+        fields["schema_version"] = 1
+        var products = try XCTUnwrap(fields["products"] as? [[String: Any]])
+        products[0].removeValue(forKey: "kind")
+        fields["products"] = products
+        try assertRefusedAsMalformed(fields)
     }
 
     func testAValidDocumentStillImports() throws {
@@ -285,10 +344,14 @@ final class JournalImportStrictShapeTests: XCTestCase {
     }
 
     /// Walks up from this source file to the repository root, then into the committed contracts.
-    private func schemaURL() throws -> URL {
+    /// The committed schema for a version, found by walking up to the repository root. Reading the
+    /// committed file rather than a copy is deliberate: the copies under the test targets exist for the
+    /// export tests, and this is where a change to the contract would be caught.
+    private func schemaURL(version: Int = 1) throws -> URL {
         var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<5 {
-            let candidate = directory.appendingPathComponent("contracts/journal-export/v1.schema.json")
+            let candidate = directory.appendingPathComponent(
+                "contracts/journal-export/v\(version).schema.json")
             if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
             let parent = directory.deletingLastPathComponent()
             if parent.path == directory.path { break }

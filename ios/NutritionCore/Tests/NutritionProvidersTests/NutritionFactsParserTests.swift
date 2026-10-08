@@ -923,6 +923,50 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.displayName(for: .calcium), "Calcium Citrate")
     }
 
+    /// A panel whose heading says Supplement Facts is a supplement, and its rows are read exactly as
+    /// carefully: Vitamin D is Vitamin D whichever panel prints it.
+    func testASupplementFactsHeadingMakesThePanelASupplement() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Sample daily multi, invented for tests",
+            "Serving size 1 tablet",
+            "Amount per serving",
+            "Vitamin D 25mcg 125%",
+            "Calcium 200mg 20%",
+            "* The % Daily Value tells you how much a nutrient contributes to a daily diet.",
+        ])
+
+        XCTAssertEqual(panel.panelKind, .supplementFacts)
+        XCTAssertTrue(panel.isSupplementPanel)
+        XCTAssertEqual(panel.panelKind.productKind, .supplement)
+        XCTAssertEqual(try amount(.vitaminD, panel), dec("25"))
+        XCTAssertEqual(try amount(.calcium, panel), dec("200"))
+        // A supplement says nothing about fat, and that is not a missing row to chase: the rows it prints
+        // are read, and the rows it does not print are simply not there.
+        XCTAssertEqual(value(.fat, panel), .unknown)
+        XCTAssertFalse(panel.isUnreadable)
+    }
+
+    /// The heading arrives from a camera in whatever case the label set it in, and a heading that is
+    /// somewhere in the text rather than alone on its line is still the heading.
+    func testTheSupplementHeadingIsReadInAnyCaseAndAnywhereInTheLine() {
+        XCTAssertEqual(
+            parse(["supplementary blend panel", "Vitamin D 25mcg"]).panelKind, .supplementFacts)
+        XCTAssertEqual(parse(["SUPPLEMENT FACTS"]).panelKind, .supplementFacts)
+    }
+
+    /// A Nutrition Facts panel, and a panel with no heading at all, are both foods. Losing the heading
+    /// costs the label its kind and nothing else, which is the safe direction: a food recorded as a
+    /// supplement would drop out of the day's count, and the reverse is a word on the review screen.
+    func testAPanelWithoutTheSupplementHeadingIsAFood() {
+        XCTAssertEqual(parse(fullPanel).panelKind, .nutritionFacts)
+        XCTAssertEqual(parse(fullPanel).panelKind.productKind, .food)
+        XCTAssertEqual(parse([]).panelKind, .nutritionFacts)
+        // A food panel that happens to list a vitamin still names the same rows as a supplement does, so
+        // only the heading tells them apart.
+        XCTAssertEqual(parse(["Vitamin D 2mcg 10%"]).panelKind, .nutritionFacts)
+    }
+
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false

@@ -46,6 +46,7 @@ public struct LabelCaptureView: View {
             if model.isUnreadable {
                 unreadableSection
             } else {
+                kindSection
                 servingSection
                 Section("Nutrients") {
                     ForEach(model.rows) { row in
@@ -69,6 +70,30 @@ public struct LabelCaptureView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Check the label")
+    }
+
+    /// What the panel is recorded as, read off its heading and changeable here.
+    ///
+    /// The heading settles it in the ordinary case — a Supplement Facts panel is a supplement — and the two
+    /// cases it cannot settle are the ones this row exists for: a drink prints a Nutrition Facts panel, and
+    /// a heading cropped out of the frame reads as no heading at all. Getting it wrong is what would put a
+    /// drink or a vitamin in the day's count of foods, so it is shown rather than assumed, and changing it
+    /// changes what the snapshot is stored as.
+    private var kindSection: some View {
+        Section("Kind") {
+            Picker("Kind", selection: $model.kind) {
+                ForEach(ProductKind.allCases, id: \.self) { kind in
+                    Text(kind.displayName).tag(kind)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Kind of product")
+            .accessibilityHint("Food, drink or supplement, read from the panel and changeable here")
+            Text(model.kindExplanation)
+                .font(.footnote)
+                .foregroundStyle(TokenColors.textSecondary)
+                .accessibilityLabel(model.kindExplanation)
+        }
     }
 
     /// A panel with nothing readable in it: the user is told so plainly and offered another look.

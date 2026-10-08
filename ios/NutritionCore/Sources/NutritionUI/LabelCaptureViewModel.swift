@@ -326,6 +326,23 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// The compound row whose correction field is open, or nil when none is.
     @Published public private(set) var editingAdditionalKey: String?
 
+    /// What kind of product this capture is recorded as, read off the panel's own heading.
+    ///
+    /// A Supplement Facts panel makes a supplement and anything else a food, which is the whole of what
+    /// the heading decides: the rows are read the same way either way. The user can change it on the
+    /// review screen, because the two cases the heading cannot see are real — a drink prints a Nutrition
+    /// Facts panel, and a heading cropped out of the frame reads as a food — and a wrong kind is what
+    /// puts an entry into a coverage count it does not belong in.
+    @Published public var kind: ProductKind = .food
+
+    /// The one sentence under the kind row: what the chosen kind does to the day's coverage, said where
+    /// the choice is made rather than where its consequences are read.
+    public var kindExplanation: String {
+        kind == .supplement
+            ? "A supplement is left out of the day's food coverage. What it states still counts towards the day's totals."
+            : "Foods and drinks are counted in the day's food coverage."
+    }
+
     /// The origin every captured product is stored with, so a later reader can tell that its values
     /// came from a panel the user read on their own device rather than from a catalog.
     public static let catalogOrigin = ProductOrigin.label_capture
@@ -346,6 +363,8 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// second capture is a different panel and the values of the first one are not still true.
     public func load(lines: [String]) {
         let panel = NutritionFactsParser.parse(lines: lines)
+        // The heading decides the kind and nothing else does: the rows either way are read as carefully.
+        kind = panel.panelKind.productKind
         var loaded: [LabelCaptureRow] = []
         for key in NutritionFactKey.allCases {
             loaded.append(
@@ -384,6 +403,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     public func retake() {
         rows = []
         additionalRows = []
+        kind = .food
         servingText = nil
         servingQuantity = nil
         servingsPerContainer = nil
@@ -724,6 +744,10 @@ public final class LabelCaptureViewModel: ObservableObject {
         }
         let basis = Self.labelBasis(servingText: servingText, quantity: servingQuantity)
         var signature = basis
+        // The kind is part of what this panel is, so two captures of the same rows that mean different
+        // things are two products: a drink and a food state the same panel, and a snapshot id that could
+        // name both would make the second save of it a conflict rather than a second record.
+        signature += "|kind=" + kind.rawValue
         if let servingsPerContainer {
             signature += "|servings=" + "\(NSDecimalNumber(decimal: servingsPerContainer).stringValue)"
         }
@@ -742,6 +766,7 @@ public final class LabelCaptureViewModel: ObservableObject {
             labelBasis: basis,
             catalogOrigin: Self.catalogOrigin,
             catalogVersion: "unknown",
+            kind: kind,
             nutrients: nutrients,
             nutrientDisplayNames: displayNames
         )

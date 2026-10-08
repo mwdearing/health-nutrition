@@ -65,11 +65,15 @@ public struct TodayView: View {
                         .foregroundStyle(TokenColors.textPrimary)
                 }
             }
-            Section("Coverage") {
-                ForEach(model.coverage) { line in
-                    Text(line.text)
-                        .font(.body)
-                        .foregroundStyle(line.isComplete ? TokenColors.success : TokenColors.warning)
+            // The section is left out entirely when the day holds nothing it could say anything about: only
+            // water, or only supplements, which are excluded from the count as not being foods.
+            if !model.coverage.isEmpty {
+                Section("Coverage") {
+                    ForEach(model.coverage) { line in
+                        Text(line.text)
+                            .font(.body)
+                            .foregroundStyle(line.isComplete ? TokenColors.success : TokenColors.warning)
+                    }
                 }
             }
             Section("Today") {
@@ -130,12 +134,21 @@ public struct TodayView: View {
 
     /// One entry: what it was, how much of it, and which meal it was for. The meal is a secondary
     /// line because it qualifies the entry rather than being another amount of it.
+    ///
+    /// A supplement is marked, because its rows read like any other entry's: nothing about a list of
+    /// vitamins and minerals would otherwise say that it is not food and does not belong in the day's
+    /// food count. A food and a drink are marked with nothing, being what a row normally is.
     private func entryRow(_ row: TodayRow) -> some View {
         VStack(alignment: .leading) {
             Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
             Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
             if let meal = row.meal {
                 Text(meal).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+            if row.kind == .supplement {
+                Label(ProductKind.supplement.displayName, systemImage: "pills")
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.accent)
             }
         }
     }

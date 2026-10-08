@@ -6,10 +6,11 @@ import NutritionDomain
 /// The parser is the pure core of label capture: text lines in, a panel out. It reads no image and
 /// sends nothing anywhere; the capture session that produces the lines does that in a later task.
 ///
-/// What it reads: the serving size, the servings per container, one row per nutrient it recognises, and
-/// the rows a supplement states that it does not recognise (`additionalNutrients`, kept under the name
-/// the label printed). Amounts are read exactly with `Decimal(string:)` and never pass through a binary
-/// floating point type.
+/// What it reads: the panel's own heading (a **Nutrition Facts** panel or a **Supplement Facts** one),
+/// the serving size, the servings per container, one row per nutrient it recognises, and the rows a
+/// supplement states that it does not recognise (`additionalNutrients`, kept under the name the label
+/// printed). Amounts are read exactly with `Decimal(string:)` and never pass through a binary floating
+/// point type.
 /// What it never guesses:
 ///
 /// - A nutrient the panel does not state is `.unknown`, never zero. A label that says nothing about
@@ -122,8 +123,32 @@ public enum NutritionFactsParser {
             nutrients: amounts,
             additionalNutrients: extra,
             nutrientDisplayNames: displayNames,
-            valuesNeedingReview: reviews
+            valuesNeedingReview: reviews,
+            panelKind: panelKind(in: cleaned)
         )
+    }
+
+    // MARK: The panel's own heading
+
+    /// Which panel these lines are: a **Supplement Facts** panel when its heading is among them, and a
+    /// **Nutrition Facts** panel otherwise.
+    ///
+    /// The heading is read off the text rather than inferred from what the rows say, because the two
+    /// panels overlap: a supplement prints Vitamin D, Calcium and Potassium under the same names a food
+    /// does, so the rows cannot tell the two apart. Only a panel that states no Supplement Facts heading
+    /// at all is read as a food panel — a heading cropped out of the frame costs the label its kind, and
+    /// nothing else: every value read from it is kept exactly as before, and the review screen offers the
+    /// kind for the user to change.
+    ///
+    /// The words are matched as they are printed rather than as whole words in one case, because a
+    /// heading arrives from a camera in whatever case the label set it in.
+    private static func panelKind(in lines: [String]) -> NutritionPanelKind {
+        for line in lines where line.range(
+            of: "supplement facts", options: [.caseInsensitive, .diacriticInsensitive]
+        ) != nil {
+            return .supplementFacts
+        }
+        return .nutritionFacts
     }
 
     // MARK: - Serving size and servings per container

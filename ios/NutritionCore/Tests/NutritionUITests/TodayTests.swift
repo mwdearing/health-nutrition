@@ -69,6 +69,23 @@ final class TodayTests: XCTestCase {
         return intakeID
     }
 
+    /// An intake recorded against a product of a given kind. A supplement snapshot carries none of the
+    /// nutrients coverage counts, which is the point of the test that uses this.
+    private func addSupplement(
+        _ store: JournalStore, name: String, id: String, at date: Date, zone: String = "UTC"
+    ) throws -> String {
+        let intakeID = UUID().uuidString.lowercased()
+        let intake = Intake(id: intakeID, category: "food", occurredAt: date, timeZoneIdentifier: zone)
+        try store.create(
+            intake, components: [IntakeComponent(componentID: id, name: name, amount: 1, unit: .tablet)],
+            product: ProductDefinition(
+                snapshotID: "snap-\(id)", productID: "label_capture", name: name,
+                labelBasis: "per serving (1 tablet)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+                kind: .supplement),
+            now: date)
+        return intakeID
+    }
+
     func testQuickAddWaterCreatesOneIntakeAtRevisionOneAndQueuesOutbox() throws {
         let store = try makeStore()
         // The amount is read from the preference rather than a literal, so this pins the writing of one
@@ -346,6 +363,58 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.coverage.first?.missing, 0)
         XCTAssertEqual(model.coverage.first?.total, 1)
         XCTAssertEqual(model.coverage.first?.text, "0 of 1 foods lack sodium")
+    }
+
+    /// A supplement is left out of the count of the day's foods, on both sides of it: a multivitamin
+    /// states no fibre and no potassium because that is what a supplement is, and counting it would tell
+    /// the reader their day is short of nutrients nobody was ever going to get from it. Its totals still
+    /// count, so what it does state is not thrown away.
+    func testASupplementIsLeftOutOfCoverageButStillCountsTowardsTotals() throws {
+        let store = try makeStore()
+        _ = try addFood(store, name: "Oats", id: "oats", at: now)
+        _ = try addSupplement(store, name: "Sample daily multi", id: "multi", at: now)
+        let facts = FixedFacts(values: ["oats": .known(Decimal(300), .mg)])
+
+        let model = TodayViewModel(
+            store: store, lookup: facts, trackedNutrients: ["potassium", "fiber"], timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        XCTAssertEqual(model.coverage.map(\.text), ["0 of 1 foods lack potassium", "1 of 1 foods lack fiber"])
+        // Being left out of the count of foods is not being left out of the day: the totals still add up
+        // what the day did state, and what the supplement did not state stays unknown, not a zero.
+        XCTAssertEqual(
+            model.progress.first { $0.nutrient == "potassium" }?.amount, .known(Decimal(300), .mg))
+        XCTAssertEqual(
+            model.progress.first { $0.nutrient == "fiber" }?.amount, .unknown,
+            "nothing in the day stated fibre, and the supplement did not make that a zero")
+    }
+
+    /// A day holding nothing but supplements has no food in it to report coverage about, and "0 of 0
+    /// foods lack fibre" says nothing about anybody's day, so no line is published for it.
+    func testADayOfOnlySupplementsPublishesNoCoverageLine() throws {
+        let store = try makeStore()
+        _ = try addSupplement(store, name: "Sample daily multi", id: "multi", at: now)
+        let model = TodayViewModel(
+            store: store, trackedNutrients: ["potassium", "fiber"], timeZoneIdentifier: "UTC")
+
+        model.load(now: now)
+
+        XCTAssertTrue(model.coverage.isEmpty)
+        XCTAssertEqual(model.rows.first?.kind, .supplement, "the entry is still listed, and says what it is")
+    }
+
+    /// An entry with no product snapshot has no kind to state, and is counted as the food it was always
+    /// recorded as — otherwise adding a supplement would quietly shorten the day for everybody else.
+    func testAnEntryWithoutASnapshotIsCountedAsAFood() throws {
+        let store = try makeStore()
+        _ = try addFood(store, name: "Oats", id: "oats", at: now)
+        _ = try addFood(store, name: "Banana", id: "banana", at: now)
+
+        let model = TodayViewModel(
+            store: store, trackedNutrients: ["potassium"], timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        XCTAssertEqual(model.coverage.first?.text, "2 of 2 foods lack potassium")
     }
 
     func testDeletedIntakesAreHidden() throws {

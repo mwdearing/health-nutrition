@@ -11,11 +11,30 @@ public struct JournalRow: Equatable, Identifiable {
     /// The meal as words, or nil when the entry states none. Carried on the row so the screens that
     /// list an entry can say which meal it was without reading the journal again.
     public let meal: String?
+    /// What kind of product the entry was recorded with, read from the same snapshot its amounts come
+    /// from. Food unless that snapshot says otherwise, which is what an entry typed by hand is.
+    public let kind: ProductKind
+
+    public init(
+        id: String, title: String, detail: String, occurredAt: Date, timeZoneIdentifier: String,
+        meal: String?, kind: ProductKind = .food
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.occurredAt = occurredAt
+        self.timeZoneIdentifier = timeZoneIdentifier
+        self.meal = meal
+        self.kind = kind
+    }
 
     /// What a screen reader reads for one row: the name, the amounts, and the meal when it has one.
+    /// A supplement says so, because the amounts of a supplement say nothing about what it is.
     public var accessibilityText: String {
-        guard let meal else { return "\(title), \(detail)" }
-        return "\(title), \(detail), \(meal)"
+        var parts = [title, detail]
+        if let meal { parts.append(meal) }
+        if kind == .supplement { parts.append(ProductKind.supplement.displayName) }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -74,6 +93,8 @@ public final class JournalViewModel: ObservableObject {
             // The intakes of each day, kept beside the rows so the day's totals are summed from
             // exactly the entries the rows below were built from. Nothing here ever sees two days.
             var intakesByDay: [String: [Intake]] = [:]
+            // One snapshot is read once per load, however many entries name it.
+            var snapshots: [String: ProductDefinition?] = [:]
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
                 guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else {
                     skipped += 1
@@ -89,7 +110,8 @@ public final class JournalViewModel: ObservableObject {
                     id: intake.id, title: AmountText.title(current.components),
                     detail: AmountText.summary(current.components), occurredAt: intake.occurredAt,
                     timeZoneIdentifier: intake.timeZoneIdentifier,
-                    meal: MealLabel.displayName(for: intake.meal))
+                    meal: MealLabel.displayName(for: intake.meal),
+                    kind: Self.snapshot(of: current, in: &snapshots, using: store)?.kind ?? .food)
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
                     titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
@@ -153,6 +175,18 @@ public final class JournalViewModel: ObservableObject {
             return line.text
         }
         return parts.isEmpty ? "No totals for this day." : parts.joined(separator: ", ")
+    }
+
+    /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that
+    /// cannot be read is nil, which the row reads as the food an entry without a product always was.
+    private static func snapshot(
+        of revision: IntakeRevision?, in cache: inout [String: ProductDefinition?], using store: any JournalStore
+    ) -> ProductDefinition? {
+        guard let id = revision?.productSnapshotID else { return nil }
+        if let cached = cache[id] { return cached }
+        let found = try? store.product(snapshotID: id)
+        cache[id] = found
+        return found
     }
 
     static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale) -> String {

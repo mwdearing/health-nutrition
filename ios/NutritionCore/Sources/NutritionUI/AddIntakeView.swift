@@ -130,6 +130,17 @@ public struct AddIntakeView: View {
                         Text(label.displayName).tag(MealLabel?.some(label))
                     }
                 }
+                // What kind of thing this is. Food unless the panel or the source said otherwise, which
+                // is what the form starts on: a supplement left out of the day's food count, and a drink
+                // counted in it, are only distinguishable from the entry itself.
+                Picker("Kind", selection: $model.kind) {
+                    ForEach(ProductKind.allCases, id: \.self) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Kind of product")
+                .accessibilityHint("Food, drink or supplement. A supplement is left out of the day's food coverage")
                 DatePicker("When", selection: $model.occurredAt)
             }
             if model.canLookUpBarcode, let basis = model.lookupBasis {

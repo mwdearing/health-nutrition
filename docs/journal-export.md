@@ -12,10 +12,15 @@ whole-second dates written by earlier builds still import. Favorites are written
 of the same favorites are the same document.
 
 The contract lives in the repository next to the code:
-- `contracts/journal-export/v1.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines.
-- `contracts/journal-export/example.v1.json` - a small synthetic document that validates against the schema.
+- `contracts/journal-export/v2.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
+- `contracts/journal-export/example.v2.json` - a small synthetic document that validates against it.
+- `contracts/journal-export/v1.schema.json` and `example.v1.json` - the version 1 contract, kept unchanged and still read.
 
-Those two files are the canonical ones. SwiftPM can only bundle resources that live inside a target, so copies
+Version 2 is version 1 with one field: `provenance.kind`, which says whether a product is a `food`, a
+`drink` or a `supplement`. It is what a restore needs to know whether a snapshot joins the day's count of
+foods, so a restore that dropped it would quietly change what the day says about the person.
+
+Those files are the canonical ones. SwiftPM can only bundle resources that live inside a target, so copies
 sit in `ios/NutritionCore/Tests/NutritionJournalExportTests/Contracts/`; a test compares the two locations
 byte for byte, so a contract change without a fresh copy fails the build instead of passing against a stale
 contract.
@@ -30,6 +35,9 @@ the backup.
 `JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
+**Both version 1 and version 2 are read**, so a backup taken before the kind existed still restores;
+`decode(_:)` reads the version off the document and hands it to the matching `init(from:)`. This build
+writes version 2.
 
 ## Importing
 
@@ -45,19 +53,24 @@ snapshots it wrote, and it throws `JournalImportError` instead of writing part o
 
 | Case | Meaning |
 |---|---|
-| `unsupportedVersion` | The document declares a `schema_version` this build does not read. The version is read from the raw JSON before anything else, so a file from a newer build is refused as such even when its other fields would not decode. A file that spells the same version as `"1"` rather than `1` is accepted. |
+| `unsupportedVersion` | The document declares a `schema_version` this build does not read. The version is read from the raw JSON before anything else, so a file from a newer build is refused as such even when its other fields would not decode. A file that spells a read version as `"1"` or `"2"` rather than `1` or `2` is accepted. |
 | `notEmpty` | The store already holds intakes, active or deleted. There is no merge in this version: one journal is restored into an empty one. A tombstone is an intake row too, so a journal that already has one is not empty either. |
 | `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
-| `corrupt` | The file is a version 1 export that cannot be restored as it stands. |
+| `corrupt` | The file is an export that cannot be restored as it stands. |
 
-**Strict shape.** Before anything is decoded, the document is checked against the v1 contract key by key at
+**Strict shape.** Before anything is decoded, the document is checked against the contract key by key at
 every level it defines: no unknown key (`additionalProperties: false`) and no missing key, including the
 required-but-nullable ones such as `note`, `provenance`, `brand` and `amount`, which have to be written as an
 explicit `null` rather than left out. An ordinary `JSONDecoder` can see neither difference - it ignores an
 unknown key and reads an absent required-but-nullable key the same as a null one - so without this pass a
 file that breaks the contract would import, and whatever it carried that this build does not understand would
-quietly disappear on the next export. The key sets live in `JournalImportV1Keys`, and a test holds them to
-`contracts/journal-export/v1.schema.json` so they cannot drift from the committed contract.
+quietly disappear on the next export. The key sets live in `JournalImportV1Keys` and `JournalImportV2Keys`,
+and a test holds both to the committed schemas so they cannot drift from the contract.
+
+**Each version is held to its own keys.** A version 1 document is checked against the version 1 sets and a
+version 2 document against the version 2 sets, because a `kind` is required from version 2 on and an unknown
+key in a version 1 document is as unknown to that version as any other: a reader that ignored it would drop
+the kind on the next export without saying so. The refusal names the version whose schema the document broke.
 
 What a restore writes:
 - **Every intake with every one of its revisions, in order.** Ids, `occurred_at`, `created_at`, the time
@@ -148,7 +161,7 @@ the device, or somewhere the person opened it from.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `1`. |
+| `schema_version` | Version of the schema this document follows. This build writes `2`; version 1 documents are still read. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
@@ -161,7 +174,9 @@ are **exact decimal strings** in the POSIX format (`"37.5"`, `"250"`), never JSO
 float would quietly change the value. A missing amount is `"amount": null` with `"value_state": "unknown"`
 and is never written as `0`. The schema ties the two together with a `oneOf`, so `"amount": null` with
 `"value_state": "known"` does not validate either. `provenance` repeats the immutable product snapshot a
-revision points at, so the export says where the amounts came from.
+revision points at, so the export says where the amounts came from, and from version 2 it carries the
+product's `kind` beside the identity. A version 1 document has no such field, and every product in one was
+recorded before a kind existed, so it reads back as the `food` it was stored as rather than being refused.
 
 `products` is what lets a favorite outlive the intakes it was made from. Once those intakes are deleted only
 tombstones remain, so without this list the favorite would keep a `product_snapshot_id` that nothing in the
@@ -182,11 +197,18 @@ already resolved is reused instead of being fetched again for every revision tha
 
 ## Versioning rule
 `schema_version` never changes shape. Adding a field, removing one, renaming one or changing what a field
-means requires a **new schema version** (a new `v2.schema.json`) and a new `currentSchemaVersion` in
-`JournalExport`. Readers of version 1 keep working, because a reader that does not know a field can ignore
-it and version 1 keeps rejecting unknown fields through `additionalProperties: false`. This build writes only
-version 1 and reads only version 1; `decode(_:)` refuses anything else by value rather than by shape, so a
-version 2 file is never half-understood.
+means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
+`JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
+ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
+build **writes version 2 and reads version 1 and version 2**; `decode(_:)` refuses anything else by value
+rather than by shape, so a version 3 file is never half-understood.
+
+Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
+in its own right: its documents carry no kind, and refusing them would take away the only backup a person
+has. Writing only version 2 is also a decision: an older build that reads version 2 has no kind in it, and
+the field is the one thing an older reader cannot ignore, so the two builds are not interchangeable in that
+direction. The strict shape pass makes that visible rather than silent - an older reader would refuse a
+version 2 document outright instead of importing it with the kind quietly dropped.
 
 ## Privacy
 - The export is **local and user-initiated**. Nothing is uploaded, and no network call is involved: the
@@ -210,10 +232,10 @@ that pushes `ConnectionsPrivacyView`. Today and Add intake have no entry to it, 
 ## Follow-ups
 - No merge. An import restores into an empty journal only; a later version may add a merge, and the
   revision history and tombstones in the document are what it would need.
-- A restored product snapshot states no nutrient values of its own, because version 1 has no field for
-  them. Where the store already knew the snapshot its values are kept exactly; a snapshot the store does not
-  know gets none until the catalog supplies them again. Carrying them in the document would need a version 2
-  schema, which is a change of contract rather than of this importer.
+- A restored product snapshot states no nutrient values of its own, because no schema version has a field
+  for them. Where the store already knew the snapshot its values are kept exactly; a snapshot the store does
+  not know gets none until the catalog supplies them again. Carrying them in the document would be a further
+  change of contract, which is what a new version is for.
 - The version string is not a placeholder. The app target exists and reads `CFBundleShortVersionString`
   from its own bundle, handing that real value to `ConnectionsPrivacyViewModel`, so an export states the
   shipping version. The `0.0.0-development` default on the view model is only what a test gets when it

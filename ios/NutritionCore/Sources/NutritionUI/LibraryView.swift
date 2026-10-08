@@ -46,6 +46,14 @@ public struct LibraryView: View {
                                 VStack(alignment: .leading) {
                                     Text(item.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
                                     Text(item.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                                    // A supplement is marked here for the reason it is marked on Today:
+                                    // its amounts read like any other item's, and nothing in them says the
+                                    // item is not food.
+                                    if item.kind == .supplement {
+                                        Label(ProductKind.supplement.displayName, systemImage: "pills")
+                                            .font(.footnote)
+                                            .foregroundStyle(TokenColors.accent)
+                                    }
                                 }
                             }
                             .buttonStyle(.borderless)

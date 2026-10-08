@@ -62,6 +62,14 @@ public final class AddIntakeViewModel: ObservableObject {
     /// hour: the label is the person's own answer, and guessing one for them would put a word in
     /// their record that they never gave.
     @Published public var meal: MealLabel?
+    /// What kind of thing this entry is: a food, a drink or a supplement. Food unless something says
+    /// otherwise, which is the honest default for a form that is mostly typed by hand.
+    ///
+    /// The kind is written onto the product snapshot the entry carries, so a scanned drink or a typed
+    /// supplement keeps it; and the day's coverage counts only the kinds that are foods and drinks. An
+    /// entry with no product snapshot has no kind stored at all, and is counted as the food it always
+    /// was before this picker existed.
+    @Published public var kind: ProductKind = .food
     @Published public private(set) var nameError: String?
     @Published public private(set) var amountError: String?
     @Published public private(set) var saveError: String?
@@ -287,6 +295,9 @@ public final class AddIntakeViewModel: ObservableObject {
         invalidateLookup()
         lookupState = .idle
         labelValues = product
+        // The panel already said what it is: a Supplement Facts panel is a supplement. The review
+        // screen lets the user change it before the product reaches this form at all.
+        kind = product.kind
         // Every panel row is filled in, so a nutrient the panel did not state reads as unknown on the
         // form rather than missing from it. A known zero is never written for a missing row.
         var filled: [String: NutrientValue] = [:]
@@ -341,6 +352,10 @@ public final class AddIntakeViewModel: ObservableObject {
     /// they actually ate.
     private func apply(_ product: LookedUpProduct) {
         labelValues = nil
+        // A barcode lookup fills the form as a food, which is what every product behind a barcode is
+        // until a source says otherwise: none of them states a kind today, and guessing one from the
+        // name would put an entry into a coverage count nobody chose.
+        kind = .food
         if let productName = product.name?.trimmingCharacters(in: .whitespacesAndNewlines),
            !productName.isEmpty
         {
@@ -428,6 +443,9 @@ public final class AddIntakeViewModel: ObservableObject {
             var signature = captured.labelBasis + "|origin=" + captured.catalogOrigin
             signature += "|name=" + trimmedName
             signature += "|brand=" + (trimmedBrand ?? "")
+            // The kind is part of what the capture recorded, so the same panel saved once as a drink and
+            // once as a food is two products rather than one snapshot id reused with other content.
+            signature += "|kind=" + kind.rawValue
             for key in captured.nutrients.keys.sorted() {
                 signature += "|" + key + "=" + LookedUpProduct.describe(captured.nutrients[key] ?? .unknown)
             }
@@ -446,6 +464,7 @@ public final class AddIntakeViewModel: ObservableObject {
                 labelBasis: captured.labelBasis,
                 catalogOrigin: captured.catalogOrigin,
                 catalogVersion: captured.catalogVersion,
+                kind: kind,
                 nutrients: captured.nutrients,
                 nutrientDisplayNames: captured.nutrientDisplayNames
             )
@@ -464,6 +483,7 @@ public final class AddIntakeViewModel: ObservableObject {
             labelBasis: lookedUp.labelBasis,
             catalogOrigin: lookedUp.attribution?.source ?? "unknown",
             catalogVersion: lookedUp.version ?? "unknown",
+            kind: kind,
             nutrients: lookedUp.nutrients
         )
     }

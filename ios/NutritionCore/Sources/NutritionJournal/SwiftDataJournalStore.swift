@@ -744,7 +744,168 @@ enum JournalSchemaV5: VersionedSchema {
     }
 }
 
-/// The store is written with V5.
+/// **The product kind, as one optional column.** V6 above is V5 with a single `kindRaw` added to the
+/// product record; every other model and column is exactly as V5 wrote it, so a store that build created
+/// still has a schema SwiftData can migrate from.
+///
+/// The column is optional and reads as `food` when it is nil, which is the honest reading rather than a
+/// value waiting to be recovered: a product recorded before this column existed states nothing about its
+/// kind, and this build had no notion of a supplement then, so the food it was recorded as is what that
+/// row can honestly be read as. Unlike the V2→V3 and V4→V5 stages there is nothing to copy onto it — the
+/// app never wrote the kind anywhere else — so the stage below is **lightweight**, and every row keeps
+/// its nutrients, its times and its suspension exactly as they were.
+enum JournalSchemaV6: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(6, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [IntakeRecord.self, RevisionRecord.self, ProductRecord.self, ProjectionRecord.self, OutboxRecord.self]
+    }
+
+    @Model
+    final class IntakeRecord {
+        var intakeID: String
+        var category: String
+        var occurredAt: Date
+        var timeZoneIdentifier: String
+        var meal: String?
+        var note: String?
+        var lifecycleRaw: String
+        var currentRevision: Int
+
+        init(
+            intakeID: String, category: String, occurredAt: Date, timeZoneIdentifier: String,
+            meal: String?, note: String?, lifecycleRaw: String, currentRevision: Int
+        ) {
+            self.intakeID = intakeID
+            self.category = category
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+            self.meal = meal
+            self.note = note
+            self.lifecycleRaw = lifecycleRaw
+            self.currentRevision = currentRevision
+        }
+    }
+
+    @Model
+    final class RevisionRecord {
+        var intakeID: String
+        var number: Int
+        /// JSON array of components; amounts are decimal text.
+        var componentsJSON: String
+        var productSnapshotID: String?
+        var changeReason: String
+        var createdAt: Date
+        /// The instant this revision was written for, nil meaning "the entry's current time".
+        var occurredAt: Date?
+        /// The zone `occurredAt` is a wall clock in, nil under the same rule.
+        var timeZoneIdentifier: String?
+
+        init(
+            intakeID: String, number: Int, componentsJSON: String,
+            productSnapshotID: String?, changeReason: String, createdAt: Date,
+            occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+        ) {
+            self.intakeID = intakeID
+            self.number = number
+            self.componentsJSON = componentsJSON
+            self.productSnapshotID = productSnapshotID
+            self.changeReason = changeReason
+            self.createdAt = createdAt
+            self.occurredAt = occurredAt
+            self.timeZoneIdentifier = timeZoneIdentifier
+        }
+    }
+    @Model
+    final class ProductRecord {
+        var snapshotID: String
+        var productID: String
+        var name: String
+        var brand: String?
+        var barcode: String?
+        var labelBasis: String
+        var catalogOrigin: String
+        var catalogVersion: String
+        /// JSON of the nutrient values the product states, sorted by id.
+        var nutrientsJSON: String?
+        /// The stored spelling of `ProductKind`. Nil means the row was written before the column
+        /// existed, which reads as `food`; see the note above the schema.
+        var kindRaw: String?
+
+        init(
+            snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
+            labelBasis: String, catalogOrigin: String, catalogVersion: String, nutrientsJSON: String? = nil,
+            kindRaw: String? = nil
+        ) {
+            self.snapshotID = snapshotID
+            self.productID = productID
+            self.name = name
+            self.brand = brand
+            self.barcode = barcode
+            self.labelBasis = labelBasis
+            self.catalogOrigin = catalogOrigin
+            self.catalogVersion = catalogVersion
+            self.nutrientsJSON = nutrientsJSON
+            self.kindRaw = kindRaw
+        }
+    }
+
+    @Model
+    final class ProjectionRecord {
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var actionRaw: String
+        var stateRaw: String
+        var isCurrent: Bool
+
+        init(
+            intakeID: String, revision: Int, destinationRaw: String,
+            actionRaw: String, stateRaw: String, isCurrent: Bool
+        ) {
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.actionRaw = actionRaw
+            self.stateRaw = stateRaw
+            self.isCurrent = isCurrent
+        }
+    }
+    @Model
+    final class OutboxRecord {
+        var operationID: String
+        var kindRaw: String
+        var intakeID: String
+        var revision: Int
+        var destinationRaw: String
+        var payloadHash: String
+        var attempts: Int
+        var nextAttemptAt: Date?
+        var acknowledgedAt: Date?
+        var suspensionReason: String?
+        var deletedAt: Date?
+        var linksJSON: String?
+
+        init(
+            operationID: String, kindRaw: String, intakeID: String, revision: Int,
+            destinationRaw: String, payloadHash: String, suspensionReason: String? = nil,
+            deletedAt: Date? = nil, linksJSON: String? = nil
+        ) {
+            self.operationID = operationID
+            self.kindRaw = kindRaw
+            self.intakeID = intakeID
+            self.revision = revision
+            self.destinationRaw = destinationRaw
+            self.payloadHash = payloadHash
+            self.attempts = 0
+            self.nextAttemptAt = nil
+            self.acknowledgedAt = nil
+            self.suspensionReason = suspensionReason
+            self.deletedAt = deletedAt
+            self.linksJSON = linksJSON
+        }
+    }
+}
+/// The store is written with V6.
 ///
 /// The V1→V2 stage is lightweight: the only change is one optional column, so an existing file is
 /// migrated in place and its rows keep their values.
@@ -781,9 +942,18 @@ enum JournalSchemaV5: VersionedSchema {
 ///
 /// It runs in `didMigrate`, for the reason the V2→V3 stage does: the context there is bound to V5, where the
 /// two columns exist to write.
+///
+/// **The V5→V6 stage is lightweight, and needs no backfill.** It adds one optional column to the product
+/// record and changes nothing else. The column describes something only the reader can supply: a product
+/// row written before this build has no kind, and none was ever written anywhere else, so nil is the
+/// whole of what such a row can say — and `.food` is what that nil is read as, because the app had no
+/// notion of a supplement then. Filling it in would mean writing down what the file does not hold.
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self, JournalSchemaV5.self]
+        [
+            JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self,
+            JournalSchemaV5.self, JournalSchemaV6.self,
+        ]
     }
     static var stages: [MigrationStage] {
         [
@@ -803,6 +973,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
                     try backfillRevisionTimes(context: context)
                     try context.save()
                 }),
+            .lightweight(fromVersion: JournalSchemaV5.self, toVersion: JournalSchemaV6.self),
         ]
     }
 
@@ -868,11 +1039,11 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
     }
 }
 
-typealias IntakeRecord = JournalSchemaV5.IntakeRecord
-typealias RevisionRecord = JournalSchemaV5.RevisionRecord
-typealias ProductRecord = JournalSchemaV5.ProductRecord
-typealias ProjectionRecord = JournalSchemaV5.ProjectionRecord
-typealias OutboxRecord = JournalSchemaV5.OutboxRecord
+typealias IntakeRecord = JournalSchemaV6.IntakeRecord
+typealias RevisionRecord = JournalSchemaV6.RevisionRecord
+typealias ProductRecord = JournalSchemaV6.ProductRecord
+typealias ProjectionRecord = JournalSchemaV6.ProjectionRecord
+typealias OutboxRecord = JournalSchemaV6.OutboxRecord
 
 private struct StoredComponent: Codable {
     var componentID: String
@@ -918,7 +1089,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV5.self)
+        let schema = Schema(versionedSchema: JournalSchemaV6.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -1044,6 +1215,17 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
         guard let row = rows.first else { throw JournalError.corruptRecord(snapshotID) }
         row.nutrientsJSON = nil
+        try context.save()
+    }
+
+    /// Drops a stored snapshot's kind, leaving the row as a store written before the column existed
+    /// would have it: the product states what it states and says nothing about what it is.
+    func clearKindOnSnapshotForTesting(snapshotID: String) throws {
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<ProductRecord>(
+            predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
+        guard let row = rows.first else { throw JournalError.corruptRecord(snapshotID) }
+        row.kindRaw = nil
         try context.save()
     }
 
@@ -1298,7 +1480,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
                 brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
                 catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
                 nutrientsJSON: Self.encodeNutrients(
-                    product.nutrients, displayNames: product.nutrientDisplayNames)))
+                    product.nutrients, displayNames: product.nutrientDisplayNames),
+                kindRaw: product.kind.rawValue))
             return true
         }
         let stored = snapshot(from: row)
@@ -1735,7 +1918,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
             catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
             nutrientsJSON: Self.encodeNutrients(
-                product.nutrients, displayNames: product.nutrientDisplayNames)))
+                product.nutrients, displayNames: product.nutrientDisplayNames),
+            kindRaw: product.kind.rawValue))
     }
 
     // MARK: Reads
@@ -1899,7 +2083,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         ProductDefinition(
             snapshotID: row.snapshotID, productID: row.productID, name: row.name, brand: row.brand,
             barcode: row.barcode, labelBasis: row.labelBasis, catalogOrigin: row.catalogOrigin,
-            catalogVersion: row.catalogVersion, nutrients: Self.decodeNutrients(row.nutrientsJSON),
+            catalogVersion: row.catalogVersion, kind: ProductKind(storedRawValue: row.kindRaw),
+            nutrients: Self.decodeNutrients(row.nutrientsJSON),
             nutrientDisplayNames: Self.decodeDisplayNames(row.nutrientsJSON))
     }
 

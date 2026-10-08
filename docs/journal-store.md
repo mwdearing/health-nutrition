@@ -48,6 +48,13 @@ finishes opening.
 no backfill: every column they add is optional and describes something a row written before it cannot
 have, so nil is the honest reading rather than a value waiting to be recovered.
 
+`JournalSchemaV6` adds the optional `kindRaw` to the product record, and its stage from V5 is lightweight
+for the same reason. The column is **optional and never backfilled**: a product written before kinds existed
+has no kind, and reading nil as `.food` says what such a row was recorded as rather than inventing a kind
+the person never chose. An unrecognised stored value reads as `.food` as well, so a journal written by a
+build that knew kinds this one does not still opens. The row is kept either way, which is the point of a
+lightweight stage: nothing here is lost, only left unlabelled.
+
 The import path changed nothing here: a restore writes columns the existing rows already have, so V1 and V2
 stay exactly as they are and no migration stage was added. A restored tombstone carries an empty category,
 because the export records a deleted entry's id, revision, time and time zone but not its category, and

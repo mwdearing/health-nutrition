@@ -58,6 +58,15 @@ class JournalImportTestCase: XCTestCase {
             catalogOrigin: "sample-catalog", catalogVersion: "1", nutrients: sampleNutrients)
     }
 
+    /// A supplement panel read on this device: the kind is what the panel's own heading decided, and the
+    /// values are the rows it stated. Synthetic, like every product in these tests.
+    func supplement() -> ProductDefinition {
+        ProductDefinition(
+            snapshotID: "snap-vitamin-1", productID: "label_capture", name: "Sample daily multi",
+            labelBasis: "per serving (1 tablet)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+            kind: .supplement, nutrients: ["vitaminD": .known(Decimal(string: "25")!, .mcg)])
+    }
+
     /// A journal with two live entries, one of them edited once, and one entry already deleted.
     func filledStore(_ directory: URL) throws -> SwiftDataJournalStore {
         let store = try self.store(directory)
@@ -337,7 +346,7 @@ final class JournalImportTests: JournalImportTestCase {
 
     func testAnExportFromANewerSchemaVersionIsRefusedAndNothingIsWritten() throws {
         var root = try object(of: try exportData(favorites: false))
-        root["schema_version"] = 2
+        root["schema_version"] = JournalExport.currentSchemaVersion + 1
         root["field_this_build_does_not_know"] = "something"
         let newer = try JSONSerialization.data(withJSONObject: root)
 
@@ -360,6 +369,58 @@ final class JournalImportTests: JournalImportTestCase {
         let summary = try JournalImporter.importExport(data, into: journal, favorites: nil)
         XCTAssertEqual(summary.intakes, 0)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
+    }
+
+    /// A document written before the product kind existed carries no kind at all, and every product in
+    /// such a document was recorded as a food: this build had no notion of a supplement then. Reading it
+    /// as food is what makes a person's older backup restore, rather than being refused for a field its
+    /// build could not write.
+    func testImportOfADocumentWithoutTheKindIsAFood() throws {
+        let older = Data(#"""
+        {"schema_version":1,"exported_at":"2024-01-15T09:15:00Z","app_version":"0.1.0",
+        "intakes":[{"id":"1f0c9d2a-6b3e-4a7f-9c5d-0e2b6f8a1d33","category":"food",
+        "occurred_at":"2024-01-15T07:30:00Z","time_zone":"UTC","meal":null,"note":null,"current_revision":1,
+        "revisions":[{"number":1,"created_at":"2024-01-15T07:31:00Z","change_reason":"created",
+        "product_snapshot_id":"snap-oats-1",
+        "provenance":{"snapshot_id":"snap-oats-1","product_id":"product-oats","name":"Sample rolled oats",
+        "brand":null,"barcode":null,"label_basis":"per100g","catalog_origin":"sample-catalog",
+        "catalog_version":"1"},
+        "components":[{"component_id":"oats","name":"Sample rolled oats","amount":"40","unit":"g",
+        "value_state":"known"}]}],
+        "tombstones":[],"favorites":[],
+        "products":[{"snapshot_id":"snap-oats-1","product_id":"product-oats","name":"Sample rolled oats",
+        "brand":null,"barcode":null,"label_basis":"per100g","catalog_origin":"sample-catalog",
+        "catalog_version":"1"}]}
+        """#.utf8)
+
+        let target = try directory()
+        let journal = try store(target)
+        let summary = try JournalImporter.importExport(older, into: journal, favorites: nil)
+        XCTAssertEqual(summary.products, 1)
+        let restored = try XCTUnwrap(try journal.product(snapshotID: "snap-oats-1"))
+        XCTAssertEqual(restored.kind, .food, "a document with no kind is the food it was recorded as")
+        // The values are the store's own, as they are for any restore: the document states no nutrients.
+        XCTAssertTrue(restored.nutrients.isEmpty)
+    }
+
+    /// The kind is what decides whether a restored product joins the day's count of foods, so it has to
+    /// come back across a round trip rather than being defaulted on the way in.
+    func testExportImportRoundTripsTheProductKind() throws {
+        let target = try directory()
+        let journal = try store(target)
+        try journal.create(
+            Intake(
+                id: oatsID, category: "food", occurredAt: base, timeZoneIdentifier: "UTC"),
+            components: [oats("37.5")], product: supplement(), now: base)
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(store: journal, appVersion: appVersion, exportedAt: exportedAt))
+        journal.close()
+
+        let restored = try store(target)
+        try JournalImporter.importExport(data, into: restored, favorites: nil)
+        let product = try XCTUnwrap(try restored.product(snapshotID: "snap-vitamin-1"))
+        XCTAssertEqual(product.kind, .supplement)
+        XCTAssertEqual(product.value(for: "vitaminD"), .known(Decimal(string: "25")!, .mcg))
     }
 
     func testANonEmptyStoreIsRefusedRatherThanMerged() throws {

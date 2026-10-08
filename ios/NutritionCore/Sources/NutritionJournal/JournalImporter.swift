@@ -41,14 +41,19 @@ public struct JournalImportSummary: Sendable, Equatable {
 extension ProductDefinition {
     /// The product snapshot an export describes.
     ///
-    /// The document carries the identity of the product and where it came from, not the nutrient values it
-    /// states, so a snapshot built from one states none. Where the store already knows the snapshot, its
-    /// values are kept instead; see `SwiftDataJournalStore.restoreSnapshot`.
+    /// The document carries the identity of the product, where it came from and what kind of product it
+    /// is, but not the nutrient values it states, so a snapshot built from one states none. The kind
+    /// comes across as the document states it, and a version 1 document — which has no kind at all —
+    /// reads as the food that every product in it was.
+    ///
+    /// Where the store already knows the snapshot, its values are kept instead; see
+    /// `SwiftDataJournalStore.restoreSnapshot`.
     init(provenance: JournalExportProvenance) {
         self.init(
             snapshotID: provenance.snapshotID, productID: provenance.productID, name: provenance.name,
             brand: provenance.brand, barcode: provenance.barcode, labelBasis: provenance.labelBasis,
-            catalogOrigin: provenance.catalogOrigin, catalogVersion: provenance.catalogVersion)
+            catalogOrigin: provenance.catalogOrigin, catalogVersion: provenance.catalogVersion,
+            kind: provenance.kind)
     }
 }
 
@@ -79,6 +84,20 @@ enum JournalImportV1Keys {
     static let favorite: Set<String> = [
         "id", "display_name", "category", "meal", "product_snapshot_id", "components",
     ]
+}
+
+/// The keys each object in a version 2 export has, taken from `contracts/journal-export/v2.schema.json`.
+///
+/// Version 2 is version 1 with one field: a product's `kind`. Every other object is unchanged, so the
+/// sets are the version 1 sets taken again, and the one that differs is the provenance.
+enum JournalImportV2Keys {
+    static let root = JournalImportV1Keys.root
+    static let intake = JournalImportV1Keys.intake
+    static let revision = JournalImportV1Keys.revision
+    static let provenance: Set<String> = JournalImportV1Keys.provenance.union(["kind"])
+    static let component = JournalImportV1Keys.component
+    static let tombstone = JournalImportV1Keys.tombstone
+    static let favorite = JournalImportV1Keys.favorite
 }
 
 /// Restores a journal export into an empty journal: the entries with their whole revision history, the
@@ -159,13 +178,13 @@ public enum JournalImporter {
             throw JournalImportError.malformed("the file is not a JSON object")
         }
         guard let declared = schemaVersion(in: root),
-              declared == JournalExport.currentSchemaVersion
+              JournalExport.readableSchemaVersions.contains(declared)
         else {
             throw JournalImportError.unsupportedVersion
         }
         var bytes = data
         if root["schema_version"] is String {
-            // A file that spells the version as "1" names the version this build reads, so only the
+            // A file that spells the version as "1" names a version this build reads, so only the
             // spelling differs. The decoder wants the number the export writes, so that one field is set
             // to it and the document is decoded from that.
             root["schema_version"] = declared
@@ -178,7 +197,7 @@ public enum JournalImporter {
         // difference: it ignores a key the schema does not define, and it reads a required-but-nullable key
         // that is absent the same as one written as an explicit null. A file that breaks the contract is a
         // malformed file, refused here rather than half-understood below.
-        try validateV1Shape(root)
+        try validateShape(root, version: declared)
         do {
             return try JournalExporter.decode(bytes)
         } catch {
@@ -188,58 +207,66 @@ public enum JournalImporter {
         }
     }
 
-    /// Checks a document against the key rules the v1 schema states, at every level it defines.
+    /// Checks a document against the key rules the schema of the version it declares states, at every
+    /// level that schema defines.
     ///
     /// Every object must carry exactly the keys its shape defines: no unknown key, because a reader that
     /// does not know what a field means drops it and the next export writes the file without it; and no
     /// missing key, because a required-but-nullable one that is absent is a document the schema does not
     /// describe, even though it decodes to the same value.
-    static func validateV1Shape(_ root: [String: Any]) throws {
-        try checkObject(root, keys: JournalImportV1Keys.root, path: "$")
+    ///
+    /// The version decides the sets, and it is the whole of what it decides: version 2 is version 1 with
+    /// `kind` added to a provenance, so a version 1 document is still a document this build reads, and a
+    /// `kind` in one is as unknown a key as any other.
+    static func validateShape(_ root: [String: Any], version: Int) throws {
+        let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
+        try checkObject(root, keys: JournalImportV1Keys.root, path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
             let path = "$.intakes[\(index)]"
             let intake = try object(item, path: path)
-            try checkObject(intake, keys: JournalImportV1Keys.intake, path: path)
+            try checkObject(intake, keys: JournalImportV1Keys.intake, path: path, version: version)
             let revisionList = try objects(intake["revisions"], path: "\(path).revisions")
             for (revisionIndex, revisionItem) in revisionList.enumerated() {
                 let revisionPath = "\(path).revisions[\(revisionIndex)]"
                 let revision = try object(revisionItem, path: revisionPath)
-                try checkObject(revision, keys: JournalImportV1Keys.revision, path: revisionPath)
+                try checkObject(revision, keys: JournalImportV1Keys.revision, path: revisionPath, version: version)
                 if let provenance = revision["provenance"], !(provenance is NSNull) {
                     let provenancePath = "\(revisionPath).provenance"
                     try checkObject(
                         try object(provenance, path: provenancePath),
-                        keys: JournalImportV1Keys.provenance, path: provenancePath)
+                        keys: provenanceKeys, path: provenancePath, version: version)
                 }
-                try checkComponents(revision["components"], path: "\(revisionPath).components")
+                try checkComponents(revision["components"], path: "\(revisionPath).components", version: version)
             }
         }
         let tombstoneList = try objects(root["tombstones"], path: "$.tombstones")
         for (index, item) in tombstoneList.enumerated() {
             let path = "$.tombstones[\(index)]"
-            try checkObject(try object(item, path: path), keys: JournalImportV1Keys.tombstone, path: path)
+            try checkObject(
+                try object(item, path: path), keys: JournalImportV1Keys.tombstone, path: path, version: version)
         }
         let favoriteList = try objects(root["favorites"], path: "$.favorites")
         for (index, item) in favoriteList.enumerated() {
             let path = "$.favorites[\(index)]"
             let favorite = try object(item, path: path)
-            try checkObject(favorite, keys: JournalImportV1Keys.favorite, path: path)
-            try checkComponents(favorite["components"], path: "\(path).components")
+            try checkObject(favorite, keys: JournalImportV1Keys.favorite, path: path, version: version)
+            try checkComponents(favorite["components"], path: "\(path).components", version: version)
         }
         let productList = try objects(root["products"], path: "$.products")
         for (index, item) in productList.enumerated() {
             let path = "$.products[\(index)]"
             try checkObject(
-                try object(item, path: path), keys: JournalImportV1Keys.provenance, path: path)
+                try object(item, path: path), keys: provenanceKeys, path: path, version: version)
         }
     }
 
-    private static func checkComponents(_ value: Any?, path: String) throws {
+    private static func checkComponents(_ value: Any?, path: String, version: Int) throws {
         let list = try objects(value, path: path)
         for (index, item) in list.enumerated() {
             let componentPath = "\(path)[\(index)]"
             try checkObject(
-                try object(item, path: componentPath), keys: JournalImportV1Keys.component, path: componentPath)
+                try object(item, path: componentPath), keys: JournalImportV1Keys.component, path: componentPath,
+                version: version)
         }
     }
 
@@ -263,15 +290,21 @@ public enum JournalImporter {
     }
 
     /// The keys of one object, against the keys its shape defines. They are walked in order, so the message
-    /// names the first one that is wrong rather than whichever the dictionary happened to hash to.
-    private static func checkObject(_ fields: [String: Any], keys: Set<String>, path: String) throws {
+    /// names the first one that is wrong rather than whichever the dictionary happened to hash to. The
+    /// version it was checked against is named in the message, because "a key this build does not know"
+    /// is a different thing in a version 1 document and in a version 2 one.
+    private static func checkObject(
+        _ fields: [String: Any], keys: Set<String>, path: String, version: Int
+    ) throws {
         for key in fields.keys.sorted() where !keys.contains(key) {
-            throw JournalImportError.malformed("\(path) has \(key), which the version 1 schema does not define")
+            throw JournalImportError.malformed(
+                "\(path) has \(key), which the version \(version) schema does not define")
         }
         // An explicit null is a value, so a required-but-nullable key written as null is present. Only a key
         // that is not there at all is refused.
         for key in keys.sorted() where fields[key] == nil {
-            throw JournalImportError.malformed("\(path) is missing \(key), which the version 1 schema requires")
+            throw JournalImportError.malformed(
+                "\(path) is missing \(key), which the version \(version) schema requires")
         }
     }
 

@@ -90,6 +90,21 @@ public struct LibraryItem: Equatable, Identifiable {
     public let detail: String
     public let isFavorite: Bool
     public let template: RepeatTemplate
+    /// What kind of product the item is, read from the snapshot it repeats. A template with no snapshot
+    /// states no product at all and is the food it was recorded as; only a supplement is marked.
+    public let kind: ProductKind
+
+    public init(
+        id: String, title: String, detail: String, isFavorite: Bool, template: RepeatTemplate,
+        kind: ProductKind = .food
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.isFavorite = isFavorite
+        self.template = template
+        self.kind = kind
+    }
 }
 
 public struct LibrarySection: Equatable, Identifiable {
@@ -134,20 +149,39 @@ public final class LibraryViewModel: ObservableObject {
         do {
             let stored = try favorites.list()
             let favoriteKeys = Set(stored.map(Self.key(of:)))
-            let favoriteItems = stored.map { favorite -> LibraryItem in
+            let recents = try RecentItemsProvider(store: store).recents()
+            let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
-                let template = RepeatTemplate(favorite: favorite) ?? RepeatTemplate(
+                RepeatTemplate(favorite: favorite) ?? RepeatTemplate(
                     displayName: favorite.displayName, category: favorite.category, meal: favorite.meal, components: [],
                     productSnapshotID: favorite.productSnapshotID)
+            }
+            // What each product the screen names is, read once per snapshot rather than once per row: a
+            // favorite and a recent can repeat the same product, and each read is a store query. A
+            // template with no snapshot states no product at all and is the food it was recorded as.
+            let snapshotIDs = Set(
+                (favoriteTemplates + recents.map(\.template)).compactMap(\.productSnapshotID))
+            var kinds: [String: ProductKind] = [:]
+            for snapshotID in snapshotIDs {
+                kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
+            }
+            func kind(of template: RepeatTemplate) -> ProductKind {
+                guard let snapshotID = template.productSnapshotID else { return .food }
+                return kinds[snapshotID] ?? .food
+            }
+            let favoriteItems = stored.enumerated().map { index, favorite -> LibraryItem in
+                let template = favoriteTemplates[index]
                 return LibraryItem(
                     id: "favorite:\(favorite.id)", title: favorite.displayName,
-                    detail: Self.detail(template), isFavorite: true, template: template)
+                    detail: Self.detail(template), isFavorite: true, template: template,
+                    kind: kind(of: template))
             }
-            let recentItems = try RecentItemsProvider(store: store).recents().map { recent in
+            let recentItems = recents.map { recent -> LibraryItem in
                 LibraryItem(
                     id: "recent:\(recent.id)", title: recent.template.displayName,
                     detail: Self.detail(recent.template),
-                    isFavorite: favoriteKeys.contains(recent.id), template: recent.template)
+                    isFavorite: favoriteKeys.contains(recent.id), template: recent.template,
+                    kind: kind(of: recent.template))
             }
             sections = [
                 LibrarySection(title: "Favorites", items: favoriteItems),

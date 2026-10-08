@@ -80,6 +80,9 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
     public var labelBasis: String
     public var catalogOrigin: String
     public var catalogVersion: String
+    /// What kind of product this is. A version 1 document has no such field, and a document that
+    /// states none reads back as `.food`, which is the only kind a version 1 build could record.
+    public var kind: ProductKind
 
     enum CodingKeys: String, CodingKey {
         case snapshotID = "snapshot_id"
@@ -90,11 +93,12 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
         case labelBasis = "label_basis"
         case catalogOrigin = "catalog_origin"
         case catalogVersion = "catalog_version"
+        case kind
     }
 
     public init(
         snapshotID: String, productID: String, name: String, brand: String?, barcode: String?,
-        labelBasis: String, catalogOrigin: String, catalogVersion: String
+        labelBasis: String, catalogOrigin: String, catalogVersion: String, kind: ProductKind = .food
     ) {
         self.snapshotID = snapshotID
         self.productID = productID
@@ -104,17 +108,36 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
         self.labelBasis = labelBasis
         self.catalogOrigin = catalogOrigin
         self.catalogVersion = catalogVersion
+        self.kind = kind
+    }
+
+    /// Read back with the kind defaulted, because a version 1 document does not carry one.
+    ///
+    /// `decodeIfPresent` rather than `decode`: a synthesized decode would refuse the whole document for
+    /// a field an earlier build could not write, which is what a version number exists to prevent.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            snapshotID: try container.decode(String.self, forKey: .snapshotID),
+            productID: try container.decode(String.self, forKey: .productID),
+            name: try container.decode(String.self, forKey: .name),
+            brand: try container.decodeIfPresent(String.self, forKey: .brand),
+            barcode: try container.decodeIfPresent(String.self, forKey: .barcode),
+            labelBasis: try container.decode(String.self, forKey: .labelBasis),
+            catalogOrigin: try container.decode(String.self, forKey: .catalogOrigin),
+            catalogVersion: try container.decode(String.self, forKey: .catalogVersion),
+            kind: try container.decodeIfPresent(ProductKind.self, forKey: .kind) ?? .food)
     }
 
     public init(product: ProductDefinition) {
         self.init(
             snapshotID: product.snapshotID, productID: product.productID, name: product.name, brand: product.brand,
             barcode: product.barcode, labelBasis: product.labelBasis, catalogOrigin: product.catalogOrigin,
-            catalogVersion: product.catalogVersion)
+            catalogVersion: product.catalogVersion, kind: product.kind)
     }
 
     /// `brand` and `barcode` are required-but-nullable in the schema, so both are always written, as `null`
-    /// when the product has neither.
+    /// when the product has neither. `kind` is required from version 2 on, so it is always written.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(snapshotID, forKey: .snapshotID)
@@ -125,6 +148,7 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
         try container.encode(labelBasis, forKey: .labelBasis)
         try container.encode(catalogOrigin, forKey: .catalogOrigin)
         try container.encode(catalogVersion, forKey: .catalogVersion)
+        try container.encode(kind, forKey: .kind)
     }
 }
 
@@ -318,13 +342,21 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
     }
 }
 
-/// The exported document, schema version 1. See `contracts/journal-export/v1.schema.json`.
+/// The exported document, schema version 2. See `contracts/journal-export/v2.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
-/// written against version 1 keeps working.
+/// written against version 1 keeps working. This build writes only version 2 and reads both, so a backup
+/// taken before the product kind existed still restores.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
+
+    /// Every version this build reads, in the order they were written.
+    ///
+    /// Version 1 is here because its documents are still backups people hold: it has no product kind and
+    /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
+    /// backup. Anything outside this set is refused by value rather than by shape.
+    public static let readableSchemaVersions: Set<Int> = [1, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
@@ -527,8 +559,8 @@ public enum JournalExporter {
     /// Reads a document back, with the same date strategy the writer uses. Millisecond and whole-second dates
     /// are still accepted, so a file written by an earlier build of this app imports cleanly.
     ///
-    /// A document that declares another schema version is refused: this reader does not know what its extra
-    /// or changed fields mean, and guessing would silently drop data.
+    /// A document that declares a version outside `readableSchemaVersions` is refused: this reader does
+    /// not know what its extra or changed fields mean, and guessing would silently drop data.
     public static func decode(_ data: Data) throws -> JournalExport {
         let decoder = JSONDecoder()
         // One set of readers for the whole run; see `encode` for why they are not rebuilt per date.
@@ -544,7 +576,7 @@ public enum JournalExporter {
                 in: container, debugDescription: "not an ISO-8601 date: \(text)")
         }
         let document = try decoder.decode(JournalExport.self, from: data)
-        guard document.schemaVersion == JournalExport.currentSchemaVersion else {
+        guard JournalExport.readableSchemaVersions.contains(document.schemaVersion) else {
             throw JournalExportError.unsupportedSchemaVersion(document.schemaVersion)
         }
         return document

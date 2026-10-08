@@ -63,6 +63,29 @@ public struct ParsedValueReview: Sendable, Hashable {
     }
 }
 
+/// Which panel the capture read: a **Nutrition Facts** panel, which states a food or a drink, or a
+/// **Supplement Facts** panel, which states what is in a supplement.
+///
+/// The distinction is the whole reason the kind is recorded. The two panels print some of the same rows
+/// — vitamin D, calcium, iron and potassium are named on both — so the values read off a supplement are
+/// read just as carefully; what differs is what the absence of a row means. A food that says nothing
+/// about fibre has a gap in it, and a supplement that says nothing about fibre is a supplement.
+public enum NutritionPanelKind: String, Sendable, Hashable, Codable, CaseIterable {
+    case nutritionFacts
+    case supplementFacts
+
+    /// The product kind a captured panel is recorded as.
+    ///
+    /// Only a Supplement Facts panel makes a supplement. Everything else is recorded as a food, which is
+    /// what a capture read before this distinction existed recorded every panel as.
+    public var productKind: ProductKind {
+        switch self {
+        case .nutritionFacts: return .food
+        case .supplementFacts: return .supplement
+        }
+    }
+}
+
 /// One row of a panel that the table of named nutrients does not carry.
 ///
 /// A supplement states its own compounds routinely — `Creatine Monohydrate 3g`, `Zinc 15mg` — and
@@ -110,6 +133,12 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
     public let nutrientDisplayNames: [String: String]
     /// Only the values that were read with less than full confidence, keyed the same way as `nutrients`.
     public let valuesNeedingReview: [String: ParsedValueReview]
+    /// Which panel was read: a Nutrition Facts panel or a Supplement Facts one.
+    ///
+    /// Nutrition Facts unless the capture found the other heading. A panel whose heading was missed,
+    /// cropped away or misread is recorded as the food it always was before this was known, so a failed
+    /// recognition costs the label's kind and never its values.
+    public let panelKind: NutritionPanelKind
 
     public init(
         servingSize: ParsedServingSize?,
@@ -117,7 +146,8 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         nutrients: [String: NutrientValue],
         additionalNutrients: [ParsedAdditionalNutrient] = [],
         nutrientDisplayNames: [String: String] = [:],
-        valuesNeedingReview: [String: ParsedValueReview]
+        valuesNeedingReview: [String: ParsedValueReview],
+        panelKind: NutritionPanelKind = .nutritionFacts
     ) {
         var complete = nutrients
         for key in NutritionFactKey.allCases where complete[key.rawValue] == nil {
@@ -129,7 +159,11 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         self.additionalNutrients = additionalNutrients
         self.nutrientDisplayNames = nutrientDisplayNames
         self.valuesNeedingReview = valuesNeedingReview
+        self.panelKind = panelKind
     }
+
+    /// Whether the capture read a Supplement Facts panel rather than a Nutrition Facts one.
+    public var isSupplementPanel: Bool { panelKind == .supplementFacts }
 
     public func value(for key: NutritionFactKey) -> NutrientValue {
         nutrients[key.rawValue] ?? .unknown
