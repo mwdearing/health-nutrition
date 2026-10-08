@@ -154,4 +154,42 @@ final class EntryDetailDesignTests: XCTestCase {
         model.load(now: now)
         XCTAssertTrue(model.adds.isEmpty)
     }
+
+    func testEntryDetailLoggedRowNeverCarriesANote() throws {
+        let store = try makeStore()
+        let id = try addEntry(store)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        XCTAssertEqual(model.changes.last?.verb, "Logged")
+        XCTAssertNil(model.changes.last?.note)
+    }
+
+    func testEntryDetailChangesReadAsPlainVerbsForACombinedChange() throws {
+        let store = try makeStore()
+        let id = try addEntry(store)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        model.drafts["example-oats"] = "55"
+        model.occurredAt = now.addingTimeInterval(-3_600)
+        XCTAssertTrue(model.saveDrafts(now: now))
+
+        XCTAssertEqual(model.changes.first?.verb, "Amount changed and time corrected")
+    }
+
+    func testEntryDetailThisEntryAddsReadsNotOnTheLabelWhenTheBasisCannotBeResolved() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "design-oats-per-serving", productID: "example-oats", name: "Example oats",
+            labelBasis: "per serving", catalogOrigin: "example", catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g)])
+        let id = try addEntry(store, amount: 50, product: product)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        let protein = try XCTUnwrap(model.adds.first { $0.key == "protein" })
+        XCTAssertEqual(protein.amountText, "Not on the label")
+        XCTAssertTrue(model.adds.allSatisfy { $0.amountText == "Not on the label" })
+    }
 }
