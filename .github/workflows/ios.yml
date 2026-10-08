@@ -89,6 +89,22 @@ jobs:
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 
+  # A Release build for a real device, unsigned. The signed upload archives in Release and cannot show its
+  # log (the Actions log is public), so an error that only the optimizer raises (for example a view body the
+  # compiler cannot type-check in reasonable time) would otherwise be invisible. This job shows it here.
+  release-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: xcodegen generate
+      - name: Build the app in Release for a generic iOS device
+        working-directory: ios/HealthNutrition
+        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
   # The app target's own unit tests. Same shape as app-build: regenerate the project, then run the
   # HealthNutritionTests bundle, which is hosted by the app so @testable import HealthNutrition works.
   app-test:
