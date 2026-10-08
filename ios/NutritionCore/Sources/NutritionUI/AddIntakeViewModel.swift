@@ -67,8 +67,8 @@ public final class AddIntakeViewModel: ObservableObject {
     ///
     /// The kind is written onto the product snapshot the entry carries, so a scanned drink or a typed
     /// supplement keeps it; and the day's coverage counts only the kinds that are foods and drinks. An
-    /// entry with no product snapshot has no kind stored at all, and is counted as the food it always
-    /// was before this picker existed.
+    /// typed non-food entry carries a minimal manual snapshot so its kind survives saving.
+    /// A typed food without a snapshot keeps the existing food default.
     @Published public var kind: ProductKind = .food
     @Published public private(set) var nameError: String?
     @Published public private(set) var amountError: String?
@@ -469,13 +469,22 @@ public final class AddIntakeViewModel: ObservableObject {
                 nutrientDisplayNames: captured.nutrientDisplayNames
             )
         }
-        guard let lookedUp else { return nil }
+        guard let lookedUp else {
+            guard kind != .food else { return nil }
+            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            let signature = "manual|name=" + trimmedName + "|brand=" + (trimmedBrand ?? "") + "|kind=" + kind.rawValue
+            let identity = "manual-" + Self.slug(signature) + "-" + LookedUpProduct.checksum(signature)
+            return ProductDefinition(
+                snapshotID: identity, productID: identity, name: trimmedName, brand: trimmedBrand,
+                labelBasis: "per serving", catalogOrigin: "manual", catalogVersion: "1", kind: kind)
+        }
         // The name and brand are the ones in the form, not the source's: the user may have corrected
         // or cleared them, and the snapshot has to say what was actually recorded.
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         return ProductDefinition(
-            snapshotID: lookedUp.snapshotIdentity(name: trimmedName, brand: trimmedBrand),
+            snapshotID: lookedUp.snapshotIdentity(name: trimmedName, brand: trimmedBrand, kind: kind),
             productID: lookedUp.barcode,
             name: trimmedName,
             brand: trimmedBrand,

@@ -586,6 +586,36 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(older.products.first?.kind, .food)
     }
 
+    func testV2MissingKindRejected() throws {
+        for missing in [true, false] {
+            for nested in [true, false] {
+                var object = try XCTUnwrap(JSONSerialization.jsonObject(
+                    with: try JournalExporter.encode(try makeExport(store: filledStore()))) as? [String: Any])
+                func removeKind(_ provenance: inout [String: Any]) {
+                    if missing { provenance.removeValue(forKey: "kind") }
+                    else { provenance["kind"] = NSNull() }
+                }
+                if nested {
+                    var intakes = try XCTUnwrap(object["intakes"] as? [[String: Any]])
+                    var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+                    let index = try XCTUnwrap(revisions.firstIndex { $0["provenance"] is [String: Any] })
+                    var provenance = try XCTUnwrap(revisions[index]["provenance"] as? [String: Any])
+                    removeKind(&provenance)
+                    revisions[index]["provenance"] = provenance
+                    intakes[0]["revisions"] = revisions
+                    object["intakes"] = intakes
+                } else {
+                    var products = try XCTUnwrap(object["products"] as? [[String: Any]])
+                    removeKind(&products[0])
+                    object["products"] = products
+                }
+                XCTAssertThrowsError(try JournalExporter.decode(JSONSerialization.data(withJSONObject: object))) {
+                    XCTAssertTrue($0 is DecodingError)
+                }
+            }
+        }
+    }
+
     func testProductSnapshotsAreListedSoAFavoriteCanOutliveItsIntakes() throws {
         // The only intake that used the snapshot is deleted, so no revision carries its provenance any more.
         let store = filledStore()

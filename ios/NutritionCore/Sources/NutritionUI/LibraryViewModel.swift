@@ -94,6 +94,11 @@ public struct LibraryItem: Equatable, Identifiable {
     /// states no product at all and is the food it was recorded as; only a supplement is marked.
     public let kind: ProductKind
 
+    public var accessibilityLabel: String {
+        let label = "Add \(title), \(detail)"
+        return kind == .supplement ? label + ", " + kind.displayName : label
+    }
+
     public init(
         id: String, title: String, detail: String, isFavorite: Bool, template: RepeatTemplate,
         kind: ProductKind = .food

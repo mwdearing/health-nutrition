@@ -1,3 +1,4 @@
+import NutritionDomain
 import SwiftUI
 
 public struct JournalView: View {

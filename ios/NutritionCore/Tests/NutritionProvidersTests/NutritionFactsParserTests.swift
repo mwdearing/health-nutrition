@@ -951,7 +951,7 @@ final class NutritionFactsParserTests: XCTestCase {
     /// somewhere in the text rather than alone on its line is still the heading.
     func testTheSupplementHeadingIsReadInAnyCaseAndAnywhereInTheLine() {
         XCTAssertEqual(
-            parse(["supplementary blend panel", "Vitamin D 25mcg"]).panelKind, .supplementFacts)
+            parse(["Example Supplement Facts blend panel", "Vitamin D 25mcg"]).panelKind, .supplementFacts)
         XCTAssertEqual(parse(["SUPPLEMENT FACTS"]).panelKind, .supplementFacts)
     }
 

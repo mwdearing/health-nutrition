@@ -70,6 +70,8 @@ func encodeNullable<T: Encodable, Key: CodingKey>(
     }
 }
 
+private let exportSchemaVersionKey = CodingUserInfoKey(rawValue: "journalExportSchemaVersion")!
+
 /// Where the recorded amounts came from: the immutable product snapshot a revision points at.
 public struct JournalExportProvenance: Sendable, Hashable, Codable {
     public var snapshotID: String
@@ -80,8 +82,7 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
     public var labelBasis: String
     public var catalogOrigin: String
     public var catalogVersion: String
-    /// What kind of product this is. A version 1 document has no such field, and a document that
-    /// states none reads back as `.food`, which is the only kind a version 1 build could record.
+    /// What kind of product this is. Version 2 requires it; version 1 defaults to food.
     public var kind: ProductKind
 
     enum CodingKeys: String, CodingKey {
@@ -111,12 +112,15 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
         self.kind = kind
     }
 
-    /// Read back with the kind defaulted, because a version 1 document does not carry one.
-    ///
-    /// `decodeIfPresent` rather than `decode`: a synthesized decode would refuse the whole document for
-    /// a field an earlier build could not write, which is what a version number exists to prevent.
+    /// Default the kind only for version 1; a missing or null version 2 kind is a decoding error.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind: ProductKind
+        if (decoder.userInfo[exportSchemaVersionKey] as? Int ?? 1) >= 2 {
+            kind = try container.decode(ProductKind.self, forKey: .kind)
+        } else {
+            kind = try container.decodeIfPresent(ProductKind.self, forKey: .kind) ?? .food
+        }
         self.init(
             snapshotID: try container.decode(String.self, forKey: .snapshotID),
             productID: try container.decode(String.self, forKey: .productID),
@@ -126,7 +130,7 @@ public struct JournalExportProvenance: Sendable, Hashable, Codable {
             labelBasis: try container.decode(String.self, forKey: .labelBasis),
             catalogOrigin: try container.decode(String.self, forKey: .catalogOrigin),
             catalogVersion: try container.decode(String.self, forKey: .catalogVersion),
-            kind: try container.decodeIfPresent(ProductKind.self, forKey: .kind) ?? .food)
+            kind: kind)
     }
 
     public init(product: ProductDefinition) {
@@ -563,6 +567,14 @@ public enum JournalExporter {
     /// not know what its extra or changed fields mean, and guessing would silently drop data.
     public static func decode(_ data: Data) throws -> JournalExport {
         let decoder = JSONDecoder()
+        struct VersionHeader: Decodable {
+            let schema_version: Int
+        }
+        let version = try JSONDecoder().decode(VersionHeader.self, from: data).schema_version
+        guard JournalExport.readableSchemaVersions.contains(version) else {
+            throw JournalExportError.unsupportedSchemaVersion(version)
+        }
+        decoder.userInfo[exportSchemaVersionKey] = version
         // One set of readers for the whole run; see `encode` for why they are not rebuilt per date.
         let formatter = dateFormatter()
         let fallback = wholeSecondFormatter()
