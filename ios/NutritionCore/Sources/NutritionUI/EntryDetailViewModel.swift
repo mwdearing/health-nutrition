@@ -43,6 +43,22 @@ public struct EntryRevisionRow: Equatable, Identifiable {
     public let changeReason: String
 }
 
+/// One change to the entry, newest first in `changes`: the revision's number, what changed in plain
+/// words, when it was written, and the reason the person gave when they gave one.
+public struct EntryChangeRow: Equatable, Identifiable {
+    public let id: Int
+    public let verb: String
+    public let at: Date
+    public let note: String?
+
+    public init(id: Int, verb: String, at: Date, note: String?) {
+        self.id = id
+        self.verb = verb
+        self.at = at
+        self.note = note
+    }
+}
+
 public struct EntryDestinationRow: Equatable, Identifiable {
     public var id: String { destination.rawValue }
     public let destination: JournalDestination
@@ -50,6 +66,10 @@ public struct EntryDestinationRow: Equatable, Identifiable {
     /// State as words, so colour is never the only signal.
     public let stateText: String
     public let iconName: String
+    /// The destination's name as a person reads it, e.g. "Apple Health".
+    public let sentToLabel: String
+    /// The state as a phrase under "Sent to", e.g. "Waiting to send".
+    public let sentToText: String
 }
 
 /// One edited component: the amount arrives as text and is parsed with the POSIX parser.
@@ -79,6 +99,14 @@ public final class EntryDetailViewModel: ObservableObject {
     /// The compounds the product snapshot states under names the fifteen journal nutrients do not, so a
     /// scanned supplement's own rows are visible where the entry's amounts are shown.
     @Published public private(set) var additionalNutrients: [EntryNutrientRow] = []
+    /// "This entry adds": the snapshot's standard values scaled to the amount this entry logged.
+    @Published public private(set) var adds: [EntryNutrientRow] = []
+    /// Every nutrient the snapshot states with a known value, unscaled, as the label printed them.
+    @Published public private(set) var allValues: [EntryNutrientRow] = []
+    /// Where the entry's values came from, as one line.
+    @Published public private(set) var sourceLine: String = EntryDetailViewModel.sourceLine(for: nil)
+    /// The entry's changes, newest first.
+    @Published public private(set) var changes: [EntryChangeRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
     @Published public private(set) var destinations: [EntryDestinationRow] = []
     @Published public private(set) var currentRevision: Int = 0
@@ -97,6 +125,9 @@ public final class EntryDetailViewModel: ObservableObject {
     /// may only correct that, so a save made before the first load cannot move an entry whose
     /// stored time this model has not seen.
     private var storedOccurredAt: Date?
+    /// The amount drafts as `load` seeded them, so `isDirty` compares what the person has typed with
+    /// what the entry states.
+    private var loadedDrafts: [String: String] = [:]
     /// The zone the entry's time is a wall clock in, as the view shows and edits it.
     ///
     /// The picker is bound to this rather than to the device zone, because the stored time is a wall
@@ -157,9 +188,13 @@ public final class EntryDetailViewModel: ObservableObject {
             }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             additionalNutrients = Self.additionalNutrients(of: snapshot)
+            sourceLine = Self.sourceLine(for: snapshot)
+            allValues = Self.allValues(of: snapshot)
+            adds = Self.adds(of: snapshot, logged: current.components)
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
                 ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))
             })
+            loadedDrafts = drafts
             occurredAt = intake.occurredAt
             storedOccurredAt = intake.occurredAt
             timeZoneIdentifier = intake.timeZoneIdentifier
@@ -167,17 +202,27 @@ public final class EntryDetailViewModel: ObservableObject {
             revisions = all.reversed().map {
                 EntryRevisionRow(number: $0.number, createdAt: $0.createdAt, changeReason: $0.changeReason)
             }
+            changes = Self.changeRows(of: all)
             let projections = try store.projections(of: intakeID).filter { $0.isCurrent }
             destinations = projections.sorted { $0.destination.rawValue < $1.destination.rawValue }.map {
                 EntryDestinationRow(
                     destination: $0.destination, label: Self.label($0.destination),
-                    stateText: Self.stateText($0.state), iconName: Self.icon($0.state))
+                    stateText: Self.stateText($0.state), iconName: Self.icon($0.state),
+                    sentToLabel: Self.sentToLabel($0.destination), sentToText: Self.sentToText($0.state))
             }
             fieldErrors = [:]
             errorMessage = nil
         } catch {
             errorMessage = "Could not read this entry."
         }
+    }
+
+    /// Whether the screen holds a change the person has not saved: an amount draft that differs from
+    /// the one the entry states, or a time that differs from the stored one. Save is offered only then.
+    public var isDirty: Bool {
+        if drafts != loadedDrafts { return true }
+        guard let storedOccurredAt else { return false }
+        return occurredAt != storedOccurredAt
     }
 
     /// The same amount in the unit the reader chose, recomputed from what is in the text field rather
@@ -242,7 +287,7 @@ public final class EntryDetailViewModel: ObservableObject {
                 occurredAt: correctedTime,
                 timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
         } catch {
-            errorMessage = "Could not save the change. The previous version is kept."
+            errorMessage = "Couldn't save. Your previous amount is kept."
             return false
         }
         load(now: now)
@@ -393,6 +438,117 @@ public final class EntryDetailViewModel: ObservableObject {
         key.split(separator: "-")
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
+    }
+
+    /// Where the entry's values came from, as the line under "Where this came from". A manual entry, or
+    /// one with no snapshot, states no values.
+    public static func sourceLine(for product: ProductDefinition?) -> String {
+        guard let product, product.catalogOrigin != "manual" else { return "Typed in · no nutrition values" }
+        switch product.catalogOrigin {
+        case ProductOrigin.label_capture:
+            return "Label scan · \(product.labelBasis)"
+        case RecipeLogger.catalogOrigin:
+            return "Recipe · \(product.name)"
+        default:
+            return "Barcode lookup · values \(product.labelBasis)"
+        }
+    }
+
+    /// "This entry adds": each standard key the snapshot states, or the tracked nutrients it states, scaled
+    /// to what the entry logged. The keys follow `AddIntakeViewModel.thisAddsKeys`, so the Add form and this
+    /// screen show the same rows in the same order. A value the snapshot does not state, or a basis that
+    /// the logged amount cannot resolve, reads "Not on the label" and is never shown as zero.
+    static func adds(of product: ProductDefinition?, logged components: [IntakeComponent]) -> [EntryNutrientRow] {
+        guard let product else { return [] }
+        let factor = DailyTotalsBuilder.scalingFactor(labelBasis: product.labelBasis, logged: components)
+        var rows: [EntryNutrientRow] = []
+        for key in AddIntakeViewModel.thisAddsKeys {
+            let value = snapshotValue(for: key, in: product.nutrients)
+            guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { continue }
+            var amountText = "Not on the label"
+            if value != .unknown, let factor {
+                amountText = LookedUpProduct.describe(value.scaled(by: factor))
+            }
+            rows.append(EntryNutrientRow(
+                key: key, name: LookedUpProduct.displayNames[key] ?? compoundName(for: key), amountText: amountText))
+        }
+        return rows
+    }
+
+    /// Every nutrient the snapshot states with a known value, as the label printed it, sorted by name.
+    static func allValues(of product: ProductDefinition?) -> [EntryNutrientRow] {
+        guard let product else { return [] }
+        var rows: [EntryNutrientRow] = []
+        for (key, value) in product.nutrients where value.isKnown {
+            let name = product.displayName(for: key) ?? LookedUpProduct.displayNames[key] ?? compoundName(for: key)
+            rows.append(EntryNutrientRow(key: key, name: name, amountText: LookedUpProduct.describe(value)))
+        }
+        return rows.sorted { ($0.name, $0.key) < ($1.name, $1.key) }
+    }
+
+    /// The value a key reads from a snapshot, trying the keys the write planner accepts for it.
+    static func snapshotValue(for key: String, in nutrients: [String: NutrientValue]) -> NutrientValue {
+        for accepted in HealthKitWritePlanner.acceptedKeys(for: key) {
+            if let value = nutrients[accepted], value != .unknown { return value }
+        }
+        return .unknown
+    }
+
+    /// The changes, newest first. Revision 1 is "Logged". A later revision reads by what it changed against
+    /// the one before: its components, and its time when it carries one that differs from the time the entry
+    /// was last known to have. A revision with no time of its own is unchanged in time.
+    static func changeRows(of revisions: [IntakeRevision]) -> [EntryChangeRow] {
+        var rows: [EntryChangeRow] = []
+        var previous: IntakeRevision?
+        var baseline: Date?
+        for revision in revisions.sorted(by: { $0.number < $1.number }) {
+            var verb = "Logged"
+            if let previous {
+                let amountsChanged = !componentsUnchanged(from: previous.components, to: revision.components)
+                let timeChanged = revision.occurredAt != nil && baseline != nil && revision.occurredAt != baseline
+                switch (amountsChanged, timeChanged) {
+                case (true, true): verb = "Amount changed and time corrected"
+                case (true, false): verb = "Amount changed"
+                case (false, true): verb = "Time corrected"
+                case (false, false): verb = "Changed"
+                }
+            }
+            rows.append(EntryChangeRow(
+                id: revision.number, verb: verb, at: revision.createdAt,
+                note: changeNote(for: revision.changeReason, verb: verb)))
+            baseline = revision.occurredAt ?? baseline
+            previous = revision
+        }
+        return rows.reversed()
+    }
+
+    /// The reason a change is shown with, or nil when it says nothing the verb does not: the default reason,
+    /// the automatic time-correction reason, and a reason that repeats the verb are all left out.
+    static func changeNote(for reason: String, verb: String) -> String? {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == defaultChangeReason || trimmed == timeCorrectionReason || trimmed == verb {
+            return nil
+        }
+        return trimmed
+    }
+
+    /// The name of a destination as a person reads it under "Sent to".
+    static func sentToLabel(_ destination: JournalDestination) -> String {
+        switch destination {
+        case .healthKit: return "Apple Health"
+        case .relay: return "HealthRelay"
+        }
+    }
+
+    /// The state of a destination as a phrase under "Sent to". Each state has its own word.
+    static func sentToText(_ state: DestinationState) -> String {
+        switch state {
+        case .pending: return "Waiting to send"
+        case .inProgress: return "Sending"
+        case .succeeded: return "Sent"
+        case .needsAttention: return "Needs attention"
+        case .disabled: return "Not connected"
+        }
     }
 
     static func label(_ destination: JournalDestination) -> String {
