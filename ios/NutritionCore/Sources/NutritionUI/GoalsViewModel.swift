@@ -157,6 +157,8 @@ public final class GoalsViewModel: ObservableObject {
     private var snapshotUnits: [String: MeasureUnit] = [:]
     private let preferences: DisplayPreferences
     private var loadedUnitSystem: UnitSystem?
+    private var storedWaterDraft: String?
+    private var storedWaterUnit: MeasureUnit?
 
     public init(
         store: GoalStore, journal: (any JournalStore)? = nil,
@@ -186,6 +188,10 @@ public final class GoalsViewModel: ObservableObject {
                     nutrient: key, displayName: name,
                     targetText: self.displayGoal(goal).text)
             }
+            self.storedWaterDraft = byNutrient[DailyTotalsBuilder.waterKey].map {
+                DecimalFormatting.text(self.displayGoal($0).amount)
+            }
+            self.storedWaterUnit = byNutrient[DailyTotalsBuilder.waterKey].map { self.displayGoal($0).unit }
             for key in offeredKeys {
                 let waterUnitChanged = key == DailyTotalsBuilder.waterKey
                     && self.loadedUnitSystem != self.preferences.unitSystem
@@ -323,6 +329,10 @@ public final class GoalsViewModel: ObservableObject {
     public func commitTarget(for nutrient: String) -> Bool {
         let text = (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         rowError[nutrient] = nil
+        if nutrient == DailyTotalsBuilder.waterKey,
+           text == self.storedWaterDraft, selectedUnits[nutrient] == self.storedWaterUnit {
+            return true
+        }
         if text.isEmpty {
             guard removeTarget(for: nutrient) else { return false }
             draftText[nutrient] = ""

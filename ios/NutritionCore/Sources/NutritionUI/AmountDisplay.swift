@@ -33,15 +33,17 @@ public struct DisplayAmount: Equatable {
     /// read as "less than" rather than rounded to a zero.
     public let isBelowSmallest: Bool
     private let groupsWholeAmount: Bool
+    private let smallestAmount: Decimal
 
     public init(
         amount: Decimal, unit: MeasureUnit, isBelowSmallest: Bool = false,
-        groupsWholeAmount: Bool = false
+        groupsWholeAmount: Bool = false, smallestAmount: Decimal = AmountDisplay.smallestShown
     ) {
         self.amount = amount
         self.unit = unit
         self.isBelowSmallest = isBelowSmallest
         self.groupsWholeAmount = groupsWholeAmount
+        self.smallestAmount = smallestAmount
     }
 
     /// The amount and its symbol, as one line of text. An amount too small to name says so instead of
@@ -50,7 +52,7 @@ public struct DisplayAmount: Equatable {
         guard isBelowSmallest else {
             return "\(self.numberText) \(unit.symbol)"
         }
-        return "< \(DecimalFormatting.text(AmountDisplay.smallestShown)) \(unit.symbol)"
+        return "< \(DecimalFormatting.text(self.smallestAmount)) \(unit.symbol)"
     }
 
     /// The figures alone, for a sentence that spells the unit out in words.
@@ -59,7 +61,7 @@ public struct DisplayAmount: Equatable {
     /// amount that is not zero is the same wrong figure in a different voice.
     public var spokenAmount: String {
         guard isBelowSmallest else { return self.numberText }
-        return "less than \(DecimalFormatting.text(AmountDisplay.smallestShown))"
+        return "less than \(DecimalFormatting.text(self.smallestAmount))"
     }
 
     private var numberText: String {
@@ -155,10 +157,13 @@ public enum AmountDisplay {
         guard let milliliters = try? Quantity(value: amount, unit: unit).converted(to: .mL).value
         else { return display(amount, unit: unit, system: system) }
         let shown = display(milliliters, unit: .mL, system: system)
-        guard system == .metric else { return shown }
+        let rounded = system == .metric
+            ? DisplayRounding.rounded(shown.amount, fractionDigits: 0) : shown.amount
         return DisplayAmount(
-            amount: DisplayRounding.rounded(shown.amount, fractionDigits: 0), unit: .mL,
-            groupsWholeAmount: true)
+            amount: rounded, unit: shown.unit,
+            isBelowSmallest: shown.isBelowSmallest || (milliliters > 0 && rounded == 0),
+            groupsWholeAmount: system == .metric,
+            smallestAmount: system == .metric ? 1 : Decimal(string: "0.1")!)
     }
 
     /// The stored component's amount, shown under `system`.
