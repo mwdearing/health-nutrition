@@ -115,8 +115,9 @@ An unchanged water draft in the same display unit is not written back on submit 
 The Today water card and Journal water totals use `AmountDisplay.water`: a 12 fl oz intake against
 a 64 fl oz goal reads `12 fl oz of 64 fl oz`, or `355 mL of 1,893 mL` under metric.
 Bar fractions and goal comparisons still use the exact stored amounts, not the rounded display.
-Positive water amounts rounded to zero are shown as a bound, `< 1 mL` or `< 0.1 fl oz`,
-with the same bound spoken for accessibility; an actual zero still displays as zero.
+Positive water amounts rounded to zero are shown as a bound, `< 1 mL` or `< 0.0001 fl oz`.
+The US bound uses `AmountDisplay.smallestShown`, matching quick-water strings.
+The same bound is spoken for accessibility; an actual zero still displays as zero.
 Settings' quick-water equivalence and entry detail's converted line use `AmountDisplay` as well.
 
 Entry rows choose their decorative SF Symbol from the intake category and product kind:

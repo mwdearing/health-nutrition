@@ -163,7 +163,7 @@ public enum AmountDisplay {
             amount: rounded, unit: shown.unit,
             isBelowSmallest: shown.isBelowSmallest || (milliliters > 0 && rounded == 0),
             groupsWholeAmount: system == .metric,
-            smallestAmount: system == .metric ? 1 : Decimal(string: "0.1")!)
+            smallestAmount: system == .metric ? 1 : smallestShown)
     }
 
     /// The stored component's amount, shown under `system`.

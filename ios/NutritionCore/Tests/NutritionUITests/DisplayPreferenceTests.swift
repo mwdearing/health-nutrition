@@ -214,10 +214,12 @@ final class AmountDisplayPreferenceTests: XCTestCase {
 
     func testTinyWaterAmountShowsBelowSmallest() {
         for system in [UnitSystem.metric, .usCustomary] {
+            let smallest = system == .metric ? Decimal(1) : AmountDisplay.smallestShown
+            let bound = DecimalFormatting.text(smallest)
             let shown = AmountDisplay.water(Decimal(string: "0.0001")!, system: system)
             XCTAssertTrue(shown.isBelowSmallest)
-            XCTAssertEqual(shown.text, system == .metric ? "< 1 mL" : "< 0.1 fl oz")
-            XCTAssertEqual(shown.spokenAmount, system == .metric ? "less than 1" : "less than 0.1")
+            XCTAssertEqual(shown.text, "< \(bound) \(shown.unit.symbol)")
+            XCTAssertEqual(shown.spokenAmount, "less than \(bound)")
             let zero = AmountDisplay.water(0, system: system)
             XCTAssertFalse(zero.isBelowSmallest)
             XCTAssertEqual(zero.text, system == .metric ? "0 mL" : "0 fl oz")
