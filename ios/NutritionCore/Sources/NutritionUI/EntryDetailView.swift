@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// One entry, read first: what it is, what it added, where its values came from, where it was sent, and
-/// how it was changed. Editing its amounts and time is offered only once something has changed, and Save
-/// appears in the toolbar only then.
+/// how it was changed. The amounts and the time are always shown and can be edited; only Save and the
+/// optional note appear once something has changed.
 public struct EntryDetailView: View {
     @ObservedObject var model: EntryDetailViewModel
     private let now: () -> Date
@@ -29,8 +29,10 @@ public struct EntryDetailView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 if model.isDirty {
-                    Button("Save") { model.saveDrafts(now: now()) }
-                        .accessibilityHint("Adds a new revision and keeps the old one")
+                    Button("Save") {
+                        if model.saveDrafts(now: now()) { onFinished() }
+                    }
+                    .accessibilityHint("Saves your change")
                 }
             }
         }
@@ -78,10 +80,12 @@ public struct EntryDetailView: View {
                         DatePicker("When", selection: $model.occurredAt, in: ...now())
                             .environment(\.timeZone, model.storedTimeZone)
                             .accessibilityLabel("When the entry was eaten")
-                            .accessibilityHint("Corrects the time. Saving adds a new revision and keeps the old one.")
+                            .accessibilityHint("Corrects when this was eaten or drunk")
                         if model.isDirty {
-                            TextField("Reason for the change", text: $model.changeReason)
-                                .font(.body)
+                            DisclosureGroup("Add a note") {
+                                TextField("Optional note", text: $model.changeReason)
+                                    .font(.body)
+                            }
                         }
                     }
                 }
@@ -157,7 +161,7 @@ public struct EntryDetailView: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(row.sentToLabel)
                         .accessibilityValue(row.sentToText)
-                        if row.sentToText == EntryDetailViewModel.sentToText(.needsAttention) {
+                        if row.state == .needsAttention {
                             Button {} label: {
                                 HStack {
                                     Text("Try again").font(.body)

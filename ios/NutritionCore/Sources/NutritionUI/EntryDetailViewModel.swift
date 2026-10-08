@@ -70,6 +70,8 @@ public struct EntryDestinationRow: Equatable, Identifiable {
     public let sentToLabel: String
     /// The state as a phrase under "Sent to", e.g. "Waiting to send".
     public let sentToText: String
+    /// The destination's state as a value, so a reader compares states rather than their words.
+    public let state: DestinationState
 }
 
 /// One edited component: the amount arrives as text and is parsed with the POSIX parser.
@@ -94,6 +96,8 @@ public final class EntryDetailViewModel: ObservableObject {
     /// What a correction of the entry's time alone is recorded as, because a history that reads
     /// "Edited" for a change of time tells a reader nothing about what happened.
     public static let timeCorrectionReason = "Time corrected"
+    /// The reason revision 1 is stored with, when the entry is first logged.
+    static let creationReason = "created"
 
     @Published public private(set) var components: [EntryComponentRow] = []
     /// The compounds the product snapshot states under names the fifteen journal nutrients do not, so a
@@ -218,10 +222,12 @@ public final class EntryDetailViewModel: ObservableObject {
                 EntryDestinationRow(
                     destination: $0.destination, label: Self.label($0.destination),
                     stateText: Self.stateText($0.state), iconName: Self.icon($0.state),
-                    sentToLabel: Self.sentToLabel($0.destination), sentToText: Self.sentToText($0.state))
+                    sentToLabel: Self.sentToLabel($0.destination), sentToText: Self.sentToText($0.state),
+                    state: $0.state)
             }
             fieldErrors = [:]
             errorMessage = nil
+            changeReason = EntryDetailViewModel.defaultChangeReason
         } catch {
             errorMessage = "Could not read this entry."
         }
@@ -525,7 +531,7 @@ public final class EntryDetailViewModel: ObservableObject {
             }
             rows.append(EntryChangeRow(
                 id: revision.number, verb: verb, at: revision.createdAt,
-                note: changeNote(for: revision.changeReason, verb: verb)))
+                note: changeNote(for: revision.changeReason, verb: verb, number: revision.number)))
             baseline = revision.occurredAt ?? baseline
             previous = revision
         }
@@ -534,9 +540,11 @@ public final class EntryDetailViewModel: ObservableObject {
 
     /// The reason a change is shown with, or nil when it says nothing the verb does not: the default reason,
     /// the automatic time-correction reason, and a reason that repeats the verb are all left out.
-    static func changeNote(for reason: String, verb: String) -> String? {
+    static func changeNote(for reason: String, verb: String, number: Int) -> String? {
         let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == defaultChangeReason || trimmed == timeCorrectionReason || trimmed == verb {
+        // Revision 1 is stored as "created", which says nothing the "Logged" verb does not.
+        if number == 1 || trimmed == creationReason || trimmed.isEmpty || trimmed == defaultChangeReason
+            || trimmed == timeCorrectionReason || trimmed == verb {
             return nil
         }
         return trimmed
