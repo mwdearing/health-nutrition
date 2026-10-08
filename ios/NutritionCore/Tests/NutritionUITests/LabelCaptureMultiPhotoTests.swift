@@ -137,8 +137,9 @@ final class LabelCaptureMultiPhotoTests: XCTestCase {
 
         let zinc = try XCTUnwrap(model.additionalNutrient(for: "zinc"))
         XCTAssertEqual(zinc.value, .known(Decimal(11), .mg), "the value already on screen is kept")
-        XCTAssertEqual(zinc.conflictingValue, .known(Decimal(15), .mg), "the other reading is kept too")
-        XCTAssertEqual(zinc.conflictingFrameIndex, 2)
+        XCTAssertEqual(
+            zinc.candidates.first?.value, .known(Decimal(15), .mg), "the other reading is kept too")
+        XCTAssertEqual(zinc.candidates.first?.frameIndex, 2)
         XCTAssertTrue(zinc.hasConflict)
         XCTAssertEqual(zinc.conflictSummary, "Photo 2 reads 15 mg")
         XCTAssertEqual(model.conflictCount, 1)
@@ -178,8 +179,8 @@ final class LabelCaptureMultiPhotoTests: XCTestCase {
         model.addPhoto(lines: ["Calcium 130mg 6%"])
 
         XCTAssertEqual(model.row(for: .calcium)?.value, .known(Decimal(120), .mg))
-        XCTAssertEqual(model.row(for: .calcium)?.conflictingValue, .known(Decimal(130), .mg))
-        XCTAssertEqual(model.row(for: .calcium)?.conflictingFrameIndex, 2)
+        XCTAssertEqual(model.row(for: .calcium)?.candidates.first?.value, .known(Decimal(130), .mg))
+        XCTAssertEqual(model.row(for: .calcium)?.candidates.first?.frameIndex, 2)
         XCTAssertFalse(model.canApply)
 
         XCTAssertTrue(model.correct(key: .calcium, text: "130 mg"))
@@ -351,5 +352,146 @@ final class LabelCaptureMultiPhotoTests: XCTestCase {
         XCTAssertNil(model.servingText)
         XCTAssertFalse(model.canAddPhoto)
         XCTAssertNil(model.photoHeader)
+    }
+
+    // MARK: What a later photo says about a row already on screen
+
+    /// A row only the second photo supplies keeps the name that photo printed with it. The first
+    /// photo left it unknown, so there was no earlier spelling to keep, and dropping the incoming one
+    /// is what turned a printed `Calcium Citrate 200mg` into a bare `Calcium` on screen and in the
+    /// stored snapshot.
+    func testASecondPhotoKeepsTheDisplayNameOfARowOnlyItReads() throws {
+        let model = makeModel()
+        model.load(lines: ["Serving Size: 2 Gummies", "Iron 8mg 4%"])
+        XCTAssertNil(model.row(for: .calcium)?.displayName)
+        XCTAssertEqual(model.row(for: .calcium)?.name, "Calcium")
+
+        model.addPhoto(lines: ["Calcium Citrate 200mg 6%"])
+
+        XCTAssertEqual(model.row(for: .calcium)?.displayName, "Calcium Citrate")
+        XCTAssertEqual(model.row(for: .calcium)?.name, "Calcium Citrate")
+        let product = try XCTUnwrap(model.makeProduct())
+        XCTAssertEqual(product.nutrientDisplayNames["calcium"], "Calcium Citrate")
+    }
+
+    /// A third photo that reads a row differently does not overwrite what the first two said and is
+    /// not dropped either: every distinct reading is kept as a candidate of its own, so the user
+    /// chooses between three values rather than two, and the photo counts because it read the panel.
+    func testAThirdPhotoOfAConflictedRowKeepsEveryReadingAsACandidate() throws {
+        let model = makeModel()
+        model.load(lines: ["Serving Size: 2 Gummies", "Calcium 120mg 6%"])
+        model.addPhoto(lines: ["Calcium 130mg 6%"])
+        XCTAssertEqual(model.frameCount, 2)
+
+        model.addPhoto(lines: ["Calcium 140mg 6%"])
+
+        let row = try XCTUnwrap(model.row(for: .calcium))
+        XCTAssertEqual(row.value, .known(Decimal(120), .mg), "the value on screen is the first one")
+        XCTAssertEqual(
+            row.candidates.map(\.value), [.known(Decimal(130), .mg), .known(Decimal(140), .mg)],
+            "each distinct reading is a candidate: the third photo is not dropped for disagreeing")
+        XCTAssertEqual(row.candidates.map(\.frameIndex), [2, 3])
+        XCTAssertEqual(row.candidates.map(\.support), [1, 1])
+        XCTAssertTrue(row.hasConflict)
+        XCTAssertEqual(model.conflictCount, 1)
+        XCTAssertFalse(model.canApply)
+        XCTAssertEqual(model.frameCount, 3, "the photo is counted: it read the panel")
+    }
+
+    /// A reading that agrees with a candidate already on the row raises that candidate's confidence
+    /// instead of becoming a further candidate, and the agreeing photo counts too.
+    func testAFurtherPhotoThatAgreesWithACandidateRaisesItsConfidence() throws {
+        let model = makeModel()
+        model.load(lines: ["Serving Size: 2 Gummies", "Calcium 120mg 6%"])
+        model.addPhoto(lines: ["Calcium 130mg 6%"])
+        model.addPhoto(lines: ["Calcium 140mg 6%"])
+
+        model.addPhoto(lines: ["Calcium 130mg 6%"])
+
+        let row = try XCTUnwrap(model.row(for: .calcium))
+        XCTAssertEqual(row.candidates.count, 2, "an agreeing reading is not a new candidate")
+        XCTAssertEqual(row.candidates.first?.support, 2, "two photos read 130 mg")
+        XCTAssertEqual(row.candidates.first?.frameIndex, 2, "still the photo that read it first")
+        XCTAssertEqual(row.candidates.last?.support, 1)
+        XCTAssertEqual(model.frameCount, 4)
+
+        // The user picks one of the readings, and the row is an answered row afterwards.
+        XCTAssertTrue(model.chooseConflict(key: .calcium, taking: 3))
+        XCTAssertEqual(model.row(for: .calcium)?.value, .known(Decimal(140), .mg))
+        XCTAssertEqual(model.row(for: .calcium)?.frameIndex, 3)
+        XCTAssertFalse(model.row(for: .calcium)?.hasConflict == true)
+        XCTAssertTrue(model.canApply)
+    }
+
+    /// The same on a compound row: compounds merge by slug, so the readings have to meet on one row
+    /// for the choice to be possible, and a third reading is kept beside the first two.
+    func testAThirdPhotoOfACompoundKeepsEveryReadingAsACandidate() throws {
+        let model = makeModel()
+        model.load(lines: leftHalf)
+        model.addPhoto(lines: rightHalfWithOtherZinc)
+        model.addPhoto(lines: ["Zinc 20mg"])
+
+        let zinc = try XCTUnwrap(model.additionalNutrient(for: "zinc"))
+        XCTAssertEqual(zinc.value, .known(Decimal(11), .mg))
+        XCTAssertEqual(
+            zinc.candidates.map(\.value), [.known(Decimal(15), .mg), .known(Decimal(20), .mg)])
+        XCTAssertEqual(model.frameCount, 3)
+        XCTAssertEqual(model.conflictCount, 1)
+
+        XCTAssertTrue(model.chooseConflict(additionalKey: "zinc", taking: 3))
+        XCTAssertEqual(model.additionalNutrient(for: "zinc")?.value, .known(Decimal(20), .mg))
+        XCTAssertEqual(model.conflictCount, 0)
+    }
+
+    // MARK: Opening the camera from the review screen
+
+    /// Opening the camera ends whatever correction was open. The camera is a different screen, so an
+    /// editor left standing behind it would come back with a field the user never filled in and no
+    /// way to tell which row it belonged to.
+    func testAddingAPhotoEndsAnOpenCorrection() {
+        let model = makeModel()
+        model.load(lines: leftHalf)
+        model.beginCorrection(for: .sodium)
+        XCTAssertEqual(model.editingKey, .sodium)
+
+        model.beginAddingPhoto()
+
+        XCTAssertTrue(model.isAddingPhoto)
+        XCTAssertNil(model.editingKey, "the camera is open, so no editor is left behind it")
+        XCTAssertNil(model.editingAdditionalKey)
+
+        // And on the way back, whichever way the user left the camera.
+        model.cancelAddingPhoto()
+        XCTAssertTrue(model.isReviewing)
+        XCTAssertNil(model.editingKey)
+    }
+
+    /// A compound editor is ended the same way: there is one editor at a time, and none of them are
+    /// open while the camera is in front of the user.
+    func testAddingAPhotoEndsAnOpenCompoundCorrection() {
+        let model = makeModel()
+        model.load(lines: leftHalf)
+        model.beginCorrection(forAdditional: "zinc")
+        XCTAssertEqual(model.editingAdditionalKey, "zinc")
+
+        model.beginAddingPhoto()
+
+        XCTAssertNil(model.editingAdditionalKey)
+        XCTAssertNil(model.editingKey)
+    }
+
+    /// A serving size the user had already stated is not lost by opening the camera: the draft keeps
+    /// what was entered, and only the edit is closed.
+    func testAddingAPhotoLeavesAnEnteredServingSizeAlone() {
+        let model = makeModel()
+        model.load(lines: ["Supplement Facts", "Calories 40"])
+        XCTAssertTrue(model.servingIsMissing)
+        XCTAssertTrue(model.enterServingSize(text: "2 gummies"))
+
+        model.beginAddingPhoto()
+
+        XCTAssertEqual(model.servingText, "2 gummies")
+        XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(2), unit: .gummy))
+        XCTAssertTrue(model.isServingConfirmed)
     }
 }

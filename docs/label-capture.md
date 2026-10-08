@@ -223,24 +223,49 @@ draft, and the review screen offers **Add another photo** once there is somethin
   reads the row the same way. The compound rows under "Also on the label" merge the same way, keyed by
   the slug of the name the label printed, so `Zinc 15mg` meets the `Zinc 11mg` of the first photo
   rather than becoming a second row of its own.
-- **A row the two photos read differently becomes a conflict.** Neither value is dropped and neither is
-  chosen silently: both are kept, the row is marked for review — it counts as one of the pending values,
-  which is what the screen's `isPending` means — the screen shows both values and reads "Conflict: tap
-  to choose", and so **Save stays disabled until it is resolved**. Confirming keeps the value on screen,
-  the other button takes the other photo's reading, and typing an amount resolves it the same way. A
-  resolved conflict is an ordinary answered row: the value on screen is the one that is kept. A row the
-  user has already confirmed or corrected is never made a conflict by a later photo — their answer
-  outranks anything a second reading says.
+- **A row the photos read differently becomes a conflict.** Every reading is kept and nothing is chosen
+  silently: the row is marked for review — it counts as one of the pending values, which is what the
+  screen's `isPending` means — the screen lists each reading with its own button and reads
+  "Conflict: tap to choose", and so **Save stays disabled until it is resolved**. Confirming keeps the
+  value on screen, another button takes that photo's reading, and typing an amount resolves it the
+  same way. A resolved conflict is an ordinary answered row: the value on screen is the one that is
+  kept. A row the user has already confirmed or corrected is never made a conflict by a later photo —
+  their answer outranks anything a second reading says.
+- **A third photo is kept, not dropped.** A panel can be read several ways rather than two, so a third
+  reading joins the row's `candidates` beside the value on screen instead of replacing one or being
+  discarded for arriving late, and the photo counts towards `frameCount` because it read the panel. A
+  reading that agrees with a candidate already kept raises that one's `support` rather than becoming a
+  further candidate, which is what a second look that agrees is worth; the screen says how many photos
+  agreed, and the user still chooses. Every candidate's button is labelled with the value it keeps,
+  since there is no longer a single "other" one.
+- **A row only a later photo supplies keeps the name that photo printed.** `Calcium Citrate 200mg` is
+  calcium with the printed form as the row's display name, and a row the first photo left unknown has
+  no earlier spelling, so the incoming name is copied onto it. A row that already has a name is not
+  renamed by a later photo.
 - **Panel-wide facts come from whichever photo read them.** The serving size and the
   servings-per-container count are taken from the first photo that read them, and a later photo never
   replaces one already on screen — never a serving the user has confirmed, which is their answer
   rather than a reading at all.
 - **What the screen says.** The header reads "From 2 photos" once more than one photo has contributed,
-  and a row that is a conflict is called out in the row itself, next to the two values.
+  and a row that is a conflict is called out in the row itself, beside the readings.
 - **A photo that read no amount contributes nothing.** A shot that missed the panel leaves the draft
   exactly as it was and does not count towards the number of photos, rather than looking as though it
   had been merged. A photo that repeats rows the draft already has does count: a second reading of a
   row is what can answer the parser's doubt about the first one.
+- **Leaving the camera.** **Back to the values** calls `LabelCaptureSession.cancelAddingPhoto()`, which
+  clears the held transcript as well as the flag: the recogniser replaces those lines only when it
+  recognises something, so a camera reopened for another photo would otherwise still hold what the
+  cancelled one saw, and a Capture taken before anything new was read would merge the photo the user
+  backed out of. Coming back the same way from a camera failure does the same thing.
+- **Opening the camera ends an open correction.** `beginAddingPhoto()` closes whichever editor was open,
+  and the review screen clears its typed draft as it goes: the camera is a different screen, so a field
+  left standing behind it would return empty, against a row it was never filled in for. What was
+  already stated on the draft — a corrected amount, an entered serving size — is kept.
+- **A camera failure keeps the reviewed draft.** `LabelCaptureSheetState` records why the camera stopped
+  and decides what the failure screen offers. When the failure arrived while another photo was being
+  added, the rows the user had already checked are still behind it, so the screen offers **Back to the
+  values** alongside Close; offering only Close would throw away a reviewed draft because a camera
+  stopped. With no draft behind it, as before the first photo, Close is the only way out.
 - **What retake does.** `retake()` clears every frame: the rows, the serving, the conflicts and the
   photo count all go, and the next capture loads a new panel. A retake is a different product, not the
   next photo of this one — that is what Add another photo is for.
