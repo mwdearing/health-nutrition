@@ -26,6 +26,8 @@ Semantic roles either name the existing token they equal, or are new values that
 | surface | #F2F2F7 | #0B3D4A | dark value equals the light value of RelayAccentInk | proposed, needs Michael's approval |
 | border | #D1D5DB | #1F5663 | none | proposed, needs Michael's approval |
 | textPrimary | #111827 | #F0F6FC | brand guide text colours | proposed, needs Michael's approval |
+| track | #DCE7E9 | #1F5663 | none (dark equals border) | proposed, needs Michael's approval |
+| accentTint | #E3F1F0 | #134B58 | none | proposed, needs Michael's approval |
 | textSecondary | #6C6C70 | #AEAEB2 | RelaySecondaryText | existing: equals RelaySecondaryText |
 | accent | #0F6B78 | #5EEAD4 | AccentColor | existing: equals AccentColor |
 | success | #14592A | #A6E8B8 | RelayReadyInk | existing: equals RelayReadyInk |
@@ -62,10 +64,20 @@ Checked pairs (light / dark ratio):
 | RelayWaitingInk on RelayWaitingTint | 6.93 | 9.71 |
 | RelayFailedInk on RelayFailedTint | 7.30 | 9.35 |
 | RelayOnMint on RelayMint | 11.11 | 11.11 |
+| accent fill on track (graphic, needs 3:1) | 4.90 | 5.52 |
+| RelayAccentInk on accentTint | 10.17 | 6.53 |
+| textPrimary on accentTint | 15.30 | 8.87 |
+| accent on accentTint | 5.33 | 6.53 |
 
 ## Usage notes
 
 - Never use RelayMint as text on a light surface: mint on white is only 1.48:1. Mint is a fill colour, with RelayOnMint on top.
 - In dark mode the accent is mint, which reads at 11.11:1 on the dark background.
 - The border role is a decorative separator. It is not text and does not carry meaning on its own, so it is not held to 4.5:1.
+- `track` is the unfilled part of a goal bar and its hatch lines. It is decorative: the figure beside the bar always
+  states the value, so the bar's low contrast against the background (1.26 light, 2.01 dark) never carries meaning alone.
+  The filled part of the bar is the accent, which clears 3:1 on the track in both appearances.
+- `accentTint` is the fill behind icon wells, kind tags and quiet capsules. Put `RelayAccentInk` or `textPrimary` on it.
+  Do not put `textSecondary` on it in dark: that pair is 4.37:1.
+- `track` and `accentTint` are kept in their own list (`NutritionTokens.design`) so the audited and semantic tables stay as approved.
 - Do not add a token without a row in the table above and a passing contrast check.

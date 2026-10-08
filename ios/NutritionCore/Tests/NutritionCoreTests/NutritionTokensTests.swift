@@ -146,4 +146,36 @@ final class NutritionTokensTests: XCTestCase {
         XCTAssertEqual(try token("background").light, RGB(red: 255, green: 255, blue: 255))
         XCTAssertEqual(try token("background").light.hex, "#FFFFFF")
     }
+
+    func testTrackAndAccentTintAreDeclaredWithTheirExactValues() throws {
+        let track = try token("track")
+        XCTAssertEqual(track.light.hex, "#DCE7E9")
+        XCTAssertEqual(track.dark.hex, "#1F5663")
+        let tint = try token("accentTint")
+        XCTAssertEqual(tint.light.hex, "#E3F1F0")
+        XCTAssertEqual(tint.dark.hex, "#134B58")
+        for item in NutritionTokens.design {
+            XCTAssertEqual(try rgb(item.lightHex), item.light, "\(item.name) light")
+            XCTAssertEqual(try rgb(item.darkHex), item.dark, "\(item.name) dark")
+        }
+        let names = (NutritionTokens.audited + NutritionTokens.semantic + NutritionTokens.design).map { $0.name }
+        XCTAssertEqual(Set(names).count, names.count)
+    }
+
+    func testAccentFillOnTrackIsAtLeastThreeToOneInBothAppearances() throws {
+        let accent = try token("accent")
+        let track = try token("track")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(accent.light, track.light), 3, "light")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(accent.dark, track.dark), 3, "dark")
+    }
+
+    func testAccentInkOnAccentTintIsAtLeastFourPointFiveToOneInBothAppearances() throws {
+        let ink = try token("RelayAccentInk")
+        let tint = try token("accentTint")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(ink.light, tint.light), 4.5, "light")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(ink.dark, tint.dark), 4.5, "dark")
+        let primary = try token("textPrimary")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(primary.light, tint.light), 4.5, "primary light")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(primary.dark, tint.dark), 4.5, "primary dark")
+    }
 }

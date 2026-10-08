@@ -137,8 +137,15 @@ public enum NutritionTokens: Sendable {
         Token(name: "error", light: "#8A1C14", dark: "#FFB3AB"),
     ]
 
-    /// Looks a token up by name in both lists.
+    /// Colours the design adds for bars and tags. Proposed like the semantic roles above, and kept in
+    /// their own list so the audited and semantic tables stay exactly as they were approved.
+    public static let design: [Token] = [
+        Token(name: "track", light: "#DCE7E9", dark: "#1F5663"),
+        Token(name: "accentTint", light: "#E3F1F0", dark: "#134B58"),
+    ]
+
+    /// Looks a token up by name in all three lists.
     public static func token(named name: String) -> Token? {
-        (audited + semantic).first { $0.name == name }
+        (audited + semantic + design).first { $0.name == name }
     }
 }
