@@ -172,6 +172,40 @@ final class LabelCaptureMultiPhotoTests: XCTestCase {
         XCTAssertFalse(other.chooseConflict(additionalKey: "zinc", taking: 3))
     }
 
+    func testThirdPhotoAgreeingWithTheDisplayedValueRaisesItsSupportOnNamedRow() throws {
+        let model = makeModel()
+        model.load(lines: ["Serving Size: 2 Gummies", "Calcium 120mg"])
+        model.addPhoto(lines: ["Calcium 130mg"])
+        model.addPhoto(lines: ["Calcium 120mg"])
+
+        let row = try XCTUnwrap(model.row(for: .calcium))
+        XCTAssertEqual(row.value, .known(Decimal(120), .mg))
+        XCTAssertEqual(row.frameIndex, 1)
+        XCTAssertEqual(row.support, 2)
+        XCTAssertEqual(row.displayedCandidate.support, 2)
+        XCTAssertEqual(row.candidates.map(\.support), [1])
+        XCTAssertEqual(model.frameCount, 3)
+        XCTAssertTrue(row.hasConflict)
+        XCTAssertFalse(model.canApply)
+    }
+
+    func testThirdPhotoAgreeingWithTheDisplayedValueRaisesItsSupportOnCompoundRow() throws {
+        let model = makeModel()
+        model.load(lines: ["Serving Size: 2 Gummies", "Zinc 11mg"])
+        model.addPhoto(lines: ["Zinc 15mg"])
+        model.addPhoto(lines: ["Zinc 11mg"])
+
+        let row = try XCTUnwrap(model.additionalNutrient(for: "zinc"))
+        XCTAssertEqual(row.value, .known(Decimal(11), .mg))
+        XCTAssertEqual(row.frameIndex, 1)
+        XCTAssertEqual(row.support, 2)
+        XCTAssertEqual(row.displayedCandidate.support, 2)
+        XCTAssertEqual(row.candidates.map(\.support), [1])
+        XCTAssertEqual(model.frameCount, 3)
+        XCTAssertTrue(row.hasConflict)
+        XCTAssertFalse(model.canApply)
+    }
+
     /// The same rule on a named nutrient row: both readings are kept, and a typed value resolves it.
     func testAConflictingNutrientRowKeepsBothValuesUntilItIsCorrected() {
         let model = makeModel()

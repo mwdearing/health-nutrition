@@ -96,6 +96,11 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
     /// Supplement Facts panel is two columns and does not always fit in one frame, so a panel can be
     /// read across several photos and a row belongs to the photo that saw it.
     public var frameIndex: Int
+    /// Photos agreeing with the displayed reading, including those before a conflict arose.
+    var support = 1
+    var displayedCandidate: LabelCaptureCandidate {
+        LabelCaptureCandidate(value: value, frameIndex: frameIndex, support: support)
+    }
     /// Every value a photo other than the one on screen read for this row, in the order the photos
     /// read them. A row the photos agree about has none; a row three photos read three ways has two,
     /// because the value on screen is the third.
@@ -242,6 +247,11 @@ public struct LabelCaptureAdditionalRow: Identifiable, Equatable, Sendable {
     /// Which photo read this row, as on a named nutrient row. A compound the panel states beside its
     /// own text can fall outside the first frame, and then it belongs to the photo that saw it.
     public var frameIndex: Int
+    /// Photos agreeing with the displayed reading, as on a named nutrient row.
+    var support = 1
+    var displayedCandidate: LabelCaptureCandidate {
+        LabelCaptureCandidate(value: value, frameIndex: frameIndex, support: support)
+    }
     /// Every value another photo read for this compound under the same slug and it did not match, in
     /// the order the photos read them. Kept beside this one until the user chooses, exactly as on a
     /// nutrient row.
@@ -589,6 +599,7 @@ public final class LabelCaptureViewModel: ObservableObject {
                 }
                 contributed = true
             } else if rows[index].value == incoming {
+                rows[index].support += 1
                 // The same value from two photos is worth more than one: what stands is the reading this
                 // photo made, so the reasons of that reading are the ones the row keeps. A doubt the
                 // first photo raised is answered when another reads the row cleanly, and a doubt the
@@ -626,6 +637,7 @@ public final class LabelCaptureViewModel: ObservableObject {
             }
             let reasons = compound.review?.reasons ?? []
             if additionalRows[index].value == compound.value {
+                additionalRows[index].support += 1
                 additionalRows[index].reasons = reasons
                 if !additionalRows[index].isAnswered {
                     additionalRows[index].status = reasons.isEmpty ? .read : .needsConfirmation

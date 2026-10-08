@@ -58,8 +58,8 @@ final class LabelCaptureSessionTests: XCTestCase {
         session.capture()
 
         XCTAssertEqual(model.frameCount, 1, "the cancelled photo did not contribute to the draft")
-        XCTAssertNil(model.row(for: .calcium))
-        XCTAssertNil(model.row(for: .iron))
+        XCTAssertEqual(model.row(for: .calcium)?.value, .unknown)
+        XCTAssertEqual(model.row(for: .iron)?.value, .unknown)
         XCTAssertEqual(model.row(for: .calories)?.value, .known(Decimal(40), .kcal))
         XCTAssertEqual(model.additionalNutrient(for: "zinc")?.value, .known(Decimal(11), .mg))
         XCTAssertEqual(model.conflictCount, 0)
@@ -123,7 +123,7 @@ final class LabelCaptureSessionTests: XCTestCase {
         session.capture()
 
         XCTAssertEqual(model.frameCount, 1)
-        XCTAssertNil(model.row(for: .calcium))
+        XCTAssertEqual(model.row(for: .calcium)?.value, .unknown)
         XCTAssertEqual(model.conflictCount, 0)
     }
 

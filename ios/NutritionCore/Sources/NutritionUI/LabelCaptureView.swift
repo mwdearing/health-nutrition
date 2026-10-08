@@ -317,10 +317,10 @@ public struct LabelCaptureView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
                     "\(row.name) was read differently in \(row.candidates.count + 1) photos. Tap to choose.")
-                Text("Photo \(row.frameIndex) reads \(row.valueText).")
+                Text(row.displayedCandidate.summary)
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
-                    .accessibilityLabel("Photo \(row.frameIndex) reads \(row.valueText).")
+                    .accessibilityLabel(row.displayedCandidate.summary)
                 Button("Keep photo \(row.frameIndex)") { model.confirm(row.key) }
                     .font(.body)
                     .buttonStyle(.borderless)
@@ -447,10 +447,10 @@ public struct LabelCaptureView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
                     "\(row.name) was read differently in \(row.candidates.count + 1) photos. Tap to choose.")
-                Text("Photo \(row.frameIndex) reads \(row.valueText).")
+                Text(row.displayedCandidate.summary)
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
-                    .accessibilityLabel("Photo \(row.frameIndex) reads \(row.valueText).")
+                    .accessibilityLabel(row.displayedCandidate.summary)
                 Button("Keep photo \(row.frameIndex)") { model.confirmAdditional(key: row.key) }
                     .font(.body)
                     .buttonStyle(.borderless)

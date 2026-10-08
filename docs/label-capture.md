@@ -234,9 +234,10 @@ draft, and the review screen offers **Add another photo** once there is somethin
 - **A third photo is kept, not dropped.** A panel can be read several ways rather than two, so a third
   reading joins the row's `candidates` beside the value on screen instead of replacing one or being
   discarded for arriving late, and the photo counts towards `frameCount` because it read the panel. A
-  reading that agrees with a candidate already kept raises that one's `support` rather than becoming a
-  further candidate, which is what a second look that agrees is worth; the screen says how many photos
-  agreed, and the user still chooses. Every candidate's button is labelled with the value it keeps,
+  reading that agrees with any reading already kept, including the displayed value, raises that one's
+  support rather than becoming a further candidate. Support includes agreeing photos taken before the
+  conflict arose. The screen uses the same photo-and-support summary for the displayed reading and the
+  alternatives; corroboration never resolves the conflict automatically. Every candidate's button is labelled with the value it keeps,
   since there is no longer a single "other" one.
 - **A row only a later photo supplies keeps the name that photo printed.** `Calcium Citrate 200mg` is
   calcium with the printed form as the row's display name, and a row the first photo left unknown has
