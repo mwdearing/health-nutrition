@@ -14,6 +14,7 @@ read live in `NutritionJournal`. The app target wires them together. Tests cover
 - **Add intake** (`AddIntakeView`, `AddIntakeViewModel`): name, amount text, unit, category, meal, time.
 - **Daily goals** (`GoalsView`, `GoalsViewModel`): the target for each offered nutrient, and the way to change or
   clear it. Reached from Today's "Edit goals" link or from Settings; the Library no longer holds a Connections section.
+  Dismissing Settings reloads Today and Journal, so changed goals immediately update both screens.
 
 ## Totals
 A **DailyTotals** (`ios/NutritionCore/Sources/NutritionUI/DailyTotals.swift`) is what one day adds up to, one entry
@@ -165,9 +166,9 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Quick water** writes one intake through `JournalStore.create` (category `water`, component `water`, the
   configured amount in mL, amount as `Decimal`). The store queues the outbox operations; this layer never
   delivers anything. The amount is configurable: see [Units and the quick-water amount](#units-and-the-quick-water-amount).
-- **Entry rows** carry the entry's meal as a secondary line when it states one, and read out as the name, the amounts
-  and then the meal. They open the entry through an `onSelect` closure; a host that passes none leaves the rows as
-  plain text.
+- **Entry rows** carry the entry's meal as a secondary line when it states one, and read out as the name, amounts,
+  time in the entry's stored zone, and then the meal. They open the entry through an `onSelect` closure; a host that
+  passes none leaves the rows as plain text.
 - **Meal** is picked next to **When** on the Add form: `None` plus the four labels of `MealLabel`. `None` is a real
   answer and the form starts on it — no label is inferred from the hour, because the label is the person's own
   answer and a guessed one puts a word in their record that they never gave. The choice is stored as the label's raw
@@ -180,6 +181,10 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Local day**: an intake is on Today when its time falls on the same calendar day as "now" in the intake's own time
   zone. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
   in the Journal as well as here.
+- **Date subtitle** uses the current device time zone on every reload, including after a zone change.
+- **Missing values**: a food snapshot with only unknown tracked nutrients counts as having no nutrition values.
+  Goal-bar reasons count intakes, not components. An entry whose nutrient is not applicable does not make that
+  nutrient logged; a day containing only such entries reads "Nothing logged yet" for that nutrient.
 - **Water total** is the exact `Decimal` sum, in mL, of the volume components of intakes with category `water`. Other
   categories never contribute, whatever their unit. A component whose unit is not a volume is skipped and counted
   (`waterSkippedCount`), never treated as zero. So is a stored amount that is NaN or not above zero, checked before and

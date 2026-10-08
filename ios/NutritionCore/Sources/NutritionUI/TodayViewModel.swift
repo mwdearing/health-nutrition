@@ -44,10 +44,11 @@ public struct TodayRow: Equatable, Identifiable {
         timeText.isEmpty ? detail : "\(detail) · \(timeText)"
     }
 
-    /// What a screen reader reads for one row: the name, the amounts, and the meal when it has one.
+    /// What a screen reader reads for one row: the name, amounts, time, and meal when it has one.
     /// A supplement says so, because its rows say nothing that would tell a reader otherwise.
     public var accessibilityText: String {
         var parts = [title, detail]
+        if !timeText.isEmpty { parts.append(timeText) }
         if let meal { parts.append(meal) }
         if kind == .supplement { parts.append(ProductKind.supplement.displayName) }
         return parts.joined(separator: ", ")
@@ -96,7 +97,7 @@ public final class TodayViewModel: ObservableObject {
     /// The one line that replaces the Coverage section: how many food and drink entries state no
     /// nutrition values at all. Nil when there are none. Supplements and water are never counted.
     @Published public private(set) var missingValuesSummary: String?
-    /// The date under the title, "Tuesday, November 14", in the model's time zone.
+    /// The date under the title, "Tuesday, November 14", in the current device time zone.
     @Published public private(set) var dateSubtitle: String = ""
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
@@ -234,7 +235,7 @@ public final class TodayViewModel: ObservableObject {
             rows = newRows
             mealSections = Self.makeMealSections(from: newRows)
             waterEntryCount = waterEntries
-            dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: timeZoneIdentifier)
+            dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
             waterTotalMilliliters = waterTotal
             waterSkippedCount = skipped
             skippedIntakeCount = skippedIntakes
@@ -280,10 +281,20 @@ public final class TodayViewModel: ObservableObject {
                 displayNames: Self.printedNames(in: snapshots))
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
             goalBars = progress.filter { $0.nutrient != DailyTotalsBuilder.waterKey }.map { line in
-                GoalBarModel.make(
-                    line: line,
-                    hasEntries: foodEntries.contains { $0.kind != .supplement } || line.hasKnownAmount,
-                    missingCount: coverage.first { $0.nutrient == line.nutrient }?.missing ?? 0)
+                var hasEntries = line.hasKnownAmount
+                var missingCount = 0
+                for entry in foodEntries where entry.kind != .supplement {
+                    var entryMissing = false
+                    for component in entry.components {
+                        let value = DailyTotalsBuilder.value(
+                            for: component, snapshot: entry.snapshot, nutrient: line.nutrient, lookup: self.lookup)
+                        if value != .notApplicable { hasEntries = true }
+                        if value == .unknown { entryMissing = true }
+                    }
+                    if entryMissing { missingCount += 1 }
+                }
+                return GoalBarModel.make(
+                    line: line, hasEntries: hasEntries, missingCount: missingCount)
             }
             waterBar = progress.first { $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal }.map { line in
                 GoalBarModel.make(
@@ -397,15 +408,17 @@ public final class TodayViewModel: ObservableObject {
     }
 
     /// "2 entries have no nutrition values", or nil. An entry counts when it is a food or a drink whose
-    /// snapshot states nothing and whose components the lookup knows nothing about for any tracked
-    /// nutrient. A supplement never counts: stating no macros is what it is.
+    /// tracked snapshot values are all unknown and whose components the lookup knows nothing about.
+    /// A supplement never counts: stating no macros is what it is.
     static func makeMissingValuesSummary(
         entries: [(components: [IntakeComponent], snapshot: ProductDefinition?, kind: ProductKind)],
         trackedNutrients: [String], lookup: NutrientFactsLookup
     ) -> String? {
         var missing = 0
         for entry in entries where entry.kind != .supplement {
-            if !(entry.snapshot?.nutrients.isEmpty ?? true) { continue }
+            if let snapshot = entry.snapshot,
+                trackedNutrients.contains(where: { snapshot.value(for: $0) != .unknown })
+            { continue }
             let known = entry.components.contains { component in
                 trackedNutrients.contains { nutrient in
                     DailyTotalsBuilder.value(

@@ -48,6 +48,94 @@ final class TodayDesignTests: XCTestCase {
             trackedNutrients: tracked, timeZoneIdentifier: "UTC")
     }
 
+    func testGoalBarsAndJournalSectionsReloadChangedGoals() throws {
+        let store = try makeStore()
+        try log(store, product: oats(withValues: true))
+        let goals = InMemoryGoalStore(goals: [
+            NutrientGoal(nutrient: "protein", target: 60, unit: .g)
+        ])
+        let today = TodayViewModel(
+            store: store, goals: goals, lookup: SnapshotNutrientFacts(),
+            trackedNutrients: ["protein"])
+        let journal = JournalViewModel(store: store, goals: goals, lookup: SnapshotNutrientFacts())
+        today.load(now: now)
+        journal.load(now: now)
+        XCTAssertEqual(today.goalBars.first?.valueText, "13 g of 60 g")
+        XCTAssertTrue(try XCTUnwrap(journal.sections.first).totalsText.contains("Protein 13 g of 60 g"))
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: 80, unit: .g))
+        today.load(now: now)
+        journal.load(now: now)
+        XCTAssertEqual(today.goalBars.first?.valueText, "13 g of 80 g")
+        XCTAssertTrue(try XCTUnwrap(journal.sections.first).totalsText.contains("Protein 13 g of 80 g"))
+    }
+
+    func testDateSubtitleFollowsTheCurrentTimeZoneOnReload() throws {
+        let store = try makeStore()
+        let currentSubtitle = TodayViewModel.makeDateSubtitle(
+            now, zoneIdentifier: TimeZone.current.identifier)
+        let staleZone = currentSubtitle == "Tuesday, November 14" ? "Asia/Tokyo" : "UTC"
+        let today = TodayViewModel(store: store, timeZoneIdentifier: staleZone)
+        today.load(now: now)
+        XCTAssertEqual(today.dateSubtitle, currentSubtitle)
+        let later = now.addingTimeInterval(86400)
+        today.load(now: later)
+        XCTAssertEqual(today.dateSubtitle, TodayViewModel.makeDateSubtitle(
+            later, zoneIdentifier: TimeZone.current.identifier))
+    }
+
+    func testRowAccessibilityTextIncludesTheTimeAndMeal() throws {
+        let store = try makeStore()
+        try log(store, meal: "dinner")
+        try log(store, meal: "dinner", at: now.addingTimeInterval(-3600))
+        let today = model(store)
+        today.load(now: now)
+        XCTAssertEqual(today.rows.map(\.accessibilityText), [
+            "Sample oats, 100 g, 22:13, Dinner",
+            "Sample oats, 100 g, 21:13, Dinner"
+        ])
+    }
+
+    func testAllUnknownSnapshotCountsAsMissingValues() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "unknown-food", productID: "sample-food", name: "Sample food",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["protein": .unknown, "fiber": .unknown])
+        try log(store, product: product)
+        let today = model(store)
+        today.load(now: now)
+        XCTAssertEqual(today.missingValuesSummary, "1 entry has no nutrition values")
+    }
+
+    func testMissingValueReasonCountsEntriesNotComponents() throws {
+        let store = try makeStore()
+        try store.create(
+            Intake(id: "mixed-food", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [
+                IntakeComponent(componentID: "first", name: "Sample toast", amount: 50, unit: .g),
+                IntakeComponent(componentID: "second", name: "Sample spread", amount: 10, unit: .g)
+            ], product: nil, now: now)
+        let today = model(store)
+        today.load(now: now)
+        XCTAssertEqual(today.goalBars.first?.reason, "1 entry has no protein value")
+        try log(store, name: "Sample fruit")
+        today.load(now: now)
+        XCTAssertEqual(today.goalBars.first?.reason, "2 entries have no protein value")
+    }
+
+    func testNotApplicableOnlyDayReadsNothingLogged() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "not-applicable-food", productID: "sample-food", name: "Sample food",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["protein": .notApplicable, "fiber": .notApplicable])
+        try log(store, product: product)
+        let today = model(store)
+        today.load(now: now)
+        XCTAssertEqual(today.goalBars.map(\.state), [.nothingLogged, .nothingLogged])
+        XCTAssertEqual(today.goalBars.map(\.valueText), ["Nothing logged yet", "Nothing logged yet"])
+    }
+
     // MARK: Goal bars
 
     func testGoalBarsFollowTheTrackedOrderAndLeaveWaterToItsOwnCard() throws {
@@ -211,12 +299,7 @@ final class TodayDesignTests: XCTestCase {
     }
 
     // MARK: Date line and row time
-
-    func testDateSubtitleReadsWeekdayMonthAndDayInTheModelsZone() throws {
-        let today = model(try makeStore())
-        today.load(now: now)
-        XCTAssertEqual(today.dateSubtitle, "Tuesday, November 14")
-    }
+    // The current-zone reload test above covers the date subtitle.
 
     func testRowsCarryTheTimeOfDayAndWhetherTheyAreWater() throws {
         let store = try makeStore()

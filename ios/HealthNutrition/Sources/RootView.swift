@@ -165,7 +165,7 @@ struct RootView: View {
         }
         // Settings from the gear on any tab, in its own navigation stack so the goals and the privacy
         // screen push inside it.
-        .sheet(isPresented: $showingSettings) {
+        .sheet(isPresented: $showingSettings, onDismiss: { self.reload() }) {
             NavigationStack {
                 AppSettingsView(
                     goals: services.goals, connections: connections, now: { Date() },
