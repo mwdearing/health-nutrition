@@ -3,12 +3,14 @@ name: design-system-tests
 on:
   pull_request:
     paths:
+      - "ios/**"
       - "scripts/build_design_system.py"
       - "scripts/tests/test_build_design_system.py"
       - ".github/workflows/design-system-tests.yml"
   push:
     branches: [main]
     paths:
+      - "ios/**"
       - "scripts/build_design_system.py"
       - "scripts/tests/test_build_design_system.py"
       - ".github/workflows/design-system-tests.yml"

@@ -69,6 +69,9 @@ jobs:
             -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO \
             -only-testing:HealthNutritionTests/ScreenshotCaptureTests test
           ls -l "$RUNNER_TEMP/screenshots"
+      # Fails when a screen that is not a component, not exempt and not a camera sheet has no capture.
+      - name: Check every screen has a capture
+        run: python3 scripts/build_design_system.py "$RUNNER_TEMP/design-system" --no-index --check --screenshots "$RUNNER_TEMP/screenshots"
       - name: Upload the screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

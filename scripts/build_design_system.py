@@ -105,8 +105,9 @@ FONT_RE = re.compile(r"\.font\(\.(\w+)")
 COLOR_RE = re.compile(r"TokenColors\.(\w+)")
 SPACING_RE = re.compile(r"\bspacing:\s*(\d+(?:\.\d+)?)")
 PADDING_RE = re.compile(r"\.padding\((?:[^)]*,\s*)?(\d+(?:\.\d+)?)\)")
-# `Button { action } label: { Text("...") }`: the label is the button's text.
-CLOSURE_LABEL_RE = re.compile(r"\blabel:\s*\{\s*Text\((?P<text>" + STRING + r")\)\s*\}")
+# `Button { action } label: { Text("...") }`: the label is the button's text. Modifiers may follow the
+# Text (`Text("Save").font(.headline)`); braces end the label.
+CLOSURE_LABEL_RE = re.compile(r"\blabel:\s*\{\s*Text\((?P<text>" + STRING + r")\)[^{}]*\}")
 # `public static var mint: Color { color(named: "RelayMint") }` maps a TokenColors accessor to its token.
 ACCESSOR_RE = re.compile(r'static var (\w+):\s*Color\s*\{\s*color\(named:\s*"(\w+)"\)')
 

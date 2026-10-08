@@ -155,6 +155,21 @@ def test_closure_label_buttons_are_controls_with_their_label_text(tmp_path):
     assert ("text", "Other") in elements
 
 
+def test_closure_label_buttons_with_modifiers_are_still_controls(tmp_path):
+    write_view(tmp_path, "SaveView", 'public struct SaveView: View {\n'
+               '    public var body: some View {\n'
+               '        Button { save() } label: { Text("From library").font(.headline) }\n'
+               '        Button { save() } label: {\n'
+               '            Text("Save").font(.headline).foregroundStyle(TokenColors.textPrimary)\n'
+               '        }\n'
+               '    }\n}\n')
+    elements = bds.scan_screens(tmp_path)[0]["SaveView"]["elements"]
+    assert ("button", "From library") in elements
+    assert ("button", "Save") in elements
+    assert ("text", "From library") not in elements
+    assert ("text", "Save") not in elements
+
+
 def test_colour_accessors_resolve_to_their_token_names(tmp_path):
     write_view(tmp_path, "TokenColors", 'public enum TokenColors {\n'
                '    public static var mint: Color { color(named: "RelayMint") }\n}\n')
