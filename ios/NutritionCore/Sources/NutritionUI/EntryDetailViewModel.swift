@@ -105,6 +105,12 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var allValues: [EntryNutrientRow] = []
     /// Where the entry's values came from, as one line.
     @Published public private(set) var sourceLine: String = EntryDetailViewModel.sourceLine(for: nil)
+    /// True for an entry with no values of its own: typed by hand, with no snapshot or a manual one.
+    @Published public private(set) var isTypedEntry = true
+    /// The product's name and brand, and what kind of thing it is, for the header. Nil when there is no snapshot.
+    @Published public private(set) var productName: String?
+    @Published public private(set) var brand: String?
+    @Published public private(set) var kind: ProductKind = .food
     /// The entry's changes, newest first.
     @Published public private(set) var changes: [EntryChangeRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
@@ -189,6 +195,10 @@ public final class EntryDetailViewModel: ObservableObject {
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             additionalNutrients = Self.additionalNutrients(of: snapshot)
             sourceLine = Self.sourceLine(for: snapshot)
+            isTypedEntry = snapshot == nil || snapshot?.catalogOrigin == "manual"
+            productName = snapshot?.name
+            brand = snapshot?.brand
+            kind = snapshot?.kind ?? .food
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
