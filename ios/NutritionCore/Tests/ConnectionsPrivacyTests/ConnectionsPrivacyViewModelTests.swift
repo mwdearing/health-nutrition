@@ -108,7 +108,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         XCTAssertTrue(model.privacyText.lowercased().contains("tap"))
     }
 
-    func testExportWritesALocalFileThatDecodesAsVersionOne() throws {
+    func testExportWritesALocalFileThatDecodesAsVersionTwo() throws {
         let model = ConnectionsPrivacyViewModel(
             store: filledStore(), favorites: favorites(), appVersion: "0.1.0")
         XCTAssertTrue(model.export(now: now))
@@ -119,7 +119,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         XCTAssertEqual(url.lastPathComponent, "journal-export-2024-01-15-101500.json")
         let document = try JournalExporter.decode(try Data(contentsOf: url))
-        XCTAssertEqual(document.schemaVersion, 1)
+        XCTAssertEqual(document.schemaVersion, 2)
         XCTAssertEqual(document.appVersion, "0.1.0")
         XCTAssertEqual(document.intakes.count, 1)
         XCTAssertEqual(document.intakes.first?.revisions.first?.components.first?.amount, "37.5")
@@ -198,7 +198,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         XCTAssertTrue(recorded.options.contains(.completeFileProtection), "\(recorded.options)")
         XCTAssertTrue(recorded.options.contains(.atomic), "\(recorded.options)")
         let document = try JournalExporter.decode(try XCTUnwrap(written))
-        XCTAssertEqual(document.schemaVersion, 1)
+        XCTAssertEqual(document.schemaVersion, 2)
         XCTAssertEqual(document.intakes.count, 1)
         XCTAssertEqual(ConnectionsPrivacyViewModel.exportWriteOptions, [.atomic, .completeFileProtection])
     }
@@ -209,7 +209,7 @@ func testTheRealWriterLeavesADecodableFileBehind() throws {
         let url = try XCTUnwrap(model.exportFileURL)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         let document = try JournalExporter.decode(try Data(contentsOf: url))
-        XCTAssertEqual(document.schemaVersion, 1)
+        XCTAssertEqual(document.schemaVersion, 2)
     }
 
 func testClearingTheExportWhenTheScreenGoesAwayLeavesNothingOnDisk() throws {

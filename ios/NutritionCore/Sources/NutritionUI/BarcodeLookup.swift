@@ -140,10 +140,11 @@ public struct LookedUpProduct: Sendable, Hashable {
     /// A stable id for a snapshot of this product. It covers every field that gets stored, including
     /// the name and brand the user settled on, so saving the same product twice under two different
     /// names gives two different ids and neither is mistaken for the other.
-    public func snapshotIdentity(name: String, brand: String?) -> String {
+    public func snapshotIdentity(name: String, brand: String?, kind: ProductKind = .food) -> String {
         var signature = barcode + "|" + basis.rawValue + "|" + (version ?? "")
         signature += "|name=" + name
         signature += "|brand=" + (brand ?? "")
+        signature += "|kind=" + kind.rawValue
         if let serving {
             signature += "|serving=" + serving.label
         }

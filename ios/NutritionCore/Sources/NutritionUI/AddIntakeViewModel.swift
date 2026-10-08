@@ -62,6 +62,17 @@ public final class AddIntakeViewModel: ObservableObject {
     /// hour: the label is the person's own answer, and guessing one for them would put a word in
     /// their record that they never gave.
     @Published public var meal: MealLabel?
+    /// What kind of thing this entry is: a food, a drink or a supplement. Food unless something says
+    /// otherwise, which is the honest default for a form that is mostly typed by hand.
+    ///
+    /// The kind is written onto the product snapshot the entry carries, so a scanned drink or a typed
+    /// supplement keeps it; and the day's coverage counts only the kinds that are foods and drinks. An
+    /// typed non-food entry carries a minimal manual snapshot so its kind survives saving.
+    /// A typed food without a snapshot keeps the existing food default.
+    @Published public var kind: ProductKind = .food {
+        didSet { hasChosenKind = true }
+    }
+    private var hasChosenKind = false
     @Published public private(set) var nameError: String?
     @Published public private(set) var amountError: String?
     @Published public private(set) var saveError: String?
@@ -287,6 +298,12 @@ public final class AddIntakeViewModel: ObservableObject {
         invalidateLookup()
         lookupState = .idle
         labelValues = product
+        // The panel already said what it is: a Supplement Facts panel is a supplement. The review
+        // screen lets the user change it before the product reaches this form at all.
+        if !hasChosenKind {
+            kind = product.kind
+            hasChosenKind = false
+        }
         // Every panel row is filled in, so a nutrient the panel did not state reads as unknown on the
         // form rather than missing from it. A known zero is never written for a missing row.
         var filled: [String: NutrientValue] = [:]
@@ -341,6 +358,12 @@ public final class AddIntakeViewModel: ObservableObject {
     /// they actually ate.
     private func apply(_ product: LookedUpProduct) {
         labelValues = nil
+        // The source has no kind. Only a source-derived default may be replaced; an explicit
+        // selection made before or during the request stays the user's.
+        if !hasChosenKind {
+            kind = .food
+            hasChosenKind = false
+        }
         if let productName = product.name?.trimmingCharacters(in: .whitespacesAndNewlines),
            !productName.isEmpty
         {
@@ -428,6 +451,9 @@ public final class AddIntakeViewModel: ObservableObject {
             var signature = captured.labelBasis + "|origin=" + captured.catalogOrigin
             signature += "|name=" + trimmedName
             signature += "|brand=" + (trimmedBrand ?? "")
+            // The kind is part of what the capture recorded, so the same panel saved once as a drink and
+            // once as a food is two products rather than one snapshot id reused with other content.
+            signature += "|kind=" + kind.rawValue
             for key in captured.nutrients.keys.sorted() {
                 signature += "|" + key + "=" + LookedUpProduct.describe(captured.nutrients[key] ?? .unknown)
             }
@@ -446,17 +472,27 @@ public final class AddIntakeViewModel: ObservableObject {
                 labelBasis: captured.labelBasis,
                 catalogOrigin: captured.catalogOrigin,
                 catalogVersion: captured.catalogVersion,
+                kind: kind,
                 nutrients: captured.nutrients,
                 nutrientDisplayNames: captured.nutrientDisplayNames
             )
         }
-        guard let lookedUp else { return nil }
+        guard let lookedUp else {
+            guard kind != .food else { return nil }
+            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            let signature = "manual|name=" + trimmedName + "|brand=" + (trimmedBrand ?? "") + "|kind=" + kind.rawValue
+            let identity = "manual-" + Self.slug(signature) + "-" + LookedUpProduct.checksum(signature)
+            return ProductDefinition(
+                snapshotID: identity, productID: identity, name: trimmedName, brand: trimmedBrand,
+                labelBasis: "per serving", catalogOrigin: "manual", catalogVersion: "1", kind: kind)
+        }
         // The name and brand are the ones in the form, not the source's: the user may have corrected
         // or cleared them, and the snapshot has to say what was actually recorded.
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         return ProductDefinition(
-            snapshotID: lookedUp.snapshotIdentity(name: trimmedName, brand: trimmedBrand),
+            snapshotID: lookedUp.snapshotIdentity(name: trimmedName, brand: trimmedBrand, kind: kind),
             productID: lookedUp.barcode,
             name: trimmedName,
             brand: trimmedBrand,
@@ -464,6 +500,7 @@ public final class AddIntakeViewModel: ObservableObject {
             labelBasis: lookedUp.labelBasis,
             catalogOrigin: lookedUp.attribution?.source ?? "unknown",
             catalogVersion: lookedUp.version ?? "unknown",
+            kind: kind,
             nutrients: lookedUp.nutrients
         )
     }

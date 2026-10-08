@@ -206,6 +206,45 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertNil(product.barcode)
     }
 
+    /// The heading on the panel is what says what kind of product was captured, and the snapshot carries
+    /// that kind: it is what keeps a supplement out of the day's count of foods later on.
+    func testASupplementPanelIsCapturedAsASupplement() throws {
+        let model = makeModel()
+        model.load(lines: [
+            "Supplement Facts", "Sample daily multi, invented for tests", "Serving size 1 tablet",
+            "Vitamin D 25mcg 125%",
+        ])
+
+        XCTAssertEqual(model.kind, .supplement)
+        XCTAssertEqual(try XCTUnwrap(model.makeProduct()).kind, .supplement)
+    }
+
+    /// A Nutrition Facts panel, and a panel whose heading was cropped out of the frame, are both foods —
+    /// which is what every capture was before this was known.
+    func testAFoodPanelIsCapturedAsAFoodAndTheKindCanBeCorrected() throws {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+        XCTAssertTrue(model.canApply)
+        XCTAssertEqual(model.kind, .food)
+
+        // A bottle of powder that prints a Nutrition Facts panel anyway is a supplement the user knows
+        // about and the heading does not say, so the kind is theirs to change.
+        model.kind = .supplement
+        XCTAssertEqual(try XCTUnwrap(model.makeProduct()).kind, .supplement)
+    }
+
+    /// A retake drops the panel, and with it the kind that was read off it: nothing about the next label
+    /// is known yet.
+    func testRetakeLeavesTheKindUnsetUntilTheNextPanelIsRead() throws {
+        let model = makeModel()
+        model.load(lines: ["Supplement Facts", "Serving size 1 tablet", "Vitamin D 25mcg"])
+        XCTAssertEqual(model.kind, .supplement)
+
+        model.retake()
+        XCTAssertEqual(model.kind, .food)
+    }
+
     func testProductWithoutAStatedMeasureKeepsThePrintedServingText() {
         let model = makeModel()
         model.load(lines: ["Serving size 1 large biscuit", "Calories 90", "Fat 3g"])

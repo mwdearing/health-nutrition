@@ -188,6 +188,13 @@ public struct ProductDefinition: Sendable, Hashable {
     public var labelBasis: String
     public var catalogOrigin: String
     public var catalogVersion: String
+    /// What kind of product this is: a food, a drink or a supplement. It belongs to the product rather
+    /// than to the entry, and it is what tells a coverage line that a product stating no fibre is a
+    /// supplement doing what a supplement does rather than a gap in the day.
+    ///
+    /// `.food` is the reading for a snapshot written before this column existed, because the app had no
+    /// notion of a supplement then: every product it recorded was recorded as the food it stood for.
+    public var kind: ProductKind
     /// The nutrient values this product states, on the basis `labelBasis` names. A nutrient the
     /// product does not state is absent, which reads as unknown and never as zero; a known zero is
     /// stored as zero. Empty when the product carries no values.
@@ -212,6 +219,7 @@ public struct ProductDefinition: Sendable, Hashable {
         labelBasis: String,
         catalogOrigin: String,
         catalogVersion: String,
+        kind: ProductKind = .food,
         nutrients: [String: NutrientValue] = [:],
         nutrientDisplayNames: [String: String] = [:]
     ) {
@@ -223,6 +231,7 @@ public struct ProductDefinition: Sendable, Hashable {
         self.labelBasis = labelBasis
         self.catalogOrigin = catalogOrigin
         self.catalogVersion = catalogVersion
+        self.kind = kind
         self.nutrients = nutrients
         self.nutrientDisplayNames = nutrientDisplayNames
     }

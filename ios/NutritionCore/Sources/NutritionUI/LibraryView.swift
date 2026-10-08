@@ -1,3 +1,4 @@
+import NutritionDomain
 import SwiftUI
 
 public struct LibraryView: View {
@@ -39,29 +40,7 @@ public struct LibraryView: View {
                         Text("Nothing here yet.").font(.footnote).foregroundStyle(TokenColors.textSecondary)
                     }
                     ForEach(section.items) { item in
-                        HStack {
-                            Button {
-                                if model.select(item, now: now()) != nil { onAdded() }
-                            } label: {
-                                VStack(alignment: .leading) {
-                                    Text(item.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
-                                    Text(item.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
-                                }
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Add \(item.title), \(item.detail)")
-                            .accessibilityHint("Adds a new entry now with the same amounts")
-                            Spacer()
-                            Button {
-                                if item.isFavorite { model.removeFavorite(item) } else { model.addFavorite(item) }
-                            } label: {
-                                Image(systemName: item.isFavorite ? "star.fill" : "star")
-                                    .foregroundStyle(TokenColors.accent)
-                                    .accessibilityHidden(true)
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(item.isFavorite ? "Remove \(item.title) from favorites" : "Add \(item.title) to favorites")
-                        }
+                        self.libraryRow(item)
                     }
                 }
             }
@@ -96,6 +75,41 @@ public struct LibraryView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Library")
-        .onAppear { model.load() }
+        .onAppear { self.model.load() }
+    }
+
+    @ViewBuilder
+    private func libraryRow(_ item: LibraryItem) -> some View {
+        HStack {
+            Button {
+                if self.model.select(item, now: self.now()) != nil { self.onAdded() }
+            } label: {
+                VStack(alignment: .leading) {
+                    Text(item.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
+                    Text(item.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                    // A supplement is marked here for the reason it is marked on Today:
+                    // its amounts read like any other item's, and nothing in them says the
+                    // item is not food.
+                    if item.kind == .supplement {
+                        Label(ProductKind.supplement.displayName, systemImage: "pills")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.accent)
+                    }
+                }
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(item.accessibilityLabel)
+            .accessibilityHint("Adds a new entry now with the same amounts")
+            Spacer()
+            Button {
+                if item.isFavorite { self.model.removeFavorite(item) } else { self.model.addFavorite(item) }
+            } label: {
+                Image(systemName: item.isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(TokenColors.accent)
+                    .accessibilityHidden(true)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(item.isFavorite ? "Remove \(item.title) from favorites" : "Add \(item.title) to favorites")
+        }
     }
 }

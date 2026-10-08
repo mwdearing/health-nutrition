@@ -31,6 +31,14 @@ Where an amount comes from is decided by two rules, because those are the two th
   with no snapshot asks the injected `NutrientFactsLookup` about each component, so a food the catalog can still answer
   still contributes.
 
+**Supplements never join either coverage count.** Their declared snapshot nutrients still contribute
+to totals, scaled by the logged amount. Nutrients a supplement does not declare supply no contribution
+and do not make otherwise known food totals unknown; an unknown food value still makes the total unknown.
+
+**The kind picker remains the user's choice.** A barcode reply cannot replace a Food, Drink or
+Supplement selection made before or during the lookup. A source-derived kind may be replaced by the
+next source only while the user has not explicitly selected a kind.
+
 A **per-serving basis that also states its serving as a quantity** — "per serving (30 g)" or "per serving (240
 mL)", which is what a barcode lookup or a label panel writes when it knows how big a serving is — is scaled from
 that stated serving and the amount logged, because the entry records the food as an amount and a count cannot be scaled

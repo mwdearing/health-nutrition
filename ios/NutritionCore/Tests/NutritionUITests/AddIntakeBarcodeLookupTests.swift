@@ -116,6 +116,29 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertEqual(model.amountText, "")
     }
 
+    func testLookupKeepsChosenKindBeforeTheRequest() async throws {
+        for kind in [ProductKind.drink, .supplement, .food] {
+            let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
+            model.kind = kind
+            model.barcode = validBarcode
+            await model.lookUpBarcode()
+            XCTAssertEqual(model.kind, kind)
+        }
+    }
+
+    func testLookupKeepsChosenKindDuringTheRequest() async throws {
+        let lookup = GatedBarcodeLookup(result: .found(oatMilk()))
+        let model = try makeModel(lookup)
+        model.barcode = validBarcode
+        let task = Task { await model.lookUpBarcode() }
+        for _ in 0..<1000 where lookup.requestedBarcodes.isEmpty { await Task.yield() }
+        XCTAssertEqual(lookup.requestedBarcodes, [validBarcode])
+        model.kind = .supplement
+        lookup.answer()
+        await task.value
+        XCTAssertEqual(model.kind, .supplement)
+    }
+
     func testFoundCarriesTheAttributionTextAndLink() async throws {
         let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
         model.barcode = validBarcode
@@ -385,6 +408,52 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         // The form must not show one barcode beside another product's name and nutrients.
         XCTAssertEqual(model.name, "")
         XCTAssertTrue(model.prefilledNutrients.isEmpty)
+    }
+
+    func testManualSupplementKeepsKindInTodayAndExport() throws {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        model.name = "Example supplement"
+        model.amountText = "1"
+        model.kind = .supplement
+        XCTAssertTrue(model.save(now: now))
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        XCTAssertEqual(today.rows.first?.kind, .supplement)
+        XCTAssertTrue(today.coverage.isEmpty)
+        let document = try JournalExporter.makeExport(store: store, appVersion: "test", exportedAt: now)
+        let decoded = try JournalExporter.decode(try JournalExporter.encode(document))
+        XCTAssertEqual(decoded.products.first?.kind, .supplement)
+        XCTAssertEqual(decoded.intakes.first?.revisions.first?.provenance?.kind, .supplement)
+    }
+
+    func testTwoSavesWithDifferentKindsProduceDifferentSnapshotIDs() async throws {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC",
+            lookup: FakeBarcodeLookup(result: .found(oatMilk())))
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
+        model.amountText = "250"
+        model.unit = .mL
+        model.kind = .food
+        XCTAssertTrue(model.save(now: now))
+        model.kind = .supplement
+        XCTAssertTrue(model.save(now: now))
+        let ids = try store.activeIntakes().map { intake in
+            try XCTUnwrap(store.revisions(of: intake.id).first?.productSnapshotID)
+        }
+        XCTAssertEqual(Set(ids).count, 2)
+    }
+
+    func testLibrarySupplementAccessibilityLabelIncludesKind() {
+        let template = RepeatTemplate(displayName: "Example", category: "food", meal: nil, components: [])
+        let item = LibraryItem(id: "example", title: "Example", detail: "1 g", isFavorite: false,
+                               template: template, kind: .supplement)
+        XCTAssertEqual(item.accessibilityLabel, "Add Example, 1 g, Supplement")
+        let food = LibraryItem(id: "food", title: "Example", detail: "1 g", isFavorite: false,
+                               template: template)
+        XCTAssertEqual(food.accessibilityLabel, "Add Example, 1 g")
     }
 
     // MARK: Saving

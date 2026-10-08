@@ -1,3 +1,4 @@
+import NutritionDomain
 import SwiftUI
 
 public struct JournalView: View {
@@ -47,12 +48,20 @@ public struct JournalView: View {
 
     /// One entry: what it was, how much of it, and which meal it was for. The meal is a secondary
     /// line because it qualifies the entry rather than being another amount of it.
+    ///
+    /// A supplement is marked rather than left to be guessed at: its amounts read like any other
+    /// entry's, and nothing in them says the entry is not food.
     private func entryRow(_ row: JournalRow) -> some View {
         VStack(alignment: .leading) {
             Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
             Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
             if let meal = row.meal {
                 Text(meal).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+            if row.kind == .supplement {
+                Label(ProductKind.supplement.displayName, systemImage: "pills")
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.accent)
             }
         }
     }

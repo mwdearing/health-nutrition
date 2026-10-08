@@ -40,6 +40,14 @@ camera rather than the last frame that had anything on it. `NutritionUI` sees on
 
 - **The panel as it is printed.** `Nutrition Facts`, `Amount per serving`, the footnote and the
   surrounding print are recognised as lines that state nothing and are ignored.
+- **Which panel it was.** A `Supplement Facts` heading makes the capture a **supplement**, and anything
+  else — a `Nutrition Facts` panel, or a heading that was cropped out of the frame — makes it a **food**.
+  The heading is what decides it, not the rows: a supplement prints Vitamin D, Calcium and Potassium
+  under the same names a food does, so the rows cannot tell the two apart. The kind is carried on
+  `ParsedNutritionFacts.panelKind` and set on the saved snapshot, where it is what later keeps a
+  multivitamin out of the day's count of foods. Losing the heading costs the label its kind and nothing
+  else — every value read from it is kept exactly as before — and the review screen lets the user change
+  the kind, which is what a powder that prints a Nutrition Facts panel anyway needs.
 - **The serving size**, as printed (`1 cup (240mL)`, `3/4 cup (55g)`), plus the measure it states when it
   states one: the amount in parentheses becomes a `Quantity`, and `servingsPerContainer` is read whether
   the count stands before the phrase ("About 6 servings per container") or after it.

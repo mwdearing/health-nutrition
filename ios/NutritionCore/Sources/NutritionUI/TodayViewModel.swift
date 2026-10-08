@@ -16,11 +16,29 @@ public struct TodayRow: Equatable, Identifiable {
     public let occurredAt: Date
     /// The meal as words, or nil when the entry states none.
     public let meal: String?
+    /// What kind of product the entry was recorded with. Food unless the entry's product says
+    /// otherwise, which is what an entry typed by hand is; only a supplement is labelled on the row.
+    public let kind: ProductKind
+
+    public init(
+        id: String, title: String, detail: String, occurredAt: Date, meal: String?,
+        kind: ProductKind = .food
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.occurredAt = occurredAt
+        self.meal = meal
+        self.kind = kind
+    }
 
     /// What a screen reader reads for one row: the name, the amounts, and the meal when it has one.
+    /// A supplement says so, because its rows say nothing that would tell a reader otherwise.
     public var accessibilityText: String {
-        guard let meal else { return "\(title), \(detail)" }
-        return "\(title), \(detail), \(meal)"
+        var parts = [title, detail]
+        if let meal { parts.append(meal) }
+        if kind == .supplement { parts.append(ProductKind.supplement.displayName) }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -124,13 +142,19 @@ public final class TodayViewModel: ObservableObject {
             var newRows: [TodayRow] = []
             var waterTotal = Decimal(0)
             var skipped = 0
-            var foodComponents: [(component: IntakeComponent, snapshot: ProductDefinition?)] = []
+            var foodComponents: [(component: IntakeComponent, snapshot: ProductDefinition?, kind: ProductKind)] = []
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
             for intake in intakes.sorted(by: { $0.occurredAt > $1.occurredAt }) {
                 let revisions = try store.revisions(of: intake.id)
                 let current = revisions.first { $0.number == intake.currentRevision }
                 let components = current?.components ?? []
+                // Read once per entry, and once per snapshot however many components name it: what the
+                // entry is comes from the same snapshot its values come from.
+                let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                // An entry typed by hand has no product to say what it is, so it is the food it was
+                // always recorded as; a snapshot's own kind is what an entry with a product states.
+                let kind = snapshot?.kind ?? .food
                 if intake.category == "water" {
                     for component in components {
                         if component.unit.dimension == .volume,
@@ -144,8 +168,9 @@ public final class TodayViewModel: ObservableObject {
                         }
                     }
                 } else {
-                    let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
-                    for component in components { foodComponents.append((component, snapshot)) }
+                    if kind != .supplement {
+                        for component in components { foodComponents.append((component, snapshot, kind)) }
+                    }
                 }
                 newRows.append(
                     TodayRow(
@@ -154,7 +179,8 @@ public final class TodayViewModel: ObservableObject {
                         detail: components.map { AmountText.describe($0, unitSystem: unitSystem) }
                             .joined(separator: ", "),
                         occurredAt: intake.occurredAt,
-                        meal: MealLabel.displayName(for: intake.meal)))
+                        meal: MealLabel.displayName(for: intake.meal),
+                        kind: kind))
             }
             rows = newRows
             waterTotalMilliliters = waterTotal
@@ -191,8 +217,12 @@ public final class TodayViewModel: ObservableObject {
                 CoverageLine.make(nutrient: nutrient, values: foodComponents.map {
                     DailyTotalsBuilder.value(
                         for: $0.component, snapshot: $0.snapshot, nutrient: nutrient, lookup: lookup)
-                })
+                }, kinds: foodComponents.map(\.kind))
             }
+                // A line with nothing behind it is not shown. That is the day holding no food and no
+                // drink at all — only water, or only supplements, which are not foods and are excluded
+                // from the count — and "0 of 0 foods lack fibre" tells a reader nothing.
+                .filter { $0.total > 0 }
             progress = try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
                 displayNames: Self.printedNames(in: snapshots))

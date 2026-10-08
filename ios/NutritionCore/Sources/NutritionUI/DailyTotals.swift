@@ -112,6 +112,9 @@ public enum DailyTotalsBuilder {
             // answers the product, and one that reads it answers the same for every component.
             guard let component = entry.components.first else { return [.unknown] }
             let value = Self.value(for: component, snapshot: snapshot, nutrient: nutrient, lookup: lookup)
+            // A supplement contributes the nutrients it declares, not unknown food nutrients.
+            // An undeclared nutrient supplies no contribution; it does not invalidate food totals.
+            if snapshot.kind == .supplement, case .unknown = value { return [] }
             guard case .known(let amount, let unit) = value else { return [value] }
             // The stated value is for the amount the basis names; it has to be scaled to the amount
             // actually logged before it can be summed with anything else.
@@ -217,6 +220,11 @@ public enum DailyTotalsBuilder {
         lookup: NutrientFactsLookup
     ) -> NutrientValue {
         for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+            if let snapshot, snapshot.kind == .supplement {
+                let declared = snapshot.value(for: key)
+                if case .unknown = declared { continue }
+                return declared
+            }
             let value = lookup.value(for: component, snapshot: snapshot, nutrient: key)
             if case .unknown = value { continue }
             return value

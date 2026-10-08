@@ -139,8 +139,9 @@ final class JournalExportTests: XCTestCase {
     }
 
     private func contractFile(_ name: String, _ fileExtension: String) throws -> Data {
-        // The committed contracts are copied into this target's resources as `Contracts/example.v1.json`
-        // and `Contracts/v1.schema.json`, so the Swift shapes and the JSON Schema cannot drift apart.
+        // The committed contracts are copied into this target's resources as `Contracts/example.v1.json`,
+        // `Contracts/v1.schema.json` and their version 2 counterparts, so the Swift shapes and the JSON
+        // Schema cannot drift apart.
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: name, withExtension: fileExtension, subdirectory: "Contracts"),
             "missing contract resource \(name).\(fileExtension)")
@@ -154,7 +155,7 @@ final class JournalExportTests: XCTestCase {
         let document = try makeExport(store: store, favorites: favorites())
         let decoded = try JournalExporter.decode(try JournalExporter.encode(document))
         XCTAssertEqual(decoded, document)
-        XCTAssertEqual(decoded.schemaVersion, 1)
+        XCTAssertEqual(decoded.schemaVersion, JournalExport.currentSchemaVersion)
         XCTAssertEqual(decoded.appVersion, "0.1.0")
         XCTAssertEqual(decoded.exportedAt, now)
         XCTAssertEqual(decoded.intakes.first?.revisions.count, 2)
@@ -232,7 +233,7 @@ final class JournalExportTests: XCTestCase {
                 store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
         let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let schema = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: try contractFile("v1.schema", "json")) as? [String: Any])
+            try JSONSerialization.jsonObject(with: try contractFile("v2.schema", "json")) as? [String: Any])
         let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
 
         try assertRequiredKeys(encoded, against: schema, definitionName: nil, path: "$")
@@ -553,11 +554,65 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         var object = try XCTUnwrap(
             try JSONSerialization.jsonObject(
                 with: try JournalExporter.encode(try makeExport(store: filledStore()))) as? [String: Any])
-        object["schema_version"] = 2
+        object["schema_version"] = JournalExport.currentSchemaVersion + 1
         object["field_this_build_does_not_know"] = "something"
         let data = try JSONSerialization.data(withJSONObject: object)
         XCTAssertThrowsError(try JournalExporter.decode(data)) { error in
-            XCTAssertEqual(error as? JournalExportError, .unsupportedSchemaVersion(2))
+            XCTAssertEqual(
+                error as? JournalExportError, .unsupportedSchemaVersion(JournalExport.currentSchemaVersion + 1))
+        }
+    }
+
+    /// The kind is what a restore reads to know whether a product belongs in the day's count of foods, so
+    /// it has to survive the JSON round trip exactly as the snapshot stored it.
+    func testExportImportKeepsTheProductKindAcrossTheJSONRoundTrip() throws {
+        let store = filledStore()
+        store.products["snap-1"] = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-oats", name: "Sample rolled oats",
+            labelBasis: "per100g", catalogOrigin: "sample-catalog", catalogVersion: "1",
+            kind: .supplement, nutrients: ["protein": .known(Decimal(7), .g)])
+        let data = try JournalExporter.encode(try makeExport(store: store))
+
+        let decoded = try JournalExporter.decode(data)
+        XCTAssertEqual(decoded.products.first?.kind, .supplement)
+        XCTAssertEqual(decoded.intakes.first?.revisions.last?.provenance?.kind, .supplement)
+        XCTAssertEqual(
+            ProductDefinition(provenance: try XCTUnwrap(decoded.products.first)).kind, .supplement,
+            "a restore has to read the same kind the export wrote, not a default")
+        // A document written before the field existed is still a document this build reads, and every
+        // product in it is the food that build could only record.
+        let older = try JournalExporter.decode(try contractFile("example.v1", "json"))
+        XCTAssertEqual(older.schemaVersion, 1)
+        XCTAssertEqual(older.products.first?.kind, .food)
+    }
+
+    func testV2MissingKindRejected() throws {
+        for missing in [true, false] {
+            for nested in [true, false] {
+                var object = try XCTUnwrap(JSONSerialization.jsonObject(
+                    with: try JournalExporter.encode(try makeExport(store: filledStore()))) as? [String: Any])
+                func removeKind(_ provenance: inout [String: Any]) {
+                    if missing { provenance.removeValue(forKey: "kind") }
+                    else { provenance["kind"] = NSNull() }
+                }
+                if nested {
+                    var intakes = try XCTUnwrap(object["intakes"] as? [[String: Any]])
+                    var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+                    let index = try XCTUnwrap(revisions.firstIndex { $0["provenance"] is [String: Any] })
+                    var provenance = try XCTUnwrap(revisions[index]["provenance"] as? [String: Any])
+                    removeKind(&provenance)
+                    revisions[index]["provenance"] = provenance
+                    intakes[0]["revisions"] = revisions
+                    object["intakes"] = intakes
+                } else {
+                    var products = try XCTUnwrap(object["products"] as? [[String: Any]])
+                    removeKind(&products[0])
+                    object["products"] = products
+                }
+                XCTAssertThrowsError(try JournalExporter.decode(JSONSerialization.data(withJSONObject: object))) {
+                    XCTAssertTrue($0 is DecodingError)
+                }
+            }
         }
     }
 
@@ -664,7 +719,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
     }
 
     func testEncoderTopLevelKeysMatchTheSchemaProperties() throws {
-        let schemaData = try contractFile("v1.schema", "json")
+        let schemaData = try contractFile("v2.schema", "json")
         let schema = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: schemaData) as? [String: Any])
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
@@ -675,7 +730,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         for key in ["schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites", "products"] {
             XCTAssertNotNil(encoded[key], key)
         }
-        XCTAssertEqual(encoded["schema_version"] as? Int, 1)
+        XCTAssertEqual(encoded["schema_version"] as? Int, JournalExport.currentSchemaVersion)
         let products = try XCTUnwrap(properties["products"] as? [String: Any])
         XCTAssertEqual(
             try XCTUnwrap(products["items"] as? [String: Any])["$ref"] as? String, "#/$defs/provenance")
@@ -688,7 +743,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
     func testSchemaTiesAnAmountToItsValueState() throws {
         // The schema, not only the writer, has to reject "amount: null but known" and "amount: \"5\" but unknown".
         let schema = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: try contractFile("v1.schema", "json")) as? [String: Any])
+            try JSONSerialization.jsonObject(with: try contractFile("v2.schema", "json")) as? [String: Any])
         let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
         let component = try XCTUnwrap(definitions["component"] as? [String: Any])
         XCTAssertNotNil(component["oneOf"], "amount and value_state must be constrained together")
@@ -710,7 +765,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
     /// The contract files in `contracts/journal-export` are the canonical ones; the copies bundled as test
     /// resources must be byte-for-byte identical, or the Swift tests would be checking a stale contract.
     func testBundledContractCopiesMatchTheCanonicalFiles() throws {
-        for name in ["example.v1.json", "v1.schema.json"] {
+        for name in ["example.v1.json", "v1.schema.json", "example.v2.json", "v2.schema.json"] {
             let bundled = try contractFileResource(name)
             let canonical = try XCTUnwrap(
                 canonicalContractURL(name), "the canonical contract \(name) is missing from contracts/journal-export")
