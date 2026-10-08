@@ -115,7 +115,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         let product = ProductDefinition(
             snapshotID: RecipeLogger.snapshotID(recipeID: recipe.recipeID, number: recipe.number),
             productID: recipe.recipeID, name: recipe.title,
-            labelBasis: unit == .serving ? "per serving" : "per \(unit.symbol)",
+            labelBasis: RecipeLogger.basisText(recipe.yield),
             catalogOrigin: RecipeLogger.catalogOrigin, catalogVersion: String(recipe.number), nutrients: values)
         model.applyLabelProduct(product)
         model.name = recipe.title

@@ -142,6 +142,20 @@ final class JournalLibraryTests: XCTestCase {
             catalogOrigin: "test", catalogVersion: "1")
     }
 
+    func testPickModeRowLabelDoesNotSayAdd() {
+        let template = RepeatTemplate(displayName: "Oats", category: "food",
+            components: [IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)])
+        for kind in [ProductKind.food, .supplement] {
+            let item = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
+                isFavorite: false, template: template, kind: kind)
+            let label = item.accessibilityLabel(forPick: true)
+            XCTAssertFalse(label.hasPrefix("Add"))
+            XCTAssertTrue(label.contains("Oats"))
+            XCTAssertTrue(label.contains("opens details"))
+            XCTAssertTrue(item.accessibilityLabel(forPick: false).hasPrefix("Add Oats"))
+        }
+    }
+
     // MARK: Journal
 
     func testJournalGroupsByLocalDayOfEachIntakesOwnZoneNewestFirst() throws {

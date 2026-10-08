@@ -74,6 +74,19 @@ final class AddHomeTests: XCTestCase {
         XCTAssertEqual(product.nutrients["energy"], .known(215, .kcal))
     }
 
+    func testRecipeDetailsUseTheRecipeLoggerBasis() throws {
+        let home = AddHomeViewModel(store: try makeStore())
+        let sample = uiSampleVersion()
+        for yield in [RecipeYield.servings(4), .total(Quantity(value: 220, unit: .g))] {
+            let recipe = RecipeVersion(
+                recipeID: sample.recipeID, number: sample.number, title: sample.title,
+                ingredients: sample.ingredients, yield: yield, createdAt: sample.createdAt)
+            let details = try home.makeDetails(recipe: recipe, now: now)
+            let product = try XCTUnwrap(details.labelValues)
+            XCTAssertEqual(product.labelBasis, RecipeLogger.basisText(yield))
+        }
+    }
+
     func testLibraryPickKeepsEveryAmountInAMixedUnitTemplate() throws {
         let home = AddHomeViewModel(store: try makeStore(), meal: .lunch)
         let template = RepeatTemplate(displayName: "Oats and milk", category: "food",

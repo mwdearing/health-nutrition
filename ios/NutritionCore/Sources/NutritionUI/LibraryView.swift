@@ -79,7 +79,7 @@ public struct LibraryView: View {
                 }
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel(item.accessibilityLabel)
+            .accessibilityLabel(item.accessibilityLabel(forPick: onPick != nil))
             .accessibilityHint(onPick == nil ? "Adds a new entry now with the same amounts" : "Opens details without adding an entry")
             Spacer()
             Button {

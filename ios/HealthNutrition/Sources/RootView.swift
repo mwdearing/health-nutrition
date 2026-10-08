@@ -275,7 +275,9 @@ struct RootView: View {
             self.addIntakeModel = home.makeDetails(now: Date())
         case .labelScanner:
             self.labelCapture = LabelCaptureViewModel()
-            self.addIntakeModel = home.makeDetails(now: Date())
+            if self.addIntakeModel == nil {
+                self.addIntakeModel = home.makeDetails(now: Date())
+            }
         case .details:
             self.addIntakeModel = home.makeDetails(now: Date())
         case .library: break
@@ -332,7 +334,12 @@ struct RootView: View {
                 }
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {
-                AddIntakeView(model: model, now: { Date() }, onSaved: { self.finishAdding() })
+                AddIntakeView(model: model, now: { Date() },
+                    onScanLabel: {
+                        self.addIntakeModel = model
+                        self.openAddRoute(.labelScanner, home: home)
+                    },
+                    onSaved: { self.finishAdding() })
             }
         }
     }
