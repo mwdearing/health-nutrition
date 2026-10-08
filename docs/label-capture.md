@@ -7,6 +7,32 @@ it into an intake the user confirms. This note describes the whole flow and what
 middle of it does and does not do, and what the review screen asks the user about before anything is
 filled in.
 
+## Add flow
+
+The shared **Add food or drink** action opens Add home in a full-screen cover with one
+navigation stack and Cancel. **Add to Lunch** (and the other meal sections on Today) opens
+the same home with that meal selected. None, Breakfast, Lunch, Dinner and Snack are explicit
+choices; the selected meal is carried into barcode, label, Library and typed Details.
+
+The four methods are **Scan barcode**, **Scan label**, **From Library** and **Type it in**.
+Scanners are pushed destinations, not nested sheets. An unavailable scanner stays visible
+with an explanation and a typed alternative. A scanned barcode starts the lookup immediately;
+typing digits in Details still requires **Look up**. A missing product or a product with no
+nutrition facts offers **Scan the label instead** and **Type it in**.
+
+Label capture keeps its existing on-device camera, multi-photo review and confirmation
+behavior. **Use these values** pushes the existing Details form; it does not save an entry.
+Library pick mode offers Favourites, Recent and Recipes. Picking prefills Details without
+switching tabs or writing the journal. Save closes Add and clears its path; Cancel does the same.
+
+Home shows at most five recent items from the journal. Each quiet **Add** action logs
+immediately with the currently selected meal and shows an Undo toast for ten seconds.
+Undo removes only that new entry. Without recent items, home says
+"Things you log will show up here."
+
+**Search foods**, **Describe or photograph a meal** (#149) and **Amounts only** (#146)
+remain disabled, carry a Later badge, and announce "Not available yet".
+
 ## The flow
 
 1. **Scan.** A capture session frames the panel and produces one text line per line of text it can see.
@@ -30,7 +56,7 @@ a scanned number reaches the journal is through a confirmation the user gave.
 The camera lives in the app target (`LabelCaptureSheet.swift`), never in the UI package: it uses
 VisionKit's `DataScannerViewController` with `recognizedDataTypes: [.text()]` and
 `recognizesMultipleItems` on, because a panel is printed as many separate items and asking for one at a
-time caps what the scanner reports. It checks `isSupported` and `isAvailable` before offering the entry,
+time caps what the scanner reports. It checks `isSupported` and `isAvailable` before enabling the tile,
 and a Capture button collects the recognized lines in reading order — top to bottom, and left to right
 within one line of print, so a two-column panel reads as the rows it printed. The held lines are replaced
 on every change to the recognized set, including a removal, so Capture submits the frame in front of the
