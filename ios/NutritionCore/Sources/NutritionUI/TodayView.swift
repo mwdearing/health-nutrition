@@ -1,4 +1,5 @@
 import SwiftUI
+import NutritionDomain
 
 public struct TodayView: View {
     @ObservedObject var model: TodayViewModel

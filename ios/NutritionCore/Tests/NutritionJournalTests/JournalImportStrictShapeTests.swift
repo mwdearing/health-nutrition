@@ -157,7 +157,7 @@ final class JournalImportStrictShapeTests: XCTestCase {
             XCTAssertEqual(Set(required), entry.keys)
         }
         XCTAssertEqual(
-            JournalImportV2Keys.provenance.difference(JournalImportV1Keys.provenance), ["kind"],
+            JournalImportV2Keys.provenance.subtracting(JournalImportV1Keys.provenance), ["kind"],
             "version 2 adds the kind and changes nothing else")
     }
 
