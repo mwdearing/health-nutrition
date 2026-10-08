@@ -2,6 +2,7 @@ import XCTest
 @testable import NutritionUI
 
 /// The interim Settings list: the placeholder rows are present, named, and never available.
+@MainActor
 final class AppSettingsTests: XCTestCase {
     func testSettingsPlaceholderRowsAreNamedAsTheDesignListsThem() {
         XCTAssertEqual(

@@ -281,7 +281,8 @@ public final class TodayViewModel: ObservableObject {
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
             goalBars = progress.filter { $0.nutrient != DailyTotalsBuilder.waterKey }.map { line in
                 GoalBarModel.make(
-                    line: line, hasEntries: !foodEntries.isEmpty,
+                    line: line,
+                    hasEntries: foodEntries.contains { $0.kind != .supplement } || line.hasKnownAmount,
                     missingCount: coverage.first { $0.nutrient == line.nutrient }?.missing ?? 0)
             }
             waterBar = progress.first { $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal }.map { line in

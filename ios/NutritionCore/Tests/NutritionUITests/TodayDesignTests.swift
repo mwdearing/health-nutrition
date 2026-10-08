@@ -72,6 +72,15 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(today.goalBars.first?.valueText, "Nothing logged yet")
     }
 
+    func testGoalBarNothingLoggedOnADayOfOnlySupplements() throws {
+        let store = try makeStore()
+        try log(store, name: "Sample multi", product: oats(withValues: false, kind: .supplement))
+        let today = model(store)
+        today.load(now: now)
+        XCTAssertEqual(today.goalBars.map(\.state), [.nothingLogged, .nothingLogged])
+        XCTAssertEqual(today.rows.count, 1, "the supplement is still listed")
+    }
+
     func testGoalBarCannotTotalWhenAnEntryStatesNoValueAndSaysWhichKind() throws {
         let store = try makeStore()
         try log(store, product: oats(withValues: true))

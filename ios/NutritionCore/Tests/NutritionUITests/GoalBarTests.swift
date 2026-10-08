@@ -6,6 +6,7 @@ import XCTest
 
 /// The goal bar's states as a model: what the figure reads, whether there is a fraction to draw, and
 /// what a screen reader is told. The view only renders these.
+@MainActor
 final class GoalBarTests: XCTestCase {
     private func line(
         _ nutrient: String, _ amount: NutrientValue, goal: NutrientGoal? = nil
