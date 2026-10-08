@@ -19,10 +19,15 @@ public struct TodayRow: Equatable, Identifiable {
     /// What kind of product the entry was recorded with. Food unless the entry's product says
     /// otherwise, which is what an entry typed by hand is; only a supplement is labelled on the row.
     public let kind: ProductKind
+    /// Whether the entry is a water entry. Water is summarised by its own card on Today rather than
+    /// listed row by row, so the meal sections leave these out; the flat `rows` list still holds them.
+    public let isWater: Bool
+    /// The time of day the entry was logged, "22:13", in the entry's own time zone. Empty when unknown.
+    public let timeText: String
 
     public init(
         id: String, title: String, detail: String, occurredAt: Date, meal: String?,
-        kind: ProductKind = .food
+        kind: ProductKind = .food, isWater: Bool = false, timeText: String = ""
     ) {
         self.id = id
         self.title = title
@@ -30,6 +35,13 @@ public struct TodayRow: Equatable, Identifiable {
         self.occurredAt = occurredAt
         self.meal = meal
         self.kind = kind
+        self.isWater = isWater
+        self.timeText = timeText
+    }
+
+    /// The amounts and the time on one line: "100 g · 22:13". The amounts alone where no time is known.
+    public var detailLine: String {
+        timeText.isEmpty ? detail : "\(detail) · \(timeText)"
     }
 
     /// What a screen reader reads for one row: the name, the amounts, and the meal when it has one.
@@ -39,6 +51,19 @@ public struct TodayRow: Equatable, Identifiable {
         if let meal { parts.append(meal) }
         if kind == .supplement { parts.append(ProductKind.supplement.displayName) }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// The entries of one meal on Today, in the order the screen lists them.
+public struct TodayMealSection: Equatable, Identifiable {
+    public let id: String
+    public let title: String
+    public let rows: [TodayRow]
+
+    public init(id: String, title: String, rows: [TodayRow]) {
+        self.id = id
+        self.title = title
+        self.rows = rows
     }
 }
 
@@ -57,6 +82,22 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var coverage: [CoverageLine] = []
     /// One line per tracked nutrient: what the day has reached, against a target where one is set.
     @Published public private(set) var progress: [NutrientProgressLine] = []
+    /// One bar per tracked nutrient except water, in tracked order. A nutrient with a goal draws a bar;
+    /// one without shows its value alone. Built from `progress` and `coverage`, which stay published.
+    @Published public private(set) var goalBars: [GoalBarModel] = []
+    /// The water bar, only where a water goal is set; without one the water card shows the total alone.
+    @Published public private(set) var waterBar: GoalBarModel?
+    /// The day's food and drink entries grouped by meal: Breakfast, Lunch, Dinner, Snack, then Other for
+    /// an entry with no meal or a free-text one. Sections with no entry are left out, and water entries
+    /// are not listed (see `waterEntryCount`).
+    @Published public private(set) var mealSections: [TodayMealSection] = []
+    /// How many water entries the day holds.
+    @Published public private(set) var waterEntryCount: Int = 0
+    /// The one line that replaces the Coverage section: how many food and drink entries state no
+    /// nutrition values at all. Nil when there are none. Supplements and water are never counted.
+    @Published public private(set) var missingValuesSummary: String?
+    /// The date under the title, "Tuesday, November 14", in the model's time zone.
+    @Published public private(set) var dateSubtitle: String = ""
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
 
@@ -143,6 +184,10 @@ public final class TodayViewModel: ObservableObject {
             var waterTotal = Decimal(0)
             var skipped = 0
             var foodComponents: [(component: IntakeComponent, snapshot: ProductDefinition?, kind: ProductKind)] = []
+            // One record per food or drink entry, so the entries that state no values can be counted once
+            // the tracked nutrients are known.
+            var foodEntries: [(components: [IntakeComponent], snapshot: ProductDefinition?, kind: ProductKind)] = []
+            var waterEntries = 0
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
             for intake in intakes.sorted(by: { $0.occurredAt > $1.occurredAt }) {
@@ -156,6 +201,7 @@ public final class TodayViewModel: ObservableObject {
                 // always recorded as; a snapshot's own kind is what an entry with a product states.
                 let kind = snapshot?.kind ?? .food
                 if intake.category == "water" {
+                    waterEntries += 1
                     for component in components {
                         if component.unit.dimension == .volume,
                             Self.isPositive(component.amount),
@@ -171,6 +217,7 @@ public final class TodayViewModel: ObservableObject {
                     if kind != .supplement {
                         for component in components { foodComponents.append((component, snapshot, kind)) }
                     }
+                    foodEntries.append((components, snapshot, kind))
                 }
                 newRows.append(
                     TodayRow(
@@ -180,9 +227,14 @@ public final class TodayViewModel: ObservableObject {
                             .joined(separator: ", "),
                         occurredAt: intake.occurredAt,
                         meal: MealLabel.displayName(for: intake.meal),
-                        kind: kind))
+                        kind: kind,
+                        isWater: intake.category == "water",
+                        timeText: Self.timeText(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier)))
             }
             rows = newRows
+            mealSections = Self.makeMealSections(from: newRows)
+            waterEntryCount = waterEntries
+            dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: timeZoneIdentifier)
             waterTotalMilliliters = waterTotal
             waterSkippedCount = skipped
             skippedIntakeCount = skippedIntakes
@@ -226,6 +278,18 @@ public final class TodayViewModel: ObservableObject {
             progress = try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
                 displayNames: Self.printedNames(in: snapshots))
+            let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
+            goalBars = progress.filter { $0.nutrient != DailyTotalsBuilder.waterKey }.map { line in
+                GoalBarModel.make(
+                    line: line, hasEntries: !foodEntries.isEmpty,
+                    missingCount: coverage.first { $0.nutrient == line.nutrient }?.missing ?? 0)
+            }
+            waterBar = progress.first { $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal }.map { line in
+                GoalBarModel.make(
+                    line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped)
+            }
+            missingValuesSummary = Self.makeMissingValuesSummary(
+                entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
         } catch {
             errorMessage = "Could not read the journal."
@@ -315,6 +379,63 @@ public final class TodayViewModel: ObservableObject {
     public var waterAccessibilityValue: String {
         "\(waterTotalDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
+    }
+
+    /// The meal sections for a list of rows. Water rows are left out; a meal that is not one of the four
+    /// the app names, or none at all, is Other.
+    static func makeMealSections(from rows: [TodayRow]) -> [TodayMealSection] {
+        let named = MealLabel.allCases.map(\.displayName)
+        var buckets: [String: [TodayRow]] = [:]
+        for row in rows where !row.isWater {
+            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
+            buckets[title, default: []].append(row)
+        }
+        return (named + ["Other"]).compactMap { title in
+            buckets[title].map { TodayMealSection(id: title, title: title, rows: $0) }
+        }
+    }
+
+    /// "2 entries have no nutrition values", or nil. An entry counts when it is a food or a drink whose
+    /// snapshot states nothing and whose components the lookup knows nothing about for any tracked
+    /// nutrient. A supplement never counts: stating no macros is what it is.
+    static func makeMissingValuesSummary(
+        entries: [(components: [IntakeComponent], snapshot: ProductDefinition?, kind: ProductKind)],
+        trackedNutrients: [String], lookup: NutrientFactsLookup
+    ) -> String? {
+        var missing = 0
+        for entry in entries where entry.kind != .supplement {
+            if !(entry.snapshot?.nutrients.isEmpty ?? true) { continue }
+            let known = entry.components.contains { component in
+                trackedNutrients.contains { nutrient in
+                    DailyTotalsBuilder.value(
+                        for: component, snapshot: entry.snapshot, nutrient: nutrient, lookup: lookup).isKnown
+                }
+            }
+            if !known { missing += 1 }
+        }
+        switch missing {
+        case 0: return nil
+        case 1: return "1 entry has no nutrition values"
+        default: return "\(missing) entries have no nutrition values"
+        }
+    }
+
+    /// "22:13" in the given zone, with a fixed locale so the figure never depends on the device's.
+    static func timeText(_ date: Date, zoneIdentifier: String) -> String {
+        formatted(date, format: "HH:mm", zoneIdentifier: zoneIdentifier)
+    }
+
+    /// "Tuesday, November 14" in the given zone.
+    static func makeDateSubtitle(_ date: Date, zoneIdentifier: String) -> String {
+        formatted(date, format: "EEEE, MMMM d", zoneIdentifier: zoneIdentifier)
+    }
+
+    private static func formatted(_ date: Date, format: String, zoneIdentifier: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: zoneIdentifier) ?? TimeZone.current
+        formatter.dateFormat = format
+        return formatter.string(from: date)
     }
 
     private static func isPositive(_ value: Decimal) -> Bool {

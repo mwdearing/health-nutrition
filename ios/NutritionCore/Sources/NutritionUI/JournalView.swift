@@ -46,23 +46,11 @@ public struct JournalView: View {
         .onAppear { model.load(now: now()) }
     }
 
-    /// One entry: what it was, how much of it, and which meal it was for. The meal is a secondary
-    /// line because it qualifies the entry rather than being another amount of it.
-    ///
-    /// A supplement is marked rather than left to be guessed at: its amounts read like any other
-    /// entry's, and nothing in them says the entry is not food.
+    /// One entry: what it was, how much of it, and which meal it was for, as the shared row. The meal
+    /// joins the amounts on one line because it qualifies the entry rather than being another amount.
+    /// A supplement and a drink carry their tag; a food carries none.
     private func entryRow(_ row: JournalRow) -> some View {
-        VStack(alignment: .leading) {
-            Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
-            Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
-            if let meal = row.meal {
-                Text(meal).font(.footnote).foregroundStyle(TokenColors.textSecondary)
-            }
-            if row.kind == .supplement {
-                Label(ProductKind.supplement.displayName, systemImage: "pills")
-                    .font(.footnote)
-                    .foregroundStyle(TokenColors.accent)
-            }
-        }
+        let detail = [row.detail, row.meal].compactMap { $0 }.joined(separator: " · ")
+        return EntryRow(title: row.title, detail: detail, kind: row.kind)
     }
 }

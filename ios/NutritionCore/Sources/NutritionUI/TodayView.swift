@@ -1,156 +1,198 @@
 import SwiftUI
 import NutritionDomain
 
+/// Today: how the day stands against its goals, the water, and what was logged by meal.
+///
+/// The Add action is not here. It is the capsule the app shell holds above the tab bar on every tab, so
+/// this view only offers Add again where it has nothing else to say (the empty day).
 public struct TodayView: View {
     @ObservedObject var model: TodayViewModel
     private let now: () -> Date
     private let onAddIntake: () -> Void
-    private let onOpenJournal: (() -> Void)?
-    private let onOpenLibrary: (() -> Void)?
+    /// Opens the daily goals. Nil hides the "Edit goals" link, for a host with nowhere to route to.
+    private let onEditGoals: (() -> Void)?
     /// Opens one entry, so what Today lists can be corrected there rather than only read. Nil hides
-    /// the affordance and leaves the rows as plain text, which is what a host that has nowhere to
+    /// the affordance and leaves the rows as plain content, which is what a host that has nowhere to
     /// route to wants.
     private let onSelect: ((String) -> Void)?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
-        onOpenJournal: (() -> Void)? = nil, onOpenLibrary: (() -> Void)? = nil,
-        onSelect: ((String) -> Void)? = nil
+        onEditGoals: (() -> Void)? = nil, onSelect: ((String) -> Void)? = nil
     ) {
         self.model = model
         self.now = now
         self.onAddIntake = onAddIntake
-        self.onOpenJournal = onOpenJournal
-        self.onOpenLibrary = onOpenLibrary
+        self.onEditGoals = onEditGoals
         self.onSelect = onSelect
     }
 
     public var body: some View {
-        List {
-            Section {
-                HStack {
-                    Image(systemName: "drop.fill")
-                        .foregroundStyle(TokenColors.accent)
-                        .accessibilityLabel("Water")
-                    Text(model.waterTotalDisplay.text)
-                        .font(.title2)
-                        .foregroundStyle(TokenColors.textPrimary)
-                        .accessibilityValue(model.waterAccessibilityValue)
-                }
-                Button {
-                    model.quickAddWater(now: now())
-                } label: {
-                    Text(model.quickWaterLabel).font(.headline)
-                }
-                .accessibilityLabel(model.quickWaterAccessibilityLabel)
-                .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
-                if model.isUndoAvailable(now: now()) {
-                    Button {
-                        model.undoLastQuickAdd(now: now())
-                    } label: {
-                        Text("Undo").font(.body)
-                    }
-                    .accessibilityLabel("Undo last water")
-                    .accessibilityValue("Available for 10 seconds after adding")
-                }
-                if model.waterSkippedCount > 0 {
-                    Text("\(model.waterSkippedCount) water entries have a unit that is not a volume and are not counted.")
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                Text(model.dateSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(TokenColors.textSecondary)
+                notices
+                goalsCard
+                waterCard
+                entries
+                if let summary = model.missingValuesSummary {
+                    Text(summary)
                         .font(.footnote)
-                        .foregroundStyle(TokenColors.warning)
+                        .foregroundStyle(TokenColors.textSecondary)
                 }
             }
-            Section("Totals") {
-                ForEach(model.progress) { line in
-                    Text(line.text)
-                        .font(.body)
-                        .foregroundStyle(TokenColors.textPrimary)
-                }
-            }
-            // The section is left out entirely when the day holds nothing it could say anything about: only
-            // water, or only supplements, which are excluded from the count as not being foods.
-            if !model.coverage.isEmpty {
-                Section("Coverage") {
-                    ForEach(model.coverage) { line in
-                        Text(line.text)
-                            .font(.body)
-                            .foregroundStyle(line.isComplete ? TokenColors.success : TokenColors.warning)
-                    }
-                }
-            }
-            Section("Today") {
-                ForEach(model.rows) { row in
-                    if let onSelect {
-                        Button {
-                            onSelect(row.id)
-                        } label: {
-                            entryRow(row)
-                        }
-                        .accessibilityLabel(row.accessibilityText)
-                        .accessibilityHint("Opens the entry")
-                    } else {
-                        entryRow(row)
-                    }
-                }
-            }
-            if onOpenJournal != nil || onOpenLibrary != nil {
-                Section {
-                    if let onOpenJournal {
-                        Button {
-                            onOpenJournal()
-                        } label: {
-                            Text("Journal").font(.body)
-                        }
-                        .accessibilityLabel("Open the journal")
-                    }
-                    if let onOpenLibrary {
-                        Button {
-                            onOpenLibrary()
-                        } label: {
-                            Text("Library").font(.body)
-                        }
-                        .accessibilityLabel("Open the library")
-                    }
-                }
-            }
-            if let message = model.errorMessage {
-                Text(message).font(.footnote).foregroundStyle(TokenColors.error)
-            }
+            .padding(.horizontal, DesignSpacing.m)
+            .padding(.vertical, DesignSpacing.s)
         }
-        .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Today")
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    onAddIntake()
-                } label: {
-                    Image(systemName: "plus")
-                        .accessibilityLabel("Add intake")
-                }
-                .accessibilityLabel("Add intake")
-            }
-        }
         .onAppear { model.load(now: now()) }
     }
 
-    /// One entry: what it was, how much of it, and which meal it was for. The meal is a secondary
-    /// line because it qualifies the entry rather than being another amount of it.
-    ///
-    /// A supplement is marked, because its rows read like any other entry's: nothing about a list of
-    /// vitamins and minerals would otherwise say that it is not food and does not belong in the day's
-    /// food count. A food and a drink are marked with nothing, being what a row normally is.
+    @ViewBuilder
+    private var notices: some View {
+        if let message = model.errorMessage {
+            InlineNotice(message, tone: .failed)
+        }
+        if model.skippedIntakeCount > 0 {
+            InlineNotice("\(model.skippedIntakeCount) entries can't be shown.", tone: .waiting)
+        }
+    }
+
+    private var goalsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                HStack {
+                    Text("Daily goals")
+                        .font(.headline)
+                        .foregroundStyle(TokenColors.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: DesignSpacing.s)
+                    if let onEditGoals {
+                        Button("Edit goals") { onEditGoals() }
+                            .font(.subheadline)
+                            .foregroundStyle(TokenColors.accent)
+                            .accessibilityHint("Opens the daily goals")
+                    }
+                }
+                ForEach(model.goalBars) { bar in
+                    GoalBar(bar)
+                }
+            }
+        }
+    }
+
+    private var waterCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                if let bar = model.waterBar {
+                    GoalBar(bar)
+                } else {
+                    HStack {
+                        Image(systemName: "drop.fill")
+                            .foregroundStyle(TokenColors.accent)
+                            .accessibilityHidden(true)
+                        Text("Water")
+                            .font(.headline)
+                            .foregroundStyle(TokenColors.textPrimary)
+                        Spacer(minLength: DesignSpacing.s)
+                        Text(model.waterTotalDisplay.text)
+                            .font(.title3)
+                            .foregroundStyle(TokenColors.textPrimary)
+                            .accessibilityValue(model.waterAccessibilityValue)
+                    }
+                    if model.waterSkippedCount > 0 {
+                        InlineNotice(
+                            "\(model.waterSkippedCount) water entries have a unit that is not a volume and are not counted.",
+                            tone: .waiting)
+                    }
+                }
+                HStack(spacing: DesignSpacing.m) {
+                    QuietCapsule(model.quickWaterLabel) {
+                        model.quickAddWater(now: now())
+                    }
+                    .accessibilityLabel(model.quickWaterAccessibilityLabel)
+                    .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
+                    if model.isUndoAvailable(now: now()) {
+                        QuietCapsule("Undo") {
+                            model.undoLastQuickAdd(now: now())
+                        }
+                        .accessibilityLabel("Undo last water")
+                        .accessibilityValue("Available for 10 seconds after adding")
+                    }
+                    Spacer(minLength: DesignSpacing.s)
+                }
+                HStack(spacing: DesignSpacing.s) {
+                    Text("Other amount").font(.subheadline)
+                    LaterBadge()
+                }
+                .foregroundStyle(TokenColors.textSecondary)
+                .accessibilityElement(children: .combine)
+                .laterPlaceholder()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var entries: some View {
+        if model.rows.isEmpty {
+            EmptyState(
+                title: "Nothing logged today",
+                message: "Scan a label, scan a barcode or type it in.",
+                systemImage: "fork.knife",
+                actionTitle: "Add food or drink",
+                action: onAddIntake)
+        } else {
+            ForEach(model.mealSections) { section in
+                mealSection(section)
+            }
+        }
+    }
+
+    private func mealSection(_ section: TodayMealSection) -> some View {
+        VStack(alignment: .leading, spacing: DesignSpacing.s) {
+            Text(section.title)
+                .font(.headline)
+                .foregroundStyle(TokenColors.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Card {
+                VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                    ForEach(section.rows) { row in
+                        entryRow(row)
+                        if row.id != section.rows.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+            HStack(spacing: DesignSpacing.s) {
+                Text("Add to \(section.title)").font(.subheadline)
+                LaterBadge()
+            }
+            .foregroundStyle(TokenColors.textSecondary)
+            .accessibilityElement(children: .combine)
+            .laterPlaceholder()
+        }
+    }
+
+    /// One entry. A supplement carries its tag, because its amounts read like any other entry's and
+    /// nothing in them says it is not food; a food carries none.
+    @ViewBuilder
     private func entryRow(_ row: TodayRow) -> some View {
-        VStack(alignment: .leading) {
-            Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
-            Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
-            if let meal = row.meal {
-                Text(meal).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+        if let onSelect {
+            Button {
+                onSelect(row.id)
+            } label: {
+                EntryRow(title: row.title, detail: row.detailLine, kind: row.kind)
             }
-            if row.kind == .supplement {
-                Label(ProductKind.supplement.displayName, systemImage: "pills")
-                    .font(.footnote)
-                    .foregroundStyle(TokenColors.accent)
-            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(row.accessibilityText)
+            .accessibilityHint("Opens the entry")
+        } else {
+            EntryRow(title: row.title, detail: row.detailLine, kind: row.kind, showsChevron: false)
+                .accessibilityElement(children: .combine)
         }
     }
 }
