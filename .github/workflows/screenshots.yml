@@ -1,0 +1,78 @@
+name: screenshots
+
+# Captures a PNG of each screen, in light and dark, on the iOS Simulator, and uploads them as a workflow
+# artifact. The screens are the real views on invented data (ScreenshotCaptureTests); nothing here uses
+# a device or personal data. scripts/build_design_system.py puts the images on the design system pages.
+
+on:
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/screenshots.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/screenshots.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: xcodegen generate
+      # The simulator is picked from what this runner actually has, never a name that might not exist.
+      - name: Pick an available iPhone simulator
+        id: simulator
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
+          name=$(python3 - "$RUNNER_TEMP/simulators.json" <<'PY'
+          import json
+          import sys
+
+          devices = json.load(open(sys.argv[1]))["devices"]
+          names = [
+              device["name"]
+              for runtime in sorted(devices)
+              for device in devices[runtime]
+              if device.get("isAvailable") and device["name"].startswith("iPhone")
+          ]
+          print(names[0] if names else "")
+          PY
+          )
+          if [ -z "$name" ]; then
+            echo "No available iPhone simulator on this runner." >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Capture the screens
+        working-directory: ios/HealthNutrition
+        env:
+          SIMULATOR: ${{ steps.simulator.outputs.name }}
+          # xcodebuild hands TEST_RUNNER_-prefixed variables to the test process without the prefix.
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ runner.temp }}/screenshots
+        run: |
+          mkdir -p "$RUNNER_TEMP/screenshots"
+          xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition \
+            -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO \
+            -only-testing:HealthNutritionTests/ScreenshotCaptureTests test
+          ls -l "$RUNNER_TEMP/screenshots"
+      - name: Upload the screenshots
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 30
