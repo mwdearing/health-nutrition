@@ -10,6 +10,7 @@ on:
       - ".github/workflows/signed-beta.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
       - "scripts/tests/test_project_declarations.py"
+      - "scripts/tests/test_ios_workflow.py"
   push:
     branches: [main]
     paths:
@@ -20,6 +21,7 @@ on:
       - ".github/workflows/signed-beta.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
       - "scripts/tests/test_project_declarations.py"
+      - "scripts/tests/test_ios_workflow.py"
   # Manual runs only. Builds an unsigned device .ipa so it can be signed and sideloaded locally;
   # no signing material ever lives in this repository.
   workflow_dispatch:
@@ -63,6 +65,8 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py
       - name: Test the project declarations
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
+      - name: Check the CI release build keeps its shape
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_ios_workflow.py
 
   swift-test:
     runs-on: macos-latest
