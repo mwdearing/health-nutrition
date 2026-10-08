@@ -88,10 +88,13 @@ struct RootView: View {
                 // One line, because a delivery that is parked or waiting for a person should be visible
                 // where the entries it belongs to are, not only on the debug tab. Debug builds only.
                 .safeAreaInset(edge: .bottom) {
-                    Text(healthKitDeliveryStatus.summaryLine)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
+                    // Left out of the design-system screenshots, which are taken in a debug build.
+                    if ProcessInfo.processInfo.environment["SCREENSHOT_DIR"] == nil {
+                        Text(healthKitDeliveryStatus.summaryLine)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                    }
                 }
                 #endif
             }

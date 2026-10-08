@@ -110,6 +110,55 @@ final class ScreenshotCaptureTests: XCTestCase {
         try capture("RootView") { RootView(services: services) }
     }
 
+    func testTodayView() throws {
+        let services = try makeSeededServices()
+        try capture("TodayView") {
+            NavigationStack {
+                TodayView(
+                    model: services.today, onAddIntake: {}, onEditGoals: {}, onSelect: { _ in })
+            }
+        }
+    }
+
+    func testJournalView() throws {
+        let services = try makeSeededServices()
+        try capture("JournalView") {
+            NavigationStack { JournalView(model: services.journal, onSelect: { _ in }) }
+        }
+    }
+
+    func testLibraryView() throws {
+        let services = try makeSeededServices()
+        try capture("LibraryView") {
+            NavigationStack {
+                LibraryView(model: services.library, onAdded: {}, onOpenRecipes: {})
+                    .navigationTitle("Library")
+            }
+        }
+    }
+
+    func testAppSettingsView() throws {
+        let services = try makeSeededServices()
+        try capture("AppSettingsView") {
+            NavigationStack {
+                AppSettingsView(goals: services.goals, connections: services.connections)
+            }
+        }
+    }
+
+    func testEntryDetailView() throws {
+        let services = try makeSeededServices()
+        try capture("EntryDetailView") {
+            NavigationStack {
+                EntryDetailView(
+                    model: EntryDetailViewModel(
+                        store: services.journalStore, intakeID: intakeIDs[0],
+                        preferences: services.displayPreferences),
+                    now: { Date() }, onFinished: {})
+            }
+        }
+    }
+
     func testStartupFailureView() throws {
         try capture("StartupFailureView") {
             StartupFailureView(message: "The journal store file could not be opened.")
