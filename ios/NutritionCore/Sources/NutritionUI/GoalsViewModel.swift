@@ -91,6 +91,24 @@ public struct NutrientGoalRow: Equatable, Identifiable {
     }
 }
 
+/// Editable presentation beside the existing persisted-goal rows.
+public struct GoalSectionRow: Identifiable {
+    public let nutrient: String
+    public let displayName: String
+    public let targetText: String
+    public let draftText: String
+    public let unit: MeasureUnit
+    public let detail: String?
+    public let rowError: String?
+    public var id: String { nutrient }
+}
+
+public struct GoalSection: Identifiable {
+    public let title: String
+    public let rows: [GoalSectionRow]
+    public var id: String { title }
+}
+
 /// Backs the Goals screen: the targets a person set, and the writes that change them.
 ///
 /// The keys come from `NutrientGoalChoices` rather than from the store, so the screen lists the same
@@ -103,6 +121,31 @@ public final class GoalsViewModel: ObservableObject {
     /// journal's current snapshots carry.
     @Published public private(set) var offeredKeys: [String] = NutrientGoalChoices.keys
     @Published public private(set) var errorMessage: String?
+    @Published public var draftText: [String: String] = [:]
+    @Published public var selectedUnits: [String: MeasureUnit] = [:]
+    @Published public private(set) var rowError: [String: String] = [:]
+
+    public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
+
+    public var sections: [GoalSection] {
+        let groups: [(String, [String])] = [
+            ("Energy and macros", ["energy", "protein", "carbohydrate", "fat", "fiber"]),
+            ("Water", ["water"]),
+            ("Minerals", ["sodium", "potassium"]),
+            ("From your labels", self.offeredKeys.filter { !NutrientGoalChoices.keys.contains($0) }),
+        ]
+        return groups.map { title, keys in
+            GoalSection(title: title, rows: keys.compactMap { key in
+                guard let row = self.rows.first(where: { $0.nutrient == key }) else { return nil }
+                return GoalSectionRow(
+                    nutrient: key, displayName: row.displayName, targetText: row.targetText ?? "None",
+                    draftText: self.draftText[key] ?? "",
+                    unit: self.selectedUnits[key] ?? self.unit(for: key),
+                    detail: title == "From your labels" ? "Added by a scanned label" : nil,
+                    rowError: self.rowError[key])
+            })
+        }
+    }
 
     public static let readFailedMessage = "Could not read the daily goals."
     public static let saveFailedMessage = "Could not save that daily goal."
@@ -140,6 +183,14 @@ public final class GoalsViewModel: ObservableObject {
                 return NutrientGoalRow(
                     nutrient: key, displayName: name,
                     targetText: "\(DecimalFormatting.text(goal.target)) \(goal.unit.symbol)")
+            }
+            for key in offeredKeys {
+                if draftText[key] == nil {
+                    draftText[key] = byNutrient[key].map { DecimalFormatting.text($0.target) } ?? ""
+                }
+                if selectedUnits[key] == nil {
+                    selectedUnits[key] = byNutrient[key]?.unit ?? self.unit(for: key)
+                }
             }
             errorMessage = nil
         } catch {
@@ -249,6 +300,42 @@ public final class GoalsViewModel: ObservableObject {
             try store.removeGoal(nutrient: nutrient)
             load()
             return true
+        } catch {
+            errorMessage = Self.removeFailedMessage
+            return false
+        }
+    }
+
+    /// Commits one inline field without discarding drafts in other fields.
+    @discardableResult
+    public func commitTarget(for nutrient: String) -> Bool {
+        let text = (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        rowError[nutrient] = nil
+        if text.isEmpty {
+            guard removeTarget(for: nutrient) else { return false }
+            draftText[nutrient] = ""
+            return true
+        }
+        guard let target = AmountParser.parse(text), !target.isNaN, target > 0 else {
+            rowError[nutrient] = "Enter a number above zero."
+            return false
+        }
+        guard setTarget(text, for: nutrient, unit: selectedUnits[nutrient]) else { return false }
+        draftText[nutrient] = DecimalFormatting.text(target)
+        return true
+    }
+
+    @discardableResult
+    public func clearAllGoals() -> Bool {
+        do {
+            for goal in try store.goals() {
+                try store.removeGoal(nutrient: goal.nutrient)
+            }
+            draftText = [:]
+            selectedUnits = [:]
+            rowError = [:]
+            load()
+            return errorMessage == nil
         } catch {
             errorMessage = Self.removeFailedMessage
             return false
