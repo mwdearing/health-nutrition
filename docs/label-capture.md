@@ -205,6 +205,49 @@ product is invalidated by exactly the same things a looked-up one is: a later ba
 or a later lookup — and a lookup invalidates from the moment it starts, not when its reply arrives, so
 Save cannot store a panel the user has already begun to replace on a slow request.
 
+## More than one photo
+
+A Supplement Facts panel on a small bottle is printed in two columns and does not always fit in one
+frame: one photo shows the left column, the next the right one and the "Other ingredients" print, and a
+single capture misses half the rows. So a panel may be read across several photos and merged into one
+draft, and the review screen offers **Add another photo** once there is something to add to.
+
+- **The second photo is merged, not loaded.** `LabelCaptureViewModel.addPhoto(lines:)` parses the new
+  lines and merges them into the draft on screen; `load(lines:)` still replaces everything, and is what
+  the first photo of a panel uses. The capture sheet's Capture button hands its lines to
+  `LabelCaptureViewModel.capture(lines:)`, which picks between the two, so **the same camera and the
+  same text recogniser read every photo** of a panel — the second half is not a different flow.
+- **The merge rule, row by row.** A row the draft does not have is added, and belongs to the photo that
+  read it. A row the draft has with the *same* value is kept, and the second reading raises its
+  confidence: a flag the parser raised on the strength of one photo is answered when another photo
+  reads the row the same way. The compound rows under "Also on the label" merge the same way, keyed by
+  the slug of the name the label printed, so `Zinc 15mg` meets the `Zinc 11mg` of the first photo
+  rather than becoming a second row of its own.
+- **A row the two photos read differently becomes a conflict.** Neither value is dropped and neither is
+  chosen silently: both are kept, the row is marked for review — it counts as one of the pending values,
+  which is what the screen's `isPending` means — the screen shows both values and reads "Conflict: tap
+  to choose", and so **Save stays disabled until it is resolved**. Confirming keeps the value on screen,
+  the other button takes the other photo's reading, and typing an amount resolves it the same way. A
+  resolved conflict is an ordinary answered row: the value on screen is the one that is kept. A row the
+  user has already confirmed or corrected is never made a conflict by a later photo — their answer
+  outranks anything a second reading says.
+- **Panel-wide facts come from whichever photo read them.** The serving size and the
+  servings-per-container count are taken from the first photo that read them, and a later photo never
+  replaces one already on screen — never a serving the user has confirmed, which is their answer
+  rather than a reading at all.
+- **What the screen says.** The header reads "From 2 photos" once more than one photo has contributed,
+  and a row that is a conflict is called out in the row itself, next to the two values.
+- **A photo that read no amount contributes nothing.** A shot that missed the panel leaves the draft
+  exactly as it was and does not count towards the number of photos, rather than looking as though it
+  had been merged. A photo that repeats rows the draft already has does count: a second reading of a
+  row is what can answer the parser's doubt about the first one.
+- **What retake does.** `retake()` clears every frame: the rows, the serving, the conflicts and the
+  photo count all go, and the next capture loads a new panel. A retake is a different product, not the
+  next photo of this one — that is what Add another photo is for.
+
+One photo behaves exactly as it did before this: the merge only ever runs when the user asks for
+another photo, and `frameCount` is 1 for a single capture, so the header says nothing.
+
 ## Privacy: no image is stored or sent
 
 Text recognition runs on the device and nothing leaves it:
@@ -224,4 +267,6 @@ Text recognition runs on the device and nothing leaves it:
 
 - Panels that are not US Nutrition Facts panels: a supplement facts panel, a menu item or a non-US
   label is out of scope for this parser.
-- Reading more than one panel in one capture: the sheet reads what is in the frame.
+- Reading more than one panel in one capture: the sheet reads what is in the frame, and a capture is one
+  panel. One panel may be read across several photos and merged — see above — but two different products
+  are never in the same draft.

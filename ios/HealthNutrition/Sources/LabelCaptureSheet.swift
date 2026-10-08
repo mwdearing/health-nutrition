@@ -58,6 +58,12 @@ final class LabelCaptureSession: ObservableObject {
     /// a live preview. An empty capture is still handed over: the parser then says the panel was
     /// unreadable, which is a clearer answer than a Capture button that does nothing.
     ///
+    /// The lines go to `LabelCaptureViewModel.capture(lines:)`, which decides what this capture is for:
+    /// the first photo of a panel loads the draft, and a photo taken while the user asked to add
+    /// another one is merged into the draft already on screen. Both go through this same session and
+    /// this same recogniser — the second half of a panel is read by the camera that read the first,
+    /// not by a second one the user has to find.
+    ///
     /// Main actor, because it loads the parser's rows into the view model, and because it is only ever
     /// reached from the Capture button.
     @MainActor
@@ -65,7 +71,7 @@ final class LabelCaptureSession: ObservableObject {
         let collected = lines
         lines = []
         controller?.stopScanning()
-        model.load(lines: collected)
+        model.capture(lines: collected)
     }
 
     /// The recognized items as lines of text in the order a person reads them: top to bottom, and
@@ -128,7 +134,7 @@ struct LabelCaptureSheet: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle(model.hasPanel ? "Check the label" : "Scan the label")
+                .navigationTitle(model.isReviewing ? "Check the label" : "Scan the label")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -140,18 +146,23 @@ struct LabelCaptureSheet: View {
 
     /// The camera while it reads, the review screen once the Capture button has handed it the lines. A
     /// terminal failure takes the camera out of the tree, so nothing asks it to start again.
+    ///
+    /// The camera also comes back after the review screen's "Add another photo": the same session, the
+    /// same recogniser and the same Capture button read the second half of a panel, and the draft on
+    /// screen is kept so its rows can be merged with whatever this photo reads.
     @ViewBuilder
     private var content: some View {
         if let failureMessage {
             failureNotice(failureMessage)
-        } else if model.hasPanel {
+        } else if model.hasPanel && !model.isAddingPhoto {
             LabelCaptureView(
                 model: model,
                 onUse: { product in
                     onUse(product)
                     dismiss()
                 },
-                onRetake: {}
+                onRetake: {},
+                onAddPhoto: {}
             )
         } else {
             camera
@@ -166,9 +177,17 @@ struct LabelCaptureSheet: View {
 
     /// The Capture button. It collects the lines the camera has read so far, in reading order, and
     /// hands them to the parser; nothing is parsed and nothing is saved while the camera is open.
+    ///
+    /// While another photo is being added it says so: the panel on the table often does not fit in one
+    /// frame, and the same Capture button reads the column that was missing last time.
     private var captureBar: some View {
         VStack(spacing: 8) {
-            Text("Hold the Nutrition Facts panel inside the frame, then tap Capture. Nothing is saved until you have checked what was read.")
+            Text(
+                model.isAddingPhoto
+                    ? "Frame the rest of the panel, including any other column and the other ingredients, "
+                        + "then tap Capture. The values already checked are kept and added to."
+                    : "Hold the Nutrition Facts panel inside the frame, then tap Capture. "
+                        + "Nothing is saved until you have checked what was read.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
             Button {
@@ -178,6 +197,12 @@ struct LabelCaptureSheet: View {
             }
             .accessibilityLabel("Capture the panel")
             .accessibilityHint("Reads the text of the panel in front of the camera and shows it for checking")
+            if model.isAddingPhoto {
+                Button("Back to the values") { model.cancelAddingPhoto() }
+                    .font(.body)
+                    .accessibilityLabel("Back to the values you checked")
+                    .accessibilityHint("Goes back to the review screen without adding a photo")
+            }
         }
         .padding()
         .frame(maxWidth: .infinity)
