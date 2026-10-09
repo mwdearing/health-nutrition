@@ -36,6 +36,10 @@ public struct JournalView: View {
                 InlineNotice(skipped, tone: .waiting)
                     .listRowBackground(TokenColors.background)
             }
+            if let goalsMessage = model.goalsErrorMessage {
+                InlineNotice(goalsMessage, tone: .failed)
+                    .listRowBackground(TokenColors.background)
+            }
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
                     .listRowBackground(TokenColors.background)

@@ -101,6 +101,8 @@ public final class JournalViewModel: ObservableObject {
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
     @Published public private(set) var errorMessage: String?
+    /// Set when the stored goals cannot be read. The days still load, with no goal bars.
+    @Published public private(set) var goalsErrorMessage: String?
     /// The days the person has opened. Only an old day (more than a week back) starts collapsed.
     @Published public private(set) var expandedDays: Set<String> = []
     /// True once a load has completed without failing, so the empty state is never shown before one.
@@ -147,8 +149,6 @@ public final class JournalViewModel: ObservableObject {
             // The intakes of each day, kept beside the rows so the day's totals are summed from
             // exactly the entries the rows below were built from. Nothing here ever sees two days.
             var intakesByDay: [String: [Intake]] = [:]
-            // The zone each day is read in: the zone of the first intake that named that day.
-            var zones: [String: TimeZone] = [:]
             // One snapshot is read once per load, however many entries name it.
             var snapshots: [String: ProductDefinition?] = [:]
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
@@ -179,12 +179,19 @@ public final class JournalViewModel: ObservableObject {
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
                     titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
-                    zones[key] = zone
                 }
                 groups[key, default: []].append(row)
                 intakesByDay[key, default: []].append(intake)
             }
-            let storedGoals = (try? goals?.goals()) ?? []
+            // A goal store that cannot be read is reported, not taken for a person with no goals.
+            var goalsReadFailed = false
+            let storedGoals: [NutrientGoal]
+            do {
+                storedGoals = try goals?.goals() ?? []
+            } catch {
+                storedGoals = []
+                goalsReadFailed = true
+            }
             let tracked = TodayViewModel.totalsNutrients(goals: storedGoals)
             // Energy is read once per day alongside the tracked nutrients, for the header. The summary
             // line still names only the tracked ones, so it does not change.
@@ -202,12 +209,15 @@ public final class JournalViewModel: ObservableObject {
                         totals: totals, goals: storedGoals, hasFoodEntries: rows.contains { !$0.isWater && $0.kind != .supplement },
                         unitSystem: self.preferences.unitSystem),
                     energyText: Self.energyText(totals: totals),
-                    isCollapsedByDefault: Self.isMoreThanAWeekBefore(
-                        key, now: now, zone: zones[key] ?? TimeZone.current),
+                    isCollapsedByDefault: rows.allSatisfy { row in
+                        let zone = TimeZone(identifier: row.timeZoneIdentifier) ?? TimeZone.current
+                        return Self.isMoreThanAWeekBefore(Self.dayKey(row.occurredAt, zone: zone), now: now, zone: zone)
+                    },
                     entryCountText: Self.entryCountText(rows.count))
             }
             skippedCount = skipped
             errorMessage = nil
+            goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
             hasLoaded = true
         } catch {
             errorMessage = "Could not read the journal."
