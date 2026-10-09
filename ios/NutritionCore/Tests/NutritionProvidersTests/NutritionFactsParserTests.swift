@@ -374,6 +374,19 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertNil(unknown.servingSize?.quantity, "a count the registry does not carry is not a measure")
     }
 
+    /// A counted unit ends at a word boundary. "capsulesdaily" is one run of letters that runs past the
+    /// longest unit, so it is not "capsules" followed by a word; a unit followed by a space or the end is.
+    func testCountedUnitNeedsAWordBoundaryAfterIt() {
+        XCTAssertNil(parse(["Serving size 2 capsulesdaily"]).servingSize?.quantity,
+                     "a unit glued to a longer word is not read as the unit")
+        XCTAssertEqual(parse(["Serving size 2 capsules"]).servingSize?.quantity,
+                       Quantity(value: dec("2"), unit: .capsule))
+        XCTAssertEqual(parse(["Serving size 3 gummies"]).servingSize?.quantity,
+                       Quantity(value: dec("3"), unit: .gummy))
+        XCTAssertEqual(parse(["Serving size 1 capsule daily"]).servingSize?.quantity,
+                       Quantity(value: dec("1"), unit: .capsule))
+    }
+
     func testServingsPerContainerVariants() throws {
         XCTAssertEqual(parse(["8 servings per container"]).servingsPerContainer, dec("8"))
         XCTAssertEqual(parse(["Servings Per Container: 12"]).servingsPerContainer, dec("12"))
