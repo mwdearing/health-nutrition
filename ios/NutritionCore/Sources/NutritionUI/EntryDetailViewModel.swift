@@ -172,9 +172,10 @@ public final class EntryDetailViewModel: ObservableObject {
     /// The named meal the entry states, which is what the Meal menu shows as chosen. Nil for "Not set" and
     /// for a meal this build does not name.
     @Published public private(set) var selectedMeal: MealLabel?
-    /// Whether the Meal menu can be used: the entry states no meal, or one of the named meals. A meal this build
-    /// does not name (an imported free-text value) is shown as written and is left as it is.
-    public var canChangeMeal: Bool { mealText == nil || selectedMeal != nil }
+    /// Whether the Meal menu can be used: the entry states no meal, or one of the named meals, and no amount or
+    /// time edit is waiting to be saved (choosing a meal reloads the screen). A meal this build does not name
+    /// (an imported free-text value) is shown as written and is left as it is.
+    public var canChangeMeal: Bool { (mealText == nil || selectedMeal != nil) && !isDirty }
     /// The time exactly as the journal holds it, and nil until `load` has read the entry. A draft
     /// may only correct that, so a save made before the first load cannot move an entry whose
     /// stored time this model has not seen.

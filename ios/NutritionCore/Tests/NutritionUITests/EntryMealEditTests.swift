@@ -102,10 +102,29 @@ final class EntryMealEditTests: XCTestCase {
         try logEntry(store, meal: "breakfast")
         let model = entryModel(store)
         model.load(now: now)
-        XCTAssertTrue(model.changeMeal(to: .breakfast, now: now))
+        XCTAssertFalse(model.changeMeal(to: .breakfast, now: now), "the meal already shown is not a change")
+        XCTAssertNil(model.errorMessage)
         XCTAssertEqual(try store.revisions(of: intakeID).count, 1)
         try store.delete(intakeID: intakeID, now: now)
         XCTAssertFalse(model.changeMeal(to: .dinner, now: now))
         XCTAssertNotNil(model.errorMessage)
+    }
+
+    /// Choosing a meal reloads the screen, so it is refused while an amount or time edit is unsaved rather than
+    /// quietly discarding it.
+    func testAMealCannotBeChangedWhileAnEditIsUnsaved() throws {
+        let store = try makeStore()
+        try logEntry(store, meal: "breakfast")
+        let model = entryModel(store)
+        model.load(now: now)
+        let component = try XCTUnwrap(model.drafts.keys.first)
+        model.drafts[component] = "55"
+        XCTAssertTrue(model.isDirty)
+        XCTAssertFalse(model.canChangeMeal)
+
+        XCTAssertFalse(model.changeMeal(to: .dinner, now: now))
+
+        XCTAssertEqual(model.drafts[component], "55", "the unsaved edit is still there")
+        XCTAssertEqual(try store.revisions(of: intakeID).count, 1)
     }
 }
