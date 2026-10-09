@@ -256,6 +256,15 @@ public final class JournalViewModel: ObservableObject {
         }
     }
 
+    /// Opens the day a jump landed on when it starts collapsed, so the person sees its entries and not a
+    /// button. A day that is already open, or a jump with no day, changes nothing.
+    public func reveal(_ target: JournalJumpTarget) {
+        guard let id = target.sectionID, let section = sections.first(where: { $0.id == id }),
+              !isExpanded(section)
+        else { return }
+        toggleDay(id)
+    }
+
     /// Opens a collapsed day, or collapses an open one.
     public func toggleDay(_ id: String) {
         if expandedDays.contains(id) {

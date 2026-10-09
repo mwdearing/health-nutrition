@@ -125,6 +125,7 @@ public struct JournalView: View {
     /// Closes the sheet, shows the sentence for the day if it had none, and scrolls to the section chosen.
     private func goToPickedDay() {
         let target = model.jumpTarget(for: pickedDay, now: now())
+        model.reveal(target)
         jumpNotice = target.message
         jumpSection = target.sectionID
         jumpSerial += 1

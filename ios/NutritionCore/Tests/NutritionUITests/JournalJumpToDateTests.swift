@@ -176,4 +176,21 @@ final class JournalJumpToDateTests: XCTestCase {
         XCTAssertEqual(
             utcDay.message, "Nothing logged on Nov 4, 2023. Showing the closest day with entries.")
     }
+
+    /// A day more than a week back starts collapsed; jumping to it opens it, and a day already open stays open.
+    func testRevealOpensACollapsedDayAndLeavesAnOpenDayOpen() throws {
+        let journal = try makeJournalStore()
+        try addEntry(journal, at: jumpDay(2023, 10, 20))
+        try addEntry(journal, at: jumpDay(2023, 11, 14))
+        let model = makeModel(journal)
+        model.load(now: jumpNow)
+        let old = try XCTUnwrap(model.sections.first { $0.id == "2023-10-20" })
+        XCTAssertFalse(model.isExpanded(old), "an old day starts collapsed")
+
+        model.reveal(model.jumpTarget(for: jumpDay(2023, 10, 20), now: jumpNow))
+        XCTAssertTrue(model.isExpanded(old))
+        model.reveal(model.jumpTarget(for: jumpDay(2023, 10, 20), now: jumpNow))
+        XCTAssertTrue(model.isExpanded(old), "revealing an open day does not collapse it")
+        model.reveal(JournalJumpTarget(sectionID: nil, message: "Nothing logged yet."))
+    }
 }
