@@ -114,7 +114,8 @@ struct RootView: View {
             // reached from the gear on every tab, not from here.
             NavigationStack {
                 LibraryView(
-                    model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() }
+                    model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
+                    onOpen: { template in self.openAddDetails(prefilledFrom: template) }
                 )
                 .navigationTitle("Library")
                 .toolbar { settingsToolbar }
@@ -266,6 +267,14 @@ struct RootView: View {
             scannerAvailability: AddScannerAvailability(
                 barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
             lookup: self.services.barcodeLookup, preferences: self.services.displayPreferences)
+    }
+
+    /// Opens Add on its details form, prefilled from a Library item. Nothing is logged until Save.
+    private func openAddDetails(prefilledFrom template: RepeatTemplate) {
+        self.startAddingIntake()
+        guard let home = self.addHome, let model = try? home.makeDetails(prefill: template, now: Date()) else { return }
+        self.addIntakeModel = model
+        self.addNavigation.path.append(.details(AddPrefill(model: model)))
     }
 
     private func finishAdding() {
