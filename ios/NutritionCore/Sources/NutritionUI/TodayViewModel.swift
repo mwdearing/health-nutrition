@@ -73,6 +73,8 @@ public struct TodayMealSection: Equatable, Identifiable {
 public final class TodayViewModel: ObservableObject {
     public static let defaultTrackedNutrients = ["potassium", "sodium", "protein", "fiber"]
     public static let undoWindow: TimeInterval = 10
+    /// Shown when a water amount is zero, negative or not a number.
+    public static let waterAmountInvalidMessage = "Enter a water amount above zero."
 
     @Published public private(set) var rows: [TodayRow] = []
     /// Water today in mL, an exact decimal.
@@ -325,7 +327,7 @@ public final class TodayViewModel: ObservableObject {
     public func quickAddWater(milliliters: Decimal? = nil, now: Date) -> UndoHandle? {
         let milliliters = milliliters ?? preferences.quickWaterMilliliters
         guard !milliliters.isNaN, milliliters > 0 else {
-            errorMessage = "Enter a water amount above zero."
+            errorMessage = Self.waterAmountInvalidMessage
             return nil
         }
         let intake = Intake(
@@ -342,6 +344,33 @@ public final class TodayViewModel: ObservableObject {
         load(now: now)
         return handle
     }
+
+    /// Writes one water intake for an amount typed in the volume unit the reader sees: millilitres
+    /// under metric, fluid ounces under US. The amount is stored in millilitres and undone exactly like
+    /// the quick button. Zero, negative or unreadable text is refused with `errorMessage` and nothing
+    /// is written.
+    @discardableResult
+    public func addWater(typed text: String, now: Date) -> UndoHandle? {
+        guard let typed = AmountParser.parseTyped(text), typed > 0 else {
+            errorMessage = Self.waterAmountInvalidMessage
+            return nil
+        }
+        let milliliters: Decimal
+        if AmountDisplay.volumeUnit(for: unitSystem) == .flOz {
+            // Exact factor, the same one the quick-water setting uses: a Decimal product, nothing rounded.
+            milliliters = typed * Decimal(string: "29.5735295625", locale: AmountParser.locale)!
+        } else {
+            milliliters = typed
+        }
+        errorMessage = nil
+        return quickAddWater(milliliters: milliliters, now: now)
+    }
+
+    /// The unit symbol of the volume unit the typed water amount is read in: "mL" or "fl oz".
+    public var otherWaterUnitSymbol: String { AmountDisplay.volumeUnit(for: unitSystem).symbol }
+
+    /// The label of the typed water field, naming the unit: "Water amount in mL".
+    public var otherWaterFieldLabel: String { "Water amount in \(otherWaterUnitSymbol)" }
 
     public func isUndoAvailable(now: Date) -> Bool {
         guard let undo else { return false }
