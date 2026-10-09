@@ -300,7 +300,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// or the digests.
     @discardableResult
     public func saveQuickWaterAmount() -> Bool {
-        guard let amount = AmountParser.parse(quickWaterText) else {
+        guard let amount = AmountParser.parseTyped(quickWaterText) else {
             quickWaterError = Self.quickWaterInvalidMessage
             return false
         }
@@ -354,7 +354,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// value: a glass entered but not yet saved is still a glass, and the line describing the previous
     /// one while a new one is typed would be answering about the wrong amount.
     private var quickWaterTypedMilliliters: Decimal {
-        guard let typed = AmountParser.parse(quickWaterText) else { return preferences.quickWaterMilliliters }
+        guard let typed = AmountParser.parseTyped(quickWaterText) else { return preferences.quickWaterMilliliters }
         return milliliters(for: typed, in: quickWaterUnit)
     }
 
@@ -408,7 +408,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Nothing happens to an amount that is not a number: a half-typed entry has no value to convert,
     /// and the field's own error already says what is wrong with it.
     private func convertQuickWaterText(from oldSystem: UnitSystem) {
-        guard let typed = AmountParser.parse(quickWaterText) else { return }
+        guard let typed = AmountParser.parseTyped(quickWaterText) else { return }
         let milliliters = milliliters(
             for: typed, in: AmountDisplay.volumeUnit(for: oldSystem))
         quickWaterText = DecimalFormatting.text(

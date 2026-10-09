@@ -26,6 +26,23 @@ public enum AmountParser {
         guard let value = Decimal(string: trimmed, locale: locale), !value.isNaN, value > 0 else { return nil }
         return value
     }
+
+    /// Reads an amount a person typed into a field.
+    ///
+    /// The decimal pad offers the separator of the device's region, so where that is a comma a typed
+    /// "2,5" means two and a half. It is read as such only there, and only when it is the one separator
+    /// in the text: "1,000" typed where the separator is a point is refused as before rather than read
+    /// as one, and "1.234,5" is refused everywhere. A point is accepted in every region. Stored text is
+    /// never read through this; it goes through `parse`, which stays independent of the region.
+    public static func parseTyped(
+        _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Decimal? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard decimalSeparator == ",", !trimmed.contains("."),
+            trimmed.filter({ $0 == "," }).count == 1
+        else { return parse(trimmed) }
+        return parse(trimmed.replacingOccurrences(of: ",", with: "."))
+    }
 }
 
 /// Where the last barcode lookup stands. A lookup only ever starts from an explicit user action,
@@ -214,7 +231,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// Recomputed from the same metric components and basis rules used for the saved total.
     public var thisAdds: [ThisAddsLine] {
-        guard hasPrefilledValues, let amount = AmountParser.parse(amountText),
+        guard hasPrefilledValues, let amount = AmountParser.parseTyped(amountText),
             let basis = lookedUp?.labelBasis ?? prefilledProduct?.labelBasis
         else { return [] }
         let stored = Self.storedMetric(amount: amount, unit: unit)
@@ -510,7 +527,7 @@ public final class AddIntakeViewModel: ObservableObject {
     public func save(now: Date) -> Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         nameError = trimmedName.isEmpty ? "Enter a name." : nil
-        let amount = AmountParser.parse(amountText)
+        let amount = AmountParser.parseTyped(amountText)
         amountError = amount == nil ? "Enter an amount greater than zero, using digits and a point." : nil
         saveError = nil
         guard nameError == nil, let amount else {
