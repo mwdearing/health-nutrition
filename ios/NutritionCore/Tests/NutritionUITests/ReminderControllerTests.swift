@@ -392,4 +392,38 @@ final class ReminderControllerTests: XCTestCase {
         XCTAssertNil(controller.message)
         XCTAssertFalse(controller.isOn, "allowing notifications does not switch the reminder on by itself")
     }
+
+    func testSwitchingOffWhileATimeChangeIsBeingScheduledLeavesNothingPending() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        await controller.setOn(true)
+        scheduler.whileScheduling = { [weak controller] in
+            scheduler.whileScheduling = nil
+            await controller?.setOn(false)
+        }
+
+        await controller.setTime(ReminderTime(hour: 9, minute: 15))
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertNil(scheduler.pendingTime, "the late add must not leave a request behind")
+    }
+
+    func testASyncOverlappedBySwitchingOffDoesNotTurnItBackOn() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        await controller.setOn(true)
+        scheduler.whileScheduling = { [weak controller] in
+            scheduler.whileScheduling = nil
+            await controller?.setOn(false)
+        }
+
+        await controller.syncOnLaunch()
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertNil(scheduler.pendingTime)
+    }
 }

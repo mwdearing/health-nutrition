@@ -93,8 +93,13 @@ public final class ReminderController: ObservableObject {
             turnOffAfterRefusal()
             return
         }
-        if token != generation, isOn {
-            try? await scheduler.scheduleDaily(at: time)
+        if token != generation {
+            if isOn {
+                try? await scheduler.scheduleDaily(at: time)
+            } else {
+                // Switched off while this request was being added: the late add must not stay pending.
+                scheduler.cancelDaily()
+            }
         }
     }
 
@@ -105,13 +110,21 @@ public final class ReminderController: ObservableObject {
         let permission = await scheduler.permission()
         if preferences.isReminderOn {
             if permission == .allowed {
+                let token = generation
                 do {
                     try await scheduler.scheduleDaily(at: time)
-                    isOn = true
-                    message = nil
                 } catch {
-                    turnOffAfterRefusal()
+                    if token == generation { turnOffAfterRefusal() }
+                    return
                 }
+                guard token == generation else {
+                    // A switch tap or an erase arrived while the request was being added: that action
+                    // decides the state, and a request it switched off must not stay pending.
+                    if !preferences.isReminderOn { scheduler.cancelDaily() }
+                    return
+                }
+                isOn = true
+                message = nil
             } else {
                 scheduler.cancelDaily()
                 preferences.setReminderOn(false)
