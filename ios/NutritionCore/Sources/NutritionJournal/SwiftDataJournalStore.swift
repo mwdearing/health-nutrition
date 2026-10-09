@@ -1568,7 +1568,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         now: Date, olderThan days: Int = JournalRetention.acknowledgedOutboxDays
     ) throws -> Int {
         let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
-        return try commit { context in
+        return try commit { context -> Int in
             let acknowledged = try context.fetch(FetchDescriptor<OutboxRecord>(
                 predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt != nil }))
             var pruned = 0
