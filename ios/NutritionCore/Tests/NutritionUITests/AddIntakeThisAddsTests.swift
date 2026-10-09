@@ -54,6 +54,17 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertEqual(protein.text, "Less than the label reports (g)")
     }
 
+    /// A compound the label states only as a bound is still one of the label's own rows, so it is
+    /// listed with the other compounds rather than dropped because it has no exact amount.
+    func testBoundOnlyCompoundIsListedWithTheLabelsOwnRows() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        model.applyLabelProduct(ProductDefinition(snapshotID: "example-compound-bound", productID: "example-oats",
+            name: "Example oats", labelBasis: "per 100 g", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["example-compound": .belowReportingThreshold(.mg), "example-absent": .unknown]))
+        XCTAssertTrue(model.hasPrefilledValues)
+        XCTAssertEqual(model.additionalLabelNutrients, ["example-compound"])
+    }
+
     func testNotApplicableSurvivesAnAmountThatCannotBeScaled() throws {
         let model = AddIntakeViewModel(store: try makeStore(), now: now)
         model.applyLabelProduct(ProductDefinition(snapshotID: "example-no-basis", productID: "example-oats",
