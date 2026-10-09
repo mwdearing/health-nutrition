@@ -80,7 +80,8 @@ millilitres and an entry logged in millilitres say the same thing about how much
 logged amount is converted into the stated serving's unit first, so 0.48 L counts as the 480 mL it is. A mass serving
 against a logged volume does not agree and is nil, as is a serving stated no quantity at all — "per serving",
 "per serving (1 large biscuit)", "per serving (a handful)" — so the nutrient stays unknown rather than being scaled by
-a guess. That is done by the totals builder and not by the basis type itself: the intake-context encoder answers the
+a guess. A household measure that carries its gram weight in its own brackets, "per serving (1 bar
+(30 g))", is read from the innermost brackets, so the 30 g is what scales. That is done by the totals builder and not by the basis type itself: the intake-context encoder answers the
 same basis as unresolvable and its contract with the relay receiver says so, so changing what the basis means would be
 a contract change rather than one reader being able to answer a question the data can answer.
 
@@ -240,7 +241,8 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Amount text** is parsed with a fixed POSIX parser: digits and at most one point, greater than zero, no locale, no
   binary floating point. Invalid text sets a field error and writes nothing.
 - **This adds** scales prefilled barcode, label or Library nutrients live from the typed amount, using the
-  totals builder's basis rules and the same metric components Save stores. Energy comes first. A basis that
+  totals builder's basis rules and the same metric components Save stores. Energy comes first. A nutrient the
+  product does not state gets no line; a "does not apply" value keeps its line. A basis that
   cannot be resolved leaves every line unknown; zero is never shown for unknown. Invalid amount text shows
   no preview lines, and a form without prefilled nutrients hides the section.
 - **Details layout** uses a header card for Name, known Brand, Kind and the typed barcode lookup; Amount

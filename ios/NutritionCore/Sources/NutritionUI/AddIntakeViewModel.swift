@@ -223,7 +223,7 @@ public final class AddIntakeViewModel: ObservableObject {
         let factor = DailyTotalsBuilder.scalingFactor(labelBasis: basis, logged: components)
         return Self.thisAddsKeys.compactMap { key in
             let value = self.prefilledValue(for: key)
-            guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { return nil }
+            guard value != .unknown else { return nil }
             return ThisAddsLine(
                 key: key, displayName: LookedUpProduct.displayNames[key] ?? key.capitalized,
                 value: factor.map { value.scaled(by: $0) } ?? (value == .notApplicable ? .notApplicable : .unknown),

@@ -382,6 +382,26 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
     }
 
+    /// A serving whose quantity sits inside a household measure, "1 bar (30 g)", is read from the
+    /// innermost brackets, so the gram weight is what scales. A plain "(30 g)" reads the same way.
+    func testHouseholdServingTextScales() throws {
+        let bar = try XCTUnwrap(DailyTotalsBuilder.statedServingQuantity("per serving (1 bar (30 g))"))
+        XCTAssertEqual(bar.value, Decimal(30))
+        XCTAssertEqual(bar.unit, MeasureUnit.g)
+
+        let plain = try XCTUnwrap(DailyTotalsBuilder.statedServingQuantity("per serving (30 g)"))
+        XCTAssertEqual(plain.value, Decimal(30))
+        XCTAssertEqual(plain.unit, MeasureUnit.g)
+
+        XCTAssertNil(DailyTotalsBuilder.statedServingQuantity("per serving (1 large biscuit)"))
+        XCTAssertNil(DailyTotalsBuilder.statedServingQuantity("per serving"))
+
+        let factor = DailyTotalsBuilder.scalingFactor(
+            labelBasis: "per serving (1 bar (30 g))",
+            logged: [IntakeComponent(componentID: "bar", name: "Bar", amount: 60, unit: .g)])
+        XCTAssertEqual(factor, Decimal(2))
+    }
+
     // MARK: Stored under a nutrient's other keys
 
     /// A barcode snapshot keeps the keys `LookedUpProduct.standardKeys` names, so it stores its energy
