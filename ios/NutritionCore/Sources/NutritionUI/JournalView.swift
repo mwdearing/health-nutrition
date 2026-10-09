@@ -30,10 +30,6 @@ public struct JournalView: View {
     public var body: some View {
         ScrollViewReader { proxy in
             List {
-                if let notice = jumpNotice {
-                    InlineNotice(notice, tone: .waiting)
-                        .listRowBackground(TokenColors.background)
-                }
                 jumpToDateRow
                 if model.isEmpty {
                     EmptyState(
@@ -58,6 +54,18 @@ public struct JournalView: View {
                     InlineNotice(message, tone: .failed)
                         .listRowBackground(TokenColors.background)
                 }
+            }
+            // Outside the scrolling rows, so the sentence stays visible after the list scrolls to the day.
+            .safeAreaInset(edge: .top) {
+                if let notice = jumpNotice {
+                    InlineNotice(notice, tone: .waiting)
+                        .padding(DesignSpacing.m)
+                        .background(TokenColors.background)
+                }
+            }
+            // A notice about an earlier jump goes whenever the journal reloads.
+            .onChange(of: model.loadCount) { _, _ in
+                jumpNotice = nil
             }
             .onChange(of: jumpSerial) { _, _ in
                 if let section = jumpSection {
@@ -113,7 +121,9 @@ public struct JournalView: View {
             }
             .padding(DesignSpacing.m)
             .navigationTitle("Jump to date")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showingJumpSheet = false }

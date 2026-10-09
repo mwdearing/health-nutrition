@@ -193,4 +193,31 @@ final class JournalJumpToDateTests: XCTestCase {
         XCTAssertTrue(model.isExpanded(old), "revealing an open day does not collapse it")
         model.reveal(JournalJumpTarget(sectionID: nil, message: "Nothing logged yet."))
     }
+
+    /// A journal whose entries are all unreadable has no sections but is not empty: the jump must not claim
+    /// nothing was logged, because the screen already says entries could not be shown.
+    func testJumpDoesNotSayNothingLoggedWhenEntriesWereSkipped() throws {
+        let journal = try makeJournalStore()
+        try addEntry(journal, at: jumpDay(2023, 11, 5), zone: "Not/AZone")
+        let model = makeModel(journal)
+        model.load(now: jumpNow)
+        XCTAssertTrue(model.sections.isEmpty)
+        XCTAssertGreaterThan(model.skippedCount, 0)
+
+        let target = model.jumpTarget(for: jumpDay(2023, 11, 5), now: jumpNow)
+
+        XCTAssertNil(target.sectionID)
+        XCTAssertNil(target.message)
+    }
+
+    /// Every completed load bumps a counter the screen watches, so a notice about an earlier jump goes
+    /// when the journal reloads.
+    func testEveryLoadAdvancesTheLoadCounter() throws {
+        let journal = try makeJournalStore()
+        let model = makeModel(journal)
+        let before = model.loadCount
+        model.load(now: jumpNow)
+        model.load(now: jumpNow)
+        XCTAssertEqual(model.loadCount, before + 2)
+    }
 }

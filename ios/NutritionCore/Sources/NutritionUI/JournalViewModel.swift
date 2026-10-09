@@ -112,6 +112,8 @@ public final class JournalViewModel: ObservableObject {
     @Published public private(set) var sections: [JournalDaySection] = []
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
+    /// How many times the journal has finished loading. The screen watches it to drop state tied to an earlier load.
+    @Published public private(set) var loadCount = 0
     @Published public private(set) var errorMessage: String?
     /// Set when the stored goals cannot be read. The days still load, with no goal bars.
     @Published public private(set) var goalsErrorMessage: String?
@@ -157,6 +159,7 @@ public final class JournalViewModel: ObservableObject {
 
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
     public func load(now: Date) {
+        defer { loadCount += 1 }
         do {
             var skipped = 0
             var groups: [String: [JournalRow]] = [:]
@@ -282,7 +285,10 @@ public final class JournalViewModel: ObservableObject {
     /// Sections are keyed by each entry's own local day, so the picked day is compared as a day key.
     public func jumpTarget(for date: Date, now: Date) -> JournalJumpTarget {
         guard !sections.isEmpty else {
-            return JournalJumpTarget(sectionID: nil, message: "Nothing logged yet.")
+            // Entries that could not be read, or a journal that failed to load, are not an empty journal:
+            // the screen already says so, and "Nothing logged yet." would be false.
+            let unreadable = skippedCount > 0 || errorMessage != nil
+            return JournalJumpTarget(sectionID: nil, message: unreadable ? nil : "Nothing logged yet.")
         }
         let zone = TimeZone(identifier: journalZoneID()) ?? TimeZone.current
         let today = Self.dayKey(now, zone: zone)
