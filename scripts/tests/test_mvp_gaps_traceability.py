@@ -603,7 +603,7 @@ def test_a_debug_bundle_beneath_a_source_root_is_not_searched(tmp_path: Path) ->
 
     `rglob` descends into a `.dSYM` or `.xcarchive` directory and filters only
     the files *inside* it by suffix, so a debug binary's DWARF symbols can match
-    a token that no source file contains — reporting a hit that is an artefact
+    a token that no source file contains — reporting a hit that is an artifact
     rather than evidence, which is the same failure as a missed hit. Bundle
     directories are pruned before descent, and a real text file beside one is
     still found, so the pruning is not simply a wider skip.
@@ -648,8 +648,8 @@ def test_every_production_source_root_under_ios_is_searched() -> None:
     convention-based sweep, a configured *file* rejected because the check wanted
     a directory, unhandled `include:` indirection, a nested dependency call, a
     `systemLibrary` target, a target-dependency expression read as a declaration,
-    and a checked-in bundle skipped as a build artefact. Each was a new way for
-    "production code" to mean something the parser did not recognise, which is
+    and a checked-in bundle skipped as a build artifact. Each was a new way for
+    "production code" to mean something the parser did not recognize, which is
     the wrong failure mode for a guard whose job is to be unable to be wrong.
 
     Searching a superset of what the document names can only strengthen "these
@@ -743,8 +743,8 @@ def _searched_trees() -> tuple[str, ...]:
     by a convention-based sweep, then a configured *file* rejected because the
     check wanted a directory, then `include:` indirection, a nested dependency
     call, a `systemLibrary` target, a target-dependency expression read as a
-    declaration, and a bundle skipped as a build artefact. Each was a way for
-    "production code" to mean something the parser did not recognise.
+    declaration, and a bundle skipped as a build artifact. Each was a way for
+    "production code" to mean something the parser did not recognize.
 
     Searching all of `ios/` removes the question. A superset can only strengthen
     the document's claim — it says these tokens appear nowhere in the named trees,
@@ -883,7 +883,7 @@ def test_a_shipped_resource_root_is_searched(tmp_path: Path) -> None:
     """A token in a `Resources` root the app ships must not read as absent.
 
     The reproduction this guards against: `project.yml` declares `Resources` as a
-    production input of the app target, and a search that recognised only a
+    production input of the app target, and a search that recognized only a
     directory named `Sources` never looked inside it, so
 
         ios/HealthNutrition/Resources/Localizable.strings  ->  "notif" = "Notif";
@@ -1017,7 +1017,7 @@ def test_a_source_file_directly_under_ios_is_searched(tmp_path: Path) -> None:
 
 
 def test_a_checked_in_resource_bundle_is_searched(tmp_path: Path) -> None:
-    """A `.bundle` the repository ships is a production input, not an artefact.
+    """A `.bundle` the repository ships is a production input, not an artifact.
 
     The suffix filter listed `.bundle` with `.app` and `.dSYM`, so
     `Resources/Help.bundle` and everything under it was excluded twice over:
@@ -1091,7 +1091,7 @@ def test_a_file_named_like_a_skipped_directory_is_still_searched(
 def test_a_generated_bundle_is_not_searched(tmp_path: Path) -> None:
     """Searching a checked-in bundle must not start searching generated ones.
 
-    A resource bundle a build produced is a build artefact: it lands under a
+    A resource bundle a build produced is a build artifact: it lands under a
     build-output directory or inside a bundle the build assembled, and its
     compiled contents embed the symbols this search looks for — the same defect as
     a debug binary under a `.dSYM`. Both cases are planted here, each under
@@ -1117,7 +1117,7 @@ def test_a_generated_bundle_is_not_searched(tmp_path: Path) -> None:
     assert found == [], (
         "a bundle produced by a build was searched, so the search reported "
         f"{found}. A bundle under a build-output directory, or inside another "
-        "assembled bundle, is an artefact — which is how a generated one is told "
+        "assembled bundle, is an artifact — which is how a generated one is told "
         "apart from a checked-in one."
     )
 
@@ -1298,7 +1298,7 @@ def test_the_asserted_zero_match_evidence_is_still_zero() -> None:
     )
 
 
-# Binary and build artefacts are not read. Everything else is: the document claims
+# Binary and build artifacts are not read. Everything else is: the document claims
 # zero matches across the whole tree, not across the Swift files in it, so a JSON
 # configuration or a plist carrying one of these tokens has to count too.
 _TEXT_SKIP_SUFFIXES = frozenset(
@@ -1352,11 +1352,11 @@ _TEST_FIXTURE_DIRS = frozenset({"Tests"})
 
 # Names that are excluded as DIRECTORIES, planted here as FILES. Both exclusions
 # are `.gitignore`d as directories, so a file sharing one of their names is a
-# shipped resource, not an artefact.
+# shipped resource, not an artifact.
 FILE_NAMES_THAT_MUST_STILL_BE_SEARCHED: tuple[str, ...] = ("build", "Tests")
 
 
-# Directory names that are build or packaging artefacts rather than source. Held
+# Directory names that are build or packaging artifacts rather than source. Held
 # separately from the file-suffix set because the same suffix names a directory in
 # a bundle and a file elsewhere, and the two are decided differently: a file's own
 # suffix is filtered, while a *directory* of this shape disqualifies everything
@@ -1366,8 +1366,8 @@ FILE_NAMES_THAT_MUST_STILL_BE_SEARCHED: tuple[str, ...] = ("build", "Tests")
 #
 # `.bundle` is deliberately absent, and that is the whole `.bundle` question. A
 # checked-in resource bundle is a production input the app ships — `Help.bundle`
-# and a strings catalogue are how a bundle reaches a target — while a bundle a
-# build produced is an artefact whose compiled contents embed the symbols this
+# and a strings catalog are how a bundle reaches a target — while a bundle a
+# build produced is an artifact whose compiled contents embed the symbols this
 # search looks for, which is the same defect as a debug binary under a `.dSYM`.
 # Shape cannot tell them apart: both are a directory with `Contents/` inside it.
 #
@@ -1412,7 +1412,7 @@ def _is_skipped_directory(parts: Sequence[str]) -> bool:
     both are already covered by the name checks above and nothing here has to
     special-case `.bundle`.
 
-    That asymmetry is deliberate. Excluding an artefact wrongly costs a spurious
+    That asymmetry is deliberate. Excluding an artifact wrongly costs a spurious
     match on a debug binary; excluding a checked-in production bundle wrongly makes
     the document's absence claim false over exactly the files it is about. So the
     narrow reading is the safe one, and a generated bundle that a build happened to
@@ -1516,17 +1516,17 @@ def _is_readable_text(text: str) -> bool:
 
 
 def _read_text(path: Path) -> str:
-    """Read a source file, honouring a byte-order mark in either endianness.
+    """Read a source file, honoring a byte-order mark in either endianness.
 
     Reading UTF-16 as UTF-8 with replacement yields a NUL between every ASCII
     character, so `"goal" = "Goal";` never contains the substring `goal` and the
-    document's absence claim looks true while being false. A mark is honoured
+    document's absence claim looks true while being false. A mark is honored
     for UTF-8, UTF-16 LE and UTF-16 BE, and the mark itself is stripped so it
     cannot fuse with the first token. Unmarked UTF-16 is detected from the
     encoding's own shape — see ``_unmarked_utf16_encoding``.
 
     Undecodable bytes are replaced rather than raised, so a binary file degrades
-    to "no match" instead of failing the suite. No substitution or normalisation
+    to "no match" instead of failing the suite. No substitution or normalization
     is applied beyond that: folding characters would let a token match where the
     file does not literally contain it.
     """
@@ -1547,7 +1547,7 @@ def _read_text(path: Path) -> str:
 def _text_files(root: Path) -> list[Path]:
     """Every readable text file under `root`.
 
-    A file is skipped when any *directory* above it is a build artefact, not only
+    A file is skipped when any *directory* above it is a build artifact, not only
     when the file's own suffix says so. A `.dSYM` or `.xcarchive` beneath a source
     root holds debug binaries whose DWARF symbols embed the very source symbols
     the search is looking for, so the old suffix filter — which only saw the files

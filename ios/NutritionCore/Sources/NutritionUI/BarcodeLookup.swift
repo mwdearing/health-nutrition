@@ -27,15 +27,15 @@ public enum BarcodeLookupBasis: String, Sendable, Hashable, CaseIterable {
 }
 
 /// Where a displayed value came from. The wording and the link are carried in, never assumed: a
-/// source with licence obligations to meet supplies both, and the UI shows them as given. Nothing
+/// source with license obligations to meet supplies both, and the UI shows them as given. Nothing
 /// here names any particular data source.
 public struct ProductAttribution: Sendable, Hashable {
     /// A stable identifier for the catalog, stored with an entry so a later reader can tell where
     /// its values came from.
     public let source: String
-    /// The sentence a licence requires next to the values.
+    /// The sentence a license requires next to the values.
     public let text: String
-    /// Where a reader can read the licence; shown as a link.
+    /// Where a reader can read the license; shown as a link.
     public let url: String
 
     public init(source: String, text: String, url: String) {

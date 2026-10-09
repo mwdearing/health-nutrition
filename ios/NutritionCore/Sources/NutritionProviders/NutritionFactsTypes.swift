@@ -52,8 +52,8 @@ public struct ParsedValueReview: Sendable, Hashable {
         /// The unit the row carries is not the unit this nutrient usually carries, so the amount is kept
         /// exactly as printed and the value is not silently rewritten.
         case unexpectedUnit
-        /// A microgram symbol OCR spelled as `µg`, `μg` or `ug` was normalised to `mcg`.
-        case normalisedMicrogramSymbol
+        /// A microgram symbol OCR spelled as `µg`, `μg` or `ug` was normalized to `mcg`.
+        case normalizedMicrogramSymbol
     }
 
     public let reasons: Set<Reason>
@@ -69,7 +69,7 @@ public struct ParsedValueReview: Sendable, Hashable {
 /// The distinction is the whole reason the kind is recorded. The two panels print some of the same rows
 /// — vitamin D, calcium, iron and potassium are named on both — so the values read off a supplement are
 /// read just as carefully; what differs is what the absence of a row means. A food that says nothing
-/// about fibre has a gap in it, and a supplement that says nothing about fibre is a supplement.
+/// about fiber has a gap in it, and a supplement that says nothing about fiber is a supplement.
 public enum NutritionPanelKind: String, Sendable, Hashable, Codable, CaseIterable {
     case nutritionFacts
     case supplementFacts

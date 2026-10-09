@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Build the Claude Design "Design System" file tree from the Swift sources.
 
-Everything is derived from the repository, so a new screen, text style or colour shows up the
+Everything is derived from the repository, so a new screen, text style or color shows up the
 next time this runs:
 
-  * colour tokens   from ios/NutritionCore/Sources/NutritionCore/NutritionTokens.swift
+  * color tokens   from ios/NutritionCore/Sources/NutritionCore/NutritionTokens.swift
   * text styles     from the `.font(.x)` calls in the SwiftUI views
   * spacing         from the `spacing:` and `.padding` values in the views
   * screens         one page per non-private `struct X: View` (name, title, sections, text,
-                    controls, symbols, fonts, token colours), as a static outline preview
+                    controls, symbols, fonts, token colors), as a static outline preview
 
 Usage:
   build_design_system.py OUT_DIR [--title TITLE] [--no-index] [--check]
@@ -50,7 +50,7 @@ TOKEN_RE = re.compile(
 USAGE = {
     "AccentColor": "Brand accent for controls and links. Teal on light, mint on dark.",
     "RelayAccentInk": "Deep teal ink for emphasis on light surfaces.",
-    "RelayMint": "Fill colour only. Never use it as text on a light surface (1.48:1 on white). Put RelayOnMint on top.",
+    "RelayMint": "Fill color only. Never use it as text on a light surface (1.48:1 on white). Put RelayOnMint on top.",
     "RelayOnMint": "Text and icons on a RelayMint fill.",
     "RelayReadyInk": "Text for a ready state, on RelayReadyTint.",
     "RelayReadyTint": "Background tint for a ready state.",
@@ -151,7 +151,7 @@ def scan_design_scales(root=ROOT):
 
 
 def scan_color_aliases(root=ROOT):
-    """TokenColors accessor name -> the colour token it returns (`mint` -> `RelayMint`)."""
+    """TokenColors accessor name -> the color token it returns (`mint` -> `RelayMint`)."""
     path = root / "ios/NutritionCore/Sources/NutritionUI/TokenColors.swift"
     return dict(ACCESSOR_RE.findall(path.read_text())) if path.exists() else {}
 
@@ -181,7 +181,7 @@ def element_list(body):
 
 
 def nested_colors(name, bodies, aliases, seen=frozenset()):
-    """Token colours a view uses, including those of the views it renders (`QuietCapsule(...)`)."""
+    """Token colors a view uses, including those of the views it renders (`QuietCapsule(...)`)."""
     colors = {aliases.get(c, c) for c in COLOR_RE.findall(bodies[name])}
     for other in bodies:
         if other != name and other not in seen and re.search(rf"\b{other}\(", bodies[name]):
@@ -316,10 +316,10 @@ def readme(title, screens, pictured=frozenset()):
     return f"""# {title}
 
 A white, clean light layout with teal and mint accents, and a dark mode designed to match it
-rather than inverted from it. The app is native SwiftUI for iOS. This system documents its colour
+rather than inverted from it. The app is native SwiftUI for iOS. This system documents its color
 tokens, text styles, spacing and screens so designs match the shipped app.
 
-## Colour
+## Color
 
 - Use the semantic roles in screens: `background`, `surface`, `border`, `textPrimary`,
   `textSecondary`, `accent`, `success`, `warning`, `error`. The `Relay*` tokens are the audited
@@ -327,9 +327,9 @@ tokens, text styles, spacing and screens so designs match the shipped app.
 - Normal text needs 4.5:1 against what it sits on, in light and dark. Large text and meaningful
   graphics need 3:1.
 - `RelayMint` is a fill. Never set it as text on a light surface. Use `RelayOnMint` on top of it.
-- State colours come in pairs: `RelayReadyInk` on `RelayReadyTint`, `RelayWaitingInk` on
+- State colors come in pairs: `RelayReadyInk` on `RelayReadyTint`, `RelayWaitingInk` on
   `RelayWaitingTint`, `RelayFailedInk` on `RelayFailedTint`.
-- Do not add a colour without a contrast check against `background` and `surface`.
+- Do not add a color without a contrast check against `background` and `surface`.
 
 ## Type
 
@@ -352,7 +352,7 @@ the source.
 def screens_md(screens):
     lines = ["# Screens", "",
              "Generated from the SwiftUI sources. Private helper views are not listed.", "",
-             "| Screen | Source | Title | Fonts | Token colours |", "|---|---|---|---|---|"]
+             "| Screen | Source | Title | Fonts | Token colors |", "|---|---|---|---|---|"]
     for s in screens.values():
         title = next((e[1] for e in s["elements"] if e[0] == "title"), "")
         lines.append(f"| {humanize(s['name'])} | `{s['source']}` | {title} | {', '.join(s['fonts'])} | {', '.join(s['colors'])} |")
@@ -376,7 +376,7 @@ def screen_readme(s, pictured=False):
     if s["fonts"]:
         out += ["## Text styles", "", ", ".join(f"`{x}`" for x in s["fonts"]), ""]
     if s["colors"]:
-        out += ["## Token colours", "", ", ".join(f"`{x}`" for x in s["colors"]), ""]
+        out += ["## Token colors", "", ", ".join(f"`{x}`" for x in s["colors"]), ""]
     if pictured:
         out += ["The preview is a simulator capture of this screen in light and dark.", ""]
     else:
@@ -545,13 +545,13 @@ def main():
         for f in unknown:
             print(f"unknown font style: {f}")
         for c in unmapped:
-            print(f"colour used but not in the tokens: {c}")
-        print(f"{len(screens)} screens, {len(tokens)} colour tokens, {len(fonts)} text styles")
+            print(f"color used but not in the tokens: {c}")
+        print(f"{len(screens)} screens, {len(tokens)} color tokens, {len(fonts)} text styles")
         sys.exit(1 if empty or unknown or uncovered or unmapped else 0)
     if unknown:
         print(f"warning: unknown font styles skipped: {', '.join(unknown)}", file=sys.stderr)
     if unmapped:
-        print(f"warning: colours not in the tokens, left out of the pages: {', '.join(unmapped)}", file=sys.stderr)
+        print(f"warning: colors not in the tokens, left out of the pages: {', '.join(unmapped)}", file=sys.stderr)
 
     out = Path(args.out_dir)
     project = out / "project"
@@ -582,7 +582,7 @@ def main():
             "namespace": "HealthNutrition", "libraries": [], "sections": {}, "groups": [], "assetGroups": {},
             "blobs": {}, "docs": {"readme": "project/README.md", "sections": []},
             "lastChange": {"by": "Claude", "at": now, "via": "Claude Code",
-                           "note": f"{len(screens)} screens, {len(tokens)} colour tokens"},
+                           "note": f"{len(screens)} screens, {len(tokens)} color tokens"},
         }
         (project / "design-system.json").write_text(json.dumps(index, indent=2) + "\n")
     if args.screenshots:
@@ -590,7 +590,7 @@ def main():
         print(f"screenshots on the pages: {', '.join(shown) if shown else 'none'}")
         print(f"screenshots captured but not uploaded: {', '.join(sorted(shots - set(shown))) or 'none'}")
         print(f"screens without a screenshot: {', '.join(uncovered) if uncovered else 'none'}")
-    print(f"wrote {len(screens)} screens, {len(tokens)} colour tokens, {len(fonts)} text styles to {project}")
+    print(f"wrote {len(screens)} screens, {len(tokens)} color tokens, {len(fonts)} text styles to {project}")
 
 
 if __name__ == "__main__":

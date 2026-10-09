@@ -171,7 +171,7 @@ public struct IntakeContextLink: Sendable, Hashable {
     }
 }
 
-/// Whether a link counts towards the totals or is kept for audit only.
+/// Whether a link counts toward the totals or is kept for audit only.
 public enum IntakeContextLinkDisposition: String, Sendable, Hashable, CaseIterable {
     /// The sample currently stands for the component.
     case active

@@ -219,7 +219,7 @@ final class TodayDesignTests: XCTestCase {
         today.load(now: self.now)
         let bar = try XCTUnwrap(today.waterBar)
         XCTAssertEqual(bar.valueText, "355 mL of 1,893 mL")
-        XCTAssertEqual(bar.accessibilityText, "Water, 355 millilitres of 1,893 millilitres")
+        XCTAssertEqual(bar.accessibilityText, "Water, 355 milliliters of 1,893 milliliters")
         XCTAssertEqual(bar.fraction, total / target)
     }
 

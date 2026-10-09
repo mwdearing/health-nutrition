@@ -40,7 +40,7 @@ public struct IntakeContextCapabilities: Sendable, Equatable, Hashable {
     /// The most operations one batch may carry.
     public let maxOperations: Int
     public let authentication: IntakeContextAuthentication
-    /// Optional behaviour flags, read as text because this module acts on none of them yet.
+    /// Optional behavior flags, read as text because this module acts on none of them yet.
     public let features: [String]
 
     public init(
@@ -105,7 +105,7 @@ public protocol IntakeContextTransport: Sendable {
 
     /// Sends one canonical batch and reports what came back, including the status and `Retry-After`.
     ///
-    /// A transport error — no connection, a timeout, a cancelled request — is thrown rather than returned
+    /// A transport error — no connection, a timeout, a canceled request — is thrown rather than returned
     /// as a status, because nothing was received and there is no status to act on. The worker treats a
     /// thrown error as transient.
     func send(batch: Data, token: String) async throws -> IntakeContextTransportResponse

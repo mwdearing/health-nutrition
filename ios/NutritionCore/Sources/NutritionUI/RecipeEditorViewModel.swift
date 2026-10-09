@@ -34,7 +34,7 @@ public struct RecipeIngredientDraft: Identifiable, Equatable {
     public var nutrientTexts: [String: String] = [:]
     /// The unit a loaded value is stated in, when it differs from its editor field's unit and cannot
     /// be converted to it exactly. The field still shows the number, so saving writes the value back
-    /// in the unit it was stored in rather than relabelling it.
+    /// in the unit it was stored in rather than relabeling it.
     public var nutrientUnits: [String: MeasureUnit] = [:]
     /// A state a field cannot express, such as not applicable or below a reporting threshold. The field
     /// shows no number for it, so it is carried through an edit unless the user types a number there.
@@ -77,10 +77,10 @@ public final class RecipeEditorViewModel: ObservableObject {
 
     /// The units the ingredient and yield pickers offer: the registry without the two ounces.
     ///
-    /// `oz` and `fl oz` are input and display units for Add intake, which normalises them to grams and
-    /// millilitres on the way in. A recipe has no such step: its yield becomes the component of a
+    /// `oz` and `fl oz` are input and display units for Add intake, which normalizes them to grams and
+    /// milliliters on the way in. A recipe has no such step: its yield becomes the component of a
     /// logged entry through `RecipeLogger.portionQuantity`, so an ounce yield would be stored as an
-    /// ounce and skip that normalisation. Keeping them out here is what makes a recipe metric.
+    /// ounce and skip that normalization. Keeping them out here is what makes a recipe metric.
     public static let unitSymbols: [String] =
         UnitRegistry.all.filter { $0 != .oz && $0 != .flOz }.map { $0.symbol }
 

@@ -35,7 +35,7 @@ chooses, asking them to log what they have eaten. It is off by default and nothi
   changing the time, the launch sync and the refresh after an erase.
 - `ios/NutritionCore/Sources/NutritionUI/ReminderEraser.swift`: the erase hook that cancels the request.
 - `ios/HealthNutrition/Sources/SystemReminderScheduler.swift`: the only file that talks to the system
-  notification centre. It is the only file in the app that imports the notifications framework.
+  notification center. It is the only file in the app that imports the notifications framework.
 - `ios/HealthNutrition/Sources/AppServices.swift` and `RootView.swift`: the controller is created once
   for the app's lifetime, synced at launch and each time the app becomes active.
 

@@ -195,7 +195,7 @@ final class JournalDesignTests: XCTestCase {
     // MARK: Meal groups
 
     /// Breakfast, dinner, a water with no meal and a food with no meal on one day: the groups are
-    /// titled "Breakfast", "Dinner", "Other" in that order, and "Other" holds both unlabelled rows
+    /// titled "Breakfast", "Dinner", "Other" in that order, and "Other" holds both unlabeled rows
     /// newest first. A meal with no entries is left out.
     func testJournalMealGroupsAreTitledAndOrdered() throws {
         let journal = try makeJournalStore()

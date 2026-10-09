@@ -253,7 +253,7 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.waterSkippedCount, 1)
     }
 
-    func testWaterTotalAddsLitresAndMillilitres() throws {
+    func testWaterTotalAddsLitresAndMilliliters() throws {
         let store = try makeStore()
         _ = try addFood(store, name: "Water", id: "water", at: now, amount: 1, unit: .L, category: "water")
         _ = try addFood(store, name: "Water", id: "water", at: now, amount: 250, unit: .mL, category: "water")
@@ -370,7 +370,7 @@ final class TodayTests: XCTestCase {
     /// states no fibre and no potassium because that is what a supplement is, and counting it would tell
     /// the reader their day is short of nutrients nobody was ever going to get from it. Its totals still
     /// count, so what it does state is not thrown away.
-    func testASupplementIsLeftOutOfCoverageButStillCountsTowardsTotals() throws {
+    func testASupplementIsLeftOutOfCoverageButStillCountsTowardTotals() throws {
         let store = try makeStore()
         _ = try addFood(store, name: "Oats", id: "oats", at: now)
         _ = try addSupplement(

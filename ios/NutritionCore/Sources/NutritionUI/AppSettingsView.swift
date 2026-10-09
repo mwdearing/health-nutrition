@@ -152,12 +152,12 @@ private struct SettingsContent: View {
                     HStack { Text("Show welcome again"); Spacer(); LaterBadge() }
                         .disabled(true).accessibilityValue("Not available yet")
                 }
-                NavigationLink("Licences") {
+                NavigationLink("Licenses") {
                     Form {
                         Text(model.openFoodFactsAttribution)
-                        Link("Open Database Licence", destination: URL(string: "https://opendatacommons.org/licenses/odbl/1-0/")!)
+                        Link("Open Database License", destination: URL(string: "https://opendatacommons.org/licenses/odbl/1-0/")!)
                     }
-                    .navigationTitle("Licences")
+                    .navigationTitle("Licenses")
                 }
             }
         }

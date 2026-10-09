@@ -156,7 +156,7 @@ final class HealthKitWritePlanTests: XCTestCase {
 
     // MARK: - Water
 
-    func testWaterFromAVolumeComponentIsWrittenInMillilitres() throws {
+    func testWaterFromAVolumeComponentIsWrittenInMilliliters() throws {
         let specs = plan(["water": .known(dec("250"), .mL)])
         let water = try spec("water", in: specs)
 
@@ -165,7 +165,7 @@ final class HealthKitWritePlanTests: XCTestCase {
         XCTAssertEqual(water.unitSymbol, "mL")
     }
 
-    func testLitresOfWaterBecomeMillilitres() throws {
+    func testLitresOfWaterBecomeMilliliters() throws {
         let specs = plan(["water": .known(dec("0.25"), .L)])
         let water = try spec("water", in: specs)
 

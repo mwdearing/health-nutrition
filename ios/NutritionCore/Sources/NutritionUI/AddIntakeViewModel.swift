@@ -169,7 +169,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     public let timeZoneIdentifier: String
     /// The units the picker offers, read through so a preference changed on another screen is
-    /// honoured the next time this form is opened. Metric offers the whole registry; the US system
+    /// honored the next time this form is opened. Metric offers the whole registry; the US system
     /// puts ounces and fluid ounces first.
     public var units: [MeasureUnit] { UnitSelection.offered(for: preferences.unitSystem) }
     /// The unit system the offered list is built from.

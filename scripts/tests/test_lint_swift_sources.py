@@ -45,23 +45,23 @@ def findings(result: subprocess.CompletedProcess[str]) -> list[tuple[str, int, s
     return parsed
 
 
-def test_colour_literal_red_in_ui_reports_file_and_line(tmp_path: Path) -> None:
+def test_color_literal_red_in_ui_reports_file_and_line(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/BadColor.swift": "import SwiftUI\nstruct BadColor {\n    let tint = Color(red: 1, green: 0, blue: 0)\n}\n",
     })
     result = run(root)
     assert result.returncode == 1
-    assert findings(result) == [("BadColor.swift", 3, "colour-literal")]
+    assert findings(result) == [("BadColor.swift", 3, "color-literal")]
 
 
-def test_colour_literal_hex_in_ui_reports_file_and_line(tmp_path: Path) -> None:
+def test_color_literal_hex_in_ui_reports_file_and_line(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/BadHex.swift": 'import SwiftUI\nlet tint = Color(hex: "#FF0000")\nlet other = "#00FF00"\n',
     })
     result = run(root)
     assert result.returncode == 1
-    # The bare hex string on line 3 is string content, not a colour literal.
-    assert findings(result) == [("BadHex.swift", 2, "colour-literal")]
+    # The bare hex string on line 3 is string content, not a color literal.
+    assert findings(result) == [("BadHex.swift", 2, "color-literal")]
 
 
 def test_fixed_font_in_ui_reports_file_and_line(tmp_path: Path) -> None:
@@ -358,7 +358,7 @@ def test_comments_and_string_literals_do_not_trigger(tmp_path: Path) -> None:
     assert result.stdout == ""
 
 
-def test_token_colors_is_exempt_from_colour_literal(tmp_path: Path) -> None:
+def test_token_colors_is_exempt_from_color_literal(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/TokenColors.swift": (
             "import SwiftUI\n"
@@ -378,14 +378,14 @@ def test_other_files_in_ui_are_not_exempt(tmp_path: Path) -> None:
     })
     result = run(root)
     assert result.returncode == 1
-    assert findings(result) == [("Palette.swift", 1, "colour-literal")]
+    assert findings(result) == [("Palette.swift", 1, "color-literal")]
 
 
 def test_lint_allow_comment_skips_the_named_rule(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/Allowed.swift": (
             "import SwiftUI\n"
-            "let tint = Color(red: 1, green: 0, blue: 0) // lint-allow: colour-literal\n"
+            "let tint = Color(red: 1, green: 0, blue: 0) // lint-allow: color-literal\n"
         ),
         f"{UI}/NotAllowed.swift": (
             "import SwiftUI\n"
@@ -394,20 +394,20 @@ def test_lint_allow_comment_skips_the_named_rule(tmp_path: Path) -> None:
     })
     result = run(root)
     assert result.returncode == 1
-    assert findings(result) == [("NotAllowed.swift", 2, "colour-literal")]
+    assert findings(result) == [("NotAllowed.swift", 2, "color-literal")]
 
 
 def test_lint_allow_comment_is_line_scoped(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/Allowed.swift": (
             "import SwiftUI\n"
-            "let tint = Color(red: 1, green: 0, blue: 0) // lint-allow: colour-literal\n"
+            "let tint = Color(red: 1, green: 0, blue: 0) // lint-allow: color-literal\n"
             "let other = Color(red: 0, green: 1, blue: 0)\n"
         ),
     })
     result = run(root)
     assert result.returncode == 1
-    assert findings(result) == [("Allowed.swift", 3, "colour-literal")]
+    assert findings(result) == [("Allowed.swift", 3, "color-literal")]
 
 
 def test_clean_tree_exits_zero(tmp_path: Path) -> None:
@@ -427,7 +427,7 @@ def test_clean_tree_exits_zero(tmp_path: Path) -> None:
     assert result.stdout == ""
 
 
-def test_colour_call_split_across_lines_is_reported(tmp_path: Path) -> None:
+def test_color_call_split_across_lines_is_reported(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/Wrapped.swift": (
             "import SwiftUI\n"
@@ -448,7 +448,7 @@ def test_colour_call_split_across_lines_is_reported(tmp_path: Path) -> None:
     result = run(root)
     assert result.returncode == 1
     assert findings(result) == [
-        ("Wrapped.swift", 2, "colour-literal"),
+        ("Wrapped.swift", 2, "color-literal"),
         ("WrappedFont.swift", 2, "fixed-font"),
         ("WrappedFont.swift", 2, "fixed-font-size"),
         # The chained call opens on line 5 and the prohibited label sits on line 7;
@@ -494,7 +494,7 @@ def test_string_interpolation_content_is_still_code(tmp_path: Path) -> None:
     assert findings(result) == [
         ("Interpolated.swift", 2, "binary-float"),
         ("Interpolated.swift", 4, "binary-float"),
-        ("Interpolated.swift", 2, "colour-literal"),
+        ("Interpolated.swift", 2, "color-literal"),
     ]
 
 
@@ -521,7 +521,7 @@ def test_nested_block_comments_are_ignored(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_extended_string_literal_delimiters_are_honoured(tmp_path: Path) -> None:
+def test_extended_string_literal_delimiters_are_honored(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{DOMAIN}/Extended.swift": (
             "import Foundation\n"
@@ -805,20 +805,20 @@ def test_unlabeled_image_in_an_icon_only_button_is_reported(tmp_path: Path) -> N
     assert findings(result) == [("IconButton.swift", 4, "unlabeled-image")]
 
 
-def test_labelled_icon_only_button_is_clean(tmp_path: Path) -> None:
+def test_labeled_icon_only_button_is_clean(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
-        f"{UI}/LabelledImage.swift": (
+        f"{UI}/LabeledImage.swift": (
             "import SwiftUI\n"
-            "struct LabelledImage: View {\n"
+            "struct LabeledImage: View {\n"
             "    var body: some View {\n"
             '        Image(systemName: "plus")\n'
             '            .accessibilityLabel("Add water")\n'
             "    }\n"
             "}\n"
         ),
-        f"{UI}/LabelledButton.swift": (
+        f"{UI}/LabeledButton.swift": (
             "import SwiftUI\n"
-            "struct LabelledButton: View {\n"
+            "struct LabeledButton: View {\n"
             "    var body: some View {\n"
             "        Button {\n"
             "            add()\n"
@@ -855,9 +855,9 @@ def test_decorative_image_hidden_from_accessibility_is_clean(tmp_path: Path) -> 
 
 def test_label_with_a_system_image_is_clean(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
-        f"{UI}/Labelled.swift": (
+        f"{UI}/Labeled.swift": (
             "import SwiftUI\n"
-            "struct Labelled: View {\n"
+            "struct Labeled: View {\n"
             "    var body: some View {\n"
             '        Label("Water", systemImage: "drop")\n'
             "    }\n"
@@ -960,11 +960,11 @@ def test_text_beside_an_image_outside_a_control_label_does_not_name_it(tmp_path:
     result = run(root)
     assert result.returncode == 1
     # The text sits in the enclosing layout, not in a control label, so it names
-    # nothing and the image still has to be labelled.
+    # nothing and the image still has to be labeled.
     assert findings(result) == [("CaptionRow.swift", 6, "unlabeled-image")]
 
 
-def test_image_in_a_layout_inside_a_labelled_control_is_clean(tmp_path: Path) -> None:
+def test_image_in_a_layout_inside_a_labeled_control_is_clean(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/NestedLabel.swift": (
             "import SwiftUI\n"
@@ -1073,9 +1073,9 @@ def test_accessibility_label_in_only_one_build_branch_does_not_exempt(tmp_path: 
 
 def test_accessibility_label_in_every_build_branch_exempts(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
-        f"{UI}/Labelled.swift": (
+        f"{UI}/Labeled.swift": (
             "import SwiftUI\n"
-            "struct Labelled: View {\n"
+            "struct Labeled: View {\n"
             "    var body: some View {\n"
             "        Button(action: {}) {\n"
             '            Image(systemName: "plus")\n'
@@ -1165,7 +1165,7 @@ def test_label_title_closure_names_its_icon_closure(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_a_nested_labelled_image_does_not_exempt_the_outer_one(tmp_path: Path) -> None:
+def test_a_nested_labeled_image_does_not_exempt_the_outer_one(tmp_path: Path) -> None:
     root = write_tree(tmp_path, {
         f"{UI}/Overlay.swift": (
             "import SwiftUI\n"
@@ -1305,7 +1305,7 @@ def test_text_hidden_in_one_branch_does_not_name_the_control(tmp_path: Path) -> 
     assert findings(result) == [("DebugCaption.swift", 5, "unlabeled-image")]
 
 
-def test_a_nested_labelled_image_in_a_content_argument_does_not_exempt_the_outer_one(
+def test_a_nested_labeled_image_in_a_content_argument_does_not_exempt_the_outer_one(
     tmp_path: Path,
 ) -> None:
     root = write_tree(tmp_path, {
@@ -1551,7 +1551,7 @@ def test_a_custom_qualified_control_does_not_name_the_image(tmp_path: Path) -> N
             "        Custom.Button(action: {}) label: {\n"
             "            VStack {\n"
             '                Image(systemName: "star")\n'
-            '                Text("Favourite")\n'
+            '                Text("Favorite")\n'
             "            }\n"
             "        }\n"
             "    }\n"

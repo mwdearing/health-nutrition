@@ -160,7 +160,7 @@ final class DailyGoalsTests: XCTestCase {
     }
 
     /// Water has a target too, in mL, and its own line compares the day's water against it.
-    func testAWaterGoalComparesTheDaysWaterInMillilitres() throws {
+    func testAWaterGoalComparesTheDaysWaterInMilliliters() throws {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
@@ -686,7 +686,7 @@ final class DailyGoalsTests: XCTestCase {
     /// then compared a kcal total against a gram target.
     ///
     /// The two ounces are excluded too, by the same rule the recipe editor applies. They are input and
-    /// display units that Add intake normalises to grams and millilitres; a target is not normalised
+    /// display units that Add intake normalizes to grams and milliliters; a target is not normalized
     /// anywhere, so an ounce target would sit beside a gram total and the comparison would be between
     /// two numbers in different units. `UnitRegistry` grew them for display, and a nutrient's units
     /// are the ones its total is stored in, not the ones a person may type.

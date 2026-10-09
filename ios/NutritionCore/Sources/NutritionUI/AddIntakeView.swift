@@ -120,7 +120,7 @@ public struct AddIntakeView: View {
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
                         .accessibilityLabel(AddIntakeViewModel.noStatedNutrientsMessage)
-                    sourceAndLicence
+                    sourceAndLicense
                 }
             }
             if model.hasPrefilledValues {
@@ -128,9 +128,9 @@ public struct AddIntakeView: View {
                     ForEach(model.thisAdds, id: \.key) { line in
                         LabeledContent(line.displayName, value: line.text)
                     }
-                    // Beside the values, not inside the collapsed list: some sources licence their data
+                    // Beside the values, not inside the collapsed list: some sources license their data
                     // only if the attribution is shown wherever the values are.
-                    sourceAndLicence
+                    sourceAndLicense
                     DisclosureGroup("All values") {
                         ForEach(model.labelValues != nil || model.lookedUp == nil
                             ? Self.capturedKeys : LookedUpProduct.standardKeys, id: \.self) { key in
@@ -208,9 +208,9 @@ public struct AddIntakeView: View {
         }
     }
 
-    /// Where the values came from and, when the source requires it, a titled link to its licence.
+    /// Where the values came from and, when the source requires it, a titled link to its license.
     @ViewBuilder
-    private var sourceAndLicence: some View {
+    private var sourceAndLicense: some View {
         if let source = model.sourceLine {
             Text(source).font(.footnote).foregroundStyle(TokenColors.textSecondary)
         }
@@ -218,7 +218,7 @@ public struct AddIntakeView: View {
             let attributionTitle = model.attributionTitle, let url = URL(string: attribution.url) {
             Link(attributionTitle, destination: url)
                 .font(.footnote)
-                .accessibilityLabel("Read the licence for these nutrition facts")
+                .accessibilityLabel("Read the license for these nutrition facts")
         }
     }
 

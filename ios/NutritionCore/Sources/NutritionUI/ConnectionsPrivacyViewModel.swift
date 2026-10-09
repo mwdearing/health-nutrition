@@ -291,12 +291,12 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                 preferences.quickWaterMilliliters, unit: .mL, system: preferences.unitSystem).amount)
     }
 
-    /// Checks the typed quick-water amount and stores it in millilitres when it is above zero. An amount
+    /// Checks the typed quick-water amount and stores it in milliliters when it is above zero. An amount
     /// that is not a positive decimal is refused with a message and the stored value is left alone, so a
     /// bad entry cannot become the amount the Today button adds.
     ///
-    /// The field is read in the unit it is labelled in, and converted here: what is stored stays
-    /// millilitres, so the ounces are an input and a display unit and never reach the journal, the export
+    /// The field is read in the unit it is labeled in, and converted here: what is stored stays
+    /// milliliters, so the ounces are an input and a display unit and never reach the journal, the export
     /// or the digests.
     @discardableResult
     public func saveQuickWaterAmount() -> Bool {
@@ -310,7 +310,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         return true
     }
 
-    /// The unit the quick-water field is read in: fluid ounces under the US system, millilitres under
+    /// The unit the quick-water field is read in: fluid ounces under the US system, milliliters under
     /// metric. Water is a volume either way, so the two are the same measure at two scales.
     public var quickWaterUnit: MeasureUnit {
         AmountDisplay.volumeUnit(for: unitSystem)
@@ -331,7 +331,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// what they can read stores what they meant. The rounding is the display rounding, so it never
     /// turns a non-zero stored amount into a zero in the field.
     ///
-    /// Metric shows the millilitres that are stored, so nothing is rounded there: 400.55 mL was typed at
+    /// Metric shows the milliliters that are stored, so nothing is rounded there: 400.55 mL was typed at
     /// that precision and rounding it to the digit a converted ounce carries would restate it as 400.6
     /// in the very field the person is editing.
     public var quickWaterDraftAmount: Decimal {
@@ -347,7 +347,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         return rounded == 0 && amount != 0 ? amount : rounded
     }
 
-    /// The millilitres the typed draft stands for, or the stored amount when the field holds something
+    /// The milliliters the typed draft stands for, or the stored amount when the field holds something
     /// that is not a number.
     ///
     /// The helper line is about the figure in the field, so it follows the draft rather than the stored
@@ -373,7 +373,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// before Save is tapped. A field holding something that is not a number has nothing to convert,
     /// so it falls back to the stored amount rather than showing nothing.
     ///
-    /// Millilitres are read as whole figures there, because a glass size is the thing being set and
+    /// Milliliters are read as whole figures there, because a glass size is the thing being set and
     /// "354.9 mL" is a precision nobody asked for; a fluid ounce keeps the digits it is shown with
     /// everywhere else, since 8 fl oz and 8.45 fl oz are different glasses.
     public var quickWaterOtherUnitDisplay: DisplayAmount {
@@ -396,7 +396,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             + "\(AmountDisplay.spokenName(for: quickWaterOtherUnitDisplay.unit))"
     }
 
-    /// The volume in millilitres an amount typed in `unit` stands for. One fluid ounce is exactly
+    /// The volume in milliliters an amount typed in `unit` stands for. One fluid ounce is exactly
     /// 29.5735295625 mL, so this multiplication is exact in a `Decimal` and nothing is lost.
     private func milliliters(for amount: Decimal, in unit: MeasureUnit) -> Decimal {
         guard unit == .flOz else { return amount }

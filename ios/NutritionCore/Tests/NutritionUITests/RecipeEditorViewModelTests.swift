@@ -278,7 +278,7 @@ final class RecipeEditorViewModelTests: XCTestCase {
     }
 
     /// The recipe editor must not offer the ounces. A recipe yield becomes the component of a logged
-    /// entry through `RecipeLogger.portionQuantity`, with no normalisation step of its own, so an
+    /// entry through `RecipeLogger.portionQuantity`, with no normalization step of its own, so an
     /// ounce yield would be stored as an ounce and reach the export, which Add intake never does.
     func testTheRecipeEditorOffersNoOunceUnits() throws {
         let store = try makeStore()

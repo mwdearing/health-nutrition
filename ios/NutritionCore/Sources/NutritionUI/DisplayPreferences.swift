@@ -23,7 +23,7 @@ public enum UnitSystem: String, Sendable, CaseIterable, Equatable {
 /// else in the app may store settings on top of it.
 public protocol DisplayPreferences: AnyObject {
     var unitSystem: UnitSystem { get }
-    /// The quick-water amount in millilitres, an exact decimal.
+    /// The quick-water amount in milliliters, an exact decimal.
     var quickWaterMilliliters: Decimal { get }
 }
 

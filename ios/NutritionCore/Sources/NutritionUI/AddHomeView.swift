@@ -45,7 +45,7 @@ public struct AddHomeView: View {
                 tile("Scan label", help: model.scannerAvailability.label
                     ? "Read and check the nutrition values." : model.scannerAvailability.labelExplanation,
                     available: model.scannerAvailability.label, action: onLabel)
-                tile("From Library", help: "Choose a favourite, recent item or recipe.", action: onLibrary)
+                tile("From Library", help: "Choose a favorite, recent item or recipe.", action: onLibrary)
                 tile("Type it in", help: "Enter a name and amount yourself.", action: onType)
                 HStack {
                     Text("Recent").font(.headline).accessibilityAddTraits(.isHeader)

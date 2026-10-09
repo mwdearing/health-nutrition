@@ -47,7 +47,7 @@ final class JournalImportNutrientsTests: JournalImportTestCase {
     }
 
     func testASnapshotWhoseValuesDisagreeWithTheStoredOnesIsStillRefused() throws {
-        // Keeping the stored values is not a licence to accept a file that describes a different product
+        // Keeping the stored values is not a license to accept a file that describes a different product
         // under the same snapshot id: the identity still has to match. The name is changed in the products
         // list *and* in the revision's own provenance, so the file stays consistent with itself and the
         // refusal comes from the store's snapshot rule rather than from the file contradicting itself.

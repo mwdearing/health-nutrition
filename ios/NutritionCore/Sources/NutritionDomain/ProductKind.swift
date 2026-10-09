@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The kind is a property of the product and not of how much of it anyone logged, so it is recorded on
 /// the snapshot rather than worked out from the entry. It is also what a coverage line has to leave out:
-/// a multivitamin states no fibre, and its silence about fibre is not a gap in anybody's day.
+/// a multivitamin states no fiber, and its silence about fiber is not a gap in anybody's day.
 ///
 /// The raw values are the stored and exported spelling. They are deliberately the same words an intake
 /// category uses, so an entry typed by hand — which has no product snapshot to carry a kind — is logged
@@ -14,7 +14,7 @@ public enum ProductKind: String, Sendable, Hashable, Codable, CaseIterable {
     case drink
     case supplement
 
-    /// The words a screen shows for this kind. Only a supplement is ever labelled on its own: a food and
+    /// The words a screen shows for this kind. Only a supplement is ever labeled on its own: a food and
     /// a drink read as themselves without a mark, and a label beside every row would say nothing.
     public var displayName: String {
         switch self {
@@ -38,7 +38,7 @@ public enum ProductKind: String, Sendable, Hashable, Codable, CaseIterable {
     /// both counts: it is never missing from the denominator, and it never produces a "lack" line about a
     /// nutrient no supplement is expected to state. The values a supplement does declare still count,
     /// in the day's totals.
-    public var countsTowardsCoverage: Bool {
+    public var countsTowardCoverage: Bool {
         self != .supplement
     }
 

@@ -6,7 +6,7 @@ import UIKit
 import AppKit
 #endif
 
-/// The only place that turns design-token values into SwiftUI colours.
+/// The only place that turns design-token values into SwiftUI colors.
 /// Every other file in this target uses the named accessors below.
 public enum TokenColors {
     public static var accent: Color { color(named: "accent") }

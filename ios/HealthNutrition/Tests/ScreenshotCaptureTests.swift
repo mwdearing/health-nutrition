@@ -69,7 +69,7 @@ final class ScreenshotCaptureTests: XCTestCase {
         return services
     }
 
-    /// True when every sampled pixel is the same colour, which is what a screen that failed to draw
+    /// True when every sampled pixel is the same color, which is what a screen that failed to draw
     /// looks like.
     private func isUniform(_ image: UIImage) -> Bool {
         guard let cgImage = image.cgImage else { return true }
@@ -109,7 +109,7 @@ final class ScreenshotCaptureTests: XCTestCase {
             window.isHidden = true
             let png = try XCTUnwrap(image.pngData())
             try png.write(to: directory.appendingPathComponent("\(name)-\(suffix).png"))
-            XCTAssertFalse(isUniform(image), "\(name)-\(suffix) rendered as one flat colour")
+            XCTAssertFalse(isUniform(image), "\(name)-\(suffix) rendered as one flat color")
         }
     }
 
@@ -282,7 +282,7 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
-    /// An invented Nutrition Facts panel, read the way recognised camera text arrives: one string per line.
+    /// An invented Nutrition Facts panel, read the way recognized camera text arrives: one string per line.
     func testLabelCaptureView() throws {
         let model = LabelCaptureViewModel()
         model.load(lines: [

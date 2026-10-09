@@ -318,7 +318,7 @@ final class DSLDClientTests: XCTestCase {
 
     // MARK: - Environment
 
-    func testProductionEnvironmentNamesTheDSLDHostAndTheLicence() {
+    func testProductionEnvironmentNamesTheDSLDHostAndTheLicense() {
         XCTAssertEqual(
             DSLDEnvironment.production.baseURL.absoluteString,
             "https:" + "//" + "api.ods.od.nih.gov/dsld"

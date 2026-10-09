@@ -13,10 +13,10 @@ invocation that names only ``ios/NutritionCore`` covers both SwiftUI surfaces.
 
 Rules
 -----
-colour-literal
+color-literal
     In ``Sources/NutritionUI/**``: no ``Color(red:``, ``UIColor(red:``,
     ``NSColor(red:``, ``Color(hex:`` or ``#RRGGBB`` literals. ``TokenColors.swift``
-    is the single allowed place where design tokens become colours.
+    is the single allowed place where design tokens become colors.
 fixed-font
     In ``Sources/NutritionUI/**``: no ``.font(.system(size:`` or
     ``Font.system(size:``. Text must use Dynamic Type styles.
@@ -106,7 +106,7 @@ Allowing a finding
 A line whose trailing comment is ``// lint-allow: <rule>`` is skipped for that
 rule, e.g.::
 
-    let tint = Color(red: 1, green: 0, blue: 0) // lint-allow: colour-literal
+    let tint = Color(red: 1, green: 0, blue: 0) // lint-allow: color-literal
 
 Several rules can be listed, separated by spaces or commas. The exemption
 applies only to the line it appears on, and only a real comment counts: the same
@@ -129,8 +129,8 @@ APP_ROOTS = ("HealthNutrition",)
 
 SKIPPED_DIRS = {".build", ".git", "DerivedData", "node_modules"}
 
-HEX_COLOUR = re.compile(r"#(?:[0-9A-Fa-f]{6})(?![0-9A-Fa-f])")
-COLOUR_CALL = re.compile(r"\b(?:Color|UIColor|NSColor)\s*\(\s*(?:red|hex)\s*:")
+HEX_COLOR = re.compile(r"#(?:[0-9A-Fa-f]{6})(?![0-9A-Fa-f])")
+COLOR_CALL = re.compile(r"\b(?:Color|UIColor|NSColor)\s*\(\s*(?:red|hex)\s*:")
 FIXED_FONT = re.compile(
     r"\bFont\s*\.\s*system\s*\(\s*size\s*:"
     r"|\.font\s*\(\s*\.system\s*\(\s*size\s*:"
@@ -185,7 +185,7 @@ ALLOW_COMMENT = re.compile(r"//\s*lint-allow:\s*(?P<rules>[A-Za-z0-9_,\s-]+?)\s*
 IMAGE_CALL = re.compile(r"\bImage\s*\(")
 
 RULES = (
-    "colour-literal",
+    "color-literal",
     "fixed-font",
     "fixed-font-size",
     "forbidden-import",
@@ -194,7 +194,7 @@ RULES = (
 )
 
 MESSAGES = {
-    "colour-literal": "hard-coded colour; use the design tokens via TokenColors",
+    "color-literal": "hard-coded color; use the design tokens via TokenColors",
     "fixed-font": "fixed font size; use a Dynamic Type text style",
     "fixed-font-size": (
         "literal point size, which Dynamic Type cannot scale; use a text "
@@ -236,7 +236,7 @@ def _string_start(source: str, i: int) -> tuple[int, bool] | None:
 
 
 def _mask_block_comment(source: str, i: int, out: list[str], keep_comments: bool = False) -> int:
-    """Mask a ``/* ... */`` comment, honouring Swift's nested comments."""
+    """Mask a ``/* ... */`` comment, honoring Swift's nested comments."""
     out.append(source[i:i + 2] if keep_comments else "  ")
     i += 2
     depth = 1
@@ -523,7 +523,7 @@ CONTROL_NAMES = frozenset({
     "Button", "Menu", "Toggle", "Label", "Link", "NavigationLink", "Picker",
     "Stepper", "Slider", "DisclosureGroup", "ControlGroup", "EditButton",
 })
-# Controls whose unlabelled closure holds content rather than a label: the actions
+# Controls whose unlabeled closure holds content rather than a label: the actions
 # of a `Menu`, the options of a `Picker`, the views of a `ControlGroup`. A name
 # written on such a control names the control, not the items inside it, so an
 # image among the items has to be named in its own right. Their `label:` closure
@@ -1345,12 +1345,12 @@ def check_file(path: Path, root: Path) -> list[tuple[int, str, str]]:
     is_ui = applies(rel, ("Sources/NutritionUI/",))
     is_net_scoped = applies(rel, ("Sources/NutritionUI/", "Sources/NutritionJournal/"))
     is_float_scoped = applies(rel, ("Sources/NutritionDomain/", "Sources/NutritionJournal/"))
-    colour_exempt = base == "TokenColors.swift"
+    color_exempt = base == "TokenColors.swift"
 
     patterns: list[tuple[str, re.Pattern[str]]] = []
-    if is_ui and not colour_exempt:
-        patterns.append(("colour-literal", HEX_COLOUR))
-        patterns.append(("colour-literal", COLOUR_CALL))
+    if is_ui and not color_exempt:
+        patterns.append(("color-literal", HEX_COLOR))
+        patterns.append(("color-literal", COLOR_CALL))
     if is_ui:
         patterns.append(("fixed-font", FIXED_FONT))
     if is_net_scoped:

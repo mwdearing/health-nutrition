@@ -189,7 +189,7 @@ public struct ProductDefinition: Sendable, Hashable {
     public var catalogOrigin: String
     public var catalogVersion: String
     /// What kind of product this is: a food, a drink or a supplement. It belongs to the product rather
-    /// than to the entry, and it is what tells a coverage line that a product stating no fibre is a
+    /// than to the entry, and it is what tells a coverage line that a product stating no fiber is a
     /// supplement doing what a supplement does rather than a gap in the day.
     ///
     /// `.food` is the reading for a snapshot written before this column existed, because the app had no

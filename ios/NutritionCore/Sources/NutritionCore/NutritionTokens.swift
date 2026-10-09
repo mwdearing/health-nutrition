@@ -1,11 +1,11 @@
 import Foundation
 
-/// Errors thrown when a hex colour string is malformed.
+/// Errors thrown when a hex color string is malformed.
 public enum TokenError: Error, Sendable, Equatable {
     case malformedHex(String)
 }
 
-/// An opaque sRGB colour with 8-bit channels.
+/// An opaque sRGB color with 8-bit channels.
 public struct RGB: Sendable, Equatable, Hashable {
     public let red: UInt8
     public let green: UInt8
@@ -77,7 +77,7 @@ public struct RGB: Sendable, Equatable, Hashable {
     }
 }
 
-/// A named colour with a light and a dark appearance.
+/// A named color with a light and a dark appearance.
 public struct Token: Sendable, Equatable {
     public let name: String
     public let light: RGB
@@ -107,7 +107,7 @@ public struct Token: Sendable, Equatable {
     }
 }
 
-/// Design tokens as plain data. The app maps them to platform colours later.
+/// Design tokens as plain data. The app maps them to platform colors later.
 public enum NutritionTokens: Sendable {
     /// The 11 audited values. Never change these.
     public static let audited: [Token] = [
@@ -137,7 +137,7 @@ public enum NutritionTokens: Sendable {
         Token(name: "error", light: "#8A1C14", dark: "#FFB3AB"),
     ]
 
-    /// Colours the design adds for bars and tags. Proposed like the semantic roles above, and kept in
+    /// Colors the design adds for bars and tags. Proposed like the semantic roles above, and kept in
     /// their own list so the audited and semantic tables stay exactly as they were approved.
     public static let design: [Token] = [
         Token(name: "track", light: "#DCE7E9", dark: "#1F5663"),

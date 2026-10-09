@@ -13,7 +13,7 @@ an `HKMetadataKeySyncVersion` that says how current that sample is.
 
 Apple's documentation states the intent plainly: if two samples of the same type carry the same sync
 identifier, HealthKit keeps only the one with the higher sync version. What it does not settle, and
-what the writer's idempotency and its delete both depend on, is the behaviour that actually matters
+what the writer's idempotency and its delete both depend on, is the behavior that actually matters
 on a device:
 
 1. Does a **higher** sync version replace the old sample, and is the sample's `UUID` stable across
@@ -124,7 +124,7 @@ slipped past the text replacement; it was redacted by hand before the transcript
 
 Device run on 2026-10-03 (iPhone on the iOS 26 runtime, Debug build 0.1.64, sideloaded with a
 HealthKit-capable profile; the exact iOS point release was not captured by the spike). The equal and
-lower version behaviour below is observed, not documented by Apple, so it holds for this runtime only:
+lower version behavior below is observed, not documented by Apple, so it holds for this runtime only:
 re-run the spike after each major iOS release before relying on it there.
 Transcript as copied from the app; the source bundle identifier was redacted by hand to `<bundle-id>`
 (see the redaction note above).

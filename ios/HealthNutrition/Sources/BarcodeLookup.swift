@@ -4,7 +4,7 @@ import NutritionUI
 
 /// Adapts the Open Food Facts client to the lookup protocol the intake UI depends on. The UI never
 /// sees the client, the outcome type or the provider name; this file owns that knowledge, including
-/// the attribution the licence requires and the serving definition.
+/// the attribution the license requires and the serving definition.
 struct OpenFoodFactsProductLookup: BarcodeProductLookup {
     /// Stored with an entry as its catalog origin, so a later reader can tell which source a set of
     /// values came from.
@@ -48,7 +48,7 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
         )
     }
 
-    /// The wording and the link the licence requires, carried in rather than hard-coded in the UI.
+    /// The wording and the link the license requires, carried in rather than hard-coded in the UI.
     private static func attribution() -> ProductAttribution {
         ProductAttribution(
             source: catalogOrigin, text: OpenFoodFactsAttribution.text, url: OpenFoodFactsAttribution.url)

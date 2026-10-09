@@ -17,9 +17,9 @@ public struct TodayRow: Equatable, Identifiable {
     /// The meal as words, or nil when the entry states none.
     public let meal: String?
     /// What kind of product the entry was recorded with. Food unless the entry's product says
-    /// otherwise, which is what an entry typed by hand is; only a supplement is labelled on the row.
+    /// otherwise, which is what an entry typed by hand is; only a supplement is labeled on the row.
     public let kind: ProductKind
-    /// Whether the entry is a water entry. Water is summarised by its own card on Today rather than
+    /// Whether the entry is a water entry. Water is summarized by its own card on Today rather than
     /// listed row by row, so the meal sections leave these out; the flat `rows` list still holds them.
     public let isWater: Bool
     /// The time of day the entry was logged, "22:13", in the entry's own time zone. Empty when unknown.
@@ -114,7 +114,7 @@ public final class TodayViewModel: ObservableObject {
     private let timeZoneIdentifier: String
     private let makeID: () -> String
     /// Read on every quick add and every label, rather than copied into this model, so a preference
-    /// changed on another screen is honoured by the next tap rather than by the next launch.
+    /// changed on another screen is honored by the next tap rather than by the next launch.
     private let preferences: DisplayPreferences
 
     public init(
@@ -262,7 +262,7 @@ public final class TodayViewModel: ObservableObject {
             // **Water is left out of Coverage**, which is the section that says how much of what was
             // eaten could not be read: its line counts *foods*, and the values here come from the
             // day's food components, which a drink never joins. A water goal therefore gets a line in
-            // Totals, where the day's millilitres are compared with the target, and no line here —
+            // Totals, where the day's milliliters are compared with the target, and no line here —
             // counting the day's foods against water would read "2 of 3 foods lack water" for a day
             // whose water was known exactly, and would ignore the drinks that are the only entries
             // that could have said anything. How much of the day's water could not be counted is
@@ -277,7 +277,7 @@ public final class TodayViewModel: ObservableObject {
             }
                 // A line with nothing behind it is not shown. That is the day holding no food and no
                 // drink at all — only water, or only supplements, which are not foods and are excluded
-                // from the count — and "0 of 0 foods lack fibre" tells a reader nothing.
+                // from the count — and "0 of 0 foods lack fiber" tells a reader nothing.
                 .filter { $0.total > 0 }
             progress = try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
@@ -312,7 +312,7 @@ public final class TodayViewModel: ObservableObject {
         }
     }
 
-    /// The quick-water amount the preference holds, in millilitres. Read through on every call, so a
+    /// The quick-water amount the preference holds, in milliliters. Read through on every call, so a
     /// glass size changed elsewhere is used by the next tap.
     public var quickWaterMilliliters: Decimal { preferences.quickWaterMilliliters }
 
@@ -345,8 +345,8 @@ public final class TodayViewModel: ObservableObject {
         return handle
     }
 
-    /// Writes one water intake for an amount typed in the volume unit the reader sees: millilitres
-    /// under metric, fluid ounces under US. The amount is stored in millilitres and undone exactly like
+    /// Writes one water intake for an amount typed in the volume unit the reader sees: milliliters
+    /// under metric, fluid ounces under US. The amount is stored in milliliters and undone exactly like
     /// the quick button. Zero, negative or unreadable text is refused with `errorMessage` and nothing
     /// is written.
     @discardableResult
@@ -410,7 +410,7 @@ public final class TodayViewModel: ObservableObject {
         "Add \(quickWaterDisplay.text) water"
     }
 
-    /// The same line, spelled out for a screen reader: "Add 250 millilitres of water".
+    /// The same line, spelled out for a screen reader: "Add 250 milliliters of water".
     public var quickWaterAccessibilityLabel: String {
         "Add \(quickWaterDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: quickWaterDisplay.unit)) of water"

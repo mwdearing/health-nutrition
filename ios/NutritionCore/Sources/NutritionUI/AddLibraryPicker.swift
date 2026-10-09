@@ -19,7 +19,7 @@ public struct AddLibraryPicker: View {
     public var body: some View {
         VStack {
             Picker("Library", selection: $segment) {
-                Text("Favourites").tag("Favourites")
+                Text("Favorites").tag("Favorites")
                 Text("Recent").tag("Recent")
                 Text("Recipes").tag("Recipes")
             }
@@ -46,7 +46,7 @@ public struct AddLibraryPicker: View {
                 .scrollContentBackground(.hidden)
             } else {
                 LibraryView(model: library, onAdded: {}, onPick: onPick,
-                    sectionTitle: segment == "Favourites" ? "Favorites" : "Recents")
+                    sectionTitle: segment == "Favorites" ? "Favorites" : "Recents")
             }
         }
         .background(TokenColors.background)

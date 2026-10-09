@@ -85,7 +85,7 @@ What a restore writes:
 - **Product snapshots.** Every snapshot the entries and favorites refer to is written back, so a restored
   entry needs no catalog lookup to be shown or repeated. A revision that names a snapshot nothing defines is
   `corrupt`: the amounts would have to come from somewhere, and inventing them is what this refuses. So is a
-  revision whose `provenance` describes a *different* snapshot than its `product_snapshot_id`: honouring
+  revision whose `provenance` describes a *different* snapshot than its `product_snapshot_id`: honoring
   either half of such a file would attach the wrong product to the entry and drop the other on the next
   export.
 - **Favorites**, as the templates they are, with their decimal text kept exactly as it was written.
@@ -153,7 +153,7 @@ another write creates an entry and the restore joins it, which is the merge this
 
 The **Restore from an export** action under **Settings > Your data** is a file picker (`fileImporter`, JSON only) that reads the
 bytes and hands them to the model, which shows the summary line or the reason the file was refused. A picker
-that was cancelled returns the screen to its empty import state, while a file that cannot be read at all is
+that was canceled returns the screen to its empty import state, while a file that cannot be read at all is
 reported as a failed import: the person asked for it and nothing happened. A successful import also removes
 the exported file this screen was holding, because that copy was made from the journal as it was *before* the
 restore and sharing it would hand over the wrong journal. Nothing is sent anywhere: the file was already on

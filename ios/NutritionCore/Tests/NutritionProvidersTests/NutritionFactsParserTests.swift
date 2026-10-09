@@ -142,7 +142,7 @@ final class NutritionFactsParserTests: XCTestCase {
         let microSign = parse(["Calcium 45 \u{00B5}g"])
         XCTAssertEqual(try amount(.calcium, microSign), dec("45"))
         XCTAssertEqual(try unit(.calcium, microSign), .mcg)
-        XCTAssertTrue(microSign.needsReview(.calcium), "a normalised microgram symbol is low confidence")
+        XCTAssertTrue(microSign.needsReview(.calcium), "a normalized microgram symbol is low confidence")
 
         let greekMu = parse(["Vitamin D 1.5 \u{03BC}g"])
         XCTAssertEqual(try unit(.vitaminD, greekMu), .mcg)
@@ -515,7 +515,7 @@ final class NutritionFactsParserTests: XCTestCase {
     }
 
     /// An amount is only read in front of a name when the panel prints it there; a number that belongs to
-    /// unrecognised text, or to the standard footnote, is left alone.
+    /// unrecognized text, or to the standard footnote, is left alone.
     func testLeadingAmountsAreOnlyReadFromARowThatPrintsOne() throws {
         XCTAssertEqual(value(.calcium, parse(["Magnesium 50mg Calcium"])), .unknown)
         XCTAssertEqual(
@@ -531,7 +531,7 @@ final class NutritionFactsParserTests: XCTestCase {
     }
 
     /// A single-serving package states the singular wording.
-    func testSingularServingPerContainerIsRecognised() {
+    func testSingularServingPerContainerIsRecognized() {
         XCTAssertEqual(parse(["1 serving per container"]).servingsPerContainer, dec("1"))
     }
 
@@ -601,7 +601,7 @@ final class NutritionFactsParserTests: XCTestCase {
     }
 
     /// A capture that drops the qualifier leaves the amount alone in front of the name, as in
-    /// "5g Added Sugars". A number in front of an unrecognised word is still that word's row.
+    /// "5g Added Sugars". A number in front of an unrecognized word is still that word's row.
     func testALeadingAmountWithoutItsQualifierIsRead() throws {
         let panel = parse(["Total Sugars 12g", "5g Added Sugars"])
 
@@ -611,7 +611,7 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(
             value(.calcium, parse(["Magnesium 50mg Calcium"])),
             .unknown,
-            "a number behind an unrecognised word is not this row's amount"
+            "a number behind an unrecognized word is not this row's amount"
         )
     }
 

@@ -75,7 +75,7 @@ public struct DisplayAmount: Equatable {
 ///
 /// Metric shows what is stored: the stored unit is shown unchanged, so 10 mg reads "10 mg" and is
 /// never scaled into grams. The US system converts only the two base-scale units a customary kitchen
-/// measure uses, grams and kilograms into ounces and millilitres and litres into fluid ounces.
+/// measure uses, grams and kilograms into ounces and milliliters and liters into fluid ounces.
 /// Milligrams and micrograms are too small to be anyone's kitchen measure, and energy, counts and
 /// international units have no customary counterpart here, so all of them are shown as stored.
 public enum AmountDisplay {
@@ -102,7 +102,7 @@ public enum AmountDisplay {
     }
 
     /// The unit a stored unit is shown in. Metric shows the stored unit itself; the US system converts
-    /// grams and kilograms to ounces and millilitres and litres to fluid ounces, and leaves every
+    /// grams and kilograms to ounces and milliliters and liters to fluid ounces, and leaves every
     /// other stored unit alone.
     public static func displayUnit(for stored: MeasureUnit, system: UnitSystem) -> MeasureUnit {
         guard system == .usCustomary else { return stored }
@@ -180,8 +180,8 @@ public enum AmountDisplay {
         case .mcg: return "micrograms"
         case .kg: return "kilograms"
         case .oz: return "ounces"
-        case .mL: return "millilitres"
-        case .L: return "litres"
+        case .mL: return "milliliters"
+        case .L: return "liters"
         case .flOz: return "fluid ounces"
         case .kcal: return "calories"
         case .iu: return "international units"

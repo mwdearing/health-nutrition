@@ -58,7 +58,7 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
-        # Both strings describe debug-only behaviour, which is the only thing that reaches Health in any
+        # Both strings describe debug-only behavior, which is the only thing that reaches Health in any
         # build. The delivery driver on the HealthKit tab writes the nutrients of the entries you log, and
         # removes them again when you delete an entry; the spike writes its own two test samples.
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "In a debug build, the HealthKit tab writes the nutrients of the entries you log to Health, and removes them again when you delete an entry. It also writes a few test water and protein samples you can delete from that screen. No release build writes anything to Health."

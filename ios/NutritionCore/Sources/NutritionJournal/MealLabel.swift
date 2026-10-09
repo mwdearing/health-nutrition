@@ -39,7 +39,7 @@ public enum MealLabel: String, Sendable, Hashable, Codable, CaseIterable {
 
     /// What one stored `Intake.meal` is **keyed** as, or nil when it states no meal.
     ///
-    /// This is the same normalisation `displayName(for:)` applies, exposed for the places that compare two
+    /// This is the same normalization `displayName(for:)` applies, exposed for the places that compare two
     /// stored meals rather than show one. A stored value is free text in the export, so `"Breakfast "`,
     /// `"breakfast"` and a meal typed in another case are all spellings of one meal, and keying them
     /// verbatim would make one entry stand in for the others as a favorite or a recent.

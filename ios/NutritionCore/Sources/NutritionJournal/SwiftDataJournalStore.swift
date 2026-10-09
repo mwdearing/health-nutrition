@@ -2076,7 +2076,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             deletedIntakes: deleted.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) })
     }
 
-    /// Maps a stored lifecycle string to its value. An unrecognised value means the row is corrupt or was
+    /// Maps a stored lifecycle string to its value. An unrecognized value means the row is corrupt or was
     /// written by a build this one does not understand: the ordinary active read leaves such a row out
     /// because it predicates on the exact `active` value, so defaulting it to `active` here would put a
     /// deleted entry back into an export as live data. Refuse it instead.

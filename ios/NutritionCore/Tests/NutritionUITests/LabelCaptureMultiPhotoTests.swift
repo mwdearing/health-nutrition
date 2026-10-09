@@ -33,7 +33,7 @@ final class LabelCaptureMultiPhotoTests: XCTestCase {
         [
             "Calcium 120mg 6%",
             "Iron 8mg 4%",
-            "Other Ingredients: Synthetic Pectin, Synthetic Colour",
+            "Other Ingredients: Synthetic Pectin, Synthetic Color",
         ]
     }
 
@@ -331,7 +331,7 @@ final class LabelCaptureMultiPhotoTests: XCTestCase {
 
     /// Every capture goes through one door on the model: the first photo of a panel is loaded, and a
     /// photo taken while the user asked for another one is merged. Both are read by the same session
-    /// and the same recogniser.
+    /// and the same recognizer.
     func testTheSecondCaptureGoesThroughTheSameSessionAndIsMerged() {
         let model = makeModel()
         XCTAssertFalse(model.canAddPhoto, "there is no panel to add a photo to yet")

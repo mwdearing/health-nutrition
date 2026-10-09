@@ -1,7 +1,7 @@
 # Design tokens
 
 The tokens live in `ios/NutritionCore/Sources/NutritionCore/NutritionTokens.swift` as pure data (opaque sRGB, no UI framework).
-The app maps them to platform colours later. The direction is a white, clean light layout with teal and mint accents and a
+The app maps them to platform colors later. The direction is a white, clean light layout with teal and mint accents and a
 dark mode that is designed to match it, not an inversion.
 
 ## Table
@@ -25,7 +25,7 @@ Semantic roles either name the existing token they equal, or are new values that
 | background | #FFFFFF | #07222E | dark value equals RelayOnMint; light is white | proposed, needs Michael's approval |
 | surface | #F2F2F7 | #0B3D4A | dark value equals the light value of RelayAccentInk | proposed, needs Michael's approval |
 | border | #D1D5DB | #1F5663 | none | proposed, needs Michael's approval |
-| textPrimary | #111827 | #F0F6FC | brand guide text colours | proposed, needs Michael's approval |
+| textPrimary | #111827 | #F0F6FC | brand guide text colors | proposed, needs Michael's approval |
 | track | #DCE7E9 | #1F5663 | none (dark equals border) | proposed, needs Michael's approval |
 | accentTint | #E3F1F0 | #134B58 | none | proposed, needs Michael's approval |
 | textSecondary | #6C6C70 | #AEAEB2 | RelaySecondaryText | existing: equals RelaySecondaryText |
@@ -36,11 +36,11 @@ Semantic roles either name the existing token they equal, or are new values that
 
 The rows marked proposed (background, surface, border, textPrimary) are the only additions in this change. They reuse
 brand values where possible: the dark background is the dark end of the brand gradient, the dark surface is the other
-gradient colour, and the two text colours come from the brand guide. Nothing here is final until approved.
+gradient color, and the two text colors come from the brand guide. Nothing here is final until approved.
 
 ## Contrast rule
 
-Normal text must reach a contrast ratio of at least 4.5:1 against the colour it sits on, in light and in dark.
+Normal text must reach a contrast ratio of at least 4.5:1 against the color it sits on, in light and in dark.
 Large text and meaningful graphics need at least 3:1. The host checks every text and background pair with a contrast
 script, and the unit tests check the same pairs with the WCAG 2.x formula.
 
@@ -71,7 +71,7 @@ Checked pairs (light / dark ratio):
 
 ## Usage notes
 
-- Never use RelayMint as text on a light surface: mint on white is only 1.48:1. Mint is a fill colour, with RelayOnMint on top.
+- Never use RelayMint as text on a light surface: mint on white is only 1.48:1. Mint is a fill color, with RelayOnMint on top.
 - In dark mode the accent is mint, which reads at 11.11:1 on the dark background.
 - The border role is a decorative separator. It is not text and does not carry meaning on its own, so it is not held to 4.5:1.
 - `track` is the unfilled part of a goal bar and its hatch lines. It is decorative: the figure beside the bar always

@@ -101,7 +101,7 @@ extension MeasureUnit {
     public static let mL = MeasureUnit(symbol: "mL", dimension: .volume, toBase: power10(0), fromBase: power10(0))
     public static let L = MeasureUnit(symbol: "L", dimension: .volume, toBase: power10(3), fromBase: power10(-3))
     /// One US fluid ounce: exactly 29.5735295625 mL. A distinct symbol from `oz`, so a weight is never
-    /// read as a measure. Rounded into from millilitres, exactly like `oz` is from grams.
+    /// read as a measure. Rounded into from milliliters, exactly like `oz` is from grams.
     public static let flOz = repeatingReciprocalUnit(symbol: "fl oz", dimension: .volume, "29.5735295625")
     public static let kcal = MeasureUnit(symbol: "kcal", dimension: .energy, toBase: power10(0), fromBase: power10(0))
     public static let serving = MeasureUnit(symbol: "serving", dimension: .count, toBase: power10(0), fromBase: power10(0))

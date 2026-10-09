@@ -55,7 +55,7 @@ contributes nothing.
 Where an amount comes from is decided by two rules, because those are the two the data has:
 
 - A component that **measures the nutrient itself** is summed directly. Water is the case this reaches: an entry in
-  category `water` states its volume in its own unit, so it is already the amount. Litres and millilitres are added,
+  category `water` states its volume in its own unit, so it is already the amount. Liters and milliliters are added,
   exactly.
 - A **product snapshot** states its nutrients for the amount its `labelBasis` names, so those values are scaled by the
   factor `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)` gives — the same factor the intake-context
@@ -76,7 +76,7 @@ mL)", which is what a barcode lookup or a label panel writes when it knows how b
 that stated serving and the amount logged, because the entry records the food as an amount and a count cannot be scaled
 from a log that states none. 30 g of a 30 g serving is one serving and 60 g is two; 480 mL of a 240 mL serving is two.
 The requirement is that **the two agree in dimension**, not that they are masses: a panel that states a serving in
-millilitres and an entry logged in millilitres say the same thing about how much was eaten, so it scales too. The
+milliliters and an entry logged in milliliters say the same thing about how much was eaten, so it scales too. The
 logged amount is converted into the stated serving's unit first, so 0.48 L counts as the 480 mL it is. A mass serving
 against a logged volume does not agree and is nil, as is a serving stated no quantity at all — "per serving",
 "per serving (1 large biscuit)", "per serving (a handful)" — so the nutrient stays unknown rather than being scaled by
@@ -151,7 +151,7 @@ The US bound uses `AmountDisplay.smallestShown`, matching quick-water strings.
 The same bound is spoken for accessibility; an actual zero still displays as zero.
 Settings' quick-water equivalence and entry detail's converted line use `AmountDisplay` as well.
 
-**Other amount** opens a field in the preferred volume unit, labelled "Water amount in mL" or "Water amount in fl oz".
+**Other amount** opens a field in the preferred volume unit, labeled "Water amount in mL" or "Water amount in fl oz".
 Add logs one water entry through the same path as the quick button, so it gets the same 10-second Undo. A typed comma is
 read where the region uses one. Under US the amount converts at the exact 29.5735295625 mL per fl oz and is stored in mL.
 Zero, negative or unreadable text is refused with "Enter a water amount above zero." shown at the top of Today; nothing is
@@ -163,7 +163,7 @@ Today and Journal carry the water category separately from product kind; water t
 Icons are hidden from accessibility, and the row's accessibility text includes its kind word.
 
 **Clear all goals** asks for confirmation before `clearAllGoals()` removes every stored target,
-including compound goals. Targets use primary text colour, with no rating implied by colour.
+including compound goals. Targets use primary text color, with no rating implied by color.
 The footer states: "A goal is a number you set. The app compares your day against it and gives no advice or rating."
 Each **Show on Today** switch is disabled, with a Later badge and accessibility value "Not available yet";
 it does not change the tracked list.
@@ -222,15 +222,15 @@ against a gram target. No count or international unit is offered either, so a ta
 totals are never counted in.
 
 The two ounces are excluded as well, by the same rule the recipe editor applies
-(`RecipeEditorViewModel.unitSymbols`). `oz` and `fl oz` are input and display units that Add intake normalises to
-grams and millilitres on the way in; a target has no such step, because the progress line shows the day's total in
+(`RecipeEditorViewModel.unitSymbols`). `oz` and `fl oz` are input and display units that Add intake normalizes to
+grams and milliliters on the way in; a target has no such step, because the progress line shows the day's total in
 its own unit beside the target as it was set rather than converting one to the other. An ounce target would therefore
 read "Protein 52 g of 2 oz" — two numbers not in the same unit. `UnitRegistry` grew the ounces for display, and what
 a nutrient is offered is the units its total is stored in, not the units a person may type.
 
 Text that is not a positive number is refused rather than rounded or guessed at.
 
-## Behaviour
+## Behavior
 - **Quick water** writes one intake through `JournalStore.create` (category `water`, component `water`, the
   configured amount in mL, amount as `Decimal`). The store queues the outbox operations; this layer never
   delivers anything. The amount is configurable: see [Units and the quick-water amount](#units-and-the-quick-water-amount).
@@ -240,7 +240,7 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Meal** is picked next to **When** on the Add form: `None` plus the four labels of `MealLabel`. `None` is a real
   answer and the form starts on it — no label is inferred from the hour, because the label is the person's own
   answer and a guessed one puts a word in their record that they never gave. The choice is stored as the label's raw
-  value in `Intake.meal`, so a repeat and a favourite keep copying it.
+  value in `Intake.meal`, so a repeat and a favorite keep copying it.
 - **Undo** is available for 10 seconds, measured with a clock value passed in by the caller. It calls
   `JournalStore.delete(intakeID:now:)`, so history is kept and delete operations are queued. After 10 seconds it is
   gone.
@@ -259,7 +259,7 @@ Text that is not a positive number is refused rather than rounded or guessed at.
   no preview lines, and a form without prefilled nutrients hides the section.
 - **Details layout** uses a header card for Name, known Brand, Kind and the typed barcode lookup; Amount
   and Unit share a row, followed by the serving hint, Meal and When. All values is collapsed initially and
-  contains the full prefilled list, additional label rows and source text with a titled licence link when
+  contains the full prefilled list, additional label rows and source text with a titled license link when
   available. Library products say "From your Library"; an unedited recipe keeps its version snapshot.
   Save stays enabled in the bottom inset, with save errors and blocked-field messages above it. Serving
   chips and Log to several days are disabled placeholders with Later badges and "Not available yet".
@@ -291,16 +291,16 @@ Where they are set: **Settings > Units and logging**, reached from the gear on e
 `AppSettingsView` composes `AppSettingsViewModel` and the existing `ConnectionsPrivacyViewModel`.
 The segmented unit-system picker and inline quick-water field save on submit or focus loss, without a Save button. The field is **read in the preferred unit** —
 `fl oz` under the US system, `mL` under metric — and its label says which one, so twelve means twelve
-fluid ounces and not twelve millilitres. The helper line under it states the amount **in the field** in
+fluid ounces and not twelve milliliters. The helper line under it states the amount **in the field** in
 the other unit (`= 355 mL`), read from the draft rather than from what was last saved, so a figure typed
 and not yet stored already says what it is worth. Changing the unit system restates an amount already
 typed in the new unit. The amount
 is validated with the same POSIX parser as Add intake and must be above zero; anything else is refused
-with a message and the stored value is left alone. What is **stored** stays millilitres: `save` converts
+with a message and the stored value is left alone. What is **stored** stays milliliters: `save` converts
 a typed fluid-ounce figure by the exact factor (× 29.5735295625, exact in a `Decimal`), so 12 fl oz is
 stored as 354.88235475 mL and the Today button reads back `12 fl oz`. A converted draft is rounded to the
 digits the field shows before it is written back, so 250 mL shown as `8.45 fl oz` and saved stores
-249.896324803125 mL — the glass those digits stand for. Metric shows the stored millilitres unrounded,
+249.896324803125 mL — the glass those digits stand for. Metric shows the stored milliliters unrounded,
 so `400.55` stays `400.55` in the field.
 
 What the preference changes, and what it does not:
@@ -325,7 +325,7 @@ What the preference changes, and what it does not:
   The quick-add button writes the configured amount in mL whatever the unit system, so an export of a
   US-customary journal is byte-identical to a metric one. The recipe editor is metric for the same
   reason and offers neither ounce: a recipe yield becomes the component of a logged entry through
-  `RecipeLogger.portionQuantity`, which has no normalisation step of its own, so an ounce yield would
+  `RecipeLogger.portionQuantity`, which has no normalization step of its own, so an ounce yield would
   be stored as an ounce.
 - **Erased with everything else**: the unit system and the quick-water amount are stored values, so
   **Erase all data** removes both `display.` keys rather than overwriting them with the defaults. See
@@ -354,7 +354,7 @@ holds because an empty day and an unreadable one are both `.unknown`:
 
 Nothing logged is not a total of zero: a known zero reads "0 g of 60 g" with an empty fill. Fractions are `Decimal`,
 clamped to 0 through 1; `GoalBar.drawingWidth` is the one place one becomes a `Double`. The bar is a single
-accessibility element and never colour alone. Progress is always the accent colour: green and red belong to the
+accessibility element and never color alone. Progress is always the accent color: green and red belong to the
 state of the app, not of the day.
 
 The reason line under a cannot-total bar says "N entries have no <nutrient> value" only where `CoverageLine`
@@ -382,7 +382,7 @@ amount. Each value is read through the canonical nutrient mapping's keys, so a s
 as known for `energy` rather than as missing. An entry typed by hand has no snapshot, so it stays unknown until a product or a calculated recipe is attached.
 
 ## Boundaries
-`NutritionUI` imports no HealthKit and no networking. Colours come only from the design tokens through
+`NutritionUI` imports no HealthKit and no networking. Colors come only from the design tokens through
 `TokenColors.swift`; text uses Dynamic Type styles; every button and image has an accessibility label.
 
 Totals and goals are read and written, and neither is delivered anywhere: a target is not an intake, and the export

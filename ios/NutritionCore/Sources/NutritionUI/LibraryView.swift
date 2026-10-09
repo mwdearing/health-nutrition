@@ -52,7 +52,7 @@ public struct LibraryView: View {
         .background(TokenColors.background)
         .navigationTitle("Library")
         .onAppear { self.model.load() }
-        // The Undo window ends with this screen: its ten-second task is cancelled with the toast.
+        // The Undo window ends with this screen: its ten-second task is canceled with the toast.
         .onDisappear { if self.onPick == nil { self.model.clearUndo() } }
         .safeAreaInset(edge: .bottom) {
             // Pick mode is Add's "From Library": a token from this screen must never show there.
@@ -75,7 +75,7 @@ public struct LibraryView: View {
         ForEach(model.sections.filter { self.sectionTitle == nil || $0.title == self.sectionTitle }) { section in
             Section(section.title) {
                 if section.items.isEmpty {
-                    Text(model.emptyText(for: section.title == "Favorites" ? .favourites : .recent).message)
+                    Text(model.emptyText(for: section.title == "Favorites" ? .favorites : .recent).message)
                         .font(.footnote).foregroundStyle(TokenColors.textSecondary)
                 }
                 ForEach(section.items) { item in
@@ -100,7 +100,7 @@ public struct LibraryView: View {
     @ViewBuilder
     private var segmentContent: some View {
         switch model.segment {
-        case .favourites, .recent:
+        case .favorites, .recent:
             if model.visibleItems.isEmpty {
                 emptyState(for: model.segment)
             } else {

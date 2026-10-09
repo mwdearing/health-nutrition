@@ -138,8 +138,8 @@ public struct GoalBarModel: Equatable, Identifiable {
     }
 }
 
-/// A labelled bar: the nutrient and its figure above a capsule track. One accessibility element, so
-/// the bar is never read as a separate unlabelled control and is never colour alone.
+/// A labeled bar: the nutrient and its figure above a capsule track. One accessibility element, so
+/// the bar is never read as a separate unlabeled control and is never color alone.
 public struct GoalBar: View {
     private let model: GoalBarModel
 
