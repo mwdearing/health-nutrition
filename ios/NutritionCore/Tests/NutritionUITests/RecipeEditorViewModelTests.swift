@@ -55,14 +55,14 @@ final class RecipeEditorViewModelTests: XCTestCase {
 
     func testBadDecimalTextRejected() throws {
         let store = try makeStore()
-        for bad in ["1,5", "abc"] {
+        for bad in ["1,5,0", "abc"] {
             let model = filledModel(store)
             model.ingredients[0].amountText = bad
             XCTAssertFalse(model.save(now: when))
             XCTAssertFalse(model.messages.isEmpty)
         }
         let model = filledModel(store)
-        model.ingredients[0].nutrientTexts["protein"] = "1,5"
+        model.ingredients[0].nutrientTexts["protein"] = "1,5,0"
         XCTAssertFalse(model.save(now: when))
         XCTAssertTrue(try store.list().recipes.isEmpty)
     }

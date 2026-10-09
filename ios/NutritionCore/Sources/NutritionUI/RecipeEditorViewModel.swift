@@ -166,9 +166,12 @@ public final class RecipeEditorViewModel: ObservableObject {
         }
     }
 
-    /// Accepts digits with one point, including zero; nil for anything else.
-    static func parseNonNegative(_ text: String) -> Decimal? {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
+    /// Accepts digits with one point, including zero; nil for anything else. The field is typed, so the
+    /// region's comma is read as `AmountParser.parseTyped` reads it.
+    static func parseNonNegative(
+        _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Decimal? {
+        let trimmed = AmountParser.normalizedTyped(text, decimalSeparator: decimalSeparator)
         if let value = AmountParser.parse(trimmed) { return value }
         let dots = trimmed.filter { $0 == "." }.count
         guard !trimmed.isEmpty, dots <= 1, trimmed.contains("0"), trimmed.allSatisfy({ $0 == "0" || $0 == "." }) else {
@@ -192,7 +195,7 @@ public final class RecipeEditorViewModel: ObservableObject {
             let position = index + 1
             let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
             if name.isEmpty { problems.append("Ingredient \(position): enter a name.") }
-            let amount = AmountParser.parse(draft.amountText)
+            let amount = AmountParser.parseTyped(draft.amountText)
             if amount == nil {
                 problems.append("Ingredient \(position): enter an amount greater than zero, using digits and a point.")
             }
@@ -201,7 +204,7 @@ public final class RecipeEditorViewModel: ObservableObject {
             var density: Decimal?
             let densityTrimmed = draft.densityText.trimmingCharacters(in: .whitespaces)
             if !densityTrimmed.isEmpty {
-                density = AmountParser.parse(densityTrimmed)
+                density = AmountParser.parseTyped(densityTrimmed)
                 if density == nil {
                     problems.append("Ingredient \(position): weight per mL must be greater than zero, using digits and a point.")
                 }
@@ -235,7 +238,7 @@ public final class RecipeEditorViewModel: ObservableObject {
         }
 
         var yieldValue: RecipeYield?
-        if let amount = AmountParser.parse(yieldAmountText) {
+        if let amount = AmountParser.parseTyped(yieldAmountText) {
             switch yieldKind {
             case .servings:
                 yieldValue = .servings(amount)

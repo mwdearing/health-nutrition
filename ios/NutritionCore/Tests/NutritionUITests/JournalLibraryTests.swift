@@ -566,7 +566,7 @@ final class JournalLibraryTests: XCTestCase {
         let store = try makeStore()
         let id = try addFood(store, at: now)
         let model = EntryDetailViewModel(store: store, intakeID: id)
-        for text in ["", "abc", "0", "-5", "1,5", "1.2.3"] {
+        for text in ["", "abc", "0", "-5", "1,5,0", "1.2.3"] {
             XCTAssertFalse(model.save(components: [EditedComponent(componentID: "oats", name: "Oats", amountText: text, unit: .g)], changeReason: "x", now: now), text)
             XCTAssertNotNil(model.fieldErrors["oats"], text)
         }
