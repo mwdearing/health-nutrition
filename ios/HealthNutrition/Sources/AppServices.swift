@@ -104,7 +104,7 @@ final class AppServices {
     static func make(
         directory: URL = defaultDirectory,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
-        reminderScheduler: ReminderScheduling = SystemReminderScheduler()
+        reminderScheduler: ReminderScheduling
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.

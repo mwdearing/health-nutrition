@@ -46,7 +46,7 @@ final class ScreenshotCaptureTests: XCTestCase {
             .appendingPathComponent("HealthNutritionScreenshots", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let services = try AppServices.make(directory: directory)
+        let services = try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler())
         let start = Calendar.current.startOfDay(for: Date())
         let zone = TimeZone.current.identifier
         let entries: [(String, String, String?, [IntakeComponent])] = [

@@ -492,4 +492,32 @@ final class ReminderControllerTests: XCTestCase {
         XCTAssertTrue(preferences.isReminderOn)
         XCTAssertEqual(scheduler.pendingTime, .standard, "switching on after the lookup leaves its request pending")
     }
+
+    func testAnActionQueuedBeforeAnEraseStandsDownWhenItsTurnComes() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let erasures = ReminderErasures()
+        let (controller, preferences) = makeController(scheduler, erasures: erasures)
+        try await scheduler.scheduleDaily(at: .standard)
+        let queued = TaskBox()
+        // A sync is under way (off in the preferences, a request still pending). A switch-on is queued behind
+        // it, then Erase all data runs before the switch-on gets its turn.
+        scheduler.whilePendingLookup = { [weak controller] in
+            scheduler.whilePendingLookup = nil
+            queued.task = Task { @MainActor in await controller?.setOn(true) }
+            await Task.yield()
+            await MainActor.run {
+                try? ReminderEraser(scheduler: scheduler, erasures: erasures).eraseAll()
+                preferences.resetToDefaults()
+                controller?.refreshFromPreferences()
+            }
+        }
+
+        await controller.syncOnLaunch()
+        await queued.task?.value
+
+        XCTAssertFalse(controller.isOn, "a switch-on queued before the erase does not run after it")
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertNil(scheduler.pendingTime)
+    }
 }

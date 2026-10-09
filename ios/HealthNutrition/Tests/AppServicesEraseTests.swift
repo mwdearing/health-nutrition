@@ -24,7 +24,7 @@ final class AppServicesEraseTests: XCTestCase {
             .appendingPathComponent("HealthNutritionTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return (try AppServices.make(directory: directory), directory)
+        return (try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler()), directory)
     }
 
     private func sampleIntake() -> Intake {
@@ -126,7 +126,8 @@ final class AppServicesEraseTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let services = try AppServices.make(
-            directory: directory, displayPreferences: UserDefaultsDisplayPreferences(defaults: suite))
+            directory: directory, displayPreferences: UserDefaultsDisplayPreferences(defaults: suite),
+            reminderScheduler: RecordingReminderScheduler())
         try fill(services)
         services.displayPreferences.setHasSeenWelcome(true)
         XCTAssertTrue(services.displayPreferences.hasSeenWelcome)
@@ -172,7 +173,7 @@ final class AppServicesEraseTests: XCTestCase {
 }
 
 /// A reminder scheduler that records calls and answers from settable state, for the app's own wiring.
-private final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable {
+final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable {
     private let lock = NSLock()
     private var currentPermission: ReminderPermission = .notDetermined
     private var pending: ReminderTime?

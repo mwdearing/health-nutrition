@@ -68,7 +68,7 @@ public final class ReminderController: ObservableObject {
     /// Switches the reminder on or off. Turning on asks for permission only when it is not yet decided,
     /// and stays off with a message when the answer is no.
     public func setOn(_ on: Bool) async {
-        await enqueue { [self] in await self.applyOn(on) }
+        await enqueue { [self] erased in await self.applyOn(on, erased: erased) }
     }
 
     /// Stores the new time at once, so the picker shows it, then queues the rescheduling. While the reminder
@@ -76,13 +76,13 @@ public final class ReminderController: ObservableObject {
     public func setTime(_ newTime: ReminderTime) async {
         preferences.setReminderTime(newTime)
         time = newTime
-        await enqueue { [self] in await self.applyTime() }
+        await enqueue { [self] erased in await self.applyTime(erased: erased) }
     }
 
     /// Brings the system's pending request in line with the stored setting. Never asks for permission.
     /// Called at launch and each time the app becomes active.
     public func syncOnLaunch() async {
-        await enqueue { [self] in await self.applySync() }
+        await enqueue { [self] erased in await self.applySync(erased: erased) }
     }
 
     /// Re-reads the stored values. Erase all data resets them, so the screen reads them again.
@@ -96,11 +96,16 @@ public final class ReminderController: ObservableObject {
 
     // MARK: Queue
 
-    private func enqueue(_ body: @escaping @MainActor () async -> Void) async {
+    /// Queues `body` behind the last action. The erase count is read now, when the action is requested: an
+    /// erase that happens before its turn comes means it was asked for against settings that are gone, so it
+    /// is dropped rather than run.
+    private func enqueue(_ body: @escaping @MainActor (_ erased: Int) async -> Void) async {
+        let erased = erasures.count
         let previous = tail
         let task = Task { @MainActor in
             await previous?.value
-            await body()
+            guard erased == erasures.count else { return }
+            await body(erased)
         }
         tail = task
         await task.value
@@ -108,7 +113,7 @@ public final class ReminderController: ObservableObject {
 
     // MARK: Actions (each runs alone, in order)
 
-    private func applyOn(_ on: Bool) async {
+    private func applyOn(_ on: Bool, erased: Int) async {
         guard on else {
             preferences.setReminderOn(false)
             isOn = false
@@ -116,7 +121,6 @@ public final class ReminderController: ObservableObject {
             scheduler.cancelDaily()
             return
         }
-        let erased = erasures.count
         var permission = await scheduler.permission()
         guard erased == erasures.count else { return }
         if permission == .notDetermined {
@@ -146,9 +150,8 @@ public final class ReminderController: ObservableObject {
         message = nil
     }
 
-    private func applyTime() async {
+    private func applyTime(erased: Int) async {
         guard preferences.isReminderOn else { return }
-        let erased = erasures.count
         do {
             try await scheduler.scheduleDaily(at: preferences.reminderTime)
         } catch {
@@ -158,8 +161,7 @@ public final class ReminderController: ObservableObject {
         if erased != erasures.count { scheduler.cancelDaily() }
     }
 
-    private func applySync() async {
-        let erased = erasures.count
+    private func applySync(erased: Int) async {
         time = preferences.reminderTime
         let permission = await scheduler.permission()
         guard erased == erasures.count else { return }
