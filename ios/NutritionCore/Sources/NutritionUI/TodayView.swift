@@ -176,6 +176,10 @@ public struct TodayView: View {
                         }
                         .accessibilityLabel("Add water in \(self.model.otherWaterUnitSymbol)")
                     }
+                    // A draft typed in one unit must not be read in another: clear it when the unit changes.
+                    .onChange(of: self.model.otherWaterUnitSymbol) { _, _ in
+                        self.otherWaterText = ""
+                    }
                 }
             }
         }
