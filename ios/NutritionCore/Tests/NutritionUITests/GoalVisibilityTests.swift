@@ -55,8 +55,10 @@ final class GoalVisibilityTests: XCTestCase {
             product: snapshot, now: when)
     }
 
+    /// The bars on the Today card for nutrients that have a stored goal. A tracked nutrient with no goal
+    /// also gets a plain-total bar, and the switch never touches that one.
     private func todayBarIDs(_ model: TodayViewModel) -> [String] {
-        model.goalBars.map(\.id)
+        model.goalBars.map(\.nutrient).filter { id in model.progress.contains { $0.nutrient == id && $0.hasGoal } }
     }
 
     // MARK: Defaults and the Today card
@@ -225,5 +227,35 @@ final class GoalVisibilityTests: XCTestCase {
 
         XCTAssertNil(defaults.string(forKey: "display.goals.hiddenOnToday"))
         XCTAssertEqual(preferences.hiddenTodayGoals, [])
+    }
+
+    func testHidingWaterRemovesTheWaterBar() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
+        let preferences = InMemoryDisplayPreferences()
+
+        let shown = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        shown.load(now: when)
+        XCTAssertNotNil(shown.waterBar, "a water goal shows its bar until it is switched off")
+
+        preferences.setGoalShownOnToday("water", shown: false)
+        let hidden = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        hidden.load(now: when)
+        XCTAssertNil(hidden.waterBar)
+    }
+
+    func testAHiddenNutrientWithNoGoalKeepsItsPlainTotal() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try logOats(journal, grams: 40)
+        let preferences = InMemoryDisplayPreferences()
+        // Hidden while it had a goal; the goal is gone now, so there is no bar to hide.
+        preferences.setGoalShownOnToday("protein", shown: false)
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        model.load(now: when)
+
+        XCTAssertTrue(model.goalBars.contains { $0.nutrient == "protein" })
     }
 }

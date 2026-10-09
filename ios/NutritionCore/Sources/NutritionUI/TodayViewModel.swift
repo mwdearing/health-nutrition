@@ -286,7 +286,8 @@ public final class TodayViewModel: ObservableObject {
             // A goal switched off on the Goals screen keeps its target and its totals, but no bar.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
             goalBars = progress.filter {
-                $0.nutrient != DailyTotalsBuilder.waterKey && !hiddenGoals.contains($0.nutrient)
+                // Only a line that still has a goal can be hidden: with the goal gone, its plain total stays.
+                $0.nutrient != DailyTotalsBuilder.waterKey && !($0.hasGoal && hiddenGoals.contains($0.nutrient))
             }.map { line in
                 var hasEntries = line.hasKnownAmount
                 var missingCount = 0
@@ -303,7 +304,10 @@ public final class TodayViewModel: ObservableObject {
                 return GoalBarModel.make(
                     line: line, hasEntries: hasEntries, missingCount: missingCount)
             }
-            waterBar = progress.first { $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal }.map { line in
+            waterBar = progress.first {
+                $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
+                    && !hiddenGoals.contains(DailyTotalsBuilder.waterKey)
+            }.map { line in
                 GoalBarModel.make(
                     line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped,
                     unitSystem: self.preferences.unitSystem)
