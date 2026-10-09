@@ -528,9 +528,6 @@ public final class EntryDetailViewModel: ObservableObject {
             if !product.labelBasis.isEmpty {
                 rows.append(SourceDetailRow(label: "Basis", value: product.labelBasis))
             }
-            if hasVersion {
-                rows.append(SourceDetailRow(label: "Version", value: version))
-            }
         case RecipeLogger.catalogOrigin:
             rows.append(SourceDetailRow(label: "Input", value: "Recipe"))
             rows.append(SourceDetailRow(label: "Recipe", value: product.name))
