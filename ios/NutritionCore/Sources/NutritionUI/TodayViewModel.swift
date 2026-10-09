@@ -283,7 +283,11 @@ public final class TodayViewModel: ObservableObject {
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
                 displayNames: Self.printedNames(in: snapshots))
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
-            goalBars = progress.filter { $0.nutrient != DailyTotalsBuilder.waterKey }.map { line in
+            // A goal switched off on the Goals screen keeps its target and its totals, but no bar.
+            let hiddenGoals = hiddenTodayGoals(in: preferences)
+            goalBars = progress.filter {
+                $0.nutrient != DailyTotalsBuilder.waterKey && !hiddenGoals.contains($0.nutrient)
+            }.map { line in
                 var hasEntries = line.hasKnownAmount
                 var missingCount = 0
                 for entry in foodEntries where entry.kind != .supplement {
