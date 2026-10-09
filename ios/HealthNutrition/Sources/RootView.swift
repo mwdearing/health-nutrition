@@ -196,8 +196,8 @@ struct RootView: View {
         }) {
             NavigationStack {
                 AppSettingsView(
-                    goals: services.goals, connections: connections, now: { Date() },
-                    opensGoals: settingsOpensGoals,
+                    goals: services.goals, connections: connections, reminders: services.reminders,
+                    now: { Date() }, opensGoals: settingsOpensGoals,
                     onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false }
                 )
             }
@@ -223,10 +223,16 @@ struct RootView: View {
         }
         // The checklist's steps are read when the shell appears; later reads come from reload().
         .onAppear { self.services.firstDayChecklist.load() }
+        // The daily reminder's pending request is brought in line with its setting at launch. It never
+        // asks for permission here; that happens only when a person switches the reminder on.
+        .task { await self.services.reminders.syncOnLaunch() }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { reload() }
+            if phase == .active {
+                reload()
+                Task { await self.services.reminders.syncOnLaunch() }
+            }
         }
         // An erase in Settings empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.

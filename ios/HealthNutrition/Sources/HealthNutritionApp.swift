@@ -13,7 +13,7 @@ struct HealthNutritionApp: App {
 
     init() {
         do {
-            _services = State(initialValue: try AppServices.make())
+            _services = State(initialValue: try AppServices.make(reminderScheduler: SystemReminderScheduler()))
         } catch {
             _services = State(initialValue: nil)
             _startupError = State(initialValue: error.localizedDescription)

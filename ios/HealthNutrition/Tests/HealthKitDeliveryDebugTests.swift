@@ -24,7 +24,7 @@ final class HealthKitDeliveryDebugTests: XCTestCase {
             .appendingPathComponent("HealthNutritionDebugTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return try AppServices.make(directory: directory)
+        return try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler())
     }
 
     private func sampleIntake() -> Intake {

@@ -1153,6 +1153,12 @@ def test_the_legend_agrees_with_the_table() -> None:
     )
 
     areas = re.search(r"(?:One|Two|Three|Four|Five|\d+) areas? \((?P<areas>[^)]*)\)", text)
+    if not unverified:
+        # No area is left with no code behind it: the legend must not name one.
+        assert areas is None, (
+            f"the legend names areas with no code, but the table marks none unverified: {areas.group(0)!r}"
+        )
+        return
     assert areas is not None, (
         "the legend no longer names the areas that have no code behind them"
     )
@@ -1173,12 +1179,14 @@ def test_the_legend_agrees_with_the_table() -> None:
 # made goals and the display preferences part of the product: a token that production sources now carry on
 # purpose can no longer be evidence that something is absent, and keeping it here would fail this suite on
 # correct code. Every token listed below still appears in no Swift source under `ios/`.
-ASSERTED_ABSENT_TOKENS = ("remind", "notif")
+# `remind` and `notif` were on this list until the daily reminder shipped; they are expected in production
+# sources now. What stays absent is remote and background delivery, which the reminder does not use.
+ASSERTED_ABSENT_TOKENS = ("registerForRemoteNotifications", "BGTaskScheduler")
 
 # The token the search-mechanics probes below plant. It is deliberately one this repository still
 # asserts is absent, and nothing under `ios/` carries it: those probes copy the real tree and then
 # assert that the file they planted is the ONLY hit.
-PROBE_ABSENT_TOKENS = ("remind",)
+PROBE_ABSENT_TOKENS = ASSERTED_ABSENT_TOKENS[:1]
 ASSERTED_ABSENT_TREES = (
     "ios/NutritionCore/Sources",
     "ios/HealthNutrition/Sources",

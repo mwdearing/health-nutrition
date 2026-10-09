@@ -43,13 +43,20 @@ final class AppServices {
     /// app's lifetime, so a unit system changed on the settings screen is the one the Today screen
     /// reads on the next reload rather than one screen's private copy.
     let displayPreferences: UserDefaultsDisplayPreferences
+    /// The optional daily reminder. It reads its setting from `displayPreferences` and asks the system
+    /// through the scheduler it was built with. The app shell syncs it at launch and when it becomes active.
+    let reminders: ReminderController
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
         recipeStore: SwiftDataRecipeStore, goalStore: SwiftDataGoalStore,
-        displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences()
+        displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
+        reminderScheduler: ReminderScheduling
     ) {
         self.displayPreferences = displayPreferences
+        let reminderErasures = ReminderErasures()
+        self.reminders = ReminderController(
+            preferences: displayPreferences, scheduler: reminderScheduler, erasures: reminderErasures)
         self.journalStore = journalStore
         self.favoritesStore = favoritesStore
         self.recipeStore = recipeStore
@@ -65,9 +72,10 @@ final class AppServices {
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)
+        let reminderEraser = ReminderEraser(scheduler: reminderScheduler, erasures: reminderErasures)
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
-            erasers: [journalStore, favoritesStore, recipeStore, goalStore],
+            erasers: [journalStore, favoritesStore, recipeStore, goalStore, reminderEraser],
             preferences: displayPreferences)
         barcodeLookup = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
@@ -91,9 +99,12 @@ final class AppServices {
     /// real Application Support ones. The default is the app's own directory, unchanged.
     /// - Parameter displayPreferences: where the display settings live. A parameter so a test can pass
     ///   its own store rather than writing into the standard defaults domain.
+    /// - Parameter reminderScheduler: the system's local notifications by default. A test passes a fake so
+    ///   no notification is scheduled on the test device.
     static func make(
         directory: URL = defaultDirectory,
-        displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences()
+        displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
+        reminderScheduler: ReminderScheduling
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.
@@ -144,7 +155,8 @@ final class AppServices {
             let goalStore = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
             return AppServices(
                 journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
-                goalStore: goalStore, displayPreferences: displayPreferences)
+                goalStore: goalStore, displayPreferences: displayPreferences,
+                reminderScheduler: reminderScheduler)
         } catch {
             recipeStore.close()
             favoritesStore.close()

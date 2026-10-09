@@ -36,6 +36,7 @@ Plus, on the screen that offers the action:
   `display.checklistHidden`, `display.hasReviewedUnits`), so the erase removes five `display.` keys in
   all. Afterwards the first-day checklist returns on Today at once, with its steps undone. The welcome
   is not shown straight away: it shows again the next time the app starts, because its flag is gone.
+- The daily reminder: its pending notification is removed, and its stored switch and time are cleared with the display settings. See [daily reminder](reminders.md).
 - The screen's own state: the entry count goes back to zero and the export is no longer offered.
 
 The stores stay open afterwards. The app carries on with an empty journal, and a new entry, favorite

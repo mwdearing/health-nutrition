@@ -43,11 +43,17 @@ final class AppSettingsTests: XCTestCase {
 
     func testPlaceholderRowsAreDisabledWithIssueReferences() throws {
         let model = AppSettingsViewModel(connections: try makeConnections())
-        XCTAssertEqual(model.placeholderRows.count, 5)
+        XCTAssertEqual(model.placeholderRows.count, 4)
         for row in model.placeholderRows {
             XCTAssertFalse(row.isEnabled)
             XCTAssertFalse(row.issueReference.isEmpty)
         }
+    }
+
+    /// The daily reminder replaces the old "Daily prompts" placeholder, so no row carries that id.
+    func testDailyPromptsPlaceholderIsGone() throws {
+        let model = AppSettingsViewModel(connections: try makeConnections())
+        XCTAssertFalse(model.placeholderRows.contains { $0.id == "dailyPrompts" })
     }
 
     func testSettingsVersionUsesInjectedBundleValues() throws {
