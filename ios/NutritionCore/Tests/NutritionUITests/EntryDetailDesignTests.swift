@@ -189,8 +189,10 @@ final class EntryDetailDesignTests: XCTestCase {
         model.load(now: now)
 
         let protein = try XCTUnwrap(model.adds.first { $0.key == "protein" })
-        XCTAssertEqual(protein.amountText, "Not on the label")
-        XCTAssertTrue(model.adds.allSatisfy { $0.amountText == "Not on the label" })
+        XCTAssertEqual(protein.amountText, "Can't be worked out for this amount")
+        XCTAssertTrue(model.adds.allSatisfy {
+            $0.amountText == "Not on the label" || $0.amountText == "Can't be worked out for this amount"
+        })
     }
 
     func testEntryDetailThisEntryAddsIsEmptyForATypedProduct() throws {

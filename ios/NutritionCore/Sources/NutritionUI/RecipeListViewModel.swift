@@ -11,8 +11,8 @@ public enum RecipeLabels {
     public static let portionField = "Portion"
     public static let titleField = "Recipe title"
     public static let notesField = "Notes"
-    public static let yieldAmountField = "Yield amount"
-    public static let yieldKindPicker = "Yield type"
+    public static let yieldAmountField = "How much it makes"
+    public static let yieldKindPicker = "Counted as"
     public static let recipesRow = "Recipes"
 
     public static func open(title: String, version: Int) -> String {

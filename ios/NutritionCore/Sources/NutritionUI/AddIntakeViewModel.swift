@@ -50,7 +50,36 @@ public struct ThisAddsLine: Equatable {
     public let key: String
     public let displayName: String
     public let value: NutrientValue?
-    public var text: String { LookedUpProduct.describe(value ?? .unknown) }
+    /// The product states this nutrient, but the logged amount cannot be scaled to its basis.
+    public let cannotScale: Bool
+    public var text: String {
+        cannotScale ? LookedUpProduct.cannotScaleText : LookedUpProduct.shownText(value ?? .unknown)
+    }
+}
+
+extension LookedUpProduct {
+    /// The line for a nutrient the product states when the logged amount cannot be scaled to its basis.
+    static let cannotScaleText = "Can't be worked out for this amount"
+
+    /// Whether a value says something the label printed: an amount, or a bound.
+    static func statesAmount(_ value: NutrientValue) -> Bool {
+        switch value {
+        case .known, .belowReportingThreshold: return true
+        case .unknown, .notApplicable: return false
+        }
+    }
+
+    /// The words a person sees for a value. `describe` keeps the stored words, which are hashed into
+    /// snapshot ids and must never change; this is for text on screen only.
+    static func shownText(_ value: NutrientValue) -> String {
+        switch value {
+        case .known: return describe(value)
+        case .unknown: return "Not on the label"
+        case .notApplicable: return "Does not apply"
+        case .belowReportingThreshold(let unit):
+            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
+        }
+    }
 }
 
 @MainActor
@@ -197,7 +226,8 @@ public final class AddIntakeViewModel: ObservableObject {
             guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { return nil }
             return ThisAddsLine(
                 key: key, displayName: LookedUpProduct.displayNames[key] ?? key.capitalized,
-                value: factor.map { value.scaled(by: $0) } ?? .unknown)
+                value: factor.map { value.scaled(by: $0) } ?? .unknown,
+                cannotScale: factor == nil && LookedUpProduct.statesAmount(value))
         }
     }
 
