@@ -42,6 +42,19 @@ public struct JournalRow: Equatable, Identifiable {
     }
 }
 
+/// The entries of one meal in a journal day, in the order the day lists them.
+public struct JournalMealGroup: Equatable, Identifiable {
+    public let id: String
+    public let title: String
+    public let rows: [JournalRow]
+
+    public init(id: String, title: String, rows: [JournalRow]) {
+        self.id = id
+        self.title = title
+        self.rows = rows
+    }
+}
+
 public struct JournalDaySection: Equatable, Identifiable {
     /// Local day in the intakes' own time zone, as yyyy-MM-dd.
     public let id: String
@@ -53,6 +66,33 @@ public struct JournalDaySection: Equatable, Identifiable {
     public let totals: DailyTotals
     /// One compact line for the day: each tracked nutrient against its target where one is set.
     public let totalsText: String
+    /// The day's entries grouped by meal: the four named meals in order, then "Other".
+    public let mealGroups: [JournalMealGroup]
+    /// One bar per stored goal, water excluded, in the stored goals' order, at most three.
+    public let headerBars: [GoalBarModel]
+    /// The day's energy when its total is known, such as "1240 kcal"; nil when it is not.
+    public let energyText: String?
+    /// True when the day is more than seven days before the day of `now`, in the entry's own zone.
+    public let isCollapsedByDefault: Bool
+    /// "1 entry" or "9 entries".
+    public let entryCountText: String
+
+    public init(
+        id: String, title: String, rows: [JournalRow], totals: DailyTotals, totalsText: String,
+        mealGroups: [JournalMealGroup], headerBars: [GoalBarModel], energyText: String?,
+        isCollapsedByDefault: Bool, entryCountText: String
+    ) {
+        self.id = id
+        self.title = title
+        self.rows = rows
+        self.totals = totals
+        self.totalsText = totalsText
+        self.mealGroups = mealGroups
+        self.headerBars = headerBars
+        self.energyText = energyText
+        self.isCollapsedByDefault = isCollapsedByDefault
+        self.entryCountText = entryCountText
+    }
 }
 
 @MainActor
@@ -61,6 +101,13 @@ public final class JournalViewModel: ObservableObject {
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
     @Published public private(set) var errorMessage: String?
+    /// The days the person has opened. Only an old day (more than a week back) starts collapsed.
+    @Published public private(set) var expandedDays: Set<String> = []
+    /// True once a load has completed without failing, so the empty state is never shown before one.
+    private var hasLoaded = false
+
+    /// The nutrient key for energy, which the day header shows beside its goal bars.
+    private static let energyKey = "energy"
 
     private let store: JournalStore
     private let lookup: NutrientFactsLookup
@@ -100,6 +147,8 @@ public final class JournalViewModel: ObservableObject {
             // The intakes of each day, kept beside the rows so the day's totals are summed from
             // exactly the entries the rows below were built from. Nothing here ever sees two days.
             var intakesByDay: [String: [Intake]] = [:]
+            // The zone each day is read in: the zone of the first intake that named that day.
+            var zones: [String: TimeZone] = [:]
             // One snapshot is read once per load, however many entries name it.
             var snapshots: [String: ProductDefinition?] = [:]
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
@@ -130,27 +179,69 @@ public final class JournalViewModel: ObservableObject {
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
                     titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
+                    zones[key] = zone
                 }
                 groups[key, default: []].append(row)
                 intakesByDay[key, default: []].append(intake)
             }
             let storedGoals = (try? goals?.goals()) ?? []
             let tracked = TodayViewModel.totalsNutrients(goals: storedGoals)
+            // Energy is read once per day alongside the tracked nutrients, for the header. The summary
+            // line still names only the tracked ones, so it does not change.
+            let queried = tracked.contains(Self.energyKey) ? tracked : tracked + [Self.energyKey]
             sections = try groups.keys.sorted(by: >).map { key in
                 let totals = try DailyTotalsBuilder.totals(
-                    for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: tracked)
+                    for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: queried)
+                let rows = (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt }
                 return JournalDaySection(
-                    id: key, title: titles[key] ?? key,
-                    rows: (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt },
-                    totals: totals,
+                    id: key, title: titles[key] ?? key, rows: rows, totals: totals,
                     totalsText: Self.totalsText(
-                        totals: totals, tracked: tracked, goals: storedGoals, unitSystem: self.preferences.unitSystem))
+                        totals: totals, tracked: tracked, goals: storedGoals, unitSystem: self.preferences.unitSystem),
+                    mealGroups: Self.mealGroups(for: rows),
+                    headerBars: Self.headerBars(
+                        totals: totals, goals: storedGoals, unitSystem: self.preferences.unitSystem),
+                    energyText: Self.energyText(totals: totals),
+                    isCollapsedByDefault: Self.isMoreThanAWeekBefore(
+                        key, now: now, zone: zones[key] ?? TimeZone.current),
+                    entryCountText: Self.entryCountText(rows.count))
             }
             skippedCount = skipped
             errorMessage = nil
+            hasLoaded = true
         } catch {
             errorMessage = "Could not read the journal."
         }
+    }
+
+    /// True when nothing is listed after a successful load: no day and no skipped entry.
+    public var isEmpty: Bool {
+        hasLoaded && errorMessage == nil && sections.isEmpty && skippedCount == 0
+    }
+
+    /// The one sentence about skipped entries, singular or plural, or nil when none were skipped.
+    public var skippedText: String? {
+        switch skippedCount {
+        case 0:
+            return nil
+        case 1:
+            return "1 entry can't be shown because its saved time or record can't be read."
+        default:
+            return "\(skippedCount) entries can't be shown because their saved time or record can't be read."
+        }
+    }
+
+    /// Opens a collapsed day, or collapses an open one.
+    public func toggleDay(_ id: String) {
+        if expandedDays.contains(id) {
+            expandedDays.remove(id)
+        } else {
+            expandedDays.insert(id)
+        }
+    }
+
+    /// A day shows its entries unless it is collapsed by default and has not been opened.
+    public func isExpanded(_ section: JournalDaySection) -> Bool {
+        !section.isCollapsedByDefault || expandedDays.contains(section.id)
     }
 
     /// Creates a new intake from an existing one (one `create`); the original is untouched.
@@ -210,6 +301,67 @@ public final class JournalViewModel: ObservableObject {
         let found = try? store.product(snapshotID: id)
         cache[id] = found
         return found
+    }
+
+    /// The day's entries grouped by meal. A meal that is not one of the four named ones, or none at
+    /// all, is "Other"; water with no meal lands there too. Rows keep the order they are given.
+    static func mealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
+        let named = MealLabel.allCases.map(\.displayName)
+        var buckets: [String: [JournalRow]] = [:]
+        for row in rows {
+            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
+            buckets[title, default: []].append(row)
+        }
+        return (named + ["Other"]).compactMap { title in
+            buckets[title].map { JournalMealGroup(id: title, title: title, rows: $0) }
+        }
+    }
+
+    /// One bar per stored goal that is not water, in the stored order, at most three. A nutrient with
+    /// a goal but no value in the day still gets a bar, which says it cannot be totalled or is unlogged.
+    static func headerBars(totals: DailyTotals, goals: [NutrientGoal], unitSystem: UnitSystem) -> [GoalBarModel] {
+        goals.filter { $0.nutrient != DailyTotalsBuilder.waterKey }.prefix(3).map { goal -> GoalBarModel in
+            let line = NutrientProgressLine.make(
+                nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal)
+            return GoalBarModel.make(
+                line: line, hasEntries: line.hasKnownAmount, missingCount: 0, unitSystem: unitSystem)
+        }
+    }
+
+    /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown.
+    static func energyText(totals: DailyTotals) -> String? {
+        let line = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
+        guard case .known(let value, let unit) = line.amount else { return nil }
+        return "\(DecimalFormatting.text(value)) \(unit.symbol)"
+    }
+
+    /// "1 entry" or "9 entries".
+    static func entryCountText(_ count: Int) -> String {
+        count == 1 ? "1 entry" : "\(count) entries"
+    }
+
+    /// True when the day `key` is more than seven days before the day of `now`, both read in `zone`.
+    static func isMoreThanAWeekBefore(_ key: String, now: Date, zone: TimeZone) -> Bool {
+        guard let day = utcDate(fromDayKey: key), let today = utcDate(fromDayKey: dayKey(now, zone: zone)) else {
+            return false
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let days = calendar.dateComponents([.day], from: day, to: today).day ?? 0
+        return days > 7
+    }
+
+    /// A yyyy-MM-dd key as midnight UTC, so two keys can be compared by whole days.
+    private static func utcDate(fromDayKey key: String) -> Date? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var components = DateComponents()
+        components.year = parts[0]
+        components.month = parts[1]
+        components.day = parts[2]
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        return calendar.date(from: components)
     }
 
     static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale) -> String {
