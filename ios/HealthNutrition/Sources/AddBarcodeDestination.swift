@@ -23,6 +23,7 @@ struct AddBarcodeDestination: View {
                 VStack(spacing: DesignSpacing.m) {
                     ProgressView("Looking up the product")
                     Button("Cancel") {
+                        self.awaitingResult = false
                         self.model.setScannedBarcode("")
                         self.onType()
                     }
@@ -55,9 +56,11 @@ struct AddBarcodeDestination: View {
             await self.onScanned(code)
         }
         .onChange(of: model.lookupState) { _, state in
-            guard self.awaitingResult, case .found = state, !self.model.statesNoNutrients else { return }
+            // Any finished lookup ends the wait, so a later lookup made from the details form is not
+            // taken for this screen's own.
+            guard self.awaitingResult, !state.isLoading, state != .idle else { return }
             self.awaitingResult = false
-            self.onFound()
+            if case .found = state, !self.model.statesNoNutrients { self.onFound() }
         }
     }
 }
