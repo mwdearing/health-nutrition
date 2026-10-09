@@ -8,6 +8,11 @@ import NutritionJournal
 /// this view only offers Add again where it has nothing else to say (the empty day).
 public struct TodayView: View {
     @ObservedObject var model: TodayViewModel
+    /// Whether the "Other amount" row is open, and what is typed in it. Held here, not in the model,
+    /// because it is a draft: it only becomes a water entry when Add is pressed.
+    @State private var otherWaterOpen = false
+    @State private var otherWaterText = ""
+    @FocusState private var otherWaterFocused: Bool
     private let now: () -> Date
     private let onAddIntake: () -> Void
     /// Opens the daily goals. Nil hides the "Edit goals" link, for a host with nowhere to route to.
@@ -141,13 +146,37 @@ public struct TodayView: View {
                     }
                     Spacer(minLength: DesignSpacing.s)
                 }
-                HStack(spacing: DesignSpacing.s) {
-                    Text("Other amount").font(.subheadline)
-                    LaterBadge()
+                HStack(spacing: DesignSpacing.m) {
+                    QuietCapsule("Other amount") {
+                        self.otherWaterOpen.toggle()
+                        self.otherWaterFocused = self.otherWaterOpen
+                    }
+                    .accessibilityHint("Shows a field to type a water amount.")
+                    Spacer(minLength: DesignSpacing.s)
                 }
-                .foregroundStyle(TokenColors.textSecondary)
-                .accessibilityElement(children: .combine)
-                .laterPlaceholder()
+                if self.otherWaterOpen {
+                    HStack(spacing: DesignSpacing.s) {
+                        TextField(self.model.otherWaterFieldLabel, text: self.$otherWaterText)
+                            .multilineTextAlignment(.trailing)
+                            .focused(self.$otherWaterFocused)
+                            .accessibilityLabel(self.model.otherWaterFieldLabel)
+                            #if os(iOS)
+                            .keyboardType(.decimalPad)
+                            #endif
+                        Text(self.model.otherWaterUnitSymbol)
+                            .foregroundStyle(TokenColors.textSecondary)
+                            .accessibilityHidden(true)
+                        QuietCapsule("Add") {
+                            let handle = self.model.addWater(typed: self.otherWaterText, now: self.now())
+                            // A refused amount keeps the text and the row, so the reader can correct it.
+                            if handle != nil {
+                                self.otherWaterText = ""
+                                self.otherWaterOpen = false
+                            }
+                        }
+                        .accessibilityLabel("Add water in \(self.model.otherWaterUnitSymbol)")
+                    }
+                }
             }
         }
     }
