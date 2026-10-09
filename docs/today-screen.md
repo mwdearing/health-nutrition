@@ -6,7 +6,7 @@ read live in `NutritionJournal`. The app target wires them together. Tests cover
 ## Screens
 - **Today** (`TodayView`, `TodayViewModel`): the date, a **Daily goals** card with one goal bar per tracked
   nutrient (see "Goal bars" below) and an "Edit goals" link, a **Water** card with the total, the quick-add water
-  capsule and its undo, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then
+  capsule and its undo, an **Other amount** capsule that opens a typed field with an Add button, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then
   Other), and one footer line when entries state no nutrition values. Each entry row opens that entry in the entry
   screen, so a row logged late on the wrong day is corrected where it is noticed. Add is the "Add food or drink"
   capsule the app shell holds above the tab bar on every tab; Today has no Journal or Library link and no toolbar
@@ -150,6 +150,12 @@ Positive water amounts rounded to zero are shown as a bound, `< 1 mL` or `< 0.00
 The US bound uses `AmountDisplay.smallestShown`, matching quick-water strings.
 The same bound is spoken for accessibility; an actual zero still displays as zero.
 Settings' quick-water equivalence and entry detail's converted line use `AmountDisplay` as well.
+
+**Other amount** opens a field in the preferred volume unit, labelled "Water amount in mL" or "Water amount in fl oz".
+Add logs one water entry through the same path as the quick button, so it gets the same 10-second Undo. A typed comma is
+read where the region uses one. Under US the amount converts at the exact 29.5735295625 mL per fl oz and is stored in mL.
+Zero, negative or unreadable text is refused with "Enter a water amount above zero." shown at the top of Today; nothing is
+logged and the typed text stays in the field so it can be corrected.
 
 Entry rows choose their decorative SF Symbol from the intake category and product kind:
 water uses `drop.fill`, drinks `cup.and.saucer.fill`, supplements `pills.fill`, and food `fork.knife`.
