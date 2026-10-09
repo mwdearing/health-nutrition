@@ -1560,6 +1560,27 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         }
     }
 
+    /// Deletes acknowledged outbox rows acknowledged strictly more than `days` days before `now` and
+    /// returns how many were removed. Nothing else is read or written: unacknowledged rows, intakes,
+    /// revisions, tombstones, product snapshots and projections are left as they are.
+    @discardableResult
+    public func pruneAcknowledgedOutbox(
+        now: Date, olderThan days: Int = JournalRetention.acknowledgedOutboxDays
+    ) throws -> Int {
+        let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
+        return try commit { context -> Int in
+            let acknowledged = try context.fetch(FetchDescriptor<OutboxRecord>(
+                predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt != nil }))
+            var pruned = 0
+            for row in acknowledged {
+                guard let acknowledgedAt = row.acknowledgedAt, acknowledgedAt < cutoff else { continue }
+                context.delete(row)
+                pruned += 1
+            }
+            return pruned
+        }
+    }
+
     /// Records one failed attempt: `attempts` grows by one, and the operation is due again at
     /// `retryAt` unless the failure needs a person, in which case the projection becomes
     /// `needsAttention` and no automatic retry is scheduled.

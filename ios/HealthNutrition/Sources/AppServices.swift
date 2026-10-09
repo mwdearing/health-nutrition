@@ -123,6 +123,8 @@ final class AppServices {
         } catch {
             throw StoreStartupError.journal(error)
         }
+        // Best effort: the retention pass runs only here, at launch, and a failure never blocks launch.
+        _ = try? journalStore.pruneAcknowledgedOutbox(now: Date())
         let favoritesStore: SwiftDataFavoritesStore
         do {
             favoritesStore = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
