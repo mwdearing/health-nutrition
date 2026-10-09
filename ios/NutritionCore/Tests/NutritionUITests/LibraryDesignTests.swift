@@ -4,7 +4,7 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
-/// Design WP8: the Library segments, the empty states, quick add with undo, and pick mode at the view-model level.
+/// The Library's segments, empty texts, quick add with undo, open-failure report and meal carry-over, at the view-model level.
 ///
 /// Synthetic names only, lowercase UUID intake ids.
 @MainActor
@@ -197,6 +197,64 @@ final class LibraryDesignTests: XCTestCase {
         // The source clears the token before the store call and returns false when the delete throws.
         XCTAssertFalse(library.undo(now: now))
         XCTAssertNil(library.undoToken)
+    }
+
+    func testLibraryQuickAddClearsAStaleUndoWhenTheNextAddFails() throws {
+        let store = try makeStore()
+        try addEntry(store, name: "Example oats", at: now.addingTimeInterval(-60))
+        let favorites = try makeFavorites()
+        try favorites.add(FavoriteTemplate(
+            id: "22222222-2222-4222-8222-222222222222", displayName: "Example empty", category: "food",
+            components: []))
+        let library = makeLibrary(store: store, favorites: favorites)
+        library.load()
+        library.segment = .recent
+        let recent = try XCTUnwrap(library.visibleItems.first)
+        library.segment = .favourites
+        let empty = try XCTUnwrap(library.visibleItems.first)
+
+        XCTAssertTrue(library.quickAdd(recent, now: now))
+        let firstID = try XCTUnwrap(library.undoToken?.intakeID)
+        let countAfterFirst = try store.activeIntakes().count
+
+        // The failing add must not leave the earlier Undo offer behind: Undo would delete the earlier entry.
+        XCTAssertFalse(library.quickAdd(empty, now: now))
+        XCTAssertNil(library.undoToken)
+        XCTAssertEqual(try store.activeIntakes().count, countAfterFirst)
+        XCTAssertTrue(try store.activeIntakes().contains { $0.id == firstID })
+    }
+
+    func testLibraryReportsAnItemThatCannotBeOpened() throws {
+        let library = makeLibrary(store: try makeStore(), favorites: try makeFavorites())
+        library.load()
+        XCTAssertNil(library.errorMessage)
+
+        library.reportOpenFailure()
+        XCTAssertEqual(
+            library.errorMessage, "This item can't be opened. Its saved product is no longer available.")
+
+        library.load()
+        XCTAssertNil(library.errorMessage)
+    }
+
+    func testAddHomeCarriesAMealIntoPrefilledDetails() throws {
+        let store = try makeStore()
+        XCTAssertNil(LibraryViewModel.mealLabel(for: RepeatTemplate(
+            displayName: "Example oats", category: "food",
+            components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)])))
+        XCTAssertNil(LibraryViewModel.mealLabel(for: RepeatTemplate(
+            displayName: "Example oats", category: "food", meal: "midnight feast",
+            components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)])))
+
+        let template = RepeatTemplate(
+            displayName: "Example oats", category: "food", meal: "breakfast",
+            components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)])
+        let label = try XCTUnwrap(LibraryViewModel.mealLabel(for: template))
+        XCTAssertEqual(label, .breakfast)
+
+        let home = AddHomeViewModel(store: store, meal: label, now: { self.now })
+        let details = try home.makeDetails(prefill: template, now: now)
+        XCTAssertEqual(details.meal, .breakfast)
     }
 
     // MARK: Pick mode
