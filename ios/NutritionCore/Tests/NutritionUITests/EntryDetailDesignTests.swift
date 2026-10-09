@@ -192,4 +192,78 @@ final class EntryDetailDesignTests: XCTestCase {
         XCTAssertEqual(protein.amountText, "Not on the label")
         XCTAssertTrue(model.adds.allSatisfy { $0.amountText == "Not on the label" })
     }
+
+    func testEntryDetailThisEntryAddsIsEmptyForATypedProduct() throws {
+        let store = try makeStore()
+        let typed = ProductDefinition(
+            snapshotID: "design-typed", productID: "example-typed", name: "Example snack",
+            labelBasis: "per 100 g", catalogOrigin: "manual", catalogVersion: "1")
+        let id = try addEntry(store, product: typed)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        XCTAssertTrue(model.adds.isEmpty)
+        XCTAssertEqual(model.sourceLine, "Typed in · no nutrition values")
+    }
+
+    func testEntryDetailAllValuesKeepABelowThresholdValue() {
+        let product = ProductDefinition(
+            snapshotID: "design-threshold", productID: "label_capture", name: "Example bar",
+            labelBasis: "per serving (30 g)", catalogOrigin: ProductOrigin.label_capture, catalogVersion: "unknown",
+            nutrients: [
+                "creatine-monohydrate": .known(Decimal(3), .g),
+                "synthetic-trace": .belowReportingThreshold(MeasureUnit.mg),
+                "synthetic-unstated": .unknown,
+            ])
+
+        let keys = EntryDetailViewModel.allValues(of: product).map(\.key)
+        XCTAssertEqual(Set(keys), ["creatine-monohydrate", "synthetic-trace"])
+    }
+
+    func testEntryDetailChangesReadATimeCorrectionOnARestoredEntry() {
+        let created = IntakeRevision(
+            intakeID: "design-restored", number: 1,
+            components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)],
+            productSnapshotID: nil, changeReason: "created", createdAt: now)
+        let corrected = IntakeRevision(
+            intakeID: "design-restored", number: 2,
+            components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)],
+            productSnapshotID: nil, changeReason: EntryDetailViewModel.timeCorrectionReason, createdAt: now)
+
+        let rows = EntryDetailViewModel.changeRows(of: [created, corrected])
+        XCTAssertEqual(rows.first?.verb, "Time corrected")
+        XCTAssertNil(rows.first?.note)
+    }
+
+    func testEntryDetailSaveAppearsOnlyAfterAChangeNotForAReformattedAmount() throws {
+        let store = try makeStore()
+        let id = try addEntry(store, amount: 40)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertFalse(model.isDirty)
+
+        model.drafts["example-oats"] = "40.0"
+        XCTAssertFalse(model.isDirty)
+
+        model.drafts["example-oats"] = " 40 "
+        XCTAssertFalse(model.isDirty)
+
+        model.drafts["example-oats"] = "41"
+        XCTAssertTrue(model.isDirty)
+    }
+
+    func testEntryDetailChangesKeepAWrittenNoteThatReadsTimeCorrected() throws {
+        let store = try makeStore()
+        let id = try addEntry(store)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        model.drafts["example-oats"] = "55"
+        model.changeReason = "Time corrected"
+        XCTAssertTrue(model.saveDrafts(now: now))
+
+        let newest = try XCTUnwrap(model.changes.first)
+        XCTAssertEqual(newest.verb, "Amount changed")
+        XCTAssertEqual(newest.note, "Time corrected")
+    }
 }
