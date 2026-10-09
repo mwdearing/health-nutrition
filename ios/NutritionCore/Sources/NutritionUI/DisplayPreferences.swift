@@ -61,7 +61,7 @@ public enum DisplayPreferenceDefaults {
 /// Written synchronously rather than deferred, so a preference a person just changed is read back
 /// the moment the next screen asks for it, and so a setting screen can never show a value the rest
 /// of the app has not seen yet.
-public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences {
+public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences {
     /// Every key this type owns carries this prefix, so a preference can never collide with another
     /// part of the app or with a value written by an OS framework into the same domain.
     public static let keyPrefix = "display."
@@ -76,6 +76,8 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
     /// holds the time as text, "HH:mm". Both carry the same prefix as every other key here.
     private let reminderOnKey = "display.reminder.on"
     private let reminderTimeKey = "display.reminder.time"
+    /// The goals hidden from Today: a comma-joined, sorted list of nutrient keys, absent when none is.
+    private let hiddenTodayGoalsKey = "display.goals.hiddenOnToday"
 
     /// `defaults` is a parameter so a test can pass a suite of its own rather than touching the
     /// standard domain.
@@ -111,6 +113,22 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
               let time = ReminderTime(storedText: text)
         else { return ReminderTime.standard }
         return time
+    }
+
+    /// Absent or blank reads as none hidden. Empty entries are dropped, so a stray comma is harmless.
+    public var hiddenTodayGoals: Set<String> {
+        guard let text = defaults.string(forKey: hiddenTodayGoalsKey) else { return [] }
+        return Set(text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+    }
+
+    public func setGoalShownOnToday(_ nutrient: String, shown: Bool) {
+        var hidden = hiddenTodayGoals
+        if shown { hidden.remove(nutrient) } else { hidden.insert(nutrient) }
+        if hidden.isEmpty {
+            defaults.removeObject(forKey: hiddenTodayGoalsKey)
+        } else {
+            defaults.set(hidden.sorted().joined(separator: ","), forKey: hiddenTodayGoalsKey)
+        }
     }
 
     public func setReminderOn(_ on: Bool) {
@@ -174,11 +192,12 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.removeObject(forKey: hasReviewedUnitsKey)
         defaults.removeObject(forKey: reminderOnKey)
         defaults.removeObject(forKey: reminderTimeKey)
+        defaults.removeObject(forKey: hiddenTodayGoalsKey)
     }
 }
 
 /// The preferences held in memory. For tests and for previews, so neither needs a defaults domain.
-public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences {
+public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences {
     public var unitSystem: UnitSystem
     public var quickWaterMilliliters: Decimal
     public private(set) var hasSeenWelcome = false
@@ -186,6 +205,11 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
     public private(set) var hasReviewedUnits = false
     public private(set) var isReminderOn = false
     public private(set) var reminderTime = ReminderTime.standard
+    public private(set) var hiddenTodayGoals: Set<String> = []
+
+    public func setGoalShownOnToday(_ nutrient: String, shown: Bool) {
+        if shown { hiddenTodayGoals.remove(nutrient) } else { hiddenTodayGoals.insert(nutrient) }
+    }
 
     public init(
         unitSystem: UnitSystem = DisplayPreferenceDefaults.unitSystem,
@@ -232,5 +256,6 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         hasReviewedUnits = false
         isReminderOn = false
         reminderTime = ReminderTime.standard
+        hiddenTodayGoals = []
     }
 }

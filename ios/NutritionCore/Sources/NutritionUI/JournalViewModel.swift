@@ -196,6 +196,8 @@ public final class JournalViewModel: ObservableObject {
             // Energy is read once per day alongside the tracked nutrients, for the header. The summary
             // line still names only the tracked ones, so it does not change.
             let queried = tracked.contains(Self.energyKey) ? tracked : tracked + [Self.energyKey]
+            // The same choice as Today: a goal switched off there gets no bar in the day header either.
+            let hiddenGoals = hiddenTodayGoals(in: preferences)
             sections = try groups.keys.sorted(by: >).map { key in
                 let totals = try DailyTotalsBuilder.totals(
                     for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: queried)
@@ -207,7 +209,7 @@ public final class JournalViewModel: ObservableObject {
                     mealGroups: Self.mealGroups(for: rows),
                     headerBars: Self.headerBars(
                         totals: totals, goals: storedGoals, hasFoodEntries: rows.contains { !$0.isWater && $0.kind != .supplement },
-                        unitSystem: self.preferences.unitSystem),
+                        unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
                     energyText: Self.energyText(totals: totals),
                     isCollapsedByDefault: rows.allSatisfy { row in
                         let zone = TimeZone(identifier: row.timeZoneIdentifier) ?? TimeZone.current
@@ -328,12 +330,15 @@ public final class JournalViewModel: ObservableObject {
         }
     }
 
-    /// One bar per stored goal that is not water, in the stored order, at most three. A nutrient with
-    /// a goal but no value in the day still gets a bar, which says it cannot be totalled or is unlogged.
+    /// One bar per stored goal that is not water and is shown on Today, in the stored order, at most
+    /// three. A nutrient with a goal but no value in the day still gets a bar, which says it cannot be
+    /// totalled or is unlogged.
     static func headerBars(
-        totals: DailyTotals, goals: [NutrientGoal], hasFoodEntries: Bool, unitSystem: UnitSystem
+        totals: DailyTotals, goals: [NutrientGoal], hasFoodEntries: Bool, unitSystem: UnitSystem,
+        hidden: Set<String> = []
     ) -> [GoalBarModel] {
-        goals.filter { $0.nutrient != DailyTotalsBuilder.waterKey }.prefix(3).map { goal -> GoalBarModel in
+        goals.filter { $0.nutrient != DailyTotalsBuilder.waterKey && !hidden.contains($0.nutrient) }
+            .prefix(3).map { goal -> GoalBarModel in
             let line = NutrientProgressLine.make(
                 nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal)
             return GoalBarModel.make(
