@@ -6,21 +6,24 @@ public struct AppSettingsView: View {
     private let connections: ConnectionsPrivacyViewModel?
     private let now: () -> Date
     private let opensGoals: Bool
+    private let onShowWelcome: (() -> Void)?
 
     public init(
         goals: GoalsViewModel? = nil, connections: ConnectionsPrivacyViewModel? = nil,
-        now: @escaping () -> Date = { Date() }, opensGoals: Bool = false
+        now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
+        onShowWelcome: (() -> Void)? = nil
     ) {
         self.goals = goals
         self.connections = connections
         self.now = now
         self.opensGoals = opensGoals
+        self.onShowWelcome = onShowWelcome
     }
 
     public var body: some View {
         if let connections {
             SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals),
-                            now: now, opensGoals: opensGoals)
+                            now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome)
         }
     }
 }
@@ -33,11 +36,16 @@ private struct SettingsContent: View {
     @State private var isImporting = false
     @State private var confirmingErase = false
     private let now: () -> Date
+    private let onShowWelcome: (() -> Void)?
 
-    init(model: AppSettingsViewModel, now: @escaping () -> Date, opensGoals: Bool) {
+    init(
+        model: AppSettingsViewModel, now: @escaping () -> Date, opensGoals: Bool,
+        onShowWelcome: (() -> Void)? = nil
+    ) {
         _model = StateObject(wrappedValue: model)
         _showingGoals = State(initialValue: opensGoals && model.goals != nil)
         self.now = now
+        self.onShowWelcome = onShowWelcome
     }
 
     private var connections: ConnectionsPrivacyViewModel { model.connections }
@@ -136,8 +144,12 @@ private struct SettingsContent: View {
             }
             Section("About") {
                 HStack { Text("Version"); Spacer(); Text(model.versionText) }
-                HStack { Text("Show welcome again"); Spacer(); LaterBadge() }
-                    .disabled(true).accessibilityValue("Not available yet")
+                if let onShowWelcome {
+                    Button("Show welcome again") { onShowWelcome() }
+                } else {
+                    HStack { Text("Show welcome again"); Spacer(); LaterBadge() }
+                        .disabled(true).accessibilityValue("Not available yet")
+                }
                 NavigationLink("Licences") {
                     Form {
                         Text(model.openFoodFactsAttribution)

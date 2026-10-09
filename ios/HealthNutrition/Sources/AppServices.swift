@@ -27,6 +27,9 @@ final class AppServices {
     let connections: ConnectionsPrivacyViewModel
     /// The Daily goals screen, reached from the Library screen's Connections section.
     let goals: GoalsViewModel
+    /// The first-day checklist on Today. It reads the journal and the goals, and the display settings
+    /// for the units step; the app shell loads it.
+    let firstDayChecklist: FirstDayChecklistModel
     /// Barcode lookups in Add intake. One client for the app's lifetime, so its rolling rate-limit
     /// window is shared and never reset by opening the form again.
     let barcodeLookup: BarcodeProductLookup
@@ -60,6 +63,8 @@ final class AppServices {
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
+        firstDayChecklist = FirstDayChecklistModel(
+            store: journalStore, goals: goalStore, preferences: displayPreferences)
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
             erasers: [journalStore, favoritesStore, recipeStore, goalStore],

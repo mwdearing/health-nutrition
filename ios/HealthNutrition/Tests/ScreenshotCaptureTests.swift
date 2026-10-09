@@ -302,6 +302,29 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
+    func testWelcomeView() throws {
+        try capture("WelcomeView") { WelcomeView(onStart: {}, onRestore: {}) }
+    }
+
+    /// The first-day checklist on an empty store, as a first launch shows it.
+    func testFirstDayChecklistView() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionScreenshots", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let model = FirstDayChecklistModel(
+            store: store, goals: nil, preferences: InMemoryDisplayPreferences())
+        model.load()
+        try capture("FirstDayChecklistView") {
+            ScrollView {
+                FirstDayChecklistView(model: model, onLog: {}, onGoals: {}, onUnits: {})
+                    .padding()
+            }
+        }
+    }
+
     func testStartupFailureView() throws {
         try capture("StartupFailureView") {
             StartupFailureView(message: "The journal store file could not be opened.")

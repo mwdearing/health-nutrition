@@ -13,6 +13,21 @@ struct RootView: View {
     /// unrelated change before it ran, with erased entries still on screen.
     @ObservedObject var connections: ConnectionsPrivacyViewModel
 
+    @State private var showingWelcome: Bool
+    /// The welcome is skipped while the design-system screenshots are captured, so the shell's own
+    /// picture is not covered by it.
+    private static var skipsWelcome: Bool {
+        #if DEBUG
+        return isCapturingScreenshots
+        #else
+        return false
+        #endif
+    }
+    /// One presentation is never switched off and another on in the same action: the second is asked
+    /// for here and shown when the first has finished going away.
+    @State private var settingsAfterWelcome = false
+    @State private var welcomeAfterSettings = false
+
     @State private var selection: AppTab = .today
     @State private var addHome: AddHomeViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
@@ -48,6 +63,7 @@ struct RootView: View {
     init(services: AppServices) {
         self.services = services
         _connections = ObservedObject(wrappedValue: services.connections)
+        _showingWelcome = State(initialValue: !services.displayPreferences.hasSeenWelcome && !Self.skipsWelcome)
         _recipeList = State(initialValue: RecipeListViewModel(store: services.recipeStore))
         #if DEBUG
         _todayModel = ObservedObject(wrappedValue: services.today)
@@ -80,7 +96,9 @@ struct RootView: View {
                     // entry screen: an entry logged late on the wrong day is corrected from where
                     // it is noticed rather than only from the Journal tab.
                     onSelect: { selectedIntakeID = $0 },
-                    onAddToMeal: { meal in self.startAddingIntake(meal: meal) }
+                    onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
+                    checklist: services.firstDayChecklist,
+                    onOpenUnits: { self.openSettings(goals: false) }
                 )
                 .toolbar { settingsToolbar }
                 #if DEBUG
@@ -169,14 +187,42 @@ struct RootView: View {
         }
         // Settings from the gear on any tab, in its own navigation stack so the goals and the privacy
         // screen push inside it.
-        .sheet(isPresented: $showingSettings, onDismiss: { self.reload() }) {
+        .sheet(isPresented: $showingSettings, onDismiss: {
+            self.reload()
+            if self.welcomeAfterSettings {
+                self.welcomeAfterSettings = false
+                self.showingWelcome = true
+            }
+        }) {
             NavigationStack {
                 AppSettingsView(
                     goals: services.goals, connections: connections, now: { Date() },
-                    opensGoals: settingsOpensGoals
+                    opensGoals: settingsOpensGoals,
+                    onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false }
                 )
             }
         }
+        // The welcome, shown once: on the first launch, and again when Settings asks for it. Settings
+        // is opened from this cover's dismissal when Restore was chosen, never in the same action.
+        .fullScreenCover(isPresented: $showingWelcome, onDismiss: {
+            if self.settingsAfterWelcome {
+                self.settingsAfterWelcome = false
+                self.openSettings(goals: false)
+            }
+        }) {
+            WelcomeView(
+                onStart: {
+                    self.services.displayPreferences.setHasSeenWelcome(true)
+                    self.showingWelcome = false
+                },
+                onRestore: {
+                    self.services.displayPreferences.setHasSeenWelcome(true)
+                    self.settingsAfterWelcome = true
+                    self.showingWelcome = false
+                })
+        }
+        // The checklist's steps are read when the shell appears; later reads come from reload().
+        .onAppear { self.services.firstDayChecklist.load() }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
@@ -192,6 +238,7 @@ struct RootView: View {
             reload()
             recipeList.load()
             services.goals.load()
+            services.firstDayChecklist.load()
         }
         #if DEBUG
         // A restore on the Connections and privacy screen writes the journal without going through
@@ -441,6 +488,7 @@ struct RootView: View {
         services.today.load(now: now)
         services.journal.load(now: now)
         services.library.load()
+        services.firstDayChecklist.load()
         #if DEBUG
         deliverToHealthKit(now: now)
         #endif

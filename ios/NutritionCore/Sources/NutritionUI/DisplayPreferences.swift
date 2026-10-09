@@ -40,6 +40,16 @@ public protocol DisplayPreferencesWriting: DisplayPreferences {
     func resetToDefaults()
 }
 
+/// What the first run has already shown. Stored with the display preferences and erased with them.
+public protocol FirstRunPreferences: AnyObject {
+    var hasSeenWelcome: Bool { get }
+    var isChecklistHidden: Bool { get }
+    var hasReviewedUnits: Bool { get }
+    func setHasSeenWelcome(_ seen: Bool)
+    func setChecklistHidden(_ hidden: Bool)
+    func setHasReviewedUnits(_ reviewed: Bool)
+}
+
 /// The defaults a person has before they change anything: metric, and a 250 mL glass.
 public enum DisplayPreferenceDefaults {
     public static let unitSystem = UnitSystem.metric
@@ -51,7 +61,7 @@ public enum DisplayPreferenceDefaults {
 /// Written synchronously rather than deferred, so a preference a person just changed is read back
 /// the moment the next screen asks for it, and so a setting screen can never show a value the rest
 /// of the app has not seen yet.
-public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting {
+public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences {
     /// Every key this type owns carries this prefix, so a preference can never collide with another
     /// part of the app or with a value written by an OS framework into the same domain.
     public static let keyPrefix = "display."
@@ -59,6 +69,9 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting {
     private let defaults: UserDefaults
     private let unitSystemKey: String
     private let quickWaterKey: String
+    private let hasSeenWelcomeKey: String
+    private let checklistHiddenKey: String
+    private let hasReviewedUnitsKey: String
 
     /// `defaults` is a parameter so a test can pass a suite of its own rather than touching the
     /// standard domain.
@@ -66,6 +79,34 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting {
         self.defaults = defaults
         self.unitSystemKey = Self.keyPrefix + "unitSystem"
         self.quickWaterKey = Self.keyPrefix + "quickWaterMilliliters"
+        self.hasSeenWelcomeKey = Self.keyPrefix + "hasSeenWelcome"
+        self.checklistHiddenKey = Self.keyPrefix + "checklistHidden"
+        self.hasReviewedUnitsKey = Self.keyPrefix + "hasReviewedUnits"
+    }
+
+    /// An absent key reads as false: nothing of the first run has been shown yet.
+    public var hasSeenWelcome: Bool {
+        defaults.bool(forKey: hasSeenWelcomeKey)
+    }
+
+    public var isChecklistHidden: Bool {
+        defaults.bool(forKey: checklistHiddenKey)
+    }
+
+    public var hasReviewedUnits: Bool {
+        defaults.bool(forKey: hasReviewedUnitsKey)
+    }
+
+    public func setHasSeenWelcome(_ seen: Bool) {
+        defaults.set(seen, forKey: hasSeenWelcomeKey)
+    }
+
+    public func setChecklistHidden(_ hidden: Bool) {
+        defaults.set(hidden, forKey: checklistHiddenKey)
+    }
+
+    public func setHasReviewedUnits(_ reviewed: Bool) {
+        defaults.set(reviewed, forKey: hasReviewedUnitsKey)
     }
 
     /// An unreadable or absent value reads as the default, never as a crash and never as a guess:
@@ -99,18 +140,24 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting {
             NSDecimalNumber(decimal: milliliters).stringValue, forKey: quickWaterKey)
     }
 
-    /// Removes both keys, so nothing of this app's remains in the domain. The getters already read an
-    /// absent key as the default, so removing is enough and the defaults are not written back.
+    /// Removes every key this type owns, so nothing of this app's remains in the domain. The getters
+    /// already read an absent key as the default, so removing is enough and nothing is written back.
     public func resetToDefaults() {
         defaults.removeObject(forKey: unitSystemKey)
         defaults.removeObject(forKey: quickWaterKey)
+        defaults.removeObject(forKey: hasSeenWelcomeKey)
+        defaults.removeObject(forKey: checklistHiddenKey)
+        defaults.removeObject(forKey: hasReviewedUnitsKey)
     }
 }
 
 /// The preferences held in memory. For tests and for previews, so neither needs a defaults domain.
-public final class InMemoryDisplayPreferences: DisplayPreferencesWriting {
+public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences {
     public var unitSystem: UnitSystem
     public var quickWaterMilliliters: Decimal
+    public private(set) var hasSeenWelcome = false
+    public private(set) var isChecklistHidden = false
+    public private(set) var hasReviewedUnits = false
 
     public init(
         unitSystem: UnitSystem = DisplayPreferenceDefaults.unitSystem,
@@ -129,8 +176,23 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting {
         quickWaterMilliliters = milliliters
     }
 
+    public func setHasSeenWelcome(_ seen: Bool) {
+        hasSeenWelcome = seen
+    }
+
+    public func setChecklistHidden(_ hidden: Bool) {
+        isChecklistHidden = hidden
+    }
+
+    public func setHasReviewedUnits(_ reviewed: Bool) {
+        hasReviewedUnits = reviewed
+    }
+
     public func resetToDefaults() {
         unitSystem = DisplayPreferenceDefaults.unitSystem
         quickWaterMilliliters = DisplayPreferenceDefaults.quickWaterMilliliters
+        hasSeenWelcome = false
+        isChecklistHidden = false
+        hasReviewedUnits = false
     }
 }

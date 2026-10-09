@@ -17,11 +17,17 @@ public struct TodayView: View {
     /// route to wants.
     private let onSelect: ((String) -> Void)?
     private let onAddToMeal: ((MealLabel?) -> Void)?
+    /// The first-day checklist. Nil hides the card, for a host that does not show it.
+    private let checklist: FirstDayChecklistModel?
+    /// Opens the units settings from the checklist's "Choose units" step. Nil leaves that step with no
+    /// settings screen to open.
+    private let onOpenUnits: (() -> Void)?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
         onEditGoals: (() -> Void)? = nil, onSelect: ((String) -> Void)? = nil,
-        onAddToMeal: ((MealLabel?) -> Void)? = nil
+        onAddToMeal: ((MealLabel?) -> Void)? = nil,
+        checklist: FirstDayChecklistModel? = nil, onOpenUnits: (() -> Void)? = nil
     ) {
         self.model = model
         self.now = now
@@ -29,6 +35,8 @@ public struct TodayView: View {
         self.onEditGoals = onEditGoals
         self.onSelect = onSelect
         self.onAddToMeal = onAddToMeal
+        self.checklist = checklist
+        self.onOpenUnits = onOpenUnits
     }
 
     public var body: some View {
@@ -38,6 +46,11 @@ public struct TodayView: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
                 notices
+                if let checklist {
+                    FirstDayChecklistCard(
+                        model: checklist, onLog: onAddIntake,
+                        onGoals: { onEditGoals?() }, onUnits: { onOpenUnits?() })
+                }
                 goalsCard
                 waterCard
                 entries
@@ -199,6 +212,21 @@ public struct TodayView: View {
                 title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater, showsChevron: false)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(row.accessibilityText)
+        }
+    }
+}
+
+/// Observes the checklist so the card appears and goes away as its steps change. An optional model
+/// cannot be observed directly, so the card is held here.
+private struct FirstDayChecklistCard: View {
+    @ObservedObject var model: FirstDayChecklistModel
+    let onLog: () -> Void
+    let onGoals: () -> Void
+    let onUnits: () -> Void
+
+    var body: some View {
+        if model.isVisible {
+            FirstDayChecklistView(model: model, onLog: onLog, onGoals: onGoals, onUnits: onUnits)
         }
     }
 }
