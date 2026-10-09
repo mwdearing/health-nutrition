@@ -1,13 +1,14 @@
 # Recipes
 
-Personal recipes: you enter ingredients and a yield, the app calculates nutrient values per serving or per portion, and you can log a portion into the journal.
+Personal recipes: you enter ingredients and what the recipe makes (the yield), the app calculates nutrient values per serving or per portion, and you can log a portion into the journal.
 
 ## Model
 
 - A recipe has numbered, immutable versions. Each version holds a title, notes, ingredient lines and a yield.
-- An ingredient has a quantity (exact decimal amount and a unit from the unit registry) and nutrient values stated per ONE of a basis unit (by default the ingredient's own unit). An optional density (g per mL) is used only to convert between mass and volume.
-- The yield is either a number of servings or a total quantity such as 800 g.
-- Validation: non-empty title, at least one ingredient, yield greater than zero, ingredient quantities greater than zero, unique ingredient ids.
+- An ingredient has a quantity (exact decimal amount and a unit from the unit registry) and nutrient values stated per ONE of a basis unit (by default the ingredient's own unit). An optional density (g per mL, entered in the editor as "Weight per mL") is used only to convert between mass and volume.
+- The yield is either a number of servings or a total quantity such as 800 g. The editor shows it in the "Makes" section: "How much it makes" is the amount and "Counted as" chooses servings or a total; for a total a unit picker titled "Unit of what it makes" follows.
+- Validation: non-empty title, at least one ingredient, yield greater than zero, ingredient quantities greater than zero, unique ingredient ids. The editor says so in these words: "Enter how much the recipe makes, greater than zero, using digits and a point.", "Choose a known unit for what the recipe makes.", "Ingredient N: weight per mL must be greater than zero, using digits and a point." and "Two ingredients are the same entry. Remove one and add it again."
+- The words "yield", "density" and "identifier" are the model's names. They stay in code and in the stored label basis text (for example "Per serving; yield 4 servings"); that basis text is stored data, not the editor's wording.
 
 ## Math
 
@@ -74,6 +75,11 @@ files already opened and names the one that failed on the startup failure screen
 
 The editor asks for every nutrient the Today screen tracks by default: energy, protein, sodium,
 potassium and fiber. A nutrient left blank is unknown, never zero.
+
+The amount fields (what the recipe makes, each ingredient amount, each per-unit nutrient field and
+Weight per mL) use a decimal keyboard on iOS. The weight per mL field's placeholder reads "Weight per
+mL in g (only to convert between weight and volume)", and it is announced as "Weight per mL of
+ingredient N".
 
 A value that was stored in another unit of the same kind (protein in milligrams, say) is converted
 into the field's unit exactly, so an edit that only touches the title cannot turn 1000 mg into 1000 g.

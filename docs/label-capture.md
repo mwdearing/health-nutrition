@@ -21,7 +21,9 @@ typing digits in Details still requires **Look up**. A missing product or a prod
 nutrition facts offers **Scan the label instead** and **Type it in**.
 
 Label capture keeps its existing on-device camera, multi-photo review and confirmation
-behavior. **Use these values** pushes the existing Details form; it does not save an entry.
+behavior. **Use these values** pushes the existing Details form; it does not save an entry. While
+values are still waiting for an answer the same button reads **Confirm 1 value first** or
+**Confirm N values first**, with N the count still owed, and stays disabled until the count is zero.
 Library pick mode offers Favourites, Recent and Recipes. Picking prefills Details without
 switching tabs or writing the journal. Save closes Add and clears its path; Cancel does the same.
 
@@ -114,7 +116,7 @@ camera rather than the last frame that had anything on it. `NutritionUI` sees on
 
 - **A missing row is `.unknown`, never zero.** A panel that says nothing about potassium does not say
   potassium is zero. Unknown is a different state from a stated zero, and it is the state the
-  confirmation screen shows as "not read".
+  confirmation screen shows as "Not on the label".
 - **The % Daily Value column is never an amount.** Only a number that stands on its own, on the row that
   printed it, becomes a value. A bare number on a row that prints no unit of its own — the Calories row
   is the only one — is read there and nowhere else, because everywhere else a bare number is a Daily
@@ -144,6 +146,11 @@ screen can highlight exactly those rows instead of asking the user to check the 
 | `unexpectedUnit` | The row carries a unit this nutrient does not usually carry; the amount is kept as printed. |
 | `normalisedMicrogramSymbol` | A microgram symbol was written `µg`, `μg` or `ug` and became `mcg`. |
 
+These names are the parser's own enum and are never shown. The review screen words the reasons in
+plain English: `correctedLetterO` reads "a letter O was read as a zero", `unexpectedUnit` reads "the
+unit is not the one this row usually carries", and `normalisedMicrogramSymbol` reads "the unit was read
+as mcg". The reasons are gathered under "Check this value:" on the row.
+
 The serving size carries its own reasons in `ParsedServingSize.review`, because the serving size scales
 every nutrient saved from the panel: a `Serving size 1 cup (24O mL)` reads as `240 mL` and is highlighted
 as corrected rather than being quietly scaled by a number the parser fixed up.
@@ -164,7 +171,9 @@ The rules the screen keeps are short:
   value as printed, or taps Correct and types their own. There is no third way to get a flagged value
   saved on the parser's word.
 - **A flagged serving size blocks the same way.** The serving size scales every nutrient below it, so
-  a `Serving size 1 cup (24O mL)` the parser corrected is confirmed separately, exactly like a row.
+  a `Serving size 1 cup (24O mL)` the parser corrected is confirmed separately, exactly like a row. The
+  question asked about it is plain: "We read this as 240 mL. Is that right?", with the serving as the
+  screen shows it (`this serving size` when the model holds no serving text).
 - **A panel that stated no serving size cannot be used until the user states one.** Values read from a
   panel are per serving, and one serving may be 30 g, 250 mL or one item, so a capture that missed the
   serving-size line would otherwise be stored as a bare `per serving` with numbers nothing can scale. The
@@ -202,9 +211,11 @@ The rules the screen keeps are short:
   read: the printed unit is sometimes the reason the row was flagged in the first place, so following it
   would let a correction walk into a dimension nothing downstream can interpret. The Calories row is
   measured in energy, sodium in mass, whatever the panel happened to print.
-- **A nutrient the panel does not state stays `.unknown`.** It is shown as "not on the panel" and is
+- **A nutrient the panel does not state stays `.unknown`.** It is shown as "Not on the label" and is
   left out of the product rather than stored as zero, so `ProductDefinition.value(for:)` reads it back
-  as unknown.
+  as unknown. The four states read on screen as "Not on the label" (unknown), "Does not apply"
+  (not applicable), "Less than the label reports" (below the reporting threshold, with no unit
+  suffix) and the number with its unit (known). The Add details form reads the same words.
 - **The compound rows are shown under a heading of their own, "Also on the label".** They are not
   folded into the Nutrients list: they are not that list's rows, and listing them there would tell the
   user they are nutrients the journal already knows. Each one is shown under the name the label
@@ -218,6 +229,11 @@ The rules the screen keeps are short:
 - **A panel with no readable amount is not turned into a product.** `isUnreadable` is true, the screen
   says the panel could not be read, nothing is filled in, and the only thing offered is another look at
   the panel.
+
+The words above are for people. The stored form is unchanged: a row's candidate id, the snapshot
+signature and the `label-…` snapshot id are built from `LabelCaptureRow.describe`, which still reads
+"not on the panel" and "below reporting threshold mg". Those strings are stored, never shown on screen,
+and not reworded, so a saved label product keeps its id.
 
 The product the review screen hands on records `catalogOrigin` as `label_capture` and its basis as
 `per serving`, with the serving spelled out when the panel stated a measure (`per serving (240 mL)`) and
