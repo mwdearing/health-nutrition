@@ -199,6 +199,31 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertNil(library.undoToken)
     }
 
+    func testLibraryUndoKeepsItsOfferWhenTheDeleteFails() throws {
+        let store = try makeStore()
+        try addEntry(store, name: "Example oats", at: now.addingTimeInterval(-60))
+        let library = makeLibrary(store: store, favorites: try makeFavorites())
+        library.load()
+        library.segment = .recent
+        let recent = try XCTUnwrap(library.visibleItems.first)
+
+        XCTAssertTrue(library.quickAdd(recent, now: now))
+        let token = try XCTUnwrap(library.undoToken)
+
+        // The store's delete honours the one-shot failure flag and throws JournalError.injectedSaveFailure.
+        store.failNextSaveForTesting = true
+        XCTAssertFalse(library.undo(now: now))
+        XCTAssertNotNil(library.undoToken)
+        XCTAssertEqual(library.undoToken?.intakeID, token.intakeID)
+        XCTAssertEqual(library.errorMessage, "Could not undo. Try again.")
+        XCTAssertTrue(try store.activeIntakes().contains { $0.id == token.intakeID })
+
+        // The failure was one-shot, so the offer still works.
+        XCTAssertTrue(library.undo(now: now))
+        XCTAssertNil(library.undoToken)
+        XCTAssertFalse(try store.activeIntakes().contains { $0.id == token.intakeID })
+    }
+
     func testLibraryQuickAddClearsAStaleUndoWhenTheNextAddFails() throws {
         let store = try makeStore()
         try addEntry(store, name: "Example oats", at: now.addingTimeInterval(-60))
@@ -255,6 +280,20 @@ final class LibraryDesignTests: XCTestCase {
         let home = AddHomeViewModel(store: store, meal: label, now: { self.now })
         let details = try home.makeDetails(prefill: template, now: now)
         XCTAssertEqual(details.meal, .breakfast)
+    }
+
+    func testAddHomeMealLabelNormalisesAStoredMeal() {
+        func template(meal: String?) -> RepeatTemplate {
+            RepeatTemplate(
+                displayName: "Example oats", category: "food", meal: meal,
+                components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)])
+        }
+        XCTAssertEqual(LibraryViewModel.mealLabel(for: template(meal: "Breakfast")), .breakfast)
+        XCTAssertEqual(LibraryViewModel.mealLabel(for: template(meal: " breakfast ")), .breakfast)
+        XCTAssertEqual(LibraryViewModel.mealLabel(for: template(meal: "DINNER")), .dinner)
+        XCTAssertNil(LibraryViewModel.mealLabel(for: template(meal: "midnight feast")))
+        XCTAssertNil(LibraryViewModel.mealLabel(for: template(meal: "")))
+        XCTAssertNil(LibraryViewModel.mealLabel(for: template(meal: nil)))
     }
 
     // MARK: Pick mode
