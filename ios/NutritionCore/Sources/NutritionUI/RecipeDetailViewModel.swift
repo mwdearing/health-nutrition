@@ -64,7 +64,7 @@ public final class RecipeDetailViewModel: ObservableObject {
     }
 
     private func recalculate() {
-        guard let portion = AmountParser.parse(portionText) else {
+        guard let portion = AmountParser.parseTyped(portionText) else {
             rows = []
             errorMessage = "Enter a portion greater than zero, using digits and a point."
             return
@@ -85,7 +85,7 @@ public final class RecipeDetailViewModel: ObservableObject {
     /// Writes one intake for the portion. Unknown nutrients are left out, never written as zero.
     @discardableResult
     public func logPortion(now: Date) -> Bool {
-        guard let portion = AmountParser.parse(portionText) else {
+        guard let portion = AmountParser.parseTyped(portionText) else {
             errorMessage = "Enter a portion greater than zero, using digits and a point."
             return false
         }

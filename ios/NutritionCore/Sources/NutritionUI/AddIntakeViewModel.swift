@@ -37,11 +37,20 @@ public enum AmountParser {
     public static func parseTyped(
         _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
     ) -> Decimal? {
+        parse(normalizedTyped(text, decimalSeparator: decimalSeparator))
+    }
+
+    /// Typed text with the region's comma rewritten as a point, under the rule `parseTyped` states, and
+    /// otherwise as typed. For the fields whose own parser allows more than `parse` does, such as a zero
+    /// or a unit after the number.
+    public static func normalizedTyped(
+        _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard decimalSeparator == ",", !trimmed.contains("."),
             trimmed.filter({ $0 == "," }).count == 1
-        else { return parse(trimmed) }
-        return parse(trimmed.replacingOccurrences(of: ",", with: "."))
+        else { return trimmed }
+        return trimmed.replacingOccurrences(of: ",", with: ".")
     }
 }
 

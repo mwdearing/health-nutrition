@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 import XCTest
 @testable import NutritionUI
 

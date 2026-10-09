@@ -254,11 +254,16 @@ public final class EntryDetailViewModel: ObservableObject {
     }
 
     /// Whether two amount texts state the same amount. Both are trimmed; when both parse, the decimals
-    /// decide, so "40.0" and " 40 " match a stored 40. Otherwise the trimmed text decides.
-    static func sameAmountText(_ loaded: String, _ draft: String) -> Bool {
+    /// decide, so "40.0" and " 40 " match a stored 40. Otherwise the trimmed text decides. The loaded text
+    /// is stored text and takes a point only; the draft is typed, so the region's comma is read in it.
+    static func sameAmountText(
+        _ loaded: String, _ draft: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Bool {
         let first = loaded.trimmingCharacters(in: .whitespacesAndNewlines)
         let second = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let a = AmountParser.parse(first), let b = AmountParser.parse(second) { return a == b }
+        if let a = AmountParser.parse(first),
+            let b = AmountParser.parseTyped(second, decimalSeparator: decimalSeparator)
+        { return a == b }
         return first == second
     }
 
@@ -271,7 +276,7 @@ public final class EntryDetailViewModel: ObservableObject {
     public func convertedText(for componentID: String) -> String? {
         guard let row = components.first(where: { $0.id == componentID }),
               row.amountText != "unknown",
-              let draft = drafts[componentID], let amount = AmountParser.parse(draft)
+              let draft = drafts[componentID], let amount = AmountParser.parseTyped(draft)
         else { return nil }
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem).text
     }
@@ -301,7 +306,7 @@ public final class EntryDetailViewModel: ObservableObject {
                 // so should never have needed an amount validated at all.
                 if let untouched = Self.unchangedStoredComponent(for: item, in: current?.components ?? []) {
                     parsed.append(untouched)
-                } else if let amount = AmountParser.parse(item.amountText) {
+                } else if let amount = AmountParser.parseTyped(item.amountText) {
                     parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: item.unit))
                 } else {
                     errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."

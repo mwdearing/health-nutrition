@@ -240,12 +240,12 @@ Text that is not a positive number is refused rather than rounded or guessed at.
   gone.
 - **Amount text** is parsed with a fixed POSIX parser: digits and at most one point, greater than zero, no locale, no
   binary floating point. Invalid text sets a field error and writes nothing.
-- **Typed amounts** on the Add form, the goal targets and the quick-water amount are read through
-  `AmountParser.parseTyped`: where the device's region uses a comma as its decimal separator, one comma is read
+- **Typed amounts** on the Add form, the goal targets, the quick-water amount, the recipe editor and a recipe's
+  portion, the entry screen and label corrections are read through `AmountParser.parseTyped`: where the device's region uses a comma as its decimal separator, one comma is read
   as that separator ("2,5" is two and a half); elsewhere a comma is refused as before. A point is accepted in
   every region, and mixed or repeated separators are refused. Stored and exported text still goes through the
-  fixed parser and never depends on the region. Recipe fields, the entry screen and label corrections still
-  take a point only.
+  fixed parser and never depends on the region. The messages about a refused amount name the point, which
+  every region accepts.
 - **This adds** scales prefilled barcode, label or Library nutrients live from the typed amount, using the
   totals builder's basis rules and the same metric components Save stores. Energy comes first. A nutrient the
   product does not state gets no line; a "does not apply" value keeps its line. A basis that

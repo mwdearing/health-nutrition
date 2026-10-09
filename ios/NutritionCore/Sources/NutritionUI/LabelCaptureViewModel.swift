@@ -387,6 +387,14 @@ public enum NutrientAmountParser {
         return Amount(value: value, unit: nil)
     }
 
+    /// The same, for text a person typed into a correction field: the region's comma is read as
+    /// `AmountParser.parseTyped` reads it. Text the panel printed never goes through this.
+    public static func parseTyped(
+        _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Amount? {
+        parse(AmountParser.normalizedTyped(text, decimalSeparator: decimalSeparator))
+    }
+
     /// A non-negative decimal written with digits and at most one point, and no sign.
     private static func decimal(_ text: String) -> Decimal? {
         guard !text.isEmpty else { return nil }
@@ -897,7 +905,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     public func correctAdditional(key: String, text: String, unit chosen: MeasureUnit) -> Bool {
         guard let index = additionalRows.firstIndex(where: { $0.key == key }) else { return false }
         guard additionalRows[index].canBeCorrected else { return false }
-        guard let parsed = NutrientAmountParser.parse(text) else {
+        guard let parsed = NutrientAmountParser.parseTyped(text) else {
             correctionError = "Enter zero or more, using digits and a point."
             return false
         }
@@ -993,7 +1001,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// value nobody can scale is not worth storing. A serving of zero is refused for the same reason an
     /// intake of zero is: it says nothing. Text that does not state an amount changes nothing and says why.
     private func applyServingSize(_ text: String) -> Bool {
-        guard let parsed = NutrientAmountParser.parse(text), parsed.value > 0, let unit = parsed.unit else {
+        guard let parsed = NutrientAmountParser.parseTyped(text), parsed.value > 0, let unit = parsed.unit else {
             servingSizeError = "Enter what one serving is, as an amount with its unit, for example 30 g or 240 mL."
             return false
         }
@@ -1020,7 +1028,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     public func correct(key: NutritionFactKey, text: String) -> Bool {
         guard let index = rows.firstIndex(where: { $0.key == key }) else { return false }
         guard rows[index].canBeCorrected else { return false }
-        guard let parsed = NutrientAmountParser.parse(text) else {
+        guard let parsed = NutrientAmountParser.parseTyped(text) else {
             correctionError = "Enter zero or more, using digits and a point, and add the unit if you want a different one."
             return false
         }
