@@ -54,7 +54,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     }
 
     public func makeDetails(now: Date) -> AddIntakeViewModel {
-        let model = AddIntakeViewModel(store: store, now: now, lookup: lookup, preferences: preferences)
+        let model = AddIntakeViewModel(
+            store: store, now: now, lookup: lookup, preferences: preferences,
+            labelScannerAvailable: scannerAvailability.label)
         model.meal = meal
         return model
     }
