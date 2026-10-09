@@ -107,8 +107,8 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertEqual(recent.systemImage, "clock")
 
         let foods = library.emptyText(for: .foods)
-        XCTAssertEqual(foods.title, "Foods")
-        XCTAssertEqual(foods.message, "Foods you've scanned will be kept here so you can log them again.")
+        XCTAssertEqual(foods.title, "No foods yet")
+        XCTAssertEqual(foods.message, "Foods you scan or look up are kept here so you can log them again.")
         XCTAssertEqual(foods.systemImage, "barcode.viewfinder")
 
         let recipes = library.emptyText(for: .recipes)

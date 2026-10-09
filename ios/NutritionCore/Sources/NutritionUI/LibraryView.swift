@@ -100,7 +100,7 @@ public struct LibraryView: View {
     @ViewBuilder
     private var segmentContent: some View {
         switch model.segment {
-        case .favorites, .recent:
+        case .favorites, .recent, .foods:
             if model.visibleItems.isEmpty {
                 emptyState(for: model.segment)
             } else {
@@ -108,13 +108,6 @@ public struct LibraryView: View {
                     self.libraryRow(item)
                 }
             }
-        case .foods:
-            VStack(alignment: .leading, spacing: DesignSpacing.s) {
-                emptyState(for: .foods)
-                LaterBadge()
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityValue("Not available yet")
         case .recipes:
             if let onOpenRecipes {
                 Button("Open recipes") { onOpenRecipes() }
