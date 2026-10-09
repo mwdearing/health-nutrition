@@ -661,10 +661,10 @@ public struct LabelCaptureView: View {
             Button {
                 if let product = model.makeProduct() { onUse(product) }
             } label: {
-                Text("Use these values").font(.headline)
+                Text(model.primaryActionTitle).font(.headline)
             }
             .disabled(!model.canApply)
-            .accessibilityLabel("Use these values")
+            .accessibilityLabel(model.primaryActionTitle)
             .accessibilityHint("Fills the intake form with the values you checked")
             if model.canAddPhoto {
                 Button("Add another photo") {

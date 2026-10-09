@@ -244,19 +244,19 @@ public struct AddIntakeView: View {
             .joined(separator: " ")
     }
 
-    /// A nutrient the source did not give reads as unknown, never as zero.
+    /// A nutrient the source did not give reads as "Not on the label", never as zero.
     static func text(for value: NutrientValue?) -> String {
         switch value {
         case .known(let amount, let unit):
             return "\(amount) \(unit.symbol)"
         case .unknown:
-            return "unknown"
+            return "Not on the label"
         case .notApplicable:
-            return "not applicable"
+            return "Does not apply"
         case .belowReportingThreshold:
-            return "below reporting threshold"
+            return "Less than the label reports"
         case nil:
-            return "unknown"
+            return "Not on the label"
         }
     }
 }

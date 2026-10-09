@@ -39,7 +39,7 @@ public struct LabelCaptureCandidate: Equatable, Sendable, Identifiable {
 
     /// One line for the screen: which photo read this value, and how many agreed.
     public var summary: String {
-        let reading = LabelCaptureRow.describe(value)
+        let reading = LabelCaptureRow.displayText(value)
         guard support > 1 else { return "Photo \(frameIndex) reads \(reading)" }
         return "Photo \(frameIndex) reads \(reading) (\(support) photos agree)"
     }
@@ -155,16 +155,16 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         }
     }
 
-    /// The value as the screen shows it. An unknown row reads as "not on the panel", never as zero.
+    /// The value as the screen shows it. An unknown row reads as "Not on the label", never as zero.
     public var valueText: String {
-        LabelCaptureRow.describe(value)
+        LabelCaptureRow.displayText(value)
     }
 
     /// One sentence for VoiceOver: the value, and whether it still needs the user's answer.
     public var accessibilityLabel: String {
         var parts = ["\(name), \(valueText)"]
         if !candidates.isEmpty {
-            let readings = candidates.map { "photo \($0.frameIndex) reads \(Self.describe($0.value))" }
+            let readings = candidates.map { "photo \($0.frameIndex) reads \(Self.displayText($0.value))" }
             parts.append("\(readings.joined(separator: ", ")), tap to choose")
         }
         switch status {
@@ -204,7 +204,7 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
             sentences.append("the unit is not the one this row usually carries")
         }
         if reasons.contains(.normalisedMicrogramSymbol) {
-            sentences.append("the microgram symbol was normalised")
+            sentences.append("the unit was read as mcg")
         }
         return "Check this value: " + sentences.joined(separator: ", ") + "."
     }
@@ -220,6 +220,22 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
             return "not applicable"
         case .belowReportingThreshold(let unit):
             return "below reporting threshold" + (unit.map { " \($0.symbol)" } ?? "")
+        }
+    }
+
+    /// The value as a person reads it on screen or hears it spoken. A known value reads exactly as
+    /// `describe` does; the other three use the label's own words. Ids and signatures keep `describe`,
+    /// because its words are stored in snapshot and row ids.
+    static func displayText(_ value: NutrientValue) -> String {
+        switch value {
+        case .known:
+            return describe(value)
+        case .unknown:
+            return "Not on the label"
+        case .notApplicable:
+            return "Does not apply"
+        case .belowReportingThreshold:
+            return "Less than the label reports"
         }
     }
 }
@@ -291,13 +307,13 @@ public struct LabelCaptureAdditionalRow: Identifiable, Equatable, Sendable {
         }
     }
 
-    public var valueText: String { LabelCaptureRow.describe(value) }
+    public var valueText: String { LabelCaptureRow.displayText(value) }
 
     /// One sentence for VoiceOver: the value, and whether it still needs the user's answer.
     public var accessibilityLabel: String {
         var parts = ["\(name), \(valueText)"]
         if !candidates.isEmpty {
-            let readings = candidates.map { "photo \($0.frameIndex) reads \(LabelCaptureRow.describe($0.value))" }
+            let readings = candidates.map { "photo \($0.frameIndex) reads \(LabelCaptureRow.displayText($0.value))" }
             parts.append("\(readings.joined(separator: ", ")), tap to choose")
         }
         switch status {
@@ -1093,6 +1109,15 @@ public final class LabelCaptureViewModel: ObservableObject {
         hasPanel && !isUnreadable && !rows.isEmpty && pendingCount == 0
     }
 
+    /// The title of the one button that hands the values on, counting the answers still owed.
+    public var primaryActionTitle: String {
+        switch pendingCount {
+        case 0: return "Use these values"
+        case 1: return "Confirm 1 value first"
+        default: return "Confirm \(pendingCount) values first"
+        }
+    }
+
     /// Whether the screen can offer another look at the panel. There is nothing to look at again until
     /// a capture has been loaded, whether that capture was readable or not.
     public var canRetake: Bool { hasPanel }
@@ -1142,6 +1167,11 @@ public final class LabelCaptureViewModel: ObservableObject {
         return parts.joined(separator: ", ") + " before these values can be used."
     }
 
+    /// The question asked about a serving size the parser corrected, with the serving as the screen shows it.
+    static func servingQuestion(_ servingText: String) -> String {
+        "We read this as \(servingText). Is that right?"
+    }
+
     /// The prompt above the serving-size field, or nil when there is nothing to ask for: a serving the
     /// panel printed is either fine or, when the parser corrected it, answered by confirming it.
     public var servingPrompt: String? {
@@ -1149,7 +1179,7 @@ public final class LabelCaptureViewModel: ObservableObject {
             return "The serving size was not read from that shot. Enter what one serving is, so the values below can be scaled to how much you actually have."
         }
         if servingNeedsReview && !isServingConfirmed {
-            return "The parser had to correct this serving size. Confirm it, or scan the panel again."
+            return Self.servingQuestion(servingText ?? "this serving size")
         }
         return nil
     }
