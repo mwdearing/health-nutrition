@@ -165,8 +165,11 @@ Icons are hidden from accessibility, and the row's accessibility text includes i
 **Clear all goals** asks for confirmation before `clearAllGoals()` removes every stored target,
 including compound goals. Targets use primary text color, with no rating implied by color.
 The footer states: "A goal is a number you set. The app compares your day against it and gives no advice or rating."
-Each **Show on Today** switch is disabled, with a Later badge and accessibility value "Not available yet";
-it does not change the tracked list.
+Each goal with a target has a **Show on Today** switch, on by default. Switching it off hides that goal's bar on
+the Today card and in the Journal day header, and nothing else: the goal and its target are kept, the day's totals
+are still computed, and the tracked list does not change. The choice is stored in the display preferences under
+`display.goals.hiddenOnToday` (a sorted, comma-joined list of nutrient keys; absent means every goal shows) and is
+cleared by Erase all data. A goal with no target has its switch disabled, because there is no bar to hide.
 
 `GoalStore` is the protocol; `SwiftDataGoalStore` persists it in its own `goals.store`, opened in `AppServices.make`
 next to the journal, favorites and recipe files and listed in the `erasers:` array; `InMemoryGoalStore` is the
