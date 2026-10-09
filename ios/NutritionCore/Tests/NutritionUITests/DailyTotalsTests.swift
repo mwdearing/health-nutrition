@@ -220,7 +220,7 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     /// The same protein in milligrams is still a protein total, stated as it was read.
-    func testALoneProteinValueInMilligramsIsStillTotalled() throws {
+    func testALoneProteinValueInMilligramsIsStillSummed() throws {
         let store = try makeStore()
         try addFood(store, name: "Tablet", id: "mg-protein", at: when)
         let intake = try XCTUnwrap(try store.activeIntakes().first)

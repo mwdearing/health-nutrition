@@ -171,7 +171,7 @@ final class ValueStateTests: XCTestCase {
         XCTAssertEqual(inMilligrams.coverage.knownCount, 3)
     }
 
-    /// A lone value in international units cannot be totalled for a nutrient read in grams: the value
+    /// A lone value in international units cannot be summed for a nutrient read in grams: the value
     /// is checked against the nutrient's own unit even when nothing else is there to mismatch it.
     func testALoneValueInAnotherDimensionThanTheNutrientThrows() throws {
         XCTAssertThrowsError(try NutrientTotal.sum([try known("1000", .iu)], expecting: .g)) { error in
