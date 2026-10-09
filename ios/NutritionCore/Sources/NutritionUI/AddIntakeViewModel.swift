@@ -50,7 +50,20 @@ public struct ThisAddsLine: Equatable {
     public let key: String
     public let displayName: String
     public let value: NutrientValue?
-    public var text: String { LookedUpProduct.describe(value ?? .unknown) }
+    public var text: String { LookedUpProduct.shownText(value ?? .unknown) }
+}
+
+extension LookedUpProduct {
+    /// The words a person sees for a value. `describe` keeps the stored words, which are hashed into
+    /// snapshot ids and must never change; this is for text on screen only.
+    static func shownText(_ value: NutrientValue) -> String {
+        switch value {
+        case .known: return describe(value)
+        case .unknown: return "Not on the label"
+        case .notApplicable: return "Does not apply"
+        case .belowReportingThreshold: return "Less than the label reports"
+        }
+    }
 }
 
 @MainActor

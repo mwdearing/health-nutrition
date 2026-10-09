@@ -456,7 +456,7 @@ public final class EntryDetailViewModel: ObservableObject {
             .map { key in
                 EntryNutrientRow(
                     key: key, name: product.displayName(for: key) ?? compoundName(for: key),
-                    amountText: LookedUpProduct.describe(product.nutrients[key] ?? .unknown))
+                    amountText: LookedUpProduct.shownText(product.nutrients[key] ?? .unknown))
             }
     }
 
@@ -497,7 +497,7 @@ public final class EntryDetailViewModel: ObservableObject {
             guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { continue }
             var amountText = "Not on the label"
             if value != .unknown, let factor {
-                amountText = LookedUpProduct.describe(value.scaled(by: factor))
+                amountText = LookedUpProduct.shownText(value.scaled(by: factor))
             }
             rows.append(EntryNutrientRow(
                 key: key, name: LookedUpProduct.displayNames[key] ?? compoundName(for: key), amountText: amountText))
@@ -520,7 +520,7 @@ public final class EntryDetailViewModel: ObservableObject {
         var rows: [EntryNutrientRow] = []
         for (key, value) in product.nutrients where isStated(value) {
             let name = product.displayName(for: key) ?? LookedUpProduct.displayNames[key] ?? compoundName(for: key)
-            rows.append(EntryNutrientRow(key: key, name: name, amountText: LookedUpProduct.describe(value)))
+            rows.append(EntryNutrientRow(key: key, name: name, amountText: LookedUpProduct.shownText(value)))
         }
         return rows.sorted { ($0.name, $0.key) < ($1.name, $1.key) }
     }

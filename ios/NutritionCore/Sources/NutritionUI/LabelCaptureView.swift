@@ -342,7 +342,7 @@ public struct LabelCaptureView: View {
     private func candidateRow(
         _ candidate: LabelCaptureCandidate, rowName: String, keep: @escaping () -> Void
     ) -> some View {
-        let value = LabelCaptureRow.describe(candidate.value)
+        let value = LabelCaptureRow.displayText(candidate.value)
         return HStack {
             Text(candidate.summary)
                 .font(.footnote)
