@@ -4,17 +4,20 @@ import UniformTypeIdentifiers
 public struct AppSettingsView: View {
     private let goals: GoalsViewModel?
     private let connections: ConnectionsPrivacyViewModel?
+    private let reminders: ReminderController?
     private let now: () -> Date
     private let opensGoals: Bool
     private let onShowWelcome: (() -> Void)?
 
     public init(
         goals: GoalsViewModel? = nil, connections: ConnectionsPrivacyViewModel? = nil,
+        reminders: ReminderController? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
         onShowWelcome: (() -> Void)? = nil
     ) {
         self.goals = goals
         self.connections = connections
+        self.reminders = reminders
         self.now = now
         self.opensGoals = opensGoals
         self.onShowWelcome = onShowWelcome
@@ -22,7 +25,7 @@ public struct AppSettingsView: View {
 
     public var body: some View {
         if let connections {
-            SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals),
+            SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders),
                             now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome)
         }
     }
@@ -86,13 +89,12 @@ private struct SettingsContent: View {
                 if let error = model.quickWaterError {
                     InlineNotice(error, tone: .failed)
                 }
-                HStack { placeholderText(0); Spacer(); LaterBadge() }
-                    .disabled(true).accessibilityValue("Not available yet")
+                reminderRows
             }
             Section("Connections") {
-                HStack { placeholderText(1); Spacer(); LaterBadge() }
+                HStack { placeholderText("appleHealth"); Spacer(); LaterBadge() }
                     .disabled(true).accessibilityValue("Not available yet")
-                HStack { placeholderText(2); Spacer(); LaterBadge() }
+                HStack { placeholderText("healthRelay"); Spacer(); LaterBadge() }
                     .disabled(true).accessibilityValue("Not available yet")
             }
             Section("Privacy") {
@@ -104,7 +106,7 @@ private struct SettingsContent: View {
                 Toggle(isOn: .constant(false)) {
                     VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                         HStack { Text("Share product labels with the community"); LaterBadge() }
-                        Text(model.placeholderRows[3].detail)
+                        Text(placeholderDetail("communitySharing"))
                             .font(.footnote).foregroundStyle(TokenColors.textSecondary)
                     }
                 }
@@ -127,7 +129,7 @@ private struct SettingsContent: View {
                     Text(message).font(.footnote)
                         .foregroundStyle(connections.importState == .failed ? TokenColors.error : TokenColors.textSecondary)
                 }
-                HStack { placeholderText(4); Spacer(); LaterBadge() }
+                HStack { placeholderText("keepHistory"); Spacer(); LaterBadge() }
                     .disabled(true).accessibilityValue("Not available yet")
                 if connections.canEraseAll {
                     Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
@@ -180,7 +182,10 @@ private struct SettingsContent: View {
         .onChange(of: waterFocused) { _, focused in
             if !focused { self.model.commitQuickWater() }
         }
-        .onChange(of: connections.eraseGeneration) { _, _ in self.model.load() }
+        .onChange(of: connections.eraseGeneration) { _, _ in
+            self.model.load()
+            self.model.reminders?.refreshFromPreferences()
+        }
         .confirmationDialog(
             ConnectionsPrivacyViewModel.eraseConfirmationTitle, isPresented: $confirmingErase,
             titleVisibility: .visible
@@ -201,12 +206,49 @@ private struct SettingsContent: View {
         }
     }
 
-    private func placeholderText(_ index: Int) -> some View {
-        let row = model.placeholderRows[index]
-        return VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-            Text(row.title)
-            Text(row.detail).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+    /// The daily reminder: the switch, the time while it is on, the footnote and any notice. Shown only
+    /// where a controller is wired in.
+    @ViewBuilder
+    private var reminderRows: some View {
+        if let reminders = model.reminders {
+            Toggle("Daily reminder", isOn: Binding(
+                get: { reminders.isOn },
+                set: { on in Task { await reminders.setOn(on) } }
+            ))
+            if reminders.isOn {
+                DatePicker("Reminder time", selection: Binding(
+                    get: { Self.date(for: reminders.time) },
+                    set: { date in
+                        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                        let time = ReminderTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
+                        Task { await reminders.setTime(time) }
+                    }
+                ), displayedComponents: .hourAndMinute)
+            }
+            Text("A reminder on this phone at the time you choose. Nothing is sent anywhere.")
+                .font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            if let message = reminders.message {
+                InlineNotice(message, tone: .failed)
+            }
         }
+    }
+
+    /// Today at the stored clock time, for the time picker to show.
+    private static func date(for time: ReminderTime) -> Date {
+        Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+    }
+
+    /// Looks a placeholder row up by its id, so the rows can change without shifting the others.
+    private func placeholderText(_ id: String) -> some View {
+        let row = model.placeholderRows.first { $0.id == id }
+        return VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+            Text(row?.title ?? "")
+            Text(row?.detail ?? "").font(.footnote).foregroundStyle(TokenColors.textSecondary)
+        }
+    }
+
+    private func placeholderDetail(_ id: String) -> String {
+        model.placeholderRows.first { $0.id == id }?.detail ?? ""
     }
 
     private func importPickedFile(_ result: Result<[URL], Error>) {

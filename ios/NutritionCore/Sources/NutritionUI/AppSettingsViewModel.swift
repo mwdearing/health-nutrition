@@ -14,15 +14,19 @@ public struct SettingsPlaceholderRow: Identifiable, Equatable {
 public final class AppSettingsViewModel: ObservableObject {
     public let connections: ConnectionsPrivacyViewModel
     public let goals: GoalsViewModel?
+    /// The daily reminder's controller. Nil where no reminder is wired, so the row is simply not shown.
+    public let reminders: ReminderController?
     public let versionText: String
     private var observations: Set<AnyCancellable> = []
 
     public init(
         connections: ConnectionsPrivacyViewModel, goals: GoalsViewModel? = nil,
+        reminders: ReminderController? = nil,
         version: String? = nil, build: String? = nil, bundle: Bundle = .main
     ) {
         self.connections = connections
         self.goals = goals
+        self.reminders = reminders
         let version = version ?? bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
         let build = build ?? bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
         self.versionText = "\(version) (\(build))"
@@ -30,6 +34,9 @@ public final class AppSettingsViewModel: ObservableObject {
             self?.objectWillChange.send()
         }.store(in: &observations)
         goals?.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }.store(in: &observations)
+        reminders?.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }.store(in: &observations)
     }
@@ -59,7 +66,6 @@ public final class AppSettingsViewModel: ObservableObject {
     public let openFoodFactsAttribution = "Open Food Facts — database available under the Open Database Licence (ODbL)."
 
     public let placeholderRows: [SettingsPlaceholderRow] = [
-        SettingsPlaceholderRow(id: "dailyPrompts", title: "Daily prompts", detail: "Choose daily prompts in a later release.", issueReference: "#98"),
         SettingsPlaceholderRow(id: "appleHealth", title: "Apple Health", detail: "Not connected", issueReference: "#103"),
         SettingsPlaceholderRow(id: "healthRelay", title: "HealthRelay", detail: "Not connected", issueReference: "HealthRelay #123"),
         SettingsPlaceholderRow(id: "communitySharing", title: "Share product labels with the community", detail: "Only product facts would ever be shared, never amounts, times or identity.", issueReference: "Needs issue: community sharing"),
