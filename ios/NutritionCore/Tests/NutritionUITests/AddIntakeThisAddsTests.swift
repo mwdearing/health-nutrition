@@ -95,6 +95,43 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertFalse(model.thisAdds.contains { $0.key == "potassium" })
     }
 
+    /// A standard nutrient the product does not state is not a line in the preview, so only the stated
+    /// protein is listed.
+    func testThisAddsLeavesOutUnstatedStandardNutrients() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        model.applyLabelProduct(ProductDefinition(snapshotID: "example-protein-only", productID: "example-oats",
+            name: "Example oats", labelBasis: "per 100 g", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g)]))
+        model.amountText = "50"
+        model.unit = .g
+        XCTAssertEqual(model.thisAdds.map(\.key), ["protein"])
+    }
+
+    /// Stated energy leads the stated protein, and a "does not apply" sodium is still listed because the
+    /// product said something about it.
+    func testThisAddsKeepsStatedEnergyFirstAndNotApplicableSodium() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        model.applyLabelProduct(ProductDefinition(snapshotID: "example-energy-protein", productID: "example-oats",
+            name: "Example oats", labelBasis: "per 100 g", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g), "energyKcal": .known(380, .kcal), "sodium": .notApplicable]))
+        model.amountText = "50"
+        model.unit = .g
+        XCTAssertEqual(model.thisAdds.map(\.key), ["energyKcal", "protein", "sodium"])
+        XCTAssertEqual(model.thisAdds.first { $0.key == "sodium" }?.value, .notApplicable)
+    }
+
+    /// A household measure inside the serving's brackets scales from its gram weight: 60 g of a bar
+    /// stated as "1 bar (30 g)" is two servings, so 10 g of protein per serving is 20 g.
+    func testHouseholdServingTextScalesTheStoredProduct() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        model.applyStoredProduct(ProductDefinition(snapshotID: "example-bar", productID: "example-bar",
+            name: "Example bar", labelBasis: "per serving (1 bar (30 g))", catalogOrigin: "example", catalogVersion: "1",
+            nutrients: ["protein": .known(10, .g)]))
+        model.amountText = "60"
+        model.unit = .g
+        XCTAssertEqual(model.thisAdds.first { $0.key == "protein" }?.value, .known(20, .g))
+    }
+
     func testLabelScanKeepsTheLibraryName() throws {
         let model = AddIntakeViewModel(store: try makeStore(), now: now)
         let product = ProductDefinition(snapshotID: "example-library", productID: "example-oats",

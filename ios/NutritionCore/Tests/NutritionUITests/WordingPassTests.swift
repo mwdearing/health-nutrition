@@ -124,7 +124,32 @@ final class WordingPassTests: XCTestCase {
         ])
         XCTAssertTrue(model.servingNeedsReview)
         let servingText = try XCTUnwrap(model.servingText)
-        XCTAssertEqual(model.servingPrompt, LabelCaptureViewModel.servingQuestion(servingText))
+        XCTAssertEqual(model.servingPrompt, LabelCaptureViewModel.servingQuestion(
+            LabelCaptureViewModel.servingReading(quantity: model.servingQuantity, text: servingText)))
+    }
+
+    /// The serving question names the quantity the parser settled on, so a serving printed as "24O mL"
+    /// is asked about as 240 mL, and a serving with no quantity is asked about as its own words.
+    func testServingQuestionShowsTheCorrectedQuantity() throws {
+        XCTAssertEqual(
+            LabelCaptureViewModel.servingReading(quantity: Quantity(value: 240, unit: .mL), text: "1 cup (240 mL)"),
+            "240 mL")
+        XCTAssertEqual(
+            LabelCaptureViewModel.servingReading(quantity: nil, text: "  1 cup (240 mL)  "),
+            "1 cup (240 mL)")
+        XCTAssertEqual(LabelCaptureViewModel.servingReading(quantity: nil, text: "   "), "this serving size")
+        XCTAssertEqual(LabelCaptureViewModel.servingReading(quantity: nil, text: nil), "this serving size")
+
+        let model = LabelCaptureViewModel()
+        model.load(lines: [
+            "Serving size 1 cup (24O mL)",
+            "Calories 120",
+            "Protein 3g",
+        ])
+        let quantity = try XCTUnwrap(model.servingQuantity)
+        XCTAssertEqual(quantity.value, Decimal(240))
+        XCTAssertEqual(quantity.unit, MeasureUnit.mL)
+        XCTAssertEqual(model.servingPrompt, LabelCaptureViewModel.servingQuestion("240 mL"))
     }
 
     // MARK: Entry words
