@@ -1,3 +1,4 @@
+import NutritionJournal
 import SwiftUI
 
 /// One entry, read first: what it is, what it added, where its values came from, where it was sent, and
@@ -49,6 +50,14 @@ public struct EntryDetailView: View {
         .onAppear { model.load(now: now()) }
     }
 
+    /// The Meal menu's selection. Only a choice the person makes writes; the screen showing the stored meal
+    /// does not.
+    private var mealSelection: Binding<MealLabel?> {
+        Binding(
+            get: { model.selectedMeal },
+            set: { meal in model.changeMeal(to: meal, now: now()) })
+    }
+
     private var form: some View {
         Form {
             if let message = model.errorMessage {
@@ -65,14 +74,24 @@ public struct EntryDetailView: View {
                         ForEach(model.components) { component in
                             amountRow(component)
                         }
-                        // Editing the meal is not part of this build, so the row states it and says so.
+                        // The meal is chosen from a menu and each choice is saved at once as a new revision. A
+                        // meal this build does not name is shown as written, because a menu cannot show it.
                         HStack {
                             Text("Meal").font(.body).foregroundStyle(TokenColors.textPrimary)
                             Spacer()
-                            Text(model.mealText ?? "Not set")
-                                .font(.body)
-                                .foregroundStyle(TokenColors.textSecondary)
-                            LaterBadge()
+                            if model.canChangeMeal {
+                                Picker("Meal", selection: mealSelection) {
+                                    ForEach(EntryDetailViewModel.mealOptions) { option in
+                                        Text(option.title).tag(option.meal)
+                                    }
+                                }
+                                .labelsHidden()
+                                .accessibilityHint("Changes the meal this entry was eaten at")
+                            } else {
+                                Text(model.mealText ?? "Not set")
+                                    .font(.body)
+                                    .foregroundStyle(TokenColors.textSecondary)
+                            }
                         }
                         .accessibilityElement(children: .combine)
                         // Bounded to now: nobody has eaten anything in the future, and an entry's time is

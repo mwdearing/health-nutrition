@@ -79,6 +79,8 @@ rather than a conflict.
 | `projection_hash` | `producer_id`, `intake_id`, `revision`, `projection_sequence` and the complete link snapshot, sorted by `(component_id, healthkit_sample_uuid)` by code point. | The order the app listed the links in; `installation_id`. |
 | `client_payload_hash` | `producer_id`, `writer_bundle_id`, `installation_id` and `schema_version` from the batch plus the operation as sent, without its own `client_payload_hash`. | Nothing: it is the digest of the delivered content, and it covers the other two. |
 
+Known limitation: an entry with no product snapshot takes its `display_name` from the meal, and the meal is read from the entry at delivery time. Changing the meal of such an entry while an earlier revision of it is still waiting to be delivered would rebuild that revision's payload with the new name. Relay delivery is not switched on yet; the name needs to be fixed per revision before it is.
+
 A changed `display_name` moves the domain and client digests and leaves the projection digest alone. A changed
 `installation_id` moves only the client digest. Reordering `healthkit_links` moves only the client digest,
 because the projection digest sorts them.

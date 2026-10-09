@@ -89,6 +89,10 @@ because the document carries none and an import must not empty the ones the jour
 stored row that states none is filled in from the plan. Only two sets that both state values and differ are a
 `snapshotConflict`, as is a *different* product under a snapshot id the store holds.
 
+## Changing the meal
+
+`changeMeal(intakeID:meal:now:)` (the `JournalMealEditing` protocol) writes one new revision with the reason "Meal changed". It keeps the previous revision's components and product snapshot, moves the intake's own meal in the same save, and supersedes the earlier projections, so the new revision queues its work exactly as an edit does. Choosing the meal the entry already states writes nothing and returns nil; a deleted entry is refused. No schema version is involved, because the meal already lives on the intake row.
+
 ## Correcting when an entry was eaten
 
 `edit` also takes `occurredAt` and the `timeZoneIdentifier` that goes with it. Given both, the new revision carries the

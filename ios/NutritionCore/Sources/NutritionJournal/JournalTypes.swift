@@ -378,6 +378,18 @@ extension JournalStore {
     }
 }
 
+/// Changes the meal of an existing entry. A separate protocol rather than a requirement of `JournalStore`, so
+/// the stores and test doubles that only read or create entries keep their shape.
+public protocol JournalMealEditing: AnyObject, Sendable {
+    /// Writes one new revision with the reason "Meal changed" and moves the intake's own meal in the same save.
+    /// The new revision keeps the previous revision's components and product snapshot, and the earlier
+    /// projections are superseded, so the new revision queues its work like any edit.
+    ///
+    /// A nil meal clears it. When the meal is already the one given, nothing is written and nil is returned.
+    @discardableResult
+    func changeMeal(intakeID: String, meal: String?, now: Date) throws -> IntakeRevision?
+}
+
 /// One intake with the whole revision history an import writes, exactly as the export carried it: the
 /// ids, the timestamps, the revision numbers and the product snapshot ids are the file's, not new ones.
 /// A restore must not renumber anything or move an entry onto another instant.

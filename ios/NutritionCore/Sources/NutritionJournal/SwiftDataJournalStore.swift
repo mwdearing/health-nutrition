@@ -1071,7 +1071,8 @@ private struct StoredNutrient: Codable {
 /// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
 /// initializer.
 public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnapshotSource,
-    JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalErasing, @unchecked Sendable
+    JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalErasing, JournalMealEditing,
+    @unchecked Sendable
 {
     private let lock = NSLock()
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
@@ -1324,6 +1325,49 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             return try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
                 product: product, changeReason: changeReason, now: now,
+                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
+        }
+    }
+
+    /// Changes the meal of an active entry as one new revision, reason "Meal changed". The previous revision's
+    /// components and product snapshot are carried over; the entry's own meal moves in the same save.
+    @discardableResult
+    public func changeMeal(intakeID: String, meal: String?, now: Date) throws -> IntakeRevision? {
+        let stored: String? = meal.flatMap { (value: String) -> String? in
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return try commit { (context: ModelContext) throws -> IntakeRevision? in
+            guard let record = try Self.intakeRecord(intakeID, in: context) else {
+                throw JournalError.unknownIntake(intakeID)
+            }
+            guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
+                throw JournalError.intakeDeleted(intakeID)
+            }
+            guard record.meal != stored else { return nil }
+            let current = record.currentRevision
+            let revisionRows = try context.fetch(FetchDescriptor<RevisionRecord>(
+                predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == current }))
+            guard let previous = revisionRows.first else {
+                throw JournalError.corruptRecord("revision")
+            }
+            let components = try Self.decode(previous.componentsJSON)
+            var product: ProductDefinition?
+            if let snapshotID = previous.productSnapshotID {
+                let productRows = try context.fetch(FetchDescriptor<ProductRecord>(
+                    predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
+                guard let productRow = productRows.first else {
+                    throw JournalError.corruptRecord("product")
+                }
+                product = Self.snapshot(from: productRow)
+            }
+            let number = current + 1
+            record.meal = stored
+            record.currentRevision = number
+            try Self.supersedeProjections(of: intakeID, in: context)
+            return try appendRevision(
+                intakeID: intakeID, number: number, componentsJSON: previous.componentsJSON,
+                components: components, product: product, changeReason: "Meal changed", now: now,
                 occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
         }
     }
