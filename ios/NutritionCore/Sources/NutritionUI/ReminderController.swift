@@ -1,10 +1,39 @@
 import Foundation
 
+/// Counts how many times Erase all data has run, so an operation that was already under way when an erase
+/// happened can tell and stand down. Shared by the controller and the eraser; safe to read from anywhere.
+public final class ReminderErasures: @unchecked Sendable {
+    private let lock = NSLock()
+    private var erased = 0
+
+    public init() {}
+
+    /// How many erases have been recorded.
+    public var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return erased
+    }
+
+    /// Notes that an erase is running.
+    public func record() {
+        lock.lock()
+        erased += 1
+        lock.unlock()
+    }
+}
+
 /// Drives the daily reminder: the switch and time the settings screen shows, the one permission prompt,
 /// and the single pending request the system holds for the app.
 ///
 /// The system prompt is asked for only when a person switches the reminder on while the status is not
 /// determined. Launch and every return to the foreground read the status and never ask.
+///
+/// **Every action runs in order.** A switch, a time change and a launch sync are queued behind whatever is
+/// still under way and each reads the stored settings when its turn comes, so the last thing a person did
+/// decides the outcome and no two actions ever overlap while they wait on the system. The one thing that can
+/// happen outside the queue is Erase all data, which is recorded in `erasures`: an action that finds an erase
+/// happened while it waited cancels what it added and changes nothing.
 @MainActor
 public final class ReminderController: ObservableObject {
     /// Shown when notifications are not allowed for the app, on the settings screen and at launch.
@@ -21,24 +50,65 @@ public final class ReminderController: ObservableObject {
 
     private let preferences: ReminderPreferences
     private let scheduler: ReminderScheduling
-    /// Bumped by every switch tap so a slow earlier call can tell it has been superseded.
-    private var generation = 0
+    private let erasures: ReminderErasures
+    /// The last queued action. A new one starts only after this one has finished.
+    private var tail: Task<Void, Never>?
 
-    public init(preferences: ReminderPreferences, scheduler: ReminderScheduling) {
+    public init(
+        preferences: ReminderPreferences, scheduler: ReminderScheduling,
+        erasures: ReminderErasures = ReminderErasures()
+    ) {
         self.preferences = preferences
         self.scheduler = scheduler
+        self.erasures = erasures
         self.isOn = preferences.isReminderOn
         self.time = preferences.reminderTime
     }
 
     /// Switches the reminder on or off. Turning on asks for permission only when it is not yet decided,
     /// and stays off with a message when the answer is no.
-    ///
-    /// Each call supersedes the one before it: a switch tapped on and then off again before the system has
-    /// answered ends off, because the older call finds on resuming that it is no longer the latest.
     public func setOn(_ on: Bool) async {
-        generation += 1
-        let token = generation
+        await enqueue { [self] in await self.applyOn(on) }
+    }
+
+    /// Stores the new time at once, so the picker shows it, then queues the rescheduling. While the reminder
+    /// is on, the pending request is replaced, never added to, and the latest stored time is the one set.
+    public func setTime(_ newTime: ReminderTime) async {
+        preferences.setReminderTime(newTime)
+        time = newTime
+        await enqueue { [self] in await self.applyTime() }
+    }
+
+    /// Brings the system's pending request in line with the stored setting. Never asks for permission.
+    /// Called at launch and each time the app becomes active.
+    public func syncOnLaunch() async {
+        await enqueue { [self] in await self.applySync() }
+    }
+
+    /// Re-reads the stored values. Erase all data resets them, so the screen reads them again.
+    public func refreshFromPreferences() {
+        // Anything still under way was started against settings that no longer exist.
+        erasures.record()
+        isOn = preferences.isReminderOn
+        time = preferences.reminderTime
+        message = nil
+    }
+
+    // MARK: Queue
+
+    private func enqueue(_ body: @escaping @MainActor () async -> Void) async {
+        let previous = tail
+        let task = Task { @MainActor in
+            await previous?.value
+            await body()
+        }
+        tail = task
+        await task.value
+    }
+
+    // MARK: Actions (each runs alone, in order)
+
+    private func applyOn(_ on: Bool) async {
         guard on else {
             preferences.setReminderOn(false)
             isOn = false
@@ -46,11 +116,12 @@ public final class ReminderController: ObservableObject {
             scheduler.cancelDaily()
             return
         }
+        let erased = erasures.count
         var permission = await scheduler.permission()
-        guard token == generation else { return }
+        guard erased == erasures.count else { return }
         if permission == .notDetermined {
             let granted = await scheduler.requestPermission()
-            guard token == generation else { return }
+            guard erased == erasures.count else { return }
             permission = granted ? .allowed : .denied
         }
         guard permission == .allowed else {
@@ -60,82 +131,63 @@ public final class ReminderController: ObservableObject {
             return
         }
         do {
-            try await scheduler.scheduleDaily(at: time)
+            try await scheduler.scheduleDaily(at: preferences.reminderTime)
         } catch {
-            guard token == generation else { return }
-            turnOffAfterRefusal()
+            if erased == erasures.count { turnOffAfterRefusal() }
             return
         }
-        guard token == generation else {
-            // A later switch-off arrived while the request was being added: do not leave it pending.
-            if !isOn { scheduler.cancelDaily() }
+        guard erased == erasures.count else {
+            scheduler.cancelDaily()
             return
         }
         preferences.setReminderOn(true)
         isOn = true
+        time = preferences.reminderTime
         message = nil
     }
 
-    /// Stores the new time. While the reminder is on, the pending request is replaced, never added to.
-    ///
-    /// The last time chosen wins: a change that finishes after a later one has been made schedules the
-    /// latest time again, so a stale request never stays pending.
-    public func setTime(_ newTime: ReminderTime) async {
-        generation += 1
-        let token = generation
-        preferences.setReminderTime(newTime)
-        time = newTime
-        guard isOn else { return }
+    private func applyTime() async {
+        guard preferences.isReminderOn else { return }
+        let erased = erasures.count
         do {
-            try await scheduler.scheduleDaily(at: newTime)
+            try await scheduler.scheduleDaily(at: preferences.reminderTime)
         } catch {
-            guard token == generation else { return }
-            turnOffAfterRefusal()
+            if erased == erasures.count { turnOffAfterRefusal() }
             return
         }
-        if token != generation {
-            if isOn {
-                try? await scheduler.scheduleDaily(at: time)
-            } else {
-                // Switched off while this request was being added: the late add must not stay pending.
-                scheduler.cancelDaily()
-            }
-        }
+        if erased != erasures.count { scheduler.cancelDaily() }
     }
 
-    /// Brings the system's pending request in line with the stored setting. Never asks for permission.
-    /// Called at launch and each time the app becomes active.
-    public func syncOnLaunch() async {
+    private func applySync() async {
+        let erased = erasures.count
         time = preferences.reminderTime
         let permission = await scheduler.permission()
+        guard erased == erasures.count else { return }
         if preferences.isReminderOn {
-            if permission == .allowed {
-                let token = generation
-                do {
-                    try await scheduler.scheduleDaily(at: time)
-                } catch {
-                    if token == generation { turnOffAfterRefusal() }
-                    return
-                }
-                guard token == generation else {
-                    // A switch tap or an erase arrived while the request was being added: that action
-                    // decides the state, and a request it switched off must not stay pending.
-                    if !preferences.isReminderOn { scheduler.cancelDaily() }
-                    return
-                }
-                isOn = true
-                message = nil
-            } else {
+            guard permission == .allowed else {
                 scheduler.cancelDaily()
                 preferences.setReminderOn(false)
                 isOn = false
                 message = Self.withdrawnMessage
+                return
             }
+            do {
+                try await scheduler.scheduleDaily(at: preferences.reminderTime)
+            } catch {
+                if erased == erasures.count { turnOffAfterRefusal() }
+                return
+            }
+            guard erased == erasures.count else {
+                scheduler.cancelDaily()
+                return
+            }
+            isOn = true
+            message = nil
         } else {
             isOn = false
             // A notice about notifications being off no longer holds once they are allowed again.
             if permission == .allowed, message == Self.withdrawnMessage { message = nil }
-            if await scheduler.pendingDailyCount() > 0 {
+            if await scheduler.pendingDailyCount() > 0, erased == erasures.count {
                 scheduler.cancelDaily()
             }
         }
@@ -147,14 +199,5 @@ public final class ReminderController: ObservableObject {
         preferences.setReminderOn(false)
         isOn = false
         message = Self.refusedMessage
-    }
-
-    /// Re-reads the stored values. Erase all data resets them, so the screen reads them again.
-    public func refreshFromPreferences() {
-        // Anything still in flight was started against settings that no longer exist.
-        generation += 1
-        isOn = preferences.isReminderOn
-        time = preferences.reminderTime
-        message = nil
     }
 }

@@ -16,6 +16,13 @@ private final class FakeReminderScheduler: ReminderScheduling, @unchecked Sendab
     private var failure: Error?
     private var hook: (@Sendable () async -> Void)?
     private var schedulingHook: (@Sendable () async -> Void)?
+    private var lookupHook: (@Sendable () async -> Void)?
+
+    /// Run while `pendingDailyCount()` is answering.
+    var whilePendingLookup: (@Sendable () async -> Void)? {
+        get { locked { lookupHook } }
+        set { locked { lookupHook = newValue } }
+    }
 
     /// Run while `scheduleDaily` is in flight, before it records the request.
     var whileScheduling: (@Sendable () async -> Void)? {
@@ -81,7 +88,9 @@ private final class FakeReminderScheduler: ReminderScheduling, @unchecked Sendab
     }
 
     func pendingDailyCount() async -> Int {
-        locked { pending == nil ? 0 : 1 }
+        let count = locked { pending == nil ? 0 : 1 }
+        if let hook = whilePendingLookup { await hook() }
+        return count
     }
 
     private func locked<T>(_ body: () -> T) -> T {
@@ -89,6 +98,11 @@ private final class FakeReminderScheduler: ReminderScheduling, @unchecked Sendab
         defer { lock.unlock() }
         return body()
     }
+}
+
+/// Holds a task started from inside a fake's hook, so a test can wait for it.
+private final class TaskBox: @unchecked Sendable {
+    var task: Task<Void, Never>?
 }
 
 private let withdrawnMessage =
@@ -101,9 +115,10 @@ final class ReminderControllerTests: XCTestCase {
     private let sevenThirty = ReminderTime(hour: 7, minute: 30)
 
     private func makeController(
-        _ scheduler: FakeReminderScheduler, preferences: InMemoryDisplayPreferences = InMemoryDisplayPreferences()
+        _ scheduler: FakeReminderScheduler, preferences: InMemoryDisplayPreferences = InMemoryDisplayPreferences(),
+        erasures: ReminderErasures = ReminderErasures()
     ) -> (ReminderController, InMemoryDisplayPreferences) {
-        (ReminderController(preferences: preferences, scheduler: scheduler), preferences)
+        (ReminderController(preferences: preferences, scheduler: scheduler, erasures: erasures), preferences)
     }
 
     func testReminderIsOffByDefaultAndSchedulesNothing() async throws {
@@ -311,18 +326,19 @@ final class ReminderControllerTests: XCTestCase {
         let scheduler = FakeReminderScheduler()
         scheduler.settablePermission = .allowed
         let (controller, preferences) = makeController(scheduler)
+        let second = TaskBox()
         // The second tap (off) lands while the first (on) is still reading the status.
         scheduler.whilePermissionIsAnswering = { [weak controller] in
-            await controller?.setOn(false)
+            scheduler.whilePermissionIsAnswering = nil
+            second.task = Task { @MainActor in await controller?.setOn(false) }
         }
 
         await controller.setOn(true)
-        scheduler.whilePermissionIsAnswering = nil
+        await second.task?.value
 
         XCTAssertFalse(controller.isOn, "the last tap wins")
         XCTAssertFalse(preferences.isReminderOn)
         XCTAssertNil(scheduler.pendingTime)
-        XCTAssertEqual(scheduler.scheduledTimes, [])
     }
 
     func testAFailedScheduleTurnsTheSwitchOffWithAMessage() async throws {
@@ -340,38 +356,45 @@ final class ReminderControllerTests: XCTestCase {
         XCTAssertNil(scheduler.pendingTime)
     }
 
-    func testEraseRefreshInvalidatesAnEnableThatIsStillScheduling() async throws {
+    func testAnEraseDuringAnEnableIsNotUndoneByIt() async throws {
         let scheduler = FakeReminderScheduler()
         scheduler.settablePermission = .allowed
-        let (controller, preferences) = makeController(scheduler)
+        let erasures = ReminderErasures()
+        let (controller, preferences) = makeController(scheduler, erasures: erasures)
+        // Erase all data runs while the enable is still adding its request: the eraser cancels, the
+        // preferences are reset, and the screen refreshes.
         scheduler.whileScheduling = { [weak controller] in
+            scheduler.whileScheduling = nil
             await MainActor.run {
+                try? ReminderEraser(scheduler: scheduler, erasures: erasures).eraseAll()
                 preferences.resetToDefaults()
                 controller?.refreshFromPreferences()
             }
         }
 
         await controller.setOn(true)
-        scheduler.whileScheduling = nil
 
         XCTAssertFalse(controller.isOn)
         XCTAssertFalse(preferences.isReminderOn, "the erase is not undone by the enable that was in flight")
+        XCTAssertNil(scheduler.pendingTime, "the request the enable added after the erase is cancelled")
     }
 
-    func testTheLastTimeChosenWinsWhenAnEarlierRescheduleFinishesLate() async throws {
+    func testTheLastTimeChosenWinsWhenChangesOverlap() async throws {
         let scheduler = FakeReminderScheduler()
         scheduler.settablePermission = .allowed
         let (controller, preferences) = makeController(scheduler)
         await controller.setOn(true)
         let early = ReminderTime(hour: 6, minute: 0)
         let late = ReminderTime(hour: 9, minute: 15)
-        // While the first change is still being scheduled, a second one arrives and finishes first.
+        let second = TaskBox()
+        // While the first change is still being scheduled, a second one arrives.
         scheduler.whileScheduling = { [weak controller] in
             scheduler.whileScheduling = nil
-            await controller?.setTime(late)
+            second.task = Task { @MainActor in await controller?.setTime(late) }
         }
 
         await controller.setTime(early)
+        await second.task?.value
 
         XCTAssertEqual(controller.time, late)
         XCTAssertEqual(preferences.reminderTime, late)
@@ -398,12 +421,14 @@ final class ReminderControllerTests: XCTestCase {
         scheduler.settablePermission = .allowed
         let (controller, preferences) = makeController(scheduler)
         await controller.setOn(true)
+        let second = TaskBox()
         scheduler.whileScheduling = { [weak controller] in
             scheduler.whileScheduling = nil
-            await controller?.setOn(false)
+            second.task = Task { @MainActor in await controller?.setOn(false) }
         }
 
         await controller.setTime(ReminderTime(hour: 9, minute: 15))
+        await second.task?.value
 
         XCTAssertFalse(controller.isOn)
         XCTAssertFalse(preferences.isReminderOn)
@@ -415,15 +440,56 @@ final class ReminderControllerTests: XCTestCase {
         scheduler.settablePermission = .allowed
         let (controller, preferences) = makeController(scheduler)
         await controller.setOn(true)
+        let second = TaskBox()
         scheduler.whileScheduling = { [weak controller] in
             scheduler.whileScheduling = nil
-            await controller?.setOn(false)
+            second.task = Task { @MainActor in await controller?.setOn(false) }
         }
 
         await controller.syncOnLaunch()
+        await second.task?.value
 
         XCTAssertFalse(controller.isOn)
         XCTAssertFalse(preferences.isReminderOn)
         XCTAssertNil(scheduler.pendingTime)
+    }
+
+    func testASyncThatOverlapsATimeChangeLeavesTheLatestTime() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        await controller.setOn(true)
+        let latest = ReminderTime(hour: 7, minute: 45)
+        let second = TaskBox()
+        scheduler.whileScheduling = { [weak controller] in
+            scheduler.whileScheduling = nil
+            second.task = Task { @MainActor in await controller?.setTime(latest) }
+        }
+
+        await controller.syncOnLaunch()
+        await second.task?.value
+
+        XCTAssertEqual(preferences.reminderTime, latest)
+        XCTAssertEqual(scheduler.pendingTime, latest, "a slower sync does not put the old time back")
+    }
+
+    func testAnOrphanedRequestIsRemovedEvenWhenTheReminderIsSwitchedOnMeanwhile() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        // Off in the preferences, but a request is still pending in the system.
+        try await scheduler.scheduleDaily(at: .standard)
+        let second = TaskBox()
+        scheduler.whilePendingLookup = { [weak controller] in
+            scheduler.whilePendingLookup = nil
+            second.task = Task { @MainActor in await controller?.setOn(true) }
+        }
+
+        await controller.syncOnLaunch()
+        await second.task?.value
+
+        XCTAssertTrue(controller.isOn)
+        XCTAssertTrue(preferences.isReminderOn)
+        XCTAssertEqual(scheduler.pendingTime, .standard, "switching on after the lookup leaves its request pending")
     }
 }

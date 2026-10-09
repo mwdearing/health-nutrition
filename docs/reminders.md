@@ -41,7 +41,8 @@ chooses, asking them to log what they have eaten. It is off by default and nothi
 
 ## Edge cases
 
-- Switching on and then off again before the system has answered ends off: each tap supersedes the one before.
+- Reminder actions (a switch, a time change, the launch and foreground sync) run one at a time, in the order they were made, and each reads the stored settings when its turn comes. Switching on and then off again ends off; the last time chosen is the one left pending.
+- Erase all data while an action is waiting on the system: the action cancels what it added and changes nothing.
 - If the system refuses the request after the permission check, the switch turns off and says the reminder could not be set.
 - When the time arrives while the app is open, the reminder still shows as a banner with its sound.
 

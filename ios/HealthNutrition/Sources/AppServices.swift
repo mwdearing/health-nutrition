@@ -54,7 +54,9 @@ final class AppServices {
         reminderScheduler: ReminderScheduling
     ) {
         self.displayPreferences = displayPreferences
-        self.reminders = ReminderController(preferences: displayPreferences, scheduler: reminderScheduler)
+        let reminderErasures = ReminderErasures()
+        self.reminders = ReminderController(
+            preferences: displayPreferences, scheduler: reminderScheduler, erasures: reminderErasures)
         self.journalStore = journalStore
         self.favoritesStore = favoritesStore
         self.recipeStore = recipeStore
@@ -70,7 +72,7 @@ final class AppServices {
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)
-        let reminderEraser = ReminderEraser(scheduler: reminderScheduler)
+        let reminderEraser = ReminderEraser(scheduler: reminderScheduler, erasures: reminderErasures)
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
             erasers: [journalStore, favoritesStore, recipeStore, goalStore, reminderEraser],
