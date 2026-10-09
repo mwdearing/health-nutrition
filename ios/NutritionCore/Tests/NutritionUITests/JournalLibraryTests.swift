@@ -479,6 +479,41 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: id).count, 1, "an invalid amount writes nothing")
     }
 
+    /// Typing the amount back to the loaded one leaves nothing to save, so Save goes away. The message
+    /// about the refused amount must go with it, or nothing on screen could clear it.
+    func testEntryDetailClearsAFieldErrorWhenItsDraftChanges() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        let loaded = try XCTUnwrap(model.drafts["oats"])
+        model.drafts["oats"] = "0"
+        XCTAssertFalse(model.saveDrafts(now: now))
+        XCTAssertNotNil(model.fieldErrors["oats"])
+        model.drafts["oats"] = loaded
+        XCTAssertFalse(model.isDirty)
+        XCTAssertNil(model.fieldErrors["oats"])
+    }
+
+    /// Only the field that was edited loses its message: another refused amount still needs correcting.
+    func testEntryDetailKeepsTheErrorOfAFieldThatWasNotEdited() throws {
+        let store = try makeStore()
+        let id = try addFood(store, at: now)
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+        XCTAssertFalse(model.save(
+            components: [
+                EditedComponent(componentID: "oats", name: "Oats", amountText: "0", unit: .g),
+                EditedComponent(componentID: "seeds", name: "Seeds", amountText: "0", unit: .g),
+            ],
+            changeReason: "Edited", now: now))
+        XCTAssertNotNil(model.fieldErrors["oats"])
+        XCTAssertNotNil(model.fieldErrors["seeds"])
+        model.drafts["oats"] = "41"
+        XCTAssertNil(model.fieldErrors["oats"])
+        XCTAssertNotNil(model.fieldErrors["seeds"])
+    }
+
     /// An amounts-only edit leaves the instant alone: nothing corrected it, so nothing may move.
     func testEntryDetailSaveWithoutATimeChangeLeavesTheStoredTimeAlone() throws {
         let store = try makeStore()

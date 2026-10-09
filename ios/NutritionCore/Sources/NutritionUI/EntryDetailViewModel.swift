@@ -124,7 +124,16 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var isDeleted = false
     /// Edit drafts by component id, bound to the text fields.
-    @Published public var drafts: [String: String] = [:]
+    ///
+    /// Editing a field drops the message a refused save left on it. The message describes the text that
+    /// was refused, and typing the loaded amount back removes Save, so nothing else could clear it.
+    @Published public var drafts: [String: String] = [:] {
+        didSet {
+            let edited = fieldErrors.keys.filter { drafts[$0] != oldValue[$0] }
+            guard !edited.isEmpty else { return }
+            for id in edited { fieldErrors[id] = nil }
+        }
+    }
     @Published public var changeReason: String = EntryDetailViewModel.defaultChangeReason
     /// The entry's time as an editable draft, which the "When" row binds to. `load` seeds it from
     /// the stored value, and a save writes a correction only once it differs from it.
@@ -485,7 +494,8 @@ public final class EntryDetailViewModel: ObservableObject {
     /// to what the entry logged. The keys follow `AddIntakeViewModel.thisAddsKeys`, so the Add form and this
     /// screen show the same rows in the same order. A value the snapshot does not state, or a basis that
     /// the logged amount cannot resolve, reads "Not on the label" and is never shown as zero, unless the
-    /// snapshot states the nutrient, when it reads the cannot-scale sentence instead.
+    /// snapshot states the nutrient, when it reads the cannot-scale sentence instead. A nutrient marked
+    /// not applicable reads "Does not apply" either way, as it does in the Add preview.
     static func adds(of product: ProductDefinition?, logged components: [IntakeComponent]) -> [EntryNutrientRow] {
         // A typed entry, or a snapshot that states no value at all, has nothing this entry added.
         guard let product, product.catalogOrigin != "manual",
@@ -501,6 +511,9 @@ public final class EntryDetailViewModel: ObservableObject {
                 amountText = LookedUpProduct.shownText(value.scaled(by: factor))
             } else if LookedUpProduct.statesAmount(value) {
                 amountText = LookedUpProduct.cannotScaleText
+            } else if value == .notApplicable {
+                // Not an amount, so there is nothing to scale: it reads as it does in the Add preview.
+                amountText = LookedUpProduct.shownText(value)
             }
             rows.append(EntryNutrientRow(
                 key: key, name: LookedUpProduct.displayNames[key] ?? compoundName(for: key), amountText: amountText))

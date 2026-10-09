@@ -195,6 +195,40 @@ final class EntryDetailDesignTests: XCTestCase {
         })
     }
 
+    /// A nutrient the snapshot marks as not applicable reads "Does not apply", as it does in the Add
+    /// preview, whether or not it is one of the standard rows.
+    func testEntryDetailThisEntryAddsReadsDoesNotApplyLikeTheAddPreview() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "design-recipe-not-applicable", productID: "example-oats", name: "Example oats",
+            labelBasis: "per 100 g", catalogOrigin: RecipeLogger.catalogOrigin, catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g), "sodium": .notApplicable, "potassium": .notApplicable])
+        let id = try addEntry(store, amount: 50, product: product)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        XCTAssertEqual(model.adds.first { $0.key == "protein" }?.amountText, "6.5 g")
+        XCTAssertEqual(model.adds.first { $0.key == "sodium" }?.amountText, "Does not apply")
+        XCTAssertEqual(model.adds.first { $0.key == "potassium" }?.amountText, "Does not apply")
+    }
+
+    /// Not applicable is not an amount, so an amount that cannot be scaled changes nothing about it: the
+    /// row still reads "Does not apply", not "Not on the label".
+    func testEntryDetailNotApplicableSurvivesAnAmountThatCannotBeScaled() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "design-oats-per-serving-not-applicable", productID: "example-oats", name: "Example oats",
+            labelBasis: "per serving", catalogOrigin: "example", catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g), "sodium": .notApplicable])
+        let id = try addEntry(store, amount: 50, product: product)
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        XCTAssertEqual(model.adds.first { $0.key == "sodium" }?.amountText, "Does not apply")
+        XCTAssertEqual(
+            model.adds.first { $0.key == "protein" }?.amountText, "Can't be worked out for this amount")
+    }
+
     func testEntryDetailThisEntryAddsIsEmptyForATypedProduct() throws {
         let store = try makeStore()
         let typed = ProductDefinition(
