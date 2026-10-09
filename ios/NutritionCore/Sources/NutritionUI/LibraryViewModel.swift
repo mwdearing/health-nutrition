@@ -294,17 +294,23 @@ public final class LibraryViewModel: ObservableObject {
     }
 
     /// Deletes the entry the last quick add wrote. False when there is nothing to undo.
-    /// A failed delete clears the token too: the Undo offer cannot succeed again, so it must not stay on screen.
+    /// An entry that is already gone clears the offer without an error, since there is nothing left to undo.
+    /// Any other failure keeps the offer, so the person can try again.
     @discardableResult
     public func undo(now: Date) -> Bool {
         guard let token = undoToken else { return false }
-        undoToken = nil
         do {
             try store.delete(intakeID: token.intakeID, now: now)
+            undoToken = nil
             load()
             return true
+        } catch JournalError.intakeDeleted(_) {
+            // The entry is already gone: there is nothing left to undo.
+            undoToken = nil
+            load()
+            return false
         } catch {
-            errorMessage = "Could not undo."
+            errorMessage = "Could not undo. Try again."
             return false
         }
     }
@@ -321,7 +327,7 @@ public final class LibraryViewModel: ObservableObject {
 
     /// The meal an item was recorded under, when it names one of the meals the app offers.
     public static func mealLabel(for template: RepeatTemplate) -> MealLabel? {
-        template.meal.flatMap { MealLabel(rawValue: $0) }
+        MealLabel.identityKeyPart(for: template.meal).flatMap { MealLabel(rawValue: $0) }
     }
 
     /// Drops any pending Undo offer, for when the Library screen goes away.

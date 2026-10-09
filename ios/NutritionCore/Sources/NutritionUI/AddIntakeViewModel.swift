@@ -177,7 +177,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     private var prefilledProduct: ProductDefinition? { storedProduct ?? labelValues }
 
-    public var hasPrefilledValues: Bool { prefilledNutrients.values.contains { $0.isKnown } }
+    public var hasPrefilledValues: Bool { prefilledNutrients.values.contains { LookedUpProduct.statesAmount($0) } }
 
     public var sourceLine: String? {
         if storedProduct != nil { return "From your Library" }
@@ -226,7 +226,7 @@ public final class AddIntakeViewModel: ObservableObject {
             guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { return nil }
             return ThisAddsLine(
                 key: key, displayName: LookedUpProduct.displayNames[key] ?? key.capitalized,
-                value: factor.map { value.scaled(by: $0) } ?? .unknown,
+                value: factor.map { value.scaled(by: $0) } ?? (value == .notApplicable ? .notApplicable : .unknown),
                 cannotScale: factor == nil && LookedUpProduct.statesAmount(value))
         }
     }
