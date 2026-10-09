@@ -56,7 +56,8 @@ public struct JournalView: View {
             LaterBadge()
         }
         .accessibilityElement(children: .combine)
-        .laterPlaceholder()
+        .disabled(true)
+        .accessibilityValue("Not available yet")
     }
 
     /// One day: a header card with its energy and goal bars, then its entries by meal. An old day is
@@ -107,7 +108,8 @@ public struct JournalView: View {
                 LaterBadge()
             }
             .accessibilityElement(children: .combine)
-            .laterPlaceholder()
+            .disabled(true)
+            .accessibilityValue("Not available yet")
         }
     }
 
