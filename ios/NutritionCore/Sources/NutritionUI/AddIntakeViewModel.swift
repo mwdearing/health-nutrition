@@ -272,8 +272,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// stable order. The form shows them under "Also on the label" so a compound the panel printed is
     /// visible and, saved with the snapshot, is not lost between the review screen and the journal.
     ///
-    /// Only a row the panel captured with a known amount is listed. A key a barcode snapshot completed
-    /// as unknown (its `salt`, say) is not a row the label stated and never appears here.
+    /// Only a row the panel stated is listed: a known amount, or a bound such as "<1 mg". A key a barcode
+    /// snapshot completed as unknown (its `salt`, say) is not a row the label stated and never appears here.
     public var additionalLabelNutrients: [String] {
         guard let captured = prefilledProduct else { return [] }
         var excluded = Set<String>()
@@ -283,7 +283,7 @@ public final class AddIntakeViewModel: ObservableObject {
         }
         return captured.nutrients
             .filter {
-                $0.value.isKnown && !excluded.contains($0.key)
+                LookedUpProduct.statesAmount($0.value) && !excluded.contains($0.key)
                     && excluded.isDisjoint(with: HealthKitWritePlanner.acceptedKeys(for: $0.key))
             }
             .map(\.key)
