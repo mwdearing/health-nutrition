@@ -22,8 +22,8 @@ public protocol ReminderScheduling: AnyObject, Sendable {
     /// Asks the system once. Returns whether the person allowed notifications.
     func requestPermission() async -> Bool
     /// Schedules the daily request at `time`, replacing any request already pending under the daily
-    /// identifier.
-    func scheduleDaily(at time: ReminderTime) async
+    /// identifier. Throws when the system refuses the request, so the caller can say so.
+    func scheduleDaily(at time: ReminderTime) async throws
     /// Removes the daily request, pending and delivered. Synchronous so an erase can finish before it
     /// returns.
     func cancelDaily()

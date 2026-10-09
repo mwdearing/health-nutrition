@@ -11,12 +11,18 @@ public final class ReminderController: ObservableObject {
     public static let withdrawnMessage =
         "Notifications are turned off for this app. You can allow them in the iPhone Settings app."
 
+    /// Shown when the system would not take the reminder, for example because notifications were switched
+    /// off between the check and the request.
+    public static let refusedMessage = "The reminder could not be set. Check the notification settings for this app and try again."
+
     @Published public private(set) var isOn: Bool
     @Published public private(set) var time: ReminderTime
     @Published public private(set) var message: String?
 
     private let preferences: ReminderPreferences
     private let scheduler: ReminderScheduling
+    /// Bumped by every switch tap so a slow earlier call can tell it has been superseded.
+    private var generation = 0
 
     public init(preferences: ReminderPreferences, scheduler: ReminderScheduling) {
         self.preferences = preferences
@@ -27,7 +33,12 @@ public final class ReminderController: ObservableObject {
 
     /// Switches the reminder on or off. Turning on asks for permission only when it is not yet decided,
     /// and stays off with a message when the answer is no.
+    ///
+    /// Each call supersedes the one before it: a switch tapped on and then off again before the system has
+    /// answered ends off, because the older call finds on resuming that it is no longer the latest.
     public func setOn(_ on: Bool) async {
+        generation += 1
+        let token = generation
         guard on else {
             preferences.setReminderOn(false)
             isOn = false
@@ -36,8 +47,11 @@ public final class ReminderController: ObservableObject {
             return
         }
         var permission = await scheduler.permission()
+        guard token == generation else { return }
         if permission == .notDetermined {
-            permission = await scheduler.requestPermission() ? .allowed : .denied
+            let granted = await scheduler.requestPermission()
+            guard token == generation else { return }
+            permission = granted ? .allowed : .denied
         }
         guard permission == .allowed else {
             preferences.setReminderOn(false)
@@ -45,10 +59,21 @@ public final class ReminderController: ObservableObject {
             message = Self.withdrawnMessage
             return
         }
+        do {
+            try await scheduler.scheduleDaily(at: time)
+        } catch {
+            guard token == generation else { return }
+            turnOffAfterRefusal()
+            return
+        }
+        guard token == generation else {
+            // A later switch-off arrived while the request was being added: do not leave it pending.
+            if !isOn { scheduler.cancelDaily() }
+            return
+        }
         preferences.setReminderOn(true)
         isOn = true
         message = nil
-        await scheduler.scheduleDaily(at: time)
     }
 
     /// Stores the new time. While the reminder is on, the pending request is replaced, never added to.
@@ -56,7 +81,11 @@ public final class ReminderController: ObservableObject {
         preferences.setReminderTime(newTime)
         time = newTime
         if isOn {
-            await scheduler.scheduleDaily(at: newTime)
+            do {
+                try await scheduler.scheduleDaily(at: newTime)
+            } catch {
+                turnOffAfterRefusal()
+            }
         }
     }
 
@@ -67,9 +96,13 @@ public final class ReminderController: ObservableObject {
         let permission = await scheduler.permission()
         if preferences.isReminderOn {
             if permission == .allowed {
-                isOn = true
-                message = nil
-                await scheduler.scheduleDaily(at: time)
+                do {
+                    try await scheduler.scheduleDaily(at: time)
+                    isOn = true
+                    message = nil
+                } catch {
+                    turnOffAfterRefusal()
+                }
             } else {
                 scheduler.cancelDaily()
                 preferences.setReminderOn(false)
@@ -82,6 +115,14 @@ public final class ReminderController: ObservableObject {
                 scheduler.cancelDaily()
             }
         }
+    }
+
+    /// The system refused the request, so no reminder is pending: the switch says so rather than staying on.
+    private func turnOffAfterRefusal() {
+        scheduler.cancelDaily()
+        preferences.setReminderOn(false)
+        isOn = false
+        message = Self.refusedMessage
     }
 
     /// Re-reads the stored values. Erase all data resets them, so the screen reads them again.

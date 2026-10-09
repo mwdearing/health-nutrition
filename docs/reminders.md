@@ -39,6 +39,12 @@ chooses, asking them to log what they have eaten. It is off by default and nothi
 - `ios/HealthNutrition/Sources/AppServices.swift` and `RootView.swift`: the controller is created once
   for the app's lifetime, synced at launch and each time the app becomes active.
 
+## Edge cases
+
+- Switching on and then off again before the system has answered ends off: each tap supersedes the one before.
+- If the system refuses the request after the permission check, the switch turns off and says the reminder could not be set.
+- When the time arrives while the app is open, the reminder still shows as a banner with its sound.
+
 ## How to test
 
 - The rules are covered by `ReminderControllerTests`, `ReminderPreferencesTests` and the erase case in

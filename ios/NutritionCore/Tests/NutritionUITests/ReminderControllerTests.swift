@@ -13,6 +13,20 @@ private final class FakeReminderScheduler: ReminderScheduling, @unchecked Sendab
     private var scheduled: [ReminderTime] = []
     private var cancels = 0
     private var pending: ReminderTime?
+    private var failure: Error?
+    private var hook: (@Sendable () async -> Void)?
+
+    /// Run while `permission()` is answering, to model a second tap landing mid-await.
+    var whilePermissionIsAnswering: (@Sendable () async -> Void)? {
+        get { locked { hook } }
+        set { locked { hook = newValue } }
+    }
+
+    /// When set, `scheduleDaily` throws it and schedules nothing.
+    var scheduleFailure: Error? {
+        get { locked { failure } }
+        set { locked { failure = newValue } }
+    }
 
     var settablePermission: ReminderPermission {
         get { locked { currentPermission } }
@@ -31,7 +45,8 @@ private final class FakeReminderScheduler: ReminderScheduling, @unchecked Sendab
     var pendingTime: ReminderTime? { locked { pending } }
 
     func permission() async -> ReminderPermission {
-        locked { currentPermission }
+        if let hook = whilePermissionIsAnswering { await hook() }
+        return locked { currentPermission }
     }
 
     func requestPermission() async -> Bool {
@@ -42,7 +57,8 @@ private final class FakeReminderScheduler: ReminderScheduling, @unchecked Sendab
         }
     }
 
-    func scheduleDaily(at time: ReminderTime) async {
+    func scheduleDaily(at time: ReminderTime) async throws {
+        if let error = scheduleFailure { throw error }
         locked {
             scheduled.append(time)
             pending = time
@@ -281,5 +297,38 @@ final class ReminderControllerTests: XCTestCase {
 
         do { let pending = await scheduler.pendingDailyCount(); XCTAssertEqual(pending, 0) }
         XCTAssertGreaterThanOrEqual(scheduler.cancelCount, 1)
+    }
+
+    func testSwitchingOnThenOffBeforeTheStatusIsReadLeavesItOff() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        // The second tap (off) lands while the first (on) is still reading the status.
+        scheduler.whilePermissionIsAnswering = { [weak controller] in
+            await controller?.setOn(false)
+        }
+
+        await controller.setOn(true)
+        scheduler.whilePermissionIsAnswering = nil
+
+        XCTAssertFalse(controller.isOn, "the last tap wins")
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertNil(scheduler.pendingTime)
+        XCTAssertEqual(scheduler.scheduledTimes, [])
+    }
+
+    func testAFailedScheduleTurnsTheSwitchOffWithAMessage() async throws {
+        struct Refused: Error {}
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        scheduler.scheduleFailure = Refused()
+        let (controller, preferences) = makeController(scheduler)
+
+        await controller.setOn(true)
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertNotNil(controller.message)
+        XCTAssertNil(scheduler.pendingTime)
     }
 }
