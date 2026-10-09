@@ -40,6 +40,45 @@ public struct RecentItemsProvider {
         return result
     }
 
+    /// Distinct products the person has logged from a lookup, a label scan or another source that stored a
+    /// product snapshot. Typed-in entries (origin `manual`), recipes and water are left out.
+    ///
+    /// Read from every active entry rather than from `recents(limit:)`, so the Foods segment is not capped at
+    /// the Recents rows. One row per product (its lineage `productID`), built from the newest entry of that
+    /// product, so the row repeats the snapshot that entry used. Sorted by the name the row shows, ignoring case.
+    public func foods() throws -> [RecentItem] {
+        var seenProducts = Set<String>()
+        var result: [RecentItem] = []
+        let intakes = try store.activeIntakes()
+            .filter { $0.lifecycle == .active && $0.category != DailyTotalsBuilder.waterCategory }
+            .sorted { $0.occurredAt > $1.occurredAt }
+        for intake in intakes {
+            guard let revisions = try? store.revisions(of: intake.id),
+                let current = revisions.first(where: { $0.number == intake.currentRevision }),
+                let snapshotID = current.productSnapshotID,
+                let product = try? store.product(snapshotID: snapshotID),
+                product.catalogOrigin != Self.manualOrigin,
+                product.catalogOrigin != RecipeLogger.catalogOrigin
+            else { continue }
+            guard seenProducts.insert(product.productID).inserted else { continue }
+            let key = Self.key(category: intake.category, revision: current, meal: intake.meal)
+            result.append(RecentItem(
+                id: key,
+                template: RepeatTemplate(
+                    displayName: AmountText.title(current.components), category: intake.category, meal: intake.meal,
+                    components: current.components, productSnapshotID: snapshotID),
+                lastUsedAt: intake.occurredAt))
+        }
+        return result.sorted {
+            let left = $0.template.displayName.lowercased()
+            let right = $1.template.displayName.lowercased()
+            return left == right ? $0.id < $1.id : left < right
+        }
+    }
+
+    /// The origin a typed-in entry's product carries.
+    static let manualOrigin = "manual"
+
     /// **The meal is part of the identity.** A recent item is a template to add again, and "again" means
     /// the same thing a person last ate: the same oats at breakfast and the same oats at dinner are two
     /// different entries they would add again separately, and a favorite is a copy of one of them.
@@ -124,7 +163,7 @@ public struct LibrarySection: Equatable, Identifiable {
     public let items: [LibraryItem]
 }
 
-/// The segments of the Library screen. Foods and Recipes are placeholders for now.
+/// The segments of the Library screen. Recipes is a placeholder for now.
 public enum LibrarySegment: String, CaseIterable, Identifiable {
     case favorites, recent, foods, recipes
 
@@ -155,7 +194,7 @@ public struct LibraryUndoToken: Equatable {
 
 @MainActor
 public final class LibraryViewModel: ObservableObject {
-    /// Favorites first, then Recents.
+    /// Favorites first, then Foods, then Recents.
     @Published public private(set) var sections: [LibrarySection] = []
     @Published public private(set) var errorMessage: String?
     @Published public var segment: LibrarySegment = .favorites
@@ -192,6 +231,7 @@ public final class LibraryViewModel: ObservableObject {
             let stored = try favorites.list()
             let favoriteKeys = Set(stored.map(Self.key(of:)))
             let recents = try RecentItemsProvider(store: store).recents()
+            let foods = try RecentItemsProvider(store: store).foods()
             let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
                 RepeatTemplate(favorite: favorite) ?? RepeatTemplate(
@@ -202,7 +242,7 @@ public final class LibraryViewModel: ObservableObject {
             // favorite and a recent can repeat the same product, and each read is a store query. A
             // template with no snapshot states no product at all and is the food it was recorded as.
             let snapshotIDs = Set(
-                (favoriteTemplates + recents.map(\.template)).compactMap(\.productSnapshotID))
+                (favoriteTemplates + recents.map(\.template) + foods.map(\.template)).compactMap(\.productSnapshotID))
             var kinds: [String: ProductKind] = [:]
             for snapshotID in snapshotIDs {
                 kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
@@ -225,8 +265,16 @@ public final class LibraryViewModel: ObservableObject {
                     isFavorite: favoriteKeys.contains(recent.id), template: recent.template,
                     kind: kind(of: recent.template))
             }
+            let foodItems = foods.map { food -> LibraryItem in
+                LibraryItem(
+                    id: "food:\(food.id)", title: food.template.displayName,
+                    detail: Self.detail(food.template),
+                    isFavorite: favoriteKeys.contains(food.id), template: food.template,
+                    kind: kind(of: food.template))
+            }
             sections = [
                 LibrarySection(title: "Favorites", items: favoriteItems),
+                LibrarySection(title: "Foods", items: foodItems),
                 LibrarySection(title: "Recents", items: recentItems),
             ]
             errorMessage = nil
@@ -255,12 +303,13 @@ public final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// The items the current segment lists. Foods and Recipes list nothing yet.
+    /// The items the current segment lists. Recipes lists nothing yet.
     public var visibleItems: [LibraryItem] {
         switch segment {
         case .favorites: return sections.first { $0.title == "Favorites" }?.items ?? []
         case .recent: return sections.first { $0.title == "Recents" }?.items ?? []
-        case .foods, .recipes: return []
+        case .foods: return sections.first { $0.title == "Foods" }?.items ?? []
+        case .recipes: return []
         }
     }
 
@@ -274,7 +323,7 @@ public final class LibraryViewModel: ObservableObject {
                 title: "Nothing logged yet", message: "Things you log will show up here.", systemImage: "clock")
         case .foods:
             return LibraryEmptyText(
-                title: "Foods", message: "Foods you've scanned will be kept here so you can log them again.",
+                title: "No foods yet", message: "Foods you scan or look up are kept here so you can log them again.",
                 systemImage: "barcode.viewfinder")
         case .recipes:
             return LibraryEmptyText(
