@@ -79,7 +79,7 @@ final class AddIntakeThisAddsTests: XCTestCase {
                 nutrients: ["protein": .known(13, .g)]))
             model.amountText = basis == "per serving" ? "40" : "60"
             if basis == "per serving" {
-                XCTAssertTrue(model.thisAdds.allSatisfy { $0.value == .unknown && $0.text == "unknown" })
+                XCTAssertTrue(model.thisAdds.allSatisfy { $0.value == .unknown && $0.text == "Not on the label" })
             } else {
                 XCTAssertEqual(model.thisAdds.first { $0.key == "protein" }?.value, .known(26, .g))
                 XCTAssertEqual(model.servingHint, "1 serving = 30 g")

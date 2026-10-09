@@ -43,6 +43,13 @@ final class WordingPassTests: XCTestCase {
         XCTAssertEqual(LookedUpProduct.describe(.belowReportingThreshold(MeasureUnit.mg)), "below reporting threshold mg")
     }
 
+    func testShownTextUsesTheLabelWordsForLookedUpValues() {
+        XCTAssertEqual(LookedUpProduct.shownText(.known(Decimal(180), MeasureUnit.mg)), "180 mg")
+        XCTAssertEqual(LookedUpProduct.shownText(.unknown), "Not on the label")
+        XCTAssertEqual(LookedUpProduct.shownText(.notApplicable), "Does not apply")
+        XCTAssertEqual(LookedUpProduct.shownText(.belowReportingThreshold(MeasureUnit.mg)), "Less than the label reports")
+    }
+
     func testPrimaryActionTitleCountsPendingValues() {
         let none = LabelCaptureViewModel()
         none.load(lines: ["Serving size 1 cup (240mL)", "Calories 120", "Protein 3g"])
@@ -84,6 +91,32 @@ final class WordingPassTests: XCTestCase {
         XCTAssertTrue(model.servingNeedsReview)
         let servingText = try XCTUnwrap(model.servingText)
         XCTAssertEqual(model.servingPrompt, LabelCaptureViewModel.servingQuestion(servingText))
+    }
+
+    // MARK: Entry words
+
+    /// A label-capture entry whose snapshot states one nutrient below the reporting threshold. Synthetic.
+    func testEntryScreenShowsABoundInTheLabelWords() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let store = try SwiftDataJournalStore(url: try uiTempURL(self, "wording-entry.store"))
+        let product = ProductDefinition(
+            snapshotID: "wording-threshold", productID: "label_capture", name: "Example bar",
+            labelBasis: "per serving (30 g)", catalogOrigin: ProductOrigin.label_capture, catalogVersion: "unknown",
+            nutrients: [
+                "creatine-monohydrate": .known(Decimal(3), MeasureUnit.g),
+                "synthetic-trace": .belowReportingThreshold(MeasureUnit.mg),
+            ])
+        let id = UUID().uuidString.lowercased()
+        try store.create(
+            Intake(id: id, category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)],
+            product: product, now: now)
+
+        let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+
+        let trace = model.allValues.first { $0.key == "synthetic-trace" }
+        XCTAssertEqual(trace?.amountText, "Less than the label reports")
     }
 
     // MARK: Recipe words
