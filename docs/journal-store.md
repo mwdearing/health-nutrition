@@ -166,6 +166,28 @@ No schema change was needed: the three columns already existed.
 
 See [healthkit-writer.md](healthkit-writer.md) for the worker that calls them and the retry policy.
 
+## Retention
+
+What the journal keeps, and for how long. Only one kind of row is ever removed.
+
+| Data | Kept |
+|---|---|
+| Acknowledged outbox rows | Pruned 30 days after `acknowledgedAt`: a row acknowledged strictly more than 30 days before the pass goes; a row acknowledged exactly 30 days before stays |
+| Unacknowledged outbox rows (pending, suspended, `needsAttention`) | Forever, until delivered |
+| Tombstones (deleted intakes) | Forever |
+| Revisions | Forever |
+| Product snapshots | Forever |
+| Projections | Forever |
+| Intakes | Forever |
+
+- `pruneAcknowledgedOutbox(now:olderThan:)` performs the pass and returns how many rows it removed. It
+  reads and writes nothing else, so the export is unchanged by it. Once a row is pruned, a later
+  `acknowledge` for that operation throws `unknownOperation`; no reader of the outbox needs an
+  acknowledged row, because every reader filters on `acknowledgedAt == nil`.
+- The pass runs **once at launch**, best effort: a failure is ignored and never blocks launch. A second
+  pass with the same `now` removes nothing.
+- The pass **never runs during an import or an undo of a restore**. It is called only from launch.
+
 ## Testing
 
 Tests run on real on-disk stores in a unique temporary directory. A test flag makes the
