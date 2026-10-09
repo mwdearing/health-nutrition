@@ -129,7 +129,7 @@ public struct JournalView: View {
             }
         }
         .accessibilityLabel(section.entryCountText)
-        .accessibilityHint("Shows this day's entries")
+        .accessibilityHint(model.isExpanded(section) ? "Hides this day's entries" : "Shows this day's entries")
     }
 
     private func entryButton(_ row: JournalRow) -> some View {

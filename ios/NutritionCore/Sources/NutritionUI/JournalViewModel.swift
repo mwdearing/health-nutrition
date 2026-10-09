@@ -199,7 +199,8 @@ public final class JournalViewModel: ObservableObject {
                         totals: totals, tracked: tracked, goals: storedGoals, unitSystem: self.preferences.unitSystem),
                     mealGroups: Self.mealGroups(for: rows),
                     headerBars: Self.headerBars(
-                        totals: totals, goals: storedGoals, unitSystem: self.preferences.unitSystem),
+                        totals: totals, goals: storedGoals, hasFoodEntries: rows.contains { !$0.isWater && $0.kind != .supplement },
+                        unitSystem: self.preferences.unitSystem),
                     energyText: Self.energyText(totals: totals),
                     isCollapsedByDefault: Self.isMoreThanAWeekBefore(
                         key, now: now, zone: zones[key] ?? TimeZone.current),
@@ -319,12 +320,15 @@ public final class JournalViewModel: ObservableObject {
 
     /// One bar per stored goal that is not water, in the stored order, at most three. A nutrient with
     /// a goal but no value in the day still gets a bar, which says it cannot be totalled or is unlogged.
-    static func headerBars(totals: DailyTotals, goals: [NutrientGoal], unitSystem: UnitSystem) -> [GoalBarModel] {
+    static func headerBars(
+        totals: DailyTotals, goals: [NutrientGoal], hasFoodEntries: Bool, unitSystem: UnitSystem
+    ) -> [GoalBarModel] {
         goals.filter { $0.nutrient != DailyTotalsBuilder.waterKey }.prefix(3).map { goal -> GoalBarModel in
             let line = NutrientProgressLine.make(
                 nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal)
             return GoalBarModel.make(
-                line: line, hasEntries: line.hasKnownAmount, missingCount: 0, unitSystem: unitSystem)
+                line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: 0,
+                unitSystem: unitSystem)
         }
     }
 
