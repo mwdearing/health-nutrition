@@ -463,7 +463,7 @@ public final class JournalViewModel: ObservableObject {
     }
 
     /// One goal's line for the logged days. The average is over the days whose total is known, converted
-    /// to the goal's unit, and each day that cannot be totalled is counted in the parenthetical.
+    /// to the goal's unit, and each day that cannot be totaled is counted in the parenthetical.
     static func weekGoalLine(goal: NutrientGoal, days: [JournalDaySection], unitSystem: UnitSystem) -> String {
         let name = NutrientNames.displayName(for: goal.nutrient)
         var known: [Decimal] = []
@@ -479,21 +479,22 @@ public final class JournalViewModel: ObservableObject {
         }
         guard !known.isEmpty else { return "\(name): can't total yet" }
         let average = known.reduce(Decimal(0), +) / Decimal(known.count)
-        let shown = AmountDisplay.display(average, unit: goal.unit, system: unitSystem)
+        // Nutrient goals read in their own metric unit, as the goal bars on this screen do.
+        let shown = AmountDisplay.display(average, unit: goal.unit, system: .metric)
         let figure = DisplayAmount(
             amount: DisplayRounding.rounded(shown.amount, fractionDigits: AmountDisplay.fractionDigits(for: shown.amount)),
             unit: shown.unit, isBelowSmallest: shown.isBelowSmallest)
-        let target = AmountDisplay.display(goal.target, unit: goal.unit, system: unitSystem)
+        let target = AmountDisplay.display(goal.target, unit: goal.unit, system: .metric)
         var line = "\(name): average \(figure.text) a day against \(target.text)"
         if unknownDays > 0 {
-            line += " (\(unknownDays) \(unknownDays == 1 ? "day" : "days") could not be totalled)"
+            line += " (\(unknownDays) \(unknownDays == 1 ? "day" : "days") could not be totaled)"
         }
         return line
     }
 
     /// One bar per stored goal that is not water and is shown on Today, in the stored order, at most
     /// three. A nutrient with a goal but no value in the day still gets a bar, which says it cannot be
-    /// totalled or is unlogged.
+    /// totaled or is unlogged.
     static func headerBars(
         totals: DailyTotals, goals: [NutrientGoal], hasFoodEntries: Bool, unitSystem: UnitSystem,
         hidden: Set<String> = []

@@ -49,7 +49,7 @@ final class JournalWeekSummaryTests: XCTestCase {
         return try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
     }
 
-    /// A typed food entry with no product, so none of its nutrients can be totalled.
+    /// A typed food entry with no product, so none of its nutrients can be totaled.
     private func logTypedFood(_ store: JournalStore, daysBack back: Int) throws {
         let date = daysBack(back)
         try store.create(
@@ -171,7 +171,7 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 13.3 g a day against 60 g"])
     }
 
-    /// A day whose protein cannot be totalled is left out of the average and counted in the parenthetical.
+    /// A day whose protein cannot be totaled is left out of the average and counted in the parenthetical.
     func testADayWithAnUnknownTotalIsCountedNotAveraged() throws {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
@@ -186,7 +186,7 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.headline, "Logged 3 of 7 days")
         XCTAssertEqual(
             model.weekSummary?.goalLines,
-            ["Protein: average 13.5 g a day against 60 g (1 day could not be totalled)"])
+            ["Protein: average 13.5 g a day against 60 g (1 day could not be totaled)"])
     }
 
     /// When no logged day can total the nutrient, the line says so and gives no figure.
@@ -267,9 +267,8 @@ final class JournalWeekSummaryTests: XCTestCase {
 
     // MARK: Units
 
-    /// Under the US system the average and the target are shown in ounces, as the rest of the app shows
-    /// a weight in that system.
-    func testUSUnitsShowOuncesForTheAverageAndTheTarget() throws {
+    /// Nutrient goals read in grams under the US system too, exactly as the goal bars on the same screen do.
+    func testUSUnitsKeepNutrientGoalsInGrams() throws {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
@@ -281,7 +280,6 @@ final class JournalWeekSummaryTests: XCTestCase {
 
         let line = try XCTUnwrap(model.weekSummary?.goalLines.first)
         XCTAssertTrue(line.hasPrefix("Protein: average "), line)
-        XCTAssertTrue(line.hasSuffix(" oz a day against 2.12 oz"), line)
-        XCTAssertFalse(line.contains(" g "), line)
+        XCTAssertTrue(line.hasSuffix(" g a day against 60 g"), line)
     }
 }

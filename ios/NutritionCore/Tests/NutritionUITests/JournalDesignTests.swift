@@ -268,7 +268,7 @@ final class JournalDesignTests: XCTestCase {
 
     // MARK: Totals that cannot be answered
 
-    /// A logged food with no protein value makes the protein bar say it cannot be totalled, not that
+    /// A logged food with no protein value makes the protein bar say it cannot be totaled, not that
     /// nothing is logged. A day whose only entry is water has no food, so its protein bar says nothing
     /// is logged.
     func testDayHeaderBarsSayCannotTotalWhenALoggedFoodLacksTheValue() throws {
@@ -297,7 +297,7 @@ final class JournalDesignTests: XCTestCase {
     /// A day whose only food states no energy has no energy figure at all, not "0 kcal". A food that
     /// states energy shows its day figure with the kcal symbol, read from its own snapshot at 100 g of
     /// a per-100 g basis, so the figure is exactly 400 kcal.
-    func testDayHeaderEnergyTextIsNilWhenTheDayCannotBeTotalled() throws {
+    func testDayHeaderEnergyTextIsNilWhenTheDayCannotBeTotaled() throws {
         let noEnergy = try makeJournalStore()
         try addEntry(noEnergy, at: designNow, product: oatsSnapshot())
         let noEnergyModel = makeModel(noEnergy)

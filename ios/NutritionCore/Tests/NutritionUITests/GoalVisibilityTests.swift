@@ -91,7 +91,7 @@ final class GoalVisibilityTests: XCTestCase {
         model.load(now: when)
 
         XCTAssertEqual(todayBarIDs(model), ["fiber"])
-        // The goal and its target are untouched, and the day's protein is still totalled.
+        // The goal and its target are untouched, and the day's protein is still totaled.
         XCTAssertEqual(try goals.goals().first { $0.nutrient == "protein" }?.target, Decimal(60))
         XCTAssertEqual(
             model.progress.first { $0.nutrient == "protein" }?.text, "Protein 5.2 g of 60 g")
