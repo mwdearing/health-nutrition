@@ -136,6 +136,12 @@ public struct EntryDetailView: View {
                     LaterBadge()
                 }
                 .accessibilityElement(children: .combine)
+                ForEach(model.sourceDetailRows) { row in
+                    LabeledContent(row.label, value: row.value)
+                        .font(.footnote)
+                        .accessibilityLabel(row.label)
+                        .accessibilityValue(row.value)
+                }
                 if model.isTypedEntry {
                     Button {} label: {
                         HStack {
