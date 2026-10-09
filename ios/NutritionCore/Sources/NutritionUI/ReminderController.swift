@@ -77,15 +77,24 @@ public final class ReminderController: ObservableObject {
     }
 
     /// Stores the new time. While the reminder is on, the pending request is replaced, never added to.
+    ///
+    /// The last time chosen wins: a change that finishes after a later one has been made schedules the
+    /// latest time again, so a stale request never stays pending.
     public func setTime(_ newTime: ReminderTime) async {
+        generation += 1
+        let token = generation
         preferences.setReminderTime(newTime)
         time = newTime
-        if isOn {
-            do {
-                try await scheduler.scheduleDaily(at: newTime)
-            } catch {
-                turnOffAfterRefusal()
-            }
+        guard isOn else { return }
+        do {
+            try await scheduler.scheduleDaily(at: newTime)
+        } catch {
+            guard token == generation else { return }
+            turnOffAfterRefusal()
+            return
+        }
+        if token != generation, isOn {
+            try? await scheduler.scheduleDaily(at: time)
         }
     }
 
@@ -111,6 +120,8 @@ public final class ReminderController: ObservableObject {
             }
         } else {
             isOn = false
+            // A notice about notifications being off no longer holds once they are allowed again.
+            if permission == .allowed, message == Self.withdrawnMessage { message = nil }
             if await scheduler.pendingDailyCount() > 0 {
                 scheduler.cancelDaily()
             }
@@ -127,6 +138,8 @@ public final class ReminderController: ObservableObject {
 
     /// Re-reads the stored values. Erase all data resets them, so the screen reads them again.
     public func refreshFromPreferences() {
+        // Anything still in flight was started against settings that no longer exist.
+        generation += 1
         isOn = preferences.isReminderOn
         time = preferences.reminderTime
         message = nil
