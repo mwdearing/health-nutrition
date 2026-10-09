@@ -21,6 +21,19 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
 }
 
 @MainActor
+/// Answers each component with the value given for its id, so a test can state any unit it needs.
+private struct ComponentFacts: NutrientFactsLookup {
+    let values: [String: NutrientValue]
+
+    func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+        values[component.componentID] ?? .unknown
+    }
+
+    func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+        values[component.componentID] ?? .unknown
+    }
+}
+
 final class DailyTotalsTests: XCTestCase {
     private func makeStore() throws -> SwiftDataJournalStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -188,6 +201,38 @@ final class DailyTotalsTests: XCTestCase {
 
     /// An entry with no product snapshot has no basis to scale by, so the nutrient stays unknown
     /// rather than reading as zero.
+    /// Protein stated in international units is not a protein total in grams: a day holding only that
+    /// value reads as unknown, the answer a mismatched pair already gets, and not as "1000 IU" beside
+    /// a 60 g target.
+    func testALoneProteinValueInInternationalUnitsIsUnknownNotShownInIU() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Supplement", id: "iu-protein", at: when)
+        let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store,
+            lookup: ComponentFacts(values: ["iu-protein": .known(Decimal(1000), .iu)]),
+            nutrients: ["protein"])
+
+        let total = try XCTUnwrap(totals.total(for: "protein"))
+        XCTAssertEqual(total.value, .unknown)
+        XCTAssertTrue(total.coverage.hasUnknown)
+    }
+
+    /// The same protein in milligrams is still a protein total, stated as it was read.
+    func testALoneProteinValueInMilligramsIsStillTotalled() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Tablet", id: "mg-protein", at: when)
+        let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store,
+            lookup: ComponentFacts(values: ["mg-protein": .known(Decimal(500), .mg)]),
+            nutrients: ["protein"])
+
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(500), .mg))
+    }
+
     func testAnEntryWithNoSnapshotLeavesTheNutrientUnknownRatherThanZero() throws {
         let store = try makeStore()
         try addFood(store, name: "Banana", id: "banana", at: when)
