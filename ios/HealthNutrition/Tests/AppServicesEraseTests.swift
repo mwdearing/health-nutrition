@@ -135,4 +135,79 @@ final class AppServicesEraseTests: XCTestCase {
 
         XCTAssertFalse(services.displayPreferences.hasSeenWelcome)
     }
+
+    /// Erase all data removes the pending daily reminder and the setting that asked for it, so a
+    /// reminder never fires for a journal that no longer exists. The screen refreshes the reminder
+    /// from its stored setting after an erase; the controller is refreshed the same way here.
+    func testEraseCancelsTheReminderAndResetsItsSetting() async throws {
+        let suiteName = "healthnutrition.tests.erase-reminder.\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        suite.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let scheduler = RecordingReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let services = try AppServices.make(
+            directory: directory,
+            displayPreferences: UserDefaultsDisplayPreferences(defaults: suite),
+            reminderScheduler: scheduler)
+        try fill(services)
+        await services.reminders.setOn(true)
+        let pendingBeforeErase = await scheduler.pendingDailyCount()
+        XCTAssertEqual(pendingBeforeErase, 1)
+
+        XCTAssertTrue(services.connections.eraseAllData())
+
+        let pendingAfterErase = await scheduler.pendingDailyCount()
+        XCTAssertEqual(pendingAfterErase, 0)
+        XCTAssertFalse(services.displayPreferences.isReminderOn)
+        let leftover = suite.dictionaryRepresentation().keys.filter { $0.hasPrefix("display.reminder") }
+        XCTAssertEqual(leftover.sorted(), [])
+        services.reminders.refreshFromPreferences()
+        XCTAssertFalse(services.reminders.isOn)
+    }
+}
+
+/// A reminder scheduler that records calls and answers from settable state, for the app's own wiring.
+private final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var currentPermission: ReminderPermission = .notDetermined
+    private var pending: ReminderTime?
+
+    var settablePermission: ReminderPermission {
+        get { locked { currentPermission } }
+        set { locked { currentPermission = newValue } }
+    }
+
+    func permission() async -> ReminderPermission {
+        locked { currentPermission }
+    }
+
+    func requestPermission() async -> Bool {
+        locked {
+            currentPermission = .allowed
+            return true
+        }
+    }
+
+    func scheduleDaily(at time: ReminderTime) async {
+        locked { pending = time }
+    }
+
+    func cancelDaily() {
+        locked { pending = nil }
+    }
+
+    func pendingDailyCount() async -> Int {
+        locked { pending == nil ? 0 : 1 }
+    }
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
 }

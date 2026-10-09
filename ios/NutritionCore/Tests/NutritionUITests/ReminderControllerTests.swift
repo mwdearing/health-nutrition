@@ -1,0 +1,285 @@
+import Foundation
+import NutritionJournal
+import XCTest
+@testable import NutritionUI
+
+/// A reminder scheduler that records every call and answers from settable state. It models the
+/// one-request-per-identifier rule: scheduling again replaces the pending request rather than adding one.
+private final class FakeReminderScheduler: ReminderScheduling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var currentPermission: ReminderPermission = .notDetermined
+    private var answer = true
+    private var requests = 0
+    private var scheduled: [ReminderTime] = []
+    private var cancels = 0
+    private var pending: ReminderTime?
+
+    var settablePermission: ReminderPermission {
+        get { locked { currentPermission } }
+        set { locked { currentPermission = newValue } }
+    }
+
+    /// What the simulated system prompt answers when it is asked.
+    var requestAnswer: Bool {
+        get { locked { answer } }
+        set { locked { answer = newValue } }
+    }
+
+    var permissionRequestCount: Int { locked { requests } }
+    var scheduledTimes: [ReminderTime] { locked { scheduled } }
+    var cancelCount: Int { locked { cancels } }
+    var pendingTime: ReminderTime? { locked { pending } }
+
+    func permission() async -> ReminderPermission {
+        locked { currentPermission }
+    }
+
+    func requestPermission() async -> Bool {
+        locked {
+            requests += 1
+            currentPermission = answer ? .allowed : .denied
+            return answer
+        }
+    }
+
+    func scheduleDaily(at time: ReminderTime) async {
+        locked {
+            scheduled.append(time)
+            pending = time
+        }
+    }
+
+    func cancelDaily() {
+        locked {
+            cancels += 1
+            pending = nil
+        }
+    }
+
+    func pendingDailyCount() async -> Int {
+        locked { pending == nil ? 0 : 1 }
+    }
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
+private let withdrawnMessage =
+    "Notifications are turned off for this app. You can allow them in the iPhone Settings app."
+
+/// The daily reminder's controller: the permission prompt, the single pending request and the launch
+/// sync, checked against a fake scheduler and an in-memory preference store.
+@MainActor
+final class ReminderControllerTests: XCTestCase {
+    private let sevenThirty = ReminderTime(hour: 7, minute: 30)
+
+    private func makeController(
+        _ scheduler: FakeReminderScheduler, preferences: InMemoryDisplayPreferences = InMemoryDisplayPreferences()
+    ) -> (ReminderController, InMemoryDisplayPreferences) {
+        (ReminderController(preferences: preferences, scheduler: scheduler), preferences)
+    }
+
+    func testReminderIsOffByDefaultAndSchedulesNothing() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .notDetermined
+        let (controller, _) = makeController(scheduler)
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertEqual(controller.time, ReminderTime.standard)
+        XCTAssertNil(controller.message)
+
+        await controller.syncOnLaunch()
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertEqual(scheduler.scheduledTimes, [])
+        XCTAssertEqual(scheduler.permissionRequestCount, 0)
+        XCTAssertEqual(scheduler.cancelCount, 0)
+        XCTAssertNil(scheduler.pendingTime)
+    }
+
+    func testSyncOnLaunchNeverRequestsPermission() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .notDetermined
+
+        let (off, _) = makeController(scheduler)
+        await off.syncOnLaunch()
+
+        let storedOn = InMemoryDisplayPreferences()
+        storedOn.setReminderOn(true)
+        let (on, _) = makeController(scheduler, preferences: storedOn)
+        await on.syncOnLaunch()
+
+        XCTAssertEqual(scheduler.permissionRequestCount, 0)
+    }
+
+    func testTurningOnAsksOnceWhenNotDetermined() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .notDetermined
+        scheduler.requestAnswer = true
+        let (controller, preferences) = makeController(scheduler)
+
+        await controller.setOn(true)
+        XCTAssertEqual(scheduler.permissionRequestCount, 1)
+        XCTAssertTrue(controller.isOn)
+        XCTAssertTrue(preferences.isReminderOn)
+
+        // Once allowed, switching off and on again does not ask a second time.
+        await controller.setOn(false)
+        await controller.setOn(true)
+        XCTAssertEqual(scheduler.permissionRequestCount, 1)
+    }
+
+    func testTurningOnSchedulesAtTheDefaultTime() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .notDetermined
+        scheduler.requestAnswer = true
+        let (controller, _) = makeController(scheduler)
+
+        await controller.setOn(true)
+
+        XCTAssertEqual(scheduler.scheduledTimes, [ReminderTime.standard])
+        XCTAssertEqual(scheduler.pendingTime, ReminderTime(hour: 20, minute: 0))
+        XCTAssertNil(controller.message)
+    }
+
+    func testTurningOnWhenDeniedStaysOffWithMessageAndSchedulesNothing() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .denied
+        let (controller, preferences) = makeController(scheduler)
+
+        await controller.setOn(true)
+
+        XCTAssertEqual(scheduler.permissionRequestCount, 0)
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertEqual(controller.message, withdrawnMessage)
+        XCTAssertEqual(scheduler.scheduledTimes, [])
+        XCTAssertNil(scheduler.pendingTime)
+    }
+
+    func testRefusingThePromptStaysOffWithMessageAndSchedulesNothing() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .notDetermined
+        scheduler.requestAnswer = false
+        let (controller, preferences) = makeController(scheduler)
+
+        await controller.setOn(true)
+
+        XCTAssertEqual(scheduler.permissionRequestCount, 1)
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertEqual(controller.message, withdrawnMessage)
+        XCTAssertNil(scheduler.pendingTime)
+    }
+
+    func testChangingTheTimeWhileOnReplacesTheSingleRequest() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        await controller.setOn(true)
+        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+
+        await controller.setTime(sevenThirty)
+
+        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+        XCTAssertEqual(scheduler.pendingTime, sevenThirty)
+        XCTAssertEqual(scheduler.scheduledTimes, [ReminderTime.standard, sevenThirty])
+        XCTAssertEqual(controller.time, sevenThirty)
+        XCTAssertEqual(preferences.reminderTime, sevenThirty)
+    }
+
+    func testChangingTheTimeWhileOffOnlyStoresIt() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+
+        await controller.setTime(sevenThirty)
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertEqual(preferences.reminderTime, sevenThirty)
+        XCTAssertEqual(scheduler.scheduledTimes, [])
+        XCTAssertNil(scheduler.pendingTime)
+    }
+
+    func testTurningOffCancels() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        await controller.setOn(true)
+        XCTAssertNotNil(scheduler.pendingTime)
+
+        await controller.setOn(false)
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertGreaterThanOrEqual(scheduler.cancelCount, 1)
+        XCTAssertEqual(await scheduler.pendingDailyCount(), 0)
+    }
+
+    func testSyncOnLaunchReschedulesOnceWhenOnAndAllowed() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReminderOn(true)
+        preferences.setReminderTime(sevenThirty)
+        let controller = ReminderController(preferences: preferences, scheduler: scheduler)
+
+        await controller.syncOnLaunch()
+
+        XCTAssertEqual(scheduler.scheduledTimes, [sevenThirty])
+        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+        XCTAssertTrue(controller.isOn)
+        XCTAssertNil(controller.message)
+        XCTAssertEqual(scheduler.permissionRequestCount, 0)
+    }
+
+    func testSyncOnLaunchTurnsTheSettingOffWhenPermissionWasWithdrawn() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .denied
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReminderOn(true)
+        let controller = ReminderController(preferences: preferences, scheduler: scheduler)
+
+        await controller.syncOnLaunch()
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertEqual(controller.message, withdrawnMessage)
+        XCTAssertGreaterThanOrEqual(scheduler.cancelCount, 1)
+        XCTAssertEqual(scheduler.scheduledTimes, [])
+        XCTAssertEqual(scheduler.permissionRequestCount, 0)
+    }
+
+    func testRefreshFromPreferencesReadsTheStoredValues() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        await controller.setOn(true)
+        await controller.setTime(sevenThirty)
+
+        // What an erase leaves behind: both stored values back at their defaults.
+        preferences.resetToDefaults()
+        controller.refreshFromPreferences()
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertEqual(controller.time, ReminderTime.standard)
+    }
+
+    func testEraserCancelsThePendingRequest() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, _) = makeController(scheduler)
+        await controller.setOn(true)
+        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+
+        let eraser = ReminderEraser(scheduler: scheduler)
+        try eraser.eraseAll()
+
+        XCTAssertEqual(await scheduler.pendingDailyCount(), 0)
+        XCTAssertGreaterThanOrEqual(scheduler.cancelCount, 1)
+    }
+}
