@@ -89,15 +89,14 @@ public struct GoalsView: View {
             if let error = row.rowError {
                 Text(error).font(.footnote).foregroundStyle(TokenColors.error)
             }
-            Toggle(isOn: .constant(false)) {
-                HStack {
-                    Text("Show on Today").font(.body)
-                    LaterBadge()
-                }
+            Toggle(isOn: Binding(
+                get: { row.showsOnToday },
+                set: { self.model.setShowsOnToday($0, for: row.nutrient) })) {
+                Text("Show on Today").font(.body)
             }
-            .disabled(true)
+            .disabled(!row.hasTarget)
             .accessibilityLabel("Show \(row.displayName) on Today")
-            .accessibilityValue("Not available yet")
+            .accessibilityHint("Turn off to hide this goal's bar on Today and in the Journal")
         }
     }
 }
