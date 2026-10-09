@@ -481,6 +481,8 @@ public final class EntryDetailViewModel: ObservableObject {
     @discardableResult
     public func changeMeal(to meal: MealLabel?, now: Date) -> Bool {
         guard canChangeMeal else { return false }
+        // Choosing what the menu already shows is not a change, and reloading would drop unsaved edits.
+        guard meal != selectedMeal else { return false }
         do {
             guard let editing = store as? JournalMealEditing else {
                 errorMessage = "Could not change the meal."
