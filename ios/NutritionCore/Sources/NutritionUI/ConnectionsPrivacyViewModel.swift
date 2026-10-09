@@ -8,7 +8,7 @@ public struct ConnectionsPrivacyConnection: Equatable, Identifiable {
     public var id: String
     public var title: String
     public var detail: String
-    /// False for both connections until their work package ships.
+    /// False for both connections until each of them is built.
     public var isAvailable: Bool
     /// The switch position the screen shows. Always off while the connection is unavailable.
     public var isEnabled: Bool
