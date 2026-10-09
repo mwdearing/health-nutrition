@@ -70,20 +70,26 @@ public struct NutrientGoalRow: Equatable, Identifiable {
     public let displayName: String
     /// "60 g", or nil where no target is set for this nutrient.
     public let targetText: String?
+    /// Whether this goal's bar shows on Today. On unless a person has switched it off.
+    public let showsOnToday: Bool
 
     public var id: String { nutrient }
 
-    public init(nutrient: String, displayName: String, targetText: String?) {
+    public init(nutrient: String, displayName: String, targetText: String?, showsOnToday: Bool = true) {
         self.nutrient = nutrient
         self.displayName = displayName
         self.targetText = targetText
+        self.showsOnToday = showsOnToday
     }
 
     /// The row for a nutrient with no target, which is still listed so the screen can offer it.
-    public static func withoutGoal(_ nutrient: String, displayName: String? = nil) -> NutrientGoalRow {
+    public static func withoutGoal(
+        _ nutrient: String, displayName: String? = nil, showsOnToday: Bool = true
+    ) -> NutrientGoalRow {
         NutrientGoalRow(
             nutrient: nutrient,
-            displayName: displayName ?? NutrientNames.displayName(for: nutrient), targetText: nil)
+            displayName: displayName ?? NutrientNames.displayName(for: nutrient), targetText: nil,
+            showsOnToday: showsOnToday)
     }
 }
 
@@ -96,6 +102,9 @@ public struct GoalSectionRow: Identifiable {
     public let unit: MeasureUnit
     public let detail: String?
     public let rowError: String?
+    /// Whether a target is set, which is what the Show on Today switch needs before it can be changed.
+    public let hasTarget: Bool
+    public let showsOnToday: Bool
     public var id: String { nutrient }
 }
 
@@ -138,7 +147,8 @@ public final class GoalsViewModel: ObservableObject {
                     draftText: self.draftText[key] ?? "",
                     unit: self.selectedUnits[key] ?? self.unit(for: key),
                     detail: title == "From your labels" ? "Added by a scanned label" : nil,
-                    rowError: self.rowError[key])
+                    rowError: self.rowError[key], hasTarget: row.targetText != nil,
+                    showsOnToday: row.showsOnToday)
             })
         }
     }
@@ -181,12 +191,16 @@ public final class GoalsViewModel: ObservableObject {
             let snapshotKeys = Self.snapshotNutrientKeys(in: journal)
             offeredKeys = NutrientGoalChoices.keys(including: snapshotKeys + stored.map(\.nutrient))
             let displayNames = Self.snapshotDisplayNames(in: journal)
+            let hidden = hiddenTodayGoals(in: preferences)
             rows = offeredKeys.map { key in
                 let name = displayNames[key] ?? NutrientNames.displayName(for: key)
-                guard let goal = byNutrient[key] else { return .withoutGoal(key, displayName: name) }
+                let shown = !hidden.contains(key)
+                guard let goal = byNutrient[key] else {
+                    return .withoutGoal(key, displayName: name, showsOnToday: shown)
+                }
                 return NutrientGoalRow(
                     nutrient: key, displayName: name,
-                    targetText: self.displayGoal(goal).text)
+                    targetText: self.displayGoal(goal).text, showsOnToday: shown)
             }
             self.storedWaterDraft = byNutrient[DailyTotalsBuilder.waterKey].map {
                 DecimalFormatting.text(self.displayGoal($0).amount)
@@ -309,6 +323,18 @@ public final class GoalsViewModel: ObservableObject {
             errorMessage = Self.saveFailedMessage
             return false
         }
+    }
+
+    /// Shows or hides the nutrient's bar on Today and in the Journal day header. Refused for a nutrient
+    /// with no target, because a switch that changes nothing a person can see is not offered.
+    @discardableResult
+    public func setShowsOnToday(_ shown: Bool, for nutrient: String) -> Bool {
+        guard rows.first(where: { $0.nutrient == nutrient })?.targetText != nil,
+              let visibility = preferences as? GoalVisibilityPreferences
+        else { return false }
+        visibility.setGoalShownOnToday(nutrient, shown: shown)
+        load()
+        return true
     }
 
     /// Removes the target for `nutrient`, so the nutrient falls back to a plain total.
