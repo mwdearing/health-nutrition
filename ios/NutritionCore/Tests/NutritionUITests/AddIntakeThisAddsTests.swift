@@ -157,7 +157,7 @@ final class AddIntakeThisAddsTests: XCTestCase {
                 XCTAssertTrue(model.thisAdds.allSatisfy { $0.value == .unknown })
                 let stated = try XCTUnwrap(model.thisAdds.first { $0.key == "protein" })
                 XCTAssertEqual(stated.text, "Can't be worked out for this amount")
-                XCTAssertTrue(model.thisAdds.filter { $0.key != "protein" }.allSatisfy { $0.text == "Not on the label" })
+                XCTAssertEqual(model.thisAdds.map(\.key), ["protein"])
             } else {
                 XCTAssertEqual(model.thisAdds.first { $0.key == "protein" }?.value, .known(26, .g))
                 XCTAssertEqual(model.servingHint, "1 serving = 30 g")

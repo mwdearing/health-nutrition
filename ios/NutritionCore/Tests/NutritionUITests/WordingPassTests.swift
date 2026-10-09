@@ -79,9 +79,8 @@ final class WordingPassTests: XCTestCase {
         XCTAssertEqual(protein.cannotScale, true)
         XCTAssertEqual(protein.text, "Can't be worked out for this amount")
 
-        let energy = try XCTUnwrap(model.thisAdds.first { $0.key == "energyKcal" })
-        XCTAssertEqual(energy.cannotScale, false)
-        XCTAssertEqual(energy.text, "Not on the label")
+        // Energy is not stated, so it has no line to word.
+        XCTAssertFalse(model.thisAdds.contains { $0.key == "energyKcal" })
     }
 
     func testPrimaryActionTitleCountsPendingValues() {
