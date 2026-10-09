@@ -61,7 +61,7 @@ public enum DisplayPreferenceDefaults {
 /// Written synchronously rather than deferred, so a preference a person just changed is read back
 /// the moment the next screen asks for it, and so a setting screen can never show a value the rest
 /// of the app has not seen yet.
-public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences {
+public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences {
     /// Every key this type owns carries this prefix, so a preference can never collide with another
     /// part of the app or with a value written by an OS framework into the same domain.
     public static let keyPrefix = "display."
@@ -72,6 +72,10 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
     private let hasSeenWelcomeKey: String
     private let checklistHiddenKey: String
     private let hasReviewedUnitsKey: String
+    /// The daily reminder's stored keys: "display.reminder.on" holds a bool and "display.reminder.time"
+    /// holds the time as text, "HH:mm". Both carry the same prefix as every other key here.
+    private let reminderOnKey = "display.reminder.on"
+    private let reminderTimeKey = "display.reminder.time"
 
     /// `defaults` is a parameter so a test can pass a suite of its own rather than touching the
     /// standard domain.
@@ -95,6 +99,26 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
 
     public var hasReviewedUnits: Bool {
         defaults.bool(forKey: hasReviewedUnitsKey)
+    }
+
+    public var isReminderOn: Bool {
+        defaults.bool(forKey: reminderOnKey)
+    }
+
+    /// The stored time when it reads as a clock time, 20:00 otherwise.
+    public var reminderTime: ReminderTime {
+        guard let text = defaults.string(forKey: reminderTimeKey),
+              let time = ReminderTime(storedText: text)
+        else { return ReminderTime.standard }
+        return time
+    }
+
+    public func setReminderOn(_ on: Bool) {
+        defaults.set(on, forKey: reminderOnKey)
+    }
+
+    public func setReminderTime(_ time: ReminderTime) {
+        defaults.set(time.storedText, forKey: reminderTimeKey)
     }
 
     public func setHasSeenWelcome(_ seen: Bool) {
@@ -148,16 +172,20 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.removeObject(forKey: hasSeenWelcomeKey)
         defaults.removeObject(forKey: checklistHiddenKey)
         defaults.removeObject(forKey: hasReviewedUnitsKey)
+        defaults.removeObject(forKey: reminderOnKey)
+        defaults.removeObject(forKey: reminderTimeKey)
     }
 }
 
 /// The preferences held in memory. For tests and for previews, so neither needs a defaults domain.
-public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences {
+public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences {
     public var unitSystem: UnitSystem
     public var quickWaterMilliliters: Decimal
     public private(set) var hasSeenWelcome = false
     public private(set) var isChecklistHidden = false
     public private(set) var hasReviewedUnits = false
+    public private(set) var isReminderOn = false
+    public private(set) var reminderTime = ReminderTime.standard
 
     public init(
         unitSystem: UnitSystem = DisplayPreferenceDefaults.unitSystem,
@@ -174,6 +202,14 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
     public func setQuickWaterMilliliters(_ milliliters: Decimal) {
         guard !milliliters.isNaN, milliliters > 0 else { return }
         quickWaterMilliliters = milliliters
+    }
+
+    public func setReminderOn(_ on: Bool) {
+        isReminderOn = on
+    }
+
+    public func setReminderTime(_ time: ReminderTime) {
+        reminderTime = time
     }
 
     public func setHasSeenWelcome(_ seen: Bool) {
@@ -194,5 +230,7 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         hasSeenWelcome = false
         isChecklistHidden = false
         hasReviewedUnits = false
+        isReminderOn = false
+        reminderTime = ReminderTime.standard
     }
 }
