@@ -180,11 +180,11 @@ final class ReminderControllerTests: XCTestCase {
         scheduler.settablePermission = .allowed
         let (controller, preferences) = makeController(scheduler)
         await controller.setOn(true)
-        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+        do { let pending = await scheduler.pendingDailyCount(); XCTAssertEqual(pending, 1) }
 
         await controller.setTime(sevenThirty)
 
-        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+        do { let pending = await scheduler.pendingDailyCount(); XCTAssertEqual(pending, 1) }
         XCTAssertEqual(scheduler.pendingTime, sevenThirty)
         XCTAssertEqual(scheduler.scheduledTimes, [ReminderTime.standard, sevenThirty])
         XCTAssertEqual(controller.time, sevenThirty)
@@ -217,7 +217,7 @@ final class ReminderControllerTests: XCTestCase {
         XCTAssertFalse(controller.isOn)
         XCTAssertFalse(preferences.isReminderOn)
         XCTAssertGreaterThanOrEqual(scheduler.cancelCount, 1)
-        XCTAssertEqual(await scheduler.pendingDailyCount(), 0)
+        do { let pending = await scheduler.pendingDailyCount(); XCTAssertEqual(pending, 0) }
     }
 
     func testSyncOnLaunchReschedulesOnceWhenOnAndAllowed() async throws {
@@ -231,7 +231,7 @@ final class ReminderControllerTests: XCTestCase {
         await controller.syncOnLaunch()
 
         XCTAssertEqual(scheduler.scheduledTimes, [sevenThirty])
-        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+        do { let pending = await scheduler.pendingDailyCount(); XCTAssertEqual(pending, 1) }
         XCTAssertTrue(controller.isOn)
         XCTAssertNil(controller.message)
         XCTAssertEqual(scheduler.permissionRequestCount, 0)
@@ -274,12 +274,12 @@ final class ReminderControllerTests: XCTestCase {
         scheduler.settablePermission = .allowed
         let (controller, _) = makeController(scheduler)
         await controller.setOn(true)
-        XCTAssertEqual(await scheduler.pendingDailyCount(), 1)
+        do { let pending = await scheduler.pendingDailyCount(); XCTAssertEqual(pending, 1) }
 
         let eraser = ReminderEraser(scheduler: scheduler)
         try eraser.eraseAll()
 
-        XCTAssertEqual(await scheduler.pendingDailyCount(), 0)
+        do { let pending = await scheduler.pendingDailyCount(); XCTAssertEqual(pending, 0) }
         XCTAssertGreaterThanOrEqual(scheduler.cancelCount, 1)
     }
 }
