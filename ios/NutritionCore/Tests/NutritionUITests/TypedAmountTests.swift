@@ -29,6 +29,7 @@ final class TypedAmountTests: XCTestCase {
     }
 
     /// Recipe nutrient fields take zero as a value, and read a typed comma the same way.
+    @MainActor
     func testARecipeNutrientFieldReadsATypedComma() {
         XCTAssertEqual(
             RecipeEditorViewModel.parseNonNegative("2,5", decimalSeparator: ","), Decimal(string: "2.5"))
@@ -39,6 +40,7 @@ final class TypedAmountTests: XCTestCase {
     }
 
     /// The Entry screen compares what was typed with the stored text, which always uses a point.
+    @MainActor
     func testTheEntryAmountMatchesItsStoredTextWhenTypedWithAComma() {
         XCTAssertTrue(EntryDetailViewModel.sameAmountText("2.5", "2,5", decimalSeparator: ","))
         XCTAssertTrue(EntryDetailViewModel.sameAmountText("2.5", "2,50", decimalSeparator: ","))
