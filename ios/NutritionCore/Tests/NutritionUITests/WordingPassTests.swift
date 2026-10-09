@@ -59,10 +59,13 @@ final class WordingPassTests: XCTestCase {
         // A flagged serving size and a flagged sodium are two values waiting for the user.
         let two = LabelCaptureViewModel()
         two.load(lines: [
+            "Nutrition Facts",
+            "Synthetic Soup, invented for tests",
             "Serving size 1 cup (24O mL)",
+            "Amount per serving",
             "Calories 120",
             "Sodium 18O mg 8%",
-            "Protein 3g",
+            "Protein 3g 6%",
         ])
         XCTAssertEqual(two.pendingCount, 2)
         XCTAssertFalse(two.canApply)
