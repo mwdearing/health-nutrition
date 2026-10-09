@@ -3,8 +3,8 @@ import Foundation
 /// A time of day for the daily reminder, on a 24-hour clock. Out-of-range parts are clamped rather
 /// than rejected, so no value of this type can name a time that does not exist.
 public struct ReminderTime: Equatable, Sendable {
-    public var hour: Int
-    public var minute: Int
+    public let hour: Int
+    public let minute: Int
 
     public init(hour: Int, minute: Int) {
         self.hour = min(max(hour, 0), 23)

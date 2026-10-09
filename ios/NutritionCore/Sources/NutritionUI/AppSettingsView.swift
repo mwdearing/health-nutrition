@@ -233,9 +233,12 @@ private struct SettingsContent: View {
         }
     }
 
-    /// Today at the stored clock time, for the time picker to show.
+    /// A fixed day with no daylight-saving change in the stored clock time, for the time picker to show. Using
+    /// today would move a time in a skipped hour on a spring-forward day.
     private static func date(for time: ReminderTime) -> Date {
-        Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+        var parts = DateComponents(year: 2001, month: 1, day: 15, hour: time.hour, minute: time.minute)
+        parts.calendar = Calendar.current
+        return parts.date ?? Date()
     }
 
     /// Looks a placeholder row up by its id, so the rows can change without shifting the others.

@@ -234,6 +234,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertTrue(message.contains("recipe"))
         XCTAssertTrue(message.contains("goal"), "goals are erased too, so the warning says so")
         XCTAssertTrue(ConnectionsPrivacyViewModel.eraseFooterMessage.lowercased().contains("goal"))
+        XCTAssertTrue(message.contains("reminder"), "the daily reminder is switched off too, so the warning says so")
+        XCTAssertTrue(ConnectionsPrivacyViewModel.eraseFooterMessage.lowercased().contains("reminder"))
         XCTAssertTrue(message.contains("cannot be undone"))
         XCTAssertEqual(ConnectionsPrivacyViewModel.eraseButtonTitle, "Erase all data")
     }
