@@ -7,6 +7,15 @@ public struct JournalView: View {
     private let onSelect: (String) -> Void
     /// Adds an entry from the empty journal. Nil leaves the empty state without a button.
     private let onAdd: (() -> Void)?
+    /// The day picked in the jump sheet, read when the sheet opens.
+    @State private var pickedDay = Date()
+    @State private var showingJumpSheet = false
+    /// The sentence for the last jump, shown at the top of the list until the next jump or a reload.
+    @State private var jumpNotice: String?
+    /// The section the last jump chose, and a counter that changes on every jump so the list scrolls
+    /// even when two jumps choose the same day.
+    @State private var jumpSection: String?
+    @State private var jumpSerial = 0
 
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
@@ -19,49 +28,118 @@ public struct JournalView: View {
     }
 
     public var body: some View {
-        List {
-            jumpToDateRow
-            if model.isEmpty {
-                EmptyState(
-                    title: "Your journal is empty",
-                    message: "Everything you log is listed here by day.",
-                    systemImage: "book",
-                    actionTitle: onAdd == nil ? nil : "Add food or drink",
-                    action: onAdd)
+        ScrollViewReader { proxy in
+            List {
+                jumpToDateRow
+                if model.isEmpty {
+                    EmptyState(
+                        title: "Your journal is empty",
+                        message: "Everything you log is listed here by day.",
+                        systemImage: "book",
+                        actionTitle: onAdd == nil ? nil : "Add food or drink",
+                        action: onAdd)
+                }
+                ForEach(model.sections) { section in
+                    daySection(section)
+                }
+                if let skipped = model.skippedText {
+                    InlineNotice(skipped, tone: .waiting)
+                        .listRowBackground(TokenColors.background)
+                }
+                if let goalsMessage = model.goalsErrorMessage {
+                    InlineNotice(goalsMessage, tone: .failed)
+                        .listRowBackground(TokenColors.background)
+                }
+                if let message = model.errorMessage {
+                    InlineNotice(message, tone: .failed)
+                        .listRowBackground(TokenColors.background)
+                }
             }
-            ForEach(model.sections) { section in
-                daySection(section)
+            // Outside the scrolling rows, so the sentence stays visible after the list scrolls to the day.
+            .safeAreaInset(edge: .top) {
+                if let notice = jumpNotice {
+                    InlineNotice(notice, tone: .waiting)
+                        .padding(DesignSpacing.m)
+                        .background(TokenColors.background)
+                }
             }
-            if let skipped = model.skippedText {
-                InlineNotice(skipped, tone: .waiting)
-                    .listRowBackground(TokenColors.background)
+            // A notice about an earlier jump goes whenever the journal reloads.
+            .onChange(of: model.loadCount) { _, _ in
+                jumpNotice = nil
             }
-            if let goalsMessage = model.goalsErrorMessage {
-                InlineNotice(goalsMessage, tone: .failed)
-                    .listRowBackground(TokenColors.background)
+            .onChange(of: jumpSerial) { _, _ in
+                if let section = jumpSection {
+                    proxy.scrollTo(section, anchor: .top)
+                }
             }
-            if let message = model.errorMessage {
-                InlineNotice(message, tone: .failed)
-                    .listRowBackground(TokenColors.background)
+            .scrollContentBackground(.hidden)
+            .background(TokenColors.background)
+            .navigationTitle("Journal")
+            .onAppear {
+                model.load(now: now())
+                jumpNotice = nil
+            }
+            .sheet(isPresented: $showingJumpSheet) {
+                jumpSheet
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
-        .navigationTitle("Journal")
-        .onAppear { model.load(now: now()) }
     }
 
-    /// A disabled row for a feature this build does not have yet.
+    /// Opens the jump sheet on today. The row is a button, so a screen reader hears what it does.
     private var jumpToDateRow: some View {
-        HStack(spacing: DesignSpacing.s) {
-            Label("Jump to date", systemImage: "calendar")
-                .foregroundStyle(TokenColors.textPrimary)
-            Spacer(minLength: DesignSpacing.s)
-            LaterBadge()
+        Button {
+            pickedDay = now()
+            showingJumpSheet = true
+        } label: {
+            HStack(spacing: DesignSpacing.s) {
+                Label("Jump to date", systemImage: "calendar")
+                    .foregroundStyle(TokenColors.textPrimary)
+                Spacer(minLength: DesignSpacing.s)
+            }
         }
-        .accessibilityElement(children: .combine)
-        .disabled(true)
-        .accessibilityValue("Not available yet")
+        .accessibilityHint("Opens a calendar to choose a day")
+    }
+
+    /// A graphical day picker bounded to today, and the button that goes to the chosen day.
+    private var jumpSheet: some View {
+        NavigationStack {
+            VStack(spacing: DesignSpacing.m) {
+                DatePicker(
+                    "Day", selection: $pickedDay, in: ...now(), displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .accessibilityLabel("Day to show")
+                Button {
+                    goToPickedDay()
+                } label: {
+                    Text("Go to day")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("Go to day")
+            }
+            .padding(DesignSpacing.m)
+            .navigationTitle("Jump to date")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingJumpSheet = false }
+                }
+            }
+        }
+    }
+
+    /// Closes the sheet, shows the sentence for the day if it had none, and scrolls to the section chosen.
+    private func goToPickedDay() {
+        let target = model.jumpTarget(for: pickedDay, now: now())
+        model.reveal(target)
+        jumpNotice = target.message
+        jumpSection = target.sectionID
+        jumpSerial += 1
+        showingJumpSheet = false
     }
 
     /// One day: a header card with its energy and goal bars, then its entries by meal. An old day is
@@ -88,6 +166,7 @@ public struct JournalView: View {
                 }
             }
         }
+        .id(section.id)
     }
 
     /// The title, the day's energy when it is known, one bar per goal, and the disabled add action.

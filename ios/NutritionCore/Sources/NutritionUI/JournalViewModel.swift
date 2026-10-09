@@ -95,11 +95,25 @@ public struct JournalDaySection: Equatable, Identifiable {
     }
 }
 
+/// Where a jump to a picked day lands. `sectionID` is the day to scroll to, nil only when the journal has
+/// no entries at all. `message` is the sentence to show, or nil when the picked day had entries.
+public struct JournalJumpTarget: Equatable {
+    public let sectionID: String?
+    public let message: String?
+
+    public init(sectionID: String?, message: String?) {
+        self.sectionID = sectionID
+        self.message = message
+    }
+}
+
 @MainActor
 public final class JournalViewModel: ObservableObject {
     @Published public private(set) var sections: [JournalDaySection] = []
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
+    /// How many times the journal has finished loading. The screen watches it to drop state tied to an earlier load.
+    @Published public private(set) var loadCount = 0
     @Published public private(set) var errorMessage: String?
     /// Set when the stored goals cannot be read. The days still load, with no goal bars.
     @Published public private(set) var goalsErrorMessage: String?
@@ -117,6 +131,9 @@ public final class JournalViewModel: ObservableObject {
     /// gets the per-day totals.
     private let goals: GoalStore?
     private let repeater: IntakeRepeater
+    /// The zone a picked day is read in, and the zone "today" is read in for a future date. The same
+    /// resolved zone the repeater uses, so the device zone in production and "UTC" in tests.
+    private let journalZoneID: () -> String
     private let locale: Locale
     private let preferences: DisplayPreferences
 
@@ -135,13 +152,14 @@ public final class JournalViewModel: ObservableObject {
         self.goals = goals
         self.locale = locale
         self.preferences = preferences
-        self.repeater = IntakeRepeater(
-            store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
-            makeID: makeID)
+        let zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
+        self.journalZoneID = zoneID
+        self.repeater = IntakeRepeater(store: store, timeZoneProvider: zoneID, makeID: makeID)
     }
 
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
     public func load(now: Date) {
+        defer { loadCount += 1 }
         do {
             var skipped = 0
             var groups: [String: [JournalRow]] = [:]
@@ -243,6 +261,15 @@ public final class JournalViewModel: ObservableObject {
         }
     }
 
+    /// Opens the day a jump landed on when it starts collapsed, so the person sees its entries and not a
+    /// button. A day that is already open, or a jump with no day, changes nothing.
+    public func reveal(_ target: JournalJumpTarget) {
+        guard let id = target.sectionID, let section = sections.first(where: { $0.id == id }),
+              !isExpanded(section)
+        else { return }
+        toggleDay(id)
+    }
+
     /// Opens a collapsed day, or collapses an open one.
     public func toggleDay(_ id: String) {
         if expandedDays.contains(id) {
@@ -250,6 +277,49 @@ public final class JournalViewModel: ObservableObject {
         } else {
             expandedDays.insert(id)
         }
+    }
+
+    /// Where a picked day lands. A day with entries is its own section with no sentence. A day with none
+    /// goes to the closest day that has entries (a tie goes to the newer day) with the sentence naming the
+    /// picked day. A date after today is treated as today. With no entries at all there is no section.
+    /// Sections are keyed by each entry's own local day, so the picked day is compared as a day key.
+    public func jumpTarget(for date: Date, now: Date) -> JournalJumpTarget {
+        guard !sections.isEmpty else {
+            // Entries that could not be read, or a journal that failed to load, are not an empty journal:
+            // the screen already says so, and "Nothing logged yet." would be false.
+            let unreadable = skippedCount > 0 || errorMessage != nil
+            return JournalJumpTarget(sectionID: nil, message: unreadable ? nil : "Nothing logged yet.")
+        }
+        let zone = TimeZone(identifier: journalZoneID()) ?? TimeZone.current
+        let today = Self.dayKey(now, zone: zone)
+        var key = Self.dayKey(date, zone: zone)
+        if key > today { key = today }
+        if let exact = sections.first(where: { $0.id == key }) {
+            return JournalJumpTarget(sectionID: exact.id, message: nil)
+        }
+        let closest = sections.min { lhs, rhs in
+            let left = Self.dayDistance(lhs.id, key)
+            let right = Self.dayDistance(rhs.id, key)
+            if left != right { return left < right }
+            return lhs.id > rhs.id
+        }
+        guard let closest, let pickedDay = Self.utcDate(fromDayKey: key) else {
+            return JournalJumpTarget(sectionID: sections.first?.id, message: nil)
+        }
+        let title = Self.dayTitle(pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale)
+        return JournalJumpTarget(
+            sectionID: closest.id,
+            message: "Nothing logged on \(title). Showing the closest day with entries.")
+    }
+
+    /// Whole days between two yyyy-MM-dd keys, or Int.max when either key cannot be read.
+    private static func dayDistance(_ first: String, _ second: String) -> Int {
+        guard let start = utcDate(fromDayKey: first), let end = utcDate(fromDayKey: second) else {
+            return Int.max
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        return abs(calendar.dateComponents([.day], from: start, to: end).day ?? Int.max)
     }
 
     /// A day shows its entries unless it is collapsed by default and has not been opened.
