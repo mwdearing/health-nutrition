@@ -6,7 +6,7 @@ Personal recipes: you enter ingredients and what the recipe makes (the yield), t
 
 - A recipe has numbered, immutable versions. Each version holds a title, notes, ingredient lines and a yield.
 - An ingredient has a quantity (exact decimal amount and a unit from the unit registry) and nutrient values stated per ONE of a basis unit (by default the ingredient's own unit). An optional density (g per mL, entered in the editor as "Weight per mL") is used only to convert between mass and volume.
-- The yield is either a number of servings or a total quantity such as 800 g. The editor shows it in the "Makes" section: "How much it makes" is the amount and "Counted as" chooses servings or a total; for a total a unit picker titled "Unit of what it makes" follows.
+- The yield is either a number of servings or a total quantity such as 800 g. The editor shows it in the "Makes" section: "How much it makes" is the amount and "Counted as" chooses servings or a total; for a total a unit picker follows, shown as "Unit" and announced as "Unit of what it makes".
 - Validation: non-empty title, at least one ingredient, yield greater than zero, ingredient quantities greater than zero, unique ingredient ids. The editor says so in these words: "Enter how much the recipe makes, greater than zero, using digits and a point.", "Choose a known unit for what the recipe makes.", "Ingredient N: weight per mL must be greater than zero, using digits and a point." and "Two ingredients are the same entry. Remove one and add it again."
 - The words "yield", "density" and "identifier" are the model's names. They stay in code and in the stored label basis text (for example "Per serving; yield 4 servings"); that basis text is stored data, not the editor's wording.
 
