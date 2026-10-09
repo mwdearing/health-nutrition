@@ -265,4 +265,55 @@ final class JournalDesignTests: XCTestCase {
             three.skippedText,
             "3 entries can't be shown because their saved time or record can't be read.")
     }
+
+    // MARK: Totals that cannot be answered
+
+    /// A logged food with no protein value makes the protein bar say it cannot be totalled, not that
+    /// nothing is logged. A day whose only entry is water has no food, so its protein bar says nothing
+    /// is logged.
+    func testDayHeaderBarsSayCannotTotalWhenALoggedFoodLacksTheValue() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+
+        let foodDay = try makeJournalStore()
+        // No product, so the lookup answers protein as unknown for this food, never as zero.
+        try addEntry(foodDay, at: designNow)
+        let foodModel = makeModel(foodDay, goals: goals)
+        foodModel.load(now: designNow)
+        let foodBar = try XCTUnwrap(foodModel.sections.first?.headerBars.first(where: { $0.id == "protein" }))
+        XCTAssertEqual(foodBar.valueText, "Can't total yet")
+        XCTAssertEqual(foodBar.state, .cannotTotal)
+
+        let waterDay = try makeJournalStore()
+        try addEntry(
+            waterDay, name: "Example water", at: designNow, category: "water", grams: Decimal(250), unit: .mL)
+        let waterModel = makeModel(waterDay, goals: goals)
+        waterModel.load(now: designNow)
+        let waterBar = try XCTUnwrap(waterModel.sections.first?.headerBars.first(where: { $0.id == "protein" }))
+        XCTAssertEqual(waterBar.valueText, "Nothing logged yet")
+        XCTAssertEqual(waterBar.state, .nothingLogged)
+    }
+
+    /// A day whose only food states no energy has no energy figure at all, not "0 kcal". A food that
+    /// states energy shows its day figure with the kcal symbol, read from its own snapshot at 100 g of
+    /// a per-100 g basis, so the figure is exactly 400 kcal.
+    func testDayHeaderEnergyTextIsNilWhenTheDayCannotBeTotalled() throws {
+        let noEnergy = try makeJournalStore()
+        try addEntry(noEnergy, at: designNow, product: oatsSnapshot())
+        let noEnergyModel = makeModel(noEnergy)
+        noEnergyModel.load(now: designNow)
+        XCTAssertNil(try XCTUnwrap(noEnergyModel.sections.first).energyText)
+
+        let energyProduct = ProductDefinition(
+            snapshotID: "snapshot-example-energy", productID: "product-example-energy", name: "Example bar",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energy": .known(Decimal(400), .kcal)])
+        let withEnergy = try makeJournalStore()
+        try addEntry(withEnergy, at: designNow, product: energyProduct, grams: Decimal(100))
+        let withEnergyModel = makeModel(withEnergy)
+        withEnergyModel.load(now: designNow)
+        let energy = try XCTUnwrap(withEnergyModel.sections.first?.energyText)
+        XCTAssertTrue(energy.contains("kcal"), energy)
+        XCTAssertEqual(energy, "400 kcal")
+    }
 }
