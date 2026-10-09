@@ -1181,9 +1181,19 @@ public final class LabelCaptureViewModel: ObservableObject {
             return "The serving size was not read from that shot. Enter what one serving is, so the values below can be scaled to how much you actually have."
         }
         if servingNeedsReview && !isServingConfirmed {
-            return Self.servingQuestion(servingText ?? "this serving size")
+            return Self.servingQuestion(Self.servingReading(quantity: servingQuantity, text: servingText))
         }
         return nil
+    }
+
+    /// What the serving question calls the serving: the quantity the parser settled on when there is
+    /// one, so a misprinted "24O mL" is asked about as 240 mL; otherwise the printed words.
+    static func servingReading(quantity: Quantity?, text: String?) -> String {
+        if let quantity {
+            return "\(NSDecimalNumber(decimal: quantity.value).stringValue) \(quantity.unit.symbol)"
+        }
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "this serving size" : trimmed
     }
 
     // MARK: The product
