@@ -316,4 +316,81 @@ final class JournalDesignTests: XCTestCase {
         XCTAssertTrue(energy.contains("kcal"), energy)
         XCTAssertEqual(energy, "400 kcal")
     }
+
+    // MARK: Day age per entry, and goals that cannot be read
+
+    /// An instant in UTC, built with a UTC calendar so the arithmetic in the comments is checkable.
+    private func utcInstant(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour)) ?? designNow
+    }
+
+    /// Each entry is judged in its own zone. Pacific/Kiritimati is UTC+14 and Pacific/Pago_Pago is
+    /// UTC-11, so their local dates are at most one day apart for `now` below.
+    ///
+    /// now = 2023-11-08 12:00 UTC.
+    /// - Pago Pago local date: Nov 8 01:00, so today's key is 2023-11-08. Kiritimati local: Nov 9 02:00,
+    ///   so today's key is 2023-11-09.
+    ///
+    /// Case 1, the shared day key 2023-11-01:
+    /// - Pago entry: Nov 1 12:00 local = Nov 1 23:00 UTC. Age 2023-11-08 minus 2023-11-01 = 7 days, not
+    ///   more than 7, so not collapsed.
+    /// - Kiritimati entry: Nov 1 12:00 local = Oct 31 22:00 UTC. Age 2023-11-09 minus 2023-11-01 = 8
+    ///   days, more than 7, so collapsed.
+    /// - The day is collapsed only when every row is, so the day is not collapsed.
+    ///
+    /// Case 2, the shared day key 2023-10-31:
+    /// - Pago entry: Oct 31 12:00 local = Oct 31 23:00 UTC. Age 2023-11-08 minus 2023-10-31 = 8 days.
+    /// - Kiritimati entry: Oct 31 12:00 local = Oct 30 22:00 UTC. Age 2023-11-09 minus 2023-10-31 = 9 days.
+    /// - Both are more than 7 days old, so the day is collapsed.
+    func testOlderDaysCollapseJudgesEachEntryInItsOwnZone() throws {
+        let now = utcInstant(2023, 11, 8, 12)
+
+        let mixed = try makeJournalStore()
+        try addEntry(mixed, at: utcInstant(2023, 11, 1, 23), zone: "Pacific/Pago_Pago")
+        try addEntry(mixed, at: utcInstant(2023, 10, 31, 22), zone: "Pacific/Kiritimati")
+        let mixedModel = makeModel(mixed)
+        mixedModel.load(now: now)
+        XCTAssertEqual(mixedModel.sections.map(\.id), ["2023-11-01"])
+        XCTAssertFalse(try XCTUnwrap(mixedModel.sections.first).isCollapsedByDefault)
+
+        let bothOld = try makeJournalStore()
+        try addEntry(bothOld, at: utcInstant(2023, 10, 31, 23), zone: "Pacific/Pago_Pago")
+        try addEntry(bothOld, at: utcInstant(2023, 10, 30, 22), zone: "Pacific/Kiritimati")
+        let bothOldModel = makeModel(bothOld)
+        bothOldModel.load(now: now)
+        XCTAssertEqual(bothOldModel.sections.map(\.id), ["2023-10-31"])
+        XCTAssertTrue(try XCTUnwrap(bothOldModel.sections.first).isCollapsedByDefault)
+    }
+
+    /// A goal store whose every read fails, as a store that cannot be opened would.
+    private final class UnreadableGoalStore: GoalStore, @unchecked Sendable {
+        private struct Unreadable: Error {}
+
+        func goals() throws -> [NutrientGoal] { throw Unreadable() }
+        func goal(for nutrient: String) throws -> NutrientGoal? { throw Unreadable() }
+        func setGoal(_ goal: NutrientGoal) throws { throw Unreadable() }
+        func removeGoal(nutrient: String) throws { throw Unreadable() }
+        func close() {}
+    }
+
+    /// A goal store that cannot be read is reported beside the day, and the days are still listed. A
+    /// readable goal store with no goals reports nothing.
+    func testJournalReportsGoalsThatCannotBeRead() throws {
+        let journal = try makeJournalStore()
+        try addEntry(journal, at: designNow)
+
+        let broken = makeModel(journal, goals: UnreadableGoalStore())
+        broken.load(now: designNow)
+        XCTAssertEqual(broken.goalsErrorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertEqual(broken.sections.count, 1)
+        XCTAssertEqual(try XCTUnwrap(broken.sections.first).headerBars, [])
+        XCTAssertNil(broken.errorMessage)
+
+        let readableGoals = try makeGoalStore()
+        let working = makeModel(journal, goals: readableGoals)
+        working.load(now: designNow)
+        XCTAssertNil(working.goalsErrorMessage)
+    }
 }
