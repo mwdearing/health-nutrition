@@ -176,7 +176,7 @@ Findings are reported as `path:line: unlabeled-image: …`, on the line where th
 ## Marking a decorative image
 
 Decorative art carries no meaning of its own, so it is hidden from the
-accessibility tree rather than labelled. Hide the image itself:
+accessibility tree rather than labeled. Hide the image itself:
 
 ```swift
 HStack {
@@ -223,8 +223,8 @@ python3 scripts/lint_swift_sources.py ios/HealthNutrition
 Both roots are expected to exit `0`. A run over the package root also covers the
 app target beside it, so the single invocation CI runs enforces both surfaces.
 `scripts/tests/test_lint_swift_sources.py` covers the rule itself with synthetic
-view trees for the icon-only `Button`, the labelled button, the decorative
-image, the `Label` with a system image, the unlabelled layout caption, the
+view trees for the icon-only `Button`, the labeled button, the decorative
+image, the `Label` with a system image, the unlabeled layout caption, the
 label passed as an argument, the `Label` with title and icon closures, the
 module-qualified control, the nested view in an `overlay` and in an
 `overlay(content:)`, the hidden text, the `Picker` options, the `Menu` with a

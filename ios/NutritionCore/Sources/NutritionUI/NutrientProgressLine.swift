@@ -66,7 +66,7 @@ public struct NutrientProgressLine: Equatable, Identifiable {
 /// The name a nutrient key is shown under.
 ///
 /// A key the app does not name is spelled out rather than dropped, because a target a person set
-/// for it still has to be recognisable on the screen they set it from.
+/// for it still has to be recognizable on the screen they set it from.
 public enum NutrientNames {
     private static let names = [
         "energy": "Energy",

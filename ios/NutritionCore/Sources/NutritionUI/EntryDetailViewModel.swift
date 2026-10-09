@@ -63,7 +63,7 @@ public struct EntryDestinationRow: Equatable, Identifiable {
     public var id: String { destination.rawValue }
     public let destination: JournalDestination
     public let label: String
-    /// State as words, so colour is never the only signal.
+    /// State as words, so color is never the only signal.
     public let stateText: String
     public let iconName: String
     /// The destination's name as a person reads it, e.g. "Apple Health".
@@ -179,7 +179,7 @@ public final class EntryDetailViewModel: ObservableObject {
     public let intakeID: String
     private let store: JournalStore
     private let repeater: IntakeRepeater
-    /// Read on each load, so a preference changed on another screen is honoured here too.
+    /// Read on each load, so a preference changed on another screen is honored here too.
     private let preferences: DisplayPreferences
 
     /// The unit system the displayed amounts are shown in.
@@ -357,7 +357,7 @@ public final class EntryDetailViewModel: ObservableObject {
     /// an untouched field records what actually changed.
     ///
     /// **A time correction is named only when the amounts are untouched.** A save that changes the amounts
-    /// *and* the time is an ordinary edit of the entry, however it was reached, and labelling it "Time
+    /// *and* the time is an ordinary edit of the entry, however it was reached, and labeling it "Time
     /// corrected" would say the time was the only thing that moved when it was not: the history would read
     /// as if the amounts had stood still through a correction that changed them. So the time-correction
     /// reason is for the case it describes — the instant moved and the components did not.
@@ -376,15 +376,15 @@ public final class EntryDetailViewModel: ObservableObject {
     /// the parser would make of that text. An entry with a zero-valued component therefore keeps it, and a
     /// time correction of such an entry — which changes no amount — writes without ever validating one.
     ///
-    /// A stored `unknown` **is** recognised as untouched. Its field is seeded empty, and empty is exactly
+    /// A stored `unknown` **is** recognized as untouched. Its field is seeded empty, and empty is exactly
     /// what `load` put there, so an entry carrying an unknown component is read back the same way a zero or
     /// any other value the parser refuses is: the person changed nothing, and the save carries the component
     /// through as it stands.
     ///
-    /// It has to be recognised, or the only edit that changes no amount cannot be made on such an entry at
+    /// It has to be recognized, or the only edit that changes no amount cannot be made on such an entry at
     /// all: correcting the time of an entry with a component whose amount is unknown would fail on a field
     /// nobody touched. The comparison is against the text `load` seeded, so an amount field the person did
-    /// clear is still empty and still refused by the parser — this recognises *untouched*, not *absent*.
+    /// clear is still empty and still refused by the parser — this recognizes *untouched*, not *absent*.
     static func unchangedStoredComponent(
         for draft: EditedComponent, in stored: [IntakeComponent]
     ) -> IntakeComponent? {

@@ -23,7 +23,7 @@ struct SpikeLogEntry: Identifiable {
 /// A DEBUG-only screen that measures how HealthKit ACTUALLY behaves when the same sync
 /// identifier is saved again with a higher, an equal and a lower sync version.
 ///
-/// NC-07's real HealthKit writer must follow the measured behaviour, not the documentation, so
+/// NC-07's real HealthKit writer must follow the measured behavior, not the documentation, so
 /// this spike runs on a device once: write synthetic samples, record which sample UUIDs survive
 /// each save, then delete the samples this app wrote. Only those are deleted: the delete is
 /// filtered on `HKSource.default()`, so a sample written by another app is left alone.
@@ -167,7 +167,7 @@ final class HealthKitSpikeRunner {
     /// Ask for write and read access to **every** type the planner maps, not only the two this spike
     /// writes.
     ///
-    /// The spike measures sync-identifier behaviour using water and protein, but the real writer
+    /// The spike measures sync-identifier behavior using water and protein, but the real writer
     /// writes whatever the planner maps, and a request that names only the spike's two leaves the
     /// rest `.notDetermined`: the writer reads that as denied, the worker parks those operations, and
     /// nothing re-arms them — which is exactly what the owner's device run saw, with only water and

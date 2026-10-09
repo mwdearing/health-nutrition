@@ -337,7 +337,7 @@ public struct LabelCaptureView: View {
 
     /// One reading of a conflicted row: what the photo read, and the button that keeps it.
     ///
-    /// The button is labelled by the value it keeps rather than by its position, because there can be
+    /// The button is labeled by the value it keeps rather than by its position, because there can be
     /// any number of them and "the other one" is no longer a thing the screen can say.
     private func candidateRow(
         _ candidate: LabelCaptureCandidate, rowName: String, keep: @escaping () -> Void

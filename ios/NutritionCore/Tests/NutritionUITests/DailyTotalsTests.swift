@@ -306,7 +306,7 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(60), .g))
     }
 
-    /// A serving stated in millilitres scales exactly as one stated in grams: what matters is that the
+    /// A serving stated in milliliters scales exactly as one stated in grams: what matters is that the
     /// serving and the amount logged are in the same dimension, not which one that is. A label
     /// capture of a liquid supplement records "per serving (240 mL)" and the entry is logged in mL.
     func testAPerServingBasisWithAVolumeComponentScalesFromTheStatedServing() throws {
@@ -328,7 +328,7 @@ final class DailyTotalsTests: XCTestCase {
 
     /// The logged amount is converted into the stated serving's unit rather than compared in whatever
 /// unit it was written: 0.48 L is 480 mL, which is two of a 240 mL serving. Taking the 0.48 as if it
-/// were millilitres would give a thousandth of the answer.
+/// were milliliters would give a thousandth of the answer.
     func testAPerServingBasisConvertsTheLoggedAmountIntoTheStatedServing() throws {
         let store = try makeStore()
         let broth = ProductDefinition(

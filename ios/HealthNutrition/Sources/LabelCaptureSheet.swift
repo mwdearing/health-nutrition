@@ -53,7 +53,7 @@ final class LabelCaptureSession: ObservableObject {
     ///
     /// The lines arrive already in reading order, which is what `linesInReadingOrder(_:)` is for, so
     /// the transcript can also be handed over directly: a test drives the session by handing it the
-    /// lines a frame recognised rather than by standing a camera up.
+    /// lines a frame recognized rather than by standing a camera up.
     func update(withLines lines: [String]) {
         self.lines = lines
     }
@@ -64,7 +64,7 @@ final class LabelCaptureSession: ObservableObject {
 
     /// Whether the camera is holding a transcript that a Capture would submit.
     ///
-    /// Nothing downstream reads this, so it is here for the tests: a session that has been cancelled
+    /// Nothing downstream reads this, so it is here for the tests: a session that has been canceled
     /// and reopened must hold nothing, or the next Capture merges the photo the user backed out of.
     var hasHeldLines: Bool { !lines.isEmpty }
 
@@ -75,7 +75,7 @@ final class LabelCaptureSession: ObservableObject {
     /// The lines go to `LabelCaptureViewModel.capture(lines:)`, which decides what this capture is for:
     /// the first photo of a panel loads the draft, and a photo taken while the user asked to add
     /// another one is merged into the draft already on screen. Both go through this same session and
-    /// this same recogniser — the second half of a panel is read by the camera that read the first,
+    /// this same recognizer — the second half of a panel is read by the camera that read the first,
     /// not by a second one the user has to find.
     ///
     /// Main actor, because it loads the parser's rows into the view model, and because it is only ever
@@ -91,9 +91,9 @@ final class LabelCaptureSession: ObservableObject {
     /// Puts the reviewed draft back on screen without adding a photo, and forgets what the camera
     /// read while the user was looking for the rest of the panel.
     ///
-    /// Clearing the transcript is the point: the recogniser replaces the held lines only when it
-    /// recognises something, so a camera reopened for another photo still holds the lines the
-    /// cancelled one saw. A Capture taken before the camera read anything new would then merge the
+    /// Clearing the transcript is the point: the recognizer replaces the held lines only when it
+    /// recognizes something, so a camera reopened for another photo still holds the lines the
+    /// canceled one saw. A Capture taken before the camera read anything new would then merge the
     /// photo the user backed out of, which is not what they asked for.
     ///
     /// Main actor, because it puts rows back on the view model.
@@ -215,7 +215,7 @@ struct LabelCaptureSheet: View {
     /// terminal failure takes the camera out of the tree, so nothing asks it to start again.
     ///
     /// The camera also comes back after the review screen's "Add another photo": the same session, the
-    /// same recogniser and the same Capture button read the second half of a panel, and the draft on
+    /// same recognizer and the same Capture button read the second half of a panel, and the draft on
     /// screen is kept so its rows can be merged with whatever this photo reads. A failure while that
     /// camera is open offers the way back to that draft rather than only closing the sheet.
     @ViewBuilder

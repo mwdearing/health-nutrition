@@ -15,7 +15,7 @@ journal stays testable on macOS — so the quantity type is named by its identif
 (`"HKQuantityTypeIdentifierDietaryWater"`) and the app target looks the type up and builds the
 `HKQuantitySample` later. Nothing in this module authorizes, saves, queries or deletes anything.
 
-The behaviour follows [ADR 0002](adr/0002-healthkit-sync.md), which records what HealthKit actually
+The behavior follows [ADR 0002](adr/0002-healthkit-sync.md), which records what HealthKit actually
 did on a device rather than what its documentation says. The three consequences that shape this
 plan:
 
@@ -112,7 +112,7 @@ Skipping means *no sample at all*, never a sample of zero: the journal reads an 
 unknown, and writing 0 would turn "not stated" into "none" in the Health app. A nutrient that is
 genuinely `.known(0)` is a label statement and is written as zero.
 
-Water is not special-cased: the `water` total is the millilitres of the intake's volume component,
+Water is not special-cased: the `water` total is the milliliters of the intake's volume component,
 which the caller passes in like any other total.
 
 ## Determinism
@@ -259,7 +259,7 @@ change first, and that is a person's decision.
 HealthKit API, not as a rejected sample, so the same code from `ownSamples(type:syncIdentifier:)` or
 `healthStore.delete(_:)` stays **transient** on the ordinary `classify(_:)` path. There is no immutable
 sample behind those calls for a person to correct, an app update may well fix the call that made them,
-and the operation is still queued rather than parked. A unit symbol the writer does not recognise is
+and the operation is still queued rather than parked. A unit symbol the writer does not recognize is
 transient for the same reason: it means the writer's table and the planner's disagree, which a later
 build may fix.
 
@@ -374,7 +374,7 @@ A debug build enables the destination so the writer can be exercised on a device
 of that: it asks HealthKit for write access to every type in `HealthKitWritePlanner.mappings`, calls
 `runOnce(now:)` when the app becomes active and after every journal change, and shows the pending,
 needing-attention and suspended counts plus the last run's outcome list. Today carries one line of the
-same counts. It changes no behaviour in the worker, the writer or the journal, and the whole file is
+same counts. It changes no behavior in the worker, the writer or the journal, and the whole file is
 behind `#if DEBUG`.
 
 ### The automatic-run gate

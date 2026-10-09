@@ -51,9 +51,9 @@ have, so nil is the honest reading rather than a value waiting to be recovered.
 `JournalSchemaV6` adds the optional `kindRaw` to the product record, and its stage from V5 is lightweight
 for the same reason. The column is **optional and never backfilled**: a product written before kinds existed
 has no kind, and reading nil as `.food` says what such a row was recorded as rather than inventing a kind
-the person never chose. An unrecognised stored value reads as `.food` as well, so a journal written by a
+the person never chose. An unrecognized stored value reads as `.food` as well, so a journal written by a
 build that knew kinds this one does not still opens. The row is kept either way, which is the point of a
-lightweight stage: nothing here is lost, only left unlabelled.
+lightweight stage: nothing here is lost, only left unlabeled.
 
 The import path changed nothing here: a restore writes columns the existing rows already have, so V1 and V2
 stay exactly as they are and no migration stage was added. A restored tombstone carries an empty category,
@@ -73,7 +73,7 @@ snapshots, every intake with all of its revisions and every tombstone. It writes
 **no** outbox operation: a restored entry is history the destinations were already sent once, so it must
 not be delivered again. That is why it is a separate method and not a flag on `create` - creating an entry
 means the person just ate something and it has to reach Health. `JournalRestoreTarget` is a separate
-protocol from `JournalStore` for the same reason: the normal create/edit/delete behaviour cannot change.
+protocol from `JournalStore` for the same reason: the normal create/edit/delete behavior cannot change.
 The restore only runs into a journal with no intake rows at all, active or deleted, and it reads that
 predicate **inside** its own `commit` closure, under the same write lock as the inserts, throwing
 `JournalImportError.notEmpty` from there. A check before the save would leave a window in which another write

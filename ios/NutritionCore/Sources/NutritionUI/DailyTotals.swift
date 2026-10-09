@@ -27,7 +27,7 @@ public struct DailyTotals: Equatable {
 ///
 /// - A component that **measures the nutrient itself** is summed directly. Water is the case this
 ///   reaches: an entry in category `water` states its volume in its own unit, so it already is the
-///   amount, and litres and millilitres are added exactly.
+///   amount, and liters and milliliters are added exactly.
 /// - A **product snapshot** states its nutrients for the amount its `labelBasis` names, so those
 ///   values are scaled by the factor `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`
 ///   gives — the same factor the intake-context encoder uses — and summed exactly. 40 g of a product
@@ -159,7 +159,7 @@ public enum DailyTotalsBuilder {
     /// because nothing in it says how big one serving is.
     ///
     /// The dimension has to match on both sides, and that is the only requirement on it: a panel that
-    /// states a serving in millilitres and an entry logged in millilitres say the same thing about how
+    /// states a serving in milliliters and an entry logged in milliliters say the same thing about how
     /// much was eaten, and so does the gram case. A mass serving and a logged volume do not, so they
     /// are nil rather than a number — the day stays unknown, which is what an unscalable basis has
     /// always meant.
@@ -236,7 +236,7 @@ public enum DailyTotalsBuilder {
         return .unknown
     }
 
-    /// The millilitres a drink records, one value per component so the coverage says how much of it
+    /// The milliliters a drink records, one value per component so the coverage says how much of it
     /// could be counted. A component that is not a volume, or whose stored amount is NaN or not above
     /// zero, is unknown rather than zero: the app cannot tell what that entry was.
     private static func waterContributions(_ components: [IntakeComponent]) -> [NutrientValue] {

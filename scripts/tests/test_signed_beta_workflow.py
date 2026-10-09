@@ -292,7 +292,7 @@ def test_the_temporary_keychain_and_certificate_file_are_always_removed() -> Non
 def test_the_stored_certificate_must_belong_to_the_signing_team() -> None:
     # A valid development identity of another team would pass the identity check, and
     # Xcode would then create a new certificate for the right team on every run after
-    # all. The certificate's organisational unit is the team it was issued to.
+    # all. The certificate's organizational unit is the team it was issued to.
     run = str(_import_step()["run"])
     check = next(line for line in run.splitlines() if "find-certificate" in line)
     assert "openssl x509 -noout -subject" in check

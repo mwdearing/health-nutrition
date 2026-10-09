@@ -1184,7 +1184,7 @@ final class IntakeContextEncoderTests: XCTestCase {
         // A snapshot read from a catalog is catalog-sourced. Its own fact only exists when the basis resolves
         // against what was logged - a mass component and a per 100 g basis here - so the fact under test is
         // named by component id rather than taken by position.
-        let catalogued = try encoder.upsert(
+        let catalogd = try encoder.upsert(
             intake: intake,
             revision: waterAndCreatineRevision(
                 components: [
@@ -1205,8 +1205,8 @@ final class IntakeContextEncoderTests: XCTestCase {
                 nutrients: ["protein": .known(13, .g)]),
             operation: outboxOperation(
                 id: "8e5a3b4c-9f6d-4e1a-8b3c-4d5e6f708192", kind: .upsert, revision: 2))
-        XCTAssertEqual(provenance(ofComponent: "oats", in: catalogued), "catalog_reference")
-        XCTAssertEqual(provenance(ofComponent: "protein", in: catalogued), "catalog_reference")
+        XCTAssertEqual(provenance(ofComponent: "oats", in: catalogd), "catalog_reference")
+        XCTAssertEqual(provenance(ofComponent: "protein", in: catalogd), "catalog_reference")
         // An entry with no snapshot is the user's own, and a compound keeps the label-confirmed provenance its
         // catalog row states: provenance names where that value came from, not just whether a product is attached.
         let byHand = try encoder.upsert(

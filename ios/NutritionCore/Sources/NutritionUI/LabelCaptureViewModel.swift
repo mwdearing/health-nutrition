@@ -203,7 +203,7 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         if reasons.contains(.unexpectedUnit) {
             sentences.append("the unit is not the one this row usually carries")
         }
-        if reasons.contains(.normalisedMicrogramSymbol) {
+        if reasons.contains(.normalizedMicrogramSymbol) {
             sentences.append("the unit was read as mcg")
         }
         return "Check this value: " + sentences.joined(separator: ", ") + "."
@@ -488,7 +488,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// the choice is made rather than where its consequences are read.
     public var kindExplanation: String {
         kind == .supplement
-            ? "A supplement is left out of the day's food coverage. What it states still counts towards the day's totals."
+            ? "A supplement is left out of the day's food coverage. What it states still counts toward the day's totals."
             : "Foods and drinks are counted in the day's food coverage."
     }
 
@@ -563,7 +563,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     ///
     /// This is the single door every capture goes through, so the capture sheet never has to know which
     /// of the two it is handing over: the model knows because the review screen said so when the user
-    /// asked for another photo, and the same camera and the same recogniser read both.
+    /// asked for another photo, and the same camera and the same recognizer read both.
     public func capture(lines: [String]) {
         if isAddingPhoto {
             addPhoto(lines: lines)
@@ -946,7 +946,7 @@ public final class LabelCaptureViewModel: ObservableObject {
 
     /// Puts away the message from a correction that was refused.
     ///
-    /// The error belongs to the correction the user just cancelled or moved away from, so it is not left
+    /// The error belongs to the correction the user just canceled or moved away from, so it is not left
     /// standing under the next row's amount field: a validation failure that belongs to one row must not
     /// greet the user in another one before they have typed anything there.
     public func clearCorrectionError() {
@@ -1032,7 +1032,7 @@ public final class LabelCaptureViewModel: ObservableObject {
             correctionError = "Enter zero or more, using digits and a point, and add the unit if you want a different one."
             return false
         }
-        // A unit of another dimension is refused rather than stored: a litre of sodium or a gram of
+        // A unit of another dimension is refused rather than stored: a liter of sodium or a gram of
         // calories cannot be interpreted by anything downstream, which would drop the value in silence.
         // Another unit of the same dimension is fine, so mg may be restated as g.
         let dimension = Self.expectedDimension(for: key)

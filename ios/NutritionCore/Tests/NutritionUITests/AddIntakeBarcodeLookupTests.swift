@@ -70,7 +70,7 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
             store: try makeStore(), now: now, timeZoneIdentifier: "UTC", lookup: lookup)
     }
 
-    /// The attribution a source with licence obligations would supply. The UI shows whatever it is
+    /// The attribution a source with license obligations would supply. The UI shows whatever it is
     /// given and never names a source itself.
     private let attribution = ProductAttribution(
         source: "example-catalog", text: "Nutrition facts from Example Foods, under CC BY-SA.",
@@ -165,7 +165,7 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertEqual(model.lookupMessage, "Filled in from the barcode (per serving (30 g)). Check the amount, then save.")
     }
 
-    func testTextOnlyServingDefinitionIsKeptAndLabelled() {
+    func testTextOnlyServingDefinitionIsKeptAndLabeled() {
         // A source may give the size only as text, with no number to read.
         let biscuit = ServingDefinition(quantity: nil, unit: nil, text: "1 biscuit")
         XCTAssertEqual(biscuit.label, "1 biscuit")

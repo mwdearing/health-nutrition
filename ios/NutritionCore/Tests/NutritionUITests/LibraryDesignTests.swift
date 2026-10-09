@@ -65,8 +65,8 @@ final class LibraryDesignTests: XCTestCase {
     // MARK: Segments
 
     func testLibrarySegmentsFollowTheSegmentedControl() throws {
-        XCTAssertEqual(LibrarySegment.allCases, [.favourites, .recent, .foods, .recipes])
-        XCTAssertEqual(LibrarySegment.allCases.map(\.title), ["Favourites", "Recent", "Foods", "Recipes"])
+        XCTAssertEqual(LibrarySegment.allCases, [.favorites, .recent, .foods, .recipes])
+        XCTAssertEqual(LibrarySegment.allCases.map(\.title), ["Favorites", "Recent", "Foods", "Recipes"])
 
         let store = try makeStore()
         let favorites = try makeFavorites()
@@ -76,7 +76,7 @@ final class LibraryDesignTests: XCTestCase {
 
         let library = makeLibrary(store: store, favorites: favorites)
         library.load()
-        XCTAssertEqual(library.segment, .favourites)
+        XCTAssertEqual(library.segment, .favorites)
         XCTAssertEqual(library.visibleItems.count, 1)
         XCTAssertEqual(library.visibleItems.first?.title, "Example tea")
 
@@ -96,10 +96,10 @@ final class LibraryDesignTests: XCTestCase {
     func testLibraryEmptyStatesCoverEverySegment() throws {
         let library = makeLibrary(store: try makeStore(), favorites: try makeFavorites())
 
-        let favourites = library.emptyText(for: .favourites)
-        XCTAssertEqual(favourites.title, "No favourites yet")
-        XCTAssertEqual(favourites.message, "Star anything you log often.")
-        XCTAssertEqual(favourites.systemImage, "star")
+        let favorites = library.emptyText(for: .favorites)
+        XCTAssertEqual(favorites.title, "No favorites yet")
+        XCTAssertEqual(favorites.message, "Star anything you log often.")
+        XCTAssertEqual(favorites.systemImage, "star")
 
         let recent = library.emptyText(for: .recent)
         XCTAssertEqual(recent.title, "Nothing logged yet")
@@ -210,7 +210,7 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertTrue(library.quickAdd(recent, now: now))
         let token = try XCTUnwrap(library.undoToken)
 
-        // The store's delete honours the one-shot failure flag and throws JournalError.injectedSaveFailure.
+        // The store's delete honors the one-shot failure flag and throws JournalError.injectedSaveFailure.
         store.failNextSaveForTesting = true
         XCTAssertFalse(library.undo(now: now))
         XCTAssertNotNil(library.undoToken)
@@ -235,7 +235,7 @@ final class LibraryDesignTests: XCTestCase {
         library.load()
         library.segment = .recent
         let recent = try XCTUnwrap(library.visibleItems.first)
-        library.segment = .favourites
+        library.segment = .favorites
         let empty = try XCTUnwrap(library.visibleItems.first)
 
         XCTAssertTrue(library.quickAdd(recent, now: now))
@@ -282,7 +282,7 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertEqual(details.meal, .breakfast)
     }
 
-    func testAddHomeMealLabelNormalisesAStoredMeal() {
+    func testAddHomeMealLabelNormalizesAStoredMeal() {
         func template(meal: String?) -> RepeatTemplate {
             RepeatTemplate(
                 displayName: "Example oats", category: "food", meal: meal,

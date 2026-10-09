@@ -38,9 +38,9 @@ class JournalImportTestCase: XCTestCase {
             componentID: "oats", name: "Sample rolled oats", amount: Decimal(string: grams)!, unit: .g)
     }
 
-    func water(_ millilitres: String) -> IntakeComponent {
+    func water(_ milliliters: String) -> IntakeComponent {
         IntakeComponent(
-            componentID: "water", name: "Sample water", amount: Decimal(string: millilitres)!, unit: .mL)
+            componentID: "water", name: "Sample water", amount: Decimal(string: milliliters)!, unit: .mL)
     }
 
     /// The values the sample product states. They live with the snapshot, not in the document: an export

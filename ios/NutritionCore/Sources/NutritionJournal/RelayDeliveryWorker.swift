@@ -576,7 +576,7 @@ public struct RelayDeliveryWorker: Sendable {
     /// One intake's queue is walked in the store's order — oldest revision first, an upsert before a
     /// delete within a revision — so a delete stands above every operation ahead of it and nothing after
     /// it. Only the delete's own delivery identity is used to decide; the operations it retracts are
-    /// recognised by position, which is what the receiver would see.
+    /// recognized by position, which is what the receiver would see.
     private static func retractedByQueuedDelete(_ queued: [OutboxOperation]) -> Set<String> {
         guard let index = queued.firstIndex(where: { $0.kind == .delete }) else { return [] }
         return Set(queued[..<index].map(\.operationID))
@@ -882,7 +882,7 @@ public struct RelayDeliveryWorker: Sendable {
             // this batch and carrying straight on to the next would spend the whole run walking into the same
             // wall, so the operations after it are reported as unattempted and the next run starts fresh.
             //
-            // A stated wait is honoured as given. Without one, the per-operation backoff ladder decides —
+            // A stated wait is honored as given. Without one, the per-operation backoff ladder decides —
             // the same one every other transient failure uses, indexed by that operation's own attempt
             // count. Hard-coding the first step here would hold a repeatedly throttled producer at one
             // minute forever, which is the opposite of what a receiver asking for less traffic wants.

@@ -17,7 +17,7 @@ import SwiftUI
 /// are counted from the outbox every time they are shown, so a number on screen is the queue as it
 /// stands rather than what an earlier run left behind.
 ///
-/// Nothing here changes the worker, the writer or any journal behaviour: it calls `runOnce(now:)`,
+/// Nothing here changes the worker, the writer or any journal behavior: it calls `runOnce(now:)`,
 /// asks for authorization, and reads the store's own counts. The whole file is behind `#if DEBUG`,
 /// so a release build does not contain it and requests no Health access at all.
 @MainActor

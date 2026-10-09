@@ -10,7 +10,7 @@ requests, opens no sessions and caches nothing. `DSLDClient` (see [Live client](
 responses and feeds this adapter the same bytes, live or recorded, so both take one code path.
 
 The adapter reads a label for its own serving size. DSLD states each ingredient row for one serving size
-and the adapter keeps that basis; it does not normalise to 100 g and it does not rescale.
+and the adapter keeps that basis; it does not normalize to 100 g and it does not rescale.
 
 ## Field mapping
 
@@ -190,22 +190,22 @@ here would be a guess. What it does guarantee is that a refusal is passed throug
 could generate requests without being asked for, search on a term the user has not submitted, sends
 nothing. Callers should back off for the stated wait and must not retry on their own schedule.
 
-### Licence
+### License
 
 DSLD data is public domain under the
-[CC0 1.0 Universal licence](https://creativecommons.org/publicdomain/zero/1.0/), so live responses carry
+[CC0 1.0 Universal license](https://creativecommons.org/publicdomain/zero/1.0/), so live responses carry
 no share-alike or attribution obligation. `DSLDAttribution` names the source anyway, because a label
 shown to a user should say where it came from. Product images and PDF documents are deliberately not
 fetched: the client only asks the two endpoints above, neither of which is used for images.
 
-## Licences
+## Licenses
 
 - The NIH Dietary Supplement Label Database is released under the
-  [CC0 1.0 Universal licence](https://creativecommons.org/publicdomain/zero/1.0/), so the recorded
+  [CC0 1.0 Universal license](https://creativecommons.org/publicdomain/zero/1.0/), so the recorded
   label data in `contracts/providers/dsld` is public domain and carries no share-alike or attribution
   obligation.
 - Product images and PDF documents are deliberately not part of the fixtures and the adapter has no
-  field for them. Including them would need a separate licence review.
+  field for them. Including them would need a separate license review.
 - A label in the fixtures is an API snapshot used for testing. It is not an endorsement of the product
   by the NIH, the Office of Dietary Supplements or the app.
 

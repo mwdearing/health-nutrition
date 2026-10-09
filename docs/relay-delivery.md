@@ -120,7 +120,7 @@ HealthRelay connection that will read them back.
 | 400, 403 | permanent for the operations of that batch: the payload or the producer binding is refused, so the same bytes are refused again. The receiver's `error` code is the stored reason |
 | 401 | **the run stops.** Retrying cannot mint a new token and every later batch would be refused the same way, so one cause is reported instead of one refusal per batch. The operations sent so far are parked with a token reason and no retry until re-armed; the operations the run never reached are reported as `notAttempted`. A 401 on the **head of a split** stops the split there too: the tail shares the refused credential, so sending it would be one more refusal for the same reason and would park those operations against a token already known to be bad |
 | 413 | the batch is **split and each half retried, recursively**, keeping the order the operations were read in and filtering the tail through the head's results. How large one operation is on its own is not knowable here — one with a long link snapshot may need to travel alone while a bare facts-only one would have fitted — so only a **single** operation still refused is the payload being too large, and only that is parked. Parking whatever survived one halving would refuse operations that were perfectly sendable |
-| 429 | **stops the run**, with or without `Retry-After`. A stated wait is honoured as given; without one, the **per-operation backoff ladder** decides, so a repeatedly throttled producer waits longer each time rather than holding at one minute |
+| 429 | **stops the run**, with or without `Retry-After`. A stated wait is honored as given; without one, the **per-operation backoff ladder** decides, so a repeatedly throttled producer waits longer each time rather than holding at one minute |
 | 5xx, and transport errors | retried on the backoff. A thrown transport error means nothing arrived, so there is no status to read and the same bytes are worth sending again |
 
 The backoff is 1, 5 and 30 minutes, then every 2 hours, indexed by the attempt count **including** the
@@ -230,7 +230,7 @@ already in a store is wrong after the upgrade.
 
 ## Link projections carry their own retry date
 A projection has no outbox row, so `RelayLinkProjectionQueue` is told `retryAfter(_:reason:)` whenever one
-is rescheduled, and is expected to honour that date when it offers projections again. Without it the queue
+is rescheduled, and is expected to honor that date when it offers projections again. Without it the queue
 would hand the same projection back on the next run whatever the receiver said, and a run triggered for
 unrelated work would retry it immediately — against a receiver that had just asked this producer to stop.
 A projection that cannot be encoded at all is told `needsAttention` **and holds back the later projections

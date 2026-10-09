@@ -89,7 +89,7 @@ final class IntakeContextDigestTests: XCTestCase {
 
     func testObjectKeysAreSortedByUnicodeCodePoint() throws {
         // Code point order, not locale order: "1" < "A" < "B" < "_" < "a" < "b", and a key beyond the
-        // basic plane sorts after U+FF5E rather than beside its case-folding neighbours.
+        // basic plane sorts after U+FF5E rather than beside its case-folding neighbors.
         let value = IntakeContextJSONValue.object([
             "b": .integer("1"),
             "a": .object(["d": .string("x"), "c": .null]),

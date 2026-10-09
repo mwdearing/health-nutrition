@@ -10,7 +10,7 @@ asks only for the fields it needs: code, product name, brands, serving size,
 serving quantity, the basis of the nutrition data, the nutriments and the last
 modification time and the unit of the product quantity. The use is read-only; the app never writes to Open Food Facts.
 
-Nutrient amounts are decoded as decimal numbers. Open Food Facts normalises the
+Nutrient amounts are decoded as decimal numbers. Open Food Facts normalizes the
 `_100g` and `_serving` values to canonical units (kcal for energy, grams for every
 other nutrient), so the app reads them in those units and ignores the `_unit` field,
 which only describes the unit the contributor typed. A nutriment the source does not
@@ -93,7 +93,7 @@ scanner never sees anything but the code: no image is stored. If the camera beco
 while the sheet is open, for instance when permission is denied, the sheet shows the reason and a
 Close button and asks once: it does not keep retrying while the notice is on screen.
 
-## Licences
+## Licenses
 
 - The database is available under the Open Database License (ODbL).
 - The individual contents of the database are available under the

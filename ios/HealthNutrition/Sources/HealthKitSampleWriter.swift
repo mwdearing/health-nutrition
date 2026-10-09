@@ -131,7 +131,7 @@ struct HealthKitSampleWriter: HealthSampleWriter {
     /// The HealthKit unit for a symbol the plan produces, or a delivery failure for anything else.
     ///
     /// `HKUnit(from:)` looks like the obvious way to do this and is not: it is **not** optional and it
-    /// traps on a string it does not recognise, so an unknown symbol would take the app down rather
+    /// traps on a string it does not recognize, so an unknown symbol would take the app down rather
     /// than fail one delivery. The plan's `unitSymbol` is a `MeasureUnit` symbol from a fixed table, so
     /// the five units it can produce are mapped here by hand and anything else is refused.
     ///

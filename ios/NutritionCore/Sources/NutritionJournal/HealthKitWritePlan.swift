@@ -130,7 +130,7 @@ public enum HealthKitWritePlanner {
     ///
     /// A total that is `.unknown`, `.notApplicable` or `.belowReportingThreshold`, a nutrient key
     /// with no mapping, an international-unit total and a total whose unit cannot be converted
-    /// exactly are all skipped rather than written as zero. The `water` total is the millilitres of
+    /// exactly are all skipped rather than written as zero. The `water` total is the milliliters of
     /// the intake's volume component, which the caller passes in like any other total.
     ///
     /// The specs come out sorted by nutrient key, so the same totals always plan the same order.

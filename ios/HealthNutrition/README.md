@@ -8,7 +8,7 @@ The app makes one kind of network request: a barcode lookup in Add intake, when 
 one. Nothing else leaves the device, and no request is sent while the user is typing. The lookup
 reads a single product from Open Food Facts and nothing is sent back; see
 [docs/providers/open-food-facts.md](../../docs/providers/open-food-facts.md) for the fields read, the
-rate limits honoured and the attribution the licence requires.
+rate limits honored and the attribution the license requires.
 
 The target includes the journal's HealthKit planner and delivery worker. A release build's
 `AppServices` keeps both HealthKit and HealthRelay destinations disabled, so a normal journal save
@@ -44,7 +44,7 @@ HealthRelay destination stays off in every build. The separate debug-only spike
   `HealthKitWritePlanner.mappings`, runs `healthKitDelivery.runOnce(now:)` on the app becoming active
   and after every journal change, and shows the pending, needing-attention and suspended counts plus
   the last run's outcome list. Today shows the same counts as one line. Nothing here changes the
-  worker, the writer or any journal behaviour.
+  worker, the writer or any journal behavior.
 - `Sources/Debug/HealthKitSpikeView.swift`: the debug-only HealthKit write spike, whole file inside
   `#if DEBUG`. It writes synthetic samples to measure how HealthKit resolves a repeated sync
   identifier, and deletes them again. Its sections share the HealthKit tab with the delivery driver
@@ -54,7 +54,7 @@ HealthRelay destination stays off in every build. The separate debug-only spike
 - `Sources/BarcodeLookup.swift`: the adapter between the nutrition-data client and the lookup protocol
   the screens depend on. The screens never see the client or the source; this file fills in the
   attribution and serving definition that a licensed source requires.
-- `Resources/Assets.xcassets`: an `AccentColor` and a placeholder `AppIcon` (a single 1024-point image, the accent colour with a plain mark) so a signed archive can be uploaded; replace it with the real icon when there is one.
+- `Resources/Assets.xcassets`: an `AccentColor` and a placeholder `AppIcon` (a single 1024-point image, the accent color with a plain mark) so a signed archive can be uploaded; replace it with the real icon when there is one.
 - `Tests/`: the app target's own XCTest bundle, hosted by the app so `@testable import HealthNutrition`
   works. See [Running the tests](#running-the-tests).
 

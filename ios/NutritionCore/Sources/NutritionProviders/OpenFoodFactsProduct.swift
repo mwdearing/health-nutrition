@@ -184,7 +184,7 @@ extension OpenFoodFactsProduct {
         )
     }
 
-    /// Open Food Facts normalises `<key>_100g` and `<key>_serving` to canonical units (kcal for
+    /// Open Food Facts normalizes `<key>_100g` and `<key>_serving` to canonical units (kcal for
     /// energy, grams for everything else); `<key>_unit` only describes the entered unit and is ignored.
     private static func value(amount: Decimal?, energy: Bool) -> NutrientValue {
         guard let amount, amount >= 0 else {

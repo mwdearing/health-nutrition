@@ -28,7 +28,7 @@ Saving always writes the next version number (1 for a new recipe, else latest pl
 Logging a portion makes one journal intake in category `recipe` with ONE component, named after the
 recipe and holding the portion in the yield's own unit: servings for a yield counted in servings, the
 yield's unit (converted exactly through the unit registry) for a total yield. So a journal row reads as
-the recipe the user chose, not as a list of nutrients, and repeating or favouriting the entry copies
+the recipe the user chose, not as a list of nutrients, and repeating or favoriting the entry copies
 one amount rather than one amount per nutrient.
 
 The intake references a product snapshot with id `recipe:<recipeID>:v<N>`, origin `recipe_calculated`,

@@ -114,7 +114,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"') > /dev/null 2>&1
           security find-identity -v -p codesigning "$KEYCHAIN" | grep -q "Apple Development" || fail "the stored certificate is not a valid Apple Development identity with its private key"
           # An identity of another team would pass the check above, and Xcode would create a new certificate
-          # for this team on every run after all. The certificate's organisational unit is its team.
+          # for this team on every run after all. The certificate's organizational unit is its team.
           security find-certificate -c "Apple Development" -p "$KEYCHAIN" 2> /dev/null | openssl x509 -noout -subject 2> /dev/null | grep -q "OU *= *$APPLE_TEAM_ID\b" || fail "the stored certificate was not issued to this team"
 
       - name: Archive with automatic signing

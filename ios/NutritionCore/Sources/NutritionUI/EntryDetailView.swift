@@ -206,7 +206,7 @@ public struct EntryDetailView: View {
                 .accessibilityHint("Adds a new entry with the same amounts at the current time")
                 Button {} label: {
                     HStack {
-                        Text("Favourite").font(.body)
+                        Text("Favorite").font(.body)
                         Spacer()
                         LaterBadge()
                     }

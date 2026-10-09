@@ -376,7 +376,7 @@ final class ReminderControllerTests: XCTestCase {
 
         XCTAssertFalse(controller.isOn)
         XCTAssertFalse(preferences.isReminderOn, "the erase is not undone by the enable that was in flight")
-        XCTAssertNil(scheduler.pendingTime, "the request the enable added after the erase is cancelled")
+        XCTAssertNil(scheduler.pendingTime, "the request the enable added after the erase is canceled")
     }
 
     func testTheLastTimeChosenWinsWhenChangesOverlap() async throws {

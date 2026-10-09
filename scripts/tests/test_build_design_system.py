@@ -170,7 +170,7 @@ def test_closure_label_buttons_with_modifiers_are_still_controls(tmp_path):
     assert ("text", "Save") not in elements
 
 
-def test_colour_accessors_resolve_to_their_token_names(tmp_path):
+def test_color_accessors_resolve_to_their_token_names(tmp_path):
     write_view(tmp_path, "TokenColors", 'public enum TokenColors {\n'
                '    public static var mint: Color { color(named: "RelayMint") }\n}\n')
     write_view(tmp_path, "CapsuleView", 'public struct CapsuleView: View {\n'
@@ -178,7 +178,7 @@ def test_colour_accessors_resolve_to_their_token_names(tmp_path):
     assert bds.scan_screens(tmp_path)[0]["CapsuleView"]["colors"] == ["RelayMint"]
 
 
-def test_colours_of_rendered_components_are_included(tmp_path):
+def test_colors_of_rendered_components_are_included(tmp_path):
     write_view(tmp_path, "Pill", 'public struct Pill: View {\n'
                '    public var body: some View { Text("p").foregroundStyle(TokenColors.accent) }\n}\n')
     write_view(tmp_path, "PageView", 'public struct PageView: View {\n'

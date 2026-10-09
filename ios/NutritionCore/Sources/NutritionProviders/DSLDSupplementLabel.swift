@@ -55,7 +55,7 @@ public struct DSLDServingFacts: Sendable, Hashable {
 /// A recorded NIH Dietary Supplement Label Database label, parsed into domain values.
 ///
 /// Everything here is per serving: DSLD states each ingredient row for each serving size the label
-/// lists, and the adapter keeps that basis rather than normalising it to 100 g.
+/// lists, and the adapter keeps that basis rather than normalizing it to 100 g.
 public struct DSLDSupplementLabel: Sendable, Hashable {
     /// The DSLD label identifier.
     public let id: Int

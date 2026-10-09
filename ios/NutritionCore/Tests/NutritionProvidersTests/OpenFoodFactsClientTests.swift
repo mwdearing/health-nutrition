@@ -315,7 +315,7 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertNil(production.requests.first?.value(forHTTPHeaderField: "Authorization"))
     }
 
-    func testAttributionNamesSourceAndLicence() {
+    func testAttributionNamesSourceAndLicense() {
         XCTAssertEqual(
             OpenFoodFactsAttribution.text,
             "Nutrition facts from Open Food Facts, available under the Open Database License (ODbL)."

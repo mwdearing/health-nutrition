@@ -8,7 +8,7 @@ import Foundation
 /// sample. That is what lets `HealthKitDeliveryWorker` be tested on macOS against a fake writer.
 ///
 /// The app target's implementation is `ios/HealthNutrition/Sources/HealthKitSampleWriter.swift`, and
-/// the behaviour both halves follow is [ADR 0002](docs/adr/0002-healthkit-sync.md).
+/// the behavior both halves follow is [ADR 0002](docs/adr/0002-healthkit-sync.md).
 public protocol HealthSampleWriter: Sendable {
     /// Whether this app may write each quantity type, keyed by the identifier string the plan used.
     ///

@@ -7,8 +7,8 @@ import NutritionDomain
 /// sends nothing anywhere; the capture session that produces the lines does that in a later task.
 ///
 /// What it reads: the panel's own heading (a **Nutrition Facts** panel or a **Supplement Facts** one),
-/// the serving size, the servings per container, one row per nutrient it recognises, and the rows a
-/// supplement states that it does not recognise (`additionalNutrients`, kept under the name the label
+/// the serving size, the servings per container, one row per nutrient it recognizes, and the rows a
+/// supplement states that it does not recognize (`additionalNutrients`, kept under the name the label
 /// printed). Amounts are read exactly with `Decimal(string:)` and never pass through a binary floating
 /// point type.
 /// What it never guesses:
@@ -25,7 +25,7 @@ import NutritionDomain
 /// - Text that states no amount is no compound. A lot number, a best-by date, an ingredients line and a
 ///   footnote are print, not rows.
 public enum NutritionFactsParser {
-    /// One recognised panel row: the journal key it fills, the names a label may print for it, and the
+    /// One recognized panel row: the journal key it fills, the names a label may print for it, and the
     /// unit the row usually carries. Aliases match as whole words and the earliest match on a line wins,
     /// so "Total Fat" beats the "fat" inside it and "Total Sugars" beats the "sugars" inside it.
     private struct PanelRow: Sendable {
@@ -73,7 +73,7 @@ public enum NutritionFactsParser {
 
     private static let posix = Locale(identifier: "en_US_POSIX")
 
-    /// Reads the lines of one panel. A line that states nothing the parser recognises is ignored, so
+    /// Reads the lines of one panel. A line that states nothing the parser recognizes is ignored, so
     /// surrounding print, a brand line or a footnote cannot turn into a value.
     public static func parse(lines: [String]) -> ParsedNutritionFacts {
         let cleaned = lines.map { cleanLine($0) }
@@ -443,7 +443,7 @@ public enum NutritionFactsParser {
         var text = trimmed(rawText)
         // The marker's colon is the label's own punctuation, so it is taken off before the text is
         // split: the count can be written against it, as in "Servings Per Container:12", and the colon
-        // is then no longer a token of its own that the skip below can recognise.
+        // is then no longer a token of its own that the skip below can recognize.
         while text.hasPrefix(":") { text = trimmed(String(text.dropFirst())) }
         var tokens = text.split(separator: " ").map(String.init)
         while let first = tokens.first {
@@ -636,7 +636,7 @@ public enum NutritionFactsParser {
             let tail = tokens.suffix(count).joined(separator: " ")
             guard !tail.contains("%") else { continue }
             // Only the words a panel prints in front of such an amount stand between it and the name,
-            // so a number that belongs to unrecognised text before the name is never read as this
+            // so a number that belongs to unrecognized text before the name is never read as this
             // row's amount: the 50mg of "Magnesium 50mg Calcium" is magnesium, not calcium.
             let words = tokens.dropLast(count)
             guard words.allSatisfy({ leadingWords.contains($0.lowercased()) }) else { continue }
@@ -1082,7 +1082,7 @@ public enum NutritionFactsParser {
         } else if let unit = unit(for: unitText, allowsCountedUnits: allowsCountedUnits) {
             printed = unit
             if unitText.lowercased() == "ug" || unitText.contains("\u{00B5}") || unitText.contains("\u{03BC}") {
-                reasons.insert(.normalisedMicrogramSymbol)
+                reasons.insert(.normalizedMicrogramSymbol)
             }
         } else {
             // A word the registry does not carry is not resolved into a unit it does carry, so the row

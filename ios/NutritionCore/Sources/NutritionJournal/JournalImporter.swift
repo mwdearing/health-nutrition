@@ -337,7 +337,7 @@ public enum JournalImporter {
             // A revision repeats the snapshot it used, so a file that carries one can be restored even if
             // its products list was trimmed. The provenance has to be the provenance of the snapshot the
             // revision names: a file that points at snapshot A and describes snapshot B is saying two
-            // things at once, and honouring either of them alone would attach the wrong product to the
+            // things at once, and honoring either of them alone would attach the wrong product to the
             // entry and quietly drop the other on the next export.
             for revision in exported.revisions {
                 guard let provenance = revision.provenance else { continue }

@@ -244,7 +244,7 @@ final class UnitsTests: XCTestCase {
         }
     }
 
-    /// One US fluid ounce is exactly 29.5735295625 mL, exact out of millilitres and rounded into them,
+    /// One US fluid ounce is exactly 29.5735295625 mL, exact out of milliliters and rounded into them,
     /// exactly like the weight ounce. `fl oz` is a separate symbol from `oz`, so a measure is never
     /// read as a weight.
     func testFluidOuncesConvertFromTheExactFactorAndIntoTheDocumentedPrecision() throws {

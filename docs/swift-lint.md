@@ -17,7 +17,7 @@ The root argument defaults to `ios/NutritionCore`. Every finding is printed as
 - `1` when there is at least one finding
 - `2` when the given root is not a directory
 
-Comments and string contents are never inspected, so a colour or type name in
+Comments and string contents are never inspected, so a color or type name in
 prose does not trip the lint. That covers `//` comments, block comments
 including Swift's nested `/* /* */ */` form, plain and multi-line `"""`
 literals, and extended literals such as `#"raw"#` or `##"""raw"""##`. The
@@ -33,7 +33,7 @@ the line where the construct starts.
 
 | Rule | Scope | What is rejected |
 | --- | --- | --- |
-| `colour-literal` | `Sources/NutritionUI/**` | `Color(red:`, `UIColor(red:`, `NSColor(red:`, `Color(hex:` and `#RRGGBB` literals. `TokenColors.swift` is exempt: it is the one place that turns design-token values into colours. |
+| `color-literal` | `Sources/NutritionUI/**` | `Color(red:`, `UIColor(red:`, `NSColor(red:`, `Color(hex:` and `#RRGGBB` literals. `TokenColors.swift` is exempt: it is the one place that turns design-token values into colors. |
 | `fixed-font` | `Sources/NutritionUI/**` | `.font(.system(size: ...))` and `Font.system(size: ...)`. Text uses Dynamic Type styles only, so it scales with the reader's settings. |
 | `fixed-font-size` | `Sources/NutritionUI/**` and the app target's `Sources/**` | Any font pinned to a literal point size: `.font(.system(size: 14))`, `Font.system(size: 14)`, `.custom("Inter", fixedSize: 14)` and `Font.body.pointSize(14)`. A literal point size does not move when the reader changes their Dynamic Type setting, so the font has to scale on its own instead: a text style such as `.headline` or `.system(.body, design: .rounded)`, or `.custom("Inter", size: 14)`, which SwiftUI scales with the body text style. A size that is not a literal is fine, since one read from a `@ScaledMetric` property already tracks the reader's settings, and a `relativeTo:` argument of the font call itself relates the size to a text style. The arguments are read from the call's own bracket list, so a font wrapped over several lines is judged whole and a `relativeTo:` inside a nested call, as in `Font.custom(resolveName(relativeTo: locale), fixedSize: 14)`, does not exempt it; the finding lands on the line the font call starts on. `.custom(` and `.pointSize(` count only where they build or adjust a font, spelled on `Font` or written inside `.font(...)`, so `Widget.custom(name: "compact", size: 14)` is left alone. A `.font(.system(size:))` call is reported by both `fixed-font` and `fixed-font-size`. |
 | `forbidden-import` | `Sources/NutritionUI/**`, `Sources/NutritionJournal/**` | `import HealthKit`, `import Network` and any use of `URLSession`. Declaration-kind and attributed forms count too, so `import class HealthKit.HKHealthStore` and `@_implementationOnly import Network` are rejected as well. These layers stay offline and free of HealthKit; providers own both. |
@@ -53,7 +53,7 @@ Sometimes a line has a good reason to break a rule. End the line with a
 `lint-allow` comment naming the rule:
 
 ```swift
-let chartTint = Color(hex: "#FF0000") // lint-allow: colour-literal
+let chartTint = Color(hex: "#FF0000") // lint-allow: color-literal
 ```
 
 The exemption applies only to that line and only to the rules named. Multiple

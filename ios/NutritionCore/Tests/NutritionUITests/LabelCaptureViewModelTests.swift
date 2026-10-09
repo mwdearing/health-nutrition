@@ -556,8 +556,8 @@ final class LabelCaptureViewModelTests: XCTestCase {
     }
 
     /// An error from one row must not follow the user to the next: the message belongs to the correction
-    /// that was refused, so cancelling it or starting another one puts it away.
-    func testCancellingACorrectionClearsTheStaleError() {
+    /// that was refused, so canceling it or starting another one puts it away.
+    func testCancelingACorrectionClearsTheStaleError() {
         let model = makeModel()
         model.load(lines: panelWithFlaggedRow)
 

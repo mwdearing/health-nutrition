@@ -10,12 +10,12 @@ import XCTest
 /// The capture session's transcript, and the way back to a draft the user had already reviewed.
 ///
 /// A second photo of a panel is read by the same session that read the first, so the lines it holds
-/// are the next photo's lines as soon as the camera recognises anything. Leaving them in place when
-/// the user backs out of the camera is what lets a photo they cancelled be merged into the draft by
+/// are the next photo's lines as soon as the camera recognizes anything. Leaving them in place when
+/// the user backs out of the camera is what lets a photo they canceled be merged into the draft by
 /// a Capture taken before the camera had read anything new.
 ///
 /// The camera itself needs a device and is not involved here: these tests hand the session the lines
-/// a frame recognised and then ask what the Capture button would do with them. The panels are
+/// a frame recognized and then ask what the Capture button would do with them. The panels are
 /// synthetic and name no real product or brand.
 @MainActor
 final class LabelCaptureSessionTests: XCTestCase {
@@ -39,9 +39,9 @@ final class LabelCaptureSessionTests: XCTestCase {
     }
 
     /// Backing out of the camera forgets what it read while the user was looking for the rest of the
-    /// panel. A later "Add another photo" and a Capture taken before the camera recognised anything
-    /// merges nothing at all, rather than merging the photo that was cancelled.
-    func testCancellingTheSecondPhotoDiscardsWhatTheCameraHadRead() {
+    /// panel. A later "Add another photo" and a Capture taken before the camera recognized anything
+    /// merges nothing at all, rather than merging the photo that was canceled.
+    func testCancelingTheSecondPhotoDiscardsWhatTheCameraHadRead() {
         let model = LabelCaptureViewModel()
         let session = LabelCaptureSession(model: model)
         model.load(lines: leftHalf)
@@ -53,11 +53,11 @@ final class LabelCaptureSessionTests: XCTestCase {
         session.cancelAddingPhoto()
         XCTAssertTrue(model.isReviewing)
 
-        // Another photo, and a Capture before the camera has recognised anything at all.
+        // Another photo, and a Capture before the camera has recognized anything at all.
         model.beginAddingPhoto()
         session.capture()
 
-        XCTAssertEqual(model.frameCount, 1, "the cancelled photo did not contribute to the draft")
+        XCTAssertEqual(model.frameCount, 1, "the canceled photo did not contribute to the draft")
         XCTAssertEqual(model.row(for: .calcium)?.value, .unknown)
         XCTAssertEqual(model.row(for: .iron)?.value, .unknown)
         XCTAssertEqual(model.row(for: .calories)?.value, .known(Decimal(40), .kcal))
@@ -65,7 +65,7 @@ final class LabelCaptureSessionTests: XCTestCase {
         XCTAssertEqual(model.conflictCount, 0)
     }
 
-    /// A second photo that is not cancelled is merged as it always was: the transcript is what makes
+    /// A second photo that is not canceled is merged as it always was: the transcript is what makes
     /// the difference, not the session itself.
     func testACapturedSecondPhotoIsStillMergedIntoTheDraft() {
         let model = LabelCaptureViewModel()

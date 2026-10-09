@@ -155,19 +155,19 @@ public struct JournalSnapshotTotals: Sendable {
         return scaled
     }
 
-    /// The millilitres the revision's components record, summed, and only for a drink.
+    /// The milliliters the revision's components record, summed, and only for a drink.
     private static func recordedWater(in components: [IntakeComponent], category: String) -> NutrientValue? {
         guard category == waterCategory else { return nil }
-        var millilitres = Decimal(0)
+        var milliliters = Decimal(0)
         var found = false
         for component in components {
             guard component.unit.dimension == .volume else { continue }
             guard let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
             else { continue }
-            millilitres += converted.value
+            milliliters += converted.value
             found = true
         }
-        return found ? .known(millilitres, .mL) : nil
+        return found ? .known(milliliters, .mL) : nil
     }
 }
 

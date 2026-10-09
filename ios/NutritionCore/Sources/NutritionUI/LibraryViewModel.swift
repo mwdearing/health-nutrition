@@ -67,12 +67,12 @@ public struct RecentItemsProvider {
         return "category:\(category.count):\(category)|components:\(names.count)|\(parts)|\(mealPart)"
     }
 
-    /// The counted meal part of a key, with the stored value normalised first.
+    /// The counted meal part of a key, with the stored value normalized first.
     ///
     /// The value is free text in the export, so it reaches the store spelled however a person or another
     /// tool wrote it: `"Breakfast "` and `"breakfast"` are one meal, and keying them verbatim gave one
     /// favorite two identities — the second one added as if the first were not there, and a recent reading
-    /// as un-favorited while a favorite stood in for it. Normalising through `MealLabel.identityKeyPart` is
+    /// as un-favorited while a favorite stood in for it. Normalizing through `MealLabel.identityKeyPart` is
     /// the same rule `MealLabel.displayName(for:)` shows a meal by, so what a screen calls one meal is one
     /// entry in the Library.
     ///
@@ -126,13 +126,13 @@ public struct LibrarySection: Equatable, Identifiable {
 
 /// The segments of the Library screen. Foods and Recipes are placeholders for now.
 public enum LibrarySegment: String, CaseIterable, Identifiable {
-    case favourites, recent, foods, recipes
+    case favorites, recent, foods, recipes
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
-        case .favourites: return "Favourites"
+        case .favorites: return "Favorites"
         case .recent: return "Recent"
         case .foods: return "Foods"
         case .recipes: return "Recipes"
@@ -158,7 +158,7 @@ public final class LibraryViewModel: ObservableObject {
     /// Favorites first, then Recents.
     @Published public private(set) var sections: [LibrarySection] = []
     @Published public private(set) var errorMessage: String?
-    @Published public var segment: LibrarySegment = .favourites
+    @Published public var segment: LibrarySegment = .favorites
     @Published public private(set) var undoToken: LibraryUndoToken?
 
     private let store: JournalStore
@@ -258,7 +258,7 @@ public final class LibraryViewModel: ObservableObject {
     /// The items the current segment lists. Foods and Recipes list nothing yet.
     public var visibleItems: [LibraryItem] {
         switch segment {
-        case .favourites: return sections.first { $0.title == "Favorites" }?.items ?? []
+        case .favorites: return sections.first { $0.title == "Favorites" }?.items ?? []
         case .recent: return sections.first { $0.title == "Recents" }?.items ?? []
         case .foods, .recipes: return []
         }
@@ -266,9 +266,9 @@ public final class LibraryViewModel: ObservableObject {
 
     public func emptyText(for segment: LibrarySegment) -> LibraryEmptyText {
         switch segment {
-        case .favourites:
+        case .favorites:
             return LibraryEmptyText(
-                title: "No favourites yet", message: "Star anything you log often.", systemImage: "star")
+                title: "No favorites yet", message: "Star anything you log often.", systemImage: "star")
         case .recent:
             return LibraryEmptyText(
                 title: "Nothing logged yet", message: "Things you log will show up here.", systemImage: "clock")

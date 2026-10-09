@@ -51,14 +51,14 @@ public enum NutrientGoalChoices {
     /// is offered volumes, energy energies, and the rest masses.
     ///
     /// The two ounces are excluded for these metric goal choices. Water is the exception at the
-    /// view-model boundary: its volume menu includes fl oz, and input is normalised to mL before
+    /// view-model boundary: its volume menu includes fl oz, and input is normalized to mL before
     /// storage. Other nutrient goals retain the metric units their totals are counted in.
     public static func units(forKey key: String, snapshotUnit: MeasureUnit? = nil) -> [MeasureUnit] {
         UnitRegistry.units(in: unit(forKey: key, snapshotUnit: snapshotUnit).dimension).filter(isMetric)
     }
 
     /// Whether a unit is one a stored target may be counted in: everything the registry holds except
-    /// the two ounces, which are normalised away at the input boundary and so are never stored.
+    /// the two ounces, which are normalized away at the input boundary and so are never stored.
     private static func isMetric(_ unit: MeasureUnit) -> Bool {
         unit != .oz && unit != .flOz
     }

@@ -12,7 +12,7 @@ enum RecipeRoute: Hashable {
 ///
 /// The erase on the Connections and privacy screen has to close the recipe sheet and drop every route
 /// in it: a detail or an editor screen holds its own copy of a recipe, so an erased recipe would
-/// otherwise stay on screen and could still be logged. That reaction is behaviour, not layout, so it
+/// otherwise stay on screen and could still be logged. That reaction is behavior, not layout, so it
 /// lives here where a test can call it. `RootView` owns this object for its whole lifetime and calls
 /// `reset()` from its erase handler; the sheet and the stack read the published properties, so the
 /// screen behaves exactly as it did with plain view state.

@@ -150,7 +150,7 @@ final class RelayDeliveryWorkerTests: XCTestCase {
             let ids = Self.operationIDs(in: batch)
             // Everything read from the shared state is read under the lock, and the observer is taken out with
             // it so it can be called afterwards without holding the lock: it reads the store, and holding the
-            // lock across that would serialise the run behind it for no reason.
+            // lock across that would serialize the run behind it for no reason.
             let (observer, failure, next) = lock.withLock {
                 () -> (((_ operationIDs: [String]) -> Void)?, Error?, ScriptedResponse) in
                 recordedBatches.append(batch)
@@ -753,7 +753,7 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(parked, [ordered[0]], "only the operation refused on its own is permanent")
         XCTAssertTrue(
             outcomes.contains { $0.isResolved },
-            "its neighbour fitted alone and was delivered: \(outcomes)")
+            "its neighbor fitted alone and was delivered: \(outcomes)")
     }
 
     // MARK: - Ordering
@@ -1398,7 +1398,7 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         }
         XCTAssertEqual(date, when.addingTimeInterval(60))
         XCTAssertEqual(
-            queue.retryDates[queued.operationID], date, "the queue can honour it on the next run")
+            queue.retryDates[queued.operationID], date, "the queue can honor it on the next run")
         guard case .retryScheduled(_, let reported, _) = try XCTUnwrap(outcomes.first) else {
             return XCTFail("the run reports the same date, got \(outcomes)")
         }

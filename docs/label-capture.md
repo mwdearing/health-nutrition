@@ -25,7 +25,7 @@ behavior. **Use these values** pushes the existing Details form; it does not sav
 values are still waiting for an answer the same button reads **Confirm 1 value first** or
 **Confirm N values first**, with N the count still owed, and stays disabled until the count is zero.
 A capture with nothing readable keeps the plain title and stays disabled; it asks for another photo, not a confirmation.
-Library pick mode offers Favourites, Recent and Recipes. Picking prefills Details without
+Library pick mode offers Favorites, Recent and Recipes. Picking prefills Details without
 switching tabs or writing the journal. Save closes Add and clears its path; Cancel does the same.
 
 Home shows at most five recent items from the journal. Each quiet **Add** action logs
@@ -68,7 +68,7 @@ camera rather than the last frame that had anything on it. `NutritionUI` sees on
 ## What the parser handles
 
 - **The panel as it is printed.** `Nutrition Facts`, `Amount per serving`, the footnote and the
-  surrounding print are recognised as lines that state nothing and are ignored.
+  surrounding print are recognized as lines that state nothing and are ignored.
 - **Which panel it was.** A `Supplement Facts` heading makes the capture a **supplement**, and anything
   else — a `Nutrition Facts` panel, or a heading that was cropped out of the frame — makes it a **food**.
   The heading is what decides it, not the rows: a supplement prints Vitamin D, Calcium and Potassium
@@ -128,7 +128,7 @@ camera rather than the last frame that had anything on it. `NutritionUI` sees on
   the number the digits before the comma spell.
 - **A bound is never an amount.** `Less than 2g` is not 2 g of anything.
 - **A unit outside the registry is never resolved into one inside it.** A row the parser cannot read
-  stays `.unknown` instead of being pulled towards the unit that nutrient usually carries.
+  stays `.unknown` instead of being pulled toward the unit that nutrient usually carries.
 - **A nutrient printed in a unit it does not usually carry keeps that unit.** `Total Fat 120mg` is read
   as 120 mg, not quietly rewritten to the nearest number of grams.
 - **A household word is not a measure.** `Serving size 1 large biscuit` keeps its text and states no
@@ -145,11 +145,11 @@ screen can highlight exactly those rows instead of asking the user to check the 
 | --- | --- |
 | `correctedLetterO` | A letter `O` stood where a zero belongs, so the printed text was corrected. |
 | `unexpectedUnit` | The row carries a unit this nutrient does not usually carry; the amount is kept as printed. |
-| `normalisedMicrogramSymbol` | A microgram symbol was written `µg`, `μg` or `ug` and became `mcg`. |
+| `normalizedMicrogramSymbol` | A microgram symbol was written `µg`, `μg` or `ug` and became `mcg`. |
 
 These names are the parser's own enum and are never shown. The review screen words the reasons in
 plain English: `correctedLetterO` reads "a letter O was read as a zero", `unexpectedUnit` reads "the
-unit is not the one this row usually carries", and `normalisedMicrogramSymbol` reads "the unit was read
+unit is not the one this row usually carries", and `normalizedMicrogramSymbol` reads "the unit was read
 as mcg". The reasons are gathered under "Check this value:" on the row.
 
 The serving size carries its own reasons in `ParsedServingSize.review`, because the serving size scales
@@ -207,7 +207,7 @@ The rules the screen keeps are short:
   and no grouping. The unit is optional: text that names none keeps the unit the panel printed, and text
   that names one is read as that unit.
 - **A correction's unit has to be of the nutrient's own dimension.** Another unit of the same kind is
-  fine, so a sodium row printed in mg may be restated as g; a litre of sodium or a gram of calories is
+  fine, so a sodium row printed in mg may be restated as g; a liter of sodium or a gram of calories is
   refused, because nothing downstream can interpret a value in the wrong dimension and would drop it in
   silence. The dimension is the **nutrient's expected** one, not the unit a particular capture happened to
   read: the printed unit is sometimes the reason the row was flagged in the first place, so following it
@@ -263,7 +263,7 @@ draft, and the review screen offers **Add another photo** once there is somethin
   lines and merges them into the draft on screen; `load(lines:)` still replaces everything, and is what
   the first photo of a panel uses. The capture sheet's Capture button hands its lines to
   `LabelCaptureViewModel.capture(lines:)`, which picks between the two, so **the same camera and the
-  same text recogniser read every photo** of a panel — the second half is not a different flow.
+  same text recognizer read every photo** of a panel — the second half is not a different flow.
 - **The merge rule, row by row.** A row the draft does not have is added, and belongs to the photo that
   read it. A row the draft has with the *same* value is kept, and the second reading raises its
   confidence: a flag the parser raised on the strength of one photo is answered when another photo
@@ -280,11 +280,11 @@ draft, and the review screen offers **Add another photo** once there is somethin
   their answer outranks anything a second reading says.
 - **A third photo is kept, not dropped.** A panel can be read several ways rather than two, so a third
   reading joins the row's `candidates` beside the value on screen instead of replacing one or being
-  discarded for arriving late, and the photo counts towards `frameCount` because it read the panel. A
+  discarded for arriving late, and the photo counts toward `frameCount` because it read the panel. A
   reading that agrees with any reading already kept, including the displayed value, raises that one's
   support rather than becoming a further candidate. Support includes agreeing photos taken before the
   conflict arose. The screen uses the same photo-and-support summary for the displayed reading and the
-  alternatives; corroboration never resolves the conflict automatically. Every candidate's button is labelled with the value it keeps,
+  alternatives; corroboration never resolves the conflict automatically. Every candidate's button is labeled with the value it keeps,
   since there is no longer a single "other" one.
 - **A row only a later photo supplies keeps the name that photo printed.** `Calcium Citrate 200mg` is
   calcium with the printed form as the row's display name, and a row the first photo left unknown has
@@ -297,13 +297,13 @@ draft, and the review screen offers **Add another photo** once there is somethin
 - **What the screen says.** The header reads "From 2 photos" once more than one photo has contributed,
   and a row that is a conflict is called out in the row itself, beside the readings.
 - **A photo that read no amount contributes nothing.** A shot that missed the panel leaves the draft
-  exactly as it was and does not count towards the number of photos, rather than looking as though it
+  exactly as it was and does not count toward the number of photos, rather than looking as though it
   had been merged. A photo that repeats rows the draft already has does count: a second reading of a
   row is what can answer the parser's doubt about the first one.
 - **Leaving the camera.** **Back to the values** calls `LabelCaptureSession.cancelAddingPhoto()`, which
-  clears the held transcript as well as the flag: the recogniser replaces those lines only when it
-  recognises something, so a camera reopened for another photo would otherwise still hold what the
-  cancelled one saw, and a Capture taken before anything new was read would merge the photo the user
+  clears the held transcript as well as the flag: the recognizer replaces those lines only when it
+  recognizes something, so a camera reopened for another photo would otherwise still hold what the
+  canceled one saw, and a Capture taken before anything new was read would merge the photo the user
   backed out of. Coming back the same way from a camera failure does the same thing.
 - **Opening the camera ends an open correction.** `beginAddingPhoto()` closes whichever editor was open,
   and the review screen clears its typed draft as it goes: the camera is a different screen, so a field

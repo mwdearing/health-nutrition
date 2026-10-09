@@ -23,7 +23,7 @@ public struct RecipeIngredient: Sendable, Hashable {
     public var quantity: Quantity
     /// Keyed by nutrient id. A missing key means the value is not known.
     public var perUnit: [String: NutrientValue]
-    /// Grams per millilitre, used only when mass and volume must be converted.
+    /// Grams per milliliter, used only when mass and volume must be converted.
     public var density: Decimal?
     public var sourceNote: String?
     /// The unit the per-unit values refer to; nil means the quantity's unit.

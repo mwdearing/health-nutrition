@@ -15,7 +15,7 @@ public enum DesignRadius {
     public static let control: CGFloat = 12
 }
 
-/// A rounded container on the surface colour, for content composed of more than standard rows.
+/// A rounded container on the surface color, for content composed of more than standard rows.
 public struct Card<Content: View>: View {
     private let content: Content
 

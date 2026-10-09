@@ -76,17 +76,17 @@ public struct CoverageLine: Equatable, Identifiable {
     /// The same line for entries that know what they are. `kinds` runs alongside `values`, one per value.
     ///
     /// **A supplement is left out of both numbers.** It is not missing from anything: a multivitamin
-    /// states no fibre, no protein and no potassium because that is what a supplement is, so counting it
+    /// states no fiber, no protein and no potassium because that is what a supplement is, so counting it
     /// would report the day's food as short of three nutrients nobody was ever going to get from it.
     /// Leaving it out of the total as well as out of the missing count is what keeps "1 of 1 foods lack
-    /// fibre" meaning one food of the day's foods — a supplement never lowers the count either, because
+    /// fiber" meaning one food of the day's foods — a supplement never lowers the count either, because
     /// a day with fewer foods in it is not better covered.
     ///
     /// A value with no kind beside it counts as a food, which is what an entry without a product
     /// snapshot is: the food it was recorded as before a kind existed.
     ///
     /// **A line that counts nothing is not published.** A `total` of zero means the day holds no food and
-    /// no drink at all, and "0 of 0 foods lack fibre" says nothing about anybody's day; the caller drops
+    /// no drink at all, and "0 of 0 foods lack fiber" says nothing about anybody's day; the caller drops
     /// those rather than showing them.
     public static func make(nutrient: String, values: [NutrientValue], kinds: [ProductKind]?) -> CoverageLine {
         var missing = 0

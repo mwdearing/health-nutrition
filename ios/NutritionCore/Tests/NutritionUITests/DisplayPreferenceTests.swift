@@ -108,14 +108,14 @@ final class DisplayPreferenceTests: XCTestCase {
     }
 
     /// With nothing stored, the app is metric and the quick glass is 250 mL, exactly as before.
-    func testDefaultsAreMetricAndTwoHundredAndFiftyMillilitres() throws {
+    func testDefaultsAreMetricAndTwoHundredAndFiftyMilliliters() throws {
         let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("units-default"))
         XCTAssertEqual(preferences.unitSystem, .metric)
         XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(250))
 
         let model = makeModel(preferences)
         XCTAssertEqual(model.quickWaterLabel, "Add 250 mL water")
-        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 250 millilitres of water")
+        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 250 milliliters of water")
 
         let add = AddIntakeViewModel(
             store: RecordingStore(makeID: { "intake" }), now: now, timeZoneIdentifier: "UTC",
@@ -308,8 +308,8 @@ final class AddIntakeOuncePreferenceTests: XCTestCase {
         XCTAssertEqual(quarter.amount, Decimal(string: "7.08738078125")!)
     }
 
-    /// A fluid ounce entered is stored as the exact number of millilitres it stands for.
-    func testAFluidOunceEnteredInAddIntakeIsStoredAsExactMillilitres() throws {
+    /// A fluid ounce entered is stored as the exact number of milliliters it stands for.
+    func testAFluidOunceEnteredInAddIntakeIsStoredAsExactMilliliters() throws {
         let component = try stored("2", .flOz)
         XCTAssertEqual(component.unit, .mL)
         XCTAssertEqual(component.amount, Decimal(string: "59.147059125")!)
@@ -340,7 +340,7 @@ final class QuickWaterPreferenceTests: XCTestCase {
             store: store, timeZoneIdentifier: "UTC", makeID: { "water-1" }, preferences: preferences)
 
         XCTAssertEqual(model.quickWaterLabel, "Add 300 mL water")
-        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 300 millilitres of water")
+        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 300 milliliters of water")
 
         let handle = try XCTUnwrap(model.quickAddWater(now: now))
         XCTAssertEqual(handle.intakeID, "water-1")
@@ -350,8 +350,8 @@ final class QuickWaterPreferenceTests: XCTestCase {
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(300))
     }
 
-    /// Under US customary the stored amount is still millilitres and the label follows the preference.
-    func testQuickWaterPreferenceUnderUSCustomarySaysFluidOuncesAndStoresMillilitres() throws {
+    /// Under US customary the stored amount is still milliliters and the label follows the preference.
+    func testQuickWaterPreferenceUnderUSCustomarySaysFluidOuncesAndStoresMilliliters() throws {
         let store = RecordingStore(makeID: { "unused" })
         let preferences = InMemoryDisplayPreferences(
             unitSystem: .usCustomary, quickWaterMilliliters: Decimal(300))
@@ -362,7 +362,7 @@ final class QuickWaterPreferenceTests: XCTestCase {
         XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 10.1 fluid ounces of water")
         _ = model.quickAddWater(now: now)
         let component = try XCTUnwrap(store.revisions(of: "water-1").first?.components.first)
-        // Storage and export stay metric: what is written is the configured millilitre amount.
+        // Storage and export stay metric: what is written is the configured milliliter amount.
         XCTAssertEqual(component.amount, Decimal(300))
         XCTAssertEqual(component.unit, .mL)
         XCTAssertEqual(model.waterTotalDisplay.text, "10.1 fl oz")
@@ -385,7 +385,7 @@ final class QuickWaterPreferenceTests: XCTestCase {
 
     /// The spoken strings are built from the same figures as the visible ones, so a volume too small
     /// for fluid ounces is spoken as less than that rather than as a zero that is not there.
-    func testQuickWaterSpokenStringsHonourTheSmallestShownBound() throws {
+    func testQuickWaterSpokenStringsHonorTheSmallestShownBound() throws {
         let store = RecordingStore(makeID: { "unused" })
         let preferences = InMemoryDisplayPreferences(
             unitSystem: .usCustomary, quickWaterMilliliters: Decimal(string: "0.001")!)

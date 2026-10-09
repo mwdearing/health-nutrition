@@ -23,7 +23,7 @@ final class TodayOtherWaterTests: XCTestCase {
         return TodayViewModel(store: store, timeZoneIdentifier: "UTC", preferences: preferences)
     }
 
-    func testOtherWaterMetricLogsTheTypedMillilitres() throws {
+    func testOtherWaterMetricLogsTheTypedMilliliters() throws {
         let store = try makeStore()
         let model = makeModel(store, system: .metric)
         let handle = model.addWater(typed: "400", now: now)
@@ -47,7 +47,7 @@ final class TodayOtherWaterTests: XCTestCase {
         let intakes = try store.activeIntakes()
         XCTAssertEqual(intakes.count, 1)
         let component = try XCTUnwrap(try store.revisions(of: intakes[0].id).first?.components.first)
-        // 12 fl oz at the exact factor of 29.5735295625 mL per fl oz is 354.88235475 mL, stored as millilitres.
+        // 12 fl oz at the exact factor of 29.5735295625 mL per fl oz is 354.88235475 mL, stored as milliliters.
         XCTAssertEqual(component.amount, Decimal(string: "354.88235475")!)
         XCTAssertEqual(component.unit, .mL)
         XCTAssertEqual(component.amount, Decimal(12) * Decimal(string: "29.5735295625")!)

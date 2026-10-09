@@ -8,7 +8,7 @@ import XCTest
 /// queue the journal writes, on a real store on disk and against a fake writer.
 ///
 /// Every value here is synthetic. The worker itself names no HealthKit type, which is what lets this
-/// run on macOS; see ADR 0002 for the behaviour the app target's writer implements against HealthKit.
+/// run on macOS; see ADR 0002 for the behavior the app target's writer implements against HealthKit.
 final class HealthKitDeliveryWorkerTests: XCTestCase {
     private let intakeID = "0b6f7d3e-5a1c-4c52-9a2e-3f1d8c7b6a10"
     private let when = Date(timeIntervalSince1970: 1_700_000_000)
@@ -269,7 +269,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
     /// A queued revision 1 is stamped with the instant **its own** revision recorded, not the entry's
     /// current one. A time correction moves the entry's row and writes revision 2, so rebuilding revision 1
-    /// from the entry would put the corrected instant on a sample labelled sync version 1: the entry's
+    /// from the entry would put the corrected instant on a sample labeled sync version 1: the entry's
     /// earlier claim would be silently rewritten, and a retry of the same revision would disagree with the
     /// sample it had already written.
     func testAPendingRevisionKeepsItsOwnTimeAfterALaterRevisionCorrectsTheEntry() async throws {
@@ -1146,7 +1146,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
         let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
 
-        XCTAssertNil(recorded["water"], "a food measured in millilitres is not dietary water")
+        XCTAssertNil(recorded["water"], "a food measured in milliliters is not dietary water")
         XCTAssertEqual(recorded, [:])
     }
 
