@@ -98,7 +98,7 @@ final class LabelCaptureViewModelTests: XCTestCase {
         let model = makeModel()
         model.load(lines: panelWithFlaggedRow)
 
-        for text in ["-1", "1.2.3", "18O", "", "abc", "1,5"] {
+        for text in ["-1", "1.2.3", "18O", "", "abc", "1,5,0"] {
             XCTAssertFalse(model.correct(key: .sodium, text: text), "refused: \(text)")
         }
         XCTAssertNotNil(model.correctionError)
