@@ -113,4 +113,26 @@ final class AppServicesEraseTests: XCTestCase {
                 "\(name) is not in the given directory")
         }
     }
+
+    /// The welcome flag is one of the display settings, so the erase clears it and the welcome shows
+    /// again on the next launch. The display settings here live in a defaults suite of this test's own.
+    func testEraseClearsTheWelcomeFlagWithTheDisplaySettings() throws {
+        let suiteName = "healthnutrition.tests.erase-welcome.\(UUID().uuidString)"
+        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        suite.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let services = try AppServices.make(
+            directory: directory, displayPreferences: UserDefaultsDisplayPreferences(defaults: suite))
+        try fill(services)
+        services.displayPreferences.setHasSeenWelcome(true)
+        XCTAssertTrue(services.displayPreferences.hasSeenWelcome)
+
+        XCTAssertTrue(services.connections.eraseAllData())
+
+        XCTAssertFalse(services.displayPreferences.hasSeenWelcome)
+    }
 }
