@@ -124,7 +124,16 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var isDeleted = false
     /// Edit drafts by component id, bound to the text fields.
-    @Published public var drafts: [String: String] = [:]
+    ///
+    /// Editing a field drops the message a refused save left on it. The message describes the text that
+    /// was refused, and typing the loaded amount back removes Save, so nothing else could clear it.
+    @Published public var drafts: [String: String] = [:] {
+        didSet {
+            let edited = fieldErrors.keys.filter { drafts[$0] != oldValue[$0] }
+            guard !edited.isEmpty else { return }
+            for id in edited { fieldErrors[id] = nil }
+        }
+    }
     @Published public var changeReason: String = EntryDetailViewModel.defaultChangeReason
     /// The entry's time as an editable draft, which the "When" row binds to. `load` seeds it from
     /// the stored value, and a save writes a correction only once it differs from it.
