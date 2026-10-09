@@ -203,7 +203,7 @@ public final class RecipeEditorViewModel: ObservableObject {
             if !densityTrimmed.isEmpty {
                 density = AmountParser.parse(densityTrimmed)
                 if density == nil {
-                    problems.append("Ingredient \(position): density must be greater than zero, using digits and a point.")
+                    problems.append("Ingredient \(position): weight per mL must be greater than zero, using digits and a point.")
                 }
             }
             var perUnit = draft.preserved
@@ -243,11 +243,11 @@ public final class RecipeEditorViewModel: ObservableObject {
                 if let unit = try? UnitRegistry.unit(for: yieldUnitSymbol) {
                     yieldValue = .total(Quantity(value: amount, unit: unit))
                 } else {
-                    problems.append("Choose a known unit for the yield.")
+                    problems.append("Choose a known unit for what the recipe makes.")
                 }
             }
         } else {
-            problems.append("Enter a yield greater than zero, using digits and a point.")
+            problems.append("Enter how much the recipe makes, greater than zero, using digits and a point.")
         }
 
         guard problems.isEmpty, let yieldValue else {
@@ -289,10 +289,10 @@ public final class RecipeEditorViewModel: ObservableObject {
         switch error {
         case .emptyTitle: return "Enter a title."
         case .noIngredients: return "Add at least one ingredient."
-        case .nonPositiveYield: return "Enter a yield greater than zero, using digits and a point."
+        case .nonPositiveYield: return "Enter how much the recipe makes, greater than zero, using digits and a point."
         case .nonPositiveQuantity: return "Every ingredient needs an amount greater than zero."
         case .emptyIngredientName: return "Every ingredient needs a name."
-        case .duplicateIngredientID: return "Two ingredients share the same identifier."
+        case .duplicateIngredientID: return "Two ingredients are the same entry. Remove one and add it again."
         default: return "The recipe is not valid."
         }
     }

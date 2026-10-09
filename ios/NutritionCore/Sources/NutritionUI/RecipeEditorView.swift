@@ -30,8 +30,8 @@ public struct RecipeEditorView: View {
                     .foregroundStyle(TokenColors.accent)
                     .accessibilityLabel(RecipeLabels.addIngredient)
             }
-            Section("Yield") {
-                Picker("Yield type", selection: $model.yieldKind) {
+            Section("Makes") {
+                Picker("Counted as", selection: $model.yieldKind) {
                     ForEach(RecipeYieldKind.allCases) { kind in
                         Text(kind.label).tag(kind)
                     }
@@ -39,6 +39,7 @@ public struct RecipeEditorView: View {
                 .accessibilityLabel(RecipeLabels.yieldKindPicker)
                 TextField("Amount", text: $model.yieldAmountText)
                     .font(.body)
+                    .decimalKeyboard()
                     .accessibilityLabel(RecipeLabels.yieldAmountField)
                 if model.yieldKind == .total {
                     Picker("Unit", selection: $model.yieldUnitSymbol) {
@@ -46,7 +47,7 @@ public struct RecipeEditorView: View {
                             Text(symbol).tag(symbol)
                         }
                     }
-                    .accessibilityLabel("Yield unit")
+                    .accessibilityLabel("Unit of what it makes")
                 }
             }
             ForEach(model.messages, id: \.self) { message in
@@ -77,6 +78,7 @@ public struct RecipeEditorView: View {
             HStack {
                 TextField("Amount", text: textBinding(draft.id, \.amountText))
                     .font(.body)
+                    .decimalKeyboard()
                     .accessibilityLabel(RecipeLabels.ingredientAmount(position))
                 Picker("Unit", selection: textBinding(draft.id, \.unitSymbol)) {
                     ForEach(model.unitSymbols, id: \.self) { symbol in
@@ -93,15 +95,17 @@ public struct RecipeEditorView: View {
                 HStack {
                     TextField(field.label, text: nutrientBinding(draft.id, field.id))
                         .font(.body)
+                        .decimalKeyboard()
                         .accessibilityLabel(RecipeLabels.nutrientField(field.label, position: position))
                     // A value kept in its own unit says so, rather than sitting under the default one.
                     Text(draft.nutrientUnits[field.id]?.symbol ?? field.unit.symbol)
                         .font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
             }
-            TextField("Density in g per mL (only to convert between mass and volume)", text: textBinding(draft.id, \.densityText))
+            TextField("Weight per mL in g (only to convert between weight and volume)", text: textBinding(draft.id, \.densityText))
                 .font(.footnote)
-                .accessibilityLabel("Density of ingredient \(position)")
+                .decimalKeyboard()
+                .accessibilityLabel("Weight per mL of ingredient \(position)")
             Button("Remove") { model.removeIngredient(id: draft.id) }
                 .font(.footnote)
                 .foregroundStyle(TokenColors.error)
@@ -128,5 +132,18 @@ public struct RecipeEditorView: View {
                     model.ingredients[index].nutrientTexts[nutrientID] = newValue
                 }
             })
+    }
+}
+
+/// The decimal keypad is only set where the platform has one. This package also builds for macOS,
+/// where `keyboardType` does not exist, so it stays behind this one door.
+private extension View {
+    @ViewBuilder
+    func decimalKeyboard() -> some View {
+        #if os(iOS)
+        self.keyboardType(.decimalPad)
+        #else
+        self
+        #endif
     }
 }
