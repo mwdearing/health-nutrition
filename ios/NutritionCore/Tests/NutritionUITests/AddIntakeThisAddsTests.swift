@@ -42,6 +42,33 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertTrue(model.statesNoNutrients)
     }
 
+    func testBoundOnlyProductStillShowsItsValues() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        model.applyLabelProduct(ProductDefinition(snapshotID: "example-bound", productID: "example-oats",
+            name: "Example oats", labelBasis: "per 100 g", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .belowReportingThreshold(.g)]))
+        model.amountText = "50"
+        model.unit = .g
+        XCTAssertTrue(model.hasPrefilledValues)
+        let protein = try XCTUnwrap(model.thisAdds.first { $0.key == "protein" })
+        XCTAssertEqual(protein.text, "Less than the label reports (g)")
+    }
+
+    func testNotApplicableSurvivesAnAmountThatCannotBeScaled() throws {
+        let model = AddIntakeViewModel(store: try makeStore(), now: now)
+        model.applyLabelProduct(ProductDefinition(snapshotID: "example-no-basis", productID: "example-oats",
+            name: "Example oats", labelBasis: "per serving", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g), "sodium": .notApplicable]))
+        model.amountText = "40"
+        model.unit = .g
+        let sodium = try XCTUnwrap(model.thisAdds.first { $0.key == "sodium" })
+        XCTAssertEqual(sodium.value, .notApplicable)
+        XCTAssertFalse(sodium.cannotScale)
+        XCTAssertEqual(sodium.text, "Does not apply")
+        let protein = try XCTUnwrap(model.thisAdds.first { $0.key == "protein" })
+        XCTAssertTrue(protein.cannotScale)
+    }
+
     func testThisAddsIncludesPotassium() throws {
         let model = AddIntakeViewModel(store: try makeStore(), now: now)
         model.applyStoredProduct(ProductDefinition(snapshotID: "example-potassium", productID: "example-oats",
