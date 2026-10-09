@@ -89,6 +89,20 @@ public struct EditedComponent: Equatable {
     }
 }
 
+/// One row under "Where this came from": what the entry's values were entered as, or a fact the product
+/// snapshot stores about them, with the value as the snapshot states it.
+public struct SourceDetailRow: Identifiable, Equatable {
+    public let label: String
+    public let value: String
+
+    public var id: String { label }
+
+    public init(label: String, value: String) {
+        self.label = label
+        self.value = value
+    }
+}
+
 @MainActor
 public final class EntryDetailViewModel: ObservableObject {
     /// The reason a revision carries when the person did not write one.
@@ -109,6 +123,8 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var allValues: [EntryNutrientRow] = []
     /// Where the entry's values came from, as one line.
     @Published public private(set) var sourceLine: String = EntryDetailViewModel.sourceLine(for: nil)
+    /// The rows under "Where this came from": the input, and what the snapshot stores about the values.
+    @Published public private(set) var sourceDetailRows: [SourceDetailRow] = EntryDetailViewModel.sourceDetails(for: nil)
     /// True for an entry with no values of its own: typed by hand, with no snapshot or a manual one.
     @Published public private(set) var isTypedEntry = true
     /// The product's name and brand, and what kind of thing it is, for the header. Nil when there is no snapshot.
@@ -208,6 +224,7 @@ public final class EntryDetailViewModel: ObservableObject {
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             additionalNutrients = Self.additionalNutrients(of: snapshot)
             sourceLine = Self.sourceLine(for: snapshot)
+            sourceDetailRows = Self.sourceDetails(for: snapshot)
             isTypedEntry = snapshot == nil || snapshot?.catalogOrigin == "manual"
             productName = snapshot?.name
             brand = snapshot?.brand
@@ -493,6 +510,46 @@ public final class EntryDetailViewModel: ObservableObject {
         default:
             return "Barcode lookup · values \(product.labelBasis)"
         }
+    }
+
+    /// The rows under "Where this came from", in order. Only what the snapshot stores is shown: a label
+    /// capture records catalog version "unknown", so that version is left out, never shown as unknown.
+    static func sourceDetails(for product: ProductDefinition?) -> [SourceDetailRow] {
+        guard let product else { return [SourceDetailRow(label: "Source", value: "No source recorded")] }
+        if product.catalogOrigin == "manual" {
+            return [SourceDetailRow(label: "Input", value: "Typed in")]
+        }
+        let version = product.catalogVersion
+        let hasVersion = !version.isEmpty && version != "unknown"
+        var rows: [SourceDetailRow] = []
+        switch product.catalogOrigin {
+        case ProductOrigin.label_capture:
+            rows.append(SourceDetailRow(label: "Input", value: "Label scan"))
+            if !product.labelBasis.isEmpty {
+                rows.append(SourceDetailRow(label: "Basis", value: product.labelBasis))
+            }
+            if hasVersion {
+                rows.append(SourceDetailRow(label: "Version", value: version))
+            }
+        case RecipeLogger.catalogOrigin:
+            rows.append(SourceDetailRow(label: "Input", value: "Recipe"))
+            rows.append(SourceDetailRow(label: "Recipe", value: product.name))
+            if !version.isEmpty {
+                rows.append(SourceDetailRow(label: "Version", value: version))
+            }
+        default:
+            rows.append(SourceDetailRow(label: "Input", value: "Barcode lookup"))
+            if let barcode = product.barcode, !barcode.isEmpty {
+                rows.append(SourceDetailRow(label: "Barcode", value: barcode))
+            }
+            if hasVersion {
+                rows.append(SourceDetailRow(label: "Catalog version", value: version))
+            }
+            if !product.labelBasis.isEmpty {
+                rows.append(SourceDetailRow(label: "Basis", value: product.labelBasis))
+            }
+        }
+        return rows
     }
 
     /// "This entry adds": each standard key the snapshot states, or the tracked nutrients it states, scaled
