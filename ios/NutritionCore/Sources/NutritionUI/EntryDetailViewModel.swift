@@ -484,7 +484,8 @@ public final class EntryDetailViewModel: ObservableObject {
     /// "This entry adds": each standard key the snapshot states, or the tracked nutrients it states, scaled
     /// to what the entry logged. The keys follow `AddIntakeViewModel.thisAddsKeys`, so the Add form and this
     /// screen show the same rows in the same order. A value the snapshot does not state, or a basis that
-    /// the logged amount cannot resolve, reads "Not on the label" and is never shown as zero.
+    /// the logged amount cannot resolve, reads "Not on the label" and is never shown as zero, unless the
+    /// snapshot states the nutrient, when it reads the cannot-scale sentence instead.
     static func adds(of product: ProductDefinition?, logged components: [IntakeComponent]) -> [EntryNutrientRow] {
         // A typed entry, or a snapshot that states no value at all, has nothing this entry added.
         guard let product, product.catalogOrigin != "manual",
@@ -498,6 +499,8 @@ public final class EntryDetailViewModel: ObservableObject {
             var amountText = "Not on the label"
             if value != .unknown, let factor {
                 amountText = LookedUpProduct.shownText(value.scaled(by: factor))
+            } else if LookedUpProduct.statesAmount(value) {
+                amountText = LookedUpProduct.cannotScaleText
             }
             rows.append(EntryNutrientRow(
                 key: key, name: LookedUpProduct.displayNames[key] ?? compoundName(for: key), amountText: amountText))

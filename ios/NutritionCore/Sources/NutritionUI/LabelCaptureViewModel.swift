@@ -235,7 +235,7 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         case .notApplicable:
             return "Does not apply"
         case .belowReportingThreshold:
-            return "Less than the label reports"
+            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
         }
     }
 }
@@ -1111,6 +1111,8 @@ public final class LabelCaptureViewModel: ObservableObject {
 
     /// The title of the one button that hands the values on, counting the answers still owed.
     public var primaryActionTitle: String {
+        // Nothing to confirm on an unreadable capture or with no panel loaded: the title stays neutral.
+        if isUnreadable || !hasPanel { return "Use these values" }
         switch pendingCount {
         case 0: return "Use these values"
         case 1: return "Confirm 1 value first"
