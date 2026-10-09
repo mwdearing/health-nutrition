@@ -652,7 +652,7 @@ final class JournalLibraryTests: XCTestCase {
             components: [FavoriteComponent(componentID: "tea", name: "Tea", amountText: "250", unitSymbol: "mL")]))
         let library = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
         library.load()
-        XCTAssertEqual(library.sections.map(\.title), ["Favorites", "Recents"])
+        XCTAssertEqual(library.sections.map(\.title), ["Favorites", "Foods", "Recents"])
         let tea = try XCTUnwrap(library.sections.first?.items.first)
         let before = store.createCalls
         let newID = library.select(tea, now: now)
