@@ -1,3 +1,4 @@
+import NutritionJournal
 import SwiftUI
 
 /// One entry, read first: what it is, what it added, where its values came from, where it was sent, and
