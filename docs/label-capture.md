@@ -173,8 +173,9 @@ The rules the screen keeps are short:
   saved on the parser's word.
 - **A flagged serving size blocks the same way.** The serving size scales every nutrient below it, so
   a `Serving size 1 cup (24O mL)` the parser corrected is confirmed separately, exactly like a row. The
-  question asked about it is plain: "We read this as 240 mL. Is that right?", with the serving as the
-  screen shows it (`this serving size` when the model holds no serving text).
+  question asked about it is plain: "We read this as 240 mL. Is that right?". It names the quantity the
+  parser settled on when there is one, and otherwise the serving as printed (`this serving size` when the model
+  holds no serving text).
 - **A panel that stated no serving size cannot be used until the user states one.** Values read from a
   panel are per serving, and one serving may be 30 g, 250 mL or one item, so a capture that missed the
   serving-size line would otherwise be stored as a bare `per serving` with numbers nothing can scale. The

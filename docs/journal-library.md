@@ -48,7 +48,8 @@ barcode screen keeps that screen's form. Details offers Scan label only on a dev
 
 Scanning a label from Library Details preserves the chosen name and brand while replacing the
 nutrient values. "This adds" scales stated nutrients to the typed amount, including potassium
-when stated; an unstated extra nutrient is omitted. Products with no known nutrition values show
+when stated; a nutrient the product does not state is omitted, standard ones included, while a
+"does not apply" value is still shown. Products with no known nutrition values show
 the existing no-stated-nutrients sentence instead of a preview of unknown rows. Canonical journal
 keys and label aliases are excluded from "Also on the label", leaving only additional compounds.
 
