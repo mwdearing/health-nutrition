@@ -52,15 +52,28 @@ public struct RecentItemsProvider {
         let intakes = try store.activeIntakes()
             .filter { $0.lifecycle == .active && $0.category != DailyTotalsBuilder.waterCategory }
             .sorted { $0.occurredAt > $1.occurredAt }
+        // Each snapshot is read once, however many entries used it: a product logged hundreds of times is one query.
+        var productsBySnapshot: [String: ProductDefinition?] = [:]
         for intake in intakes {
             guard let revisions = try? store.revisions(of: intake.id),
                 let current = revisions.first(where: { $0.number == intake.currentRevision }),
-                let snapshotID = current.productSnapshotID,
-                let product = try? store.product(snapshotID: snapshotID),
+                let snapshotID = current.productSnapshotID
+            else { continue }
+            let loaded: ProductDefinition?
+            if let cached = productsBySnapshot[snapshotID] {
+                loaded = cached
+            } else {
+                loaded = try? store.product(snapshotID: snapshotID)
+                productsBySnapshot[snapshotID] = loaded
+            }
+            guard let product = loaded,
                 product.catalogOrigin != Self.manualOrigin,
                 product.catalogOrigin != RecipeLogger.catalogOrigin
             else { continue }
-            guard seenProducts.insert(product.productID).inserted else { continue }
+            // Catalog products share a lineage id across versions. A label capture's lineage id is the same
+            // for every capture, so its content-derived snapshot id is what tells two labels apart.
+            let identity = product.catalogOrigin == ProductOrigin.label_capture ? snapshotID : product.productID
+            guard seenProducts.insert(identity).inserted else { continue }
             let key = Self.key(category: intake.category, revision: current, meal: intake.meal)
             result.append(RecentItem(
                 id: key,

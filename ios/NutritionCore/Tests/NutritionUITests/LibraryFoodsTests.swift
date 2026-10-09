@@ -232,4 +232,19 @@ final class LibraryFoodsTests: XCTestCase {
         library.segment = .recent
         XCTAssertEqual(Set(library.visibleItems.map(\.title)), ["Typed oats", "Example bar"])
     }
+
+    /// Every label capture carries the same lineage id, so two different captured labels must still be two rows.
+    func testDistinctLabelCapturesAreSeparateRows() throws {
+        let store = try makeStore()
+        let first = product("s-label-a", name: "Example granola", origin: ProductOrigin.label_capture, lineage: "label_capture")
+        let second = product("s-label-b", name: "Example crackers", origin: ProductOrigin.label_capture, lineage: "label_capture")
+        try addEntry(store, name: "Example granola", at: now.addingTimeInterval(-300), product: first)
+        try addEntry(store, name: "Example crackers", at: now.addingTimeInterval(-200), product: second)
+        try addEntry(store, name: "Example granola", at: now.addingTimeInterval(-100), product: first)
+
+        let library = makeLibrary(store: store, favorites: try makeFavorites())
+        library.load()
+
+        XCTAssertEqual(foodTitles(library), ["Example crackers", "Example granola"])
+    }
 }
