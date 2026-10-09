@@ -52,8 +52,11 @@ public struct LibraryView: View {
         .background(TokenColors.background)
         .navigationTitle("Library")
         .onAppear { self.model.load() }
+        // The Undo window ends with this screen: its ten-second task is cancelled with the toast.
+        .onDisappear { if self.onPick == nil { self.model.clearUndo() } }
         .safeAreaInset(edge: .bottom) {
-            if let token = model.undoToken {
+            // Pick mode is Add's "From Library": a token from this screen must never show there.
+            if onPick == nil, let token = model.undoToken {
                 UndoToast(token.message) {
                     if self.model.undo(now: self.now()) { self.onAdded() }
                 }
@@ -91,8 +94,7 @@ public struct LibraryView: View {
             LaterBadge()
         }
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Not available yet")
-        .disabled(true)
+        .laterPlaceholder()
     }
 
     @ViewBuilder
@@ -111,12 +113,13 @@ public struct LibraryView: View {
                 emptyState(for: .foods)
                 LaterBadge()
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityValue("Not available yet")
         case .recipes:
             if let onOpenRecipes {
                 Button("Open recipes") { onOpenRecipes() }
                     .font(.headline)
                     .foregroundStyle(TokenColors.accent)
-                    .accessibilityLabel(RecipeLabels.recipesRow)
                     .accessibilityHint("Opens your personal recipes")
             } else {
                 emptyState(for: .recipes)
@@ -155,7 +158,7 @@ public struct LibraryView: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(item.accessibilityLabel(forPick: opensDetails))
-            .accessibilityHint(opensDetails ? "Opens details without adding an entry" : "")
+            .modifier(DetailsHint(isOn: opensDetails))
             Spacer()
             if onPick == nil {
                 QuietCapsule("Add") {
@@ -172,6 +175,19 @@ public struct LibraryView: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(item.isFavorite ? "Remove \(item.title) from favorites" : "Add \(item.title) to favorites")
+        }
+    }
+}
+
+/// The details hint, set only when the row's tap really opens details. Otherwise no hint is set at all.
+private struct DetailsHint: ViewModifier {
+    let isOn: Bool
+
+    func body(content: Content) -> some View {
+        if isOn {
+            content.accessibilityHint("Opens details without adding an entry")
+        } else {
+            content
         }
     }
 }

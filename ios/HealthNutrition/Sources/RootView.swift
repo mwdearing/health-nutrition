@@ -271,10 +271,18 @@ struct RootView: View {
 
     /// Opens Add on its details form, prefilled from a Library item. Nothing is logged until Save.
     private func openAddDetails(prefilledFrom template: RepeatTemplate) {
+        // Nothing to prefill: do not open Add at all.
+        guard !template.components.isEmpty else { return }
         self.startAddingIntake()
-        guard let home = self.addHome, let model = try? home.makeDetails(prefill: template, now: Date()) else { return }
-        self.addIntakeModel = model
-        self.addNavigation.path.append(.details(AddPrefill(model: model)))
+        guard let home = self.addHome else { self.finishAdding(); return }
+        do {
+            let model = try home.makeDetails(prefill: template, now: Date())
+            self.addIntakeModel = model
+            self.addNavigation.path.append(.details(AddPrefill(model: model)))
+        } catch {
+            // The form could not be built: close the Add cover again rather than leave it empty.
+            self.finishAdding()
+        }
     }
 
     private func finishAdding() {

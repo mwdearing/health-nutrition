@@ -292,12 +292,13 @@ public final class LibraryViewModel: ObservableObject {
     }
 
     /// Deletes the entry the last quick add wrote. False when there is nothing to undo.
+    /// A failed delete clears the token too: the Undo offer cannot succeed again, so it must not stay on screen.
     @discardableResult
     public func undo(now: Date) -> Bool {
         guard let token = undoToken else { return false }
+        undoToken = nil
         do {
             try store.delete(intakeID: token.intakeID, now: now)
-            undoToken = nil
             load()
             return true
         } catch {
@@ -309,6 +310,11 @@ public final class LibraryViewModel: ObservableObject {
     /// Clears the token when the Undo window ends, but only if it is still the current one.
     public func expireUndo(_ token: LibraryUndoToken) {
         if undoToken == token { undoToken = nil }
+    }
+
+    /// Drops any pending Undo offer, for when the Library screen goes away.
+    public func clearUndo() {
+        undoToken = nil
     }
 
     private static func key(of favorite: FavoriteTemplate) -> String {
