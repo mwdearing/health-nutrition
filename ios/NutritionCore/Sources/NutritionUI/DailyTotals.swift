@@ -186,14 +186,18 @@ public enum DailyTotalsBuilder {
     /// The quantity one serving is, from a basis that states it: "per serving (30 g)" is 30 g and
     /// "per serving (240 mL)" is 240 mL.
     ///
+    /// A household measure can carry its gram weight in brackets of its own, "per serving (1 bar
+    /// (30 g))", so the innermost brackets are read: the last "(" and the first ")" after it. The
+    /// weight is what scales.
+    ///
     /// Only a number and a registry unit are read, in any dimension the registry holds. A serving
     /// stated any other way — "1 large biscuit", "a handful" — is not a quantity this can scale by, so
     /// it is nil and the nutrient stays unknown rather than being scaled by something guessed at.
     static func statedServingQuantity(
         _ labelBasis: String
     ) -> (value: Decimal, unit: MeasureUnit)? {
-        guard let open = labelBasis.firstIndex(of: "("),
-            let close = labelBasis.firstIndex(of: ")"), close > open
+        guard let open = labelBasis.lastIndex(of: "("),
+            let close = labelBasis[labelBasis.index(after: open)...].firstIndex(of: ")")
         else { return nil }
         let stated = String(labelBasis[labelBasis.index(after: open)..<close])
             .trimmingCharacters(in: .whitespaces)
