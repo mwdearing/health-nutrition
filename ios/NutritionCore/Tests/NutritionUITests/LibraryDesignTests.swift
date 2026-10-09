@@ -159,6 +159,46 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, before)
     }
 
+    func testLibraryQuickAddUndoIsClearedWhenTheScreenGoesAway() throws {
+        let store = try makeStore()
+        try addEntry(store, name: "Example oats", at: now.addingTimeInterval(-60))
+        let library = makeLibrary(store: store, favorites: try makeFavorites())
+        library.load()
+        library.segment = .recent
+        let recent = try XCTUnwrap(library.visibleItems.first)
+        let before = try store.activeIntakes().count
+
+        XCTAssertTrue(library.quickAdd(recent, now: now))
+        let token = try XCTUnwrap(library.undoToken)
+
+        library.clearUndo()
+        XCTAssertNil(library.undoToken)
+        // Clearing is not undoing: the entry the quick add wrote stays.
+        XCTAssertEqual(try store.activeIntakes().count, before + 1)
+        XCTAssertTrue(try store.activeIntakes().contains { $0.id == token.intakeID })
+        // With the token gone, Undo has nothing to delete.
+        XCTAssertFalse(library.undo(now: now))
+        XCTAssertEqual(try store.activeIntakes().count, before + 1)
+    }
+
+    func testLibraryUndoClearsItsTokenEvenWhenTheEntryIsAlreadyGone() throws {
+        let store = try makeStore()
+        try addEntry(store, name: "Example oats", at: now.addingTimeInterval(-60))
+        let library = makeLibrary(store: store, favorites: try makeFavorites())
+        library.load()
+        library.segment = .recent
+        let recent = try XCTUnwrap(library.visibleItems.first)
+
+        XCTAssertTrue(library.quickAdd(recent, now: now))
+        let token = try XCTUnwrap(library.undoToken)
+        // The entry is deleted outside the Library, so the store refuses a second delete (intakeDeleted).
+        try store.delete(intakeID: token.intakeID, now: now)
+
+        // The source clears the token before the store call and returns false when the delete throws.
+        XCTAssertFalse(library.undo(now: now))
+        XCTAssertNil(library.undoToken)
+    }
+
     // MARK: Pick mode
 
     func testLibraryPickModeReturnsATemplate() throws {
