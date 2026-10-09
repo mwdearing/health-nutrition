@@ -58,7 +58,7 @@ final class GoalVisibilityTests: XCTestCase {
     /// The bars on the Today card for nutrients that have a stored goal. A tracked nutrient with no goal
     /// also gets a plain-total bar, and the switch never touches that one.
     private func todayBarIDs(_ model: TodayViewModel) -> [String] {
-        model.goalBars.map(\.nutrient).filter { id in model.progress.contains { $0.nutrient == id && $0.hasGoal } }
+        model.goalBars.map(\.id).filter { id in model.progress.contains { $0.nutrient == id && $0.hasGoal } }
     }
 
     // MARK: Defaults and the Today card
@@ -256,6 +256,6 @@ final class GoalVisibilityTests: XCTestCase {
         let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
         model.load(now: when)
 
-        XCTAssertTrue(model.goalBars.contains { $0.nutrient == "protein" })
+        XCTAssertTrue(model.goalBars.contains { $0.id == "protein" })
     }
 }
