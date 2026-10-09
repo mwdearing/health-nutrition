@@ -10,6 +10,7 @@ struct AddBarcodeDestination: View {
     let onType: () -> Void
     @State private var hasScanned = false
     @State private var scannedCode: String?
+    @State private var awaitingResult = false
 
     var body: some View {
         Group {
@@ -37,7 +38,10 @@ struct AddBarcodeDestination: View {
             } else if let message = model.lookupMessage {
                 VStack(spacing: DesignSpacing.m) {
                     InlineNotice(message, tone: .waiting)
-                    Button("Try again") { Task { await self.model.lookUpBarcode() } }
+                    Button("Try again") {
+                        self.awaitingResult = true
+                        Task { await self.model.lookUpBarcode() }
+                    }
                     QuietCapsule("Type it in", action: onType)
                 }
                 .padding(DesignSpacing.m)
@@ -47,10 +51,13 @@ struct AddBarcodeDestination: View {
         .navigationTitle("Scan barcode")
         .task(id: hasScanned) {
             guard self.hasScanned, self.model.lookupState == .idle, let code = self.scannedCode else { return }
+            self.awaitingResult = true
             await self.onScanned(code)
         }
         .onChange(of: model.lookupState) { _, state in
-            if case .found = state, !self.model.statesNoNutrients { self.onFound() }
+            guard self.awaitingResult, case .found = state, !self.model.statesNoNutrients else { return }
+            self.awaitingResult = false
+            self.onFound()
         }
     }
 }
