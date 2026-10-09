@@ -29,9 +29,13 @@ Plus, on the screen that offers the action:
   the erase sweeps the directory. A file it cannot delete is reported as a failed erase rather than
   quietly skipped. See [journal export](journal-export.md).
 - The display preferences: the unit system and the quick-water amount are stored values like any other,
-  so both `display.` keys are removed from the defaults domain rather than overwritten with their
-  defaults, and the screen is put back to what a fresh install shows. See
-  [today-screen.md](today-screen.md).
+  so both keys are removed from the defaults domain rather than overwritten with their defaults, and the
+  screen is put back to what a fresh install shows. See [today-screen.md](today-screen.md).
+- The first-run flags: the welcome flag, the hidden state of the first-day checklist and the "units
+  reviewed" step. They are stored under the same `display.` prefix (`display.hasSeenWelcome`,
+  `display.checklistHidden`, `display.hasReviewedUnits`), so the erase removes five `display.` keys in
+  all. Afterwards the first-day checklist returns on Today at once, with its steps undone. The welcome
+  is not shown straight away: it shows again the next time the app starts, because its flag is gone.
 - The screen's own state: the entry count goes back to zero and the export is no longer offered.
 
 The stores stay open afterwards. The app carries on with an empty journal, and a new entry, favorite
@@ -78,5 +82,5 @@ injected store runs, every export file in the temporary directory is removed inc
 never wrote, a file that cannot be deleted is reported as a failed erase, and a store that fails is
 reported while the rest still run.
 `ios/NutritionCore/Tests/ConnectionsPrivacyTests/ConnectionsPrivacyPreferenceTests.swift` covers the
-display preferences: both keys are removed from the defaults domain by the erase, the screen goes back
+display preferences: the display keys are removed from the defaults domain by the erase, the screen goes back
 to the defaults, and the in-memory implementation clears the same way.

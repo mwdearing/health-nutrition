@@ -16,6 +16,36 @@ read live in `NutritionJournal`. The app target wires them together. Tests cover
   clear it. Reached from Today's "Edit goals" link or from Settings; the Library no longer holds a Connections section.
   Dismissing Settings reloads Today and Journal, so changed goals immediately update both screens.
 
+## First day
+**The welcome** is a full screen shown once per install, on the first launch of the app (`RootView` presents
+`WelcomeView` in a full-screen cover while the welcome flag is not set). It shows the title "HealthNutrition", the
+sentence "Log what you eat and drink. See it against goals you set.", and three cards: "Scan a label or barcode, or
+type it in", "Your journal stays on this phone", and "No scores, no advice". It has two actions:
+- **Get started** stores the welcome flag and closes the screen.
+- **Restore from an export** stores the flag, closes the screen and opens Settings. The restore itself is the
+  "Restore from an export" button under **Privacy** in Settings, which works only while the journal is empty.
+
+The welcome asks for no permission, makes no network request and stores nothing but the flag. It is not shown while
+the design-system screenshots are captured. **Settings > About** has **Show welcome again**, which shows the welcome
+once more; it changes no other setting. Erase all data clears the flag, so the welcome shows again on the next
+launch (not at once).
+
+**The checklist card** is titled "Getting started". It sits on Today above **Daily goals** while it is shown, and has
+four rows in this order:
+1. **Log your first food or drink**: done when the journal holds at least one entry, on any day. Tapping it opens
+   Add.
+2. **Set a daily goal**: done when at least one daily goal is stored. Tapping it opens the daily goals.
+3. **Choose units**: shows the current system under the title, "Metric" or "US". Tapping it marks the step done at
+   once, then opens the units settings. The mark is stored, so it stays done even if the units are not changed.
+4. **Connect Apple Health**: a placeholder with a Later badge. It is disabled, announced as "Not available yet", and
+   never done in this build.
+
+Steps are read again when the app starts, when it returns to the foreground, when Settings closes, after an entry is
+added or edited, after an erase, and after the units step. The card disappears once the first three steps are all
+done, and it returns only if one of them becomes undone again (for example, every entry is deleted). **Hide**
+removes the card at once and stores the choice, so it stays hidden on later launches until an erase clears it. The
+fourth step never ticks off, so it never keeps the card on screen.
+
 ## Totals
 A **DailyTotals** (`ios/NutritionCore/Sources/NutritionUI/DailyTotals.swift`) is what one day adds up to, one entry
 per nutrient. It is summed by `DailyTotalsBuilder.totals(for:store:lookup:nutrients:)` from the current revision of
