@@ -6,7 +6,7 @@ import XCTest
 
 /// Design WP8: the Library segments, the empty states, quick add with undo, and pick mode at the view-model level.
 ///
-/// Written against the pinned API in `2026-10-08-design-wp8-team-plan.md`. Synthetic names only, lowercase UUID intake ids.
+/// Synthetic names only, lowercase UUID intake ids.
 @MainActor
 final class LibraryDesignTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
