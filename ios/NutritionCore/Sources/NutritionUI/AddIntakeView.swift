@@ -253,8 +253,8 @@ public struct AddIntakeView: View {
             return "Not on the label"
         case .notApplicable:
             return "Does not apply"
-        case .belowReportingThreshold:
-            return "Less than the label reports"
+        case .belowReportingThreshold(let unit):
+            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
         case nil:
             return "Not on the label"
         }

@@ -234,7 +234,7 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
             return "Not on the label"
         case .notApplicable:
             return "Does not apply"
-        case .belowReportingThreshold:
+        case .belowReportingThreshold(let unit):
             return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
         }
     }
