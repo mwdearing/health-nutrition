@@ -24,6 +24,7 @@ Label capture keeps its existing on-device camera, multi-photo review and confir
 behavior. **Use these values** pushes the existing Details form; it does not save an entry. While
 values are still waiting for an answer the same button reads **Confirm 1 value first** or
 **Confirm N values first**, with N the count still owed, and stays disabled until the count is zero.
+A capture with nothing readable keeps the plain title and stays disabled; it asks for another photo, not a confirmation.
 Library pick mode offers Favourites, Recent and Recipes. Picking prefills Details without
 switching tabs or writing the journal. Save closes Add and clears its path; Cancel does the same.
 
@@ -214,8 +215,11 @@ The rules the screen keeps are short:
 - **A nutrient the panel does not state stays `.unknown`.** It is shown as "Not on the label" and is
   left out of the product rather than stored as zero, so `ProductDefinition.value(for:)` reads it back
   as unknown. The four states read on screen as "Not on the label" (unknown), "Does not apply"
-  (not applicable), "Less than the label reports" (below the reporting threshold, with no unit
-  suffix) and the number with its unit (known). The Add details form reads the same words.
+  (not applicable), "Less than the label reports (mg)" (below the reporting threshold, with the unit
+  in parentheses when the label gives one) and the number with its unit (known). The Add details form
+  and the Entry screen read the same words. A value the label states but that cannot be scaled to the
+  amount entered reads "Can't be worked out for this amount", which is not the same as a value the
+  label does not state.
 - **The compound rows are shown under a heading of their own, "Also on the label".** They are not
   folded into the Nutrients list: they are not that list's rows, and listing them there would tell the
   user they are nutrients the journal already knows. Each one is shown under the name the label
