@@ -68,7 +68,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         preferences.setQuickWaterMilliliters(Decimal(300))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
 
-        for text in ["", "0", "-5", "abc", "1,5", "1e3", "12mL", "."] {
+        for text in ["", "0", "-5", "abc", "1,5,0", "1e3", "12mL", "."] {
             model.quickWaterText = text
             XCTAssertFalse(model.saveQuickWaterAmount(), text)
             XCTAssertEqual(model.quickWaterError, ConnectionsPrivacyViewModel.quickWaterInvalidMessage, text)

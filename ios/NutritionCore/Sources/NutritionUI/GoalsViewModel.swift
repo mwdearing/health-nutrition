@@ -290,7 +290,7 @@ public final class GoalsViewModel: ObservableObject {
     @discardableResult
     public func setTarget(_ targetText: String, for nutrient: String, unit: MeasureUnit? = nil) -> Bool {
         let chosen = unit ?? self.unit(for: nutrient)
-        guard let target = AmountParser.parse(targetText) else {
+        guard let target = AmountParser.parseTyped(targetText) else {
             errorMessage = "Enter a target above zero."
             return false
         }
@@ -338,7 +338,7 @@ public final class GoalsViewModel: ObservableObject {
             draftText[nutrient] = ""
             return true
         }
-        guard let target = AmountParser.parse(text), !target.isNaN, target > 0 else {
+        guard let target = AmountParser.parseTyped(text), !target.isNaN, target > 0 else {
             rowError[nutrient] = "Enter a number above zero."
             return false
         }

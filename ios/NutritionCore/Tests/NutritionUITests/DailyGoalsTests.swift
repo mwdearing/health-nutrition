@@ -663,7 +663,7 @@ final class DailyGoalsTests: XCTestCase {
         let goals = try makeGoalStore()
         let model = GoalsViewModel(store: goals)
 
-        for text in ["", "  ", "abc", "0", "-3", "1,5", "1e3", "1.2.3", "12g", "."] {
+        for text in ["", "  ", "abc", "0", "-3", "1,5,0", "1e3", "1.2.3", "12g", "."] {
             XCTAssertFalse(model.setTarget(text, for: "protein"), text)
             XCTAssertEqual(model.errorMessage, "Enter a target above zero.", text)
         }

@@ -168,7 +168,7 @@ final class TodayTests: XCTestCase {
         let store = try makeStore()
         let model = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
         model.name = "Rolled oats"
-        for text in ["", "abc", "0", "-3", "1,5", "1e3", "1.2.3", "12g", "."] {
+        for text in ["", "abc", "0", "-3", "1,5,0", "1e3", "1.2.3", "12g", "."] {
             model.amountText = text
             XCTAssertFalse(model.save(now: now), text)
             XCTAssertNotNil(model.amountError, text)
