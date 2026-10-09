@@ -287,8 +287,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // Computed from the store rather than read back through `quickWaterDraftAmount`: an initializer
         // cannot read itself before every stored property is set, and this is the last one.
         self.quickWaterText = DecimalFormatting.text(
-            AmountDisplay.display(
-                preferences.quickWaterMilliliters, unit: .mL, system: preferences.unitSystem).amount)
+            Self.draftAmount(milliliters: preferences.quickWaterMilliliters, system: preferences.unitSystem))
     }
 
     /// Checks the typed quick-water amount and stores it in milliliters when it is above zero. An amount
@@ -335,14 +334,24 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// that precision and rounding it to the digit a converted ounce carries would restate it as 400.6
     /// in the very field the person is editing.
     public var quickWaterDraftAmount: Decimal {
-        let shown = AmountDisplay.display(preferences.quickWaterMilliliters, unit: .mL, system: unitSystem)
+        Self.draftAmount(milliliters: preferences.quickWaterMilliliters, system: unitSystem)
+    }
+
+    /// The figure the quick-water field starts on for a stored amount, in the unit the system reads volumes in.
+    ///
+    /// It is rounded from the exact converted figure, not from the display amount: a display amount is
+    /// already rounded, so a tiny positive amount would arrive here as zero. The rounding keeps a positive
+    /// amount too small for its digits at its own value, so the field never reads as none of it.
+    static func draftAmount(milliliters: Decimal, system: UnitSystem) -> Decimal {
+        let shown = AmountDisplay.display(milliliters, unit: .mL, system: system)
         guard shown.unit != .mL else { return shown.amount }
-        return roundedForReading(shown.amount, fractionDigits: AmountDisplay.fractionDigits(for: shown.amount))
+        let exact = (try? Quantity(value: milliliters, unit: .mL).converted(to: shown.unit).value) ?? shown.amount
+        return roundedForReading(exact, fractionDigits: AmountDisplay.fractionDigits(for: exact))
     }
 
     /// A figure rounded to the digits it is shown with, except that an amount too small for those digits
     /// keeps them all rather than reading as none of it.
-    private func roundedForReading(_ amount: Decimal, fractionDigits: Int) -> Decimal {
+    private static func roundedForReading(_ amount: Decimal, fractionDigits: Int) -> Decimal {
         let rounded = DisplayRounding.rounded(amount, fractionDigits: fractionDigits)
         return rounded == 0 && amount != 0 ? amount : rounded
     }
