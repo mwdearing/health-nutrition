@@ -285,6 +285,8 @@ public final class LibraryViewModel: ObservableObject {
     /// Repeats the item as a new entry at once and offers Undo. False, with no token, when nothing was added.
     @discardableResult
     public func quickAdd(_ item: LibraryItem, now: Date) -> Bool {
+        // An earlier offer is dropped first: if this add fails, its Undo must not stay on screen.
+        undoToken = nil
         guard let id = select(item, now: now) else { return false }
         undoToken = LibraryUndoToken(intakeID: id, message: "Added \(item.title)")
         load()
@@ -310,6 +312,16 @@ public final class LibraryViewModel: ObservableObject {
     /// Clears the token when the Undo window ends, but only if it is still the current one.
     public func expireUndo(_ token: LibraryUndoToken) {
         if undoToken == token { undoToken = nil }
+    }
+
+    /// Reports that an item cannot be opened as details, because its saved product is gone.
+    public func reportOpenFailure() {
+        errorMessage = "This item can't be opened. Its saved product is no longer available."
+    }
+
+    /// The meal an item was recorded under, when it names one of the meals the app offers.
+    public static func mealLabel(for template: RepeatTemplate) -> MealLabel? {
+        template.meal.flatMap { MealLabel(rawValue: $0) }
     }
 
     /// Drops any pending Undo offer, for when the Library screen goes away.

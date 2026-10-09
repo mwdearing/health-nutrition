@@ -262,7 +262,11 @@ struct RootView: View {
     private func startAddingIntake(meal: MealLabel? = nil) {
         self.addNavigation.reset()
         self.addFlowError = nil
-        self.addHome = AddHomeViewModel(
+        self.addHome = self.makeAddHome(meal: meal)
+    }
+
+    private func makeAddHome(meal: MealLabel?) -> AddHomeViewModel {
+        AddHomeViewModel(
             store: self.services.journalStore, meal: meal,
             scannerAvailability: AddScannerAvailability(
                 barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
@@ -271,18 +275,25 @@ struct RootView: View {
 
     /// Opens Add on its details form, prefilled from a Library item. Nothing is logged until Save.
     private func openAddDetails(prefilledFrom template: RepeatTemplate) {
-        // Nothing to prefill: do not open Add at all.
-        guard !template.components.isEmpty else { return }
-        self.startAddingIntake()
-        guard let home = self.addHome else { self.finishAdding(); return }
-        do {
-            let model = try home.makeDetails(prefill: template, now: Date())
-            self.addIntakeModel = model
-            self.addNavigation.path.append(.details(AddPrefill(model: model)))
-        } catch {
-            // The form could not be built: close the Add cover again rather than leave it empty.
-            self.finishAdding()
+        // Nothing to prefill: report it and open nothing.
+        guard !template.components.isEmpty else {
+            self.services.library.reportOpenFailure()
+            return
         }
+        // The form is built before anything is presented, so a failure presents nothing.
+        let home = self.makeAddHome(meal: LibraryViewModel.mealLabel(for: template))
+        let model: AddIntakeViewModel
+        do {
+            model = try home.makeDetails(prefill: template, now: Date())
+        } catch {
+            self.services.library.reportOpenFailure()
+            return
+        }
+        self.addNavigation.reset()
+        self.addFlowError = nil
+        self.addHome = home
+        self.addIntakeModel = model
+        self.addNavigation.path.append(.details(AddPrefill(model: model)))
     }
 
     private func finishAdding() {
