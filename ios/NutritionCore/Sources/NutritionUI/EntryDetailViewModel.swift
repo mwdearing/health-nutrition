@@ -236,9 +236,21 @@ public final class EntryDetailViewModel: ObservableObject {
     /// Whether the screen holds a change the person has not saved: an amount draft that differs from
     /// the one the entry states, or a time that differs from the stored one. Save is offered only then.
     public var isDirty: Bool {
-        if drafts != loadedDrafts { return true }
+        for id in Set(drafts.keys).union(loadedDrafts.keys)
+        where !Self.sameAmountText(loadedDrafts[id] ?? "", drafts[id] ?? "") {
+            return true
+        }
         guard let storedOccurredAt else { return false }
         return occurredAt != storedOccurredAt
+    }
+
+    /// Whether two amount texts state the same amount. Both are trimmed; when both parse, the decimals
+    /// decide, so "40.0" and " 40 " match a stored 40. Otherwise the trimmed text decides.
+    static func sameAmountText(_ loaded: String, _ draft: String) -> Bool {
+        let first = loaded.trimmingCharacters(in: .whitespacesAndNewlines)
+        let second = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let a = AmountParser.parse(first), let b = AmountParser.parse(second) { return a == b }
+        return first == second
     }
 
     /// The same amount in the unit the reader chose, recomputed from what is in the text field rather
@@ -346,8 +358,7 @@ public final class EntryDetailViewModel: ObservableObject {
         for draft: EditedComponent, in stored: [IntakeComponent]
     ) -> IntakeComponent? {
         guard let existing = stored.first(where: { $0.componentID == draft.componentID }) else { return nil }
-        let text = draft.amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text == Self.seededAmountText(existing.amount) else { return nil }
+        guard Self.sameAmountText(Self.seededAmountText(existing.amount), draft.amountText) else { return nil }
         return existing
     }
 
@@ -475,7 +486,10 @@ public final class EntryDetailViewModel: ObservableObject {
     /// screen show the same rows in the same order. A value the snapshot does not state, or a basis that
     /// the logged amount cannot resolve, reads "Not on the label" and is never shown as zero.
     static func adds(of product: ProductDefinition?, logged components: [IntakeComponent]) -> [EntryNutrientRow] {
-        guard let product else { return [] }
+        // A typed entry, or a snapshot that states no value at all, has nothing this entry added.
+        guard let product, product.catalogOrigin != "manual",
+              product.nutrients.values.contains(where: { isStated($0) })
+        else { return [] }
         let factor = DailyTotalsBuilder.scalingFactor(labelBasis: product.labelBasis, logged: components)
         var rows: [EntryNutrientRow] = []
         for key in AddIntakeViewModel.thisAddsKeys {
@@ -491,11 +505,20 @@ public final class EntryDetailViewModel: ObservableObject {
         return rows
     }
 
-    /// Every nutrient the snapshot states with a known value, as the label printed it, sorted by name.
+    /// Whether a value says something the label printed: an amount, or a bound such as "<1 g". Unknown and
+    /// not-applicable values say nothing and are left out.
+    static func isStated(_ value: NutrientValue) -> Bool {
+        switch value {
+        case .known, .belowReportingThreshold: return true
+        case .unknown, .notApplicable: return false
+        }
+    }
+
+    /// Every nutrient the snapshot states, as the label printed it, sorted by name.
     static func allValues(of product: ProductDefinition?) -> [EntryNutrientRow] {
         guard let product else { return [] }
         var rows: [EntryNutrientRow] = []
-        for (key, value) in product.nutrients where value.isKnown {
+        for (key, value) in product.nutrients where isStated(value) {
             let name = product.displayName(for: key) ?? LookedUpProduct.displayNames[key] ?? compoundName(for: key)
             rows.append(EntryNutrientRow(key: key, name: name, amountText: LookedUpProduct.describe(value)))
         }
@@ -521,7 +544,12 @@ public final class EntryDetailViewModel: ObservableObject {
             var verb = "Logged"
             if let previous {
                 let amountsChanged = !componentsUnchanged(from: previous.components, to: revision.components)
-                let timeChanged = revision.occurredAt != nil && baseline != nil && revision.occurredAt != baseline
+                // A restored export carries no time on its revisions, so the automatic reason is the only record
+                // that the time was corrected.
+                let restoredTimeCorrection = revision.occurredAt == nil
+                    && revision.changeReason.trimmingCharacters(in: .whitespacesAndNewlines) == timeCorrectionReason
+                let timeChanged = restoredTimeCorrection
+                    || (revision.occurredAt != nil && baseline != nil && revision.occurredAt != baseline)
                 switch (amountsChanged, timeChanged) {
                 case (true, true): verb = "Amount changed and time corrected"
                 case (true, false): verb = "Amount changed"
@@ -538,13 +566,14 @@ public final class EntryDetailViewModel: ObservableObject {
         return rows.reversed()
     }
 
-    /// The reason a change is shown with, or nil when it says nothing the verb does not: the default reason,
-    /// the automatic time-correction reason, and a reason that repeats the verb are all left out.
+    /// The reason a change is shown with, or nil when it says nothing the verb does not: revision 1, the
+    /// creation reason, the default reason, an empty reason, and a reason that repeats the row's verb (so the
+    /// automatic time-correction reason on a time-only row) are all left out.
     static func changeNote(for reason: String, verb: String, number: Int) -> String? {
         let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         // Revision 1 is stored as "created", which says nothing the "Logged" verb does not.
         if number == 1 || trimmed == creationReason || trimmed.isEmpty || trimmed == defaultChangeReason
-            || trimmed == timeCorrectionReason || trimmed == verb {
+            || trimmed == verb {
             return nil
         }
         return trimmed
