@@ -74,6 +74,14 @@ public struct EntryDestinationRow: Equatable, Identifiable {
     public let state: DestinationState
 }
 
+/// One choice on the entry screen's Meal menu: a named meal, or nil for "Not set".
+public struct MealOption: Equatable, Identifiable {
+    public let meal: MealLabel?
+
+    public var id: String { meal?.rawValue ?? "not-set" }
+    public var title: String { meal?.displayName ?? "Not set" }
+}
+
 /// One edited component: the amount arrives as text and is parsed with the POSIX parser.
 public struct EditedComponent: Equatable {
     public var componentID: String
@@ -110,6 +118,11 @@ public final class EntryDetailViewModel: ObservableObject {
     /// What a correction of the entry's time alone is recorded as, because a history that reads
     /// "Edited" for a change of time tells a reader nothing about what happened.
     public static let timeCorrectionReason = "Time corrected"
+    /// What a change of the meal alone is recorded as, so the Changes list names it rather than "Changed".
+    public static let mealChangedReason = "Meal changed"
+    /// The choices the Meal menu offers: each named meal in order, then "Not set".
+    public static let mealOptions: [MealOption] = MealLabel.allCases.map { MealOption(meal: $0) }
+        + [MealOption(meal: nil)]
     /// The reason revision 1 is stored with, when the entry is first logged.
     static let creationReason = "created"
 
@@ -156,6 +169,12 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public var occurredAt: Date
     /// The meal the entry states, as words, or nil when it states none.
     @Published public private(set) var mealText: String?
+    /// The named meal the entry states, which is what the Meal menu shows as chosen. Nil for "Not set" and
+    /// for a meal this build does not name.
+    @Published public private(set) var selectedMeal: MealLabel?
+    /// Whether the Meal menu can be used: the entry states no meal, or one of the named meals. A meal this build
+    /// does not name (an imported free-text value) is shown as written and is left as it is.
+    public var canChangeMeal: Bool { mealText == nil || selectedMeal != nil }
     /// The time exactly as the journal holds it, and nil until `load` has read the entry. A draft
     /// may only correct that, so a save made before the first load cannot move an entry whose
     /// stored time this model has not seen.
@@ -239,6 +258,9 @@ public final class EntryDetailViewModel: ObservableObject {
             storedOccurredAt = intake.occurredAt
             timeZoneIdentifier = intake.timeZoneIdentifier
             mealText = MealLabel.displayName(for: intake.meal)
+            selectedMeal = intake.meal.flatMap {
+                MealLabel(rawValue: $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            }
             revisions = all.reversed().map {
                 EntryRevisionRow(number: $0.number, createdAt: $0.createdAt, changeReason: $0.changeReason)
             }
@@ -452,6 +474,27 @@ public final class EntryDetailViewModel: ObservableObject {
         return true
     }
 
+    /// Changes the entry's meal as one new revision, reason "Meal changed", and reloads the screen so the
+    /// meal row, the Changes list and the meal the entry is grouped under all follow. Choosing the meal the
+    /// entry already states writes nothing. Refused for a meal this build does not name, and for an entry
+    /// that is gone or cannot be written.
+    @discardableResult
+    public func changeMeal(to meal: MealLabel?, now: Date) -> Bool {
+        guard canChangeMeal else { return false }
+        do {
+            guard let editing = store as? JournalMealEditing else {
+                errorMessage = "Could not change the meal."
+                return false
+            }
+            try editing.changeMeal(intakeID: intakeID, meal: meal?.rawValue, now: now)
+        } catch {
+            errorMessage = "Could not change the meal."
+            return false
+        }
+        load(now: now)
+        return true
+    }
+
     /// Creates a new intake from this one (one `create`); this entry is untouched.
     @discardableResult
     public func repeatEntry(now: Date) -> String? {
@@ -617,6 +660,7 @@ public final class EntryDetailViewModel: ObservableObject {
         var baseline: Date?
         for revision in revisions.sorted(by: { $0.number < $1.number }) {
             var verb = "Logged"
+            let mealChanged = revision.changeReason.trimmingCharacters(in: .whitespacesAndNewlines) == mealChangedReason
             if let previous {
                 let amountsChanged = !componentsUnchanged(from: previous.components, to: revision.components)
                 // A restored export carries no time on its revisions, so the automatic reason is the only record
@@ -629,7 +673,7 @@ public final class EntryDetailViewModel: ObservableObject {
                 case (true, true): verb = "Amount changed and time corrected"
                 case (true, false): verb = "Amount changed"
                 case (false, true): verb = "Time corrected"
-                case (false, false): verb = "Changed"
+                case (false, false): verb = mealChanged ? "Meal changed" : "Changed"
                 }
             }
             rows.append(EntryChangeRow(
