@@ -107,6 +107,21 @@ public struct JournalJumpTarget: Equatable {
     }
 }
 
+/// The week at the top of the Journal: how many of the seven local days ending today have food or drink,
+/// and one line per goal that shows on Today.
+public struct JournalWeekSummary: Equatable {
+    /// "Logged 3 of 7 days", or "Nothing logged this week." when no day of the week has food or drink.
+    public let headline: String
+    /// One line per goal that shows on Today, water left out, at most three, in the stored order, such as
+    /// "Protein: average 42 g a day against 60 g". Empty when nothing was logged this week.
+    public let goalLines: [String]
+
+    public init(headline: String, goalLines: [String]) {
+        self.headline = headline
+        self.goalLines = goalLines
+    }
+}
+
 @MainActor
 public final class JournalViewModel: ObservableObject {
     @Published public private(set) var sections: [JournalDaySection] = []
@@ -119,6 +134,8 @@ public final class JournalViewModel: ObservableObject {
     @Published public private(set) var goalsErrorMessage: String?
     /// The days the person has opened. Only an old day (more than a week back) starts collapsed.
     @Published public private(set) var expandedDays: Set<String> = []
+    /// The seven local days ending today, read from the loaded sections. Nil until a load finds an entry.
+    @Published public private(set) var weekSummary: JournalWeekSummary?
     /// True once a load has completed without failing, so the empty state is never shown before one.
     private var hasLoaded = false
 
@@ -226,7 +243,7 @@ public final class JournalViewModel: ObservableObject {
                         totals: totals, tracked: tracked, goals: storedGoals, unitSystem: self.preferences.unitSystem),
                     mealGroups: Self.mealGroups(for: rows),
                     headerBars: Self.headerBars(
-                        totals: totals, goals: storedGoals, hasFoodEntries: rows.contains { !$0.isWater && $0.kind != .supplement },
+                        totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
                         unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
                     energyText: Self.energyText(totals: totals),
                     isCollapsedByDefault: rows.allSatisfy { row in
@@ -235,6 +252,10 @@ public final class JournalViewModel: ObservableObject {
                     },
                     entryCountText: Self.entryCountText(rows.count))
             }
+            weekSummary = Self.makeWeekSummary(
+                sections: sections, now: now,
+                zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
+                goals: storedGoals, hidden: hiddenGoals, unitSystem: self.preferences.unitSystem)
             skippedCount = skipped
             errorMessage = nil
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
@@ -398,6 +419,76 @@ public final class JournalViewModel: ObservableObject {
         return (named + ["Other"]).compactMap { title in
             buckets[title].map { JournalMealGroup(id: title, title: title, rows: $0) }
         }
+    }
+
+    /// A day counts as logged when it holds a food or drink entry. Water and supplements do not count.
+    /// The day header and the week summary both use this rule.
+    static func hasFoodEntries(_ rows: [JournalRow]) -> Bool {
+        rows.contains { !$0.isWater && $0.kind != .supplement }
+    }
+
+    /// The week summary for the loaded sections, or nil when the journal has no day at all. The window is
+    /// the seven days ending today in the journal's zone, today included; a later day is outside it.
+    static func makeWeekSummary(
+        sections: [JournalDaySection], now: Date, zone: TimeZone, goals: [NutrientGoal],
+        hidden: Set<String>, unitSystem: UnitSystem
+    ) -> JournalWeekSummary? {
+        guard !sections.isEmpty else { return nil }
+        let today = dayKey(now, zone: zone)
+        let week = sections.filter { section in
+            guard let back = daysBefore(section.id, today: today) else { return false }
+            return (0..<weekLength).contains(back)
+        }
+        let logged = week.filter { hasFoodEntries($0.rows) }
+        guard !logged.isEmpty else {
+            return JournalWeekSummary(headline: "Nothing logged this week.", goalLines: [])
+        }
+        let lines = goals
+            .filter { $0.nutrient != DailyTotalsBuilder.waterKey && !hidden.contains($0.nutrient) }
+            .prefix(3)
+            .map { weekGoalLine(goal: $0, days: logged, unitSystem: unitSystem) }
+        return JournalWeekSummary(headline: "Logged \(logged.count) of 7 days", goalLines: Array(lines))
+    }
+
+    /// How many local days the week summary covers, today included.
+    private static let weekLength = 7
+
+    /// Whole days from a yyyy-MM-dd key back to `today`: 0 for today, 6 for six days earlier and a negative
+    /// number for a later day. Nil when a key cannot be read.
+    private static func daysBefore(_ key: String, today: String) -> Int? {
+        guard let day = utcDate(fromDayKey: key), let end = utcDate(fromDayKey: today) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        return calendar.dateComponents([.day], from: day, to: end).day
+    }
+
+    /// One goal's line for the logged days. The average is over the days whose total is known, converted
+    /// to the goal's unit, and each day that cannot be totalled is counted in the parenthetical.
+    static func weekGoalLine(goal: NutrientGoal, days: [JournalDaySection], unitSystem: UnitSystem) -> String {
+        let name = NutrientNames.displayName(for: goal.nutrient)
+        var known: [Decimal] = []
+        var unknownDays = 0
+        for day in days {
+            guard let total = day.totals.total(for: goal.nutrient), case .known(let amount, let unit) = total.value,
+                  let converted = try? Quantity(value: amount, unit: unit).converted(to: goal.unit).value
+            else {
+                unknownDays += 1
+                continue
+            }
+            known.append(converted)
+        }
+        guard !known.isEmpty else { return "\(name): can't total yet" }
+        let average = known.reduce(Decimal(0), +) / Decimal(known.count)
+        let shown = AmountDisplay.display(average, unit: goal.unit, system: unitSystem)
+        let figure = DisplayAmount(
+            amount: DisplayRounding.rounded(shown.amount, fractionDigits: AmountDisplay.fractionDigits(for: shown.amount)),
+            unit: shown.unit, isBelowSmallest: shown.isBelowSmallest)
+        let target = AmountDisplay.display(goal.target, unit: goal.unit, system: unitSystem)
+        var line = "\(name): average \(figure.text) a day against \(target.text)"
+        if unknownDays > 0 {
+            line += " (\(unknownDays) \(unknownDays == 1 ? "day" : "days") could not be totalled)"
+        }
+        return line
     }
 
     /// One bar per stored goal that is not water and is shown on Today, in the stored order, at most
