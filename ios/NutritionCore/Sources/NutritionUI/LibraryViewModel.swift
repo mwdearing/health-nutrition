@@ -124,11 +124,42 @@ public struct LibrarySection: Equatable, Identifiable {
     public let items: [LibraryItem]
 }
 
+/// The segments of the Library screen. Foods and Recipes are placeholders for now.
+public enum LibrarySegment: String, CaseIterable, Identifiable {
+    case favourites, recent, foods, recipes
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .favourites: return "Favourites"
+        case .recent: return "Recent"
+        case .foods: return "Foods"
+        case .recipes: return "Recipes"
+        }
+    }
+}
+
+/// The words and symbol shown when a segment has nothing to list.
+public struct LibraryEmptyText: Equatable {
+    public let title: String
+    public let message: String
+    public let systemImage: String
+}
+
+/// What the Undo toast needs: the entry the quick add wrote, and the words it shows.
+public struct LibraryUndoToken: Equatable {
+    public let intakeID: String
+    public let message: String
+}
+
 @MainActor
 public final class LibraryViewModel: ObservableObject {
     /// Favorites first, then Recents.
     @Published public private(set) var sections: [LibrarySection] = []
     @Published public private(set) var errorMessage: String?
+    @Published public var segment: LibrarySegment = .favourites
+    @Published public private(set) var undoToken: LibraryUndoToken?
 
     private let store: JournalStore
     private let favorites: FavoritesStore
@@ -222,6 +253,62 @@ public final class LibraryViewModel: ObservableObject {
             errorMessage = "Could not add the item."
             return nil
         }
+    }
+
+    /// The items the current segment lists. Foods and Recipes list nothing yet.
+    public var visibleItems: [LibraryItem] {
+        switch segment {
+        case .favourites: return sections.first { $0.title == "Favorites" }?.items ?? []
+        case .recent: return sections.first { $0.title == "Recents" }?.items ?? []
+        case .foods, .recipes: return []
+        }
+    }
+
+    public func emptyText(for segment: LibrarySegment) -> LibraryEmptyText {
+        switch segment {
+        case .favourites:
+            return LibraryEmptyText(
+                title: "No favourites yet", message: "Star anything you log often.", systemImage: "star")
+        case .recent:
+            return LibraryEmptyText(
+                title: "Nothing logged yet", message: "Things you log will show up here.", systemImage: "clock")
+        case .foods:
+            return LibraryEmptyText(
+                title: "Foods", message: "Foods you've scanned will be kept here so you can log them again.",
+                systemImage: "barcode.viewfinder")
+        case .recipes:
+            return LibraryEmptyText(
+                title: "No recipes yet", message: "Recipes you write are kept here.", systemImage: "book")
+        }
+    }
+
+    /// Repeats the item as a new entry at once and offers Undo. False, with no token, when nothing was added.
+    @discardableResult
+    public func quickAdd(_ item: LibraryItem, now: Date) -> Bool {
+        guard let id = select(item, now: now) else { return false }
+        undoToken = LibraryUndoToken(intakeID: id, message: "Added \(item.title)")
+        load()
+        return true
+    }
+
+    /// Deletes the entry the last quick add wrote. False when there is nothing to undo.
+    @discardableResult
+    public func undo(now: Date) -> Bool {
+        guard let token = undoToken else { return false }
+        do {
+            try store.delete(intakeID: token.intakeID, now: now)
+            undoToken = nil
+            load()
+            return true
+        } catch {
+            errorMessage = "Could not undo."
+            return false
+        }
+    }
+
+    /// Clears the token when the Undo window ends, but only if it is still the current one.
+    public func expireUndo(_ token: LibraryUndoToken) {
+        if undoToken == token { undoToken = nil }
     }
 
     private static func key(of favorite: FavoriteTemplate) -> String {
