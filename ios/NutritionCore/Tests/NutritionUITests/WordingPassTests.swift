@@ -4,7 +4,7 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
-/// The words the design pass shows on screen. The panels are synthetic and name no real product.
+/// The words the screens show for captured, looked-up and logged values. The panels are synthetic and name no real product.
 @MainActor
 final class WordingPassTests: XCTestCase {
     /// A capture whose sodium the parser read with a letter `O` in it, so the row is flagged.
@@ -27,7 +27,8 @@ final class WordingPassTests: XCTestCase {
         XCTAssertEqual(LabelCaptureRow.displayText(.known(Decimal(180), MeasureUnit.mg)), "180 mg")
         XCTAssertEqual(LabelCaptureRow.displayText(.unknown), "Not on the label")
         XCTAssertEqual(LabelCaptureRow.displayText(.notApplicable), "Does not apply")
-        XCTAssertEqual(LabelCaptureRow.displayText(.belowReportingThreshold(MeasureUnit.mg)), "Less than the label reports")
+        XCTAssertEqual(LabelCaptureRow.displayText(.belowReportingThreshold(MeasureUnit.mg)), "Less than the label reports (mg)")
+        XCTAssertEqual(LabelCaptureRow.displayText(.belowReportingThreshold(nil)), "Less than the label reports")
     }
 
     /// The old words are stored in snapshot ids and row ids, so the signature functions must keep them.
@@ -47,7 +48,40 @@ final class WordingPassTests: XCTestCase {
         XCTAssertEqual(LookedUpProduct.shownText(.known(Decimal(180), MeasureUnit.mg)), "180 mg")
         XCTAssertEqual(LookedUpProduct.shownText(.unknown), "Not on the label")
         XCTAssertEqual(LookedUpProduct.shownText(.notApplicable), "Does not apply")
-        XCTAssertEqual(LookedUpProduct.shownText(.belowReportingThreshold(MeasureUnit.mg)), "Less than the label reports")
+        XCTAssertEqual(LookedUpProduct.shownText(.belowReportingThreshold(MeasureUnit.mg)), "Less than the label reports (mg)")
+        XCTAssertEqual(LookedUpProduct.shownText(.belowReportingThreshold(nil)), "Less than the label reports")
+    }
+
+    /// An unreadable capture asks for nothing: the user retakes it, so the title stays neutral.
+    func testPrimaryActionTitleStaysNeutralForAnUnreadableCapture() {
+        let model = LabelCaptureViewModel()
+        model.load(lines: ["Synthetic Brand, invented for tests", "Best before 2027"])
+        XCTAssertTrue(model.isUnreadable)
+        XCTAssertFalse(model.canApply)
+        XCTAssertEqual(model.primaryActionTitle, "Use these values")
+        XCTAssertEqual(LabelCaptureViewModel().primaryActionTitle, "Use these values")
+    }
+
+    /// A value the product states but the amount cannot be scaled to reads as a sentence, not "Not on the label".
+    func testThisAddsSaysWhenAnAmountCannotBeWorkedOut() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let model = AddIntakeViewModel(
+            store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
+            now: Date(timeIntervalSince1970: 1_700_000_000))
+        model.applyLabelProduct(ProductDefinition(snapshotID: "wording-label", productID: "example-oats",
+            name: "Example oats", labelBasis: "per serving", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(13, .g)]))
+        model.amountText = "40"
+
+        let protein = try XCTUnwrap(model.thisAdds.first { $0.key == "protein" })
+        XCTAssertEqual(protein.cannotScale, true)
+        XCTAssertEqual(protein.text, "Can't be worked out for this amount")
+
+        let energy = try XCTUnwrap(model.thisAdds.first { $0.key == "energyKcal" })
+        XCTAssertEqual(energy.cannotScale, false)
+        XCTAssertEqual(energy.text, "Not on the label")
     }
 
     func testPrimaryActionTitleCountsPendingValues() {
@@ -116,7 +150,7 @@ final class WordingPassTests: XCTestCase {
         model.load(now: now)
 
         let trace = model.allValues.first { $0.key == "synthetic-trace" }
-        XCTAssertEqual(trace?.amountText, "Less than the label reports")
+        XCTAssertEqual(trace?.amountText, "Less than the label reports (mg)")
     }
 
     // MARK: Recipe words
