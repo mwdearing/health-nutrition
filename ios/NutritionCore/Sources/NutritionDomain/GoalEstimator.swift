@@ -12,10 +12,10 @@ public enum ActivityLevel: Sendable, Equatable, CaseIterable {
     /// The multiplier on resting energy for this level.
     public var multiplier: Decimal {
         switch self {
-        case .sedentary: return 1.2
-        case .light: return 1.375
-        case .moderate: return 1.55
-        case .veryActive: return 1.725
+        case .sedentary: return GoalEstimator.sedentaryMultiplier
+        case .light: return GoalEstimator.lightMultiplier
+        case .moderate: return GoalEstimator.moderateMultiplier
+        case .veryActive: return GoalEstimator.veryActiveMultiplier
         }
     }
 
@@ -115,11 +115,23 @@ public enum GoalEstimator {
     /// The ranges the other answers must fall in, inclusive.
     public static let heightRangeCentimeters: ClosedRange<Decimal> = 120...230
     public static let weightRangeKilograms: ClosedRange<Decimal> = 30...300
-    public static let paceRangeKilograms: ClosedRange<Decimal> = 0.1...1.0
+    public static let paceRangeKilograms: ClosedRange<Decimal> = Decimal(string: "0.1")!...Decimal(string: "1.0")!
 
     /// The energy a kilogram of body change is worth, and the largest daily change the estimate makes.
     public static let kcalPerKilogram: Decimal = 7700
     public static let dailyChangeCapKcal: Decimal = 1000
+
+    /// Exact decimal factors, written as text so no binary float is involved.
+    static let sedentaryMultiplier = Decimal(string: "1.2")!
+    static let lightMultiplier = Decimal(string: "1.375")!
+    static let moderateMultiplier = Decimal(string: "1.55")!
+    static let veryActiveMultiplier = Decimal(string: "1.725")!
+    static let heightFactor = Decimal(string: "6.25")!
+    static let carbohydrateShare = Decimal(string: "0.5")!
+    static let proteinShare = Decimal(string: "0.2")!
+    static let fatShare = Decimal(string: "0.3")!
+    /// Fiber is 14 g per 1000 kcal, so 14 / 1000 of each kcal.
+    static let fiberGramsPerKcal = Decimal(string: "0.014")!
 
     /// The lowest energy a loss is allowed to reach.
     public static let lossFloorMaleKcal: Decimal = 1500
@@ -138,7 +150,7 @@ public enum GoalEstimator {
         case .unspecified: constant = -78
         }
         return 10 * profile.weightKilograms
-            + 6.25 * profile.heightCentimeters
+            + heightFactor * profile.heightCentimeters
             - 5 * Decimal(profile.ageYears)
             + constant
     }
@@ -179,12 +191,10 @@ public enum GoalEstimator {
         let kcal = roundedTo(energy, step: 10)
         return GoalEstimate(
             energyKcal: kcal,
-            // Carbohydrate 50% and protein 20% at 4 kcal a gram; fat 30% at 9 kcal a gram.
-            carbohydrateGrams: roundedTo(kcal * 0.5 / 4, step: 5),
-            proteinGrams: roundedTo(kcal * 0.2 / 4, step: 5),
-            fatGrams: roundedTo(kcal * 0.3 / 9, step: 5),
-            // Fiber is 14 g per 1000 kcal.
-            fiberGrams: roundedTo(kcal * 14 / 1000, step: 1),
+            carbohydrateGrams: roundedTo(kcal * carbohydrateShare / 4, step: 5),
+            proteinGrams: roundedTo(kcal * proteinShare / 4, step: 5),
+            fatGrams: roundedTo(kcal * fatShare / 9, step: 5),
+            fiberGrams: roundedTo(kcal * fiberGramsPerKcal, step: 1),
             adjustmentNote: notes.isEmpty ? nil : notes.joined(separator: " "))
     }
 
