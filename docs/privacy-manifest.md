@@ -16,7 +16,11 @@ is nothing to declare and nothing to opt out of.
 
 ## Collected data
 
-`NSPrivacyCollectedDataTypes` is empty. The reasoning:
+`NSPrivacyCollectedDataTypes` declares three types for the optional account, each
+linked to the user, not used for tracking and used for app functionality:
+Email Address (`NSPrivacyCollectedDataTypeEmailAddress`), User ID
+(`NSPrivacyCollectedDataTypeUserID`) and Name (`NSPrivacyCollectedDataTypeName`,
+the display name). Nothing else is declared. The reasoning for the rest:
 
 - The journal, recipes, favorites and repeat rules live on the device. They are
   written by the local stores under `ios/NutritionCore/Sources/NutritionJournal`
@@ -31,6 +35,12 @@ is nothing to declare and nothing to opt out of.
   Data that never leaves the device except at the user's explicit direction to
   their own endpoint is not "collection" by this app, and the app is the sender
   here, not the recipient (`ios/NutritionCore/Sources/NutritionUI/ConnectionsPrivacyView.swift`).
+- The account is optional. A signed-in account sends the three values above to
+  the project's server. Logged-out use sends nothing to that server.
+- Scanned-label values sent when sharing is on (product name, brand, barcode and
+  nutrient amounts) are described in `PRIVACY.md`. They are not declared as a
+  collected type in this manifest yet.
+- Photos and what the person eats or when are never sent.
 - Nothing is sold, shared for other purposes or used for tracking.
 
 ## Required-reason APIs
@@ -58,7 +68,9 @@ is not declared with a reason Apple publishes for it, when a declaration is
 malformed (an unknown category, an empty reasons array, a reason that is not a
 string), when a declared reason is not one Apple publishes (a typo such as an
 extra `BOGUS`, or a reason belonging to another category), or when
-`NSPrivacyTracking` is not false.
+`NSPrivacyTracking` is not false. It also fails when one of the three account
+data types is missing, or is declared without linkage to the user, with tracking
+on, or without the app-functionality purpose.
 
 ### Which code is scanned
 

@@ -14,7 +14,9 @@ scanned, so a restricted API used only there cannot demand a declaration.
 
 Every scanned ``*.swift`` file is checked for the required-reason APIs Apple
 lists. A category a source uses must be declared in the manifest with a reason
-Apple publishes for that category, and ``NSPrivacyTracking`` must be false.
+Apple publishes for that category, ``NSPrivacyTracking`` must be false, and the
+account's collected-data types (email address, user ID and name) must be declared
+as linked to the user, not used for tracking, for app functionality.
 
 Findings are printed one per line as ``path:line: message`` and the script
 exits 1 when there is at least one finding, 0 when the tree is clean and 2 on a
@@ -394,6 +396,46 @@ def shipped_directories(root: Path) -> list[Path]:
     return [d for d in directories if "Tests" not in d.parts]
 
 
+# The data types the account sends to the project's server. Each must be declared as linked to the user, not used
+# for tracking and used for the app's own functionality. Apple's identifiers, not free text.
+REQUIRED_COLLECTED_TYPES = (
+    "NSPrivacyCollectedDataTypeEmailAddress",
+    "NSPrivacyCollectedDataTypeUserID",
+    "NSPrivacyCollectedDataTypeName",
+)
+APP_FUNCTIONALITY = "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+
+
+def collected_findings(manifest: dict, manifest_path: Path) -> list[str]:
+    """Findings for the collected-data declarations the account needs."""
+    entries = manifest.get("NSPrivacyCollectedDataTypes")
+    if not isinstance(entries, list):
+        return [f"{manifest_path}: NSPrivacyCollectedDataTypes must be an array"]
+    by_type: dict[str, dict] = {}
+    findings: list[str] = []
+    for entry in entries:
+        data_type = entry.get("NSPrivacyCollectedDataType") if isinstance(entry, dict) else None
+        if not isinstance(data_type, str):
+            findings.append(f"{manifest_path}: a collected-data entry has no NSPrivacyCollectedDataType")
+            continue
+        by_type.setdefault(data_type, entry)
+    for required in REQUIRED_COLLECTED_TYPES:
+        entry = by_type.get(required)
+        if entry is None:
+            findings.append(
+                f"{manifest_path}: {required} is not declared, but the account sends it to the project's server"
+            )
+            continue
+        if entry.get("NSPrivacyCollectedDataTypeLinked") is not True:
+            findings.append(f"{manifest_path}: {required} must be declared as linked to the user (true)")
+        if entry.get("NSPrivacyCollectedDataTypeTracking") is not False:
+            findings.append(f"{manifest_path}: {required} must not be used for tracking (false)")
+        purposes = entry.get("NSPrivacyCollectedDataTypePurposes")
+        if not isinstance(purposes, list) or APP_FUNCTIONALITY not in purposes:
+            findings.append(f"{manifest_path}: {required} must list {APP_FUNCTIONALITY} as a purpose")
+    return findings
+
+
 def declared_entries(manifest: dict) -> list[tuple[object, object]]:
     """Return (category, reasons) pairs as written, without filtering."""
     entries = manifest.get("NSPrivacyAccessedAPITypes", [])
@@ -442,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     findings: list[str] = []
     if manifest.get("NSPrivacyTracking") is not False:
         findings.append(f"{manifest_path}: NSPrivacyTracking must be false in this manifest")
+    findings.extend(collected_findings(manifest, manifest_path))
 
     declared = declared_reasons(manifest)
     for category, reasons in declared_entries(manifest):
