@@ -172,7 +172,12 @@ public final class AccountViewModel: ObservableObject {
         do {
             return try await call()
         } catch {
-            message = Self.message(for: error, fallback: fallback)
+            let text = Self.message(for: error, fallback: fallback)
+            // The sign-in ended (the session could not be renewed): stop showing the account.
+            if phase == .signedIn, case .signedOut? = error as? CommunityError {
+                clearSignedInState()
+            }
+            message = text
             return nil
         }
     }

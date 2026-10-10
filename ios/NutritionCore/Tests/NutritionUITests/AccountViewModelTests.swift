@@ -207,6 +207,18 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertNotNil(model.message)
     }
 
+    /// A call that finds the sign-in ended leaves the screen signed out, not showing an account that is gone.
+    func testASignInThatEndedDuringACallReturnsTheScreenToSignedOut() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        XCTAssertEqual(model.phase, .signedIn)
+        service.updateError = CommunityError.signedOut
+        await model.setSharing(false)
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertFalse(model.sharingAllowed)
+        XCTAssertEqual(model.message, AccountViewModel.sessionEndedMessage)
+    }
+
     func testNameIsSavedTrimmed() async throws {
         let (model, service, _) = makeModel(session: AccountTestSupport.session)
         await model.load()
