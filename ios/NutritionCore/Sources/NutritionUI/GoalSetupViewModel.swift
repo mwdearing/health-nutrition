@@ -248,20 +248,52 @@ public final class GoalSetupViewModel: ObservableObject {
             ]
             adjustmentNote = estimate.adjustmentNote
         } catch let error as GoalEstimateError {
-            resultError = Self.message(for: error)
+            resultError = message(for: error)
         } catch {
             resultError = Self.genericErrorNotice
         }
     }
 
-    private static func message(for error: GoalEstimateError) -> String {
+    /// The plain sentence for a range or adult error, in the person's unit system. The bounds read in
+    /// feet and inches, pounds and pounds a week are rounded inward (the least up, the most down), so
+    /// every value the sentence names is one the estimate accepts.
+    private func message(for error: GoalEstimateError) -> String {
+        let usCustomary = unitSystem == .usCustomary
         switch error {
-        case .underAge: return adultNotice
-        case .outOfRange(.age): return "Check your age. The estimate is for ages 18 to 100."
-        case .outOfRange(.height): return "Check your height. It must be between 120 and 230 cm."
-        case .outOfRange(.weight): return "Check your weight. It must be between 30 and 300 kg."
-        case .outOfRange(.weeklyChange): return "Check your pace. It must be between 0.1 and 1 kg a week."
+        case .underAge:
+            return Self.adultNotice
+        case .outOfRange(.age):
+            return "Check your age. The estimate is for ages 18 to 100."
+        case .outOfRange(.height):
+            guard usCustomary else { return "Check your height. It must be between 120 and 230 cm." }
+            let least = Self.rounded(Decimal(120) / Self.centimetersPerInch, scale: 0, .up)
+            let most = Self.rounded(Decimal(230) / Self.centimetersPerInch, scale: 0, .down)
+            return "Check your height. It must be between \(Self.feetAndInches(inches: least)) and \(Self.feetAndInches(inches: most))."
+        case .outOfRange(.weight):
+            guard usCustomary else { return "Check your weight. It must be between 30 and 300 kg." }
+            let least = Self.rounded(Decimal(30) / Self.kilogramsPerPound, scale: 0, .up)
+            let most = Self.rounded(Decimal(300) / Self.kilogramsPerPound, scale: 0, .down)
+            return "Check your weight. It must be between \(DecimalFormatting.text(least)) and \(DecimalFormatting.text(most)) lb."
+        case .outOfRange(.weeklyChange):
+            guard usCustomary else { return "Check your pace. It must be between 0.1 and 1 kg a week." }
+            let least = Self.rounded(Decimal(string: "0.1")! / Self.kilogramsPerPound, scale: 1, .up)
+            let most = Self.rounded(Decimal(1) / Self.kilogramsPerPound, scale: 1, .down)
+            return "Check your pace. It must be between \(DecimalFormatting.text(least)) and \(DecimalFormatting.text(most)) lb a week."
         }
+    }
+
+    /// Rounds to a number of decimal places in one direction, exactly.
+    private static func rounded(_ value: Decimal, scale: Int, _ mode: NSDecimalNumber.RoundingMode) -> Decimal {
+        var input = value
+        var output = Decimal()
+        NSDecimalRound(&output, &input, scale, mode)
+        return output
+    }
+
+    /// Whole inches as feet and inches, such as "5 ft 10 in".
+    private static func feetAndInches(inches: Decimal) -> String {
+        let total = NSDecimalNumber(decimal: inches).intValue
+        return "\(total / 12) ft \(total % 12) in"
     }
 
     private func ageYears() -> Int? {
