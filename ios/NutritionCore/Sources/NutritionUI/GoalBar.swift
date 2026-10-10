@@ -22,7 +22,7 @@ public struct GoalBarModel: Equatable, Identifiable {
     public let valueText: String
     public let state: GoalBarState
     /// How full the bar is, 0 through 1. Nil whenever there is nothing honest to draw: no goal, a day
-    /// that cannot be totalled, or nothing logged. Unknown is never a fraction.
+    /// that cannot be totaled, or nothing logged. Unknown is never a fraction.
     public let fraction: Decimal?
     /// Over goal only: where the goal falls along the full bar, goal divided by total.
     public let goalMarker: Decimal?

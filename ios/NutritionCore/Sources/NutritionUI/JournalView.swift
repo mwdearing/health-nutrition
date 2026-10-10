@@ -31,6 +31,11 @@ public struct JournalView: View {
         ScrollViewReader { proxy in
             List {
                 jumpToDateRow
+                if let week = model.weekSummary {
+                    weekSummaryCard(week)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(TokenColors.background)
+                }
                 if model.isEmpty {
                     EmptyState(
                         title: "Your journal is empty",
@@ -98,6 +103,27 @@ public struct JournalView: View {
             }
         }
         .accessibilityHint("Opens a calendar to choose a day")
+    }
+
+    /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
+    private func weekSummaryCard(_ week: JournalWeekSummary) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: DesignSpacing.s) {
+                Text("This week")
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Text(week.headline)
+                    .font(.subheadline)
+                    .foregroundStyle(TokenColors.textPrimary)
+                ForEach(Array(week.goalLines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.subheadline)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     /// A graphical day picker bounded to today, and the button that goes to the chosen day.
