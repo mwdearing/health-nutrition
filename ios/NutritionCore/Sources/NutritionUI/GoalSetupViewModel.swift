@@ -152,6 +152,9 @@ public final class GoalSetupViewModel: ObservableObject {
 
     /// Saves the results as they now read. A blank result removes that target, the same as a blank
     /// field on the Goals screen. Returns false when nothing was saved, which includes "just track".
+    ///
+    /// The save is all or nothing: each affected goal is captured before anything is written, and if a
+    /// write fails, the goals already changed are put back exactly as they were read.
     @discardableResult
     public func save() -> Bool {
         guard aim != .justTrack, step == .results, !draftTargets.isEmpty else { return false }
@@ -163,12 +166,31 @@ public final class GoalSetupViewModel: ObservableObject {
                 return false
             }
         }
-        for key in Self.targetKeys {
+        var before: [(nutrient: String, goal: NutrientGoal?)] = []
+        do {
+            for key in Self.targetKeys {
+                let original = try goals.storedGoal(for: key)
+                before.append((nutrient: key, goal: original))
+            }
+        } catch {
+            return false
+        }
+        var attempted: [(nutrient: String, goal: NutrientGoal?)] = []
+        for (index, key) in Self.targetKeys.enumerated() {
             let text = (draftTargets[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            attempted.append(before[index])
             let saved = text.isEmpty
                 ? goals.removeTarget(for: key)
                 : goals.setTarget(text, for: key, unit: goals.unit(for: key))
-            guard saved else { return false }
+            guard saved else {
+                for entry in attempted.reversed() {
+                    goals.restoreGoal(entry.goal, for: entry.nutrient)
+                }
+                return false
+            }
+        }
+        for key in Self.targetKeys {
+            let text = (draftTargets[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             // The Goals screen keeps its own text per field. Set it to what was stored, so leaving that
             // field later does not read the empty text as a request to remove the new goal.
             goals.draftText[key] = text.isEmpty ? "" : DecimalFormatting.text(AmountParser.parseTyped(text) ?? 0)
