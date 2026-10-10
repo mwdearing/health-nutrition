@@ -106,7 +106,8 @@ public final class AccountViewModel: ObservableObject {
     /// Checks the code that was emailed to the address given to `requestCode(email:)`.
     public func verify(code: String) async {
         let digits = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard digits.count == 6, digits.allSatisfy { $0.isASCII && $0.isNumber } else {
+        let sixDigits = digits.count == 6 && digits.allSatisfy({ $0.isASCII && $0.isNumber })
+        guard sixDigits else {
             message = Self.codeFormatMessage
             return
         }
