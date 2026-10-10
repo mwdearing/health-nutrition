@@ -25,6 +25,7 @@ public final class GoalSetupViewModel: ObservableObject {
     public static let replaceNotice = "This replaces your current targets for these nutrients."
     public static let adultNotice = "Goal estimates here are for adults. Ask a doctor or dietitian for advice on a target."
     public static let justTrackNotice = "Nothing was saved. Your day will show totals without targets."
+    public static let justTrackExistingNotice = "Your current targets are unchanged. You can change or remove them on the Goals screen."
     public static let genericErrorNotice = "Check your answers and try again."
 
     /// The nutrients the estimate sets, in the order the results screen lists them.
@@ -131,6 +132,17 @@ public final class GoalSetupViewModel: ObservableObject {
         return GoalProfile(
             sex: sex, ageYears: ageYears, heightCentimeters: height, weightKilograms: weight,
             activity: activity, aim: aim, weeklyChangeKilograms: selectedPaceKilograms ?? 0)
+    }
+
+    /// Whether any target at all is stored, for any nutrient. The just-track result reads this, so it
+    /// never promises a day without targets while some are still set.
+    public var hasAnyStoredTarget: Bool {
+        goals.rows.contains { $0.targetText != nil }
+    }
+
+    /// The sentence the just-track result shows: the targets stay as they are when any exist.
+    public var justTrackMessage: String {
+        hasAnyStoredTarget ? Self.justTrackExistingNotice : Self.justTrackNotice
     }
 
     /// Whether any of the targets this screen sets is already stored, so the sheet says it replaces them.

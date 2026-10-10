@@ -126,8 +126,8 @@ public struct GoalSetupView: View {
     private var resultsStep: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.m) {
             if model.aim == .justTrack {
-                heading("Your day, without targets")
-                Text(GoalSetupViewModel.justTrackNotice)
+                heading(model.hasAnyStoredTarget ? "Your day" : "Your day, without targets")
+                Text(model.justTrackMessage)
                     .font(.body)
                     .foregroundStyle(TokenColors.textPrimary)
             } else if model.resultError == nil {
