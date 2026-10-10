@@ -29,6 +29,7 @@ public final class AccountViewModel: ObservableObject {
     public static let rateLimitedMessage = "Too many attempts. Wait a few minutes and try again."
     public static let storageMessage = "Could not keep your sign-in on this phone. Try again."
     public static let genericMessage = "Something went wrong. Try again."
+    public static let profileNotReadyMessage = "Your profile has not loaded yet. Try again once it has."
 
     @Published public private(set) var phase: Phase = .signedOut
     /// The email the account signed in with. Shown in Settings, never in a message.
@@ -37,11 +38,15 @@ public final class AccountViewModel: ObservableObject {
     @Published public var displayName = ""
     /// Whether labels are shared. On unless the person has turned it off.
     @Published public private(set) var shareLabels = true
+    /// True while any service call is running, including the restore that `load()` makes.
     @Published public private(set) var isBusy = false
     @Published public private(set) var message: String?
     @Published public private(set) var emailStep: EmailStep = .enterAddress
     /// True after the first sign-in on this device, until the person has read the sharing disclosure.
     @Published public private(set) var needsDisclosure = false
+    /// True only once the server's profile has been read. Until then the name and the sharing switch stay
+    /// locked, so a failed read can never lead to a write that replaces the stored values with defaults.
+    @Published public private(set) var profileReady = false
 
     private let service: CommunityAccountServicing
     private let preferences: CommunityDisclosurePreferences
@@ -49,18 +54,35 @@ public final class AccountViewModel: ObservableObject {
     private var savedName: String?
     /// The address the code was sent to. Kept here so the code step needs no address from the view.
     private var pendingEmail = ""
+    /// Counts running service calls. A counter, not a flag, so a call nested inside another does not clear
+    /// the busy state while the outer call is still running.
+    private var busyCount = 0 {
+        didSet { isBusy = busyCount > 0 }
+    }
+    /// Counts sign-ins that completed. `load()` compares it across the restore, so a sign-in that finished while
+    /// the restore was running is never cleared by the restore's answer.
+    private var signInCount = 0
 
     public init(service: CommunityAccountServicing, preferences: CommunityDisclosurePreferences) {
         self.service = service
         self.preferences = preferences
     }
 
-    /// Restores a stored sign-in when Settings opens. Signed out when nothing can be restored.
+    /// Restores a stored sign-in when Settings opens. Signed out when nothing can be restored. The model is busy
+    /// for the whole call, so the sign-in controls stay disabled until the restore has answered.
     public func load() async {
+        busyCount += 1
+        defer { busyCount -= 1 }
+        let signInsBefore = signInCount
         guard let session = await service.restore() else {
-            clearSignedInState()
+            // A sign-in that completed during the restore is newer than its empty answer; keep it.
+            if phase == .signedOut || signInCount == signInsBefore {
+                clearSignedInState()
+            }
             return
         }
+        // Same reason: a sign-in that finished during the restore wins over the restored session.
+        guard signInCount == signInsBefore else { return }
         signIn(with: session)
         // A sign-in restored before the disclosure was read still has to show it.
         if !preferences.hasSeenCommunityDisclosure {
@@ -69,10 +91,11 @@ public final class AccountViewModel: ObservableObject {
         await refreshProfile()
     }
 
-    /// True only for a signed-in person who has read the disclosure and has sharing on. Anything that sends a
-    /// label must check this first: the server default for sharing is on, so the switch alone is not consent.
+    /// True only for a signed-in person who has read the disclosure, has sharing on and whose profile has been
+    /// read. Anything that sends a label must check this first: the server default for sharing is on, so the
+    /// switch alone is not consent.
     public var sharingAllowed: Bool {
-        phase == .signedIn && shareLabels && preferences.hasSeenCommunityDisclosure
+        phase == .signedIn && profileReady && shareLabels && preferences.hasSeenCommunityDisclosure
     }
 
     public func signInWithApple(idToken: String, nonce: String) async {
@@ -103,6 +126,22 @@ public final class AccountViewModel: ObservableObject {
         message = Self.codeSentMessage
     }
 
+    /// Emails a new code to the address the first code went to. Does nothing once the person has chosen a
+    /// different address.
+    public func resendCode() async {
+        let address = pendingEmail
+        guard !address.isEmpty else { return }
+        await requestCode(email: address)
+    }
+
+    /// Goes back to the address step, forgetting the address the code went to.
+    public func useDifferentAddress() {
+        guard !isBusy else { return }
+        emailStep = .enterAddress
+        pendingEmail = ""
+        message = nil
+    }
+
     /// Checks the code that was emailed to the address given to `requestCode(email:)`.
     public func verify(code: String) async {
         let digits = code.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -121,7 +160,12 @@ public final class AccountViewModel: ObservableObject {
     }
 
     /// Turns sharing on or off. The switch shows the new value at once and goes back when the save fails.
+    /// Nothing is sent until the profile has been read.
     public func setSharing(_ on: Bool) async {
+        guard profileReady else {
+            message = Self.profileNotReadyMessage
+            return
+        }
         let previous = shareLabels
         let name = savedName
         shareLabels = on
@@ -133,8 +177,13 @@ public final class AccountViewModel: ObservableObject {
         }
     }
 
-    /// Saves the name: trimmed, capped at `nameLimit`, and empty means no name.
+    /// Saves the name: trimmed, capped at `nameLimit`, and empty means no name. Nothing is sent until the
+    /// profile has been read.
     public func saveName(_ text: String) async {
+        guard profileReady else {
+            message = Self.profileNotReadyMessage
+            return
+        }
         let capped = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.nameLimit))
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let name: String? = capped.isEmpty ? nil : capped
@@ -144,6 +193,12 @@ public final class AccountViewModel: ObservableObject {
         }) else { return }
         savedName = profile.displayName
         displayName = profile.displayName ?? ""
+    }
+
+    /// Reads the profile again after a failed read. Does nothing when nobody is signed in.
+    public func retryProfile() async {
+        guard phase == .signedIn else { return }
+        await refreshProfile()
     }
 
     public func signOut() async {
@@ -157,8 +212,10 @@ public final class AccountViewModel: ObservableObject {
         clearSignedInState()
     }
 
-    /// The person has read the sharing disclosure. Stored, so it is not shown again on this device.
+    /// The person has read the sharing disclosure. Stored, so it is not shown again on this device. Ignored
+    /// while a call is running, so a tap during a busy call is never taken for agreement.
     public func acknowledgeDisclosure() {
+        guard !isBusy else { return }
         preferences.setHasSeenCommunityDisclosure(true)
         needsDisclosure = false
     }
@@ -167,8 +224,8 @@ public final class AccountViewModel: ObservableObject {
 
     /// Runs one service call with the busy flag set. A failure sets `message` and returns nil.
     private func run<T>(_ fallback: String, _ call: () async throws -> T) async -> T? {
-        isBusy = true
-        defer { isBusy = false }
+        busyCount += 1
+        defer { busyCount -= 1 }
         message = nil
         do {
             return try await call()
@@ -196,6 +253,7 @@ public final class AccountViewModel: ObservableObject {
     }
 
     private func completeSignIn(_ session: CommunitySession) {
+        signInCount += 1
         signIn(with: session)
         emailStep = .enterAddress
         pendingEmail = ""
@@ -207,14 +265,18 @@ public final class AccountViewModel: ObservableObject {
     private func signIn(with session: CommunitySession) {
         phase = .signedIn
         email = session.email ?? ""
+        profileReady = false
     }
 
-    /// Reads the name and the sharing switch the server holds. A failure shows a message and keeps the defaults.
+    /// Reads the name and the sharing switch the server holds. Until this succeeds the profile is not ready, and
+    /// a failure shows a message and keeps the defaults.
     private func refreshProfile() async {
+        profileReady = false
         guard let profile = await run(Self.genericMessage, { try await self.service.profile() }) else { return }
         savedName = profile.displayName
         displayName = profile.displayName ?? ""
         shareLabels = profile.shareLabels
+        profileReady = true
     }
 
     private func clearSignedInState() {
@@ -226,6 +288,7 @@ public final class AccountViewModel: ObservableObject {
         emailStep = .enterAddress
         pendingEmail = ""
         needsDisclosure = false
+        profileReady = false
         message = nil
     }
 }
