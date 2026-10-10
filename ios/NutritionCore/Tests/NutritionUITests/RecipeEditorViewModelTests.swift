@@ -286,7 +286,13 @@ final class RecipeEditorViewModelTests: XCTestCase {
 
         XCTAssertFalse(model.unitSymbols.contains("oz"))
         XCTAssertFalse(model.unitSymbols.contains("fl oz"))
-        XCTAssertEqual(Set(model.unitSymbols), Set(UnitRegistry.all.map(\.symbol)).subtracting(["oz", "fl oz"]))
+        // The typed volume measures are input-only too, so the recipe editor offers none of them.
+        XCTAssertFalse(model.unitSymbols.contains("cup"))
+        XCTAssertFalse(model.unitSymbols.contains("tbsp"))
+        XCTAssertFalse(model.unitSymbols.contains("tsp"))
+        XCTAssertEqual(
+            Set(model.unitSymbols),
+            Set(UnitRegistry.all.map(\.symbol)).subtracting(["oz", "fl oz", "cup", "tbsp", "tsp"]))
         // The units a recipe does offer are all metric, so a saved yield is stored as one of them.
         for symbol in model.unitSymbols {
             let unit = try XCTUnwrap(try? MeasureUnit(symbol: symbol), symbol)
