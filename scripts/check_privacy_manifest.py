@@ -15,7 +15,7 @@ scanned, so a restricted API used only there cannot demand a declaration.
 Every scanned ``*.swift`` file is checked for the required-reason APIs Apple
 lists. A category a source uses must be declared in the manifest with a reason
 Apple publishes for that category, ``NSPrivacyTracking`` must be false, and the
-account's collected-data types (email address, user ID and name) must be declared
+account's collected-data types (email address, user ID, name and shared label values) must be declared
 as linked to the user, not used for tracking, for app functionality.
 
 Findings are printed one per line as ``path:line: message`` and the script
@@ -402,6 +402,8 @@ REQUIRED_COLLECTED_TYPES = (
     "NSPrivacyCollectedDataTypeEmailAddress",
     "NSPrivacyCollectedDataTypeUserID",
     "NSPrivacyCollectedDataTypeName",
+    # The values of a scanned label shared with the community catalog.
+    "NSPrivacyCollectedDataTypeOtherUserContent",
 )
 APP_FUNCTIONALITY = "NSPrivacyCollectedDataTypePurposeAppFunctionality"
 

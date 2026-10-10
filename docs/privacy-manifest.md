@@ -117,3 +117,5 @@ Findings print one per line as `path:line: message` and the script exits 1.
 `.github/workflows/ios.yml` runs it, and its tests, in the `privacy-manifest`
 job next to the Swift build jobs. When a new use of one of these APIs lands,
 the check fails until the manifest and this table say why the reason applies.
+
+The values of a scanned label (product name, brand, barcode and nutrient amounts) are shared with the community catalog while sharing is on, so the manifest also declares Other User Content, linked to the account, not used for tracking, for app functionality.
