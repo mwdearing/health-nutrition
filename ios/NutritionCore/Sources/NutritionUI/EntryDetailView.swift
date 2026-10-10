@@ -102,8 +102,14 @@ public struct EntryDetailView: View {
                             .accessibilityHint("Corrects when this was eaten or drunk")
                         if model.isDirty {
                             DisclosureGroup("Add a note") {
-                                TextField("Optional note", text: $model.changeReason)
+                                LabeledField("Optional note") { focus in
+                                    TextField(text: $model.changeReason, prompt: Text("For example, Ate half of it")) {
+                                        Text("Optional note")
+                                    }
+                                    .labelsHidden()
                                     .font(.body)
+                                    .focused(focus)
+                                }
                             }
                         }
                     }
@@ -268,12 +274,18 @@ public struct EntryDetailView: View {
     private func amountRow(_ component: EntryComponentRow) -> some View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
             Text(component.name).font(.headline).foregroundStyle(TokenColors.textPrimary)
-            HStack {
-                TextField("Amount", text: draftBinding(component.id))
+            LabeledField("Amount") { focus in
+                HStack {
+                    TextField(text: draftBinding(component.id), prompt: Text("For example, 150")) {
+                        Text("Amount")
+                    }
+                    .labelsHidden()
                     .font(.body)
                     .entryAmountKeyboard()
+                    .focused(focus)
                     .accessibilityLabel("Amount of \(component.name)")
-                Text(component.unit.symbol).font(.body).foregroundStyle(TokenColors.textSecondary)
+                    Text(component.unit.symbol).font(.body).foregroundStyle(TokenColors.textSecondary)
+                }
             }
             // The same amount in the unit the reader chose, shown beside the field that edits the stored one.
             // Saving writes the field back in the stored unit, so this line is a reading and never an edit.

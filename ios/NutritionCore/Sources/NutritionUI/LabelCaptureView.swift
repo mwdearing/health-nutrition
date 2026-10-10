@@ -210,10 +210,16 @@ public struct LabelCaptureView: View {
                 .accessibilityLabel(model.servingPrompt ?? "")
             // No decimal keypad here: the answer is an amount with its unit, so the keyboard has to
             // offer the letters that spell the unit.
-            TextField("One serving", text: $servingDraft)
+            LabeledField("One serving") { focus in
+                TextField(text: $servingDraft, prompt: Text("For example, 30 g")) {
+                    Text("One serving")
+                }
+                .labelsHidden()
                 .font(.body)
+                .focused(focus)
                 .accessibilityLabel("What one serving is, with its unit")
                 .accessibilityHint("For example 30 g or 240 mL")
+            }
             if let message = model.servingSizeError {
                 Text(message)
                     .font(.footnote)
@@ -501,11 +507,17 @@ public struct LabelCaptureView: View {
     private func additionalCorrectionEditor(_ row: LabelCaptureAdditionalRow) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                TextField("Amount", text: $draft)
+                LabeledField("Amount") { focus in
+                    TextField(text: $draft, prompt: Text("For example, 0.5")) {
+                        Text("Amount")
+                    }
+                    .labelsHidden()
                     .font(.body)
                     .amountKeyboard()
+                    .focused(focus)
                     .accessibilityLabel("Amount for \(row.name)")
                     .accessibilityHint("Zero or more")
+                }
                 Picker("Unit", selection: $additionalUnit) {
                     ForEach(LabelCaptureViewModel.additionalUnits, id: \.symbol) { candidate in
                         Text(candidate.symbol).tag(candidate)
@@ -596,11 +608,17 @@ public struct LabelCaptureView: View {
     private func correctionEditor(_ row: LabelCaptureRow) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                TextField("Amount", text: $draft)
+                LabeledField("Amount") { focus in
+                    TextField(text: $draft, prompt: Text("For example, 0.5")) {
+                        Text("Amount")
+                    }
+                    .labelsHidden()
                     .font(.body)
                     .amountKeyboard()
+                    .focused(focus)
                     .accessibilityLabel("Amount for \(row.name)")
                     .accessibilityHint("Zero or more, in \(unitSymbol(for: row))")
+                }
                 Text(unitSymbol(for: row))
                     .font(.body)
                     .foregroundStyle(TokenColors.textSecondary)

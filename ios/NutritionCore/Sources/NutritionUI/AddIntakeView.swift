@@ -25,15 +25,28 @@ public struct AddIntakeView: View {
         Form {
             Card {
                 VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                    TextField("Name", text: $model.name)
+                    LabeledField(
+                        "Name", error: model.visibleNameError, onFocusEnd: { model.fieldDidEnd(.name) },
+                    onFocusBegin: { model.fieldDidBegin(.name) }
+                    ) { focus in
+                        TextField(text: $model.name, prompt: Text("For example, Greek yogurt")) {
+                            Text("Name")
+                        }
+                        .labelsHidden()
                         .font(.body)
-                    if !model.brand.isEmpty {
-                        TextField("Brand", text: $model.brand)
-                            .font(.body)
-                            .accessibilityLabel("Brand")
+                        .focused(focus)
                     }
-                    if let message = model.nameError {
-                        Text(message).font(.footnote).foregroundStyle(TokenColors.error)
+                    // A typed food has nowhere to keep a brand, so the field shows only for a looked-up or captured
+                    // product, whose brand is kept with it.
+                    if !model.brand.isEmpty {
+                        LabeledField("Brand (optional)") { focus in
+                            TextField(text: $model.brand, prompt: Text("For example, a store brand")) {
+                                Text("Brand (optional)")
+                            }
+                            .labelsHidden()
+                            .font(.body)
+                            .focused(focus)
+                        }
                     }
                     Picker("Kind", selection: $model.kind) {
                         ForEach(ProductKind.allCases, id: \.self) { kind in
@@ -44,20 +57,25 @@ public struct AddIntakeView: View {
                     .accessibilityLabel("Kind of product")
                     .accessibilityHint("Food, drink or supplement. A supplement is left out of the day's food coverage")
                     if model.canLookUpBarcode {
-                        HStack {
-                            TextField("Barcode", text: $model.barcode)
+                        LabeledField("Barcode (optional)") { focus in
+                            HStack {
+                                TextField(text: $model.barcode, prompt: Text("8, 12 or 13 digits")) {
+                                    Text("Barcode (optional)")
+                                }
+                                .labelsHidden()
                                 .font(.body)
                                 .digitsOnlyKeyboard()
-                                .accessibilityLabel("Barcode")
+                                .focused(focus)
                                 .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
                                 .onSubmit { Task { await self.model.lookUpBarcode() } }
-                            Button("Look up") {
-                                Task { await self.model.lookUpBarcode() }
+                                Button("Look up") {
+                                    Task { await self.model.lookUpBarcode() }
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(model.lookupState.isLoading)
+                                .accessibilityLabel("Look up barcode")
+                                .accessibilityHint("Fills in the name, brand and nutrients for this barcode")
                             }
-                            .buttonStyle(.borderless)
-                            .disabled(model.lookupState.isLoading)
-                            .accessibilityLabel("Look up barcode")
-                            .accessibilityHint("Fills in the name, brand and nutrients for this barcode")
                         }
                         if model.lookupState.isLoading {
                             ProgressView().accessibilityLabel("Looking up the barcode")
@@ -83,18 +101,33 @@ public struct AddIntakeView: View {
             .listRowBackground(TokenColors.background)
 
             Section {
-                HStack {
-                    TextField("Amount", text: $model.amountText)
+                LabeledField(
+                    "Amount", error: model.visibleAmountError, onFocusEnd: { model.fieldDidEnd(.amount) },
+                    onFocusBegin: { model.fieldDidBegin(.amount) }
+                ) { focus in
+                    HStack {
+                        TextField(text: $model.amountText, prompt: Text("For example, 150")) {
+                            Text("Amount")
+                        }
+                        .labelsHidden()
                         .font(.body)
                         .decimalAmountKeyboard()
-                    Picker("Unit", selection: $model.unit) {
-                        ForEach(model.units, id: \.symbol) { unit in
-                            Text(unit.symbol).tag(unit)
+                        .focused(focus)
+                        // The unit is a menu, so the picker shows its own chevron; the word above it names it.
+                        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                            Text("Unit")
+                                .font(.footnote)
+                                .foregroundStyle(TokenColors.textSecondary)
+                                .accessibilityHidden(true)
+                            Picker("Unit", selection: $model.unit) {
+                                ForEach(model.units, id: \.symbol) { unit in
+                                    Text(unit.symbol).tag(unit)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
                         }
                     }
-                }
-                if let message = model.amountError {
-                    Text(message).font(.footnote).foregroundStyle(TokenColors.error)
                 }
                 // A typed cup, tablespoon or teaspoon says what it became, and whose typical density gave the
                 // grams, with the license line the catalog requires beside them.
