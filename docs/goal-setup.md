@@ -14,7 +14,9 @@ ones they keep. Nothing is saved until they tap Save goals.
 5. Pace, for losing or gaining only: 0.25, 0.5, 0.75 or 1 kg a week (0.5, 1, 1.5 or 2 lb a week).
 6. Results: energy, protein, carbohydrate, fat and fiber, each editable before saving.
 
-Just tracking ends after the aim with a message and saves nothing.
+Just tracking ends after the aim and saves nothing. When any target is already stored, the result says
+"Your current targets are unchanged. You can change or remove them on the Goals screen." and the targets
+stay as they are. When none is stored, it says "Nothing was saved. Your day will show totals without targets."
 
 ## How the numbers are worked out
 
@@ -33,7 +35,9 @@ The calculator is `NutritionDomain/GoalEstimator.swift`. It is pure arithmetic i
   kcal, rounded to the nearest 1 g.
 
 The estimate is for adults: age 18 to 100, height 120 to 230 cm, weight 30 to 300 kg, and a pace of 0.1
-to 1.0 kg a week. Outside those ranges the setup says what to check and computes nothing.
+to 1.0 kg a week. Outside those ranges the setup says what to check and computes nothing. With US customary
+units the same limits are read as 4 ft 0 in to 7 ft 6 in, 67 to 661 lb and 0.3 to 2.2 lb a week. The least
+value rounds up and the most rounds down, so every number the sentence names is inside the limits.
 
 ## Privacy
 
@@ -44,6 +48,13 @@ says so: "Your answers stay on this phone and are not saved. Only the targets yo
 Only the targets a person saves are written, through the same goal store the Goals screen uses, in the
 stored units (kcal for energy, grams for the rest). Saving replaces any target already set for those
 nutrients; a blank result removes that target.
+
+Saving is all or nothing. Before anything is written, each of the five nutrients' stored goals is read.
+If a write or removal then fails, the goals already changed are put back exactly as they were read (a goal
+that did not exist is removed again), the Goals screen keeps its own values, and the results stay on screen
+with "Could not save your goals. Try again." A result that is blank, zero or not a number is not written:
+each such field is marked "Enter a number greater than zero.", the summary reads "Enter a number above zero.",
+and the fields keep what the person typed.
 
 ## Wording the results carry
 
