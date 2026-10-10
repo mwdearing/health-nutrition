@@ -20,7 +20,6 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
     }
 }
 
-@MainActor
 /// Answers each component with the value given for its id, so a test can state any unit it needs.
 private struct ComponentFacts: NutrientFactsLookup {
     let values: [String: NutrientValue]
@@ -34,6 +33,7 @@ private struct ComponentFacts: NutrientFactsLookup {
     }
 }
 
+@MainActor
 final class DailyTotalsTests: XCTestCase {
     private func makeStore() throws -> SwiftDataJournalStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -199,8 +199,6 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(13), .g))
     }
 
-    /// An entry with no product snapshot has no basis to scale by, so the nutrient stays unknown
-    /// rather than reading as zero.
     /// Protein stated in international units is not a protein total in grams: a day holding only that
     /// value reads as unknown, the answer a mismatched pair already gets, and not as "1000 IU" beside
     /// a 60 g target.
@@ -233,6 +231,8 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(Decimal(500), .mg))
     }
 
+    /// An entry with no product snapshot has no basis to scale by, so the nutrient stays unknown
+    /// rather than reading as zero.
     func testAnEntryWithNoSnapshotLeavesTheNutrientUnknownRatherThanZero() throws {
         let store = try makeStore()
         try addFood(store, name: "Banana", id: "banana", at: when)
