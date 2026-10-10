@@ -27,6 +27,7 @@ public final class GoalSetupViewModel: ObservableObject {
     public static let justTrackNotice = "Nothing was saved. Your day will show totals without targets."
     public static let justTrackExistingNotice = "Your current targets are unchanged. You can change or remove them on the Goals screen."
     public static let genericErrorNotice = "Check your answers and try again."
+    public static let saveFailedNotice = "Could not save your goals. Try again."
 
     /// The nutrients the estimate sets, in the order the results screen lists them.
     public static let targetKeys = ["energy", "protein", "carbohydrate", "fat", "fiber"]
@@ -173,6 +174,7 @@ public final class GoalSetupViewModel: ObservableObject {
                 before.append((nutrient: key, goal: original))
             }
         } catch {
+            resultError = Self.saveFailedNotice
             return false
         }
         var attempted: [(nutrient: String, goal: NutrientGoal?)] = []
@@ -186,6 +188,7 @@ public final class GoalSetupViewModel: ObservableObject {
                 for entry in attempted.reversed() {
                     goals.restoreGoal(entry.goal, for: entry.nutrient)
                 }
+                resultError = Self.saveFailedNotice
                 return false
             }
         }
