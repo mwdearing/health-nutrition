@@ -97,11 +97,16 @@ public actor OpenFoodFactsClient {
     }
 }
 
-/// Retry-After is either delay-seconds or an HTTP-date (RFC 9110); the result is never negative.
+/// The longest wait a Retry-After header can ask for. A larger or unreadable-as-a-number value is cut to this, so a
+/// hostile or broken header can never become a figure the app cannot represent.
+let maxRetryAfter: TimeInterval = 86_400
+
+/// Retry-After is either delay-seconds or an HTTP-date (RFC 9110); the result is never negative and never more than
+/// `maxRetryAfter`.
 func parseRetryAfter(_ raw: String, now: Date) -> TimeInterval? {
     let value = raw.trimmingCharacters(in: .whitespaces)
     if !value.isEmpty, value.unicodeScalars.allSatisfy({ $0.value >= 48 && $0.value <= 57 }) {
-        return TimeInterval(value)
+        return TimeInterval(value).map { min($0, maxRetryAfter) }
     }
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -110,5 +115,5 @@ func parseRetryAfter(_ raw: String, now: Date) -> TimeInterval? {
     guard let date = formatter.date(from: value) else {
         return nil
     }
-    return max(0, date.timeIntervalSince(now))
+    return min(max(0, date.timeIntervalSince(now)), maxRetryAfter)
 }

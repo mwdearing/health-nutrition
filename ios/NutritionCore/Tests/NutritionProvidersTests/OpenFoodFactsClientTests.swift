@@ -223,6 +223,20 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertEqual(pastOutcome, .rateLimited(retryAfter: 0))
     }
 
+    /// A stated wait is never longer than a day, so a hostile or broken header cannot be a number the app
+    /// cannot represent.
+    func testAHugeRetryAfterIsClampedToOneDay() async throws {
+        let digits = StubTransport(status: 429, headers: ["Retry-After": "99999999999999999999"])
+        let digitsOutcome = await client(digits).lookup(barcode: foundCode)
+        XCTAssertEqual(digitsOutcome, .rateLimited(retryAfter: 86_400))
+        let farDate = StubTransport(status: 503, headers: ["Retry-After": "Fri, 31 Dec 9999 23:59:59 GMT"])
+        let dateOutcome = await client(farDate).lookup(barcode: foundCode)
+        XCTAssertEqual(dateOutcome, .rateLimited(retryAfter: 86_400))
+        let endless = StubTransport(status: 429, headers: ["Retry-After": String(repeating: "9", count: 400)])
+        let endlessOutcome = await client(endless).lookup(barcode: foundCode)
+        XCTAssertEqual(endlessOutcome, .rateLimited(retryAfter: 86_400))
+    }
+
     func testRateLimitedHttp503WithoutRetryAfter() async throws {
         let outcome = await client(StubTransport(status: 503)).lookup(barcode: foundCode)
         XCTAssertEqual(outcome, .rateLimited(retryAfter: nil))

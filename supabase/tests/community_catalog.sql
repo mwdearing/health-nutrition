@@ -152,4 +152,16 @@ select pg_temp.check((select count(*) from catalog.submissions where device_id =
 select pg_temp.check((select count(*) from public.profiles where id = '00000000-0000-0000-0000-000000000051') = 0, 'account deletion removes the profile');
 select pg_temp.check((select count(*) from auth.users where id = '00000000-0000-0000-0000-000000000051') = 0, 'account deletion removes the sign-in');
 reset role;
+-- Platform default grants are closed: no delete or truncate on profiles, no direct call of the trigger helper.
+reset role;
+select pg_temp.check(not has_table_privilege('authenticated', 'public.profiles', 'DELETE'), 'authenticated cannot delete profiles');
+select pg_temp.check(not has_table_privilege('authenticated', 'public.profiles', 'TRUNCATE'), 'authenticated cannot truncate profiles');
+select pg_temp.check(not has_table_privilege('anon', 'public.profiles', 'SELECT'), 'anon cannot read profiles');
+select pg_temp.check(has_table_privilege('authenticated', 'public.profiles', 'UPDATE'), 'authenticated can still update its profile');
+select pg_temp.check(not has_function_privilege('authenticated', 'public.touch_profile()', 'EXECUTE'), 'touch_profile is not callable');
+select pg_temp.check(not has_function_privilege('anon', 'public.touch_profile()', 'EXECUTE'), 'touch_profile is not callable by anon');
+-- Nutrient payloads are bounded in size and scale.
+select pg_temp.check(catalog.valid_nutrients('{"energyKcal":120.55,"protein":3,"fat":2}'::jsonb), 'a normal payload is valid');
+select pg_temp.check(not catalog.valid_nutrients(jsonb_build_object('energyKcal', 1, 'protein', 1, 'fat', ('0.' || repeat('0', 5000) || '1')::numeric)), 'a payload with thousands of digits is refused');
+select pg_temp.check(not catalog.valid_nutrients('{"energyKcal":1.2345,"protein":1,"fat":1}'::jsonb), 'a value with more than three decimals is refused');
 select 'ALL OK' as result;

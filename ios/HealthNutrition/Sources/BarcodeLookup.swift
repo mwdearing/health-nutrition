@@ -25,7 +25,7 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
         case .rateLimited(let retryAfter):
             // Round up: retrying a second early would be rate-limited straight away, and a wait
             // that is never shorter than the source asked for cannot be wrong.
-            return .rateLimited(retryAfterSeconds: retryAfter.map { max(1, Int($0.rounded(.up))) })
+            return .rateLimited(retryAfterSeconds: retryAfter.map { max(1, Int(min($0, 86_400).rounded(.up))) })
         case .invalidBarcode:
             // The form checks the barcode before calling, so this only means the two checks
             // disagree; report it rather than looking up nothing.

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +36,16 @@ def manifest(fixture_root: Path) -> dict[str, Any]:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+FIXTURE_FILE_PATTERN = re.compile(r"^fixtures/(labels/)?[A-Za-z0-9._-]+\.json$")
+
+
 def _entry_path(fixture_root: Path, entry: dict[str, Any]) -> Path:
-    return fixture_root / entry["file"]
+    """The fixture file an entry names. An absolute or escaping value is a failure, never a read."""
+    name = entry["file"]
+    assert FIXTURE_FILE_PATTERN.fullmatch(name), f"manifest path {name!r} is not a plain fixture path"
+    path = (fixture_root / name).resolve()
+    assert path.is_relative_to(fixture_root.resolve()), f"manifest path {name!r} leaves the fixture root"
+    return path
 
 
 def _label_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -121,3 +130,9 @@ def test_version_json(
 
     assert version["config"] == "production"
     assert version["version"] == manifest["api_version"]
+
+
+@pytest.mark.parametrize("name", ["/etc/passwd", "../outside.json", "fixtures/../../x.json", "fixtures/labels/a/b.json", ""])
+def test_entry_path_refuses_escaping_or_odd_names(fixture_root: Path, name: str) -> None:
+    with pytest.raises(AssertionError):
+        _entry_path(fixture_root, {"file": name})
