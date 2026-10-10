@@ -157,6 +157,9 @@ public final class GoalSetupViewModel: ObservableObject {
                 ? goals.removeTarget(for: key)
                 : goals.setTarget(text, for: key, unit: goals.unit(for: key))
             guard saved else { return false }
+            // The Goals screen keeps its own text per field. Set it to what was stored, so leaving that
+            // field later does not read the empty text as a request to remove the new goal.
+            goals.draftText[key] = text.isEmpty ? "" : DecimalFormatting.text(AmountParser.parseTyped(text) ?? 0)
         }
         return true
     }
@@ -219,12 +222,27 @@ public final class GoalSetupViewModel: ObservableObject {
 
     private func heightCentimeters() -> Decimal? {
         if unitSystem == .usCustomary {
-            guard let feet = AmountParser.parseTyped(heightFeetText),
-                  let inches = AmountParser.parseTyped(heightInchesText)
+            guard let feet = Self.wholeOrZero(heightFeetText),
+                  let inches = Self.inchesOrNone(heightInchesText)
             else { return nil }
             return (feet * 12 + inches) * Self.centimetersPerInch
         }
         return AmountParser.parseTyped(heightCentimetersText)
+    }
+
+    /// Feet typed as a number, where zero is read as zero rather than refused.
+    private static func wholeOrZero(_ text: String) -> Decimal? {
+        if let typed = AmountParser.parseTyped(text) { return typed }
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        // Only a typed zero ("0" or "0.0") counts; anything else with a zero in it is refused.
+        let isZero = trimmed.contains("0") && trimmed.allSatisfy { $0 == "0" || $0 == "." }
+        return isZero ? 0 : nil
+    }
+
+    /// Inches are optional: a blank field or a zero reads as no inches, so "5 ft" alone is a height.
+    private static func inchesOrNone(_ text: String) -> Decimal? {
+        if text.trimmingCharacters(in: .whitespaces).isEmpty { return 0 }
+        return wholeOrZero(text)
     }
 
     private func weightKilograms() -> Decimal? {

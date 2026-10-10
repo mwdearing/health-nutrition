@@ -216,6 +216,9 @@ public enum GoalEstimator {
 
     /// `value` to the nearest multiple of `step`, halves rounded away from zero.
     private static func roundedTo(_ value: Decimal, step: Decimal) -> Decimal {
-        (value / step).rounded(0, .plain) * step
+        var quotient = value / step
+        var whole = Decimal()
+        NSDecimalRound(&whole, &quotient, 0, .plain)
+        return whole * step
     }
 }
