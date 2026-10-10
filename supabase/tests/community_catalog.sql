@@ -4,6 +4,7 @@
 create or replace function pg_temp.as_device(n int) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claim.sub', ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0')), false);
+  perform set_config('request.jwt.claims', '{"is_anonymous": false}', false);
   perform set_config('role', 'authenticated', false);
 end $$;
 create or replace function pg_temp.check(ok boolean, msg text) returns void language plpgsql as $$
@@ -46,6 +47,10 @@ select public.withdraw_my_submissions();
 select public.submit_label('0123456789022','per_100g',null,'A',null,'{"energyKcal":1,"protein":1,"fat":1}');
 do $$ begin perform public.submit_label('0123456789023','per_100g',null,'A',null,'{"energyKcal":1,"protein":1,"fat":1}'); raise exception 'withdraw reset the limit'; exception when sqlstate '53400' then null; end $$;
 reset role; update catalog.settings set daily_limit = 60;
+-- Anonymous sign-ins are refused.
+reset role; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000099', false), set_config('request.jwt.claims', '{"is_anonymous": true}', false); set role authenticated;
+do $$ begin perform public.submit_label('0123456789030','per_100g',null,'A',null,'{"energyKcal":1,"protein":1,"fat":1}'); raise exception 'anonymous submit accepted'; exception when sqlstate '28000' then null; end $$;
+do $$ begin perform public.lookup_label('0123456789012'); exception when sqlstate '28000' then null; end $$;
 -- Invalid input is refused.
 select pg_temp.as_device(7);
 do $$ begin perform public.submit_label('12','per_100g',null,'X',null,'{"energyKcal":1,"protein":1,"fat":1}'); raise exception 'short barcode accepted'; exception when sqlstate '22023' then null; end $$;

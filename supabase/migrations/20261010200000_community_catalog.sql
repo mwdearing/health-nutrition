@@ -5,7 +5,7 @@
 -- distinct devices submit values that agree. Only verified labels are readable by other people.
 --
 -- Everything lives in the private `catalog` schema, which the API does not expose. The app reaches it only
--- through three functions in `public`, and only as a signed-in (anonymous sign-in) user.
+-- through three functions in `public`, and only as a signed-in account (anonymous sign-ins are refused).
 
 create schema if not exists catalog;
 revoke all on schema catalog from public, anon, authenticated;
@@ -170,6 +170,8 @@ declare
   vals numeric[];
   chosen record;
 begin
+  -- One recompute per label at a time, so two simultaneous submissions cannot each miss the other's row.
+  perform pg_advisory_xact_lock(hashtextextended(p_barcode || '|' || p_basis, 0));
   select * into cfg from catalog.settings;
 
   if exists (select 1 from catalog.rejections where barcode = p_barcode and basis = p_basis) then
@@ -236,8 +238,8 @@ declare
   cfg catalog.settings%rowtype;
   used integer;
 begin
-  if device is null then
-    raise exception 'sign in first' using errcode = '28000';
+  if device is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
+    raise exception 'sign in with an account first' using errcode = '28000';
   end if;
   if p_barcode is null or p_barcode !~ '^[0-9]{8,14}$' or p_basis not in ('per_100g', 'per_100ml', 'per_serving')
      or p_product_name is null or char_length(btrim(p_product_name)) not between 1 and 120
@@ -255,6 +257,8 @@ begin
     raise exception 'too many submissions today' using errcode = '53400';
   end if;
 
+  -- Take the label's lock before writing, so the recompute below sees every row committed before it.
+  perform pg_advisory_xact_lock(hashtextextended(p_barcode || '|' || p_basis, 0));
   insert into catalog.submissions as s (device_id, barcode, basis, serving_text, product_name, brand, nutrients)
   values (device, p_barcode, p_basis, p_serving_text, btrim(p_product_name), nullif(btrim(p_brand), ''), p_nutrients)
   on conflict (device_id, barcode, basis) do update
@@ -277,7 +281,8 @@ returns table (basis text, serving_text text, product_name text, brand text, nut
 language sql stable security definer set search_path = '' as $$
   select e.basis, e.serving_text, e.product_name, e.brand, e.nutrients, e.supporting_devices, e.verified
   from catalog.entries e
-  where auth.uid() is not null and e.barcode = p_barcode
+  where auth.uid() is not null and not coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)
+    and e.barcode = p_barcode
     and not exists (select 1 from catalog.rejections r where r.barcode = e.barcode and r.basis = e.basis);
 $$;
 
@@ -290,8 +295,8 @@ declare
   touched text[];
   removed integer := 0;
 begin
-  if device is null then
-    raise exception 'sign in first' using errcode = '28000';
+  if device is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
+    raise exception 'sign in with an account first' using errcode = '28000';
   end if;
   with gone as (
     delete from catalog.submissions where device_id = device returning barcode, basis
