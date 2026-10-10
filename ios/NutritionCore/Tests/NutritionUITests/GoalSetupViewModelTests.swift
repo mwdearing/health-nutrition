@@ -199,4 +199,26 @@ final class GoalSetupViewModelTests: XCTestCase {
             GoalSetupViewModel.replaceNotice,
             "This replaces your current targets for these nutrients.")
     }
+
+    func testJustTrackSaysTheCurrentTargetsStayWhenAnyGoalIsStored() {
+        // A water-only goal is still a target, so the day must not promise to show none.
+        let water = NutrientGoal(nutrient: "water", target: 2000, unit: .mL)
+        let (model, store, _) = makeModel(goals: [water])
+        model.aim = .justTrack
+        model.next()
+        XCTAssertEqual(
+            model.justTrackMessage,
+            "Your current targets are unchanged. You can change or remove them on the Goals screen.")
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(try store.goals(), [water])
+    }
+
+    func testJustTrackWithNoTargetsSaysTheDayShowsTotals() {
+        let (model, store, _) = makeModel()
+        model.aim = .justTrack
+        model.next()
+        XCTAssertEqual(model.justTrackMessage, "Nothing was saved. Your day will show totals without targets.")
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(try store.goals(), [])
+    }
 }
