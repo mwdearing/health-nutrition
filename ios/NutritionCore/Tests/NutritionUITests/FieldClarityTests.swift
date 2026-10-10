@@ -62,6 +62,18 @@ final class FieldClarityTests: XCTestCase {
         XCTAssertGreaterThan(announced, 0)
     }
 
+    /// Going back into a field that was left starts a new edit, so its error waits until the person leaves again.
+    func testRefocusingAFieldHidesItsErrorUntilItIsLeftAgain() throws {
+        let model = try makeModel()
+        model.amountText = "Regular"
+        model.fieldDidEnd(.amount)
+        XCTAssertNotNil(model.visibleAmountError)
+        model.fieldDidBegin(.amount)
+        XCTAssertNil(model.visibleAmountError)
+        model.fieldDidEnd(.amount)
+        XCTAssertNotNil(model.visibleAmountError)
+    }
+
     /// Leaving a field that was never edited is not a reason to say it is wrong.
     func testLeavingAFieldWithoutEditingItShowsNoError() throws {
         let model = try makeModel()
