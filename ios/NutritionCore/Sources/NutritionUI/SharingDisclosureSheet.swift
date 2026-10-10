@@ -24,13 +24,15 @@ struct SharingDisclosureSheet: View {
                         get: { model.shareLabels },
                         set: { on in Task { await model.setSharing(on) } }
                     ))
-                    .disabled(model.isBusy)
+                    .disabled(!model.profileReady || model.isBusy)
                 }
                 Section {
                     Button("Continue") {
                         model.acknowledgeDisclosure()
-                        self.dismiss()
+                        // A tap that the model ignored (a call was running) must not close the sheet as consent.
+                        if !model.needsDisclosure { self.dismiss() }
                     }
+                    .disabled(model.isBusy)
                 }
             }
             .scrollContentBackground(.hidden)

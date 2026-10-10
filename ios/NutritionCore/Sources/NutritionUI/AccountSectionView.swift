@@ -19,13 +19,20 @@ struct AccountSectionView: View {
                 TextField("Name", text: $model.displayName)
                     .focused($nameFocused)
                     .onSubmit { saveName() }
+                    .disabled(!model.profileReady || model.isBusy)
                     .accessibilityHint("Shown with the labels you share. Up to \(AccountViewModel.nameLimit) characters.")
                 LabeledContent("Email", value: model.email)
                 Toggle("Share labels with the community", isOn: Binding(
                     get: { model.shareLabels },
                     set: { on in Task { await model.setSharing(on) } }
                 ))
-                .disabled(model.isBusy)
+                .disabled(!model.profileReady || model.isBusy)
+                if !model.profileReady {
+                    // The name and the switch stay locked until the profile has been read, so a failed read
+                    // cannot lead to a save that replaces the stored values.
+                    Button("Try again") { Task { await model.retryProfile() } }
+                        .disabled(model.isBusy)
+                }
                 Button("Sign out") { Task { await model.signOut() } }
                     .disabled(model.isBusy)
                 Button("Delete account", role: .destructive) { confirmingDelete = true }

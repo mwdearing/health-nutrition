@@ -20,6 +20,8 @@ struct SignInSheet: View {
                 Section {
                     SignInWithAppleButton(.signIn) { request in
                         appleNonce = AppleNonce.make()
+                        // The email is the account's sign-in name; nothing else is asked for.
+                        request.requestedScopes = [.email]
                         request.nonce = AppleNonce.hash(appleNonce)
                     } onCompletion: { result in
                         handleApple(result)
@@ -38,6 +40,7 @@ struct SignInSheet: View {
                             .textInputAutocapitalization(.never)
                             #endif
                             .autocorrectionDisabled()
+                            .disabled(model.isBusy)
                         Button("Send code") {
                             Task { await model.requestCode(email: address) }
                         }
@@ -49,8 +52,18 @@ struct SignInSheet: View {
                             .textContentType(.oneTimeCode)
                             #endif
                             .autocorrectionDisabled()
+                            .disabled(model.isBusy)
                         Button("Sign in with code") {
                             Task { await model.verify(code: code) }
+                        }
+                        .disabled(model.isBusy)
+                        Button("Send a new code") {
+                            Task { await model.resendCode() }
+                        }
+                        .disabled(model.isBusy)
+                        Button("Use a different address") {
+                            code = ""
+                            model.useDifferentAddress()
                         }
                         .disabled(model.isBusy)
                     }
