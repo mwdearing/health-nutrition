@@ -23,9 +23,6 @@ public struct GoalSetupView: View {
                     .foregroundStyle(TokenColors.textSecondary)
                     .accessibilityLabel(model.stepLabel)
                 stepContent
-                if let error = model.resultError {
-                    InlineNotice(error, tone: .failed)
-                }
                 navigation
             }
             .padding(DesignSpacing.m)
@@ -130,7 +127,12 @@ public struct GoalSetupView: View {
                 Text(model.justTrackMessage)
                     .font(.body)
                     .foregroundStyle(TokenColors.textPrimary)
-            } else if model.resultError == nil {
+            } else {
+                if let error = model.resultError {
+                    InlineNotice(error, tone: .failed)
+                }
+            }
+            if !model.draftTargets.isEmpty {
                 heading("Your daily targets")
                 Text("You can change any number before you save.")
                     .font(.footnote)
@@ -141,7 +143,7 @@ public struct GoalSetupView: View {
                         .foregroundStyle(TokenColors.textPrimary)
                 }
                 ForEach(resultRows, id: \.key) { row in
-                    LabeledField(row.label) { focus in
+                    LabeledField(row.label, error: model.fieldErrors[row.key]) { focus in
                         TextField(text: draftBinding(row.key), prompt: Text(row.label)) {
                             Text(row.label)
                         }
@@ -170,11 +172,10 @@ public struct GoalSetupView: View {
             if model.step == .results {
                 if model.aim == .justTrack {
                     PrimaryCapsule("Done") { dismiss() }
-                } else if model.resultError == nil {
+                } else if !model.draftTargets.isEmpty {
                     PrimaryCapsule("Save goals") {
                         if model.save() { dismiss() }
                     }
-                    .disabled(model.draftTargets.isEmpty)
                 }
             } else {
                 PrimaryCapsule("Next") { model.next() }

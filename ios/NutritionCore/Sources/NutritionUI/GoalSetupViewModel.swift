@@ -28,6 +28,7 @@ public final class GoalSetupViewModel: ObservableObject {
     public static let justTrackExistingNotice = "Your current targets are unchanged. You can change or remove them on the Goals screen."
     public static let genericErrorNotice = "Check your answers and try again."
     public static let saveFailedNotice = "Could not save your goals. Try again."
+    public static let invalidFieldNotice = "Enter a number greater than zero."
 
     /// The nutrients the estimate sets, in the order the results screen lists them.
     public static let targetKeys = ["energy", "protein", "carbohydrate", "fat", "fiber"]
@@ -51,6 +52,9 @@ public final class GoalSetupViewModel: ObservableObject {
     @Published public var draftTargets: [String: String] = [:]
     /// Set when the answers cannot be estimated, in plain words for the results screen.
     @Published public private(set) var resultError: String?
+    /// The message for each result field that cannot be saved, keyed by nutrient. The fields stay on
+    /// screen with their text, so the person can correct the one named.
+    @Published public private(set) var fieldErrors: [String: String] = [:]
     /// Set when the estimate changed a number for a floor or the daily cap.
     @Published public private(set) var adjustmentNote: String?
 
@@ -105,6 +109,7 @@ public final class GoalSetupViewModel: ObservableObject {
         if step == .results {
             draftTargets = [:]
             resultError = nil
+            fieldErrors = [:]
             adjustmentNote = nil
         }
         step = list[index - 1]
@@ -159,14 +164,18 @@ public final class GoalSetupViewModel: ObservableObject {
     @discardableResult
     public func save() -> Bool {
         guard aim != .justTrack, step == .results, !draftTargets.isEmpty else { return false }
+        fieldErrors = [:]
         for key in Self.targetKeys {
             let text = (draftTargets[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if text.isEmpty { continue }
-            guard let value = AmountParser.parseTyped(text), value > 0 else {
-                resultError = "Enter a number above zero."
-                return false
-            }
+            if let value = AmountParser.parseTyped(text), value > 0 { continue }
+            fieldErrors[key] = Self.invalidFieldNotice
         }
+        guard fieldErrors.isEmpty else {
+            resultError = "Enter a number above zero."
+            return false
+        }
+        resultError = nil
         var before: [(nutrient: String, goal: NutrientGoal?)] = []
         do {
             for key in Self.targetKeys {
@@ -217,6 +226,7 @@ public final class GoalSetupViewModel: ObservableObject {
         selectedPaceKilograms = nil
         draftTargets = [:]
         resultError = nil
+        fieldErrors = [:]
         adjustmentNote = nil
     }
 
@@ -224,6 +234,7 @@ public final class GoalSetupViewModel: ObservableObject {
     private func calculate() {
         draftTargets = [:]
         resultError = nil
+        fieldErrors = [:]
         adjustmentNote = nil
         guard let profile = makeProfile() else { return }
         do {
