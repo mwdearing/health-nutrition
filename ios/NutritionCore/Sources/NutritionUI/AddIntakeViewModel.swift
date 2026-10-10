@@ -153,12 +153,15 @@ public final class AddIntakeViewModel: ObservableObject {
     }
     private var hasChosenKind = false
     @Published public private(set) var saveError: String?
-    /// Why the last tap of Save did nothing, or nil when it was not blocked.
+    /// Why the last tap of Save did nothing, or nil when it is not blocked: the sentence that points at the
+    /// marked fields, never a repeat of their errors, since each error is shown under its own field.
     ///
-    /// It is the sentence that points at the marked fields, never a repeat of their errors: each error is
-    /// shown under its own field. A long form scrolls, so the sentence sits beside the Save button, where a
-    /// Save that silently refused would otherwise look like a button that is broken.
-    @Published public private(set) var saveBlockedMessage: String?
+    /// It is derived from the current fields, so it goes as soon as both are right, without another tap of
+    /// Save. A long form scrolls, so the sentence sits beside the Save button, where a Save that silently
+    /// refused would otherwise look like a button that is broken.
+    public var saveBlockedMessage: String? {
+        hasAttemptedSave && (nameError != nil || amountError != nil) ? Self.fixFieldsMessage : nil
+    }
     /// Whether a tap of Save has been made on this form. Once it has, every field that is wrong shows its error.
     @Published public private(set) var hasAttemptedSave = false
     /// The fields edited so far, and the fields focus has left since. An error shows under a field once
@@ -298,7 +301,6 @@ public final class AddIntakeViewModel: ObservableObject {
         hasAttemptedSave = false
         editedFields = []
         leftFields = []
-        saveBlockedMessage = nil
     }
 
     /// The grams a volume typed in a cup, tablespoon or teaspoon is stored as, when a typical density
@@ -669,12 +671,9 @@ public final class AddIntakeViewModel: ObservableObject {
         saveError = nil
         guard nameError == nil, let amount else {
             // The sentence beside the Save button points at the marked fields rather than repeating them, so the
-            // same words are not on the screen twice. Naming both fields at once means fixing one and tapping
-            // Save again does not meet the same silent refusal.
-            saveBlockedMessage = Self.fixFieldsMessage
+            // same words are not on the screen twice. It is derived from the fields, so it clears itself.
             return false
         }
-        saveBlockedMessage = nil
 
         let intake = Intake(
             id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier,
