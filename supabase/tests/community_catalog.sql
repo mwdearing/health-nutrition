@@ -103,6 +103,14 @@ reset role; update catalog.submissions set updated_at = now() + interval '1 hour
 reset role; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000999', false), set_config('request.jwt.claims', '{"is_anonymous": false}', false); set role authenticated;
 select pg_temp.check((select count(*) from public.lookup_label('123456000315')) = 0, 'no profile, no lookup');
 reset role;
+-- A rejection written with the 12-digit form blocks the 13-digit label.
+reset role; delete from catalog.entries; delete from catalog.submissions; delete from catalog.rejections;
+insert into catalog.rejections (barcode, basis, reason) values ('123456000315', 'per_100g', 'test');
+select pg_temp.check((select barcode from catalog.rejections) = '0123456000315', 'a 12-digit rejection is stored in the 13-digit form');
+select pg_temp.as_device(1); select public.submit_label('123456000315','per_100g',null,'Cola',null,'{"energyKcal":42,"protein":0,"carbohydrates":10.6}');
+select pg_temp.as_device(2); select public.submit_label('0123456000315','per_100g',null,'Cola',null,'{"energyKcal":42,"protein":0,"carbohydrates":10.6}');
+select pg_temp.check((select count(*) from public.lookup_label('123456000315')) = 0, 'a rejected label is never shown');
+reset role; delete from catalog.rejections;
 -- Invalid input is refused.
 select pg_temp.as_device(7);
 do $$ begin perform public.submit_label('12','per_100g',null,'X',null,'{"energyKcal":1,"protein":1,"fat":1}'); raise exception 'short barcode accepted'; exception when sqlstate '22023' then null; end $$;
