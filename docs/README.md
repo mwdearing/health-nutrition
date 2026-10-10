@@ -11,6 +11,8 @@ Public architecture decisions and design notes for this project live here.
 - [Privacy manifest: tracking, collected data and required-reason APIs](privacy-manifest.md)
 - [Erase all data: what the erase removes, and what it cannot reach](erase-all-data.md)
 - [Daily reminder: one optional local notification, off by default](reminders.md)
+- [Accounts: sign-in, what is shared, what stays on the phone, deleting an account](accounts.md)
+- [Community client: configuration, endpoints and error mapping](community-client.md)
 - [Accessibility: naming images and hiding decorative ones](accessibility.md)
 - [ADR 0002: HealthKit sync identifier and sync version](adr/0002-healthkit-sync.md)
 - [HealthKit writer: planning, delivery and lifecycle](healthkit-writer.md)

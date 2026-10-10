@@ -64,10 +64,17 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
+          # The account settings are both set or both empty. Naming the values in the message would print them,
+          # so the message only says which rule failed.
+          if [[ -n "$SUPABASE_URL" || -n "$SUPABASE_ANON_KEY" ]]; then
+            [[ -n "$SUPABASE_URL" && -n "$SUPABASE_ANON_KEY" ]] || fail "the account settings need both SUPABASE_URL and SUPABASE_ANON_KEY, or neither"
+          fi
           [[ "$BUNDLE_ID" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || fail "bundle_id has characters a bundle identifier cannot have"
           [[ -z "$MARKETING_VERSION" || "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "marketing_version must have three parts, like 1.2.3"
           [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "APPLE_TEAM_ID is not 10 letters or digits"
@@ -123,6 +130,8 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
@@ -165,7 +174,9 @@ jobs:
             CODE_SIGN_STYLE=Automatic \
             "PRODUCT_BUNDLE_IDENTIFIER=$BUNDLE_ID" \
             "MARKETING_VERSION=$MARKETING_VERSION" \
-            "CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
+            "CURRENT_PROJECT_VERSION=$BUILD_NUMBER" \
+            "SUPABASE_URL=${SUPABASE_URL:-}" \
+            "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}"
 
       - name: Export and upload to App Store Connect
         env:

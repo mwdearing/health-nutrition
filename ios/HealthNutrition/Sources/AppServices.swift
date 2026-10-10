@@ -46,6 +46,9 @@ final class AppServices {
     /// The optional daily reminder. It reads its setting from `displayPreferences` and asks the system
     /// through the scheduler it was built with. The app shell syncs it at launch and when it becomes active.
     let reminders: ReminderController
+    /// The account, shown in Settings. Nil in a build without the project settings (an unsigned, CI or self
+    /// build): then there is no account section and no account call is ever made.
+    let account: AccountViewModel?
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
@@ -54,6 +57,7 @@ final class AppServices {
         reminderScheduler: ReminderScheduling
     ) {
         self.displayPreferences = displayPreferences
+        self.account = Self.makeAccount(preferences: displayPreferences)
         let reminderErasures = ReminderErasures()
         self.reminders = ReminderController(
             preferences: displayPreferences, scheduler: reminderScheduler, erasures: reminderErasures)
@@ -85,6 +89,17 @@ final class AppServices {
             writer: HealthKitSampleWriter(),
             totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
         )
+    }
+
+    /// The account model, or nil when the build carries no project settings. The client reads them from the
+    /// bundle's Info.plist and keeps the session in the Keychain.
+    private static func makeAccount(preferences: CommunityDisclosurePreferences) -> AccountViewModel? {
+        guard let client = try? CommunityClient.make(
+            infoDictionary: Bundle.main.infoDictionary, store: KeychainCommunitySessionStore())
+        else {
+            return nil
+        }
+        return AccountViewModel(service: client, preferences: preferences)
     }
 
     /// The marketing version from the bundle; the provider requires a User-Agent that names the app
