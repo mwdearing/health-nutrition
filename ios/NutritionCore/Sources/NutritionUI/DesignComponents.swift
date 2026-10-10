@@ -49,6 +49,7 @@ public struct LabeledField<Content: View>: View {
     private let error: String?
     private let externalFocus: FocusState<Bool>.Binding?
     private let onFocusEnd: (() -> Void)?
+    private let onFocusBegin: (() -> Void)?
     private let content: (FocusState<Bool>.Binding) -> Content
     @FocusState private var ownFocus: Bool
 
@@ -57,12 +58,14 @@ public struct LabeledField<Content: View>: View {
         error: String? = nil,
         focus: FocusState<Bool>.Binding? = nil,
         onFocusEnd: (() -> Void)? = nil,
+        onFocusBegin: (() -> Void)? = nil,
         @ViewBuilder content: @escaping (FocusState<Bool>.Binding) -> Content
     ) {
         self.label = label
         self.error = error
         self.externalFocus = focus
         self.onFocusEnd = onFocusEnd
+        self.onFocusBegin = onFocusBegin
         self.content = content
     }
 
@@ -88,11 +91,10 @@ public struct LabeledField<Content: View>: View {
                 Text(error)
                     .font(.footnote)
                     .foregroundStyle(TokenColors.error)
-                    .accessibilityHidden(true)
             }
         }
         .onChange(of: focus.wrappedValue) { _, isFocused in
-            if !isFocused { onFocusEnd?() }
+            if isFocused { onFocusBegin?() } else { onFocusEnd?() }
         }
     }
 

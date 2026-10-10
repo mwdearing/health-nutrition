@@ -26,7 +26,8 @@ public struct AddIntakeView: View {
             Card {
                 VStack(alignment: .leading, spacing: DesignSpacing.m) {
                     LabeledField(
-                        "Name", error: model.visibleNameError, onFocusEnd: { model.fieldDidEnd(.name) }
+                        "Name", error: model.visibleNameError, onFocusEnd: { model.fieldDidEnd(.name) },
+                    onFocusBegin: { model.fieldDidBegin(.name) }
                     ) { focus in
                         TextField(text: $model.name, prompt: Text("For example, Greek yogurt")) {
                             Text("Name")
@@ -34,15 +35,18 @@ public struct AddIntakeView: View {
                         .labelsHidden()
                         .font(.body)
                         .focused(focus)
-                        .accessibilityHint(model.visibleNameError ?? "")
                     }
-                    LabeledField("Brand (optional)") { focus in
-                        TextField(text: $model.brand, prompt: Text("For example, a store brand")) {
-                            Text("Brand (optional)")
+                    // A typed food has nowhere to keep a brand, so the field shows only for a looked-up or captured
+                    // product, whose brand is kept with it.
+                    if !model.brand.isEmpty {
+                        LabeledField("Brand (optional)") { focus in
+                            TextField(text: $model.brand, prompt: Text("For example, a store brand")) {
+                                Text("Brand (optional)")
+                            }
+                            .labelsHidden()
+                            .font(.body)
+                            .focused(focus)
                         }
-                        .labelsHidden()
-                        .font(.body)
-                        .focused(focus)
                     }
                     Picker("Kind", selection: $model.kind) {
                         ForEach(ProductKind.allCases, id: \.self) { kind in
@@ -98,7 +102,8 @@ public struct AddIntakeView: View {
 
             Section {
                 LabeledField(
-                    "Amount", error: model.visibleAmountError, onFocusEnd: { model.fieldDidEnd(.amount) }
+                    "Amount", error: model.visibleAmountError, onFocusEnd: { model.fieldDidEnd(.amount) },
+                    onFocusBegin: { model.fieldDidBegin(.amount) }
                 ) { focus in
                     HStack {
                         TextField(text: $model.amountText, prompt: Text("For example, 150")) {
@@ -108,7 +113,6 @@ public struct AddIntakeView: View {
                         .font(.body)
                         .decimalAmountKeyboard()
                         .focused(focus)
-                        .accessibilityHint(model.visibleAmountError ?? "")
                         // The unit is a menu, so the picker shows its own chevron; the word above it names it.
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text("Unit")

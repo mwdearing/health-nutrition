@@ -298,6 +298,12 @@ public final class AddIntakeViewModel: ObservableObject {
         leftFields.insert(field)
     }
 
+    /// Called when focus enters a field: a new edit starts, so its error waits until the person leaves again.
+    public func fieldDidBegin(_ field: AddIntakeField) {
+        objectWillChange.send()
+        leftFields.remove(field)
+    }
+
     /// Clears the attempted save and the per-field history, for when the form is reset.
     public func resetFieldErrors() {
         hasAttemptedSave = false
