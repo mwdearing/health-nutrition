@@ -73,17 +73,21 @@ private struct SettingsContent: View {
                     Text("US").tag(UnitSystem.usCustomary)
                 }
                 .pickerStyle(.segmented)
-                HStack {
-                    Text("Quick water amount")
-                    TextField(connections.quickWaterUnitSymbol, text: $model.quickWaterText)
+                LabeledField("Quick water amount", focus: $waterFocused) { focus in
+                    HStack {
+                        TextField(text: $model.quickWaterText, prompt: Text("For example, 250")) {
+                            Text("Quick water amount")
+                        }
+                        .labelsHidden()
                         .multilineTextAlignment(.trailing)
-                        .focused($waterFocused)
+                        .focused(focus)
                         .accessibilityLabel("Quick water amount in \(connections.quickWaterUnitSymbol)")
                         .onSubmit { self.model.commitQuickWater() }
                         #if os(iOS)
                         .keyboardType(.decimalPad)
                         #endif
-                    Text(connections.quickWaterUnitSymbol)
+                        Text(connections.quickWaterUnitSymbol)
+                    }
                 }
                 Text(model.quickWaterHelper).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                 if let error = model.quickWaterError {

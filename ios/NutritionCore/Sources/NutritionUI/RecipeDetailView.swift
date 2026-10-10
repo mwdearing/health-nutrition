@@ -35,9 +35,15 @@ public struct RecipeDetailView: View {
             }
             Section("Log a portion") {
                 HStack {
-                    TextField("Portion", text: $model.portionText)
+                    LabeledField("Portion") { focus in
+                        TextField(text: $model.portionText, prompt: Text("For example, 1")) {
+                            Text("Portion")
+                        }
+                        .labelsHidden()
                         .font(.body)
+                        .focused(focus)
                         .accessibilityLabel(model.portionLabel)
+                    }
                     Text(model.portionUnitText).font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
                 Button(RecipeLabels.logPortion) {

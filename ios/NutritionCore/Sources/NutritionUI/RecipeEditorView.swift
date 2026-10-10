@@ -15,12 +15,24 @@ public struct RecipeEditorView: View {
     public var body: some View {
         Form {
             Section("Recipe") {
-                TextField("Title", text: $model.title)
+                LabeledField("Title") { focus in
+                    TextField(text: $model.title, prompt: Text("For example, Overnight oats")) {
+                        Text("Title")
+                    }
+                    .labelsHidden()
                     .font(.body)
+                    .focused(focus)
                     .accessibilityLabel(RecipeLabels.titleField)
-                TextField("Notes", text: $model.notes)
+                }
+                LabeledField("Notes") { focus in
+                    TextField(text: $model.notes, prompt: Text("For example, Double the oats for two")) {
+                        Text("Notes")
+                    }
+                    .labelsHidden()
                     .font(.body)
+                    .focused(focus)
                     .accessibilityLabel(RecipeLabels.notesField)
+                }
             }
             Section("Ingredients") {
                 ForEach(Array(model.ingredients.enumerated()), id: \.element.id) { index, draft in
@@ -38,10 +50,16 @@ public struct RecipeEditorView: View {
                     }
                 }
                 .accessibilityLabel(RecipeLabels.yieldKindPicker)
-                TextField("Amount", text: $model.yieldAmountText)
+                LabeledField("Amount") { focus in
+                    TextField(text: $model.yieldAmountText, prompt: Text("For example, 4")) {
+                        Text("Amount")
+                    }
+                    .labelsHidden()
                     .font(.body)
                     .decimalKeyboard()
+                    .focused(focus)
                     .accessibilityLabel(RecipeLabels.yieldAmountField)
+                }
                 if model.yieldKind == .total {
                     Picker("Unit", selection: $model.yieldUnitSymbol) {
                         ForEach(model.unitSymbols, id: \.self) { symbol in
@@ -73,14 +91,26 @@ public struct RecipeEditorView: View {
     private func ingredientRows(index: Int, draft: RecipeIngredientDraft) -> some View {
         let position = index + 1
         VStack(alignment: .leading) {
-            TextField("Ingredient name", text: textBinding(draft.id, \.name))
+            LabeledField("Ingredient name") { focus in
+                TextField(text: textBinding(draft.id, \.name), prompt: Text("For example, Rolled oats")) {
+                    Text("Ingredient name")
+                }
+                .labelsHidden()
                 .font(.body)
+                .focused(focus)
                 .accessibilityLabel(RecipeLabels.ingredientName(position))
+            }
             HStack {
-                TextField("Amount", text: textBinding(draft.id, \.amountText))
+                LabeledField("Amount") { focus in
+                    TextField(text: textBinding(draft.id, \.amountText), prompt: Text("For example, 40")) {
+                        Text("Amount")
+                    }
+                    .labelsHidden()
                     .font(.body)
                     .decimalKeyboard()
+                    .focused(focus)
                     .accessibilityLabel(RecipeLabels.ingredientAmount(position))
+                }
                 Picker("Unit", selection: textBinding(draft.id, \.unitSymbol)) {
                     ForEach(model.unitSymbols, id: \.self) { symbol in
                         Text(symbol).tag(symbol)
@@ -94,19 +124,33 @@ public struct RecipeEditorView: View {
                 .foregroundStyle(TokenColors.textSecondary)
             ForEach(model.nutrientFields) { field in
                 HStack {
-                    TextField(field.label, text: nutrientBinding(draft.id, field.id))
+                    LabeledField(field.label) { focus in
+                        TextField(text: nutrientBinding(draft.id, field.id), prompt: Text("For example, 2.5")) {
+                            Text(field.label)
+                        }
+                        .labelsHidden()
                         .font(.body)
                         .decimalKeyboard()
+                        .focused(focus)
                         .accessibilityLabel(RecipeLabels.nutrientField(field.label, position: position))
+                    }
                     // A value kept in its own unit says so, rather than sitting under the default one.
                     Text(draft.nutrientUnits[field.id]?.symbol ?? field.unit.symbol)
                         .font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
             }
-            TextField("Weight per mL in g (only to convert between weight and volume)", text: textBinding(draft.id, \.densityText))
+            LabeledField("Weight per mL in g (only to convert between weight and volume)") { focus in
+                TextField(
+                    text: textBinding(draft.id, \.densityText), prompt: Text("For example, 1.03")
+                ) {
+                    Text("Weight per mL in g (only to convert between weight and volume)")
+                }
+                .labelsHidden()
                 .font(.footnote)
                 .decimalKeyboard()
+                .focused(focus)
                 .accessibilityLabel("Weight per mL of ingredient \(position)")
+            }
             if let suggestion = model.densitySuggestion(for: draft) {
                 HStack {
                     Text("Typical density for \(suggestion.name): \(DecimalFormatting.text(suggestion.gramsPerCup)) g per cup")
