@@ -6,12 +6,12 @@ The recipe editor can fill an ingredient's density (grams per milliliter, the "W
 
 - The table comes from the ExactCup Ingredient Density Dataset, licensed under CC BY 4.0 (https://exactcup.github.io/). It lists grams in one US customary cup for 80 ingredients.
 - The generated file `ios/NutritionCore/Sources/NutritionDomain/IngredientDensityData.swift` holds the rows. It is generated from the dataset; do not edit it by hand.
-- The app shows the attribution line, `IngredientDensityCatalog.attribution`, wherever a catalog value is offered or applied. The license requires that credit.
+- The editor shows the attribution line, `IngredientDensityCatalog.attribution`, while a catalog value is offered or still unchanged in the field. A saved recipe does not remember where a density came from, so the line does not return after reopening. The license requires that credit.
 
 ## Conversion
 
 - The table gives grams per cup. The editor's density is grams per milliliter, so the app divides by the US customary cup, exactly 236.5882365 mL, and rounds to six fraction digits.
-- Typed volume units are converted to milliliters at entry with exact factors: one cup is 236.5882365 mL, one tablespoon is 1/16 of a cup (14.78676478125 mL) and one teaspoon is 1/3 of a tablespoon (4.92892159375 mL).
+- Helpers for cup, tablespoon and teaspoon convert to milliliters with exact factors (no screen accepts these units yet): one cup is 236.5882365 mL, one tablespoon is 1/16 of a cup (14.78676478125 mL) and one teaspoon is 1/3 of a tablespoon (4.92892159375 mL).
 - These volume units are input only. They are not stored units: storage keeps metric mass and volume, and the export and relay never see a cup, tablespoon or teaspoon.
 
 ## Matching
