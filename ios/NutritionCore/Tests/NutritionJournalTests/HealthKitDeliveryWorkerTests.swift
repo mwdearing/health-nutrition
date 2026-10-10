@@ -808,6 +808,44 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
     }
 
+    /// A label's serving stated as a count of the thing logged, "per serving (3 gummy)", is the same
+    /// product as "per serving": six gummies logged are two servings, so the stated 9 g of protein is 18 g.
+    /// A serving stated as a phrase with no quantity, "per serving (1 large biscuit)", states nothing that
+    /// can be scaled, so nothing is written for the nutrient.
+    func testSnapshotProteinPerCountedServingIsScaledByTheCountLogged() async throws {
+        let store = try makeStore(try makeDirectory())
+        let gummy = ProductDefinition(
+            snapshotID: "snap-6", productID: "product-6", name: "Sample gummy", brand: nil, barcode: nil,
+            labelBasis: "per serving (3 gummy)", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["protein": .known(dec("9"), .g)])
+        try store.create(
+            sampleIntake(), components: [component("gummies", amount: 6, unit: .gummy)], product: gummy,
+            now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded["protein"], .known(dec("18"), .g), "two servings of 9 g")
+        let plan = HealthKitWritePlanner.plan(
+            intakeID: intakeID, revision: 1, occurredAt: when, totals: recorded)
+        XCTAssertEqual(
+            plan.first { $0.syncIdentifier == proteinIdentifier(intakeID) }?.amount, dec("18"),
+            "the scaled count is what the plan writes, not the label's 9 g")
+
+        let biscuit = ProductDefinition(
+            snapshotID: "snap-7", productID: "product-7", name: "Sample biscuit", brand: nil, barcode: nil,
+            labelBasis: "per serving (1 large biscuit)", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["protein": .known(dec("9"), .g)])
+        let otherStore = try makeStore(try makeDirectory())
+        try otherStore.create(
+            sampleIntake(), components: [component("biscuits", amount: 6, unit: .gummy)], product: biscuit,
+            now: when)
+
+        let unscaled = try await JournalSnapshotTotals(store: otherStore).totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(unscaled, [:], "a serving with no quantity cannot be scaled")
+    }
+
     /// A basis the journal cannot resolve against what was logged - "per 100 kcal" is not a quantity
     /// an intake records, and "per 100 g or mL" says the source did not settle its own dimension -
     /// has no factor. Nothing is written then: a guess would put a wrong number in Health, and a

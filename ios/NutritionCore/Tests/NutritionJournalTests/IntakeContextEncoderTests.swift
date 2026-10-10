@@ -1291,6 +1291,54 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertEqual(served[1].string("amount"), "48")
     }
 
+    /// A label that states its serving as a count of the thing logged, "Serving size 3 gummies", is stored as
+    /// "per serving (3 gummy)". Six gummies logged is two servings, so the stated protein doubles. A serving
+    /// stated as a household phrase with no quantity, "per serving (1 large biscuit)", has nothing to scale by
+    /// and sends no nutrient.
+    func testCountedServingBasisScalesByTheCountLogged() throws {
+        func encode(basis: String, logged: [IntakeComponent]) throws -> [IntakeContextJSONValue] {
+            let value = try encoder.upsert(
+                intake: intake,
+                revision: IntakeRevision(
+                    intakeID: intakeID,
+                    number: 1,
+                    components: logged,
+                    productSnapshotID: "snapshot-gummy",
+                    changeReason: "Scanned from the shelf",
+                    createdAt: Self.recordedAt),
+                product: ProductDefinition(
+                    snapshotID: "snapshot-gummy",
+                    productID: "product-synthetic-gummy",
+                    name: "Synthetic gummy",
+                    labelBasis: basis,
+                    catalogOrigin: "synthetic-catalog",
+                    catalogVersion: "1",
+                    nutrients: ["protein": .known(9, .g)]),
+                operation: outboxOperation(
+                    id: "6c3e0f1a-7d8b-4c9e-8f4a-5b6c7d8e9f01", kind: .upsert, revision: 1))
+            return try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue)
+        }
+        let six = IntakeComponent(
+            componentID: "gummies",
+            name: "Synthetic gummy",
+            amount: try XCTUnwrap(DecimalText.decode("6")),
+            unit: .gummy)
+        let counted = try encode(basis: "per serving (3 gummy)", logged: [six])
+        XCTAssertEqual(counted.map { $0.string("component_id") }, ["gummies", "protein"])
+        XCTAssertEqual(counted[1].string("amount"), "18", "two servings of 9 g")
+        XCTAssertEqual(counted[1].string("unit"), "g")
+
+        let household = try encode(basis: "per serving (1 large biscuit)", logged: [six])
+        XCTAssertEqual(household.map { $0.string("component_id") }, ["gummies"])
+
+        // Six gummies and a tablet: the stated serving is counted in gummies, and a tablet is a second count
+        // that says nothing about how many servings were eaten, so the protein is omitted rather than guessed.
+        let tablet = IntakeComponent(
+            componentID: "extra-tablet", name: "Synthetic tablet", amount: 1, unit: .tablet)
+        let mixed = try encode(basis: "per serving (3 gummy)", logged: [six, tablet])
+        XCTAssertEqual(mixed.map { $0.string("component_id") }, ["gummies", "extra-tablet"])
+    }
+
     /// A canonical key and an accepted alias name one nutrient, so they become one fact: the contract requires
     /// `component_id` to be unique, and two facts under one id fail the whole operation.
     func testAliasAndCanonicalKeysProduceOneFact() throws {
