@@ -81,7 +81,7 @@ public enum DailyTotalsBuilder {
                 values.append(contentsOf: contributions(
                     of: entry, nutrient: nutrient, lookup: lookup))
             }
-            totals[nutrient] = Self.sum(values)
+            totals[nutrient] = Self.sum(values, nutrient: nutrient)
         }
         return DailyTotals(totals: totals)
     }
@@ -272,10 +272,12 @@ public enum DailyTotalsBuilder {
     /// bound against a target as though the bound were the day's figure, and a person reading "at
     /// least 5 g of 60 g" cannot tell whether the day is met. Unknown is the one answer that cannot
     /// be mistaken for the day being short.
-    private static func sum(_ values: [NutrientValue]) -> NutrientTotal {
-        // `NutrientTotal.sum` is non-throwing for the values this builder produces: every value
-        // either shares a dimension with the first known one or is left out of the sum entirely.
-        let total = (try? NutrientTotal.sum(values)) ?? NutrientTotal(
+    private static func sum(_ values: [NutrientValue], nutrient: String) -> NutrientTotal {
+        // The nutrient's canonical unit comes from the same mapping the goals and the HealthKit writer use.
+        // A known value in another dimension (protein in IU, say) makes the sum throw, and a throw is
+        // answered as unknown, the same as a mismatched pair. Without a mapping nothing is checked.
+        let expected = HealthKitWritePlanner.mapping(for: nutrient)?.unit
+        let total = (try? NutrientTotal.sum(values, expecting: expected)) ?? NutrientTotal(
             value: .unknown,
             coverage: Coverage(
                 knownCount: 0, totalCount: values.count, hasBelowReportingThreshold: false,

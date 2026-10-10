@@ -263,6 +263,8 @@ public enum NutritionFactsParser {
             unitText.append(characters[look])
             look += 1
         }
+        // Same word boundary as the nutrient reader below: a letter after the capped unit is another word.
+        if look < characters.count, characters[look].isLetter { return nil }
         guard !unitText.isEmpty, unit(for: unitText, allowsCountedUnits: true) != nil else { return nil }
         var end = look
         var after = look
@@ -1075,6 +1077,9 @@ public enum NutritionFactsParser {
             unitText.append(characters[look])
             look += 1
         }
+        // The cap ends the unit only at a word boundary. A letter still following it means the run is one
+        // longer word ("capsulesdaily"), not the unit followed by another word, so no unit is read from it.
+        if look < characters.count, characters[look].isLetter { return nil }
 
         var printed: MeasureUnit?
         if unitText.isEmpty {
