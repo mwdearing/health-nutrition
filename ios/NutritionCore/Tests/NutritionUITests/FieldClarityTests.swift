@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import NutritionJournal
 import XCTest
@@ -48,6 +49,17 @@ final class FieldClarityTests: XCTestCase {
         XCTAssertEqual(model.visibleAmountError, model.amountError)
         XCTAssertNil(model.visibleNameError, "the name was never edited or left")
         XCTAssertFalse(model.hasAttemptedSave)
+    }
+
+    /// The form observes the model, so leaving a field has to announce the change that reveals its error.
+    func testLeavingAnEditedFieldAnnouncesTheChange() throws {
+        let model = try makeModel()
+        model.amountText = "Regular"
+        var announced = 0
+        let subscription = model.objectWillChange.sink { announced += 1 }
+        model.fieldDidEnd(.amount)
+        subscription.cancel()
+        XCTAssertGreaterThan(announced, 0)
     }
 
     /// Leaving a field that was never edited is not a reason to say it is wrong.
