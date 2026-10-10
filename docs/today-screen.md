@@ -385,6 +385,26 @@ snapshot names: coverage asks only whether a value is known, and the stored valu
 amount. Each value is read through the canonical nutrient mapping's keys, so a snapshot storing `energyKcal` counts
 as known for `energy` rather than as missing. An entry typed by hand has no snapshot, so it stays unknown until a product or a calculated recipe is attached.
 
+## Text fields
+
+Every typed input is a `LabeledField` (`DesignComponents.swift`). It has a caption above the box that stays visible
+while the field holds text, the input inside a bordered box at least 44 pt high, and any error under the box. The
+placeholder is an example, never a repeat of the caption, because a placeholder disappears once something is typed.
+The box turns the accent color while the input has focus and the error color when an error is shown. Only the
+existing color tokens are used.
+
+For VoiceOver the caption is hidden and the input takes its name from the caption, so each field is read once. The
+error stays a separate element beneath the box, so the input keeps its editable trait.
+
+Error rule on Add intake (`AddIntakeViewModel`): a field's error shows under that field only after a tap of Save, or
+once the field was edited and focus has left it. Typing is never reported as wrong mid-word. The line beside Save then
+reads "Fix the fields marked above." and never repeats a field's own error. A reset clears the attempted save and the
+per-field history (`resetFieldErrors()`).
+
+`scripts/tests/test_field_clarity.py` fails on any text field in `NutritionUI` that is outside a `LabeledField` call
+and not listed in its allowlist with a reason. The Add home search field (a disabled placeholder row) and the goals
+rows are listed; the goals rows are to be converted in a follow-up.
+
 ## Boundaries
 `NutritionUI` imports no HealthKit and no networking. Colors come only from the design tokens through
 `TokenColors.swift`; text uses Dynamic Type styles; every button and image has an accessibility label.
