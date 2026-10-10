@@ -91,10 +91,12 @@ public enum IntakeContextSnapshotBasis: Equatable {
     /// entry records that thing rather than a serving: "per serving (3 gummy)" with six gummies logged is
     /// two servings. A label that says "Serving size 3 gummies" is stored in this shape.
     ///
-    /// Only a counted quantity in the same unit as the logged component scales, so the factor is exact.
-    /// A serving stated in weight or volume ("per serving (30 g)") is not answered here, because the
-    /// encoder and the HealthKit totals do not say how much was eaten from a weight the entry does not
-    /// record in that dimension. A serving with no quantity ("per serving (1 large biscuit)") is nil.
+    /// Only the one counted component, in the unit the serving is stated in, scales, so the factor is exact.
+    /// An entry that records another count beside it ("six gummies and a tablet") does not say how many
+    /// servings were eaten, so it is nil. A serving stated in weight or volume ("per serving (30 g)") is not
+    /// answered here, because the encoder and the HealthKit totals do not say how much was eaten from a
+    /// weight the entry does not record in that dimension. A serving with no quantity
+    /// ("per serving (1 large biscuit)") is nil.
     private static func countedServingFactor(
         labelBasis: String, basis: IntakeContextSnapshotBasis, logged components: [IntakeComponent]
     ) -> Decimal? {
@@ -102,9 +104,9 @@ public enum IntakeContextSnapshotBasis: Equatable {
               let serving = statedServingQuantity(labelBasis),
               serving.unit.dimension == .count
         else { return nil }
-        let counted = components.filter { $0.unit == serving.unit }
-        guard counted.count == 1 else { return nil }
-        return counted[0].amount / serving.value
+        let counts = components.filter { $0.unit.dimension == .count }
+        guard counts.count == 1, counts[0].unit == serving.unit else { return nil }
+        return counts[0].amount / serving.value
     }
 
     /// The quantity one serving is, from a basis that states it: "per serving (30 g)" is 30 g and
@@ -125,7 +127,9 @@ public enum IntakeContextSnapshotBasis: Equatable {
             .trimmingCharacters(in: .whitespaces)
         let digits = stated.prefix { $0.isASCII && ($0.isNumber || $0 == ".") }
         let symbol = stated.dropFirst(digits.count).trimmingCharacters(in: .whitespaces)
-        guard let amount = DecimalText.decode(String(digits)), amount > 0,
+        // A number with two points, "1.2.3", is not a quantity; the amount parser the totals always used refuses it.
+        guard digits.filter({ $0 == "." }).count <= 1,
+            let amount = DecimalText.decode(String(digits)), amount > 0,
             let unit = try? UnitRegistry.unit(for: symbol)
         else { return nil }
         return (amount, unit)
