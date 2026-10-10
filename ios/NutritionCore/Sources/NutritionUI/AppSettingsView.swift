@@ -191,6 +191,7 @@ private struct SettingsContent: View {
         .onChange(of: connections.eraseGeneration) { _, _ in
             self.model.load()
             self.model.reminders?.refreshFromPreferences()
+            self.model.account?.refreshAfterErase()
         }
         .confirmationDialog(
             ConnectionsPrivacyViewModel.eraseConfirmationTitle, isPresented: $confirmingErase,

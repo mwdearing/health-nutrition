@@ -84,6 +84,8 @@ public struct SignInSheet: View {
             .scrollContentBackground(.hidden)
             .background(TokenColors.background)
             .tint(TokenColors.accent)
+            // A sign-in that is completing must finish with the sheet still up, so its result is never lost.
+            .interactiveDismissDisabled(model.isBusy)
             .navigationTitle("Sign in")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -91,6 +93,7 @@ public struct SignInSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { self.dismiss() }
+                        .disabled(model.isBusy)
                 }
             }
             .onChange(of: model.phase) { _, phase in

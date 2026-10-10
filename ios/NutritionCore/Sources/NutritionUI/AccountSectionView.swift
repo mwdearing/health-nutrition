@@ -73,6 +73,9 @@ public struct AccountSectionView: View {
         } message: {
             Text("The account and every label it shared are deleted. Data on this device is kept.")
         }
+        .onChange(of: model.needsDisclosure) { _, needed in
+            if needed && !showingSignIn { showingDisclosure = true }
+        }
         .task {
             await model.load()
             showingDisclosure = model.needsDisclosure && !showingSignIn

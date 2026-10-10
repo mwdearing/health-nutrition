@@ -162,6 +162,10 @@ public final class AccountViewModel: ObservableObject {
     /// Turns sharing on or off. The switch shows the new value at once and goes back when the save fails.
     /// Nothing is sent until the profile has been read.
     public func setSharing(_ on: Bool) async {
+        await serialized { await self.applySharing(on) }
+    }
+
+    private func applySharing(_ on: Bool) async {
         guard profileReady else {
             message = Self.profileNotReadyMessage
             return
@@ -180,6 +184,10 @@ public final class AccountViewModel: ObservableObject {
     /// Saves the name: trimmed, capped at `nameLimit`, and empty means no name. Nothing is sent until the
     /// profile has been read.
     public func saveName(_ text: String) async {
+        await serialized { await self.applyName(text) }
+    }
+
+    private func applyName(_ text: String) async {
         guard profileReady else {
             message = Self.profileNotReadyMessage
             return
@@ -212,6 +220,14 @@ public final class AccountViewModel: ObservableObject {
         clearSignedInState()
     }
 
+    /// Called after Erase all data cleared the stored preferences: a signed-in person who has not read the
+    /// disclosure on this device is asked again, and nothing is shared until they do.
+    public func refreshAfterErase() {
+        if phase == .signedIn && !preferences.hasSeenCommunityDisclosure {
+            needsDisclosure = true
+        }
+    }
+
     /// The person has read the sharing disclosure. Stored, so it is not shown again on this device. Ignored
     /// while a call is running, so a tap during a busy call is never taken for agreement.
     public func acknowledgeDisclosure() {
@@ -221,6 +237,20 @@ public final class AccountViewModel: ObservableObject {
     }
 
     // MARK: Helpers
+
+    /// The tail of the profile writes. Every write sends the whole profile, so each waits for the one before it
+    /// and then reads the current name and switch, which keeps an older response from undoing a newer change.
+    private var writeTail: Task<Void, Never>?
+
+    private func serialized(_ work: @escaping @MainActor () async -> Void) async {
+        let previous = writeTail
+        let task = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        writeTail = task
+        await task.value
+    }
 
     /// Runs one service call with the busy flag set. A failure sets `message` and returns nil.
     private func run<T>(_ fallback: String, _ call: () async throws -> T) async -> T? {
