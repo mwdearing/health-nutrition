@@ -1339,6 +1339,49 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertEqual(mixed.map { $0.string("component_id") }, ["gummies", "extra-tablet"])
     }
 
+    /// A recipe with a total yield states its values per one unit of that yield, so "Per kg; yield 0.8 kg" with
+    /// 100 g of protein per kilogram sends 20 g for 200 g logged, and "Per L; yield 1 L" with 80 g per liter sends
+    /// 20 g for 250 mL. A basis that names another unit than its yield, or a bare unit, sends no protein at all.
+    func testRecipeTotalYieldSnapshotsScaleToTheLoggedAmount() throws {
+        func protein(basis: String, perUnit: NutrientValue, logged: IntakeComponent) throws -> String? {
+            let value = try encoder.upsert(
+                intake: intake,
+                revision: IntakeRevision(
+                    intakeID: intakeID,
+                    number: 1,
+                    components: [logged],
+                    productSnapshotID: "snapshot-recipe-total",
+                    changeReason: "Logged from the recipe",
+                    createdAt: Self.recordedAt),
+                product: ProductDefinition(
+                    snapshotID: "snapshot-recipe-total",
+                    productID: "recipe-synthetic-total",
+                    name: "Synthetic recipe",
+                    labelBasis: basis,
+                    catalogOrigin: "recipe_calculated",
+                    catalogVersion: "1",
+                    nutrients: ["protein": perUnit]),
+                operation: outboxOperation(
+                    id: "8e5a2c3d-9f0b-4d7e-8a1c-6b7d8e9f0a1b", kind: .upsert, revision: 1))
+            let facts = try XCTUnwrap(try XCTUnwrap(value.member("facts"))?.arrayValue)
+            return facts.first { $0.string("component_id") == "protein" }?.string("amount")
+        }
+        let kilogramBasis = RecipeLogger.basisText(.total(Quantity(value: dec("0.8"), unit: .kg)))
+        let liter = RecipeLogger.basisText(.total(Quantity(value: dec("1"), unit: .L)))
+        let oat = IntakeComponent(
+            componentID: "recipe-portion", name: "Synthetic recipe",
+            amount: dec("200"), unit: .g)
+        XCTAssertEqual(
+            try protein(basis: kilogramBasis, perUnit: .known(dec("100"), .g), logged: oat), "20")
+        let milliliters = IntakeComponent(
+            componentID: "recipe-portion", name: "Synthetic recipe", amount: dec("250"), unit: .mL)
+        XCTAssertEqual(
+            try protein(basis: liter, perUnit: .known(dec("80"), .g), logged: milliliters), "20")
+        XCTAssertNil(
+            try protein(basis: "Per mL; yield 1 L", perUnit: .known(dec("80"), .g), logged: milliliters),
+            "a basis naming another unit than its yield states nothing")
+    }
+
     /// A canonical key and an accepted alias name one nutrient, so they become one fact: the contract requires
     /// `component_id` to be unique, and two facts under one id fail the whole operation.
     func testAliasAndCanonicalKeysProduceOneFact() throws {
