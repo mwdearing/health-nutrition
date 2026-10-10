@@ -7,6 +7,7 @@ one-line-per-gap output.
 """
 from __future__ import annotations
 
+import copy
 import plistlib
 import subprocess
 import sys
@@ -15,11 +16,28 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check_privacy_manifest.py"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SHIPPED_MANIFEST = REPO_ROOT / "ios" / "HealthNutrition" / "Resources" / "PrivacyInfo.xcprivacy"
 
 BOOT_TIME = ("NSPrivacyAccessedAPICategorySystemBootTime", ["35F9.1"])
 USER_DEFAULTS = ("NSPrivacyAccessedAPICategoryUserDefaults", ["CA92.1"])
 FILE_TIMESTAMP = ("NSPrivacyAccessedAPICategoryFileTimestamp", ["C617.1"])
 DISK_SPACE = ("NSPrivacyAccessedAPICategoryDiskSpace", ["E174.1"])
+
+# The account sends these to the project's server, so the manifest must declare them, linked to the user, not
+# used for tracking, for the app's own functionality.
+EMAIL = "NSPrivacyCollectedDataTypeEmailAddress"
+USER_ID = "NSPrivacyCollectedDataTypeUserID"
+NAME = "NSPrivacyCollectedDataTypeName"
+ACCOUNT_DATA = [
+    {
+        "NSPrivacyCollectedDataType": data_type,
+        "NSPrivacyCollectedDataTypeLinked": True,
+        "NSPrivacyCollectedDataTypeTracking": False,
+        "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"],
+    }
+    for data_type in (EMAIL, USER_ID, NAME)
+]
 
 PROJECT_YML = """\
 name: HealthNutrition
@@ -73,13 +91,14 @@ def manifest_xml(
     *,
     tracking: bool = False,
     declared: list[tuple[str, list[object]]] | None = None,
+    collected: list[dict] | None = None,
 ) -> str:
     if declared is None:
         declared = [BOOT_TIME]
     payload = {
         "NSPrivacyTracking": tracking,
         "NSPrivacyTrackingDomains": [],
-        "NSPrivacyCollectedDataTypes": [],
+        "NSPrivacyCollectedDataTypes": copy.deepcopy(ACCOUNT_DATA) if collected is None else collected,
         "NSPrivacyAccessedAPITypes": [
             {
                 "NSPrivacyAccessedAPIType": category,
@@ -664,3 +683,77 @@ def test_missing_project_file_is_an_error(tmp_path: Path) -> None:
     )
     result = run(root)
     assert result.returncode != 0
+
+
+CLEAN_SOURCE = {"NutritionCore/Sources/NutritionProviders/Client.swift": "import Foundation\n"}
+
+
+def account_data_without(data_type: str) -> list[dict]:
+    return [copy.deepcopy(entry) for entry in ACCOUNT_DATA if entry["NSPrivacyCollectedDataType"] != data_type]
+
+
+def account_data_changed(data_type: str, key: str, value: object) -> list[dict]:
+    entries = copy.deepcopy(ACCOUNT_DATA)
+    for entry in entries:
+        if entry["NSPrivacyCollectedDataType"] == data_type:
+            entry[key] = value
+    return entries
+
+
+def test_an_empty_collected_data_list_fails(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, CLEAN_SOURCE, manifest=manifest_xml(collected=[]))
+    result = run(root)
+    assert result.returncode == 1
+    assert EMAIL in result.stdout
+    assert USER_ID in result.stdout
+    assert NAME in result.stdout
+
+
+@pytest.mark.parametrize("data_type", [EMAIL, USER_ID, NAME])
+def test_removing_a_declared_account_data_type_fails(tmp_path: Path, data_type: str) -> None:
+    root = write_tree(tmp_path, CLEAN_SOURCE, manifest=manifest_xml(collected=account_data_without(data_type)))
+    result = run(root)
+    assert result.returncode == 1
+    assert data_type in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("NSPrivacyCollectedDataTypeTracking", True), ("NSPrivacyCollectedDataTypeLinked", False)],
+)
+def test_account_data_must_be_linked_to_the_user_and_not_used_for_tracking(
+    tmp_path: Path, key: str, value: bool
+) -> None:
+    root = write_tree(
+        tmp_path, CLEAN_SOURCE, manifest=manifest_xml(collected=account_data_changed(EMAIL, key, value))
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert EMAIL in result.stdout
+
+
+def test_account_data_needs_the_app_functionality_purpose(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        CLEAN_SOURCE,
+        manifest=manifest_xml(
+            collected=account_data_changed(
+                USER_ID, "NSPrivacyCollectedDataTypePurposes", ["NSPrivacyCollectedDataTypePurposeAnalytics"]
+            )
+        ),
+    )
+    result = run(root)
+    assert result.returncode == 1
+    assert USER_ID in result.stdout
+
+
+def test_shipped_manifest_declares_the_account_data() -> None:
+    manifest = read_manifest(SHIPPED_MANIFEST)
+    declared = {entry.get("NSPrivacyCollectedDataType") for entry in manifest.get("NSPrivacyCollectedDataTypes", [])}
+    assert {EMAIL, USER_ID, NAME} <= declared
+    assert manifest.get("NSPrivacyTracking") is False
+
+
+def test_shipped_tree_passes_the_check() -> None:
+    result = run(REPO_ROOT / "ios")
+    assert result.returncode == 0, result.stdout + result.stderr
