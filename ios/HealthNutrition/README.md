@@ -4,8 +4,10 @@ The iOS app target. It is a thin shell: the screens come from the `NutritionUI` 
 data from the `NutritionJournal` store, both in the `NutritionCore` Swift package in
 `../NutritionCore`.
 
-The app makes one kind of network request: a barcode lookup in Add intake, when the user asks for
-one. Nothing else leaves the device, and no request is sent while the user is typing. The lookup
+The app makes two kinds of network request. One is a barcode lookup in Add intake, when the user asks for
+one. The other is the account and community catalog, which exists only in a build that carries the project
+settings and only after the person signs in (see [docs/accounts.md](../../docs/accounts.md)). Nothing else
+leaves the device, and no request is sent while the user is typing. The lookup
 reads a single product from Open Food Facts and nothing is sent back; see
 [docs/providers/open-food-facts.md](../../docs/providers/open-food-facts.md) for the fields read, the
 rate limits honored and the attribution the license requires.

@@ -64,11 +64,16 @@ A PostgREST error body with an SQLSTATE `code` wins over the HTTP status:
 
 Without a known code, the status maps as follows: 400 and 422 to `invalid`, 401 and 403 to `unauthorized`, 429 to `rateLimited`, anything else to `server(status)`. A request that gets no reply throws `network`. A reply that does not decode throws `server(status)`. A session that cannot be written to the Keychain throws `storage`.
 
+## Settings and wiring
+
+- The Account section in Settings, the sign-in sheet and the first-run sharing disclosure are built on the `AccountViewModel` seam (`CommunityAccountServicing`). See [accounts](accounts.md) for what a person sees and what is shared.
+- The app target builds the client with `CommunityClient.make(infoDictionary:store:)` and the Keychain store. When that throws, no account model exists and the section is not shown.
+- The Sign in with Apple entitlement is in `HealthNutrition.entitlements`. `Support/Info.plist` reads the two keys from the build settings `SUPABASE_URL` and `SUPABASE_ANON_KEY`, which are empty in the repository. The signed-beta workflow passes them from environment secrets, all or nothing.
+- A build setting value written as `https://...` in an xcconfig file must escape the `//`, because xcconfig reads `//` as a comment. The values in `project.yml` and on the `xcodebuild` command line are not read as xcconfig.
+
 ## Not done yet
 
-- No user interface: no Settings section, sign-in sheet, sharing switch or first-run disclosure. These come in the account settings change.
-- No Sign in with Apple entitlement and no build settings wiring. The signed-build workflow must pass `SUPABASE_URL` and `SUPABASE_ANON_KEY`. A build setting value written as `https://...` must escape the `//`, because xcconfig reads `//` as a comment.
 - No catalog integration: the label capture does not submit yet, and barcode lookup does not consult the community catalog yet.
 - No privacy manifest, App Privacy or `PRIVACY.md` changes.
 - The Keychain store is compiled only where Security is available. It has not been run on a device.
-- The client has not been compiled or tested on this host. CI is the first build.
+- The account code has not been compiled on this host. CI is the first build.
