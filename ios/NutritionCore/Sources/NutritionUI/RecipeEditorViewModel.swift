@@ -85,14 +85,17 @@ public final class RecipeEditorViewModel: ObservableObject {
     /// The density text the catalog filled in, by draft id, so the attribution shows only while it holds.
     private var catalogDensityTexts: [String: String] = [:]
 
-    /// The units the ingredient and yield pickers offer: the registry without the two ounces.
+    /// The units the ingredient and yield pickers offer: the registry without the two ounces and the typed
+    /// volumes.
     ///
-    /// `oz` and `fl oz` are input and display units for Add intake, which normalizes them to grams and
-    /// milliliters on the way in. A recipe has no such step: its yield becomes the component of a
-    /// logged entry through `RecipeLogger.portionQuantity`, so an ounce yield would be stored as an
-    /// ounce and skip that normalization. Keeping them out here is what makes a recipe metric.
+    /// `oz`, `fl oz`, `cup`, `tbsp` and `tsp` are input and display units for Add intake, which normalizes
+    /// them to grams and milliliters on the way in. A recipe has no such step: its yield becomes the component
+    /// of a logged entry through `RecipeLogger.portionQuantity`, so one of them would be stored as typed and
+    /// skip that normalization. Keeping them out here is what makes a recipe metric.
     public static let unitSymbols: [String] =
-        UnitRegistry.all.filter { $0 != .oz && $0 != .flOz }.map { $0.symbol }
+        UnitRegistry.all
+            .filter { $0 != .oz && $0 != .flOz && $0 != .cup && $0 != .tablespoon && $0 != .teaspoon }
+            .map { $0.symbol }
 
     public let unitSymbols = RecipeEditorViewModel.unitSymbols
     public let nutrientFields = RecipeNutrientField.all

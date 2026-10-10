@@ -35,9 +35,27 @@ final class IngredientDensityTests: XCTestCase {
     }
 
     func testVolumeFactorsAreExact() throws {
-        XCTAssertEqual(milliliters(1, .cup), try dec("236.5882365"))
-        XCTAssertEqual(milliliters(16, .tablespoon), milliliters(1, .cup))
-        XCTAssertEqual(milliliters(3, .teaspoon), milliliters(1, .tablespoon))
+        let cup = try qty("1", .cup).converted(to: .mL).value
+        XCTAssertEqual(cup, try dec("236.5882365"))
+        XCTAssertEqual(try qty("16", .tablespoon).converted(to: .mL).value, cup)
+        let tablespoon = try qty("1", .tablespoon).converted(to: .mL).value
+        XCTAssertEqual(try qty("3", .teaspoon).converted(to: .mL).value, tablespoon)
+    }
+
+    /// Grams come from the table's own cup figure, so a cup of flour is exactly its table value, not a
+    /// cup times a rounded density. Honey is 340 g a cup, so a tablespoon is 21.25 g exactly.
+    func testGramsForAVolumeComeFromTheCupFigureExactly() throws {
+        let flour = try XCTUnwrap(IngredientDensityCatalog.match("all-purpose flour"))
+        XCTAssertEqual(flour.grams(forMilliliters: try dec("473.176473")), try dec("240"))
+        let honey = try XCTUnwrap(IngredientDensityCatalog.match("honey"))
+        XCTAssertEqual(honey.grams(forMilliliters: try dec("14.78676478125")), try dec("21.25"))
+    }
+
+    /// A tiny positive volume must not round to no mass at all.
+    func testATinyVolumeNeverBecomesZeroGrams() throws {
+        let flour = try XCTUnwrap(IngredientDensityCatalog.match("all-purpose flour"))
+        let tiny = flour.grams(forMilliliters: try dec("0.000000001"))
+        XCTAssertTrue(tiny > 0)
     }
 
     func testAttributionIsPinned() {

@@ -209,7 +209,10 @@ public struct DSLDLabelAdapter: Sendable {
                 maximum = minimum
             }
             let unitText = object["unit"]?.stringValue ?? ""
-            let unit: MeasureUnit = (try? UnitRegistry.unit(for: unitText)) ?? .serving
+            // A serving stated in a cup or a spoon stays a counted serving, as it was before those measures
+            // were typed in Add intake: they are input units and are never stored.
+            let parsed = try? UnitRegistry.unit(for: unitText)
+            let unit: MeasureUnit = parsed.flatMap { [MeasureUnit.cup, .tablespoon, .teaspoon].contains($0) ? nil : $0 } ?? .serving
             let order = literalText(in: object, "order").flatMap { Int($0) } ?? (sizes.count + 1)
             sizes.append(
                 DSLDServingSize(

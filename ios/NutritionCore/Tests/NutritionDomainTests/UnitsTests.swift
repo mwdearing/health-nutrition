@@ -58,7 +58,7 @@ final class UnitsTests: XCTestCase {
         XCTAssertEqual(try MeasureUnit(symbol: "oz"), MeasureUnit.oz)
         XCTAssertEqual(try MeasureUnit(symbol: "fl oz"), MeasureUnit.flOz)
         XCTAssertEqual(UnitRegistry.units(in: .mass).count, 5)
-        XCTAssertEqual(UnitRegistry.units(in: .volume).count, 3)
+        XCTAssertEqual(UnitRegistry.units(in: .volume).count, 6)
         XCTAssertEqual(UnitRegistry.units(in: .energy).count, 1)
         XCTAssertEqual(UnitRegistry.units(in: .count).count, 6)
         XCTAssertEqual(UnitRegistry.units(in: .internationalUnit).count, 1)
@@ -275,11 +275,11 @@ final class UnitsTests: XCTestCase {
         }
     }
 
-    /// The two new units do not widen the registry's shape: mass and volume gain one each, and an
-    /// ounce still never converts to a volume without a density.
+    /// The volume units, the three typed measures included, keep the registry's shape: an ounce still
+    /// never converts to a volume without a density.
     func testOuncesKeepTheRegistryShapeAndStillNeedADensityAcrossDimensions() throws {
         XCTAssertEqual(UnitRegistry.units(in: .mass).count, 5)
-        XCTAssertEqual(UnitRegistry.units(in: .volume).count, 3)
+        XCTAssertEqual(UnitRegistry.units(in: .volume).count, 6)
         XCTAssertTrue(UnitRegistry.units(in: .mass).contains(.oz))
         XCTAssertTrue(UnitRegistry.units(in: .volume).contains(.flOz))
         XCTAssertEqual(Set(UnitRegistry.all.map(\.symbol)).count, UnitRegistry.all.count)
@@ -292,6 +292,27 @@ final class UnitsTests: XCTestCase {
         // A fluid ounce is a volume, so it converts across to mass with a density like any other.
         let grams = try qty("1", .flOz).converted(to: .g, density: try dec("1"))
         XCTAssertEqual(grams.value, try dec("29.5735295625"))
+    }
+
+    /// A cup, a tablespoon and a teaspoon are exact in milliliters: a tablespoon is a sixteenth of a cup
+    /// and a teaspoon a third of a tablespoon, so the factors multiply out with no rounding at all.
+    func testCupTablespoonAndTeaspoonConvertFromExactFactors() throws {
+        XCTAssertEqual(MeasureUnit.cup.dimension, UnitDimension.volume)
+        XCTAssertEqual(try MeasureUnit(symbol: "cup"), MeasureUnit.cup)
+        XCTAssertEqual(try MeasureUnit(symbol: "tbsp"), MeasureUnit.tablespoon)
+        XCTAssertEqual(try MeasureUnit(symbol: "tsp"), MeasureUnit.teaspoon)
+
+        XCTAssertEqual(try qty("1", .cup).converted(to: .mL).value, try dec("236.5882365"))
+        XCTAssertEqual(try qty("16", .tablespoon).converted(to: .mL).value, try dec("236.5882365"))
+        XCTAssertEqual(try qty("3", .teaspoon).converted(to: .mL).value, try dec("14.78676478125"))
+        XCTAssertEqual(try qty("16", .tablespoon).converted(to: .cup).value, try dec("1"))
+        XCTAssertEqual(try qty("3", .teaspoon).converted(to: .tablespoon).value, try dec("1"))
+
+        let compared = 6
+        for text in ["0.25", "1", "2.5"] {
+            let back = try qty(text, .cup).converted(to: .mL).converted(to: .cup)
+            XCTAssertEqual(DisplayRounding.rounded(back.value, fractionDigits: compared), try dec(text), text)
+        }
     }
 
     func testUnknownUnitSymbolRejected() throws {

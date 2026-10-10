@@ -11,8 +11,17 @@ The recipe editor can fill an ingredient's density (grams per milliliter, the "W
 ## Conversion
 
 - The table gives grams per cup. The editor's density is grams per milliliter, so the app divides by the US customary cup, exactly 236.5882365 mL, and rounds to six fraction digits.
-- Helpers for cup, tablespoon and teaspoon convert to milliliters with exact factors (no screen accepts these units yet): one cup is 236.5882365 mL, one tablespoon is 1/16 of a cup (14.78676478125 mL) and one teaspoon is 1/3 of a tablespoon (4.92892159375 mL).
-- These volume units are input only. They are not stored units: storage keeps metric mass and volume, and the export and relay never see a cup, tablespoon or teaspoon.
+- `MeasureUnit.cup`, `MeasureUnit.tablespoon` (symbol `tbsp`) and `MeasureUnit.teaspoon` (symbol `tsp`) have exact factors: one cup is 236.5882365 mL, one tablespoon is 1/16 of a cup (14.78676478125 mL) and one teaspoon is 1/3 of a tablespoon (4.92892159375 mL).
+- A grams figure from the table is `grams per cup x milliliters / 236.5882365`, computed in one exact multiplication and division and rounded once to six fraction digits. A full cup is therefore exactly its table value.
+- These volume units are input and display only. They are not stored units: storage keeps metric mass and volume, and the export and relay never see a cup, tablespoon or teaspoon.
+
+## Add intake behavior
+
+- The Add intake unit picker offers cup, tbsp and tsp. Under the US system they follow `oz` and `fl oz`; under metric they are in the whole registry.
+- A volume typed in one of them is converted with the catalog density only when the name matches exactly one row and the entry's label basis is a mass or absent. An entry typed by hand has no basis, so it qualifies. A product whose label is per 100 mL, per serving or unresolved keeps the amount in mL, whatever its name says.
+- When the conversion applies, the form shows the line "About <n> g, using a typical density for <catalog name>." with the attribution beneath it. The saved entry stores grams, and the "This adds" preview uses the same grams.
+- When a volume is chosen for a food the catalog does not name, or for a name that matches more than one row, the form shows "No typical density is known for this food, so it is saved in mL." The amount is stored in milliliters.
+- Ounces keep their existing behavior: they convert to grams or milliliters by exact factor and never use a density.
 
 ## Matching
 
@@ -33,6 +42,5 @@ The values are typical figures per cup. Real densities vary with brand, moisture
 
 ## Out of scope
 
-- Add intake screens do not use the catalog yet. That is left for a follow-up.
 - The catalog does not change the recipe schema, the export or the relay contract.
 - No nutrient values come from the table. It only supplies the mass per volume used to convert between weight and volume.

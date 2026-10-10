@@ -19,7 +19,17 @@ public struct IngredientDensity: Equatable, Sendable {
     /// Grams per milliliter, the unit the recipe editor's density field takes. The table is per cup,
     /// so this divides by the exact cup volume and rounds to six fraction digits for display.
     public var gramsPerMilliliter: Decimal {
-        DisplayRounding.rounded(gramsPerCup / VolumeInput.cup.millilitersPerUnit, fractionDigits: 6)
+        DisplayRounding.rounded(gramsPerCup / MeasureUnit.cup.toBase, fractionDigits: 6)
+    }
+
+    /// The grams a volume of `milliliters` weighs at this ingredient's typical density. The table is per
+    /// cup, so the grams are the milliliters times the table's grams, divided once by the exact cup volume,
+    /// and rounded once to six fraction digits (unless that would give zero for a positive volume). A full cup is therefore exactly its table value.
+    public func grams(forMilliliters milliliters: Decimal) -> Decimal {
+        let exact = milliliters * gramsPerCup / MeasureUnit.cup.toBase
+        let rounded = DisplayRounding.rounded(exact, fractionDigits: 6)
+        // A positive volume never becomes no mass: below six digits the quotient is kept as it is.
+        return rounded == 0 && exact > 0 ? exact : rounded
     }
 }
 
@@ -56,33 +66,4 @@ public enum IngredientDensityCatalog {
             .split(whereSeparator: { $0.isWhitespace })
             .joined(separator: " ")
     }
-}
-
-/// US customary volume units a recipe can be typed in. This is input only: each converts to
-/// milliliters when it is typed and is never a `MeasureUnit`, so it never reaches storage, the export
-/// or the relay.
-public enum VolumeInput: CaseIterable, Sendable {
-    case cup
-    case tablespoon
-    case teaspoon
-
-    /// Exact milliliters per unit. A tablespoon is 1/16 of a cup and a teaspoon is 1/3 of a tablespoon,
-    /// so each literal here is exact in decimal.
-    var millilitersPerUnit: Decimal {
-        switch self {
-        case .cup: return densityLiteral("236.5882365")
-        case .tablespoon: return densityLiteral("14.78676478125")
-        case .teaspoon: return densityLiteral("4.92892159375")
-        }
-    }
-}
-
-/// `amount` of `unit` in milliliters.
-public func milliliters(_ amount: Decimal, _ unit: VolumeInput) -> Decimal {
-    amount * unit.millilitersPerUnit
-}
-
-/// A decimal from its text, never from a Double literal, so no binary rounding creeps in.
-private func densityLiteral(_ text: String) -> Decimal {
-    Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))!
 }
