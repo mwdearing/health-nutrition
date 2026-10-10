@@ -57,15 +57,19 @@ declare
   device uuid := auth.uid();
   cfg catalog.settings%rowtype;
   used integer;
+  sharing boolean;
 begin
   if device is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
     raise exception 'sign in with an account first' using errcode = '28000';
   end if;
-  -- A deleted account's token stays valid until it expires, so the profile has to exist as well.
-  if not exists (select 1 from public.profiles where id = device) then
+  -- Read the profile under a share lock: a switch-off or an account deletion racing this call waits for it to
+  -- finish instead of slipping in after the check. A deleted account's token stays valid until it expires, so
+  -- the profile has to exist as well.
+  select share_labels into sharing from public.profiles where id = device for share;
+  if not found then
     raise exception 'account not found' using errcode = '28000';
   end if;
-  if exists (select 1 from public.profiles where id = device and not share_labels) then
+  if not sharing then
     raise exception 'sharing is turned off' using errcode = '42501';
   end if;
   if p_barcode is null or p_barcode !~ '^[0-9]{8,14}$' or p_basis not in ('per_100g', 'per_100ml', 'per_serving')
@@ -111,6 +115,9 @@ begin
   if device is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
     raise exception 'sign in with an account first' using errcode = '28000';
   end if;
+  -- Lock the profile first, so a submission racing this call either finishes before the withdrawal below or
+  -- finds the account gone.
+  perform 1 from public.profiles where id = device for update;
   perform public.withdraw_my_submissions();
   delete from catalog.usage where device_id = device;
   delete from public.profiles where id = device;
