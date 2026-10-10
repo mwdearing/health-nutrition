@@ -2,6 +2,7 @@ import Foundation
 import NutritionDomain
 import NutritionJournal
 import XCTest
+@testable import NutritionJournal
 @testable import NutritionUI
 
 /// The one instant every test logs at, unless it says otherwise. A file-scope constant so it is the
@@ -105,6 +106,31 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(today.total(for: "water")?.value, .known(Decimal(300), .mL))
         XCTAssertEqual(second.total(for: "protein")?.value, .known(Decimal(26), .g))
         XCTAssertEqual(second.total(for: "water")?.value, .known(Decimal(500), .mL))
+    }
+
+    /// A store insert that fails must leave the day as it was: the same totals and the same queued
+    /// outbox, so no half-written entry is counted or sent to a destination.
+    func testPersistenceBoundaryFailedStoreInsertChangesNeitherTotalsNorOutbox() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Oats", id: "oats", at: when, amount: 100, product: oatsSnapshot())
+        let totalsBefore = try DailyTotalsBuilder.totals(
+            for: store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein", "water"])
+        let outboxBefore = try store.pendingOutbox().map(\.operationID)
+
+        store.failNextSaveForTesting = true
+        let failed = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
+        XCTAssertThrowsError(try store.create(
+            failed, components: [IntakeComponent(componentID: "oats", name: "Rolled oats", amount: 200, unit: .g)],
+            product: oatsSnapshot(), now: when)) {
+            XCTAssertEqual($0 as? JournalError, .injectedSaveFailure)
+        }
+
+        let totalsAfter = try DailyTotalsBuilder.totals(
+            for: store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein", "water"])
+        XCTAssertEqual(totalsAfter, totalsBefore)
+        XCTAssertEqual(totalsAfter.total(for: "protein")?.value, .known(Decimal(13), .g))
+        XCTAssertEqual(try store.pendingOutbox().map(\.operationID), outboxBefore)
     }
 
     /// The two days as the journal groups them, each carrying only its own water. This is the check that
