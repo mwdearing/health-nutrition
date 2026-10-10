@@ -282,4 +282,58 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertTrue(line.hasPrefix("Protein: average "), line)
         XCTAssertTrue(line.hasSuffix(" g a day against 60 g"), line)
     }
+
+    // MARK: Review follow-ups
+
+    /// An entry keeps the zone it was logged in. One logged at "now" in a zone far ahead of the device zone has
+    /// the next calendar day's key, and must still count as logged this week.
+    func testAnEntryInAZoneAheadOfTheDeviceZoneStillCounts() throws {
+        let journal = try makeJournalStore()
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: weekNow, timeZoneIdentifier: "Pacific/Kiritimati"),
+            components: [IntakeComponent(componentID: "example-typed", name: "Example typed", amount: Decimal(100), unit: .g)],
+            product: nil, now: weekNow)
+
+        let model = makeModel(journal)
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
+    }
+
+    /// A captured compound reads under the words its label printed, as it does on Today.
+    func testGoalLinesUseThePrintedNameOfACapturedCompound() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "dha", target: Decimal(500), unit: .mg))
+        let date = daysBack(0)
+        let product = ProductDefinition(
+            snapshotID: "snapshot-dha", productID: "product-dha", name: "Example oil",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1", kind: .food,
+            nutrients: ["dha": .known(Decimal(250), .mg)], nutrientDisplayNames: ["dha": "DHA"])
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: date, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "example-oil", name: "Example oil", amount: Decimal(100), unit: .g)],
+            product: product, now: date)
+
+        let model = makeModel(journal, goals: goals)
+        model.load(now: weekNow)
+
+        let line = try XCTUnwrap(model.weekSummary?.goalLines.first)
+        XCTAssertTrue(line.hasPrefix("DHA: average "), line)
+    }
+
+    /// A real, small average never reads as none of it.
+    func testASmallNonzeroAverageDoesNotReadAsZero() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(1), unit: .kg))
+        try logProtein(journal, daysBack: 0, Decimal(string: "0.4") ?? 0)
+
+        let model = makeModel(journal, goals: goals)
+        model.load(now: weekNow)
+
+        let line = try XCTUnwrap(model.weekSummary?.goalLines.first)
+        XCTAssertFalse(line.contains("average 0 kg"), line)
+        XCTAssertTrue(line.contains("average < "), line)
+    }
 }
