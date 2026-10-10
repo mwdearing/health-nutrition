@@ -393,8 +393,8 @@ placeholder is an example, never a repeat of the caption, because a placeholder 
 The box turns the accent color while the input has focus and the error color when an error is shown. Only the
 existing color tokens are used.
 
-For VoiceOver the caption is hidden and the input takes its name from the caption, so each field is read once. The
-error stays a separate element beneath the box, so the input keeps its editable trait.
+For VoiceOver the caption and the error are hidden, and the input takes its name from the caption. The error reaches
+VoiceOver as the input's hint (Add intake's Name and Amount), so each field is read once and keeps its editable trait.
 
 Error rule on Add intake (`AddIntakeViewModel`): a field's error shows under that field only after a tap of Save, or
 once the field was edited and focus has left it. Typing is never reported as wrong mid-word. The line beside Save then

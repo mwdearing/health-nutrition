@@ -34,9 +34,10 @@ public struct AddIntakeView: View {
                         .labelsHidden()
                         .font(.body)
                         .focused(focus)
+                        .accessibilityHint(model.visibleNameError ?? "")
                     }
                     LabeledField("Brand (optional)") { focus in
-                        TextField(text: $model.brand, prompt: Text("For example, Chobani")) {
+                        TextField(text: $model.brand, prompt: Text("For example, a store brand")) {
                             Text("Brand (optional)")
                         }
                         .labelsHidden()
@@ -107,13 +108,21 @@ public struct AddIntakeView: View {
                         .font(.body)
                         .decimalAmountKeyboard()
                         .focused(focus)
-                        Picker("Unit", selection: $model.unit) {
-                            ForEach(model.units, id: \.symbol) { unit in
-                                Text(unit.symbol).tag(unit)
+                        .accessibilityHint(model.visibleAmountError ?? "")
+                        // The unit is a menu, so the picker shows its own chevron; the word above it names it.
+                        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                            Text("Unit")
+                                .font(.footnote)
+                                .foregroundStyle(TokenColors.textSecondary)
+                                .accessibilityHidden(true)
+                            Picker("Unit", selection: $model.unit) {
+                                ForEach(model.units, id: \.symbol) { unit in
+                                    Text(unit.symbol).tag(unit)
+                                }
                             }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
                     }
                 }
                 // A typed cup, tablespoon or teaspoon says what it became, and whose typical density gave the
