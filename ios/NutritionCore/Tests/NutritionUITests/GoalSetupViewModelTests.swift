@@ -233,6 +233,20 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertEqual(goalsModel.draftText["energy"], "2000")
     }
 
+    func testAFailedSaveShowsTheSentenceAndKeepsTheResults() {
+        let goalsModel = GoalsViewModel(
+            store: InMemoryGoalStore(refusesWrites: true),
+            preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goalsModel.load()
+        let model = GoalSetupViewModel(goals: goalsModel)
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(model.resultError, "Could not save your goals. Try again.")
+        XCTAssertEqual(model.step, .results)
+        XCTAssertEqual(model.draftTargets["energy"], "2760")
+    }
+
     func testClosingTheSheetClearsEveryAnswer() {
         let (model, _, _) = makeModel()
         answerForAMaintainingMan(model)
