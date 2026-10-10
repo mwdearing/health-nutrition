@@ -180,6 +180,9 @@ public final class GoalsViewModel: ObservableObject {
         self.preferences = preferences
     }
 
+    /// The unit system the screen shows amounts in, read from the same preferences as the rest of the app.
+    public var unitSystem: UnitSystem { preferences.unitSystem }
+
     /// Every offered nutrient, with a target's text where one is stored.
     public func load() {
         snapshotUnits = Self.snapshotValueUnits(in: journal)
