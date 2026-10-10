@@ -452,6 +452,28 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .pending)
     }
 
+    /// A HealthKit write that fails must not take the local entry with it. The entry stays active at
+    /// its revision, nothing is written to HealthKit, and the delivery is queued for a retry and shown
+    /// as pending rather than dropped.
+    func testPersistenceBoundaryFailedHealthKitWriteKeepsTheLocalEntryAndQueuesARetry() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        writer.failSaves(with: HealthSampleWriterError.transient("HealthKit store unavailable"))
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .retryScheduled(let operationID, _, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a failed write must be reported as a retry, got \(outcomes)")
+        }
+        XCTAssertEqual(try store.activeIntakes().count, 1, "the local entry is still active")
+        XCTAssertEqual(try store.activeIntakes().first?.currentRevision, 1)
+        XCTAssertEqual(try store.revisions(of: intakeID).count, 1)
+        XCTAssertTrue(writer.saved.isEmpty, "nothing reached HealthKit")
+        let operation = try XCTUnwrap(try store.pendingOutbox().first { $0.operationID == operationID })
+        XCTAssertNil(operation.acknowledgedAt, "the failed delivery stays queued")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .pending)
+    }
+
     func testTheBackoffGrowsAcrossAttemptsAndThenStaysAtTwoHours() {
         let waits = (1...6).map { HealthKitDeliveryWorker.backoffSeconds(afterAttempt: $0) }
 
