@@ -25,8 +25,10 @@ HealthRelay destination stays off in every build. The separate debug-only spike
 ## What the target contains
 
 - `project.yml`: the XcodeGen spec for the `HealthNutrition` app (iOS 18, Swift 5 language mode).
-- `HealthNutrition.entitlements`: the HealthKit capability. No signing team id, certificate or
-  profile is ever committed here.
+- `HealthNutrition.entitlements`: the HealthKit capability and Sign in with Apple. No signing team id,
+  certificate or profile is ever committed here.
+- `Support/Info.plist`: the two keys the account settings read, `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+  Their values come from build settings, which are empty in the repository.
 - `Sources/HealthNutritionApp.swift`: the app entry point. It creates one `SwiftDataJournalStore`,
   one `SwiftDataFavoritesStore` and one `SwiftDataRecipeStore` for the app's lifetime and hands them
   to the screens. One
@@ -87,6 +89,17 @@ iPhone you need your own signing team:
 The team is a local setting in Xcode and is deliberately not committed: `project.yml` never sets
 `DEVELOPMENT_TEAM`, so every developer signs with their own account. If you do add a team id to
 the generated project, keep it there and do not copy it into `project.yml` or any committed file.
+
+## Accounts and the Personal Team
+
+The Account section in Settings appears only in a build that has the two project settings,
+`SUPABASE_URL` and `SUPABASE_ANON_KEY`. The signed-beta workflow supplies them from environment secrets. A
+local build, an unsigned build or a CI build has neither, so it shows no account UI and makes no account call.
+
+The entitlements declare Sign in with Apple, and a free Personal Team cannot sign that capability. Xcode
+then refuses to sign the app. To build on a Personal Team, remove the `com.apple.developer.applesignin`
+entry from your local copy of `HealthNutrition.entitlements`, and do not commit that change. Nothing in
+the app needs the entitlement to run without the account settings.
 
 ## Getting a build to install
 
