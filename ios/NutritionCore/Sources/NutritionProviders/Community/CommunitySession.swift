@@ -77,14 +77,14 @@ public struct KeychainCommunitySessionStore: CommunitySessionStore {
         var item = baseQuery()
         item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemDelete(baseQuery() as CFDictionary)
+        _ = SecItemDelete(baseQuery() as CFDictionary)
         guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
             throw CommunityError.storage
         }
     }
 
     public func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
+        _ = SecItemDelete(baseQuery() as CFDictionary)
     }
 
     private func baseQuery() -> [String: Any] {

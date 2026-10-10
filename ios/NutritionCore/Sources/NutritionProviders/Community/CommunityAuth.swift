@@ -10,6 +10,9 @@ public actor CommunityAuth {
     private let now: @Sendable () -> Date
     /// One renewal at a time: the refresh token rotates, so a second concurrent refresh would be rejected.
     private var refreshing: Task<CommunitySession, Error>?
+    /// Bumped whenever the session is replaced or ended, so a refresh that was already in flight cannot write
+    /// its result back over a newer state, for example a session the person just signed out of.
+    private var generation = 0
 
     public init(
         config: CommunityConfig,
@@ -31,7 +34,7 @@ public actor CommunityAuth {
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
             body: body
         )
-        return try accept(data, response)
+        return try accept(data, response, replacing: true)
     }
 
     /// Emails a one-time code. The address also creates the account on first use.
@@ -43,7 +46,7 @@ public actor CommunityAuth {
     public func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
         let body = try CommunityAPI.encode(VerifyBody(email: email, token: code))
         let (data, response) = try await api.send("/auth/v1/verify", body: body)
-        return try accept(data, response)
+        return try accept(data, response, replacing: true)
     }
 
     /// The stored session, renewed first when it is about to expire. A rejected renewal ends the session.
@@ -57,7 +60,8 @@ public actor CommunityAuth {
         if let inFlight = refreshing {
             return try await inFlight.value
         }
-        let task = Task { try await self.refresh(session.refreshToken) }
+        let started = generation
+        let task = Task { try await self.refresh(session.refreshToken, startedAt: started) }
         refreshing = task
         defer { refreshing = nil }
         return try await task.value
@@ -65,6 +69,7 @@ public actor CommunityAuth {
 
     /// Ends the session on the server, best effort, and always forgets it on this device.
     public func signOut() async {
+        generation += 1
         if let session = store.load() {
             _ = try? await api.send("/auth/v1/logout", bearer: session.accessToken)
         }
@@ -73,11 +78,12 @@ public actor CommunityAuth {
 
     /// Forgets the session on this device without a server call, for example after the account was deleted.
     public func discardSession() {
+        generation += 1
         store.clear()
     }
 
     /// POST /auth/v1/token?grant_type=refresh_token. A rejected refresh token ends the session.
-    private func refresh(_ refreshToken: String) async throws -> CommunitySession {
+    private func refresh(_ refreshToken: String, startedAt: Int) async throws -> CommunitySession {
         let body = try CommunityAPI.encode(RefreshBody(refreshToken: refreshToken))
         let (data, response) = try await api.raw(
             "/auth/v1/token",
@@ -86,17 +92,20 @@ public actor CommunityAuth {
         )
         switch response.statusCode {
         case 200..<300:
-            return try accept(data, response)
+            // The session changed while the request was out (signed out, or signed in again): drop the result.
+            guard startedAt == generation else { throw CommunityError.signedOut }
+            return try accept(data, response, replacing: false)
         case 400, 401, 403:
-            store.clear()
+            if startedAt == generation { store.clear() }
             throw CommunityError.signedOut
         default:
             throw CommunityError.from(status: response.statusCode, body: data)
         }
     }
 
-    private func accept(_ data: Data, _ response: HTTPURLResponse) throws -> CommunitySession {
+    private func accept(_ data: Data, _ response: HTTPURLResponse, replacing: Bool) throws -> CommunitySession {
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
+        if replacing { generation += 1 }
         let session = CommunitySession(
             accessToken: reply.accessToken,
             refreshToken: reply.refreshToken,
