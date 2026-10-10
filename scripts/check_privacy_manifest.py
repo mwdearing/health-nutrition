@@ -360,6 +360,20 @@ def app_build_description(project: Path) -> tuple[list[Path], list[str]]:
     return sources, products
 
 
+def contained(root: Path, base: Path, relative: str) -> Path:
+    """`base / relative`, refused unless it is a relative path that stays inside the checkout at `root`.
+
+    The build descriptions are files a pull request can edit, so a source path of `/` or `../..` must not make
+    the checker read and walk the machine it runs on.
+    """
+    if Path(relative).is_absolute() or relative.startswith(("~", "/")):
+        raise UsageError(f"{relative}: a source path must be relative to the checkout")
+    resolved = (base / relative).resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        raise UsageError(f"{relative}: a source path leaves the checkout (outside {root})")
+    return resolved
+
+
 def shipped_directories(root: Path) -> list[Path]:
     """Directories whose Swift sources end up in the shipped app."""
     project = root / APP_DIR_RELATIVE / "project.yml"
@@ -386,9 +400,13 @@ def shipped_directories(root: Path) -> list[Path]:
         raise UsageError(f"{package}: none of the linked products resolve to a target")
 
     app_dir = root / APP_DIR_RELATIVE
-    directories = [app_dir / source for source in source_paths if (app_dir / source).is_dir()]
+    directories = []
+    for source in source_paths:
+        candidate = contained(root, app_dir, source)
+        if candidate.is_dir():
+            directories.append(candidate)
     for name in sorted(wanted):
-        target_path = root / PACKAGE_DIR_RELATIVE / str(info[name]["path"])
+        target_path = contained(root, root / PACKAGE_DIR_RELATIVE, str(info[name]["path"]))
         if target_path.is_dir():
             directories.append(target_path)
     return [d for d in directories if "Tests" not in d.parts]
