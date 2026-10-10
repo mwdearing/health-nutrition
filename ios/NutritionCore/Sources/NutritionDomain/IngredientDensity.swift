@@ -24,9 +24,12 @@ public struct IngredientDensity: Equatable, Sendable {
 
     /// The grams a volume of `milliliters` weighs at this ingredient's typical density. The table is per
     /// cup, so the grams are the milliliters times the table's grams, divided once by the exact cup volume,
-    /// and rounded once to six fraction digits. A full cup is therefore exactly its table value.
+    /// and rounded once to six fraction digits (unless that would give zero for a positive volume). A full cup is therefore exactly its table value.
     public func grams(forMilliliters milliliters: Decimal) -> Decimal {
-        DisplayRounding.rounded(milliliters * gramsPerCup / MeasureUnit.cup.toBase, fractionDigits: 6)
+        let exact = milliliters * gramsPerCup / MeasureUnit.cup.toBase
+        let rounded = DisplayRounding.rounded(exact, fractionDigits: 6)
+        // A positive volume never becomes no mass: below six digits the quotient is kept as it is.
+        return rounded == 0 && exact > 0 ? exact : rounded
     }
 }
 

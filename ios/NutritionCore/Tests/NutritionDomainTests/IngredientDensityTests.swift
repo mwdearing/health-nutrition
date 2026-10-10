@@ -51,6 +51,13 @@ final class IngredientDensityTests: XCTestCase {
         XCTAssertEqual(honey.grams(forMilliliters: try dec("14.78676478125")), try dec("21.25"))
     }
 
+    /// A tiny positive volume must not round to no mass at all.
+    func testATinyVolumeNeverBecomesZeroGrams() throws {
+        let flour = try XCTUnwrap(IngredientDensityCatalog.match("all-purpose flour"))
+        let tiny = flour.grams(forMilliliters: try dec("0.000000001"))
+        XCTAssertTrue(tiny > 0)
+    }
+
     func testAttributionIsPinned() {
         XCTAssertEqual(
             IngredientDensityCatalog.attribution,
