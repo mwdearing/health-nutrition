@@ -389,6 +389,32 @@ final class DailyTotalsTests: XCTestCase {
         }
     }
 
+    /// A recipe with a total yield states its nutrients per one unit of the yield. The day counts the same
+    /// portion the HealthKit plan and the relay encoder count: 250 mL of a 1 L batch is a quarter of the value
+    /// per liter, and 200 g of a batch of 100 g of protein per kilogram is 20 g.
+    func testARecipeTotalYieldDayTotalScalesByTheLoggedPortion() throws {
+        let cases: [(yield: RecipeYield, amount: Decimal, unit: MeasureUnit, perUnit: Decimal, expected: Decimal)] = [
+            (.total(Quantity(value: 1, unit: .L)), 250, .mL, 80, 20),
+            (.total(Quantity(value: Decimal(string: "0.8")!, unit: .kg)), 200, .g, 100, 20),
+        ]
+        for item in cases {
+            let store = try makeStore()
+            let batch = ProductDefinition(
+                snapshotID: "snapshot-batch", productID: "product-batch", name: "Synthetic batch",
+                labelBasis: RecipeLogger.basisText(item.yield), catalogOrigin: "recipe_calculated", catalogVersion: "1",
+                nutrients: ["protein": .known(item.perUnit, .g)])
+            try addFood(store, name: "Batch portion", id: "batch-portion", at: when, amount: item.amount,
+                        unit: item.unit, product: batch)
+            let intake = try XCTUnwrap(try store.activeIntakes().first)
+
+            let totals = try DailyTotalsBuilder.totals(
+                for: [intake], store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+
+            XCTAssertEqual(
+                totals.total(for: "protein")?.value, .known(item.expected, .g), RecipeLogger.basisText(item.yield))
+        }
+    }
+
     /// A barcode lookup or a label panel that knows how big a serving is stores "per serving (30 g)",
     /// and the entry records the food as an amount. The stated serving and the amount logged together
     /// say how many servings were eaten, so a per-count basis the log cannot answer is not left

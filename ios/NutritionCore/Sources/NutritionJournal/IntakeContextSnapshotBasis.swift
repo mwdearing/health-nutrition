@@ -19,14 +19,22 @@ public enum IntakeContextSnapshotBasis: Equatable {
     case perHundred(MeasureUnit)
     /// Per one of a counted unit, the shape a recipe states: one serving, one scoop.
     case perCount(MeasureUnit)
+    /// Per one of a mass or volume unit, the shape a recipe states with a total yield: "Per kg; yield 0.8 kg"
+    /// holds the value of one kilogram of the batch, because the recipe divides its totals by the yield.
+    case perUnit(MeasureUnit)
 
     /// The basis the stored text names, or nil when it names none this encoder can resolve.
     ///
     /// The text is compared with its spaces and underscores removed, because the app stores the same basis in
-    /// several shapes: "per 100 g", "per100g", "per_serving" and "Per serving; yield 4 servings" all name a
-    /// basis this can scale. An unresolved basis is nil rather than a guess: "per 100 g or mL" says the source
+    /// several shapes: "per 100 g", "per100g", "per_serving", "Per serving; yield 4 servings" and the total-yield
+    /// recipe shape "Per kg; yield 0.8 kg" all name a basis this can scale. An unresolved basis is nil rather than a guess: "per 100 g or mL" says the source
     /// did not resolve its own dimension, and "per 100 kcal" is not a quantity the journal records.
     public static func parse(_ labelBasis: String) -> IntakeContextSnapshotBasis? {
+        // A negative yield is not a yield. The spelling below drops hyphens, which would turn "-0.8" into
+        // "0.8", so the sign is checked on the text as written.
+        if labelBasis.range(of: #"yield\s*[-\u{2212}]\s*[0-9]"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            return nil
+        }
         var compact = ""
         for character in labelBasis.lowercased() {
             if character == " " || character == "_" || character == "-" { continue }
@@ -44,7 +52,32 @@ public enum IntakeContextSnapshotBasis: Equatable {
         for unit in [MeasureUnit.serving, .scoop, .tablet, .capsule, .piece, .gummy] {
             if compact.contains("per" + unit.symbol.lowercased()) { return .perCount(unit) }
         }
+        // A recipe with a total yield states "Per <unit>; yield <amount> <unit>", the same unit on both sides.
+        for unit in UnitRegistry.units(in: .mass) + UnitRegistry.units(in: .volume) {
+            if isTotalYieldBasis(compact, unit: unit) { return .perUnit(unit) }
+        }
         return nil
+    }
+
+    /// Whether the compacted text is exactly "per<unit>;yield<amount><unit>" with a positive amount, which is
+    /// the text `RecipeLogger.basisText` writes for a total yield. Anchored at both ends, so "per kg" and
+    /// "per kg; yield 0.8 L" and "per mL; yield 1 L" do not match, and a unit inside another unit's name
+    /// ("per g" in "per gummy") cannot match either.
+    private static func isTotalYieldBasis(_ compact: String, unit: MeasureUnit) -> Bool {
+        let symbol = compactSymbol(unit.symbol)
+        let head = "per" + symbol + ";yield"
+        guard compact.hasPrefix(head), compact.hasSuffix(symbol), compact.count > head.count + symbol.count
+        else { return false }
+        let amount = String(compact.dropFirst(head.count).dropLast(symbol.count))
+        guard DecimalText.isValidDecimalText(amount), let value = DecimalText.decode(amount), value > 0
+        else { return false }
+        return true
+    }
+
+    /// A unit symbol in the form the basis text is compacted to: lowercase, with the spaces removed, so "fl oz"
+    /// is "floz".
+    private static func compactSymbol(_ symbol: String) -> String {
+        String(symbol.lowercased().filter { $0 != " " })
     }
 
     /// The factor that turns a stated value into the logged amount, or nil when the logged components cannot
@@ -56,23 +89,33 @@ public enum IntakeContextSnapshotBasis: Equatable {
     public func factor(forLogged components: [IntakeComponent]) -> Decimal? {
         switch self {
         case .perHundred(let unit):
-            var total = Decimal(0)
-            var found = false
-            for component in components {
-                guard component.unit.dimension == unit.dimension,
-                      let converted = try? Quantity(
-                        value: component.amount, unit: component.unit).converted(to: unit)
-                else { continue }
-                total += converted.value
-                found = true
-            }
-            guard found else { return nil }
+            guard let total = Self.loggedAmount(components, in: unit) else { return nil }
             return total / 100
+        case .perUnit(let unit):
+            // A recipe's values are per one unit of its yield, so the logged amount in that unit is the factor
+            // with nothing to divide by. 250 mL logged of a "Per L; yield 1 L" recipe is 0.25.
+            return Self.loggedAmount(components, in: unit)
         case .perCount(let unit):
             let counted = components.filter { $0.unit == unit }
             guard counted.count == 1 else { return nil }
             return counted[0].amount
         }
+    }
+
+    /// The logged components that are in the unit's dimension, converted to the unit and summed, or nil when
+    /// none of them is in that dimension. A logged amount in another dimension cannot answer the basis.
+    private static func loggedAmount(_ components: [IntakeComponent], in unit: MeasureUnit) -> Decimal? {
+        var total = Decimal(0)
+        var found = false
+        for component in components {
+            guard component.unit.dimension == unit.dimension,
+                  let converted = try? Quantity(
+                    value: component.amount, unit: component.unit).converted(to: unit)
+            else { continue }
+            total += converted.value
+            found = true
+        }
+        return found ? total : nil
     }
 
     /// The factor for a snapshot's basis and the logged components, or nil when the basis is unresolved or the
