@@ -664,3 +664,20 @@ def test_missing_project_file_is_an_error(tmp_path: Path) -> None:
     )
     result = run(root)
     assert result.returncode != 0
+
+def test_a_source_path_outside_the_checkout_is_refused(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "Leak.swift").write_text("import Foundation\nlet flags = UserDefaults.standard\n", encoding="utf-8")
+    escaping = PROJECT_YML.replace("      - path: Resources\n", "      - path: Resources\n      - path: ../../outside\n")
+    root = write_tree(tmp_path, {}, manifest=manifest_xml(declared=[BOOT_TIME]), project_yml=escaping)
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "outside" in (result.stdout + result.stderr)
+
+
+def test_an_absolute_source_path_is_refused(tmp_path: Path) -> None:
+    absolute = PROJECT_YML.replace("      - path: Resources\n", "      - path: Resources\n      - path: /\n")
+    root = write_tree(tmp_path, {}, manifest=manifest_xml(declared=[BOOT_TIME]), project_yml=absolute)
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
