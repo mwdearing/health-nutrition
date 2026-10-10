@@ -3,14 +3,18 @@ import SwiftUI
 /// The Account section of Settings. It is shown only where the model exists, which needs the project settings
 /// (see `AppSettingsViewModel.account`). Signed out, it offers sign-in. Signed in, it shows the name, the
 /// sharing switch, sign out and delete.
-struct AccountSectionView: View {
+public struct AccountSectionView: View {
     @ObservedObject var model: AccountViewModel
     @State private var showingSignIn = false
     @State private var showingDisclosure = false
     @State private var confirmingDelete = false
     @FocusState private var nameFocused: Bool
 
-    var body: some View {
+    public init(model: AccountViewModel) {
+        self.model = model
+    }
+
+    public var body: some View {
         Section {
             if model.phase == .signedOut {
                 Button("Sign in") { showingSignIn = true }

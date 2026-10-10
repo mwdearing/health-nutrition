@@ -5,7 +5,7 @@ import AuthenticationServices
 #endif
 
 /// Sign in with Apple, or an email address and a one-time code. It closes itself once the person is signed in.
-struct SignInSheet: View {
+public struct SignInSheet: View {
     @ObservedObject var model: AccountViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var address = ""
@@ -13,7 +13,11 @@ struct SignInSheet: View {
     /// The raw nonce for the Apple request in flight. Its SHA-256 goes to Apple; the raw value goes to the service.
     @State private var appleNonce = ""
 
-    var body: some View {
+    public init(model: AccountViewModel) {
+        self.model = model
+    }
+
+    public var body: some View {
         NavigationStack {
             Form {
                 #if os(iOS)
