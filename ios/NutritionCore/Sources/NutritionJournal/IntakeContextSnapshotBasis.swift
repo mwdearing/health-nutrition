@@ -30,6 +30,11 @@ public enum IntakeContextSnapshotBasis: Equatable {
     /// recipe shape "Per kg; yield 0.8 kg" all name a basis this can scale. An unresolved basis is nil rather than a guess: "per 100 g or mL" says the source
     /// did not resolve its own dimension, and "per 100 kcal" is not a quantity the journal records.
     public static func parse(_ labelBasis: String) -> IntakeContextSnapshotBasis? {
+        // A negative yield is not a yield. The spelling below drops hyphens, which would turn "-0.8" into
+        // "0.8", so the sign is checked on the text as written.
+        if labelBasis.range(of: #"yield\s*[-\u{2212}]\s*[0-9]"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            return nil
+        }
         var compact = ""
         for character in labelBasis.lowercased() {
             if character == " " || character == "_" || character == "-" { continue }

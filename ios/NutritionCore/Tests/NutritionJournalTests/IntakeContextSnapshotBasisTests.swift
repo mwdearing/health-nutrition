@@ -38,6 +38,8 @@ final class IntakeContextSnapshotBasisTests: XCTestCase {
             "Per g; yield 500 mL",
             "Per g",
             "Per g; yield 0 g",
+            "Per kg; yield -0.8 kg",
+            "Per serving; yield -4 servings",
             "Per kcal; yield 2000 kcal",
             "per glass",
         ]
