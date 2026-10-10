@@ -116,7 +116,7 @@ public struct JournalView: View {
                 Text(week.headline)
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textPrimary)
-                ForEach(week.goalLines, id: \.self) { line in
+                ForEach(Array(week.goalLines.enumerated()), id: \.offset) { _, line in
                     Text(line)
                         .font(.subheadline)
                         .foregroundStyle(TokenColors.textSecondary)

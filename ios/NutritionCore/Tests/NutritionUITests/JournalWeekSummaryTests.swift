@@ -336,4 +336,19 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertFalse(line.contains("average 0 kg"), line)
         XCTAssertTrue(line.contains("average < "), line)
     }
+
+    /// An entry dated later than now has not happened yet and is not part of the week.
+    func testAnEntryLaterThanNowIsNotCounted() throws {
+        let journal = try makeJournalStore()
+        let later = weekNow.addingTimeInterval(3 * 3600)
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: later, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "example-typed", name: "Example typed", amount: Decimal(100), unit: .g)],
+            product: nil, now: weekNow)
+
+        let model = makeModel(journal)
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
+    }
 }

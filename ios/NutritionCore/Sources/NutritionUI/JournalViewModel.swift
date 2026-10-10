@@ -256,7 +256,7 @@ public final class JournalViewModel: ObservableObject {
                 sections: sections, now: now,
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
                 goals: storedGoals, hidden: hiddenGoals, unitSystem: self.preferences.unitSystem,
-                displayNames: printedNames(in: intakesByDay.values.flatMap { $0 }, goals: storedGoals))
+                displayNames: printedNames(in: intakesByDay.values.flatMap { $0 }.filter { $0.occurredAt >= weekWindowStart(now: now) }, goals: storedGoals))
             skippedCount = skipped
             errorMessage = nil
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
@@ -441,11 +441,11 @@ public final class JournalViewModel: ObservableObject {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         let startOfToday = calendar.startOfDay(for: now)
-        guard let windowStart = calendar.date(byAdding: .day, value: -(weekLength - 1), to: startOfToday),
-              let windowEnd = calendar.date(byAdding: .day, value: 1, to: startOfToday)
-        else { return nil }
+        guard let windowStart = calendar.date(byAdding: .day, value: -(weekLength - 1), to: startOfToday) else { return nil }
+        // An entry dated later than now has not happened yet, so it is not part of the week.
+        let windowEnd = now
         let week = sections.filter { section in
-            section.rows.contains { $0.occurredAt >= windowStart && $0.occurredAt < windowEnd }
+            section.rows.contains { $0.occurredAt >= windowStart && $0.occurredAt <= windowEnd }
         }
         let logged = week.filter { hasFoodEntries($0.rows) }
         guard !logged.isEmpty else {
@@ -473,6 +473,13 @@ public final class JournalViewModel: ObservableObject {
             for (key, name) in product.nutrientDisplayNames where wanted.contains(key) { names[key] = name }
         }
         return names
+    }
+
+    /// The start of the first day of the week window, in the journal's zone.
+    private func weekWindowStart(now: Date) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: journalZoneID()) ?? TimeZone.current
+        return calendar.date(byAdding: .day, value: -(Self.weekLength - 1), to: calendar.startOfDay(for: now)) ?? .distantPast
     }
 
     /// How many local days the week summary covers, today included.
