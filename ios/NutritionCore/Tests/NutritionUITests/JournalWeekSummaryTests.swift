@@ -327,7 +327,7 @@ final class JournalWeekSummaryTests: XCTestCase {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(1), unit: .kg))
-        try logProtein(journal, daysBack: 0, Decimal(string: "0.4") ?? 0)
+        try logProtein(journal, daysBack: 0, Decimal(string: "0.04") ?? 0)
 
         let model = makeModel(journal, goals: goals)
         model.load(now: weekNow)

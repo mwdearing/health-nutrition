@@ -435,12 +435,17 @@ public final class JournalViewModel: ObservableObject {
         hidden: Set<String>, unitSystem: UnitSystem, displayNames: [String: String] = [:]
     ) -> JournalWeekSummary? {
         guard !sections.isEmpty else { return nil }
+        // The window is read by instant in the journal's zone: from the start of the day six days back to now.
+        // An entry's own zone only decides which day section it sits in, so a trip across zones cannot move an
+        // entry in or out of the week or make a section count twice.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let startOfToday = calendar.startOfDay(for: now)
+        guard let windowStart = calendar.date(byAdding: .day, value: -(weekLength - 1), to: startOfToday),
+              let windowEnd = calendar.date(byAdding: .day, value: 1, to: startOfToday)
+        else { return nil }
         let week = sections.filter { section in
-            // A day's key is the entry's own local date, so "today" is read in that entry's zone too: an entry
-            // logged now in a zone ahead of the device zone is still today's.
-            let sectionZone = section.rows.first.flatMap { TimeZone(identifier: $0.timeZoneIdentifier) } ?? zone
-            guard let back = daysBefore(section.id, today: dayKey(now, zone: sectionZone)) else { return false }
-            return (0..<weekLength).contains(back)
+            section.rows.contains { $0.occurredAt >= windowStart && $0.occurredAt < windowEnd }
         }
         let logged = week.filter { hasFoodEntries($0.rows) }
         guard !logged.isEmpty else {
@@ -450,7 +455,7 @@ public final class JournalViewModel: ObservableObject {
             .filter { $0.nutrient != DailyTotalsBuilder.waterKey && !hidden.contains($0.nutrient) }
             .prefix(3)
             .map { weekGoalLine(goal: $0, days: logged, unitSystem: unitSystem, displayNames: displayNames) }
-        return JournalWeekSummary(headline: "Logged \(logged.count) of 7 days", goalLines: Array(lines))
+        return JournalWeekSummary(headline: "Logged \(min(logged.count, weekLength)) of 7 days", goalLines: Array(lines))
     }
 
     /// The words the labels printed for the goal nutrients (`DHA`, never `Dha`), read from the snapshots the
