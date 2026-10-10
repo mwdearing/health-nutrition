@@ -62,7 +62,17 @@ public final class AccountViewModel: ObservableObject {
             return
         }
         signIn(with: session)
+        // A sign-in restored before the disclosure was read still has to show it.
+        if !preferences.hasSeenCommunityDisclosure {
+            needsDisclosure = true
+        }
         await refreshProfile()
+    }
+
+    /// True only for a signed-in person who has read the disclosure and has sharing on. Anything that sends a
+    /// label must check this first: the server default for sharing is on, so the switch alone is not consent.
+    public var sharingAllowed: Bool {
+        phase == .signedIn && shareLabels && preferences.hasSeenCommunityDisclosure
     }
 
     public func signInWithApple(idToken: String, nonce: String) async {

@@ -1,6 +1,6 @@
 # Community client
 
-The community client is the app's side of the shared label catalog: sign-in, the account profile and the catalog calls. It lives in `ios/NutritionCore/Sources/NutritionProviders/Community/` and has no user interface yet. The settings screen, the sign-in sheet and the catalog integration in the app come in later changes.
+The community client is the app's side of the shared label catalog: sign-in, the account profile and the catalog calls. It lives in `ios/NutritionCore/Sources/NutritionProviders/Community/` and is used by the Account section of Settings. The catalog integration (sending and reading labels) comes in a later change.
 
 ## Configuration
 

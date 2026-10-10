@@ -27,12 +27,17 @@ struct SharingDisclosureSheet: View {
                     .disabled(model.isBusy)
                 }
                 Section {
-                    Button("Continue") { self.dismiss() }
+                    Button("Continue") {
+                        model.acknowledgeDisclosure()
+                        self.dismiss()
+                    }
                 }
             }
             .scrollContentBackground(.hidden)
             .background(TokenColors.background)
             .tint(TokenColors.accent)
+            // Only the Continue button counts as reading it: a swipe down must not be taken for agreement.
+            .interactiveDismissDisabled()
             .navigationTitle("Sharing labels")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

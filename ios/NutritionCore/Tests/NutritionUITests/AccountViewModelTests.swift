@@ -100,7 +100,6 @@ final class AccountViewModelTests: XCTestCase {
         await model.load()
         XCTAssertEqual(model.phase, .signedIn)
         XCTAssertEqual(model.email, "person@example.com")
-        XCTAssertFalse(model.needsDisclosure)
     }
 
     func testAppleSignInSucceedsAndPassesTheTokenAndNonce() async throws {
@@ -163,6 +162,24 @@ final class AccountViewModelTests: XCTestCase {
         await model.signOut()
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
         XCTAssertFalse(model.needsDisclosure)
+    }
+
+    func testDisclosureIsShownWhenAStoredSignInIsRestoredBeforeItWasAcknowledged() async throws {
+        let (model, _, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        XCTAssertEqual(model.phase, .signedIn)
+        XCTAssertTrue(model.needsDisclosure)
+    }
+
+    func testSharingIsNotAllowedUntilTheDisclosureIsAcknowledged() async throws {
+        let (model, _, _) = makeModel()
+        XCTAssertFalse(model.sharingAllowed)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertFalse(model.sharingAllowed)
+        model.acknowledgeDisclosure()
+        XCTAssertTrue(model.sharingAllowed)
+        await model.setSharing(false)
+        XCTAssertFalse(model.sharingAllowed)
     }
 
     func testDisclosureIsNotShownWhenItWasSeenBefore() async throws {

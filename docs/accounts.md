@@ -21,7 +21,7 @@ The catalog integration that sends labels arrives in a later change. Until then 
 
 ## What stays on this device
 
-Signing in does not upload your journal, goals, recipes, favorites, reminders or exports. They stay on the phone. A backup of the journal through your own iCloud is planned and is not part of this change, so the Account footer's mention of iCloud describes a feature that is not built yet.
+Signing in does not upload your journal, goals, recipes, favorites, reminders or exports. They stay on the phone. A backup of the journal through your own iCloud is planned and is not part of this change.
 
 ## Sign out and delete
 

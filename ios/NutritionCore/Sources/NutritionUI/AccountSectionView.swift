@@ -38,7 +38,7 @@ struct AccountSectionView: View {
             Text("Account")
         } footer: {
             Text(model.phase == .signedOut
-                ? "Without an account, everything stays on this device. Signing in backs up your data to your iCloud and lets you share scanned labels."
+                ? "Without an account, everything stays on this device. Signing in lets you share scanned labels with the community."
                 : "Turning sharing off stops new labels from being shared. Deleting the account removes it and every label it shared; data on this device is kept.")
                 .font(.footnote)
         }
@@ -51,9 +51,7 @@ struct AccountSectionView: View {
         }) {
             SignInSheet(model: model)
         }
-        .sheet(isPresented: $showingDisclosure, onDismiss: {
-            model.acknowledgeDisclosure()
-        }) {
+        .sheet(isPresented: $showingDisclosure) {
             SharingDisclosureSheet(model: model)
         }
         .confirmationDialog(
@@ -64,7 +62,10 @@ struct AccountSectionView: View {
         } message: {
             Text("The account and every label it shared are deleted. Data on this device is kept.")
         }
-        .task { await model.load() }
+        .task {
+            await model.load()
+            showingDisclosure = model.needsDisclosure && !showingSignIn
+        }
     }
 
     private func saveName() {
