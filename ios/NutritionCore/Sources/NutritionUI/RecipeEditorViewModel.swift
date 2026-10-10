@@ -56,6 +56,14 @@ public struct RecipeIngredientDraft: Identifiable, Equatable {
     }
 }
 
+/// The catalog density offered for an ingredient whose density field is blank.
+public struct DensitySuggestion: Equatable {
+    /// The catalog's name for the ingredient, which can differ from the name typed (an alias, say).
+    public let name: String
+    public let gramsPerCup: Decimal
+    public let gramsPerMilliliter: Decimal
+}
+
 public enum RecipeYieldKind: String, CaseIterable, Identifiable {
     case servings
     case total
@@ -74,6 +82,8 @@ public final class RecipeEditorViewModel: ObservableObject {
     @Published public var yieldUnitSymbol: String = MeasureUnit.g.symbol
     @Published public private(set) var messages: [String] = []
     @Published public private(set) var savedVersion: RecipeVersion?
+    /// The density text the catalog filled in, by draft id, so the attribution shows only while it holds.
+    private var catalogDensityTexts: [String: String] = [:]
 
     /// The units the ingredient and yield pickers offer: the registry without the two ounces.
     ///
@@ -115,6 +125,33 @@ public final class RecipeEditorViewModel: ObservableObject {
 
     public func removeIngredient(id: String) {
         ingredients.removeAll { $0.id == id }
+    }
+
+    /// The catalog density for this draft's name, offered only while its density field is blank. A
+    /// typed density always wins, and a name with no single catalog match gets no suggestion.
+    public func densitySuggestion(for draft: RecipeIngredientDraft) -> DensitySuggestion? {
+        guard draft.densityText.trimmingCharacters(in: .whitespaces).isEmpty,
+              let row = IngredientDensityCatalog.match(draft.name) else { return nil }
+        return DensitySuggestion(
+            name: row.name, gramsPerCup: row.gramsPerCup, gramsPerMilliliter: row.gramsPerMilliliter)
+    }
+
+    /// Fills the draft's density field from the catalog. Does nothing when there is no suggestion, so a
+    /// density the user typed is never overwritten.
+    public func applyDensitySuggestion(to id: String) {
+        guard let index = ingredients.firstIndex(where: { $0.id == id }),
+              let suggestion = densitySuggestion(for: ingredients[index]) else { return }
+        let text = DecimalFormatting.text(suggestion.gramsPerMilliliter)
+        ingredients[index].densityText = text
+        catalogDensityTexts[id] = text
+    }
+
+    /// True while the draft's density field still holds the value the catalog filled in. Typing over it
+    /// turns the attribution off again.
+    public func showsCatalogDensity(for id: String) -> Bool {
+        guard let index = ingredients.firstIndex(where: { $0.id == id }),
+              let text = catalogDensityTexts[id] else { return false }
+        return ingredients[index].densityText == text
     }
 
     private func load(_ version: RecipeVersion) {

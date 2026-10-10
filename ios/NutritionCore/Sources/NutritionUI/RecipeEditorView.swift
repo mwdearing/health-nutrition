@@ -1,3 +1,4 @@
+import NutritionDomain
 import SwiftUI
 
 public struct RecipeEditorView: View {
@@ -106,6 +107,22 @@ public struct RecipeEditorView: View {
                 .font(.footnote)
                 .decimalKeyboard()
                 .accessibilityLabel("Weight per mL of ingredient \(position)")
+            if let suggestion = model.densitySuggestion(for: draft) {
+                HStack {
+                    Text("Typical density for \(suggestion.name): \(DecimalFormatting.text(suggestion.gramsPerCup)) g per cup")
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                    Button("Use it") { model.applyDensitySuggestion(to: draft.id) }
+                        .font(.footnote)
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Use typical density for ingredient \(position)")
+                }
+            }
+            if model.densitySuggestion(for: draft) != nil || model.showsCatalogDensity(for: draft.id) {
+                Text(IngredientDensityCatalog.attribution)
+                    .font(.caption)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
             Button("Remove") { model.removeIngredient(id: draft.id) }
                 .font(.footnote)
                 .foregroundStyle(TokenColors.error)
