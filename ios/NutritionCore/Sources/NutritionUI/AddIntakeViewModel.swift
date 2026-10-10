@@ -293,6 +293,8 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// Called when focus leaves a field, so that an error the person was typing through shows once they are done.
     public func fieldDidEnd(_ field: AddIntakeField) {
+        // The form reads the visible errors as values, so the change has to be announced for it to redraw.
+        objectWillChange.send()
         leftFields.insert(field)
     }
 
