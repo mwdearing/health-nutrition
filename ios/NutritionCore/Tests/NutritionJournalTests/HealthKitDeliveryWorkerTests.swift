@@ -826,6 +826,11 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
 
         XCTAssertEqual(recorded["protein"], .known(dec("18"), .g), "two servings of 9 g")
+        let plan = HealthKitWritePlanner.plan(
+            intakeID: intakeID, revision: 1, occurredAt: when, totals: recorded)
+        XCTAssertEqual(
+            plan.first { $0.syncIdentifier == proteinIdentifier(intakeID) }?.amount, dec("18"),
+            "the scaled count is what the plan writes, not the label's 9 g")
 
         let biscuit = ProductDefinition(
             snapshotID: "snap-7", productID: "product-7", name: "Sample biscuit", brand: nil, barcode: nil,

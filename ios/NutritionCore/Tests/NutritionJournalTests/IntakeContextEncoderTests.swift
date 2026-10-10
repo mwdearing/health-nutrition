@@ -1296,13 +1296,13 @@ final class IntakeContextEncoderTests: XCTestCase {
     /// stated as a household phrase with no quantity, "per serving (1 large biscuit)", has nothing to scale by
     /// and sends no nutrient.
     func testCountedServingBasisScalesByTheCountLogged() throws {
-        func encode(basis: String, logged: IntakeComponent) throws -> [IntakeContextJSONValue] {
+        func encode(basis: String, logged: [IntakeComponent]) throws -> [IntakeContextJSONValue] {
             let value = try encoder.upsert(
                 intake: intake,
                 revision: IntakeRevision(
                     intakeID: intakeID,
                     number: 1,
-                    components: [logged],
+                    components: logged,
                     productSnapshotID: "snapshot-gummy",
                     changeReason: "Scanned from the shelf",
                     createdAt: Self.recordedAt),
@@ -1323,13 +1323,20 @@ final class IntakeContextEncoderTests: XCTestCase {
             name: "Synthetic gummy",
             amount: try XCTUnwrap(DecimalText.decode("6")),
             unit: .gummy)
-        let counted = try encode(basis: "per serving (3 gummy)", logged: six)
+        let counted = try encode(basis: "per serving (3 gummy)", logged: [six])
         XCTAssertEqual(counted.map { $0.string("component_id") }, ["gummies", "protein"])
         XCTAssertEqual(counted[1].string("amount"), "18", "two servings of 9 g")
         XCTAssertEqual(counted[1].string("unit"), "g")
 
-        let household = try encode(basis: "per serving (1 large biscuit)", logged: six)
+        let household = try encode(basis: "per serving (1 large biscuit)", logged: [six])
         XCTAssertEqual(household.map { $0.string("component_id") }, ["gummies"])
+
+        // Six gummies and a tablet: the stated serving is counted in gummies, and a tablet is a second count
+        // that says nothing about how many servings were eaten, so the protein is omitted rather than guessed.
+        let tablet = IntakeComponent(
+            componentID: "extra-tablet", name: "Synthetic tablet", amount: 1, unit: .tablet)
+        let mixed = try encode(basis: "per serving (3 gummy)", logged: [six, tablet])
+        XCTAssertEqual(mixed.map { $0.string("component_id") }, ["gummies", "extra-tablet"])
     }
 
     /// A canonical key and an accepted alias name one nutrient, so they become one fact: the contract requires
