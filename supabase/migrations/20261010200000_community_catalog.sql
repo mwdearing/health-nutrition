@@ -307,7 +307,12 @@ begin
       perform pg_advisory_xact_lock(hashtextextended(touched[1] || '|' || touched[2], 0));
     end loop;
   end if;
-  delete from catalog.submissions where device_id = device;
+  -- Refresh what was actually deleted, which can include a label submitted after the list above was read.
+  with gone as (
+    delete from catalog.submissions where device_id = device returning barcode, basis
+  )
+  select array_agg(array[barcode, basis] order by barcode, basis) into labels
+  from (select distinct barcode, basis from gone) d;
   if labels is not null then
     foreach touched slice 1 in array labels loop
       perform catalog.refresh_entry(touched[1], touched[2]);

@@ -57,6 +57,10 @@ begin
   if device is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
     raise exception 'sign in with an account first' using errcode = '28000';
   end if;
+  -- A deleted account's token stays valid until it expires, so the profile has to exist as well.
+  if not exists (select 1 from public.profiles where id = device) then
+    raise exception 'account not found' using errcode = '28000';
+  end if;
   if exists (select 1 from public.profiles where id = device and not share_labels) then
     raise exception 'sharing is turned off' using errcode = '42501';
   end if;

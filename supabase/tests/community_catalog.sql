@@ -11,6 +11,7 @@ create or replace function pg_temp.check(ok boolean, msg text) returns void lang
 begin if not ok then raise exception 'FAILED: %', msg; end if; end $$;
 
 reset role;
+insert into auth.users (id) select ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid from generate_series(1, 10) n;
 -- Five devices send agreeing values: the fifth makes it verified; the first four never leak.
 select pg_temp.as_device(1);
 select pg_temp.check(public.submit_label('0123456789012','per_100g',null,'Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}') = 'received', 'first is received');
@@ -73,7 +74,7 @@ do $$ begin perform public.lookup_label('0123456789012'); raise exception 'anon 
 -- Profiles: a person reads and edits only their own; sharing off blocks submitting; deleting removes everything.
 reset role;
 insert into auth.users (id) values ('00000000-0000-0000-0000-000000000051'), ('00000000-0000-0000-0000-000000000052');
-select pg_temp.check((select count(*) from public.profiles) = 2, 'a profile is created for each new user');
+select pg_temp.check((select count(*) from public.profiles where id in ('00000000-0000-0000-0000-000000000051','00000000-0000-0000-0000-000000000052')) = 2, 'a profile is created for each new user');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000051', false), set_config('request.jwt.claims', '{"is_anonymous": false}', false);
 set role authenticated;
 select pg_temp.check((select count(*) from public.profiles) = 1, 'a person sees only their own profile');
@@ -83,6 +84,7 @@ update public.profiles set share_labels = true;
 select public.submit_label('0123456789040','per_100g',null,'A',null,'{"energyKcal":1,"protein":1,"fat":1}');
 do $$ begin update public.profiles set id = '00000000-0000-0000-0000-000000000052'; raise exception 'took over another profile'; exception when insufficient_privilege or unique_violation then null; end $$;
 select public.delete_my_account();
+do $$ begin perform public.submit_label('0123456789041','per_100g',null,'A',null,'{"energyKcal":1,"protein":1,"fat":1}'); raise exception 'deleted account could submit'; exception when sqlstate '28000' then null; end $$;
 reset role;
 select pg_temp.check((select count(*) from catalog.submissions where device_id = '00000000-0000-0000-0000-000000000051') = 0, 'account deletion removes submissions');
 select pg_temp.check((select count(*) from public.profiles where id = '00000000-0000-0000-0000-000000000051') = 0, 'account deletion removes the profile');
