@@ -171,6 +171,24 @@ final class ValueStateTests: XCTestCase {
         XCTAssertEqual(inMilligrams.coverage.knownCount, 3)
     }
 
+    /// A lone value in international units cannot be summed for a nutrient read in grams: the value
+    /// is checked against the nutrient's own unit even when nothing else is there to mismatch it.
+    func testALoneValueInAnotherDimensionThanTheNutrientThrows() throws {
+        XCTAssertThrowsError(try NutrientTotal.sum([try known("1000", .iu)], expecting: .g)) { error in
+            XCTAssertEqual(error as? UnitError, UnitError.dimensionMismatch(from: .iu, to: .g))
+        }
+    }
+
+    /// The nutrient's unit only checks the dimension; the total is still stated in the first value's
+    /// unit, so a compatible mix keeps the figure it had before the check was added.
+    func testCompatibleValuesCheckedAgainstTheNutrientUnitKeepTheirOwnUnit() throws {
+        let total = try NutrientTotal.sum(
+            [try known("500", .mg), try known("1", .g)], expecting: .g)
+        XCTAssertEqual(total.value, try known("1500", .mg))
+        XCTAssertTrue(total.coverage.isComplete)
+        XCTAssertEqual(try NutrientTotal.sum([try known("500", .mg)], expecting: .g).value, try known("500", .mg))
+    }
+
     func testTotalAcrossDimensionsThrows() throws {
         XCTAssertThrowsError(try NutrientTotal.sum([try known("1", .g), try known("10", .kcal)])) { error in
             XCTAssertEqual(error as? UnitError, UnitError.dimensionMismatch(from: .kcal, to: .g))

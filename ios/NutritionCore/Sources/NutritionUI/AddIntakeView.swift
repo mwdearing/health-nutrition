@@ -116,10 +116,10 @@ public struct AddIntakeView: View {
             // rows of "unknown". Its attribution still travels with it.
             if model.statesNoNutrients {
                 Section {
-                    Text(AddIntakeViewModel.noStatedNutrientsMessage)
+                    Text(model.noStatedNutrientsSentence)
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
-                        .accessibilityLabel(AddIntakeViewModel.noStatedNutrientsMessage)
+                        .accessibilityLabel(model.noStatedNutrientsSentence)
                     sourceAndLicense
                 }
             }

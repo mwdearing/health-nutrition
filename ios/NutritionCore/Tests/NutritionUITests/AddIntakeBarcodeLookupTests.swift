@@ -653,4 +653,28 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         XCTAssertEqual(model.lookupState, .idle)
         XCTAssertNil(model.lookupMessage)
     }
+
+    /// The same empty product gets the scan instruction only where a label can be scanned. Without a
+    /// label scanner the sentence states the fact and drops the instruction it could not carry out.
+    func testNoNutrientsSentenceDropsTheScanInstructionWithoutALabelScanner() async throws {
+        let bare = LookedUpProduct(
+            barcode: validBarcode, name: "Sample Bar", brand: "Example Foods", basis: .per100g,
+            nutrients: [:], attribution: attribution, version: "2024-05-01")
+        let unavailable = AddIntakeViewModel(
+            store: try makeStore(), now: now, timeZoneIdentifier: "UTC",
+            lookup: FakeBarcodeLookup(result: .found(bare)), labelScannerAvailable: false)
+        unavailable.barcode = validBarcode
+        await unavailable.lookUpBarcode()
+
+        XCTAssertTrue(unavailable.statesNoNutrients)
+        XCTAssertEqual(unavailable.noStatedNutrientsSentence,
+                       "Open Food Facts lists this product but states no nutrition facts.")
+
+        let available = AddIntakeViewModel(
+            store: try makeStore(), now: now, timeZoneIdentifier: "UTC",
+            lookup: FakeBarcodeLookup(result: .found(bare)), labelScannerAvailable: true)
+        available.barcode = validBarcode
+        await available.lookUpBarcode()
+        XCTAssertEqual(available.noStatedNutrientsSentence, AddIntakeViewModel.noStatedNutrientsMessage)
+    }
 }

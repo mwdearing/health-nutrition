@@ -31,7 +31,7 @@ struct AddBarcodeDestination: View {
             } else if model.lookupState == .notFound || model.statesNoNutrients {
                 VStack {
                     EmptyState(title: "No product found for that barcode",
-                        message: model.statesNoNutrients ? AddIntakeViewModel.noStatedNutrientsMessage
+                        message: model.statesNoNutrients ? model.noStatedNutrientsSentence
                             : "Scan the nutrition label or enter the details yourself.",
                         systemImage: "barcode", actionTitle: "Scan the label instead", action: onLabel)
                     QuietCapsule("Type it in", action: onType).padding(DesignSpacing.m)

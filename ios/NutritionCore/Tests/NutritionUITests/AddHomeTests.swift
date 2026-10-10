@@ -15,6 +15,19 @@ final class AddHomeTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
+    /// The app's scanner answer reaches the details form, so the form's wording follows the device.
+    func testLabelScannerAvailabilityReachesTheDetailsForm() throws {
+        let unavailable = AddHomeViewModel(
+            store: try makeStore(), scannerAvailability: AddScannerAvailability(barcode: true, label: false),
+            now: { self.now })
+        XCTAssertFalse(unavailable.makeDetails(now: now).labelScannerAvailable)
+
+        let available = AddHomeViewModel(
+            store: try makeStore(), scannerAvailability: AddScannerAvailability(barcode: true, label: true),
+            now: { self.now })
+        XCTAssertTrue(available.makeDetails(now: now).labelScannerAvailable)
+    }
+
     func testMealPresetIsCarriedIntoEveryMethodsDetails() async throws {
         let home = AddHomeViewModel(store: try makeStore(), meal: .lunch)
         let typed = home.makeDetails(now: now)

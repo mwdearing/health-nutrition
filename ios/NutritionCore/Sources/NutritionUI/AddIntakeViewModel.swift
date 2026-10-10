@@ -179,6 +179,8 @@ public final class AddIntakeViewModel: ObservableObject {
     private let preferences: DisplayPreferences
     private let makeID: () -> String
     private let lookup: BarcodeProductLookup?
+    /// Whether this device can scan a label. The wording that points a person at the scanner depends on it.
+    public let labelScannerAvailable: Bool
     /// Counts the lookups this form has started. A reply is applied only if it is still the newest
     /// one and the field still holds the barcode that was asked for.
     private var lookupGeneration = 0
@@ -191,7 +193,8 @@ public final class AddIntakeViewModel: ObservableObject {
         timeZoneIdentifier: String = TimeZone.current.identifier,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         lookup: BarcodeProductLookup? = nil,
-        preferences: DisplayPreferences = InMemoryDisplayPreferences()
+        preferences: DisplayPreferences = InMemoryDisplayPreferences(),
+        labelScannerAvailable: Bool = true
     ) {
         self.store = store
         self.occurredAt = now
@@ -199,6 +202,7 @@ public final class AddIntakeViewModel: ObservableObject {
         self.makeID = makeID
         self.lookup = lookup
         self.preferences = preferences
+        self.labelScannerAvailable = labelScannerAvailable
     }
 
     private var prefilledProduct: ProductDefinition? { storedProduct ?? labelValues }
@@ -293,6 +297,15 @@ public final class AddIntakeViewModel: ObservableObject {
     /// values themselves and their attribution stay source-agnostic and are shown as the source gave them.
     public static let noStatedNutrientsMessage =
         "Open Food Facts lists this product but states no nutrition facts; scan the label instead."
+
+    /// The same sentence for a device with no label scanner: the fact stays and the instruction goes.
+    public static let noStatedNutrientsMessageWithoutScanner =
+        "Open Food Facts lists this product but states no nutrition facts."
+
+    /// The sentence the form shows for this device: it tells the person to scan only when a label can be scanned.
+    public var noStatedNutrientsSentence: String {
+        labelScannerAvailable ? Self.noStatedNutrientsMessage : Self.noStatedNutrientsMessageWithoutScanner
+    }
 
     /// The compound rows a captured panel states that the fifteen journal nutrients do not name, in a
     /// stable order. The form shows them under "Also on the label" so a compound the panel printed is

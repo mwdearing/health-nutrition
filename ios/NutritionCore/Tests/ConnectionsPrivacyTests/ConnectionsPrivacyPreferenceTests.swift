@@ -287,4 +287,27 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertEqual(model.unitSystem, .metric)
         XCTAssertEqual(model.quickWaterText, "250")
     }
+
+    /// A stored amount of 0.001 mL is a real amount, too small for the fluid ounce's digits. Under the US
+    /// system the field must not start at 0, and the draft it is read back as must stay above zero.
+    func testTinyStoredQuickWaterAmountDoesNotReadAsZeroUnderUS() throws {
+        let preferences = InMemoryDisplayPreferences(
+            unitSystem: .usCustomary, quickWaterMilliliters: Decimal(string: "0.001", locale: AmountParser.locale)!)
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+
+        XCTAssertNotEqual(model.quickWaterText, "0")
+        XCTAssertGreaterThan(model.quickWaterDraftAmount, 0)
+        let read = try XCTUnwrap(AmountParser.parse(model.quickWaterText))
+        XCTAssertGreaterThan(read, 0, "the field reads back as a positive amount")
+    }
+
+    /// The same tiny amount under metric is shown as stored, so the field reads 0.001 and not 0.
+    func testTinyStoredQuickWaterAmountIsShownAsStoredUnderMetric() throws {
+        let preferences = InMemoryDisplayPreferences(
+            unitSystem: .metric, quickWaterMilliliters: Decimal(string: "0.001", locale: AmountParser.locale)!)
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+
+        XCTAssertEqual(model.quickWaterText, "0.001")
+        XCTAssertEqual(model.quickWaterDraftAmount, Decimal(string: "0.001", locale: AmountParser.locale))
+    }
 }

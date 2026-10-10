@@ -87,7 +87,13 @@ public struct NutrientTotal: Sendable, Hashable {
 
     /// Sums the known values in `unit` (default: the first known value's unit). Unknown and below-threshold
     /// values are skipped but reported in the coverage; not-applicable values are left out of the counts.
-    public static func sum(_ values: [NutrientValue], in unit: MeasureUnit? = nil) throws -> NutrientTotal {
+    ///
+    /// `expecting` is the unit the nutrient is read in. Every known value must share its dimension, even
+    /// when it is the only one, and a value that does not throws `UnitError.dimensionMismatch`. It does not
+    /// choose the total's unit, so a compatible total keeps the unit it was read in.
+    public static func sum(
+        _ values: [NutrientValue], in unit: MeasureUnit? = nil, expecting expected: MeasureUnit? = nil
+    ) throws -> NutrientTotal {
         var knownQuantities: [Quantity] = []
         var totalCount = 0
         var hasUnknown = false
@@ -96,7 +102,11 @@ public struct NutrientTotal: Sendable, Hashable {
         for value in values {
             switch value {
             case .known(let amount, let amountUnit):
-                knownQuantities.append(Quantity(value: amount, unit: amountUnit))
+                let quantity = Quantity(value: amount, unit: amountUnit)
+                if let expected, amountUnit.dimension != expected.dimension {
+                    throw UnitError.dimensionMismatch(from: amountUnit, to: expected)
+                }
+                knownQuantities.append(quantity)
                 totalCount += 1
             case .unknown:
                 hasUnknown = true
