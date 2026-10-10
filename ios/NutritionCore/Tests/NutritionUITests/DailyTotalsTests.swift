@@ -133,6 +133,39 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(try store.pendingOutbox().map(\.operationID), outboxBefore)
     }
 
+    /// Editing or deleting an entry recalculates only the day it belongs to. The other day's protein is
+    /// read again after each change and must come out the same.
+    func testPersistenceBoundaryEditingOrDeletingAnEntryRecalculatesOnlyItsOwnDay() throws {
+        let store = try makeStore()
+        let firstID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 100, product: oatsSnapshot())
+        let tomorrow = when.addingTimeInterval(86_400)
+        let secondID = try addFood(
+            store, name: "Oats", id: "oats", at: tomorrow, amount: 300, product: oatsSnapshot())
+
+        /// The protein total of the active entries that occur in a window, read fresh from the store.
+        func protein(from start: Date, to end: Date) throws -> NutrientValue? {
+            let entries = try store.activeIntakes().filter { $0.occurredAt >= start && $0.occurredAt < end }
+            let totals = try DailyTotalsBuilder.totals(
+                for: entries, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+            return totals.total(for: "protein")?.value
+        }
+        XCTAssertEqual(try protein(from: .distantPast, to: tomorrow), .known(Decimal(13), .g))
+        XCTAssertEqual(try protein(from: tomorrow, to: .distantFuture), .known(Decimal(39), .g))
+
+        // Edit day one's entry from 100 g to 200 g: day one moves to 26 g and day two stays at 39 g.
+        _ = try store.edit(
+            intakeID: firstID,
+            components: [IntakeComponent(componentID: "oats", name: "Rolled oats", amount: 200, unit: .g)],
+            product: oatsSnapshot(), changeReason: "portion", now: when)
+        XCTAssertEqual(try protein(from: .distantPast, to: tomorrow), .known(Decimal(26), .g))
+        XCTAssertEqual(try protein(from: tomorrow, to: .distantFuture), .known(Decimal(39), .g))
+
+        // Delete day two's only entry: day two has nothing left to sum, and day one still reads 26 g.
+        try store.delete(intakeID: secondID, now: tomorrow)
+        XCTAssertEqual(try protein(from: tomorrow, to: .distantFuture), .unknown)
+        XCTAssertEqual(try protein(from: .distantPast, to: tomorrow), .known(Decimal(26), .g))
+    }
+
     /// The two days as the journal groups them, each carrying only its own water. This is the check that
     /// the grouping the totals hang off never merges two days into one figure.
     func testJournalDayTotalsReportEachDaysOwnWaterSeparately() throws {
