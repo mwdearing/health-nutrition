@@ -67,6 +67,19 @@ final class FieldClarityTests: XCTestCase {
         XCTAssertNotEqual(model.saveBlockedMessage, model.amountError)
     }
 
+    /// The line beside Save speaks only while a refusal stands: once both fields are fixed it is gone
+    /// without another tap of Save, so it never says to fix fields that are already right.
+    func testSaveLineClearsOnceTheFieldsAreFixedWithoutAnotherSave() throws {
+        let model = try makeModel()
+        XCTAssertFalse(model.save(now: now))
+        XCTAssertNotNil(model.saveBlockedMessage)
+        model.name = "Rolled oats"
+        model.amountText = "40"
+        XCTAssertNil(model.saveBlockedMessage)
+        XCTAssertNil(model.visibleNameError)
+        XCTAssertNil(model.visibleAmountError)
+    }
+
     /// A reset of the form takes the attempted save with it, so the next visit starts with no errors shown.
     func testResetFieldErrorsClearsTheAttemptedSave() throws {
         let model = try makeModel()
