@@ -16,17 +16,22 @@ public final class AppSettingsViewModel: ObservableObject {
     public let goals: GoalsViewModel?
     /// The daily reminder's controller. Nil where no reminder is wired, so the row is simply not shown.
     public let reminders: ReminderController?
+    /// The account, when this build can sign in. Nil in a build without the project settings, which shows no
+    /// account section at all.
+    public let account: AccountViewModel?
     public let versionText: String
     private var observations: Set<AnyCancellable> = []
 
     public init(
         connections: ConnectionsPrivacyViewModel, goals: GoalsViewModel? = nil,
         reminders: ReminderController? = nil,
+        account: AccountViewModel? = nil,
         version: String? = nil, build: String? = nil, bundle: Bundle = .main
     ) {
         self.connections = connections
         self.goals = goals
         self.reminders = reminders
+        self.account = account
         let version = version ?? bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
         let build = build ?? bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
         self.versionText = "\(version) (\(build))"
@@ -37,6 +42,9 @@ public final class AppSettingsViewModel: ObservableObject {
             self?.objectWillChange.send()
         }.store(in: &observations)
         reminders?.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }.store(in: &observations)
+        account?.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }.store(in: &observations)
     }

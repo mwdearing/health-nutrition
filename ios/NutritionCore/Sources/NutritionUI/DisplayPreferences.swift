@@ -50,6 +50,13 @@ public protocol FirstRunPreferences: AnyObject {
     func setHasReviewedUnits(_ reviewed: Bool)
 }
 
+/// Whether the sharing disclosure has been read on this device. Stored with the display preferences, so
+/// Erase all data clears it with them.
+public protocol CommunityDisclosurePreferences: AnyObject {
+    var hasSeenCommunityDisclosure: Bool { get }
+    func setHasSeenCommunityDisclosure(_ seen: Bool)
+}
+
 /// The defaults a person has before they change anything: metric, and a 250 mL glass.
 public enum DisplayPreferenceDefaults {
     public static let unitSystem = UnitSystem.metric
@@ -61,7 +68,7 @@ public enum DisplayPreferenceDefaults {
 /// Written synchronously rather than deferred, so a preference a person just changed is read back
 /// the moment the next screen asks for it, and so a setting screen can never show a value the rest
 /// of the app has not seen yet.
-public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences {
+public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences, CommunityDisclosurePreferences {
     /// Every key this type owns carries this prefix, so a preference can never collide with another
     /// part of the app or with a value written by an OS framework into the same domain.
     public static let keyPrefix = "display."
@@ -78,6 +85,8 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
     private let reminderTimeKey = "display.reminder.time"
     /// The goals hidden from Today: a comma-joined, sorted list of nutrient keys, absent when none is.
     private let hiddenTodayGoalsKey = "display.goals.hiddenOnToday"
+    /// Set once the sharing disclosure has been read after the first sign-in on this device.
+    private let communityDisclosureKey = "display.community.disclosureSeen"
 
     /// `defaults` is a parameter so a test can pass a suite of its own rather than touching the
     /// standard domain.
@@ -105,6 +114,14 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
 
     public var isReminderOn: Bool {
         defaults.bool(forKey: reminderOnKey)
+    }
+
+    public var hasSeenCommunityDisclosure: Bool {
+        defaults.bool(forKey: communityDisclosureKey)
+    }
+
+    public func setHasSeenCommunityDisclosure(_ seen: Bool) {
+        defaults.set(seen, forKey: communityDisclosureKey)
     }
 
     /// The stored time when it reads as a clock time, 20:00 otherwise.
@@ -193,11 +210,12 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.removeObject(forKey: reminderOnKey)
         defaults.removeObject(forKey: reminderTimeKey)
         defaults.removeObject(forKey: hiddenTodayGoalsKey)
+        defaults.removeObject(forKey: communityDisclosureKey)
     }
 }
 
 /// The preferences held in memory. For tests and for previews, so neither needs a defaults domain.
-public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences {
+public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences, CommunityDisclosurePreferences {
     public var unitSystem: UnitSystem
     public var quickWaterMilliliters: Decimal
     public private(set) var hasSeenWelcome = false
@@ -206,6 +224,11 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
     public private(set) var isReminderOn = false
     public private(set) var reminderTime = ReminderTime.standard
     public private(set) var hiddenTodayGoals: Set<String> = []
+    public private(set) var hasSeenCommunityDisclosure = false
+
+    public func setHasSeenCommunityDisclosure(_ seen: Bool) {
+        hasSeenCommunityDisclosure = seen
+    }
 
     public func setGoalShownOnToday(_ nutrient: String, shown: Bool) {
         if shown { hiddenTodayGoals.remove(nutrient) } else { hiddenTodayGoals.insert(nutrient) }
@@ -257,5 +280,6 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         isReminderOn = false
         reminderTime = ReminderTime.standard
         hiddenTodayGoals = []
+        hasSeenCommunityDisclosure = false
     }
 }
