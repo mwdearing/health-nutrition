@@ -83,6 +83,51 @@ public enum IntakeContextSnapshotBasis: Equatable {
     /// count the whole package.
     public static func scalingFactor(labelBasis: String, logged components: [IntakeComponent]) -> Decimal? {
         guard let basis = parse(labelBasis) else { return nil }
-        return basis.factor(forLogged: components)
+        if let factor = basis.factor(forLogged: components) { return factor }
+        return countedServingFactor(labelBasis: labelBasis, basis: basis, logged: components)
+    }
+
+    /// The factor for a per-count basis whose serving is stated as a count of the thing logged, and the
+    /// entry records that thing rather than a serving: "per serving (3 gummy)" with six gummies logged is
+    /// two servings. A label that says "Serving size 3 gummies" is stored in this shape.
+    ///
+    /// Only a counted quantity in the same unit as the logged component scales, so the factor is exact.
+    /// A serving stated in weight or volume ("per serving (30 g)") is not answered here, because the
+    /// encoder and the HealthKit totals do not say how much was eaten from a weight the entry does not
+    /// record in that dimension. A serving with no quantity ("per serving (1 large biscuit)") is nil.
+    private static func countedServingFactor(
+        labelBasis: String, basis: IntakeContextSnapshotBasis, logged components: [IntakeComponent]
+    ) -> Decimal? {
+        guard case .perCount = basis,
+              let serving = statedServingQuantity(labelBasis),
+              serving.unit.dimension == .count
+        else { return nil }
+        let counted = components.filter { $0.unit == serving.unit }
+        guard counted.count == 1 else { return nil }
+        return counted[0].amount / serving.value
+    }
+
+    /// The quantity one serving is, from a basis that states it: "per serving (30 g)" is 30 g and
+    /// "per serving (3 gummy)" is 3 gummy.
+    ///
+    /// A household measure can carry its weight in brackets of its own, "per serving (1 bar (30 g))", so
+    /// the innermost brackets are read: the last "(" and the first ")" after it.
+    ///
+    /// Only a number and a registry unit are read. A serving stated any other way, "1 large biscuit" or
+    /// "a handful", is nil, because nothing in it says how big one serving is.
+    public static func statedServingQuantity(
+        _ labelBasis: String
+    ) -> (value: Decimal, unit: MeasureUnit)? {
+        guard let open = labelBasis.lastIndex(of: "("),
+            let close = labelBasis[labelBasis.index(after: open)...].firstIndex(of: ")")
+        else { return nil }
+        let stated = String(labelBasis[labelBasis.index(after: open)..<close])
+            .trimmingCharacters(in: .whitespaces)
+        let digits = stated.prefix { $0.isASCII && ($0.isNumber || $0 == ".") }
+        let symbol = stated.dropFirst(digits.count).trimmingCharacters(in: .whitespaces)
+        guard let amount = DecimalText.decode(String(digits)), amount > 0,
+            let unit = try? UnitRegistry.unit(for: symbol)
+        else { return nil }
+        return (amount, unit)
     }
 }

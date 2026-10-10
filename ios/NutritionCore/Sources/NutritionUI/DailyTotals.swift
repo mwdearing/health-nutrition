@@ -137,10 +137,10 @@ public enum DailyTotalsBuilder {
     /// rather than as a counted serving, so a per-count basis alone cannot be scaled from the log
     /// and the day's total for that product read unknown. The two together do say how much was
     /// eaten: the serving the panel stated against the amount logged, in whichever dimension both
-    /// are stated. It is deliberately here and not in the basis type itself, because the
-    /// intake-context encoder answers the same basis as unresolvable and its contract with the relay
-    /// receiver says so; changing what that basis means is a contract change, while reading it here
-    /// is one reader being able to answer a question the data can answer.
+    /// are stated. A counted serving ("per serving (3 gummy)" with gummies logged) is answered by the
+    /// basis type itself, so the delivery paths scale it too. The weight or volume case stays here: the
+    /// intake-context encoder still answers it as unresolvable, and its contract with the relay
+    /// receiver depends on that, so changing it is a contract change.
     static func scalingFactor(
         labelBasis: String, logged components: [IntakeComponent]
     ) -> Decimal? {
@@ -196,17 +196,8 @@ public enum DailyTotalsBuilder {
     static func statedServingQuantity(
         _ labelBasis: String
     ) -> (value: Decimal, unit: MeasureUnit)? {
-        guard let open = labelBasis.lastIndex(of: "("),
-            let close = labelBasis[labelBasis.index(after: open)...].firstIndex(of: ")")
-        else { return nil }
-        let stated = String(labelBasis[labelBasis.index(after: open)..<close])
-            .trimmingCharacters(in: .whitespaces)
-        let digits = stated.prefix { $0.isASCII && ($0.isNumber || $0 == ".") }
-        let symbol = stated.dropFirst(digits.count).trimmingCharacters(in: .whitespaces)
-        guard let amount = AmountParser.parse(String(digits)),
-            let unit = try? UnitRegistry.unit(for: symbol)
-        else { return nil }
-        return (amount, unit)
+        // Read by the basis type, which the delivery paths also use for a counted serving.
+        IntakeContextSnapshotBasis.statedServingQuantity(labelBasis)
     }
 
     /// What one component carries for a nutrient, read through every key that nutrient may be stored
