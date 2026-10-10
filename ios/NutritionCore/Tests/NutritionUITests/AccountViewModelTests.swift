@@ -234,14 +234,19 @@ final class AccountViewModelTests: XCTestCase {
     func testMessagesNeverRepeatATokenACodeOrAnAddress() async throws {
         let (model, service, _) = makeModel()
         service.appleResult = .failure(LeakyAccountError())
-        service.codeError = LeakyAccountError()
-        service.verifyResult = .failure(LeakyAccountError())
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
         var texts = [model.message ?? ""]
+        service.codeError = LeakyAccountError()
         await model.requestCode(email: "person@example.com")
         texts.append(model.message ?? "")
+        service.codeError = nil
+        await model.requestCode(email: "person@example.com")
+        texts.append(model.message ?? "")
+        service.verifyResult = .failure(LeakyAccountError())
         await model.verify(code: "654321")
         texts.append(model.message ?? "")
+        XCTAssertEqual(texts.count, 4)
+        XCTAssertFalse(texts.contains(""))
         for text in texts {
             XCTAssertFalse(text.contains("test-access-token"))
             XCTAssertFalse(text.contains("654321"))

@@ -197,7 +197,7 @@ struct RootView: View {
             NavigationStack {
                 AppSettingsView(
                     goals: services.goals, connections: connections, reminders: services.reminders,
-                    now: { Date() }, opensGoals: settingsOpensGoals,
+                    account: services.account, now: { Date() }, opensGoals: settingsOpensGoals,
                     onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false }
                 )
             }
