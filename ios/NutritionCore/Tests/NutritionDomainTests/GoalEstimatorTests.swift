@@ -92,6 +92,17 @@ final class GoalEstimatorTests: XCTestCase {
         XCTAssertEqual(target.adjustmentNote, "We raised your daily calories to the minimum we suggest.")
     }
 
+    func testTheCapAndTheFloorTogetherJoinTheirNotes() throws {
+        // Woman, 70, 150 cm, 45 kg, sedentary, losing 1.0 kg a week.
+        // Daily 1051.8; the change 1100 is capped to 1000, leaving 51.8, below the 1200 floor, so 1200.
+        let target = try estimate(profile(
+            sex: .female, age: 70, cm: 150, kg: 45, activity: .sedentary, aim: .lose, weekly: 1))
+        XCTAssertEqual(target.energyKcal, 1200)
+        XCTAssertEqual(
+            target.adjustmentNote,
+            "We limited the daily change to 1,000 calories. We raised your daily calories to the minimum we suggest.")
+    }
+
     func testLossOfAKilogramAWeekIsCappedAt1000() throws {
         // 1.0 * 7700 / 7 = 1100, capped to 1000. 2759 - 1000 = 1759, which rounds to 1760.
         let target = try estimate(profile(aim: .lose, weekly: 1))

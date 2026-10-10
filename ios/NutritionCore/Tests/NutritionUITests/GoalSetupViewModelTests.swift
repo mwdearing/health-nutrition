@@ -61,6 +61,7 @@ final class GoalSetupViewModelTests: XCTestCase {
         model.aim = .maintain
         model.next()
         model.ageText = "30"
+        model.sex = .female
         model.next()
         model.back()
         XCTAssertEqual(model.step, .about)
@@ -77,8 +78,26 @@ final class GoalSetupViewModelTests: XCTestCase {
         model.weightPoundsText = "176"
         // 70 in * 2.54 cm = 177.8 cm exactly.
         XCTAssertEqual(model.makeProfile()?.heightCentimeters, Decimal(string: "177.8"))
-        // 176 lb * 0.45359237 kg = 79.83217912 kg exactly.
-        XCTAssertEqual(model.makeProfile()?.weightKilograms, Decimal(string: "79.83217912"))
+        // 176 lb * 0.45359237 kg = 79.83225712 kg exactly.
+        XCTAssertEqual(model.makeProfile()?.weightKilograms, Decimal(string: "79.83225712"))
+    }
+
+    func testBlankOrZeroInchesCountAsNoInches() {
+        let (model, _, _) = makeModel(system: .usCustomary)
+        answerForAMaintainingMan(model)
+        model.next()
+        model.next()
+        model.heightCentimetersText = ""
+        model.weightKilogramsText = ""
+        model.heightFeetText = "5"
+        model.weightPoundsText = "176"
+        model.heightInchesText = ""
+        // 5 ft with no inches: 60 in * 2.54 cm = 152.4 cm, and the step can move on.
+        XCTAssertEqual(model.makeProfile()?.heightCentimeters, Decimal(string: "152.4"))
+        XCTAssertTrue(model.canGoNext)
+        model.heightInchesText = "0"
+        XCTAssertEqual(model.makeProfile()?.heightCentimeters, Decimal(string: "152.4"))
+        XCTAssertTrue(model.canGoNext)
     }
 
     func testMetricAnswersAreUsedAsTyped() {
@@ -121,6 +140,17 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertEqual(saved["energy"]?.unit, .kcal)
         XCTAssertEqual(saved["protein"]?.target, 140)
         XCTAssertEqual(saved["protein"]?.unit, .g)
+    }
+
+    func testSavingAlsoUpdatesTheDraftsTheGoalsScreenShows() {
+        let (model, _, goalsModel) = makeModel()
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        XCTAssertTrue(model.save())
+        // The Goals screen keeps its own text for each field. Without this, a field that was empty
+        // before the save would still read as empty, and leaving it would remove the new goal.
+        XCTAssertEqual(goalsModel.draftText["energy"], "2760")
+        XCTAssertEqual(goalsModel.draftText["protein"], "140")
     }
 
     func testAnEditedResultIsWhatIsSaved() throws {
