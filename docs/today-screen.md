@@ -308,8 +308,9 @@ so `400.55` stays `400.55` in the field.
 
 What the preference changes, and what it does not:
 
-- **Offered**: the Add-intake `Picker("Unit")` lists the registry's whole set for metric, and `oz` and
-  `fl oz` first for the US system. Both are always available. The counted units are the registry's too, so
+- **Offered**: the Add-intake `Picker("Unit")` lists the registry's whole set for metric, and `oz`, `fl oz`,
+  `cup`, `tbsp` and `tsp` first for the US system. All are always available. The cup and spoon units are typed
+  input only: a volume becomes milliliters, or grams from a typical density (see `docs/ingredient-density.md`). The counted units are the registry's too, so
   a supplement can be logged in `gummy` or `piece` alongside `capsule`, `tablet`, `scoop` and `serving`.
 - **Input**: `AddIntakeViewModel.save` converts an amount entered in `oz` or `fl oz` to the metric unit
   it stands for before storing it, by the exact factor (× 28.349523125 or × 29.5735295625, exact in a
