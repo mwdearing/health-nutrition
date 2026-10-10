@@ -4,6 +4,46 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
+/// A goal store that fails exactly one mutation, the third, and keeps working around it.
+final class ThirdWriteFailingGoalStore: GoalStore, @unchecked Sendable {
+    private struct WriteFailed: Error {}
+
+    private let lock = NSLock()
+    private var stored: [String: NutrientGoal] = [:]
+    private var mutations = 0
+
+    init(goals: [NutrientGoal]) {
+        for goal in goals { stored[goal.nutrient] = goal }
+    }
+
+    func goals() throws -> [NutrientGoal] {
+        lock.withLock { stored.values.sorted { $0.nutrient < $1.nutrient } }
+    }
+
+    func goal(for nutrient: String) throws -> NutrientGoal? {
+        lock.withLock { stored[nutrient] }
+    }
+
+    func setGoal(_ goal: NutrientGoal) throws {
+        try goal.validate()
+        try mutate { stored[goal.nutrient] = goal }
+    }
+
+    func removeGoal(nutrient: String) throws {
+        try mutate { _ = stored.removeValue(forKey: nutrient) }
+    }
+
+    func close() {}
+
+    private func mutate(_ change: () -> Void) throws {
+        try lock.withLock {
+            mutations += 1
+            if mutations == 3 { throw WriteFailed() }
+            change()
+        }
+    }
+}
+
 /// The guided goal setup: its steps, its unit conversions, what it saves and what it forgets.
 @MainActor
 final class GoalSetupViewModelTests: XCTestCase {
@@ -173,6 +213,24 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertTrue(model.draftTargets.isEmpty)
         XCTAssertFalse(model.save())
         XCTAssertEqual(try store.goals(), [])
+    }
+
+    func testAFailedSaveRestoresEveryGoalItChanged() throws {
+        // Energy was stored and protein was not, so the rollback sets one goal back and removes the other.
+        // Writes run energy, protein, carbohydrate, fat, fiber; the third (carbohydrate) fails.
+        let energy = NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)
+        let carbohydrate = NutrientGoal(nutrient: "carbohydrate", target: 250, unit: .g)
+        let store = ThirdWriteFailingGoalStore(goals: [energy, carbohydrate])
+        let goalsModel = GoalsViewModel(
+            store: store, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goalsModel.load()
+        let model = GoalSetupViewModel(goals: goalsModel)
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(try store.goals(), [carbohydrate, energy])
+        // The Goals screen still shows the goal it had, not the estimate that failed to save.
+        XCTAssertEqual(goalsModel.draftText["energy"], "2000")
     }
 
     func testClosingTheSheetClearsEveryAnswer() {
