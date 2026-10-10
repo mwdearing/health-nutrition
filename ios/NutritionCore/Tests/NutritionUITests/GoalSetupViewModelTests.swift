@@ -282,6 +282,80 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertNil(model.resultError)
     }
 
+    /// Answers for a losing person, so the pace step is part of the path to the results.
+    private func answerForALosingMan(_ model: GoalSetupViewModel) {
+        model.aim = .lose
+        model.sex = .male
+        model.ageText = "30"
+        model.heightCentimetersText = "180"
+        model.weightKilogramsText = "80"
+        model.activity = .moderate
+    }
+
+    func testAHeightOutOfRangeIsWordedInCentimetersForMetric() {
+        let (model, _, _) = makeModel(system: .metric)
+        answerForAMaintainingMan(model)
+        model.heightCentimetersText = "110"
+        model.next(); model.next(); model.next(); model.next()
+        XCTAssertEqual(model.resultError, "Check your height. It must be between 120 and 230 cm.")
+    }
+
+    func testAHeightOutOfRangeIsWordedInFeetAndInchesForUSCustomary() {
+        let (model, _, _) = makeModel(system: .usCustomary)
+        answerForAMaintainingMan(model)
+        model.heightCentimetersText = ""
+        model.heightFeetText = "3"
+        model.heightInchesText = ""
+        model.weightKilogramsText = ""
+        model.weightPoundsText = "176"
+        model.next(); model.next(); model.next(); model.next()
+        // 120 cm is 47.2 in, so the least height the estimate accepts is 4 ft 0 in; 230 cm is 90.5 in.
+        XCTAssertEqual(model.resultError, "Check your height. It must be between 4 ft 0 in and 7 ft 6 in.")
+    }
+
+    func testAWeightOutOfRangeIsWordedInKilogramsForMetric() {
+        let (model, _, _) = makeModel(system: .metric)
+        answerForAMaintainingMan(model)
+        model.weightKilogramsText = "400"
+        model.next(); model.next(); model.next(); model.next()
+        XCTAssertEqual(model.resultError, "Check your weight. It must be between 30 and 300 kg.")
+    }
+
+    func testAWeightOutOfRangeIsWordedInPoundsForUSCustomary() {
+        let (model, _, _) = makeModel(system: .usCustomary)
+        answerForAMaintainingMan(model)
+        model.heightCentimetersText = ""
+        model.heightFeetText = "5"
+        model.heightInchesText = "10"
+        model.weightKilogramsText = ""
+        model.weightPoundsText = "900"
+        model.next(); model.next(); model.next(); model.next()
+        // 30 kg is 66.1 lb, so the least weight accepted is 67 lb; 300 kg is 661.4 lb.
+        XCTAssertEqual(model.resultError, "Check your weight. It must be between 67 and 661 lb.")
+    }
+
+    func testAPaceOutOfRangeIsWordedInKilogramsForMetric() {
+        let (model, _, _) = makeModel(system: .metric)
+        answerForALosingMan(model)
+        model.selectedPaceKilograms = 2
+        model.next(); model.next(); model.next(); model.next(); model.next()
+        XCTAssertEqual(model.resultError, "Check your pace. It must be between 0.1 and 1 kg a week.")
+    }
+
+    func testAPaceOutOfRangeIsWordedInPoundsForUSCustomary() {
+        let (model, _, _) = makeModel(system: .usCustomary)
+        answerForALosingMan(model)
+        model.heightCentimetersText = ""
+        model.heightFeetText = "5"
+        model.heightInchesText = "11"
+        model.weightKilogramsText = ""
+        model.weightPoundsText = "176"
+        model.selectedPaceKilograms = 2
+        model.next(); model.next(); model.next(); model.next(); model.next()
+        // 0.1 kg is 0.22 lb, so the least pace accepted is 0.3 lb a week; 1 kg is 2.2 lb.
+        XCTAssertEqual(model.resultError, "Check your pace. It must be between 0.3 and 2.2 lb a week.")
+    }
+
     func testClosingTheSheetClearsEveryAnswer() {
         let (model, _, _) = makeModel()
         answerForAMaintainingMan(model)
