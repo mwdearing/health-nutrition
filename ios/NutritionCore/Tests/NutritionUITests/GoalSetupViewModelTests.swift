@@ -247,6 +247,41 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertEqual(model.draftTargets["energy"], "2760")
     }
 
+    func testAnInvalidResultIsNamedFieldByFieldAndTheDraftsStayAsTyped() throws {
+        let (model, store, _) = makeModel()
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        model.draftTargets["energy"] = "0"
+        model.draftTargets["protein"] = "-5"
+        let typed = model.draftTargets
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(model.draftTargets, typed)
+        XCTAssertEqual(model.fieldErrors, [
+            "energy": "Enter a number greater than zero.",
+            "protein": "Enter a number greater than zero.",
+        ])
+        XCTAssertEqual(model.resultError, "Enter a number above zero.")
+        XCTAssertEqual(try store.goals(), [])
+        // Fixing the fields and saving again clears the errors and saves.
+        model.draftTargets["energy"] = "2000"
+        model.draftTargets["protein"] = "140"
+        XCTAssertTrue(model.save())
+        XCTAssertTrue(model.fieldErrors.isEmpty)
+        XCTAssertNil(model.resultError)
+    }
+
+    func testBackClearsTheFieldErrorsAsItDoesTheSummary() {
+        let (model, _, _) = makeModel()
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        model.draftTargets["fiber"] = "abc"
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(model.fieldErrors["fiber"], "Enter a number greater than zero.")
+        model.back()
+        XCTAssertTrue(model.fieldErrors.isEmpty)
+        XCTAssertNil(model.resultError)
+    }
+
     func testClosingTheSheetClearsEveryAnswer() {
         let (model, _, _) = makeModel()
         answerForAMaintainingMan(model)
