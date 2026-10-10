@@ -58,9 +58,10 @@ public enum NutrientGoalChoices {
     }
 
     /// Whether a unit is one a stored target may be counted in: everything the registry holds except
-    /// the two ounces, which are normalized away at the input boundary and so are never stored.
+    /// the two ounces and the typed volumes, which are normalized away at the input boundary and so are
+    /// never stored.
     private static func isMetric(_ unit: MeasureUnit) -> Bool {
-        unit != .oz && unit != .flOz
+        unit != .oz && unit != .flOz && unit != .cup && unit != .tablespoon && unit != .teaspoon
     }
 }
 
@@ -414,7 +415,9 @@ public final class GoalsViewModel: ObservableObject {
     /// Only volumes for water, including fl oz; other nutrients retain their metric unit menus.
     public func units(for key: String) -> [MeasureUnit] {
         if key == DailyTotalsBuilder.waterKey {
-            return UnitSelection.offered(for: self.preferences.unitSystem).filter { $0.dimension == .volume }
+            return UnitSelection.offered(for: self.preferences.unitSystem).filter {
+                $0.dimension == .volume && !UnitSelection.typedVolumes.contains($0)
+            }
         }
         return NutrientGoalChoices.units(forKey: key, snapshotUnit: self.snapshotUnits[key])
     }

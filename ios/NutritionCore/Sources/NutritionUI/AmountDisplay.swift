@@ -5,9 +5,13 @@ import NutritionJournal
 /// Which units the Add-intake picker offers, and in what order.
 ///
 /// This is about what a person is OFFERED. A unit chosen here decides the unit an amount is read in;
-/// the ounces are converted to the metric unit they stand for before anything is stored, so changing
-/// this list never rewrites anything already logged.
+/// the ounces and the typed volumes are converted to the metric unit they stand for before anything is
+/// stored, so changing this list never rewrites anything already logged.
 public enum UnitSelection {
+    /// The volume measures a person types as input only: a cup, a tablespoon and a teaspoon. They are never
+    /// stored, and the recipe editor and the goals screen do not offer them.
+    public static let typedVolumes: [MeasureUnit] = [.cup, .tablespoon, .teaspoon]
+
     /// Every unit the picker offers under `system`, the system's own units first.
     public static func offered(for system: UnitSystem) -> [MeasureUnit] {
         let preferred = preferred(for: system)
@@ -15,11 +19,12 @@ public enum UnitSelection {
         return preferred + rest
     }
 
-    /// The units a system puts first, which is the whole list for metric and the two ounces for US.
+    /// The units a system puts first: the whole list for metric, and for US the two ounces and the three
+    /// typed volume measures.
     public static func preferred(for system: UnitSystem) -> [MeasureUnit] {
         switch system {
         case .metric: return UnitRegistry.all
-        case .usCustomary: return [.oz, .flOz]
+        case .usCustomary: return [.oz, .flOz] + typedVolumes
         }
     }
 }
@@ -183,6 +188,9 @@ public enum AmountDisplay {
         case .mL: return "milliliters"
         case .L: return "liters"
         case .flOz: return "fluid ounces"
+        case .cup: return "cups"
+        case .tablespoon: return "tablespoons"
+        case .teaspoon: return "teaspoons"
         case .kcal: return "calories"
         case .iu: return "international units"
         default: return unit.symbol

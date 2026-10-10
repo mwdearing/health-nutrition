@@ -108,6 +108,13 @@ extension LookedUpProduct {
     }
 }
 
+/// A volume typed in cups, tablespoons or teaspoons, stored as grams from the typical density of the food
+/// the name matched. The name is the catalog's, which is what the form shows.
+public struct DensityConversion: Equatable, Sendable {
+    public let grams: Decimal
+    public let ingredientName: String
+}
+
 @MainActor
 public final class AddIntakeViewModel: ObservableObject {
     /// This form's own identity, so the sheet can be bound to the model rather than to a flag beside
@@ -170,7 +177,7 @@ public final class AddIntakeViewModel: ObservableObject {
     public let timeZoneIdentifier: String
     /// The units the picker offers, read through so a preference changed on another screen is
     /// honored the next time this form is opened. Metric offers the whole registry; the US system
-    /// puts ounces and fluid ounces first.
+    /// puts ounces, fluid ounces, cups, tablespoons and teaspoons first.
     public var units: [MeasureUnit] { UnitSelection.offered(for: preferences.unitSystem) }
     /// The unit system the offered list is built from.
     public var unitSystem: UnitSystem { preferences.unitSystem }
@@ -242,14 +249,74 @@ public final class AddIntakeViewModel: ObservableObject {
         return keys
     }()
 
+    /// The name as it is saved: trimmed, so the density lookup and the saved entry read the same text.
+    private var typedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// The grams a volume typed in a cup, tablespoon or teaspoon is stored as, when a typical density
+    /// applies to the food named. Nil when it does not, and the amount then stays in milliliters.
+    public var volumeToMass: DensityConversion? {
+        guard let amount = AmountParser.parseTyped(amountText) else { return nil }
+        return densityConversion(amount: amount, unit: unit, name: typedName)
+    }
+
+    /// The line under the amount when a typical density converts the volume: the grams and the food
+    /// whose density gave them. Nil when no conversion applies.
+    public var densityNote: String? {
+        guard let conversion = volumeToMass else { return nil }
+        return "About \(DecimalFormatting.text(conversion.grams)) g, using a typical density for "
+            + "\(conversion.ingredientName)."
+    }
+
+    /// The line shown when a volume is chosen for a food the catalog does not name, so the amount is saved in
+    /// milliliters. Nil for a mass, or for a volume the density rule does not reach.
+    public var densityUnavailableNote: String? {
+        guard UnitSelection.typedVolumes.contains(unit), densityApplies, !typedName.isEmpty,
+            IngredientDensityCatalog.match(typedName) == nil
+        else { return nil }
+        return "No typical density is known for this food, so it is saved in mL."
+    }
+
+    /// Whether a typical density may stand for a typed volume. It may when the entry has no label basis,
+    /// which is a food typed by hand, or when the basis states a mass. A volume label, a per-serving
+    /// label and a basis that does not resolve stay in milliliters.
+    private var densityApplies: Bool {
+        guard let basis = lookedUp?.labelBasis ?? prefilledProduct?.labelBasis else { return true }
+        guard let parsed = IntakeContextSnapshotBasis.parse(basis) else { return false }
+        switch parsed {
+        case .perHundred(let measured), .perUnit(let measured): return measured.dimension == .mass
+        case .perCount: return false
+        }
+    }
+
+    /// The density conversion for an amount typed in `unit` of the food `name`, or nil when the unit is not a
+    /// typed volume, no density applies, or the name matches no catalog row or more than one.
+    private func densityConversion(amount: Decimal, unit: MeasureUnit, name: String) -> DensityConversion? {
+        guard UnitSelection.typedVolumes.contains(unit), densityApplies,
+            let row = IngredientDensityCatalog.match(name)
+        else { return nil }
+        let milliliters = Self.storedMetric(amount: amount, unit: unit).amount
+        return DensityConversion(grams: row.grams(forMilliliters: milliliters), ingredientName: row.name)
+    }
+
+    /// What is stored for an amount typed in `unit` of the food `name`: grams from a typical density when one
+    /// applies, otherwise the metric amount `storedMetric` gives.
+    private func storedQuantity(
+        amount: Decimal, unit: MeasureUnit, name: String
+    ) -> (amount: Decimal, unit: MeasureUnit) {
+        if let conversion = densityConversion(amount: amount, unit: unit, name: name) {
+            return (conversion.grams, .g)
+        }
+        return Self.storedMetric(amount: amount, unit: unit)
+    }
+
     /// Recomputed from the same metric components and basis rules used for the saved total.
     public var thisAdds: [ThisAddsLine] {
         guard hasPrefilledValues, let amount = AmountParser.parseTyped(amountText),
             let basis = lookedUp?.labelBasis ?? prefilledProduct?.labelBasis
         else { return [] }
-        let stored = Self.storedMetric(amount: amount, unit: unit)
+        let stored = storedQuantity(amount: amount, unit: unit, name: typedName)
         let components = [IntakeComponent(
-            componentID: Self.slug(name), name: name, amount: stored.amount, unit: stored.unit)]
+            componentID: Self.slug(typedName), name: typedName, amount: stored.amount, unit: stored.unit)]
         let factor = DailyTotalsBuilder.scalingFactor(labelBasis: basis, logged: components)
         return Self.thisAddsKeys.compactMap { key in
             let value = self.prefilledValue(for: key)
@@ -564,7 +631,7 @@ public final class AddIntakeViewModel: ObservableObject {
         let intake = Intake(
             id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier,
             meal: meal?.rawValue)
-        let (storedAmount, storedUnit) = Self.storedMetric(amount: amount, unit: unit)
+        let (storedAmount, storedUnit) = storedQuantity(amount: amount, unit: unit, name: trimmedName)
         let component = IntakeComponent(
             componentID: Self.slug(trimmedName), name: trimmedName, amount: storedAmount, unit: storedUnit)
         do {
@@ -576,17 +643,21 @@ public final class AddIntakeViewModel: ObservableObject {
         }
     }
 
-    /// What is actually stored for an amount entered in `unit`: ounces become the metric unit they
-    /// stand for, everything else is stored as entered.
+    /// What is actually stored for an amount entered in `unit` when no density applies: ounces, cups and
+    /// spoons become the metric unit they stand for, everything else is stored as entered.
     ///
-    /// The ounces are INPUT and DISPLAY units only. One ounce is exactly 28.349523125 g and one fluid
-    /// ounce is exactly 29.5735295625 mL, so this multiplication is exact in a `Decimal` and nothing is
-    /// lost. Storage, the journal export, the digests and the relay encoder therefore never see `oz`
-    /// or `fl oz`, and an entry logged in ounces exports as the same grams a metric entry would.
+    /// The ounces and the typed volumes are INPUT and DISPLAY units only. One ounce is exactly 28.349523125 g,
+    /// one fluid ounce 29.5735295625 mL, one cup 236.5882365 mL, one tablespoon 14.78676478125 mL and one
+    /// teaspoon 4.92892159375 mL, so each multiplication is exact in a `Decimal` and nothing is lost. Storage,
+    /// the journal export, the digests and the relay encoder therefore never see those units, and an entry
+    /// logged in them exports as the same amount a metric entry would.
     static func storedMetric(amount: Decimal, unit: MeasureUnit) -> (amount: Decimal, unit: MeasureUnit) {
         switch unit {
         case .oz: return (amount * Decimal(string: "28.349523125", locale: AmountParser.locale)!, .g)
         case .flOz: return (amount * Decimal(string: "29.5735295625", locale: AmountParser.locale)!, .mL)
+        case .cup: return (amount * Decimal(string: "236.5882365", locale: AmountParser.locale)!, .mL)
+        case .tablespoon: return (amount * Decimal(string: "14.78676478125", locale: AmountParser.locale)!, .mL)
+        case .teaspoon: return (amount * Decimal(string: "4.92892159375", locale: AmountParser.locale)!, .mL)
         default: return (amount, unit)
         }
     }

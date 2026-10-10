@@ -103,6 +103,14 @@ extension MeasureUnit {
     /// One US fluid ounce: exactly 29.5735295625 mL. A distinct symbol from `oz`, so a weight is never
     /// read as a measure. Rounded into from milliliters, exactly like `oz` is from grams.
     public static let flOz = repeatingReciprocalUnit(symbol: "fl oz", dimension: .volume, "29.5735295625")
+    /// One US customary cup: exactly 236.5882365 mL. A typed measure, so input and display only: Add intake
+    /// turns it into milliliters, or into grams from a typical density, before anything is stored. Rounded
+    /// into from milliliters, like the ounces.
+    public static let cup = repeatingReciprocalUnit(symbol: "cup", dimension: .volume, "236.5882365")
+    /// One US tablespoon, a sixteenth of a cup: exactly 14.78676478125 mL. Input only, like `cup`.
+    public static let tablespoon = repeatingReciprocalUnit(symbol: "tbsp", dimension: .volume, "14.78676478125")
+    /// One US teaspoon, a third of a tablespoon: exactly 4.92892159375 mL. Input only, like `cup`.
+    public static let teaspoon = repeatingReciprocalUnit(symbol: "tsp", dimension: .volume, "4.92892159375")
     public static let kcal = MeasureUnit(symbol: "kcal", dimension: .energy, toBase: power10(0), fromBase: power10(0))
     public static let serving = MeasureUnit(symbol: "serving", dimension: .count, toBase: power10(0), fromBase: power10(0))
     public static let scoop = MeasureUnit(symbol: "scoop", dimension: .count, toBase: power10(0), fromBase: power10(0))
@@ -122,19 +130,19 @@ extension MeasureUnit {
 /// states its serving as a number of things rather than as a weight, and a count is never converted
 /// into a mass without a portion definition saying how much one of them weighs.
 ///
-/// One avoirdupois ounce (28.349523125 g) and one US fluid ounce (29.5735295625 mL) are exact in the
-/// base unit, but their reciprocals repeat forever, so no reciprocal is stored for either. A
-/// conversion INTO an ounce therefore divides by the exact factor and rounds the quotient, plainly,
-/// to `reciprocalFractionDigits` fraction digits. Ten digits is far past anything a person reads and
-/// far enough below the factor's own precision that a round trip is exact at the six digits the
-/// domain tests assert; it is a documented rounding, not an exactness claim.
+/// One avoirdupois ounce (28.349523125 g), one US fluid ounce (29.5735295625 mL), one cup, one tablespoon
+/// and one teaspoon are exact in the base unit, but their reciprocals repeat forever, so no reciprocal is
+/// stored for any of them. A conversion INTO one of these units therefore divides by the exact factor and
+/// rounds the quotient, plainly, to `reciprocalFractionDigits` fraction digits. Ten digits is far past
+/// anything a person reads and far enough below the factor's own precision that a round trip is exact at
+/// the six digits the domain tests assert; it is a documented rounding, not an exactness claim.
 public enum UnitRegistry: Sendable {
-    /// Fraction digits a conversion into `oz` or `fl oz` is rounded to.
+    /// Fraction digits a conversion into `oz`, `fl oz`, `cup`, `tbsp` or `tsp` is rounded to.
     public static let reciprocalFractionDigits = 10
 
     public static let all: [MeasureUnit] = [
-        .g, .mg, .mcg, .kg, .oz, .mL, .L, .flOz, .kcal, .serving, .scoop, .tablet, .capsule, .piece,
-        .gummy, .iu,
+        .g, .mg, .mcg, .kg, .oz, .mL, .L, .flOz, .cup, .tablespoon, .teaspoon, .kcal, .serving, .scoop,
+        .tablet, .capsule, .piece, .gummy, .iu,
     ]
 
     public static func unit(for symbol: String) throws -> MeasureUnit {

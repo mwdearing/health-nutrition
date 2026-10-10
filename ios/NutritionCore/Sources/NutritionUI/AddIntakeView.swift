@@ -96,6 +96,17 @@ public struct AddIntakeView: View {
                 if let message = model.amountError {
                     Text(message).font(.footnote).foregroundStyle(TokenColors.error)
                 }
+                // A typed cup, tablespoon or teaspoon says what it became, and whose typical density gave the
+                // grams, with the license line the catalog requires beside them.
+                if let note = model.densityNote {
+                    Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                    Text(IngredientDensityCatalog.attribution)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
+                if let note = model.densityUnavailableNote {
+                    Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
                 if let hint = model.servingHint {
                     Text(hint).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                     ViewThatFits(in: .horizontal) {
