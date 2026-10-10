@@ -71,6 +71,9 @@ do $$ begin perform catalog.refresh_entry('0123456789012','per_100g'); raise exc
 -- Anonymous (no sign-in) callers are denied.
 reset role; select set_config('request.jwt.claim.sub', '', false); set role anon;
 do $$ begin perform public.lookup_label('0123456789012'); raise exception 'anon can call'; exception when insufficient_privilege then null; end $$;
+-- An anonymous user never gets a profile.
+reset role; insert into auth.users (id, is_anonymous) values ('00000000-0000-0000-0000-000000000061', true);
+select pg_temp.check((select count(*) from public.profiles where id = '00000000-0000-0000-0000-000000000061') = 0, 'no profile for an anonymous user');
 -- Profiles: a person reads and edits only their own; sharing off blocks submitting; deleting removes everything.
 reset role;
 insert into auth.users (id) values ('00000000-0000-0000-0000-000000000051'), ('00000000-0000-0000-0000-000000000052');

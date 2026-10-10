@@ -14,11 +14,12 @@ create table public.profiles (
 alter table public.profiles enable row level security;
 
 create policy profiles_select_own on public.profiles for select to authenticated
-  using (id = (select auth.uid()));
+  using (id = (select auth.uid()) and not coalesce((select auth.jwt() ->> 'is_anonymous')::boolean, false));
 create policy profiles_insert_own on public.profiles for insert to authenticated
-  with check (id = (select auth.uid()));
+  with check (id = (select auth.uid()) and not coalesce((select auth.jwt() ->> 'is_anonymous')::boolean, false));
 create policy profiles_update_own on public.profiles for update to authenticated
-  using (id = (select auth.uid())) with check (id = (select auth.uid()));
+  using (id = (select auth.uid()) and not coalesce((select auth.jwt() ->> 'is_anonymous')::boolean, false))
+  with check (id = (select auth.uid()) and not coalesce((select auth.jwt() ->> 'is_anonymous')::boolean, false));
 
 revoke all on public.profiles from public, anon;
 grant select, insert, update on public.profiles to authenticated;
@@ -37,7 +38,10 @@ create trigger profiles_touch before update on public.profiles
 create function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
-  insert into public.profiles (id) values (new.id) on conflict do nothing;
+  -- Anonymous users (off for this project) never get a profile.
+  if not coalesce(new.is_anonymous, false) then
+    insert into public.profiles (id) values (new.id) on conflict do nothing;
+  end if;
   return new;
 end;
 $$;
