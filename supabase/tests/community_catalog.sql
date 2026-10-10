@@ -77,6 +77,32 @@ select pg_temp.check((select verified from catalog.entries where barcode = '0123
 update catalog.settings set min_devices = 6;
 select pg_temp.check((select not verified from catalog.entries where barcode = '0123456881006'), 'raising the bar removes the badge');
 update catalog.settings set min_devices = 5;
+
+-- Equivalent codes (UPC-A and the same code with a leading zero) join one consensus; a stale token reads nothing.
+reset role; delete from catalog.entries; delete from catalog.submissions; delete from catalog.usage;
+select pg_temp.as_device(1); select public.submit_label('123456000315','per_100g',null,'Cola',null,'{"energyKcal":42,"protein":0,"carbohydrates":10.6}');
+select pg_temp.as_device(2); select pg_temp.check(public.submit_label('0123456000315','per_100g',null,'Cola',null,'{"energyKcal":42,"protein":0,"carbohydrates":10.6}') = 'shared', 'UPC-A and EAN-13 forms join one label');
+select pg_temp.check((select count(*) from public.lookup_label('123456000315')) = 1, 'lookup finds it by the 12-digit form');
+-- Per-serving values with different serving definitions never count together.
+select pg_temp.as_device(3); select public.submit_label('0123456000315','per_serving','30 g','Cola',null,'{"energyKcal":90,"protein":1,"carbohydrates":20}');
+select pg_temp.as_device(4); select public.submit_label('0123456000315','per_serving','60 g','Cola',null,'{"energyKcal":90,"protein":1,"carbohydrates":20}');
+select pg_temp.check((select count(*) from public.lookup_label('123456000315') where basis = 'per_serving') = 0, 'different serving definitions do not agree');
+select pg_temp.as_device(5); select public.submit_label('0123456000315','per_serving','30 g','Cola',null,'{"energyKcal":90,"protein":1,"carbohydrates":20}');
+select pg_temp.check((select supporting_devices from public.lookup_label('123456000315') where basis = 'per_serving') = 2, 'same serving definition agrees');
+-- The final median still has every supporter in tolerance.
+reset role; delete from catalog.entries; delete from catalog.submissions;
+insert into catalog.submissions (device_id, barcode, basis, product_name, nutrients)
+select ('00000000-0000-0000-0000-' || lpad((300 + n)::text, 12, '0'))::uuid, '0123456000315', 'per_100g', 'Mix',
+  jsonb_build_object('protein', p, 'fat', p, 'carbohydrates', p)
+from (values (1, 0), (2, 0), (3, 0), (4, 0.2), (5, 0.6), (6, 0.7)) v(n, p);
+select catalog.refresh_entry('0123456000315', 'per_100g');
+select pg_temp.check((select count(*) from catalog.entries where barcode = '0123456000315' and verified) = 0, 'supporters are re-checked against the final median');
+-- A replacement counts as the newest submission.
+reset role; update catalog.submissions set updated_at = now() + interval '1 hour' where device_id = '00000000-0000-0000-0000-000000000306';
+-- A deleted account reads nothing with its stale token.
+reset role; select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000999', false), set_config('request.jwt.claims', '{"is_anonymous": false}', false); set role authenticated;
+select pg_temp.check((select count(*) from public.lookup_label('123456000315')) = 0, 'no profile, no lookup');
+reset role;
 -- Invalid input is refused.
 select pg_temp.as_device(7);
 do $$ begin perform public.submit_label('12','per_100g',null,'X',null,'{"energyKcal":1,"protein":1,"fat":1}'); raise exception 'short barcode accepted'; exception when sqlstate '22023' then null; end $$;
