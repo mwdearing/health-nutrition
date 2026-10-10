@@ -84,6 +84,8 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
 
     func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile {
         updates.append((displayName, shareLabels))
+        // Suspend once, as a real request does, so two writes can overlap when nothing serializes them.
+        await Task.yield()
         if let updateError { throw updateError }
         return CommunityProfile(displayName: displayName, shareLabels: shareLabels)
     }
@@ -249,6 +251,32 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .signedOut)
         XCTAssertFalse(model.sharingAllowed)
         XCTAssertEqual(model.message, AccountViewModel.sessionEndedMessage)
+    }
+
+    /// A name saved while the sharing switch is changing must not undo the switch, and the switch must not undo
+    /// the name: the last write carries both new values whichever call goes first.
+    func testOverlappingProfileWritesEndWithBothChanges() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        async let name: Void = model.saveName("Pat")
+        async let sharing: Void = model.setSharing(false)
+        _ = await (name, sharing)
+        XCTAssertEqual(service.updates.last?.shareLabels, false)
+        XCTAssertEqual(service.updates.last?.displayName, "Pat")
+        XCTAssertFalse(model.shareLabels)
+        XCTAssertEqual(model.displayName, "Pat")
+    }
+
+    /// Erasing the stored preferences clears the disclosure flag, so the open account screen must ask again.
+    func testDisclosureIsOfferedAgainAfterThePreferencesAreErased() async throws {
+        let (model, _, preferences) = makeModel()
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+        XCTAssertTrue(model.sharingAllowed)
+        preferences.setHasSeenCommunityDisclosure(false)
+        model.refreshAfterErase()
+        XCTAssertTrue(model.needsDisclosure)
+        XCTAssertFalse(model.sharingAllowed)
     }
 
     func testNameIsSavedTrimmed() async throws {
