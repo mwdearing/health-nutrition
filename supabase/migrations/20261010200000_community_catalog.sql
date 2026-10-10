@@ -298,10 +298,16 @@ begin
   if device is null or coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
     raise exception 'sign in with an account first' using errcode = '28000';
   end if;
-  with gone as (
-    delete from catalog.submissions where device_id = device returning barcode, basis
-  )
-  select array_agg(array[barcode, basis]) into labels from (select distinct barcode, basis from gone) d;
+  -- Lock every label this device touched, in a fixed order, before deleting anything, so two withdrawals
+  -- (or a withdrawal and a submission) can never wait on each other in opposite orders.
+  select array_agg(array[barcode, basis] order by barcode, basis) into labels
+  from (select distinct barcode, basis from catalog.submissions where device_id = device) d;
+  if labels is not null then
+    foreach touched slice 1 in array labels loop
+      perform pg_advisory_xact_lock(hashtextextended(touched[1] || '|' || touched[2], 0));
+    end loop;
+  end if;
+  delete from catalog.submissions where device_id = device;
   if labels is not null then
     foreach touched slice 1 in array labels loop
       perform catalog.refresh_entry(touched[1], touched[2]);
