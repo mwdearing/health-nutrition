@@ -220,7 +220,7 @@ final class CommunityClientTests: XCTestCase {
         XCTAssertEqual(try store.load(), session)
     }
 
-    func testForbiddenSQLStateErrorsAreMappedAndRetainSession() async throws {
+    func testForbiddenSQLStateErrorsInvalidateOnlySignedOutSession() async throws {
         let cases: [(code: String, expected: CommunityError)] = [
             ("28000", .signedOut),
             ("42501", .sharingOff),
@@ -234,7 +234,7 @@ final class CommunityClientTests: XCTestCase {
             let community = try client(transport, store: store)
 
             await assertCommunityError(testCase.expected) { try await community.submitLabel(submission()) }
-            XCTAssertEqual(try store.load(), session)
+            XCTAssertEqual(try store.load(), testCase.expected == .signedOut ? nil : session)
         }
     }
 
