@@ -280,7 +280,8 @@ begin
   end if;
   code := catalog.canonical_barcode(p_barcode);
   perform pg_advisory_xact_lock(hashtextextended(code || '|' || p_basis, 0));
-  select md5(to_jsonb(a)::text) into payload_digest from catalog.approved_entries a
+  select md5(jsonb_build_object('barcode', a.barcode, 'basis', a.basis, 'serving_text', a.serving_text,
+    'product_name', a.product_name, 'brand', a.brand, 'nutrients', a.nutrients)::text) into payload_digest from catalog.approved_entries a
     where a.barcode = code and a.basis = p_basis;
   delete from catalog.approved_entries where barcode = code and basis = p_basis;
   insert into catalog.rejections (barcode, basis, reason) values (code, p_basis, btrim(p_reason))
@@ -324,7 +325,8 @@ begin
   end if;
   code := catalog.canonical_barcode(p_barcode);
   perform pg_advisory_xact_lock(hashtextextended(code || '|' || p_basis, 0));
-  select md5(to_jsonb(a)::text) into payload_digest from catalog.approved_entries a
+  select md5(jsonb_build_object('barcode', a.barcode, 'basis', a.basis, 'serving_text', a.serving_text,
+    'product_name', a.product_name, 'brand', a.brand, 'nutrients', a.nutrients)::text) into payload_digest from catalog.approved_entries a
     where a.barcode = code and a.basis = p_basis;
   delete from catalog.approved_entries where barcode = code and basis = p_basis;
   if not found then

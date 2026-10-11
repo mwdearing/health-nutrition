@@ -285,6 +285,7 @@ reset role; select catalog.refresh_entry('0123456070004', 'per_100g');
 select pg_temp.check((select count(*) = 0 from public.lookup_label_v2('0123456070004')), 'refresh and new submissions cannot restore rejected v2 visibility');
 select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')), 'refresh and new submissions cannot restore rejected legacy visibility');
 select pg_temp.check((select count(*) = 1 from catalog.moderation_audit where barcode = '0123456070004' and action = 'reject'), 'rejection is audited');
+select pg_temp.check((select count(distinct payload_digest) = 1 and bool_and(payload_digest is not null) from catalog.moderation_audit where barcode = '0123456070004' and basis = 'per_100g' and action in ('approve', 'reject')), 'approval and rejection share the canonical payload digest');
 select catalog.owner_clear_rejection('0123456070004','per_100g','reviewed');
 select pg_temp.check((select verification_source = 'community' and not verified
   from public.lookup_label_v2('0123456070004')), 'clearing rejection shows community only and does not verify it');
@@ -299,6 +300,7 @@ select pg_temp.check((select count(*) = 1 and bool_and(not verified) from public
   'legacy lookup exposes the community fallback again after revocation');
 select pg_temp.check(not exists (select 1 from catalog.approved_entries where barcode = '0123456070004'), 'revocation removes active canonical');
 select pg_temp.check((select count(*) = 1 from catalog.moderation_audit where barcode = '0123456070004' and action = 'revoke'), 'revocation is audited');
+select pg_temp.check((select count(distinct payload_digest) = 1 and bool_and(payload_digest is not null) from catalog.moderation_audit where barcode = '0123456070004' and basis = 'per_100g' and action in ('approve', 'reject', 'revoke')), 'identical reviewed payloads keep one digest across reapproval and revocation');
 -- A revoked approval with no eligible community aggregate does not return a row.
 select catalog.owner_approve_label('0123456070110','per_100g',null,'Isolated Label','Acme',
   '{"energyKcal":200,"protein":5,"carbohydrates":20}'::jsonb,'reviewed');
