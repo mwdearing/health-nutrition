@@ -528,6 +528,42 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.sodium, panel), dec("300"))
     }
 
+    func testFlattenedNutritionHeadingDropsPreheadingCalloutAndKeepsPanelRow() throws {
+        let panel = parse(["Protein 20g Nutrition Facts Protein 6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
+    func testNutritionFactsMentionInProseDoesNotStartAPanel() throws {
+        let panel = parse(["Protein 6g", "See nutrition facts for sodium content"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
+    func testConflictingNamedDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
+        let panel = parse(["Nutrition Facts", "Sodium 100mg", "Sodium 2g", "Sodium 2O0mg"])
+
+        XCTAssertEqual(try amount(.sodium, panel), dec("100"))
+        XCTAssertEqual(try unit(.sodium, panel), .mg)
+        XCTAssertEqual(reviewReasons(.sodium, panel), [.conflictingDuplicate])
+    }
+
+    func testConflictingCompoundDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
+        let panel = parse(["Supplement Facts", "Zinc 100mg", "Zinc 2O0mg"])
+        let zinc = try XCTUnwrap(panel.additionalNutrient(for: "zinc"))
+
+        XCTAssertEqual(zinc.value, .known(dec("100"), .mg))
+        XCTAssertEqual(zinc.review?.reasons, [.conflictingDuplicate])
+    }
+
+    func testConflictingChemicalFormDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
+        let panel = parse(["Calcium Citrate 100mg", "Calcium Citrate 2g"])
+
+        XCTAssertEqual(try amount(.calcium, panel), dec("100"))
+        XCTAssertEqual(try unit(.calcium, panel), .mg)
+        XCTAssertEqual(reviewReasons(.calcium, panel), [.conflictingDuplicate])
+    }
+
     func testHeadingMakesPanelRowsTakePrecedenceOverCallouts() throws {
         let panel = parse(["Protein 20g", "Nutrition Facts", "Serving size 1 bar", "Protein 6g"])
 

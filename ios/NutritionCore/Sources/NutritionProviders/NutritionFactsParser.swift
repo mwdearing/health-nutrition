@@ -77,7 +77,10 @@ public enum NutritionFactsParser {
     /// surrounding print, a brand line or a footnote cannot turn into a value.
     public static func parse(lines: [String]) -> ParsedNutritionFacts {
         let cleaned = lines.map { cleanLine($0) }
-        let panelStart = cleaned.firstIndex(where: isPanelHeading) ?? 0
+        let panelHeading = cleaned.enumerated().compactMap { index, line in
+            panelHeadingRange(in: line).map { (index, $0) }
+        }.first
+        let panelStart = panelHeading?.0 ?? 0
         var panelSize: ParsedServingSize?
         var preheadingSize: ParsedServingSize?
         var panelPerContainer: Decimal?
@@ -91,7 +94,11 @@ public enum NutritionFactsParser {
         while index < cleaned.count {
             // A capture can flatten the serving metadata and a nutrient row onto one line, so the
             // metadata is taken off first and whatever text is left behind it is still read.
-            var residual = withoutDailyValueHeading(in: cleaned[index])
+            let line = cleaned[index]
+            let panelSuffix = panelHeading.flatMap { heading in
+                heading.0 == index ? String(line[heading.1.upperBound...]) : nil
+            }
+            var residual = withoutDailyValueHeading(in: panelSuffix ?? line)
             let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
             var usedFollowingForServing = false
             let residualLower = residual.lowercased()
@@ -171,10 +178,32 @@ public enum NutritionFactsParser {
 
     // MARK: The panel's own heading
 
-    private static func isPanelHeading(_ line: String) -> Bool {
-        ["nutrition facts", "supplement facts"].contains { heading in
-            line.range(of: heading, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    /// The actual heading span on a line, if it is a heading rather than a prose mention.
+    ///
+    /// A flattened heading may follow a complete nutrient callout and precede the first panel row,
+    /// so both sides are checked independently. In particular, "for sodium content" is prose after
+    /// the words "nutrition facts", not a panel boundary.
+    private static func panelHeadingRange(in line: String) -> Range<String.Index>? {
+        for heading in ["nutrition facts", "supplement facts"] {
+            guard let range = line.range(of: heading, options: [.caseInsensitive, .diacriticInsensitive]) else {
+                continue
+            }
+            let before = trimmed(String(line[..<range.lowerBound]))
+            let after = trimmed(String(line[range.upperBound...]))
+            let validPrefix = before.isEmpty || firstRowThatStatesAmount(in: before) == before.startIndex
+            guard validPrefix, startsPanelContent(after) else { continue }
+            return range
         }
+        return nil
+    }
+
+    private static func startsPanelContent(_ text: String) -> Bool {
+        guard !text.isEmpty else { return true }
+        let lower = text.lowercased()
+        if ["serving", "servings", "amount per serving", "daily value", "% daily value"].contains(where: {
+            lower.hasPrefix($0)
+        }) { return true }
+        return firstRowThatStatesAmount(in: text) == text.startIndex
     }
 
     /// Which panel these lines are: a **Supplement Facts** panel when its heading is among them, and a
@@ -931,9 +960,8 @@ public enum NutritionFactsParser {
         let value = scan.isBound ? NutrientValue.belowReportingThreshold(unit) : .known(scan.amount, unit)
         if let existing = amounts[key] {
             guard existing != value else { return }
-            reasons.insert(.conflictingDuplicate)
             var mergedReasons = reviews[key]?.reasons ?? []
-            mergedReasons.formUnion(reasons)
+            mergedReasons.insert(.conflictingDuplicate)
             reviews[key] = ParsedValueReview(reasons: mergedReasons)
             return
         }
@@ -1003,7 +1031,6 @@ public enum NutritionFactsParser {
                 // confirmation just as it does for a named nutrient row.
                 let existing = collected[existingIndex]
                 var reasons = existing.review?.reasons ?? []
-                reasons.formUnion(row.reasons)
                 if existing.value != row.value { reasons.insert(.conflictingDuplicate) }
                 if !reasons.isEmpty {
                     collected[existingIndex] = ParsedAdditionalNutrient(
@@ -1050,10 +1077,10 @@ public enum NutritionFactsParser {
             break
         }
         if let existing = amounts[key] {
-            if existing != value { reasons.insert(.conflictingDuplicate) }
+            guard existing != value else { return }
             var mergedReasons = reviews[key]?.reasons ?? []
-            mergedReasons.formUnion(reasons)
-            if !mergedReasons.isEmpty { reviews[key] = ParsedValueReview(reasons: mergedReasons) }
+            mergedReasons.insert(.conflictingDuplicate)
+            reviews[key] = ParsedValueReview(reasons: mergedReasons)
             return
         }
         amounts[key] = value
