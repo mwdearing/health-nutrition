@@ -33,6 +33,9 @@ public final class AccountViewModel: ObservableObject {
     public static let profileNotReadyMessage = "Your profile has not loaded yet. Try again once it has."
 
     @Published public private(set) var phase: Phase = .signedOut
+    /// Set by the Account section's buttons; the Settings form owns the sheet and the confirmation they open.
+    @Published public var presentingSignIn = false
+    @Published public var presentingDeleteConfirmation = false
     /// The email the account signed in with. Shown in Settings, never in a message.
     @Published public private(set) var email = ""
     /// The name as typed. `saveName(_:)` trims and caps it before it is stored.

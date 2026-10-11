@@ -188,6 +188,7 @@ private struct SettingsContent: View {
         .navigationDestination(isPresented: $showingGoals) {
             if let goals = model.goals { GoalsView(model: goals) }
         }
+        .accountPresentations(model.account)
         .onAppear { self.model.load() }
         .onChange(of: waterFocused) { _, focused in
             if !focused { self.model.commitQuickWater() }
