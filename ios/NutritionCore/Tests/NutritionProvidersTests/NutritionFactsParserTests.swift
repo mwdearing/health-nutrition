@@ -577,6 +577,20 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(reviewReasons(.sodium, panel), [.conflictingDuplicate])
     }
 
+    func testConflictingBoundDuplicateUsesItsPrintedThreshold() {
+        let panel = parse(["Nutrition Facts", "Protein less than 1g", "Protein less than 2g"])
+
+        XCTAssertEqual(value(.protein, panel), .belowReportingThreshold(.g))
+        XCTAssertEqual(reviewReasons(.protein, panel), [.conflictingDuplicate])
+    }
+
+    func testIdenticalBoundDuplicateDoesNotNeedReview() {
+        let panel = parse(["Nutrition Facts", "Protein less than 1g", "Protein less than 1g"])
+
+        XCTAssertEqual(value(.protein, panel), .belowReportingThreshold(.g))
+        XCTAssertFalse(panel.needsReview(.protein))
+    }
+
     func testConflictingCompoundDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
         let panel = parse(["Supplement Facts", "Zinc 100mg", "Zinc 2O0mg"])
         let zinc = try XCTUnwrap(panel.additionalNutrient(for: "zinc"))
