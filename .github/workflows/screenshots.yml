@@ -9,11 +9,13 @@ on:
     paths:
       - "ios/**"
       - ".github/workflows/screenshots.yml"
+      - ".github/scripts/install-xcodegen.sh"
   push:
     branches: [main]
     paths:
       - "ios/**"
       - ".github/workflows/screenshots.yml"
+      - ".github/scripts/install-xcodegen.sh"
   workflow_dispatch:
 
 permissions:
@@ -26,11 +28,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
         run: xcodebuild -version
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen (pinned release, checksum verified)
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/install-xcodegen.sh"
       - name: Generate the Xcode project
         working-directory: ios/HealthNutrition
-        run: xcodegen generate
+        run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
       # The simulator is picked from what this runner actually has, never a name that might not exist.
       - name: Pick an available iPhone simulator
         id: simulator
