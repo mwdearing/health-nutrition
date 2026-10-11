@@ -44,7 +44,7 @@ def _manifest() -> dict:
 def _latest_submit_label_body() -> str:
     definition = re.compile(
         r"\bcreate\s+(?:or\s+replace\s+)?function\s+public\.submit_label\b"
-        r"\s*\((.*?)\)\s*returns\s+text\b.*?\bas\s+\$\$(.*?)\$\$\s*;",
+        r"\s*\(([^)]*)\)\s*returns\s+text\b.*?\bas\s+\$\$(.*?)\$\$\s*;",
         re.IGNORECASE | re.DOTALL,
     )
     bodies = []
@@ -296,8 +296,9 @@ $$;
     monkeypatch.setattr(__import__(__name__), "ROOT", fixture_root)
     test_label_submission_copy_discloses_signed_in_account_linkage()
 
-    (migrations / "20261013235959_submit_label_replacement.sql").write_text(
-        """create or replace function public.submit_label(
+    with (migrations / "20261012235959_submit_label_overload.sql").open("a", encoding="utf-8") as migration:
+        migration.write(
+            """create or replace function public.submit_label(
     p_barcode text, p_basis text, p_serving_text text, p_product_name text, p_brand text, p_nutrients jsonb
 ) returns text
 language plpgsql
@@ -308,8 +309,7 @@ begin
     return gen_random_uuid()::text;
 end;
 $$;
-""",
-        encoding="utf-8",
-    )
+"""
+        )
     with pytest.raises(AssertionError):
         test_label_submission_copy_discloses_signed_in_account_linkage()
