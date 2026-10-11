@@ -409,6 +409,8 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case unsupportedSchemaVersion(Int)
     /// A stored favorite holds an amount that is not exact decimal text, which the schema cannot express.
     case malformedFavoriteAmount(String, String)
+    /// A date in the document cannot be represented as a finite timestamp.
+    case nonFiniteDate
 }
 
 /// One active intake with every one of its revisions, as read in a single pass.
@@ -584,7 +586,7 @@ public enum JournalExporter {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let text = try container.decode(String.self)
-            if let date = date(fromExportedText: text, using: formatter) ?? fallback.date(from: text) {
+            if let date = date(fromExportedText: text, using: formatter, fallback: fallback) {
                 return date
             }
             throw DecodingError.dataCorruptedError(
@@ -634,9 +636,11 @@ public enum JournalExporter {
     /// epoch value near 1.7e9 spends ten of its sixteen significant decimal digits on the whole seconds, so six
     /// fractional digits is the finest text that still parses back to the same instant. The schema describes the
     /// dates as `format: date-time`, which RFC 3339 allows at any fractional length.
-    static func microsecondText(from date: Date, using formatter: DateFormatter) -> String {
-        let whole = date.timeIntervalSince1970.rounded(.down)
-        var microseconds = Int(((date.timeIntervalSince1970 - whole) * 1_000_000).rounded())
+    static func microsecondText(from date: Date, using formatter: DateFormatter) throws -> String {
+        let interval = date.timeIntervalSince1970
+        guard interval.isFinite else { throw JournalExportError.nonFiniteDate }
+        let whole = interval.rounded(.down)
+        var microseconds = Int(((interval - whole) * 1_000_000).rounded())
         var seconds = whole
         if microseconds >= 1_000_000 {
             // Rounding up out of the fraction carries into the next second.
@@ -647,27 +651,41 @@ public enum JournalExporter {
         return "\(formatter.string(from: Date(timeIntervalSince1970: seconds))).\(digits)Z"
     }
 
-    /// Reads back what `microsecondText(from:using:)` writes. Any number of fractional digits is accepted, so
-    /// the three-digit dates an earlier build wrote still import.
-    static func date(fromExportedText text: String, using formatter: DateFormatter) -> Date? {
+    /// Reads back fractional dates from earlier builds and other RFC-3339 writers. Fractions are converted
+    /// with a bounded decimal accumulator, while leading zeroes do not consume the significant-digit bound.
+    static func date(
+        fromExportedText text: String, using formatter: DateFormatter, fallback: ISO8601DateFormatter
+    ) -> Date? {
         guard let dot = text.firstIndex(of: ".") else {
-            return formatter.date(from: text)
+            return finiteDate(formatter.date(from: text) ?? fallback.date(from: text))
         }
-        let secondsText = String(text[text.startIndex..<dot])
-        guard let seconds = formatter.date(from: secondsText) else { return nil }
-        var digits = text[text.index(after: dot)...]
-        if digits.hasSuffix("Z") { digits = digits.dropLast() }
-        guard !digits.isEmpty else { return nil }
-        // The fraction is scaled digit by digit rather than by a format string, so more than three digits
-        // survive the round trip.
+        let zoneStart = text[text.index(after: dot)...].firstIndex {
+            $0 == "Z" || $0 == "z" || $0 == "+" || $0 == "-"
+        }
+        let fractionEnd = zoneStart ?? text.endIndex
+        let digits = text[text.index(after: dot)..<fractionEnd]
+        guard !digits.isEmpty, digits.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
+        let zone = zoneStart.map { String(text[$0...]) } ?? ""
+        let secondsText = String(text[..<dot]) + zone
+        guard let seconds = formatter.date(from: secondsText) ?? fallback.date(from: secondsText) else { return nil }
+
+        // Keep the conversion bounded even for hostile fractions. Leading zeroes do not consume the
+        // significant-digit allowance, and arbitrary shorter fractions remain accepted.
+        let significant = digits.drop { $0 == "0" }
+        guard significant.count <= 308 else { return nil }
         var scaled: TimeInterval = 0
-        var divisor: TimeInterval = 1
+        var place: TimeInterval = 0.1
         for character in digits {
-            guard character.isNumber, let digit = character.wholeNumberValue else { return nil }
-            scaled = scaled * 10 + TimeInterval(digit)
-            divisor *= 10
+            let digit = TimeInterval(character.wholeNumberValue!)
+            scaled += digit * place
+            place /= 10
         }
-        return seconds.addingTimeInterval(scaled / divisor)
+        return finiteDate(seconds.addingTimeInterval(scaled))
+    }
+
+    private static func finiteDate(_ date: Date?) -> Date? {
+        guard let date, date.timeIntervalSince1970.isFinite else { return nil }
+        return date
     }
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.

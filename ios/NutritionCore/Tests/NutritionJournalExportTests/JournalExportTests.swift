@@ -445,6 +445,40 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(wholeSeconds.exportedAt.timeIntervalSince1970, 1_705_310_100)
     }
 
+    func testNonFiniteExportDatesFailWithJournalExportError() {
+        for interval in [Double.nan, Double.infinity, -Double.infinity] {
+            let document = JournalExport(
+                exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
+                intakes: [], tombstones: [], favorites: [])
+            XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+                XCTAssertEqual(error as? JournalExportError, .nonFiniteDate)
+            }
+        }
+    }
+
+    func testDateDecoderRejectsFractionsThatOverflowNumericConversion() throws {
+        for fractionLength in [309, 310] {
+            let date = "2024-01-15T09:15:00." + String(repeating: "9", count: fractionLength) + "Z"
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), "fraction length \(fractionLength)")
+        }
+    }
+
+    func testDateDecoderKeepsSupportedFractionsOffsetsAndLongLeadingZeroesFinite() throws {
+        let cases: [(String, TimeInterval)] = [
+            ("2024-01-15T09:15:00.250Z", 1_705_310_100.25),
+            ("2024-01-15T09:15:00.123456Z", 1_705_310_100.123456),
+            ("2024-01-15T10:15:00.250+01:00", 1_705_310_100.25),
+            ("2024-01-15T09:15:00." + String(repeating: "0", count: 400) + "1Z", 1_705_310_100),
+        ]
+        for (text, expected) in cases {
+            let json = #"{"schema_version":1,"exported_at":"\#(text)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            let decoded = try JournalExporter.decode(Data(json.utf8))
+            XCTAssertTrue(decoded.exportedAt.timeIntervalSince1970.isFinite, text)
+            XCTAssertEqual(decoded.exportedAt.timeIntervalSince1970, expected, accuracy: 0.000_001, text)
+        }
+    }
+
     func testAMalformedFavoriteAmountFailsTheExportRatherThanWritingAnUnusableBackup() throws {
         // The favorites store accepts decimal-looking text such as "1.2.3", which the schema's decimal
         // pattern does not allow, so the export must refuse it rather than call it a known amount.
