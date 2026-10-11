@@ -6,3 +6,6 @@ Community label catalog (see `migrations/`). Labels are submitted by signed-in a
 - Tunables are one row in `catalog.settings`: `min_devices` (5), `tolerance_percent` (2), `daily_limit` (60).
 - Moderation: insert a row into `catalog.rejections` (barcode, basis) as the project owner; the label is never verified.
 - Test: `supabase/tests/run.sh` (needs podman or docker).
+
+## Configuration
+`config.toml` mirrors the hosted Auth settings (Apple on, email confirmation on, six-digit email codes, anonymous sign-ins off). `supabase config push` applies it to the project at once and has no confirmation step, so run it only when the file matches what you want live, with the Apple secret supplied as the `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` environment variable. Email templates cannot be changed on the free plan with the default mail service; a custom mail sender is needed first.
