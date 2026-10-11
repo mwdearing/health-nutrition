@@ -459,6 +459,9 @@ private func validateExportRequiredFields(_ document: JournalExport) throws {
         try requireExportText(favorite.id, field: "\(path).id")
         try requireExportText(favorite.displayName, field: "\(path).display_name")
         try requireExportText(favorite.category, field: "\(path).category")
+        for (componentIndex, component) in favorite.components.enumerated() {
+            try requireExportText(component.unit, field: "\(path).components[\(componentIndex)].unit")
+        }
     }
     for (index, product) in document.products.enumerated() {
         try validateExportProvenance(product, path: "products[\(index)]")

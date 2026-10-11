@@ -732,6 +732,15 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
+    func testExporterRefusesFavoriteComponentsWithoutRequiredUnits() {
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-1", displayName: "Sample favorite", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "")])]
+        XCTAssertThrowsError(try JournalExporter.makeExport(
+            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+    }
+
     func testExporterRefusesProductRequiredMetadataThatStrictImportRejects() {
         for (snapshotID, productID, name, labelBasis, catalogOrigin, catalogVersion) in [
             ("", "product-oats", "Oats", "per100g", "sample", "1"),

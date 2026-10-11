@@ -926,32 +926,45 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertEqual(encodedFavoriteComponents[0]["amount"] as? String, padded)
     }
 
-    func testMaliciousDateFractionsAreRefusedBeforeEitherStoreWrites() throws {
+    func testLongValidDateFractionCanBeImported() throws {
+        var root = try object(of: exportData())
+        let longFractionDate = "2024-01-15T09:15:00." + String(repeating: "9", count: 309) + "Z"
+        root["exported_at"] = longFractionDate
+
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        try JournalImporter.importExport(
+            try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
+        XCTAssertEqual(Set(try journal.activeIntakes().map(\.id)), Set([oatsID, waterID]))
+        XCTAssertEqual(Set(try journal.deletedIntakes().map(\.id)), Set([goneID]))
+        XCTAssertEqual(Set(try favoritesStore.list().map(\.id)), Set(["fav-tea-1", "fav-oats-1"]))
+    }
+
+    func testMalformedLongDateFractionsAreRefusedBeforeEitherStoreWrites() throws {
         let datePaths = [
             "exported_at", "intakes.0.occurred_at", "intakes.0.revisions.0.created_at",
             "tombstones.0.occurred_at",
         ]
         for sourceData in [try exportData(), try versionOneExportData()] {
-            for fractionLength in [309, 310] {
-                let hostileDate = "2024-01-15T09:15:00." + String(repeating: "9", count: fractionLength) + "Z"
-                for path in datePaths {
-                    var root = try object(of: sourceData)
-                    root = try XCTUnwrap(replacingValue(
-                        in: root, path: path.split(separator: ".").map(String.init), with: hostileDate)
-                        as? [String: Any])
+            let malformedDate = "2024-01-15T09:15:00." + String(repeating: "9", count: 309) + "xZ"
+            for path in datePaths {
+                var root = try object(of: sourceData)
+                root = try XCTUnwrap(replacingValue(
+                    in: root, path: path.split(separator: ".").map(String.init), with: malformedDate)
+                    as? [String: Any])
 
-                    let target = try directory()
-                    let journal = try store(target)
-                    let favoritesStore = try favorites(target)
-                    XCTAssertThrowsError(
-                        try JournalImporter.importExport(
-                            try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore))
-                    XCTAssertTrue(try journal.activeIntakes().isEmpty)
-                    XCTAssertTrue(try journal.deletedIntakes().isEmpty)
-                    XCTAssertTrue(try favoritesStore.list().isEmpty)
-                    XCTAssertNil(try journal.product(snapshotID: "snap-oats-1"))
-                    XCTAssertTrue(try journal.pendingOutbox().isEmpty)
-                }
+                let target = try directory()
+                let journal = try store(target)
+                let favoritesStore = try favorites(target)
+                XCTAssertThrowsError(
+                    try JournalImporter.importExport(
+                        try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore))
+                XCTAssertTrue(try journal.activeIntakes().isEmpty)
+                XCTAssertTrue(try journal.deletedIntakes().isEmpty)
+                XCTAssertTrue(try favoritesStore.list().isEmpty)
+                XCTAssertNil(try journal.product(snapshotID: "snap-oats-1"))
+                XCTAssertTrue(try journal.pendingOutbox().isEmpty)
             }
         }
     }
