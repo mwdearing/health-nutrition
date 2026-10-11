@@ -363,6 +363,40 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(flattened.servingsPerContainer, dec("60"))
     }
 
+    func testServingSizeBoundaryDoesNotTreatPackagingColonAsMarkerColon() throws {
+        let gummies = parse(["Serving size 3 Gummies LOT#:260628007"])
+        XCTAssertEqual(gummies.servingSize?.text, "3 Gummies")
+        XCTAssertEqual(gummies.servingSize?.quantity, Quantity(value: dec("3"), unit: .gummy))
+
+        let cup = parse(["Serving size 1 cup (240mL) Net wt:12oz"])
+        XCTAssertEqual(cup.servingSize?.text, "1 cup (240mL)")
+        XCTAssertEqual(cup.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+    }
+
+    func testServingSizeMarkerColonAndNextLineDescription() {
+        XCTAssertEqual(parse(["Serving size: 3 Gummies"]).servingSize?.text, "3 Gummies")
+        XCTAssertEqual(parse(["Serving size", "1 cup (240mL)"]).servingSize?.text, "1 cup (240mL)")
+    }
+
+    func testPackagingColonDoesNotHideFlattenedNutrientsBehindServingSize() throws {
+        let panel = parse(["Serving size 3 Gummies LOT#:260628007 Calories 90 Protein 2g"])
+        XCTAssertEqual(panel.servingSize?.text, "3 Gummies")
+        XCTAssertEqual(try amount(.calories, panel), dec("90"))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"))
+    }
+
+    func testServingSizeOnFollowingLineIsNotSwallowedByNextLinePackagingColon() {
+        let panel = parse(["Serving size", "3 Gummies LOT#:260628007", "Calories 90"])
+        XCTAssertEqual(panel.servingSize?.text, "3 Gummies")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("3"), unit: .gummy))
+        XCTAssertEqual(panel.value(for: .calories), .known(dec("90"), .kcal))
+    }
+
+    func testBoundServingMeasureDoesNotBecomeAQuantity() {
+        let panel = parse(["Serving size 1-2 g"])
+        XCTAssertNil(panel.servingSize?.quantity, "a range cannot supply a single scaling basis")
+    }
+
     /// A counted unit is a serving measure, never a nutrient row's. A panel states no nutrient per
     /// gummy, so a row whose amount sits behind such a word keeps no amount rather than one in a unit
     /// nobody printed for it, and an unknown word is still no unit at all.

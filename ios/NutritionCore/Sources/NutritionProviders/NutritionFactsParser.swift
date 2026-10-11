@@ -90,9 +90,19 @@ public enum NutritionFactsParser {
             // metadata is taken off first and whatever text is left behind it is still read.
             var residual = withoutDailyValueHeading(in: cleaned[index])
             let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
+            let residualLower = residual.lowercased()
+            if let following, let marker = residualLower.range(of: "serving size"),
+               trimmed(String(residual[self.index(marker.upperBound, in: residual, lowercased: residualLower)...])).isEmpty,
+               let read = servingSize(in: "\(residual) \(following)")
+            {
+                if size == nil { size = read }
+                index += 2
+                continue
+            }
             if let read = servingSize(in: residual, next: following) {
                 if size == nil { size = read }
                 residual = withoutServingSize(in: residual, next: following)
+                residual = withoutPackagingMetadata(in: residual)
             }
             if let count = servingsPerContainer(in: residual) {
                 if perContainer == nil { perContainer = count }
@@ -160,12 +170,13 @@ public enum NutritionFactsParser {
     private static func servingSize(in line: String, next nextLine: String? = nil) -> ParsedServingSize? {
         let lower = line.lowercased()
         guard let marker = lower.range(of: "serving size") else { return nil }
-        var text = after(marker, in: line, lowercased: lower)
-        if let colon = text.firstIndex(of: ":") {
-            text = String(text[text.index(after: colon)...])
+        guard let span = servingSizeSpan(in: line, next: nextLine) else { return nil }
+        var contentStart = index(marker.upperBound, in: line, lowercased: lower)
+        while contentStart < line.endIndex, line[contentStart] == " " || line[contentStart] == "\t" {
+            contentStart = line.index(after: contentStart)
         }
-        text = String(text[..<servingDescriptionEnd(in: text, next: nextLine)])
-        text = trimmed(text)
+        if contentStart < line.endIndex, line[contentStart] == ":" { contentStart = line.index(after: contentStart) }
+        let text = trimmed(String(line[contentStart..<span.upperBound]))
         guard !text.isEmpty else { return nil }
         let measure = servingMeasure(in: text)
         return ParsedServingSize(text: text, quantity: measure.quantity, review: measure.review)
@@ -198,14 +209,23 @@ public enum NutritionFactsParser {
         let start = index(marker.lowerBound, in: line, lowercased: lower)
         var end = index(marker.upperBound, in: line, lowercased: lower)
         var tail = String(line[end...])
-        if let colon = tail.firstIndex(of: ":") {
-            end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: colon) + 1)
+        let markerTail = tail
+        if let colon = immediateServingColon(in: markerTail) {
+            end = line.index(end, offsetBy: markerTail.distance(from: markerTail.startIndex, to: colon) + 1)
             tail = String(line[end...])
         }
         // The span runs to the end of the measure, or to the next piece of panel text when the measure
         // states none, and to the end of the line when that is where the description ends.
         end = line.index(end, offsetBy: tail.distance(from: tail.startIndex, to: servingDescriptionEnd(in: tail, next: nextLine)))
         return start..<end
+    }
+
+    /// A serving marker may carry its own colon across whitespace. A later colon belongs to the
+    /// following package text and cannot be used to locate the serving description.
+    private static func immediateServingColon(in tail: String) -> String.Index? {
+        var cursor = tail.startIndex
+        while cursor < tail.endIndex, tail[cursor] == " " || tail[cursor] == "\t" { cursor = tail.index(after: cursor) }
+        return cursor < tail.endIndex && tail[cursor] == ":" ? cursor : nil
     }
 
     /// Where a serving description ends in `text`.
@@ -220,9 +240,36 @@ public enum NutritionFactsParser {
     /// next piece of panel text instead and a household measure keeps the words the label printed it in:
     /// `Serving size 1 large biscuit` stays what it was read as.
     private static func servingDescriptionEnd(in text: String, next nextLine: String? = nil) -> String.Index {
-        let rowBoundary = nextField(in: text, next: nextLine)
+        let rowBoundary = min(nextField(in: text, next: nextLine), packagingFieldBoundary(in: text))
         guard let measureEnd = measureEnd(in: text), measureEnd < rowBoundary else { return rowBoundary }
         return measureEnd
+    }
+
+    /// A printed package field with its own label and colon ends an otherwise unmeasurable household
+    /// description. The colon alone is never a boundary: it can belong to the serving marker only.
+    private static func packagingFieldBoundary(in text: String) -> String.Index {
+        let lower = text.lowercased()
+        let labels = ["lot", "net wt", "best by", "use by", "exp"]
+        for label in labels {
+            guard let range = lower.range(of: label) else { continue }
+            let prefix = String(lower[..<range.lowerBound])
+            guard prefix.last == " " || prefix.last == "\t" else { continue }
+            var tail = String(lower[range.upperBound...])
+            while let first = tail.first, first == " " || first == "\t" || first == "#" { tail.removeFirst() }
+            if tail.first == ":" {
+                return text.index(text.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: range.lowerBound))
+            }
+        }
+        return text.endIndex
+    }
+
+    /// Package identifiers and weights are not panel amounts. Remove their labeled token before the
+    /// row scanner sees its digits, while leaving any nutrient rows after the token in place.
+    private static func withoutPackagingMetadata(in text: String) -> String {
+        guard let regex = try? Regex("(?i)(?:lot\\s*#?|net\\s*wt|best\\s*by|use\\s*by|exp)\\s*:\\s*[^\\s]+") else {
+            return text
+        }
+        return trimmed(text.replacing(regex, with: " "))
     }
 
     /// Where the measure a serving description states ends, or nil when it states none: after the
@@ -547,7 +594,7 @@ public enum NutritionFactsParser {
             // The Calories row prints no unit, so on a flattened line its amount is scanned only up to
             // the compound row behind it: "Calories 30 Creatine 3g" would otherwise lose its 30 to the
             // compound's name, which the unit scan reads as one long unsupported unit.
-            if row.usualUnit == .kcal, let boundary = firstAdditionalRow(in: remainder),
+            if row.usualUnit == .kcal, let boundary = firstRow(in: remainder),
                boundary.nameStart > remainder.startIndex
             {
                 let head = String(remainder[..<boundary.nameStart])
