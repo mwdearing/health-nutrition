@@ -9,13 +9,21 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
     let entered: AsyncStream<String>
     private let refreshStatus: Int
     private let profileStatus: Int
+    private let authUserID: String
     private var gates: [String: AsyncStream<Void>] = [:]
     private var gateContinuations: [String: AsyncStream<Void>.Continuation] = [:]
     private var recorded: [String] = []
+    private var recordedLogoutScopes: [String?] = []
 
-    init(gated: Set<String>, refreshStatus: Int = 200, profileStatus: Int = 401) {
+    init(
+        gated: Set<String>,
+        refreshStatus: Int = 200,
+        profileStatus: Int = 401,
+        authUserID: String = "22222222-3333-4444-5555-666666666666"
+    ) {
         self.profileStatus = profileStatus
         self.refreshStatus = refreshStatus
+        self.authUserID = authUserID
         (entered, enteredContinuation) = AsyncStream<String>.makeStream()
         for kind in gated {
             let (stream, continuation) = AsyncStream<Void>.makeStream()
@@ -25,6 +33,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
     }
 
     var operations: [String] { lock.withLock { recorded } }
+    var logoutScopes: [String?] { lock.withLock { recordedLogoutScopes } }
 
     func release(_ kind: String) {
         lock.withLock { gateContinuations[kind] }?.yield(())
@@ -43,6 +52,10 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         }
         let gate = lock.withLock {
             recorded.append(kind)
+            if kind == "logout" {
+                let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                recordedLogoutScopes.append(items.first(where: { $0.name == "scope" })?.value)
+            }
             return gates[kind]
         }
         if let gate {
@@ -53,9 +66,9 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         let status: Int
         let body: String
         switch kind {
-        case "signin":
+        case "signin", "verify":
             status = 200
-            body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"22222222-3333-4444-5555-666666666666","email":"new@example.com"}}"#
+            body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"\#(authUserID)","email":"new@example.com"}}"#
         case "refresh": status = refreshStatus; body = refreshStatus == 200 ? refreshedBody : "{}"
         case "delete": status = 204; body = ""
         case "profile": status = profileStatus; body = profileStatus == 403 ? #"{"code":"28000"}"# : "{}"
@@ -196,6 +209,94 @@ final class CommunityAuthRaceTests: XCTestCase {
         XCTAssertNil(try store.load())
     }
 
+    func testOldUnauthorizedReplyBeforeReplacementSignInDoesNotCancelSignIn() async throws {
+        let store = InMemoryCommunitySessionStore(testSession())
+        let transport = LifecycleTransport(gated: ["profile", "signin"])
+        let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let profile = Task { try await client.profile() }
+        await transport.waitFor("profile")
+        let signIn = Task { try await client.auth.signInWithApple(idToken: "new-id", nonce: "new-nonce") }
+        await transport.waitFor("signin")
+
+        transport.release("profile")
+        await assertCommunityError(.signedOut) { try await profile.value }
+        transport.release("signin")
+        let replacement = try await signIn.value
+
+        XCTAssertEqual(try store.load(), replacement)
+    }
+
+    func testOldUnauthorizedReplyBeforeEmailVerificationDoesNotCancelVerification() async throws {
+        let store = InMemoryCommunitySessionStore(testSession())
+        let transport = LifecycleTransport(gated: ["profile", "verify"])
+        let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let profile = Task { try await client.profile() }
+        await transport.waitFor("profile")
+        let verification = Task { try await client.auth.verifyEmailCode(email: "new@example.com", code: "123456") }
+        await transport.waitFor("verify")
+
+        transport.release("profile")
+        await assertCommunityError(.signedOut) { try await profile.value }
+        transport.release("verify")
+        let replacement = try await verification.value
+
+        XCTAssertEqual(try store.load(), replacement)
+    }
+
+    func testInFlightRefreshCannotSupersedeNewSignIn() async throws {
+        let initial = testSession(expiresAt: testNow.addingTimeInterval(10))
+        let store = InMemoryCommunitySessionStore(initial)
+        let transport = LifecycleTransport(gated: ["refresh", "signin"])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let refresh = Task { try await auth.validSession() }
+        await transport.waitFor("refresh")
+        let signIn = Task { try await auth.signInWithApple(idToken: "new-id", nonce: "new-nonce") }
+        await transport.waitFor("signin")
+
+        transport.release("refresh")
+        await assertCommunityError(.signedOut) { try await refresh.value }
+        transport.release("signin")
+        let replacement = try await signIn.value
+
+        XCTAssertEqual(try store.load(), replacement)
+    }
+
+    func testDiscardFencesAnInFlightSignIn() async throws {
+        let store = InMemoryCommunitySessionStore()
+        let transport = LifecycleTransport(gated: ["signin"])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let signIn = Task { try await auth.signInWithApple(idToken: "new-id", nonce: "new-nonce") }
+        await transport.waitFor("signin")
+        try await auth.discardSession()
+        transport.release("signin")
+
+        await assertCommunityError(.signedOut) { try await signIn.value }
+        XCTAssertNil(try store.load())
+    }
+
+    func testDelayedLogoutTargetsOnlyTheSessionBeingEnded() async throws {
+        let store = InMemoryCommunitySessionStore(testSession())
+        let transport = LifecycleTransport(gated: ["logout", "signin"])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let logout = Task { try await auth.signOut() }
+        await transport.waitFor("logout")
+        let signIn = Task { try await auth.signInWithApple(idToken: "new-id", nonce: "new-nonce") }
+        await transport.waitFor("signin")
+        transport.release("signin")
+        let replacement = try await signIn.value
+
+        transport.release("logout")
+        try await logout.value
+
+        XCTAssertEqual(transport.logoutScopes, ["local"])
+        XCTAssertEqual(try store.load(), replacement)
+    }
+
     func testOldUnauthorizedReplyCannotClearNewerSignIn() async throws {
         let oldSession = testSession()
         let store = InMemoryCommunitySessionStore(oldSession)
@@ -294,6 +395,26 @@ final class CommunityAuthRaceTests: XCTestCase {
         transport.release("refresh")
         await assertCommunityError(.signedOut) { try await refresh.value }
         XCTAssertNil(try store.load(), "an old refresh must not restore the deleted account")
+    }
+
+    func testSuccessfulDeleteFencesPendingSameAccountAuthentication() async throws {
+        let initial = testSession()
+        let store = InMemoryCommunitySessionStore(initial)
+        let transport = LifecycleTransport(gated: ["delete", "signin"], authUserID: initial.userID)
+        let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+        let signIn = Task { try await client.auth.signInWithApple(idToken: "same-id", nonce: "same-nonce") }
+        await transport.waitFor("signin")
+
+        transport.release("delete")
+        try await deletion.value
+        XCTAssertNil(try store.load())
+
+        transport.release("signin")
+        await assertCommunityError(.signedOut) { try await signIn.value }
+        XCTAssertNil(try store.load(), "a pending response for the deleted account must not restore credentials")
     }
 
     func testDeleteClearFailurePropagatesAfterServerSuccess() async throws {
