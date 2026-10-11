@@ -248,7 +248,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let writer: ConnectionsPrivacyExportWriter
     private let remover: ConnectionsPrivacyExportRemover
     /// One entry per store file this app keeps. `eraseAllData()` runs them all; the app injects the real
-    /// stores, and a test injects recorders or a store that refuses.
+    /// stores, and a test injects recorders or a store that refuses. When the journal store also conforms
+    /// to `JournalErasing`, object identity distinguishes its result from failures in the other erasers.
     private let erasers: [JournalErasing]
     private let beforeErase: @MainActor () -> Void
     private let afterSuccessfulErase: @MainActor () -> Void
@@ -258,8 +259,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
     /// copy that was already current when that import began; a later export may contain restored rows.
     private var exportRevision = 0
-    /// Unlike `eraseGeneration`, this advances only when all local erasers report success. A failed erase
-    /// must not make an in-flight restore's store effects disappear.
+    /// Unlike `eraseGeneration`, this advances only when the journal eraser reports success. Failures in
+    /// account or ancillary cleanup must not make a confirmed journal deletion look like it failed.
     private var successfulEraseEpoch = 0
     private struct DeferredImportEffects {
         let changedJournal: Bool
@@ -572,6 +573,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         defer { isErasing = false }
 
         var failed = false
+        var journalEraseSucceeded = false
         // The community session is forgotten locally only. This never calls the server, and a failure is
         // reported like a store's while the rest of the erase still runs.
         do {
@@ -579,9 +581,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         } catch {
             failed = true
         }
+        let journalEraser = store as? JournalErasing
         for eraser in erasers {
             do {
                 try eraser.eraseAll()
+                if let journalEraser, eraser === journalEraser {
+                    journalEraseSucceeded = true
+                }
             } catch {
                 failed = true
             }
@@ -599,11 +605,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         entryCount = 0
         exportState = .idle
         errorMessage = failed ? Self.eraseFailedMessage : nil
-        if failed {
-            resolveDeferredImportEffectsAfterFailedErase()
-        } else {
-            resolveDeferredImportEffectsAfterSuccessfulErase()
-        }
+        resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: journalEraseSucceeded)
         eraseGeneration += 1
         if !failed { afterSuccessfulErase() }
         return !failed
@@ -850,6 +852,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                 startedAt: effect.startedAtImportGeneration,
                 exportRevisionAtStart: effect.exportRevisionAtStart,
                 mayClearWarning: false)
+        }
+    }
+
+    /// Restore effects are stale as soon as the journal itself confirms erasure, even if a later
+    /// account, favorites, recipe, goal, reminder, or export-file cleanup fails. If the journal eraser
+    /// failed or was not identified, keep the prior partial-restore warning and refresh those effects.
+    private func resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: Bool) {
+        if journalEraseSucceeded {
+            resolveDeferredImportEffectsAfterSuccessfulErase()
+        } else {
+            resolveDeferredImportEffectsAfterFailedErase()
         }
     }
 

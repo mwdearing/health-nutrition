@@ -118,6 +118,11 @@ private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget,
     func close() {}
 }
 
+private final class FailingAncillaryEraser: JournalErasing, @unchecked Sendable {
+    struct Failure: Error {}
+    func eraseAll() throws { throw Failure() }
+}
+
 @MainActor
 final class ConnectionsPrivacyImportTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_705_313_700)
@@ -588,6 +593,39 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 1)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
+    }
+
+    func testSuccessfulJournalEraseDiscardsDeferredWarningDespiteLaterEraserFailure() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        journal.pauseAfterRestoreForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites,
+            erasers: [journal, favorites, FailingAncillaryEraser()],
+            eraseLocalAccount: {
+                // Let the partial import outcome arrive during the erase, before the journal is erased.
+                try await Task.sleep(nanoseconds: 500_000_000)
+            })
+
+        model.importJournal(data: try export(includeFavorite: true))
+        let restorePaused = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(restorePaused)
+        let resumeRestore = journal.resumeRestoreForTesting
+        let release = Task.detached {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            resumeRestore.signal()
+        }
+
+        let erased = await model.eraseAllData()
+        await release.value
+
+        XCTAssertFalse(erased, "the unrelated ancillary eraser still fails the overall operation")
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+        XCTAssertNil(model.incompleteRestoreWarning)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
     }
 
     func testSuccessfulEraseClearsAnExistingIncompleteRestoreWarning() async throws {
