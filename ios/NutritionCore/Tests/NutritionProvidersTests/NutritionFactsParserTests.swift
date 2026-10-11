@@ -536,6 +536,16 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, parse(["Protein 6g"])), dec("6"), "captures without a heading remain supported")
     }
 
+    func testServingSizeFromTheHeadedPanelTakesPrecedenceOverPreheadingPrint() {
+        let panel = parse(["Serving size 2 bars", "Nutrition Facts", "Serving size 1 bar", "Protein 6g"])
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+
+        let panelWithoutServingMetadata = parse(["Serving size 2 bars", "Nutrition Facts", "Protein 6g"])
+        XCTAssertEqual(
+            panelWithoutServingMetadata.servingSize?.text, "2 bars",
+            "preheading metadata remains a fallback when the panel does not state it")
+    }
+
     func testRepeatedPanelHeadingsRetainRowsAndFlagConflictingAmounts() throws {
         let panel = parse([
             "Nutrition Facts", "Serving size 1 bar", "Protein 6g",
@@ -944,6 +954,23 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertNil(panel.additionalNutrient(for: "carbohydrates"))
         XCTAssertNil(panel.additionalNutrient(for: "calories"))
         XCTAssertEqual(try amount(.calories, panel), dec("30"))
+    }
+
+    func testConflictingDuplicateCompoundRetainsFirstAmountAndNeedsReview() throws {
+        let panel = parse(["Supplement Facts", "Creatine Monohydrate 3g", "Creatine Monohydrate 4g"])
+
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine-monohydrate"))
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+        XCTAssertEqual(creatine.review?.reasons, [.conflictingDuplicate])
+    }
+
+    func testConflictingDuplicateChemicalFormRetainsFirstAmountAndNeedsReview() throws {
+        let panel = parse(["Calcium Citrate 200g", "Calcium Citrate 300mg"])
+
+        XCTAssertEqual(try amount(.calcium, panel), dec("200"))
+        XCTAssertEqual(try unit(.calcium, panel), .g)
+        XCTAssertEqual(reviewReasons(.calcium, panel), [.unexpectedUnit, .conflictingDuplicate])
+        XCTAssertEqual(panel.displayName(for: .calcium), "Calcium Citrate")
     }
 
     /// The rows a panel collects are the ones that state a name and an amount. A line that states

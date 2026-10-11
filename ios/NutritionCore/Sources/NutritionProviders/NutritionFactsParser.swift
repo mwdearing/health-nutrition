@@ -78,8 +78,10 @@ public enum NutritionFactsParser {
     public static func parse(lines: [String]) -> ParsedNutritionFacts {
         let cleaned = lines.map { cleanLine($0) }
         let panelStart = cleaned.firstIndex(where: isPanelHeading) ?? 0
-        var size: ParsedServingSize?
-        var perContainer: Decimal?
+        var panelSize: ParsedServingSize?
+        var preheadingSize: ParsedServingSize?
+        var panelPerContainer: Decimal?
+        var preheadingPerContainer: Decimal?
         var amounts: [String: NutrientValue] = [:]
         var reviews: [String: ParsedValueReview] = [:]
         var extra: [ParsedAdditionalNutrient] = []
@@ -99,18 +101,30 @@ public enum NutritionFactsParser {
                ))),
                let read = servingSize(in: "\(residual) \(following)")
             {
-                if size == nil { size = read }
+                if index < panelStart {
+                    if preheadingSize == nil { preheadingSize = read }
+                } else if panelSize == nil {
+                    panelSize = read
+                }
                 residual = withoutServingSize(in: "\(residual) \(following)")
                 residual = withoutPackagingMetadata(in: residual)
                 usedFollowingForServing = true
             }
             if let read = servingSize(in: residual, next: following) {
-                if size == nil { size = read }
+                if index < panelStart {
+                    if preheadingSize == nil { preheadingSize = read }
+                } else if panelSize == nil {
+                    panelSize = read
+                }
                 residual = withoutServingSize(in: residual, next: following)
                 residual = withoutPackagingMetadata(in: residual)
             }
             if let count = servingsPerContainer(in: residual) {
-                if perContainer == nil { perContainer = count }
+                if index < panelStart {
+                    if preheadingPerContainer == nil { preheadingPerContainer = count }
+                } else if panelPerContainer == nil {
+                    panelPerContainer = count
+                }
                 residual = withoutServingsPerContainer(in: residual)
             }
             guard !residual.isEmpty else {
@@ -145,8 +159,8 @@ public enum NutritionFactsParser {
         }
 
         return ParsedNutritionFacts(
-            servingSize: size,
-            servingsPerContainer: perContainer,
+            servingSize: panelSize ?? preheadingSize,
+            servingsPerContainer: panelPerContainer ?? preheadingPerContainer,
             nutrients: amounts,
             additionalNutrients: extra,
             nutrientDisplayNames: displayNames,
@@ -984,9 +998,19 @@ public enum NutritionFactsParser {
             guard let row = firstAdditionalRow(in: rest, next: usedNextLine ? nil : nextLine) else { break }
             if let nutrient = row.nutrient {
                 recordCompound(row, as: nutrient, amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
-            } else if !collected.contains(where: { $0.key == row.key }) {
-                // The panel stated it twice; the first row that carried an amount is the one kept, the
-                // way a nutrient stated twice keeps its first row.
+            } else if let existingIndex = collected.firstIndex(where: { $0.key == row.key }) {
+                // The panel stated it twice; the first amount is retained, and a disagreement needs
+                // confirmation just as it does for a named nutrient row.
+                let existing = collected[existingIndex]
+                var reasons = existing.review?.reasons ?? []
+                reasons.formUnion(row.reasons)
+                if existing.value != row.value { reasons.insert(.conflictingDuplicate) }
+                if !reasons.isEmpty {
+                    collected[existingIndex] = ParsedAdditionalNutrient(
+                        name: existing.name, key: existing.key, value: existing.value,
+                        review: ParsedValueReview(reasons: reasons))
+                }
+            } else {
                 let review = row.reasons.isEmpty ? nil : ParsedValueReview(reasons: row.reasons)
                 collected.append(
                     ParsedAdditionalNutrient(name: row.name, key: row.key, value: row.value, review: review))
@@ -1016,18 +1040,24 @@ public enum NutritionFactsParser {
         displayNames: inout [String: String]
     ) {
         let key = nutrient.key.rawValue
-        guard amounts[key] == nil else { return }
+        var value = row.value
+        var reasons = row.reasons
         switch row.value {
         case .known(let amount, let unit):
-            var reasons = row.reasons
             if unit != nutrient.usualUnit { reasons.insert(.unexpectedUnit) }
-            amounts[key] = .known(amount, unit)
-            if !reasons.isEmpty { reviews[key] = ParsedValueReview(reasons: reasons) }
-        case .belowReportingThreshold(let unit):
-            amounts[key] = .belowReportingThreshold(unit)
-        case .unknown, .notApplicable:
-            amounts[key] = row.value
+            value = .known(amount, unit)
+        case .belowReportingThreshold, .unknown, .notApplicable:
+            break
         }
+        if let existing = amounts[key] {
+            if existing != value { reasons.insert(.conflictingDuplicate) }
+            var mergedReasons = reviews[key]?.reasons ?? []
+            mergedReasons.formUnion(reasons)
+            if !mergedReasons.isEmpty { reviews[key] = ParsedValueReview(reasons: mergedReasons) }
+            return
+        }
+        amounts[key] = value
+        if !reasons.isEmpty { reviews[key] = ParsedValueReview(reasons: reasons) }
         displayNames[key] = row.name
     }
 
