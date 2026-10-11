@@ -26,6 +26,10 @@ public final class GoalSetupViewModel: ObservableObject {
     public static let replaceNotice = "This replaces your current targets for these nutrients."
     public static let adultNotice = "Goal estimates here are for adults. Ask a doctor or dietitian for advice on a target."
     public static let justTrackNotice = "Nothing was saved. Your day will show totals without targets."
+    public static let justTrackUnknownNotice =
+        "We could not read your current targets, so they are unchanged. Check them on the Goals screen."
+    public static let saveRestoreFailedNotice =
+        "Some goals may not have been put back. Check your targets on the Goals screen."
     public static let justTrackExistingNotice = "Your current targets are unchanged. You can change or remove them on the Goals screen."
     public static let genericErrorNotice = "Check your answers and try again."
     public static let saveFailedNotice = "Could not save your goals. Try again."
@@ -149,7 +153,9 @@ public final class GoalSetupViewModel: ObservableObject {
 
     /// The sentence the just-track result shows: the targets stay as they are when any exist.
     public var justTrackMessage: String {
-        hasAnyStoredTarget ? Self.justTrackExistingNotice : Self.justTrackNotice
+        // An unreadable store is unknown, not empty: say nothing about the day showing no targets.
+        if goals.errorMessage == GoalsViewModel.readFailedMessage { return Self.justTrackUnknownNotice }
+        return hasAnyStoredTarget ? Self.justTrackExistingNotice : Self.justTrackNotice
     }
 
     /// Whether any of the targets this screen sets is already stored, so the sheet says it replaces them.
@@ -195,10 +201,11 @@ public final class GoalSetupViewModel: ObservableObject {
                 ? goals.removeTarget(for: key)
                 : goals.setTarget(text, for: key, unit: goals.unit(for: key))
             guard saved else {
+                var restored = true
                 for entry in attempted.reversed() {
-                    goals.restoreGoal(entry.goal, for: entry.nutrient)
+                    if !goals.restoreGoal(entry.goal, for: entry.nutrient) { restored = false }
                 }
-                resultError = Self.saveFailedNotice
+                resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
                 return false
             }
         }
