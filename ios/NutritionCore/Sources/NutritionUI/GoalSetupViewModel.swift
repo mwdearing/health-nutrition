@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import NutritionJournal
 
 /// One screen of the goal setup, in the order a person meets them. Pace is only reached when losing or
 /// gaining, and a person who just tracks meets only the aim and the end.
