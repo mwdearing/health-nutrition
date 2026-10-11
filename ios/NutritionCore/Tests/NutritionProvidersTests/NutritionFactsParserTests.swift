@@ -534,6 +534,11 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("6"))
     }
 
+    func testHeadingWithColonKeepsPanelPrecedence() throws {
+        let panel = parse(["Protein 20g", "Nutrition Facts:", "Protein 6g"])
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
     func testNutritionFactsMentionInProseDoesNotStartAPanel() throws {
         let panel = parse(["Protein 6g", "See nutrition facts for sodium content"])
 

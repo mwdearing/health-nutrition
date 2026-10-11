@@ -190,6 +190,7 @@ public enum NutritionFactsParser {
             }
             let before = trimmed(String(line[..<range.lowerBound]))
             let after = trimmed(String(line[range.upperBound...]))
+                .trimmingCharacters(in: CharacterSet(charactersIn: ":–—- "))
             let validPrefix = before.isEmpty || firstRowThatStatesAmount(in: before) == before.startIndex
             guard validPrefix, startsPanelContent(after) else { continue }
             return range
