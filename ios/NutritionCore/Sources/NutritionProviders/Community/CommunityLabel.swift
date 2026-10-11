@@ -79,8 +79,10 @@ public struct CommunityLabel: Equatable, Sendable {
         self.productName = productName
         self.brand = brand
         self.nutrients = nutrients
-        self.verified = verified
-        self.supportingAccounts = supportingAccounts
+        // Keep the legacy argument label for source compatibility, but never use its bit to
+        // determine verification. Only the explicit source carries that authority.
+        self.verified = verificationSource == .ownerReviewed
+        self.supportingAccounts = verificationSource == .community ? supportingAccounts : 0
         self.verificationSource = verificationSource
     }
 }

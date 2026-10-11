@@ -1,10 +1,12 @@
 # Supabase backend
 
-Community label catalog (see `migrations/`). Labels are submitted by signed-in accounts that have sharing on, as nutrient values only. A label is shown to other people once 2 accounts agree, and carries the verified badge once 5 agree within 2 percent. A single submission is never shown. Agreement is checked against the shown value, so every counted account is within tolerance of it, and at most the 100 newest submissions per label are considered.
+Community label catalog (see `migrations/`). Signed-in accounts with sharing on can submit nutrient labels. An eligible community aggregate can be shown after two accounts agree within 2 percent; it is always unverified, regardless of how many accounts agree. The newest 100 submissions bound only the community aggregate calculation. The repository includes a forward owner-verification migration and tests; this README does not indicate whether that migration has been applied to a hosted project.
 
-- Tables live in the private `catalog` schema (not exposed by the API, row-level security on, no policies). The app uses three functions in `public`: `submit_label`, `lookup_label`, `withdraw_my_submissions`, all for signed-in accounts only (anonymous sign-ins are refused).
-- Tunables are one row in `catalog.settings`: `min_devices` (5), `tolerance_percent` (2), `daily_limit` (60).
-- Moderation: insert a row into `catalog.rejections` (barcode, basis) as the project owner; the label is never verified.
+- Community candidates, owner-approved snapshots, rejections, and the append-only moderation audit live in private `catalog` tables with row-level security and no app-role table access. An approved snapshot is an independent, bounded payload with no contributor or submission link; later withdrawal or account deletion does not remove it.
+- `submit_label` and the legacy `lookup_label` remain available to signed-in accounts only; anonymous sign-ins are refused. Submission results are `received` or `shared`, never verified by community agreement.
+- `lookup_label_v2` returns an active owner-reviewed snapshot first with source `owner_reviewed`, `verified=true`, and `supporting_devices=0`; otherwise it can return an eligible community row as `community`, `verified=false`. Rejection suppresses both sources. The legacy lookup keeps its old response shape, returns community rows only, and suppresses a key while an owner-approved snapshot is active.
+- Moderation is an explicit project-owner action through the owner-only SQL functions (`catalog.owner_approve_label`, `owner_reject_label`, `owner_clear_rejection`, `owner_revoke_label`). App roles cannot invoke them or access the approval and audit tables. Every action is recorded in the append-only audit. Rejection hides both sources; clearing rejection may reveal only an eligible unverified community row; revocation removes the active snapshot and may fall back to an unverified community row.
+- Tunables are one row in `catalog.settings`: `min_shown` (2), `tolerance_percent` (2), `daily_limit` (60). The retained `min_devices` value (5) is legacy compatibility state, not a verification threshold.
 - Test: `supabase/tests/run.sh` (needs podman or docker).
 
 ## Configuration
