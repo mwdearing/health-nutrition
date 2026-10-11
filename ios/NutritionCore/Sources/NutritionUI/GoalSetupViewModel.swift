@@ -151,6 +151,12 @@ public final class GoalSetupViewModel: ObservableObject {
         goals.rows.contains { $0.targetText != nil }
     }
 
+    /// The heading of the just-track result. Without targets only when the store was read and is empty.
+    public var justTrackHeading: String {
+        let unreadable = goals.errorMessage == GoalsViewModel.readFailedMessage
+        return unreadable || hasAnyStoredTarget ? "Your day" : "Your day, without targets"
+    }
+
     /// The sentence the just-track result shows: the targets stay as they are when any exist.
     public var justTrackMessage: String {
         // An unreadable store is unknown, not empty: say nothing about the day showing no targets.
@@ -202,7 +208,8 @@ public final class GoalSetupViewModel: ObservableObject {
                 : goals.setTarget(text, for: key, unit: goals.unit(for: key))
             guard saved else {
                 var restored = true
-                for entry in attempted.reversed() {
+                // The write that failed changed nothing, so only the ones before it are put back.
+                for entry in attempted.dropLast().reversed() {
                     if !goals.restoreGoal(entry.goal, for: entry.nutrient) { restored = false }
                 }
                 resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
