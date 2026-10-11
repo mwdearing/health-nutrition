@@ -79,7 +79,7 @@ final class CommunityClientTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.path, "/rest/v1/rpc/delete_my_account")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testFailedDeleteKeepsSession() async throws {
@@ -88,7 +88,7 @@ final class CommunityClientTests: XCTestCase {
         let store = InMemoryCommunitySessionStore(stored)
 
         await assertCommunityError(.server(500)) { try await client(transport, store: store).deleteAccount() }
-        XCTAssertEqual(store.load(), stored)
+        XCTAssertEqual(try store.load(), stored)
     }
 
     func testSubmitLabelSendsParameters() async throws {
@@ -223,7 +223,7 @@ final class CommunityClientTests: XCTestCase {
         let community = try client(transport, store: store)
 
         await assertCommunityError(.signedOut) { try await community.profile() }
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testForbiddenReplyIsPermissionDeniedAndRetainsSession() async throws {
@@ -233,7 +233,7 @@ final class CommunityClientTests: XCTestCase {
         let community = try client(transport, store: store)
 
         await assertCommunityError(.permissionDenied) { try await community.profile() }
-        XCTAssertEqual(store.load(), session)
+        XCTAssertEqual(try store.load(), session)
     }
 
     func testForbiddenSQLStateErrorsAreMappedAndRetainSession() async throws {
@@ -250,7 +250,7 @@ final class CommunityClientTests: XCTestCase {
             let community = try client(transport, store: store)
 
             await assertCommunityError(testCase.expected) { try await community.submitLabel(submission()) }
-            XCTAssertEqual(store.load(), session)
+            XCTAssertEqual(try store.load(), session)
         }
     }
 

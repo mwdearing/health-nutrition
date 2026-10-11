@@ -474,6 +474,13 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.sodium, panel), dec("210"))
     }
 
+    func testAmountAfterServingMetadataSplitAcrossTwoLinesIsNotSkipped() throws {
+        let panel = parse(["Serving size", "1 gummy Protein", "6g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 gummy")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
     func testSeveralRowsOnOneLineAreReadInOrder() throws {
         let panel = parse(["Total Fat 12g 21%  Saturated Fat 4g 20%  Sodium 300mg 13%"])
 

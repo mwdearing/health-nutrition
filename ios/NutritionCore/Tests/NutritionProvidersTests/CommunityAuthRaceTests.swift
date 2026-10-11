@@ -7,11 +7,13 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
     private let lock = NSLock()
     private let enteredContinuation: AsyncStream<String>.Continuation
     let entered: AsyncStream<String>
+    private let refreshStatus: Int
     private var gates: [String: AsyncStream<Void>] = [:]
     private var gateContinuations: [String: AsyncStream<Void>.Continuation] = [:]
     private var recorded: [String] = []
 
-    init(gated: Set<String>) {
+    init(gated: Set<String>, refreshStatus: Int = 200) {
+        self.refreshStatus = refreshStatus
         (entered, enteredContinuation) = AsyncStream<String>.makeStream()
         for kind in gated {
             let (stream, continuation) = AsyncStream<Void>.makeStream()
@@ -52,7 +54,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         case "signin":
             status = 200
             body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"22222222-3333-4444-5555-666666666666","email":"new@example.com"}}"#
-        case "refresh": status = 200; body = refreshedBody
+        case "refresh": status = refreshStatus; body = refreshStatus == 200 ? refreshedBody : "{}"
         case "delete": status = 204; body = ""
         case "profile": status = 401; body = "{}"
         default: status = 204; body = ""
@@ -79,6 +81,57 @@ final class FailingClearStore: CommunitySessionStore, @unchecked Sendable {
     func clear() throws { throw CommunityError.storage }
 }
 
+final class FailingLoadStore: CommunitySessionStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var session: CommunitySession?
+
+    init(_ session: CommunitySession?) { self.session = session }
+    func load() throws -> CommunitySession? { throw CommunityError.storage }
+    func save(_ session: CommunitySession) throws { lock.withLock { self.session = session } }
+    func clear() throws { lock.withLock { session = nil } }
+    var storedSession: CommunitySession? { lock.withLock { session } }
+}
+
+final class FailingSecondReadStore: CommunitySessionStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var session: CommunitySession?
+    private var readCount = 0
+
+    init(_ session: CommunitySession?) { self.session = session }
+    func load() throws -> CommunitySession? {
+        try lock.withLock {
+            readCount += 1
+            guard readCount == 1 else { throw CommunityError.storage }
+            return session
+        }
+    }
+    func save(_ session: CommunitySession) throws { lock.withLock { self.session = session } }
+    func clear() throws { lock.withLock { session = nil } }
+    var storedSession: CommunitySession? { lock.withLock { session } }
+}
+
+final class FailingReadAtCountStore: CommunitySessionStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingRead: Int
+    private var session: CommunitySession?
+    private var readCount = 0
+
+    init(_ session: CommunitySession?, failingRead: Int) {
+        self.session = session
+        self.failingRead = failingRead
+    }
+    func load() throws -> CommunitySession? {
+        try lock.withLock {
+            readCount += 1
+            guard readCount != failingRead else { throw CommunityError.storage }
+            return session
+        }
+    }
+    func save(_ session: CommunitySession) throws { lock.withLock { self.session = session } }
+    func clear() throws { lock.withLock { session = nil } }
+    var storedSession: CommunitySession? { lock.withLock { session } }
+}
+
 final class CommunityAuthRaceTests: XCTestCase {
     func testLogoutClearsBeforeWaitingForServerAndRefreshCannotStart() async throws {
         let store = InMemoryCommunitySessionStore(testSession())
@@ -88,7 +141,7 @@ final class CommunityAuthRaceTests: XCTestCase {
         let logout = Task { try await auth.signOut() }
         await transport.waitFor("logout")
 
-        XCTAssertNil(store.load(), "local credentials must be cleared before server logout finishes")
+        XCTAssertNil(try store.load(), "local credentials must be cleared before server logout finishes")
         await assertCommunityError(.signedOut) { try await auth.validSession() }
         XCTAssertEqual(transport.operations, ["logout"], "refresh must not run after logout begins")
 
@@ -104,11 +157,11 @@ final class CommunityAuthRaceTests: XCTestCase {
         let refresh = Task { try await auth.validSession() }
         await transport.waitFor("refresh")
         try await auth.signOut()
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
 
         transport.release("refresh")
         await assertCommunityError(.signedOut) { try await refresh.value }
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testSignInReplyAfterLocalDiscardCannotCreateSession() async throws {
@@ -134,11 +187,11 @@ final class CommunityAuthRaceTests: XCTestCase {
         let signIn = Task { try await auth.signInWithApple(idToken: "test-id", nonce: "test-nonce") }
         await transport.waitFor("signin")
         try await auth.signOut()
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
 
         transport.release("signin")
         await assertCommunityError(.signedOut) { try await signIn.value }
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testOldUnauthorizedReplyCannotClearNewerSignIn() async throws {
@@ -156,7 +209,7 @@ final class CommunityAuthRaceTests: XCTestCase {
 
         transport.release("profile")
         await assertCommunityError(.unauthorized) { try await profile.value }
-        XCTAssertEqual(store.load(), newSession, "an old 401 must not clear the newer stored session")
+        XCTAssertEqual(try store.load(), newSession, "an old 401 must not clear the newer stored session")
     }
 
     func testDeletingOldAccountCannotClearNewerSignIn() async throws {
@@ -173,7 +226,7 @@ final class CommunityAuthRaceTests: XCTestCase {
 
         transport.release("delete")
         try await deletion.value
-        XCTAssertEqual(store.load(), newSession, "a completed delete for account A must preserve account B")
+        XCTAssertEqual(try store.load(), newSession, "a completed delete for account A must preserve account B")
     }
 
     func testSuccessfulDeleteClearsRotatedSessionForSameAccount() async throws {
@@ -195,7 +248,7 @@ final class CommunityAuthRaceTests: XCTestCase {
 
         transport.release("delete")
         try await deletion.value
-        XCTAssertNil(store.load(), "successful deletion must clear a rotated session for the deleted account")
+        XCTAssertNil(try store.load(), "successful deletion must clear a rotated session for the deleted account")
     }
 
     func testSuccessfulDeleteStopsInFlightRefreshFromRestoringDeletedAccount() async throws {
@@ -216,11 +269,11 @@ final class CommunityAuthRaceTests: XCTestCase {
 
         transport.release("delete")
         try await deletion.value
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
 
         transport.release("refresh")
         await assertCommunityError(.signedOut) { try await refresh.value }
-        XCTAssertNil(store.load(), "an old refresh must not restore the deleted account")
+        XCTAssertNil(try store.load(), "an old refresh must not restore the deleted account")
     }
 
     func testDeleteClearFailurePropagatesAfterServerSuccess() async throws {
@@ -244,6 +297,114 @@ final class CommunityAuthRaceTests: XCTestCase {
         await assertCommunityError(.storage) { try await auth.signOut() }
         XCTAssertEqual(store.load(), testSession())
         XCTAssertTrue(transport.operations.isEmpty, "server logout must wait until local clear succeeds")
+    }
+
+    func testMatchingUserInvalidationPropagatesReadFailureWithoutPretendingAccountDiffers() async throws {
+        let store = FailingLoadStore(testSession())
+        let auth = CommunityAuth(config: try makeConfig(), transport: LifecycleTransport(gated: []), store: store, now: { testNow })
+
+        await assertCommunityError(.storage) {
+            try await auth.invalidateSession(matchingUserID: testSession().userID)
+        }
+        XCTAssertEqual(store.storedSession, testSession(), "a failed read must not be mistaken for a different account")
+    }
+
+    func testValidSessionPropagatesStorageReadFailureInsteadOfReportingSignedOut() async throws {
+        let store = FailingLoadStore(testSession())
+        let transport = LifecycleTransport(gated: [])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        await assertCommunityError(.storage) { try await auth.validSession() }
+        XCTAssertTrue(transport.operations.isEmpty)
+    }
+
+    func testSuccessfulDeletePropagatesReadFailureDuringMatchingInvalidation() async throws {
+        let stored = testSession()
+        let store = FailingSecondReadStore(stored)
+        let transport = LifecycleTransport(gated: ["delete"])
+        let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+        transport.release("delete")
+
+        await assertCommunityError(.storage) { try await deletion.value }
+        XCTAssertEqual(transport.operations, ["delete"], "the server deletion completed before the local session read failed")
+        XCTAssertEqual(store.storedSession, stored, "a failed matching read must not silently claim the local session was invalidated")
+    }
+
+    func testDeleteInvalidationReadFailureFencesInFlightSameAccountRefresh() async throws {
+        let clock = MutableCommunityClock(testNow)
+        let initial = testSession(expiresAt: testNow.addingTimeInterval(3600))
+        let store = FailingReadAtCountStore(initial, failingRead: 3)
+        let transport = LifecycleTransport(gated: ["delete", "refresh"])
+        let client = CommunityClient(
+            config: try makeConfig(), transport: transport, store: store, now: { clock.read() }
+        )
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+        clock.advance(by: 3601)
+        let refresh = Task { try await client.auth.validSession() }
+        await transport.waitFor("refresh")
+
+        transport.release("delete")
+        await assertCommunityError(.storage) { try await deletion.value }
+        XCTAssertEqual(store.storedSession, initial, "a failed invalidation read must not clear an unknown session")
+
+        transport.release("refresh")
+        await assertCommunityError(.signedOut) { try await refresh.value }
+        XCTAssertEqual(store.storedSession, initial, "the earlier refresh must not restore credentials after deletion")
+    }
+
+    func testRejectedRefreshReadFailureFencesPendingSignInResult() async throws {
+        let initial = testSession(expiresAt: testNow.addingTimeInterval(10))
+        let store = FailingReadAtCountStore(initial, failingRead: 2)
+        let transport = LifecycleTransport(gated: ["refresh", "signin"], refreshStatus: 401)
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let refresh = Task { try await auth.validSession() }
+        await transport.waitFor("refresh")
+        let signIn = Task { try await auth.signInWithApple(idToken: "new-id", nonce: "new-nonce") }
+        await transport.waitFor("signin")
+
+        transport.release("refresh")
+        await assertCommunityError(.storage) { try await refresh.value }
+        XCTAssertEqual(store.storedSession, initial, "an unreadable refresh session must not be cleared")
+
+        transport.release("signin")
+        await assertCommunityError(.signedOut) { try await signIn.value }
+        XCTAssertEqual(store.storedSession, initial, "the in-flight sign-in cannot replace state after read failure")
+    }
+
+    func testUnauthorizedInvalidationReadFailureFencesPendingSignInResult() async throws {
+        let initial = testSession()
+        let store = FailingReadAtCountStore(initial, failingRead: 2)
+        let transport = LifecycleTransport(gated: ["profile", "signin"])
+        let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let profile = Task { try await client.profile() }
+        await transport.waitFor("profile")
+        let signIn = Task { try await client.auth.signInWithApple(idToken: "new-id", nonce: "new-nonce") }
+        await transport.waitFor("signin")
+
+        transport.release("profile")
+        await assertCommunityError(.storage) { try await profile.value }
+        XCTAssertEqual(store.storedSession, initial, "the unreadable stored session must not be cleared")
+
+        transport.release("signin")
+        await assertCommunityError(.signedOut) { try await signIn.value }
+        XCTAssertEqual(store.storedSession, initial, "the in-flight sign-in cannot replace state after read failure")
+    }
+
+    func testSignOutClearsLocallyWhenSessionReadFailsAndSkipsServerLogout() async throws {
+        let store = FailingLoadStore(testSession())
+        let transport = LifecycleTransport(gated: [])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        try await auth.signOut()
+        XCTAssertNil(store.storedSession, "sign-out must clear local credentials even if the optional logout bearer cannot be read")
+        XCTAssertTrue(transport.operations.isEmpty, "server logout is skipped when its optional bearer cannot be read")
     }
 }
 
