@@ -15,6 +15,131 @@ final class CommunityProductsTests: XCTestCase {
     private func client(_ transport: any CommunityTransport, expired: Bool = false) throws -> CommunityClient {
         CommunityClient(config: try makeConfig(), transport: transport, store: InMemoryCommunitySessionStore(testSession(expiresAt: expired ? testNow : testNow.addingTimeInterval(3600))), now: { testNow })
     }
+    func testResolveCanceledPublishPreservesOriginalEnvelope() async throws {
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
+        var capabilities = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("capabilities-valid")) as? [String: Any])
+        capabilities["publish_resolution_version"] = 1
+        capabilities["enabled"] = false
+        capabilities["sharing_permission"] = false
+        capabilities["caller_acknowledgment"] = NSNull()
+        let t = FakeCommunityTransport([
+            .response(status: 200, body: String(decoding: try JSONSerialization.data(withJSONObject: capabilities), as: UTF8.self)),
+            .response(status: 200, body: "{\"outcome\":\"canceled_before_commit\",\"operation_id\":\"\(request.operationID)\",\"replayed\":false}")
+        ])
+        let result = try await client(t).resolvePublishForWithdrawal(request, expectedOwnerID: owner)
+        XCTAssertEqual(result, .canceledBeforeCommit(operationID: UUID(uuidString: request.operationID)!, replayed: false))
+        XCTAssertEqual(t.requests.map { $0.url!.lastPathComponent }, ["catalog_capabilities_v2", "resolve_catalog_publish_for_withdrawal_v2"])
+        XCTAssertEqual(t.requests[1].httpBody, CommunityProductsAPI.wrapped(try request.canonicalBody()))
+    }
+    func testResolveCapabilityAbsenceZeroAndFutureDisablePath() async throws {
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
+        for version: Int? in [nil, 0, 2, 999] {
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("capabilities-valid")) as? [String: Any])
+            object["publish_resolution_version"] = version
+            let data = try JSONSerialization.data(withJSONObject: object)
+            let caps = try JSONDecoder().decode(ProductCatalogCapabilities.self, from: data)
+            XCTAssertFalse(caps.supportsPublishResolution)
+            let t = FakeCommunityTransport([.response(status: 200, body: String(decoding: data, as: UTF8.self))])
+            await expect(.unsupportedBackend) { try await self.client(t).resolvePublishForWithdrawal(request, expectedOwnerID: self.owner) }
+            XCTAssertEqual(t.requests.map { $0.url!.lastPathComponent }, ["catalog_capabilities_v2"])
+        }
+    }
+    func testResolveCommittedReceiptKeepsAcknowledgedAndCurrentRevisionsSeparate() async throws {
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
+        var receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("receipt-valid")) as? [String: Any])
+        receipt["replayed"] = true
+        receipt["current_revision"] = "2"
+        receipt["current_state"] = "withdrawn"
+        receipt["publication"] = NSNull()
+        let t = FakeCommunityTransport([
+            .response(status: 200, body: String(decoding: try fixture("capabilities-resolution-valid"), as: UTF8.self)),
+            .response(status: 200, body: String(decoding: try JSONSerialization.data(withJSONObject: ["outcome": "committed", "receipt": receipt]), as: UTF8.self))
+        ])
+        let result = try await client(t).resolvePublishForWithdrawal(request, expectedOwnerID: owner)
+        guard case .committed(let acknowledgment) = result else { return XCTFail("expected committed receipt") }
+        XCTAssertEqual(acknowledgment.acknowledgedRevision, "1")
+        XCTAssertEqual(acknowledgment.currentRevision, "2")
+        XCTAssertEqual(acknowledgment.currentState, .withdrawn)
+        XCTAssertTrue(acknowledgment.replayed)
+        XCTAssertEqual(t.requests.count, 2)
+    }
+    func testMalformedResolutionNeverAcknowledgesOrFallsBack() async throws {
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
+        let valid = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("resolution-canceled-valid")) as? [String: Any])
+        var mutations: [[String: Any]] = [[:], ["outcome": "unknown"], ["outcome": "committed", "receipt": NSNull()]]
+        for key in valid.keys { var changed = valid; changed.removeValue(forKey: key); mutations.append(changed) }
+        for (key, value): (String, Any) in [("product_id", UUID().uuidString), ("receipt", NSNull()), ("operation_id", UUID().uuidString), ("replayed", "true"), ("outcome", "committed")] {
+            var changed = valid; changed[key] = value; mutations.append(changed)
+        }
+        let ordinary = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("receipt-valid")) as? [String: Any])
+        mutations.append(ordinary)
+        mutations.append(["outcome": "committed", "receipt": ordinary]) // replayed=false is never resolution.
+        var wrongReceipt = ordinary; wrongReceipt["replayed"] = true; wrongReceipt["operation_id"] = UUID().uuidString
+        mutations.append(["outcome": "committed", "receipt": wrongReceipt])
+        var replay = ordinary; replay["replayed"] = true
+        mutations.append(["outcome": "committed", "receipt": replay, "replayed": true])
+        for object in mutations {
+            let t = FakeCommunityTransport([
+                .response(status: 200, body: String(decoding: try fixture("capabilities-resolution-valid"), as: UTF8.self)),
+                .response(status: 200, body: String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+            ])
+            await expect(.unavailable) { try await self.client(t).resolvePublishForWithdrawal(request, expectedOwnerID: self.owner) }
+            XCTAssertEqual(t.requests.count, 2)
+            XCTAssertFalse(t.requests.contains { $0.url!.lastPathComponent == "submit_catalog_product_v2" })
+        }
+        // A deployed capability with missing RPC stays pending/unavailable, with no publish fallback.
+        for (status, body, error): (Int, String, ProductAPIError) in [
+            (404, #"{"code":"PGRST202"}"#, .unavailable), (503, "{}", .unavailable),
+            (400, #"{"code":"P0001","details":"{\"code\":\"operation_conflict\"}"}"#, .operationConflict),
+            (429, "{}", .rateLimited(retryAfterSeconds: nil))
+        ] {
+            let t = FakeCommunityTransport([
+                .response(status: 200, body: String(decoding: try fixture("capabilities-resolution-valid"), as: UTF8.self)),
+                .response(status: status, body: body)
+            ])
+            await expect(error) { try await self.client(t).resolvePublishForWithdrawal(request, expectedOwnerID: self.owner) }
+            XCTAssertEqual(t.requests.count, 2)
+        }
+    }
+    func testResolveCommittedReceiptMustMatchKnownProduct() async throws {
+        let original = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
+        let request = ProductPublishRequest(operationID: original.operationID, clientRevisionID: original.clientRevisionID,
+            productID: UUID().uuidString, expectedServerRevision: "1", consentVersion: original.consentVersion,
+            consentGeneration: original.consentGeneration, product: original.product)
+        let t = FakeCommunityTransport([
+            .response(status: 200, body: String(decoding: try fixture("capabilities-resolution-valid"), as: UTF8.self)),
+            .response(status: 200, body: String(decoding: try fixture("resolution-committed-valid"), as: UTF8.self))
+        ])
+        await expect(.unavailable) { try await self.client(t).resolvePublishForWithdrawal(request, expectedOwnerID: self.owner) }
+        XCTAssertEqual(t.requests.count, 2)
+    }
+    func testResolveChecksOwnerBeforeRefreshAndRejectsWrongOwnerRefresh() async throws {
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
+        let t = FakeCommunityTransport()
+        await expect(.ownerMismatch) { try await self.client(t, expired: true).resolvePublishForWithdrawal(request, expectedOwnerID: UUID()) }
+        XCTAssertTrue(t.requests.isEmpty)
+        let original = testSession(expiresAt: testNow)
+        let store = InMemoryCommunitySessionStore(original)
+        let wrong = FakeCommunityTransport([.response(status: 200, body: refreshedBody.replacingOccurrences(of: testUserID, with: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))])
+        let c = CommunityClient(config: try makeConfig(), transport: wrong, store: store, now: { testNow })
+        await expect(.unauthorized) { try await c.resolvePublishForWithdrawal(request, expectedOwnerID: self.owner) }
+        XCTAssertEqual(store.load(), original)
+        XCTAssertEqual(wrong.requests.count, 1)
+        XCTAssertFalse(wrong.requests.contains { $0.url!.path.contains("/rpc/") })
+    }
+    func testResolutionRequestPreservesRawUnicodeDecimalAndUUIDBytes() async throws {
+        let operation = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+        let request = ProductPublishRequest(operationID: operation, clientRevisionID: operation.lowercased(), consentVersion: 2, consentGeneration: "999",
+            product: ProductContentDTO(name: "Cafe\u{301}", kind: .food, basis: .per100g,
+                facts: [ProductFactDTO(key: "protein", displayName: "Protein", state: .known, amount: "1.000", unit: .g)]))
+        let t = FakeCommunityTransport([
+            .response(status: 200, body: String(decoding: try fixture("capabilities-resolution-valid"), as: UTF8.self)),
+            .response(status: 200, body: "{\"outcome\":\"canceled_before_commit\",\"operation_id\":\"\(operation.lowercased())\",\"replayed\":true}")
+        ])
+        let result = try await client(t).resolvePublishForWithdrawal(request, expectedOwnerID: owner)
+        XCTAssertEqual(result, .canceledBeforeCommit(operationID: UUID(uuidString: operation)!, replayed: true))
+        XCTAssertEqual(t.requests[1].httpBody, CommunityProductsAPI.wrapped(try request.canonicalBody()))
+    }
     func testPublishAllowlistLosslessStates() async throws {
         let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("fact-states-valid"))
         let transport = FakeCommunityTransport([.response(status: 200, body: String(decoding: try fixture("receipt-valid"), as: UTF8.self))])

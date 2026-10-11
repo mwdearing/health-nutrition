@@ -59,7 +59,8 @@ class SharedProductsSchemaTests(unittest.TestCase):
         mapping = {
             "public-product": "public_product", "search-response": "search_response", "search-request": "search_request",
             "detail-response": "detail_response", "own-state-none": "own_state", "receipt": "receipt",
-            "capabilities": "capabilities", "consent-receipt": "consent_receipt", "error": "error_detail", "withdraw": "withdraw_request",
+            "capabilities": "capabilities", "capabilities-resolution": "capabilities",
+            "resolution-committed": "publish_resolution", "resolution-canceled": "publish_resolution", "resolution-replayed": "publish_resolution", "consent-receipt": "consent_receipt", "error": "error_detail", "withdraw": "withdraw_request",
             "legacy-public-product": "public_product", "legacy-alternative": "public_product",
             "legacy-detail-response": "detail_response", "legacy-search-response": "search_response", "legacy-receipt": "receipt",
         }
@@ -68,6 +69,29 @@ class SharedProductsSchemaTests(unittest.TestCase):
             schema = {"$ref": "#/$defs/" + definition, "$defs": SCHEMA["$defs"]}
             with self.subTest(fixture=path.name):
                 jsonschema.validate(json.loads(path.read_text()), schema, format_checker=FORMAT)
+
+    def test_resolution_union_is_closed_and_receipt_requires_replay(self):
+        schema = {"$ref": "#/$defs/publish_resolution", "$defs": SCHEMA["$defs"]}
+        validator = jsonschema.Draft202012Validator(schema, format_checker=FORMAT)
+        canceled = {"outcome": "canceled_before_commit", "operation_id": "00000000-0000-4000-8000-000000000001", "replayed": False}
+        self.assertTrue(validator.is_valid(canceled))
+        for extra in ["receipt", "product_id", "current_state", "acknowledged_revision"]:
+            self.assertFalse(validator.is_valid(dict(canceled, **{extra: None})))
+        for key in canceled:
+            self.assertFalse(validator.is_valid({k: v for k, v in canceled.items() if k != key}))
+        receipt = json.loads((FIXTURES / "receipt-valid.json").read_text())
+        self.assertFalse(validator.is_valid({"outcome": "committed", "receipt": receipt}))
+        receipt["replayed"] = True
+        self.assertTrue(validator.is_valid({"outcome": "committed", "receipt": receipt}))
+        self.assertFalse(validator.is_valid({"outcome": "committed", "receipt": receipt, "replayed": True}))
+        self.assertFalse(validator.is_valid(dict(canceled, outcome="unknown")))
+        # Older backends omit the capability. A new-server fixture must advertise exactly v1.
+        old = json.loads((FIXTURES / "capabilities-valid.json").read_text())
+        cap = jsonschema.Draft202012Validator({"$ref": "#/$defs/capabilities", "$defs": SCHEMA["$defs"]})
+        self.assertTrue(cap.is_valid(old))
+        self.assertTrue(cap.is_valid(dict(old, publish_resolution_version=1)))
+        self.assertFalse(cap.is_valid(dict(old, publish_resolution_version=2)))
+        self.assertEqual(json.loads((FIXTURES / "capabilities-resolution-valid.json").read_text())["publish_resolution_version"], 1)
 
     def test_raw_ingredient_suffixes_still_allow_line_terminators(self):
         fact = {"key": "ingredient:\n", "display_name": "Synthetic compound", "state": "unknown"}

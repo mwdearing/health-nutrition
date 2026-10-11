@@ -11,6 +11,7 @@ Every RPC returns one JSON object, never a table or array wrapper. PostgREST wra
 | `catalog_capabilities_v2()` | none | `capabilities` |
 | `acknowledge_catalog_consent_v2(p_version integer)` | `consent_request` | `consent_receipt` |
 | `submit_catalog_product_v2(p_request jsonb)` | `publish_request` | `receipt` |
+| `resolve_catalog_publish_for_withdrawal_v2(p_request jsonb)` | exact original `publish_request` | `publish_resolution` |
 | `withdraw_catalog_product_v2(p_request jsonb)` | `withdraw_request` | `receipt` |
 | `search_catalog_products_v2(p_query text,p_kind text default null,p_cursor text default null,p_limit integer default 20)` | `search_request` | `search_response` |
 | `get_catalog_product_v2(p_product_id uuid)` | `detail_request` | `detail_response` |
@@ -26,7 +27,7 @@ Publication is the public product or null if no active representative exists. Pu
 
 The first active contribution is searchable with status `shared_unverified`, shown as “Shared, not yet verified.” Verification requires `verification.status:"verified"` and `verification.source:"owner_reviewed"`; all unreviewed publications have status `shared_unverified` and source null, regardless of agreement count. Name-only content cannot verify. The catalog security design still requires owner review; this contract does not implement moderation. `missing_facts` is true when no facts have a known numeric amount; unknown, not applicable and below threshold never invent an amount.
 
-Sharing requires a live nonanonymous account, loaded profile, sharing permission, and acknowledgment of consent version 2 at the current server generation. Capabilities expose caller acknowledgment only as version/generation; no account identity. Capabilities are advisory, and writes recheck authorization. Consent generation preserves server decimal spelling. Disabled capabilities produce `unavailable` for writes, except permitted withdrawal. Consent acknowledgment does not publish content.
+Sharing requires a live nonanonymous account, loaded profile, sharing permission, and acknowledgment of consent version 2 at the current server generation. Capabilities expose caller acknowledgment only as version/generation; no account identity. Capabilities are advisory, and writes recheck authorization. Consent generation preserves server decimal spelling. Disabled capabilities produce `unavailable` for writes, except permitted withdrawal and publication resolution. Consent acknowledgment does not publish content.
 
 ## Semantic validation
 
@@ -88,3 +89,68 @@ all affected identities and removes both generations through `delete_my_account`
 Root rejection suppresses both lookup generations; legacy basis rejection also
 suppresses corresponding custom alternatives. Receipt replay reflects current
 visibility without consuming quota or changing the accepted revision.
+
+## Resolving a publication before withdrawal
+
+`resolve_catalog_publish_for_withdrawal_v2` is the eighth RPC. Call it only for an
+explicit, durable cancellation or withdrawal dependency, with the **exact original
+publish envelope**, including operation/client-revision UUID spelling, product,
+expected revision, consent fields, decimal strings and array order. Owner identity
+stays outside the wire request and is checked against the session before bearer use
+and after refresh. The request has the same strict shape and 16384 canonical UTF-8
+byte bound as publication. No replacement operation UUID is created for resolution.
+
+The closed `publish_resolution` union is one of:
+
+- `{"outcome":"committed","receipt":<receipt>}`: the existing ordinary receipt,
+  with `replayed:true`. `acknowledged_revision` belongs to the original publication;
+  current revision, state and publication reflect the current contribution.
+- `{"outcome":"canceled_before_commit","operation_id":"<UUID>","replayed":false}`:
+  an atomic, durable fence against this publication committing. A matching replay
+  returns the same shape with `replayed:true`. This outcome has no product identity,
+  receipt, revision, publication or contribution state.
+
+Resolution never invokes publication or allocates a catalog identity. Under the
+live profile lock it checks the existing receipt first, then the private cancellation
+marker, comparing exact canonical UTF-8 bytes. Receipt or marker replays precede
+fresh semantic validation and resource limits. A fresh marker validates the full
+publish envelope and product, without enforcing sharing permission, current consent,
+feature enablement, product existence, barcode binding, moderation or revision CAS.
+It is allowed with sharing off, no acknowledgment, stale consent or `enabled:false`.
+
+Markers reserve `(account, operation UUID)` until account deletion and retain the
+bounded exact canonical body privately. Both ordinary publish and withdrawal return
+permanent `operation_conflict` for a canceled UUID, regardless of supplied body.
+A different body under the same UUID also conflicts on resolution. Existing receipts
+retain their original replay semantics. Matching UUIDs are parsed case insensitively;
+changing their spelling in the canonical body still changes operation identity.
+Neither fresh consent, off/on transitions, withdrawal-all, nor a timer clears markers.
+Profile erasure cascades them; stale sessions cannot resurrect deleted accounts.
+Direct table/helper access is denied to application roles. Rollback must preserve
+the fence or disable affected writes; dropping markers and restoring an unfenced
+writer violates completed cancellations.
+
+New servers advertise `publish_resolution_version:1` in capabilities. This field is
+optional for older v2 backends. Clients enable resolution only for exactly version 1;
+absent, zero or unknown future versions leave the intent pending as unsupported.
+The capability is independent of publication `enabled`. A missing endpoint after
+advertisement is a deployment inconsistency: retain pending state and refresh
+capabilities. Never fall back to submit, silently change sharing preferences, or
+interpret malformed transport success as an acknowledgment.
+
+A separate private setting allows 256 new markers per account per UTC day (integer
+range 1–10000). Identical receipt/marker replays bypass the limit. Exhaustion returns
+`rate_limited` with decimal-string `retry_after_seconds` from 1 to 86400, bounded by
+the next UTC day, and creates no marker. Retain the intent and retry its identical
+body with bounded backoff. Publication usage/quota is unchanged. Markers have no TTL
+or lifetime pruning because delayed requests must remain fenced until account deletion.
+
+Cancellation only resolves the attempted operation. A canceled first publication
+with no known identity creates no fake product ID. A canceled update leaves any
+previous contribution intact: fetch its known product's own state and withdraw with
+a fresh operation and the deliberately reviewed expected revision. A committed
+resolution likewise needs an ordinary CAS withdrawal if its contribution is still
+active. A newer revision requires deliberate conflict review; never substitute it
+automatically. Resolve every uncertain predecessor in a pending dependency chain.
+A later independent publication under a new UUID may race and must not be removed
+by a stale withdrawal or displayed as already removed.

@@ -481,6 +481,46 @@ public struct ProductDeliveryReceipt: Codable, Sendable, Equatable {
     }
 }
 
+/// Resolves one attempted publication. Cancellation does not withdraw an earlier contribution.
+public enum ProductPublishResolution: Codable, Sendable, Equatable {
+    case committed(ProductDeliveryReceipt)
+    case canceledBeforeCommit(operationID: UUID, replayed: Bool)
+
+    enum CodingKeys: String, CodingKey {
+        case outcome, receipt, replayed
+        case operationID = "operation_id"
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(String.self, forKey: .outcome) {
+        case "committed":
+            try ProductWire.keys(decoder, required: ["outcome", "receipt"])
+            let receipt = try c.decode(ProductDeliveryReceipt.self, forKey: .receipt)
+            try ProductWire.require(receipt.replayed)
+            self = .committed(receipt)
+        case "canceled_before_commit":
+            try ProductWire.keys(decoder, required: ["outcome", "operation_id", "replayed"])
+            let operation = try c.decode(String.self, forKey: .operationID)
+            try ProductWire.uuid(operation)
+            self = .canceledBeforeCommit(operationID: UUID(uuidString: operation)!, replayed: try c.decode(Bool.self, forKey: .replayed))
+        default: throw ProductAPIError.unavailable
+        }
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .committed(let receipt):
+            try ProductWire.require(receipt.replayed)
+            try c.encode("committed", forKey: .outcome)
+            try c.encode(receipt, forKey: .receipt)
+        case .canceledBeforeCommit(let operationID, let replayed):
+            try c.encode("canceled_before_commit", forKey: .outcome)
+            try c.encode(operationID, forKey: .operationID)
+            try c.encode(replayed, forKey: .replayed)
+        }
+    }
+}
+
 public struct CommunityProductPage: Codable, Sendable, Equatable {
     public let products: [CommunityProduct]
     public let nextCursor: String?
@@ -597,13 +637,16 @@ public struct ProductConsentAcknowledgment: Codable, Sendable, Equatable {
 
 public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
     public let supportedVersion: Int
+    public let publishResolutionVersion: Int?
+    public var supportsPublishResolution: Bool { publishResolutionVersion == 1 }
     public let enabled: Bool
     public let limits: ProductCatalogLimits
     public let currentConsentVersion: Int
     public let callerAcknowledgment: ProductConsentAcknowledgment?
     public let consentGeneration: String
     public let sharingPermission: Bool
-    public init(supportedVersion: Int, enabled: Bool, limits: ProductCatalogLimits, currentConsentVersion: Int, callerAcknowledgment: ProductConsentAcknowledgment? = nil, consentGeneration: String, sharingPermission: Bool) {
+    public init(supportedVersion: Int, enabled: Bool, limits: ProductCatalogLimits, currentConsentVersion: Int, callerAcknowledgment: ProductConsentAcknowledgment? = nil, consentGeneration: String, sharingPermission: Bool, publishResolutionVersion: Int? = nil) {
+        self.publishResolutionVersion = publishResolutionVersion
         self.supportedVersion = supportedVersion
         self.enabled = enabled
         self.limits = limits
@@ -614,6 +657,7 @@ public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
     }
     enum CodingKeys: String, CodingKey {
         case supportedVersion = "supported_version"
+        case publishResolutionVersion = "publish_resolution_version"
         case enabled = "enabled"
         case limits = "limits"
         case currentConsentVersion = "current_consent_version"
@@ -622,8 +666,9 @@ public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
         case sharingPermission = "sharing_permission"
     }
     public init(from decoder: Decoder) throws {
-        try ProductWire.keys(decoder, required: ["supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"], allowed: ["supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"])
+        try ProductWire.keys(decoder, required: ["supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"], allowed: ["publish_resolution_version", "supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"])
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        publishResolutionVersion = c.contains(.publishResolutionVersion) ? try c.decode(Int.self, forKey: .publishResolutionVersion) : nil
         supportedVersion = try c.decode(Int.self, forKey: .supportedVersion)
         enabled = try c.decode(Bool.self, forKey: .enabled)
         limits = try c.decode(ProductCatalogLimits.self, forKey: .limits)
@@ -636,6 +681,7 @@ public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(publishResolutionVersion, forKey: .publishResolutionVersion)
         try c.encode(supportedVersion, forKey: .supportedVersion)
         try c.encode(enabled, forKey: .enabled)
         try c.encode(limits, forKey: .limits)

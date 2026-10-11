@@ -838,6 +838,11 @@
         },
         "sharing_permission": {
           "type": "boolean"
+        },
+        "publish_resolution_version": {
+          "type": "integer",
+          "const": 1,
+          "description": "Optional for older v2 servers. Only version 1 supports publication resolution; independent of enabled."
         }
       },
       "required": [
@@ -1296,6 +1301,58 @@
         },
         {
           "$ref": "#/$defs/legacy_label"
+        }
+      ]
+    },
+    "publish_resolution": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome",
+            "receipt"
+          ],
+          "properties": {
+            "outcome": {
+              "const": "committed"
+            },
+            "receipt": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/receipt"
+                },
+                {
+                  "properties": {
+                    "replayed": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome",
+            "operation_id",
+            "replayed"
+          ],
+          "properties": {
+            "outcome": {
+              "const": "canceled_before_commit"
+            },
+            "operation_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "replayed": {
+              "type": "boolean"
+            }
+          }
         }
       ]
     }

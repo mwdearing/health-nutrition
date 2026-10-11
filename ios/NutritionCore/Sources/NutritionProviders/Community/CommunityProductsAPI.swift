@@ -18,6 +18,7 @@ public enum ProductAPIError: Error, Equatable, Sendable {
 
 public protocol CommunityProductServicing: Sendable {
     func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt
+    func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution
     func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt
     func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage
     func product(id: UUID) async throws -> CommunityProduct

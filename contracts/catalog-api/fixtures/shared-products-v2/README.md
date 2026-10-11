@@ -36,3 +36,9 @@ Legacy read fixtures: `legacy-public-product-valid.json` and
 Legacy content is deliberately invalid as publish `product` content.
 
 Run `python3 contracts/catalog-api/test_shared_products_v2_schema.py` (requires `jsonschema`) for schema and synthetic fixture conformance. Whole-string decimal, revision, generation, count and barcode grammars reject terminal line separators; UUID format checks require canonical hyphenated spelling. Raw `ingredient:` suffixes still permit line terminators.
+
+Resolution fixtures use the exact original publish request corpus. `capabilities-valid`
+represents the older no-field server; `capabilities-resolution-valid` requires the new
+server's version 1 flag. The three resolution responses exercise committed receipt
+replay, first cancellation and marker replay. Cancellation is not a receipt or an
+assertion that an earlier contribution has been withdrawn.

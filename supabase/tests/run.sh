@@ -42,9 +42,15 @@ SQL
   fi
   psql_ -f - < "$f"
 done
+psql_ -f - < supabase/tests/shared_products_v2_resolution.sql
+if [[ ${CATALOG_TEST_FOCUS:-} == resolution ]]; then
+  python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"
+  exit 0
+fi
 if [[ ${CATALOG_TEST_FOCUS:-} != bridge && ${CATALOG_TEST_FOCUS:-} != refresh ]]; then
   psql_ -f - < supabase/tests/community_catalog.sql
   if [[ ${CATALOG_TEST_FOCUS:-} == legacy ]]; then exit 0; fi
   psql_ -f - < supabase/tests/shared_products_v2.sql
 fi
 python3 supabase/tests/shared_products_v2_concurrency.py "$engine" "$name"
+python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"

@@ -1,0 +1,39 @@
+{
+  "outcome": "committed",
+  "receipt": {
+    "operation_id": "00000000-0000-4000-8000-000000000001",
+    "product_id": "00000000-0000-4000-8000-000000000003",
+    "acknowledged_revision": "1",
+    "current_revision": "1",
+    "current_state": "active",
+    "publication": {
+      "product_id": "00000000-0000-4000-8000-000000000003",
+      "representative_revision": "1",
+      "product": {
+        "name": "Synthetic oats",
+        "brand": null,
+        "barcode": null,
+        "kind": "food",
+        "basis": "per_100_g",
+        "serving": null,
+        "facts": []
+      },
+      "source": {
+        "product_id": "00000000-0000-4000-8000-000000000003",
+        "representative_revision": "1",
+        "attribution": "Community contribution"
+      },
+      "verification": {
+        "status": "shared_unverified",
+        "source": null
+      },
+      "support": {
+        "distinct_accounts": "1",
+        "verification_threshold": "5"
+      },
+      "missing_facts": true,
+      "alternatives": []
+    },
+    "replayed": true
+  }
+}

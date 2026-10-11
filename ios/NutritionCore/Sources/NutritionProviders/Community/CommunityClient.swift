@@ -133,6 +133,24 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
         return receipt
     }
 
+    public func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution {
+        let body: Data
+        do { body = try request.canonicalBody() }
+        catch let field as CustomProductFieldError { throw ProductAPIError.invalidRequest(field: field.field) }
+        catch { throw ProductAPIError.invalidRequest(field: nil) }
+        // Owner-bind both calls; account replacement between capability and resolution is rejected.
+        let capabilities: ProductCatalogCapabilities = try await productsAPI.call("catalog_capabilities_v2", body: Data("{}".utf8), owner: expectedOwnerID, capability: true)
+        guard capabilities.supportsPublishResolution else { throw ProductAPIError.unsupportedBackend }
+        let result: ProductPublishResolution = try await productsAPI.call("resolve_catalog_publish_for_withdrawal_v2", body: CommunityProductsAPI.wrapped(body), owner: expectedOwnerID)
+        switch result {
+        case .committed(let receipt):
+            guard receipt.operationID == UUID(uuidString: request.operationID), request.productID == nil || receipt.productID == UUID(uuidString: request.productID!) else { throw ProductAPIError.unavailable }
+        case .canceledBeforeCommit(let operationID, _):
+            guard operationID == UUID(uuidString: request.operationID) else { throw ProductAPIError.unavailable }
+        }
+        return result
+    }
+
     public func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
         let body: Data
         do { body = try request.canonicalBody() } catch { throw ProductAPIError.invalidRequest(field: nil) }
