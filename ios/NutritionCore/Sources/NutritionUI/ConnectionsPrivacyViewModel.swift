@@ -252,6 +252,21 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Forgets an optional community session on this device; the default keeps account-free builds standalone.
     private let eraseLocalAccount: () async throws -> Void
 
+    /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
+    /// copy that was already current when that import began; a later export may contain restored rows.
+    private var exportRevision = 0
+    /// Unlike `eraseGeneration`, this advances only when all local erasers report success. A failed erase
+    /// must not make an in-flight restore's store effects disappear.
+    private var successfulEraseEpoch = 0
+    private struct DeferredImportEffects {
+        let changedJournal: Bool
+        let isPartialRestore: Bool
+        let startedAtImportGeneration: Int
+        let exportRevisionAtStart: Int
+    }
+    /// Import outcomes that arrive while an erase is suspended are resolved when its result is known.
+    private var deferredImportEffectsDuringErase: [DeferredImportEffects] = []
+
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
     private var importTask: Task<Void, Never>?
     /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
@@ -479,6 +494,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Builds the export document, encodes it and writes it to a temporary file. Nothing is sent anywhere.
     @discardableResult
     public func export(now: Date) -> Bool {
+        exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
                 store: store, favorites: favorites, appVersion: appVersion, exportedAt: now)
@@ -535,6 +551,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         guard !isErasing else { return false }
         beforeErase()
         isErasing = true
+        deferredImportEffectsDuringErase.removeAll()
         // The import state from *before* the erase goes now, as the screen enters its erasing state: "Imported
         // 3 entries" describes a journal that is about to stop existing. It is cleared here rather than at
         // the end, because an import asked for during the erase is refused with a message of its own, and
@@ -579,7 +596,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         entryCount = 0
         exportState = .idle
         errorMessage = failed ? Self.eraseFailedMessage : nil
-        if !failed { incompleteRestoreWarning = nil }
+        if failed {
+            resolveDeferredImportEffectsAfterFailedErase()
+        } else {
+            resolveDeferredImportEffectsAfterSuccessfulErase()
+        }
         eraseGeneration += 1
         if !failed { afterSuccessfulErase() }
         return !failed
@@ -630,6 +651,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// Drops the remembered copy without touching the disk.
     private func forgetExportFile() {
+        exportRevision += 1
         exportFileURL = nil
         exportFileName = nil
     }
@@ -702,7 +724,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // so every outcome looks stale and none is ever published.
         importGeneration += 1
         let generation = importGeneration
-        let startedAtEraseGeneration = eraseGeneration
+        let startedAtSuccessfulEraseEpoch = successfulEraseEpoch
+        let exportRevisionAtStart = exportRevision
         isImporting = true
         let gate = importGate
         gate.begin()
@@ -729,39 +752,49 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             // state it updates is main-actor state, so the hop is stated instead of assumed.
             await MainActor.run {
                 self?.apply(
-                    outcome, startedAt: generation, eraseGenerationAtStart: startedAtEraseGeneration)
+                    outcome, startedAt: generation,
+                    successfulEraseEpochAtStart: startedAtSuccessfulEraseEpoch,
+                    exportRevisionAtStart: exportRevisionAtStart)
             }
         }
     }
 
     /// Publishes an import's outcome on the main actor, which is the only place that touches this state.
     ///
-    /// An outcome from an import that an erase has overtaken is dropped: the stores it restored were deleted
-    /// a moment later, and the screen saying "Imported 3 entries" would be describing a journal that is gone.
+    /// An outcome from an import that a successful erase has overtaken is dropped: the stores it restored were
+    /// deleted a moment later, and the screen saying "Imported 3 entries" would describe a journal that is gone.
     private func apply(
-        _ outcome: ImportOutcome, startedAt generation: Int, eraseGenerationAtStart: Int
+        _ outcome: ImportOutcome, startedAt generation: Int,
+        successfulEraseEpochAtStart: Int, exportRevisionAtStart: Int
     ) {
-        // An erase owns the store once it starts. Ignore any import outcome it waited for or overtook,
-        // including the store-change notifications below: the erase will publish its own final reload.
-        guard !isErasing, eraseGenerationAtStart == eraseGeneration else { return }
+        // A successful erase owns the stores after it completes. A failed erase does not: retain any
+        // restore effects that arrived while it was suspended and publish them once its result is known.
+        guard successfulEraseEpochAtStart == successfulEraseEpoch else { return }
+        if isErasing {
+            deferredImportEffectsDuringErase.append(DeferredImportEffects(
+                changedJournal: outcome.changedJournal,
+                isPartialRestore: outcome.isPartialRestore,
+                startedAtImportGeneration: generation,
+                exportRevisionAtStart: exportRevisionAtStart))
+            return
+        }
 
         // Store mutations outlive import presentation. A newer import may already have published a refusal,
-        // but an earlier successful or partial restore still changed the journal, invalidated the held
-        // export and requires every journal snapshot to reload.
-        if outcome.changedJournal {
-            removeExportFile()
-            exportState = .idle
-            entryCount = 0
-            errorMessage = nil
-            journalRestoreGeneration += 1
+        // but an earlier successful or partial restore still changed the journal and requires every journal
+        // snapshot to reload. An export made after this import started may reflect those restored rows.
+        let isCompleteImport: Bool
+        if case .imported = outcome {
+            isCompleteImport = true
+        } else {
+            isCompleteImport = false
         }
-        if outcome.isPartialRestore {
-            incompleteRestoreWarning = Self.partialRestoreWarningMessage
-        } else if generation == importGeneration, case .imported = outcome {
-            // Only the current complete restore can replace a partial warning; a late older success must not
-            // conceal rows retained by a newer partial restore.
-            incompleteRestoreWarning = nil
-        }
+        applyStoreEffects(
+            changedJournal: outcome.changedJournal,
+            isPartialRestore: outcome.isPartialRestore,
+            startedAt: generation,
+            exportRevisionAtStart: exportRevisionAtStart,
+            mayClearWarning: true,
+            isCompleteImport: isCompleteImport)
 
         guard generation == importGeneration else { return }
         isImporting = false
@@ -775,6 +808,52 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             importState = .failed
             importMessage = Self.importFailureText(for: failure)
         }
+    }
+
+    private func applyStoreEffects(
+        changedJournal: Bool, isPartialRestore: Bool, startedAt generation: Int,
+        exportRevisionAtStart: Int, mayClearWarning: Bool, isCompleteImport: Bool = false
+    ) {
+        if changedJournal {
+            if exportRevision == exportRevisionAtStart {
+                removeExportFile()
+                exportState = .idle
+                entryCount = 0
+            }
+            if mayClearWarning, generation == importGeneration { errorMessage = nil }
+            journalRestoreGeneration += 1
+        }
+        if isPartialRestore {
+            incompleteRestoreWarning = Self.partialRestoreWarningMessage
+        } else if mayClearWarning, isCompleteImport, generation == importGeneration {
+            // Only the current complete restore can replace a partial warning; a late older success must not
+            // conceal rows retained by a newer partial restore.
+            incompleteRestoreWarning = nil
+        }
+    }
+
+    /// The failed erase left the stores in an unknown but not confirmed-empty state. Apply outcomes that
+    /// arrived while it ran so the host reloads and any partial restore remains visible; the erase error
+    /// was already published and must not be cleared by these stale import generations.
+    private func resolveDeferredImportEffectsAfterFailedErase() {
+        let deferred = deferredImportEffectsDuringErase
+        deferredImportEffectsDuringErase.removeAll()
+        for effect in deferred {
+            applyStoreEffects(
+                changedJournal: effect.changedJournal,
+                isPartialRestore: effect.isPartialRestore,
+                startedAt: effect.startedAtImportGeneration,
+                exportRevisionAtStart: effect.exportRevisionAtStart,
+                mayClearWarning: false)
+        }
+    }
+
+    /// A successful erase replaces the journal with empty stores, so restore completions from before it are
+    /// obsolete. Only this confirmed success advances the epoch used by import completion fencing.
+    private func resolveDeferredImportEffectsAfterSuccessfulErase() {
+        successfulEraseEpoch += 1
+        deferredImportEffectsDuringErase.removeAll()
+        incompleteRestoreWarning = nil
     }
 
     /// The sentence for a failure, chosen here because the words belong to this actor.

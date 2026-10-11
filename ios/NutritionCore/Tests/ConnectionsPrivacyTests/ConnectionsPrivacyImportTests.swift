@@ -356,6 +356,36 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.exportState, .idle)
     }
 
+    func testRestoreDoesNotDeleteAnExportCreatedAfterItsStoreMutation() async throws {
+        let journal = ImportStubStore()
+        journal.pauseAfterRestoreForTesting = true
+        var written: [URL] = []
+        var removed: [URL] = []
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: ImportStubFavorites(),
+            writer: { _, url, _ in written.append(url) },
+            remover: { removed.append($0) })
+
+        model.importJournal(data: try export())
+        let restorePaused = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(restorePaused)
+        // The import has changed the store but has not published its result. This copy reflects the
+        // restored entry and must survive the older import completion, even at the same export URL.
+        XCTAssertTrue(model.export(now: now))
+        let freshExport = try XCTUnwrap(model.exportFileURL)
+        XCTAssertEqual(model.entryCount, 1)
+
+        journal.resumeRestoreForTesting.signal()
+        await waitForImportToSettle(model)
+
+        XCTAssertEqual(model.journalRestoreGeneration, 1)
+        XCTAssertEqual(model.exportFileURL, freshExport)
+        XCTAssertEqual(model.exportState, .ready)
+        XCTAssertEqual(model.entryCount, 1)
+        XCTAssertEqual(written, [freshExport])
+        XCTAssertTrue(removed.isEmpty, "a newer export of the restored journal must remain available")
+    }
+
     func testAFileThatCannotBeReadIsAFailureRatherThanACancellation() {
         let model = ConnectionsPrivacyViewModel(store: ImportStubStore(), favorites: ImportStubFavorites())
         model.importCouldNotReadFile()
@@ -463,6 +493,39 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.eraseGeneration, 1)
     }
 
+    func testFailedErasePublishesPartialRestoreThatCompletesDuringOrAfterErase() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        journal.failEraseForTesting = true
+        journal.pauseAfterRestoreForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites, erasers: [journal, favorites],
+            eraseLocalAccount: {
+                // Keep the erase suspended long enough for the import's main-actor completion to arrive.
+                try await Task.sleep(nanoseconds: 500_000_000)
+                throw ImportStubStore.Unsupported()
+            })
+
+        model.importJournal(data: try export(includeFavorite: true))
+        let restorePaused = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(restorePaused)
+        let resumeRestore = journal.resumeRestoreForTesting
+        Task.detached {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            resumeRestore.signal()
+        }
+
+        let erased = await model.eraseAllData()
+
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+        XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
+        XCTAssertEqual(model.journalRestoreGeneration, 1)
+        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
+    }
+
     func testSuccessfulEraseClearsAnExistingIncompleteRestoreWarning() async throws {
         let journal = ImportStubStore()
         journal.failUndoForTesting = true
@@ -546,5 +609,13 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         while (model.importState != .failed || model.isImporting), Date() < deadline {
             try? await Task.sleep(nanoseconds: 1_000_000)
         }
+    }
+
+    private func waitForImportToSettle(_ model: ConnectionsPrivacyViewModel) async {
+        let deadline = Date(timeIntervalSinceNow: 10)
+        while model.isImporting, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertFalse(model.isImporting, "the import never published an outcome")
     }
 }
