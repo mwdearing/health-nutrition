@@ -13,7 +13,7 @@ do $$ declare f regprocedure; r text; begin
   'catalog_v2.write_operation_before_publish_cancellation(jsonb,boolean)'::regprocedure,
   'catalog_v2.write_operation(jsonb,boolean)'::regprocedure,
   'catalog_v2.publish_operation_id(jsonb)'::regprocedure,
-  'catalog_v2.validate_publish_cancellation(jsonb)'::regprocedure,
+  'catalog_v2.validate_operation_envelope(jsonb,boolean)'::regprocedure,
   'catalog_v2.resolve_publish_for_withdrawal(jsonb)'::regprocedure
  ] loop
   foreach r in array array['anon','authenticated'] loop

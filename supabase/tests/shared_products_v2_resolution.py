@@ -75,6 +75,29 @@ def withdraw_body(receipt):
                 product_id=receipt['product_id'], expected_server_revision=receipt['current_revision'])
 
 
+def shared_validation_authority():
+    a = account(); committed = request(); marker = request()
+    receipt = submit(a, committed)
+    canceled(resolve(a, marker), marker)
+    before = counts(a)
+    # Tighten the real pure validator, preserving its owner/ACL through CREATE OR REPLACE.
+    # Both fresh paths must obey this single authority; existing acknowledgments must bypass it.
+    definition = sql("select pg_get_functiondef('catalog_v2.validate_operation_envelope(jsonb,boolean)'::regprocedure);")
+    sql("""create or replace function catalog_v2.validate_operation_envelope(body jsonb, withdrawing boolean) returns uuid
+      language plpgsql immutable security invoker set search_path='' as $$ begin
+      perform catalog_v2.fail('invalid_request'); end $$;""")
+    try:
+        assert submit(a, committed) == dict(receipt, replayed=True)
+        assert resolve(a, committed) == dict(outcome='committed', receipt=dict(receipt, replayed=True))
+        canceled(resolve(a, marker), marker, True)
+        expect_error(a, SUBMIT, jsql(request()), 'invalid_request')
+        expect_error(a, RESOLVE, jsql(request()), 'invalid_request')
+        assert counts(a) == before
+    finally:
+        sql(definition)
+    print('PASS single pure validation authority governs fresh publication/resolution; receipts/markers bypass it')
+
+
 def fresh_validation():
     a = account()
     initial_products = sql('select count(*) from catalog_v2.products;')
@@ -293,6 +316,7 @@ def concurrency():
 
 def main():
     sql('update catalog.settings set daily_limit=1000;')
+    shared_validation_authority()
     fresh_validation()
     policy_and_replays()
     concurrency()
