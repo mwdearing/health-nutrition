@@ -42,7 +42,7 @@ public final class AccountViewModel: ObservableObject {
     @Published public private(set) var isBusy = false
     @Published public private(set) var message: String?
     @Published public private(set) var emailStep: EmailStep = .enterAddress
-    /// True after the first sign-in on this device, until the person has read the sharing disclosure.
+    /// True while the signed-in account has not read the sharing disclosure on this device.
     @Published public private(set) var needsDisclosure = false
     /// True only once the server's profile has been read. Until then the name and the sharing switch stay
     /// locked, so a failed read can never lead to a write that replaces the stored values with defaults.
@@ -54,6 +54,9 @@ public final class AccountViewModel: ObservableObject {
     private var savedName: String?
     /// The address the code was sent to. Kept here so the code step needs no address from the view.
     private var pendingEmail = ""
+    /// The ID of the signed-in account, from its session. Nil when nobody is signed in, and then no account has
+    /// acknowledged the disclosure. Cleared on sign out and on delete.
+    private var currentUserID: String?
     /// Counts running service calls. A counter, not a flag, so a call nested inside another does not clear
     /// the busy state while the outer call is still running.
     private var busyCount = 0 {
@@ -85,9 +88,7 @@ public final class AccountViewModel: ObservableObject {
         guard signInCount == signInsBefore else { return }
         signIn(with: session)
         // A sign-in restored before the disclosure was read still has to show it.
-        if !preferences.hasSeenCommunityDisclosure {
-            needsDisclosure = true
-        }
+        needsDisclosure = !currentAccountAcknowledged
         await refreshProfile()
     }
 
@@ -95,7 +96,7 @@ public final class AccountViewModel: ObservableObject {
     /// read. Anything that sends a label must check this first: the server default for sharing is on, so the
     /// switch alone is not consent.
     public var sharingAllowed: Bool {
-        phase == .signedIn && profileReady && shareLabels && preferences.hasSeenCommunityDisclosure
+        phase == .signedIn && profileReady && shareLabels && currentAccountAcknowledged
     }
 
     public func signInWithApple(idToken: String, nonce: String) async {
@@ -217,23 +218,34 @@ public final class AccountViewModel: ObservableObject {
     /// Deletes the account on the server. The session is forgotten here only after the server agrees.
     public func deleteAccount() async {
         guard await run(Self.genericMessage, { try await self.service.deleteAccount() }) != nil else { return }
+        // The deleted account's own acknowledgment goes with it; the other accounts' entries stay.
+        if let userID = currentUserID {
+            preferences.setHasSeenCommunityDisclosure(false, for: userID)
+        }
         clearSignedInState()
     }
 
     /// Called after Erase all data cleared the stored preferences: a signed-in person who has not read the
     /// disclosure on this device is asked again, and nothing is shared until they do.
     public func refreshAfterErase() {
-        if phase == .signedIn && !preferences.hasSeenCommunityDisclosure {
-            needsDisclosure = true
+        if phase == .signedIn {
+            needsDisclosure = !currentAccountAcknowledged
         }
     }
 
-    /// The person has read the sharing disclosure. Stored, so it is not shown again on this device. Ignored
-    /// while a call is running, so a tap during a busy call is never taken for agreement.
+    /// The signed-in person has read the sharing disclosure. Stored for this account, so it is not shown again
+    /// for that account on this device. Ignored while a call is running, so a tap during a busy call is never
+    /// taken for agreement, and ignored when nobody is signed in.
     public func acknowledgeDisclosure() {
-        guard !isBusy else { return }
-        preferences.setHasSeenCommunityDisclosure(true)
+        guard !isBusy, let userID = currentUserID else { return }
+        preferences.setHasSeenCommunityDisclosure(true, for: userID)
         needsDisclosure = false
+    }
+
+    /// True when the signed-in account has read the disclosure. No signed-in account means no acknowledgment.
+    private var currentAccountAcknowledged: Bool {
+        guard let userID = currentUserID else { return false }
+        return preferences.hasSeenCommunityDisclosure(for: userID)
     }
 
     // MARK: Helpers
@@ -287,13 +299,12 @@ public final class AccountViewModel: ObservableObject {
         signIn(with: session)
         emailStep = .enterAddress
         pendingEmail = ""
-        if !preferences.hasSeenCommunityDisclosure {
-            needsDisclosure = true
-        }
+        needsDisclosure = !currentAccountAcknowledged
     }
 
     private func signIn(with session: CommunitySession) {
         phase = .signedIn
+        currentUserID = session.userID
         email = session.email ?? ""
         profileReady = false
     }
@@ -311,6 +322,7 @@ public final class AccountViewModel: ObservableObject {
 
     private func clearSignedInState() {
         phase = .signedOut
+        currentUserID = nil
         email = ""
         displayName = ""
         savedName = nil

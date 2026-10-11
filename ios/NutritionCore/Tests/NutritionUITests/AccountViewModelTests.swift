@@ -325,8 +325,8 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.otherSession.userID))
     }
 
-    /// Signing out keeps every account's acknowledgement, so the person who signs in again is not asked again.
-    func testSignOutKeepsTheAcknowledgementOfTheAccountThatSignedOut() async throws {
+    /// Signing out keeps every account's acknowledgment, so the person who signs in again is not asked again.
+    func testSignOutKeepsTheAcknowledgmentOfTheAccountThatSignedOut() async throws {
         let (model, _, preferences) = makeModel()
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
         model.acknowledgeDisclosure()
@@ -334,8 +334,8 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
     }
 
-    /// Deleting an account removes only that account's entry; the other account keeps its acknowledgement.
-    func testDeleteAccountRemovesOnlyTheDeletedAccountsAcknowledgement() async throws {
+    /// Deleting an account removes only that account's entry; the other account keeps its acknowledgment.
+    func testDeleteAccountRemovesOnlyTheDeletedAccountsAcknowledgment() async throws {
         let (model, service, preferences) = makeModel()
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
         model.acknowledgeDisclosure()
@@ -355,8 +355,8 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertTrue(model.sharingAllowed)
     }
 
-    /// A failed delete keeps the account and its acknowledgement.
-    func testAFailedDeleteKeepsTheAcknowledgement() async throws {
+    /// A failed delete keeps the account and its acknowledgment.
+    func testAFailedDeleteKeepsTheAcknowledgment() async throws {
         let (model, service, preferences) = makeModel(session: AccountTestSupport.session)
         await model.load()
         model.acknowledgeDisclosure()
@@ -366,8 +366,8 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
     }
 
-    /// Erase all data clears every account's acknowledgement, so the signed-in person is asked again.
-    func testEraseClearsEveryAccountsAcknowledgement() async throws {
+    /// Erase all data clears every account's acknowledgment, so the signed-in person is asked again.
+    func testEraseClearsEveryAccountsAcknowledgment() async throws {
         let (model, service, preferences) = makeModel()
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
         model.acknowledgeDisclosure()

@@ -436,7 +436,7 @@ final class CommunityDisclosureStorageTests: XCTestCase {
         super.tearDown()
     }
 
-    func testAcknowledgementIsKeptPerAccount() {
+    func testAcknowledgmentIsKeptPerAccount() {
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
         preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
         preferences.setHasSeenCommunityDisclosure(true, for: "account-b")
@@ -449,7 +449,7 @@ final class CommunityDisclosureStorageTests: XCTestCase {
         XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: "account-b"))
     }
 
-    func testAcknowledgementIsStoredAsAListOfAccountIDsUnderOneKey() {
+    func testAcknowledgmentIsStoredAsAListOfAccountIDsUnderOneKey() {
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
         preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
         preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
@@ -471,7 +471,7 @@ final class CommunityDisclosureStorageTests: XCTestCase {
         XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-b"))
     }
 
-    func testResetToDefaultsClearsEveryAccountsAcknowledgement() {
+    func testResetToDefaultsClearsEveryAccountsAcknowledgment() {
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
         preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
         preferences.setHasSeenCommunityDisclosure(true, for: "account-b")
@@ -481,7 +481,7 @@ final class CommunityDisclosureStorageTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: "display.community.disclosureSeen"))
     }
 
-    func testInMemoryPreferencesKeepAcknowledgementsPerAccountAndResetThemAll() {
+    func testInMemoryPreferencesKeepAcknowledgmentsPerAccountAndResetThemAll() {
         let preferences = InMemoryDisplayPreferences()
         preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
         XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: "account-a"))
