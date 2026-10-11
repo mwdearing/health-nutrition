@@ -50,11 +50,12 @@ public protocol FirstRunPreferences: AnyObject {
     func setHasReviewedUnits(_ reviewed: Bool)
 }
 
-/// Whether the sharing disclosure has been read on this device. Stored with the display preferences, so
-/// Erase all data clears it with them.
+/// Whether each account has read the sharing disclosure on this device. Kept per account ID, so a second
+/// person signing in on the same phone is asked too. Stored with the display preferences, so Erase all data
+/// clears every account's entry with them.
 public protocol CommunityDisclosurePreferences: AnyObject {
-    var hasSeenCommunityDisclosure: Bool { get }
-    func setHasSeenCommunityDisclosure(_ seen: Bool)
+    func hasSeenCommunityDisclosure(for userID: String) -> Bool
+    func setHasSeenCommunityDisclosure(_ seen: Bool, for userID: String)
 }
 
 /// The defaults a person has before they change anything: metric, and a 250 mL glass.
@@ -85,7 +86,8 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
     private let reminderTimeKey = "display.reminder.time"
     /// The goals hidden from Today: a comma-joined, sorted list of nutrient keys, absent when none is.
     private let hiddenTodayGoalsKey = "display.goals.hiddenOnToday"
-    /// Set once the sharing disclosure has been read after the first sign-in on this device.
+    /// The account IDs that have read the sharing disclosure: a string array under one key. The earlier single
+    /// flag stored under this key is a bool, which is not an array, so it reads as no account at all.
     private let communityDisclosureKey = "display.community.disclosureSeen"
 
     /// `defaults` is a parameter so a test can pass a suite of its own rather than touching the
@@ -116,12 +118,22 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.bool(forKey: reminderOnKey)
     }
 
-    public var hasSeenCommunityDisclosure: Bool {
-        defaults.bool(forKey: communityDisclosureKey)
+    private var acknowledgedAccountIDs: [String] {
+        defaults.stringArray(forKey: communityDisclosureKey) ?? []
     }
 
-    public func setHasSeenCommunityDisclosure(_ seen: Bool) {
-        defaults.set(seen, forKey: communityDisclosureKey)
+    public func hasSeenCommunityDisclosure(for userID: String) -> Bool {
+        acknowledgedAccountIDs.contains(userID)
+    }
+
+    public func setHasSeenCommunityDisclosure(_ seen: Bool, for userID: String) {
+        var ids = acknowledgedAccountIDs.filter { $0 != userID }
+        if seen { ids.append(userID) }
+        if ids.isEmpty {
+            defaults.removeObject(forKey: communityDisclosureKey)
+        } else {
+            defaults.set(ids, forKey: communityDisclosureKey)
+        }
     }
 
     /// The stored time when it reads as a clock time, 20:00 otherwise.
@@ -224,10 +236,14 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
     public private(set) var isReminderOn = false
     public private(set) var reminderTime = ReminderTime.standard
     public private(set) var hiddenTodayGoals: Set<String> = []
-    public private(set) var hasSeenCommunityDisclosure = false
+    private var acknowledgedAccountIDs: Set<String> = []
 
-    public func setHasSeenCommunityDisclosure(_ seen: Bool) {
-        hasSeenCommunityDisclosure = seen
+    public func hasSeenCommunityDisclosure(for userID: String) -> Bool {
+        acknowledgedAccountIDs.contains(userID)
+    }
+
+    public func setHasSeenCommunityDisclosure(_ seen: Bool, for userID: String) {
+        if seen { acknowledgedAccountIDs.insert(userID) } else { acknowledgedAccountIDs.remove(userID) }
     }
 
     public func setGoalShownOnToday(_ nutrient: String, shown: Bool) {
@@ -280,6 +296,6 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         isReminderOn = false
         reminderTime = ReminderTime.standard
         hiddenTodayGoals = []
-        hasSeenCommunityDisclosure = false
+        acknowledgedAccountIDs = []
     }
 }

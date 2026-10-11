@@ -418,3 +418,77 @@ final class QuickWaterPreferenceTests: XCTestCase {
         XCTAssertEqual(model.waterAccessibilityValue, "10.1 fluid ounces today")
     }
 }
+
+/// The sharing disclosure is acknowledged per account: a set of account IDs under one key, which Erase all data clears.
+final class CommunityDisclosureStorageTests: XCTestCase {
+    private var suiteName = ""
+    private var defaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "healthnutrition.tests.disclosure.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        super.tearDown()
+    }
+
+    func testAcknowledgmentIsKeptPerAccount() {
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-b")
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: "account-a"))
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: "account-b"))
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-c"))
+
+        preferences.setHasSeenCommunityDisclosure(false, for: "account-a")
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-a"))
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: "account-b"))
+    }
+
+    func testAcknowledgmentIsStoredAsAListOfAccountIDsUnderOneKey() {
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-b")
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "display.community.disclosureSeen") ?? []),
+            ["account-a", "account-b"])
+        XCTAssertEqual((defaults.stringArray(forKey: "display.community.disclosureSeen") ?? []).count, 2)
+    }
+
+    /// The old device-wide flag was a bool under the same key. It is ignored: nobody has acknowledged it.
+    func testTheOldDeviceWideFlagReadsAsNobody() {
+        defaults.set(true, forKey: "display.community.disclosureSeen")
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-a"))
+
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: "account-a"))
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-b"))
+    }
+
+    func testResetToDefaultsClearsEveryAccountsAcknowledgment() {
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-b")
+        preferences.resetToDefaults()
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-a"))
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-b"))
+        XCTAssertNil(defaults.object(forKey: "display.community.disclosureSeen"))
+    }
+
+    func testInMemoryPreferencesKeepAcknowledgmentsPerAccountAndResetThemAll() {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-a")
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: "account-a"))
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-b"))
+        preferences.setHasSeenCommunityDisclosure(true, for: "account-b")
+        preferences.resetToDefaults()
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-a"))
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: "account-b"))
+    }
+}

@@ -6,7 +6,8 @@ An account is optional. Without one, everything stays on the phone, as it did be
 
 - Sign in with Apple, or an email address and a six-digit code. The code is emailed to the address; there is no password.
 - The session is kept in the Keychain on this phone. It is readable only after the first unlock and is never copied to another device or a backup.
-- The first sign-in on a phone shows a sharing disclosure once. It says what is shared before the sharing switch is left on.
+- The first sign-in of each account on a phone shows a sharing disclosure once. It says what is shared before the sharing switch is left on.
+- The disclosure is acknowledged per account, not per phone. A second person who signs in on the same phone is shown it too, and nothing of theirs is shared until they have read it. An account that has read it is not shown it again on that phone, even after signing out and back in.
 
 The Account section appears only in a build that carries the project settings (see [the community client](community-client.md) and the [iOS app README](../ios/HealthNutrition/README.md)). A local, unsigned or CI build has no account section and makes no account call.
 
@@ -26,5 +27,5 @@ Signing in does not upload your journal, goals, recipes, favorites, reminders or
 ## Sign out and delete
 
 - **Sign out** asks the server to end the session and forgets it on this phone. Local data stays on the phone.
-- **Delete account** removes the account and every label it shared from the server. Data on this phone is kept.
-- **Erase all data** in Settings removes the journal and the settings on this phone. It does not sign out and does not delete the account. Sign out first if you also want the session removed from this phone.
+- **Delete account** removes the account and every label it shared from the server. Data on this phone is kept. The phone also forgets that account's disclosure acknowledgment; other accounts' acknowledgments stay.
+- **Erase all data** in Settings removes the journal and the settings on this phone, including every account's disclosure acknowledgment, so the signed-in person is shown the disclosure again. It does not sign out and does not delete the account. Sign out first if you also want the session removed from this phone.
