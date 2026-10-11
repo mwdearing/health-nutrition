@@ -48,6 +48,17 @@ final class CommunityLabelLimitsTests: XCTestCase {
         XCTAssertTrue(CommunityLabelLimits.fits(name: "Oats", brand: "Acme", serving: "1 cup"))
     }
 
+    /// The catalog counts Unicode characters, not the grapheme clusters Swift's count gives, so a family emoji is
+    /// several characters against the limit.
+    func testLengthsAreCountedAsUnicodeScalarsLikeTheDatabase() {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+        XCTAssertEqual(family.count, 1)
+        XCTAssertEqual(family.unicodeScalars.count, 5)
+        // 24 families are 120 scalars, which fits; 25 are 125, which does not, though Swift counts 25 < 120.
+        XCTAssertTrue(CommunityLabelLimits.fits(name: String(repeating: family, count: 24), brand: nil, serving: nil))
+        XCTAssertFalse(CommunityLabelLimits.fits(name: String(repeating: family, count: 25), brand: nil, serving: nil))
+    }
+
     /// Values read back from the catalog are held to the same range, so a bad row cannot reach the form.
     func testValuesReadBackOutsideTheRangeAreDropped() throws {
         let mapped = CommunityLabelMapping.nutrients([

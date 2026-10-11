@@ -241,6 +241,7 @@ final class CommunityLabelUploadTests: XCTestCase {
     func testALibraryProductIsNeverSubmitted() throws {
         let model = try makeModel()
         model.applyStoredProduct(panel())
+        model.name = "Library bar"
         model.barcode = validBarcode
         model.amountText = "1"
 
