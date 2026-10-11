@@ -172,6 +172,29 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertTrue(model.canApply)
     }
 
+    func testAmbiguousServingSizeBlocksApplyUntilItIsConfirmed() {
+        let model = makeModel()
+        model.load(lines: ["Serving size 1-2 g", "Calories 120", "Protein 3g"])
+
+        XCTAssertEqual(model.servingText, "1-2 g")
+        XCTAssertNil(model.servingQuantity)
+        XCTAssertTrue(model.servingNeedsReview)
+        XCTAssertEqual(model.pendingCount, 1)
+        XCTAssertFalse(model.canApply)
+
+        model.confirmServing()
+
+        XCTAssertFalse(model.servingNeedsReview)
+        XCTAssertTrue(model.canApply)
+    }
+
+    func testServingSizeUncertaintyHasAnActionableReviewMessage() {
+        XCTAssertEqual(
+            LabelCaptureRow.summarize([.uncertainServingSize], name: "serving size"),
+            "Check this value: the serving size is unclear, so its measure needs checking."
+        )
+    }
+
     // MARK: The product
 
     func testUnknownRowsStayUnknownInTheProduct() throws {

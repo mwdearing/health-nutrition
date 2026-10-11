@@ -206,6 +206,9 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         if reasons.contains(.normalizedMicrogramSymbol) {
             sentences.append("the unit was read as mcg")
         }
+        if reasons.contains(.uncertainServingSize) {
+            sentences.append("the serving size is unclear, so its measure needs checking")
+        }
         return "Check this value: " + sentences.joined(separator: ", ") + "."
     }
 
