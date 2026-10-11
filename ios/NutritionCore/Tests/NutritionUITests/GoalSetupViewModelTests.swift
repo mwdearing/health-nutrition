@@ -474,6 +474,17 @@ final class GoalSetupViewModelTests: XCTestCase {
             "Some goals may not have been put back. Check your targets on the Goals screen.")
     }
 
+    /// The heading follows the same rule as the message: an unreadable store is unknown, not empty.
+    func testJustTrackHeadingDoesNotClaimNoTargetsWhenTheStoreCannotBeRead() {
+        let goalsModel = GoalsViewModel(
+            store: UnreadableGoalStore(), preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goalsModel.load()
+        let model = GoalSetupViewModel(goals: goalsModel)
+        XCTAssertEqual(model.justTrackHeading, "Your day")
+        let (empty, _, _) = makeModel()
+        XCTAssertEqual(empty.justTrackHeading, "Your day, without targets")
+    }
+
     func testJustTrackWithNoTargetsSaysTheDayShowsTotals() {
         let (model, store, _) = makeModel()
         model.aim = .justTrack
