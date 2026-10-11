@@ -364,7 +364,24 @@ public enum NutritionFactsParser {
     /// When the next field is the servings count, the count itself belongs to that field rather than to
     /// this one, so the boundary steps back over it.
     private static func nextField(in text: String, next nextLine: String? = nil) -> String.Index {
-        let rowBoundary = firstRowThatStatesAmount(in: text, next: nextLine) ?? text.endIndex
+        let namedBoundary = firstRowThatStatesAmount(in: text, next: nextLine)
+        let compoundBoundary: String.Index? = {
+            guard let row = firstAdditionalRow(in: text, next: nextLine) else { return nil }
+            let prefix = String(text[..<row.nameStart])
+            // A named compound ends serving metadata when it follows a recognized serving measure.
+            // A marker-only line has no prefix to check, while a household description such as
+            // "1 protein bar (50g)" must stay intact even if its words resemble a compound row.
+            guard trimmed(prefix).isEmpty || measureEnd(in: prefix) != nil else { return nil }
+            return row.nameStart
+        }()
+        let rowBoundary: String.Index = {
+            switch (namedBoundary, compoundBoundary) {
+            case let (named?, compound?): return min(named, compound)
+            case let (named?, nil): return named
+            case let (nil, compound?): return compound
+            case (nil, nil): return text.endIndex
+            }
+        }()
         let lower = text.lowercased()
         guard let marker = servingsMarker(in: lower) else { return rowBoundary }
         let markerStart = index(marker.lowerBound, in: text, lowercased: lower)
@@ -611,7 +628,7 @@ public enum NutritionFactsParser {
     /// endpoint as a quantity nor truncates away the evidence before review is assigned.
     private static func ambiguousServingRangeEnd(in text: String) -> String.Index? {
         let patterns = [
-            #"[<>≤≥]\s*\d+(?:[.,]\d+)?\s*[[:alpha:]µμ]+"#,
+            #"[<>≤≥]=?\s*\d+(?:[.,]\d+)?\s*[[:alpha:]µμ]+"#,
             #"\d+(?:[.,]\d+)?\s*(?:[[:alpha:]µμ]+\s*)?[-–]\s*\d+(?:[.,]\d+)?\s*[[:alpha:]µμ]+"#,
         ]
         for pattern in patterns {

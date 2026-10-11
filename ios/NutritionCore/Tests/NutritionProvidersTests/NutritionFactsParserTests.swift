@@ -415,6 +415,14 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.value(for: .calories), .known(dec("90"), .kcal))
     }
 
+    func testBareServingMarkerDoesNotConsumeFollowingCompoundRow() throws {
+        let panel = parse(["Serving size", "Creatine Monohydrate 3g"])
+
+        XCTAssertNil(panel.servingSize, "a compound row is not a serving description")
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine-monohydrate"))
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+    }
+
     func testBoundServingMeasureDoesNotBecomeAQuantity() {
         for line in ["Serving size 1-2 g", "Serving size <1 g"] {
             let panel = parse([line])
@@ -432,11 +440,22 @@ final class NutritionFactsParserTests: XCTestCase {
     }
 
     func testComparisonServingMeasuresRequireConfirmation() {
-        for line in ["Serving size >1 g", "Serving size ≥1 g", "Serving size ≤1 g"] {
+        for line in ["Serving size >1 g", "Serving size >=1 g", "Serving size ≥1 g",
+                     "Serving size <=1 g", "Serving size ≤1 g"] {
             let panel = parse([line])
             XCTAssertNil(panel.servingSize?.quantity, "a comparison cannot supply one scaling basis: \(line)")
             XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize], line)
         }
+    }
+
+    func testBoundInLaterCompoundDoesNotMakeLeadingServingUncertain() throws {
+        let panel = parse(["Serving size 1 capsule Creatine <1g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 capsule")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("1"), unit: .capsule))
+        XCTAssertNil(panel.servingSize?.review)
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine"))
+        XCTAssertEqual(creatine.value, .belowReportingThreshold(.g))
     }
 
     func testRangeWithUnitsAtBothEndpointsRequiresConfirmation() {
