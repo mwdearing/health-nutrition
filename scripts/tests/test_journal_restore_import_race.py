@@ -26,8 +26,20 @@ def test_superseded_restore_effects_wait_for_erase_resolution_and_precede_import
     erase = source.split("public func eraseAllData() async -> Bool {", maxsplit=1)[1].split(
         "/// Puts the display preferences", maxsplit=1
     )[0]
-    assert "if failed {" in erase and "resolveDeferredImportEffectsAfterFailedErase()" in erase
-    assert "resolveDeferredImportEffectsAfterSuccessfulErase()" in erase
+    assert "var journalEraseSucceeded = false" in erase
+    journal_identity_result = erase.index("if let journalEraser, eraser === journalEraser {")
+    assert erase.index("let journalEraser = store as? JournalErasing") < journal_identity_result
+    assert journal_identity_result < erase.index("journalEraseSucceeded = true")
+    assert "resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: journalEraseSucceeded)" in erase
+    # Ancillary cleanup can fail after the journal is erased. Deferred journal effects follow the
+    # journal eraser's identified result, never the aggregate `failed` flag for all local cleanup.
+    assert "if failed {" not in erase
+    resolver = source.split("private func resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: Bool)", maxsplit=1)[1].split(
+        "/// A successful erase replaces the journal", maxsplit=1
+    )[0]
+    assert "if journalEraseSucceeded {" in resolver
+    assert "resolveDeferredImportEffectsAfterSuccessfulErase()" in resolver
+    assert "resolveDeferredImportEffectsAfterFailedErase()" in resolver
     failed_erase = source.split("private func resolveDeferredImportEffectsAfterFailedErase()", maxsplit=1)[1].split(
         "private func resolveDeferredImportEffectsAfterSuccessfulErase()", maxsplit=1
     )[0]
