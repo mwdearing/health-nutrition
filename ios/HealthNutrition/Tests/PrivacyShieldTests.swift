@@ -64,4 +64,30 @@ final class PrivacyShieldTests: XCTestCase {
         manager.update(phase: .active)
         XCTAssertEqual(appWindow.accessibilityElementsHidden, appAccessibilityWasHidden)
     }
+
+    func testDeactivationNotificationOnlyCoversItsOwnScene() throws {
+        let appWindow = try XCTUnwrap(UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { !$0.isHidden && $0.isKeyWindow })
+        let scene = try XCTUnwrap(appWindow.windowScene)
+        let otherScene: AnyObject
+        if let connectedScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0 !== scene }) {
+            otherScene = connectedScene
+        } else {
+            // The identity gate is still exercised on single-scene simulator configurations.
+            otherScene = NSObject()
+        }
+        let manager = PrivacyShieldController()
+        manager.attach(to: appWindow, phase: .active)
+
+        manager.coverBeforeSnapshot(for: otherScene)
+        XCTAssertNil(manager.shieldWindow, "another scene's deactivation must not shield this window")
+
+        manager.coverBeforeSnapshot(for: scene)
+        XCTAssertNotNil(manager.shieldWindow, "the attached scene is covered before its phase update")
+        manager.update(phase: .active)
+    }
 }

@@ -23,8 +23,11 @@ final class PrivacyShieldController: ObservableObject {
         setShielded(phase != .active)
     }
 
-    /// Called on `willResignActive`, before SwiftUI's scene-phase update can lag the snapshot.
-    func coverBeforeSnapshot() {
+    /// Called for a scene-local deactivation, before SwiftUI's scene-phase update can lag the snapshot.
+    func coverBeforeSnapshot(for notificationObject: AnyObject?) {
+        guard let scene,
+              let notifyingScene = notificationObject as? UIWindowScene,
+              notifyingScene === scene else { return }
         setShielded(true)
     }
 
@@ -132,15 +135,19 @@ struct PrivacyShieldCaptureHost: View {
                 sheetTitle = "Synthetic sheet marker"
                 showingSheet = true
             }
-            Button("Show sign-in and CAPTCHA return fixture") {
-                sheetTitle = "Synthetic sign-in and CAPTCHA return marker"
+            Button("Show synthetic authentication return sheet") {
+                sheetTitle = "Synthetic authentication return marker"
                 showingSheet = true
             }
             .accessibilityIdentifier("show-auth-return-fixture")
         }
         .sheet(isPresented: $showingSheet) {
-            Text(sheetTitle).accessibilityIdentifier("synthetic-sheet-marker")
-                .padding(40)
+            VStack(spacing: 24) {
+                Text(sheetTitle).accessibilityIdentifier("synthetic-sheet-marker")
+                Button("Close synthetic sheet") { showingSheet = false }
+                    .accessibilityIdentifier("close-synthetic-sheet")
+            }
+            .padding(40)
         }
         .background {
             PrivacyShieldWindowAttachment(controller: controller, phase: scenePhase)
@@ -149,14 +156,14 @@ struct PrivacyShieldCaptureHost: View {
                 .allowsHitTesting(false)
         }
         .onChange(of: scenePhase) { _, phase in controller.update(phase: phase) }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
-            controller.coverBeforeSnapshot()
+        .onReceive(NotificationCenter.default.publisher(for: UIScene.willDeactivateNotification)) { notification in
+            controller.coverBeforeSnapshot(for: notification.object as AnyObject?)
         }
     }
 }
 #endif
 
-private final class PrivacyShieldAnchorView: UIView {
+final class PrivacyShieldAnchorView: UIView {
     var onWindowChange: ((UIWindow?) -> Void)?
 
     override func didMoveToWindow() {

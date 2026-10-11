@@ -260,9 +260,10 @@ struct RootView: View {
                 }
             }
         }
-        // UIKit posts this before the app-switcher snapshot; the scene-phase update follows later.
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
-            privacyShield.coverBeforeSnapshot()
+        // UIKit posts this before the app-switcher snapshot. Filter by the attached scene so a
+        // different window resigning active cannot leave this still-active window covered.
+        .onReceive(NotificationCenter.default.publisher(for: UIScene.willDeactivateNotification)) { notification in
+            privacyShield.coverBeforeSnapshot(for: notification.object as AnyObject?)
         }
         // An erase in Settings empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.

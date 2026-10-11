@@ -9,6 +9,7 @@ on:
       - "ios/HealthNutrition/Tests/PrivacyShieldTests.swift"
       - "ios/HealthNutrition/Tests/PrivacyShieldUITests/**"
       - "ios/HealthNutrition/project.yml"
+      - "**/Package.resolved"
       - ".github/workflows/privacy-shield.yml"
       - ".github/scripts/install-xcodegen.sh"
   push:
@@ -20,6 +21,7 @@ on:
       - "ios/HealthNutrition/Tests/PrivacyShieldTests.swift"
       - "ios/HealthNutrition/Tests/PrivacyShieldUITests/**"
       - "ios/HealthNutrition/project.yml"
+      - "**/Package.resolved"
       - ".github/workflows/privacy-shield.yml"
       - ".github/scripts/install-xcodegen.sh"
 
@@ -72,7 +74,7 @@ jobs:
         run: >-
           xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutritionPrivacy
           -destination "platform=iOS Simulator,name=$SIMULATOR"
-          -only-testing:HealthNutritionPrivacyUITests CODE_SIGNING_ALLOWED=NO
+          -only-testing:HealthNutritionPrivacyUITests -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO
           -resultBundlePath "$RUNNER_TEMP/privacy-shield.xcresult" test
       - name: Export synthetic privacy screenshots
         if: always()

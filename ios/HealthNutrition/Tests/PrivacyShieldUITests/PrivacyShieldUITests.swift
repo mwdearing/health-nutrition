@@ -20,10 +20,11 @@ final class PrivacyShieldUITests: XCTestCase {
 
         app.activate()
         XCTAssertTrue(app.staticTexts["synthetic-sheet-marker"].waitForExistence(timeout: 5))
+        app.buttons["close-synthetic-sheet"].tap()
         XCTAssertTrue(app.staticTexts["synthetic-entry-marker"].exists)
     }
 
-    func testSyntheticSignInAndCaptchaReturnDoesNotLeaveShieldStuck() {
+    func testSyntheticAuthenticationReturnSheetDoesNotLeaveShieldStuck() {
         let app = launchPrivacyFixture()
         app.buttons["show-auth-return-fixture"].tap()
         XCTAssertTrue(app.staticTexts["synthetic-sheet-marker"].waitForExistence(timeout: 5))
@@ -32,6 +33,7 @@ final class PrivacyShieldUITests: XCTestCase {
         app.activate()
 
         XCTAssertTrue(app.staticTexts["synthetic-sheet-marker"].waitForExistence(timeout: 5))
+        app.buttons["close-synthetic-sheet"].tap()
         XCTAssertTrue(app.staticTexts["synthetic-entry-marker"].exists)
     }
 
