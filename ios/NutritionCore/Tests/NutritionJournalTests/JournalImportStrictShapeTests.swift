@@ -275,25 +275,25 @@ final class JournalImportStrictShapeTests: XCTestCase {
     }
 
     func testSchemaMinimumLengthsRejectEmptyRequiredStringsAndRevisionLists() throws {
-        var fields = try fields(document(intakes: [intake(revisions: [revision()])]))
+        var fields = try self.fields(document(intakes: [intake(revisions: [revision()])]))
         var intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
         intakes[0]["category"] = ""
         fields["intakes"] = intakes
         try assertRefusedAsMalformed(fields)
 
-        fields = try fields(document(favorites: [favorite([component()])]))
+        fields = try self.fields(document(favorites: [favorite([component()])]))
         var favorites = try XCTUnwrap(fields["favorites"] as? [[String: Any]])
         favorites[0]["display_name"] = ""
         fields["favorites"] = favorites
         try assertRefusedAsMalformed(fields)
 
-        fields = try fields(document(intakes: [intake(revisions: [revision()])]))
+        fields = try self.fields(document(intakes: [intake(revisions: [revision()])]))
         intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
         intakes[0]["revisions"] = []
         fields["intakes"] = intakes
         try assertRefusedAsMalformed(fields)
 
-        fields = try fields(document(intakes: [intake(revisions: [revision()])]))
+        fields = try self.fields(document(intakes: [intake(revisions: [revision()])]))
         intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
         var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
         revisions[0]["components"] = []
