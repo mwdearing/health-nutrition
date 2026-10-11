@@ -181,6 +181,7 @@ BINARY_FLOAT_LITERAL = re.compile(
 )
 
 IMAGE_CALL = re.compile(r"\bImage\s*\(")
+ALLOW_PREFIX = re.compile(r"//\s*lint-allow:")
 
 RULES = (
     "color-literal",
@@ -1301,38 +1302,35 @@ def fixed_font_sizes(masked: str) -> list[int]:
 
 def allowed_rules(line: str) -> set[str]:
     """Rule names allowed on this line by a trailing ``lint-allow`` comment."""
-    # Parse the directive in bounded passes. The old overlapping whitespace
-    # quantifiers could revisit a long run once per character on a malformed
-    # trailing comment.
-    marker = "lint-allow:"
-    search_from = 0
-    while True:
-        marker_start = line.find(marker, search_from)
-        if marker_start < 0:
-            return set()
-        slash = line.rfind("//", 0, marker_start)
-        if slash >= 0 and not line[slash + 2:marker_start].strip():
-            rules_start = marker_start + len(marker)
-            while rules_start < len(line) and line[rules_start].isspace():
-                rules_start += 1
-            rules_end = rules_start
-            while rules_end < len(line) and (
-                line[rules_end].isspace()
-                or (
-                    line[rules_end].isascii()
-                    and (line[rules_end].isalnum() or line[rules_end] in "_,-")
-                )
-            ):
-                rules_end += 1
-            if line[rules_end:].strip():
-                return set()
-            names = {
-                part.strip()
-                for part in re.split(r"[,\s]+", line[rules_start:rules_end])
-                if part.strip()
-            }
-            return {name.replace("_", "-") for name in names}
-        search_from = marker_start + len(marker)
+    # Only `//` can start a candidate, so find the last matching prefix once.
+    # A later `//` cannot be part of an allowed rule list, which means an
+    # earlier candidate could not consume through it to a successful end match.
+    prefix = None
+    for candidate in ALLOW_PREFIX.finditer(line):
+        prefix = candidate
+    if prefix is None:
+        return set()
+
+    rules_start = prefix.end()
+    while rules_start < len(line) and line[rules_start].isspace():
+        rules_start += 1
+    rules_end = rules_start
+    while rules_end < len(line) and (
+        line[rules_end].isspace()
+        or (
+            line[rules_end].isascii()
+            and (line[rules_end].isalnum() or line[rules_end] in "_,-")
+        )
+    ):
+        rules_end += 1
+    if line[rules_end:].strip():
+        return set()
+    names = {
+        part.strip()
+        for part in re.split(r"[,\s]+", line[rules_start:rules_end])
+        if part.strip()
+    }
+    return {name.replace("_", "-") for name in names}
 
 
 def applies(rel: str, prefixes: tuple[str, ...]) -> bool:

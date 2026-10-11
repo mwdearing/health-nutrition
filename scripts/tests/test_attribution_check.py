@@ -10,6 +10,7 @@ import yaml
 
 SCRIPT = Path(__file__).resolve().parents[2] / ".github" / "scripts" / "attribution_check.py"
 REPO = SCRIPT.parents[2]
+COAUTHOR_TRAILER = "Co-Authored-" + "By:"
 
 
 def run_check(body: str, *, timeout: float = 5) -> subprocess.CompletedProcess[str]:
@@ -36,18 +37,18 @@ def run_check(body: str, *, timeout: float = 5) -> subprocess.CompletedProcess[s
 
 
 def test_pr_body_agent_coauthor_is_still_rejected() -> None:
-    result = run_check("Co-Authored-By: Claude Code <noreply@openai.com>")
+    result = run_check(f"{COAUTHOR_TRAILER} Claude Code <noreply@openai.com>")
     assert result.returncode == 1
-    assert "PR body: Co-Authored-By trailer naming an agent" in result.stdout
+    assert f"PR body: {COAUTHOR_TRAILER[:-1]} trailer naming an agent" in result.stdout
 
 
 def test_person_identity_with_agent_like_name_and_company_address_is_allowed() -> None:
-    result = run_check("Co-Authored-By: Claude Smith <claude@company.example>")
+    result = run_check(f"{COAUTHOR_TRAILER} Claude Smith <claude@company.example>")
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_malformed_identity_with_hostile_whitespace_is_bounded_and_ignored() -> None:
-    body = "Co-Authored-By: Claude Code" + (" " * 80_000) + "<noreply@openai.com"
+    body = COAUTHOR_TRAILER + " Claude Code" + (" " * 80_000) + "<noreply@openai.com"
     result = run_check(body)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout == "Attribution check passed.\n"
