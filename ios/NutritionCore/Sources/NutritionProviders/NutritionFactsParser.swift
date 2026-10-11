@@ -189,17 +189,25 @@ public enum NutritionFactsParser {
     /// the words "nutrition facts", not a panel boundary.
     private static func panelHeadingRange(in line: String, next nextLine: String? = nil) -> Range<String.Index>? {
         for heading in ["nutrition facts", "supplement facts"] {
-            guard let range = line.range(of: heading, options: [.caseInsensitive, .diacriticInsensitive]) else {
-                continue
+            var searchStart = line.startIndex
+            var priorMentionWasProse = false
+            while searchStart < line.endIndex,
+                  let range = line.range(
+                    of: heading, options: [.caseInsensitive, .diacriticInsensitive],
+                    range: searchStart..<line.endIndex
+                  ) {
+                let before = trimmed(String(line[..<range.lowerBound]))
+                let after = trimmed(String(line[range.upperBound...]))
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ":–—- "))
+                let validPrefix = before.isEmpty
+                    || firstRowThatStatesAmount(in: before) == before.startIndex
+                    || firstAdditionalRow(in: before)?.nameStart == before.startIndex
+                if startsPanelContent(after, next: nextLine), validPrefix || priorMentionWasProse {
+                    return range
+                }
+                if !startsPanelContent(after, next: nextLine) { priorMentionWasProse = true }
+                searchStart = range.upperBound
             }
-            let before = trimmed(String(line[..<range.lowerBound]))
-            let after = trimmed(String(line[range.upperBound...]))
-                .trimmingCharacters(in: CharacterSet(charactersIn: ":–—- "))
-            let validPrefix = before.isEmpty
-                || firstRowThatStatesAmount(in: before) == before.startIndex
-                || firstAdditionalRow(in: before)?.nameStart == before.startIndex
-            guard validPrefix, startsPanelContent(after, next: nextLine) else { continue }
-            return range
         }
         return nil
     }

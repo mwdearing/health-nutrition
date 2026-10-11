@@ -562,6 +562,13 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("6"))
     }
 
+    func testRepeatedNutritionFactsMentionCanPrecedeTheRealFlattenedHeading() throws {
+        let panel = parse(["Protein 20g", "See Nutrition Facts Nutrition Facts Protein 6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein), "the earlier callout is outside the panel")
+    }
+
     func testConflictingNamedDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
         let panel = parse(["Nutrition Facts", "Sodium 100mg", "Sodium 2g", "Sodium 2O0mg"])
 
