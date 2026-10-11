@@ -131,7 +131,8 @@ final class CommunityLabelUploadTests: XCTestCase {
 
         XCTAssertTrue(model.save(now: now))
         await model.uploadTask?.value
-        let nutrients = try XCTUnwrap(await submitter.received.first?.nutrients)
+        let sent = await submitter.received
+        let nutrients = try XCTUnwrap(sent.first?.nutrients)
 
         XCTAssertEqual(nutrients["energyKcal"], 120)
         XCTAssertEqual(nutrients["sodium"], 200)
@@ -279,7 +280,8 @@ final class CommunityLabelUploadTests: XCTestCase {
 
         XCTAssertTrue(model.save(now: now))
         await model.uploadTask?.value
-        let nutrients = try XCTUnwrap(await submitter.received.first?.nutrients)
+        let sent = await submitter.received
+        let nutrients = try XCTUnwrap(sent.first?.nutrients)
 
         XCTAssertEqual(nutrients.count, 3)
         XCTAssertNil(nutrients["salt"])
