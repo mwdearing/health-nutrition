@@ -132,6 +132,7 @@ jobs:
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          HCAPTCHA_SITE_KEY: ${{ secrets.HCAPTCHA_SITE_KEY }}
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
@@ -176,7 +177,8 @@ jobs:
             "MARKETING_VERSION=$MARKETING_VERSION" \
             "CURRENT_PROJECT_VERSION=$BUILD_NUMBER" \
             "SUPABASE_URL=${SUPABASE_URL:-}" \
-            "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}"
+            "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
+            "HCAPTCHA_SITE_KEY=${HCAPTCHA_SITE_KEY:-}"
 
       - name: Export and upload to App Store Connect
         env:
