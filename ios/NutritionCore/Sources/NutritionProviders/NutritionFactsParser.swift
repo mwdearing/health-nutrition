@@ -101,30 +101,33 @@ public enum NutritionFactsParser {
             }
             var residual = withoutDailyValueHeading(in: panelSuffix ?? line)
             let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
+            // A preheading serving marker cannot take the heading line as its split measure. The
+            // panel heading owns that line and any row flattened after it.
+            let followingForServing = index < panelStart && index + 1 == panelStart ? nil : following
             var usedFollowingForServing = false
             let residualLower = residual.lowercased()
-            if let following, let marker = residualLower.range(of: "serving size"),
+            if let followingForServing, let marker = residualLower.range(of: "serving size"),
                ["", ":"].contains(trimmed(String(
                    residual[self.index(marker.upperBound, in: residual, lowercased: residualLower)...]
                ))),
-               let read = servingSize(in: "\(residual) \(following)")
+               let read = servingSize(in: "\(residual) \(followingForServing)")
             {
                 if index < panelStart {
                     if preheadingSize == nil { preheadingSize = read }
                 } else if panelSize == nil {
                     panelSize = read
                 }
-                residual = withoutServingSize(in: "\(residual) \(following)")
+                residual = withoutServingSize(in: "\(residual) \(followingForServing)")
                 residual = withoutPackagingMetadata(in: residual)
                 usedFollowingForServing = true
             }
-            if let read = servingSize(in: residual, next: following) {
+            if let read = servingSize(in: residual, next: followingForServing) {
                 if index < panelStart {
                     if preheadingSize == nil { preheadingSize = read }
                 } else if panelSize == nil {
                     panelSize = read
                 }
-                residual = withoutServingSize(in: residual, next: following)
+                residual = withoutServingSize(in: residual, next: followingForServing)
                 residual = withoutPackagingMetadata(in: residual)
             }
             if let count = servingsPerContainer(in: residual) {
@@ -192,7 +195,9 @@ public enum NutritionFactsParser {
             let before = trimmed(String(line[..<range.lowerBound]))
             let after = trimmed(String(line[range.upperBound...]))
                 .trimmingCharacters(in: CharacterSet(charactersIn: ":–—- "))
-            let validPrefix = before.isEmpty || firstRowThatStatesAmount(in: before) == before.startIndex
+            let validPrefix = before.isEmpty
+                || firstRowThatStatesAmount(in: before) == before.startIndex
+                || firstAdditionalRow(in: before)?.nameStart == before.startIndex
             guard validPrefix, startsPanelContent(after, next: nextLine) else { continue }
             return range
         }
@@ -207,6 +212,7 @@ public enum NutritionFactsParser {
         }) { return true }
         if servingsPerContainer(in: text) != nil { return true }
         return firstRowThatStatesAmount(in: text, next: nextLine) == text.startIndex
+            || firstAdditionalRow(in: text, next: nextLine)?.nameStart == text.startIndex
     }
 
     /// Which panel these lines are: a **Supplement Facts** panel when its heading is among them, and a

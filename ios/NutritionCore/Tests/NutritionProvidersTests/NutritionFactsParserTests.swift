@@ -594,6 +594,26 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, parse(["Protein 6g"])), dec("6"), "captures without a heading remain supported")
     }
 
+    func testFlattenedSupplementHeadingRecognizesAnAdditionalNutrientRow() throws {
+        let flattened = parse(["Supplement Facts Creatine Monohydrate 3g"])
+        XCTAssertEqual(flattened.panelKind, .supplementFacts)
+        XCTAssertEqual(flattened.additionalNutrients.map(\.name), ["Creatine Monohydrate"])
+        XCTAssertEqual(flattened.additionalNutrient(for: "creatine-monohydrate")?.value, .known(dec("3"), .g))
+
+        let withCallout = parse(["Creatine 5g Supplement Facts Creatine 3g"])
+        XCTAssertEqual(withCallout.panelKind, .supplementFacts)
+        XCTAssertEqual(withCallout.additionalNutrients.map(\.name), ["Creatine"])
+        XCTAssertEqual(withCallout.additionalNutrient(for: "creatine")?.value, .known(dec("3"), .g))
+    }
+
+    func testPreheadingServingMarkerDoesNotConsumeFlattenedPanelHeading() throws {
+        let panel = parse(["Serving size", "Nutrition Facts Protein 6g"])
+
+        XCTAssertNil(panel.servingSize, "a panel heading cannot be the split serving measure")
+        XCTAssertEqual(panel.panelKind, .nutritionFacts)
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
     func testServingSizeFromTheHeadedPanelTakesPrecedenceOverPreheadingPrint() {
         let panel = parse(["Serving size 2 bars", "Nutrition Facts", "Serving size 1 bar", "Protein 6g"])
         XCTAssertEqual(panel.servingSize?.text, "1 bar")
