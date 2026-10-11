@@ -90,14 +90,16 @@ public enum NutritionFactsParser {
             // metadata is taken off first and whatever text is left behind it is still read.
             var residual = withoutDailyValueHeading(in: cleaned[index])
             let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
+            var usedFollowingForServing = false
             let residualLower = residual.lowercased()
             if let following, let marker = residualLower.range(of: "serving size"),
                trimmed(String(residual[self.index(marker.upperBound, in: residual, lowercased: residualLower)...])).isEmpty,
                let read = servingSize(in: "\(residual) \(following)")
             {
                 if size == nil { size = read }
-                index += 2
-                continue
+                residual = withoutServingSize(in: "\(residual) \(following)")
+                residual = withoutPackagingMetadata(in: residual)
+                usedFollowingForServing = true
             }
             if let read = servingSize(in: residual, next: following) {
                 if size == nil { size = read }
@@ -109,10 +111,11 @@ public enum NutritionFactsParser {
                 residual = withoutServingsPerContainer(in: residual)
             }
             guard !residual.isEmpty else {
-                index += 1
+                index += usedFollowingForServing ? 2 : 1
                 continue
             }
-            let read = absorbRows(in: residual, following: following, amounts: &amounts, reviews: &reviews)
+            let rowFollowing = usedFollowingForServing ? nil : following
+            let read = absorbRows(in: residual, following: rowFollowing, amounts: &amounts, reviews: &reviews)
             // Whatever the named rows left on the line may still be a row the panel printed: a
             // supplement lists compounds the table does not name, and they are read as their own rows.
             // The whole line is scanned, not only the text behind the last named row, because a
@@ -122,9 +125,9 @@ public enum NutritionFactsParser {
             // `displayNames`. A name that is a named row itself is never collected twice, so scanning
             // the named rows' own text here is safe.
             let additionalUsedNextLine = absorbAdditionalRows(
-                in: residual, next: read.usedNextLine ? nil : following, into: &extra,
+                in: residual, next: (read.usedNextLine || usedFollowingForServing) ? nil : following, into: &extra,
                 amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
-            index += (read.usedNextLine || additionalUsedNextLine) ? 2 : 1
+            index += (usedFollowingForServing || read.usedNextLine || additionalUsedNextLine) ? 2 : 1
         }
 
         return ParsedNutritionFacts(
@@ -368,6 +371,24 @@ public enum NutritionFactsParser {
             let remainder = String(tail[match.end...])
             if let scan = scanAmount(in: remainder), statesAmount(scan, for: match.row) {
                 return text.index(text.startIndex, offsetBy: start)
+            }
+            if match.row.usualUnit == .kcal {
+                let nextNamed = firstRow(in: remainder)?.nameStart
+                let nextCompound = firstAdditionalRow(in: remainder)?.nameStart
+                let boundary: String.Index? = {
+                    switch (nextNamed, nextCompound) {
+                    case let (named?, compound?): return min(named, compound)
+                    case let (named?, nil): return named
+                    case let (nil, compound?): return compound
+                    case (nil, nil): return nil
+                    }
+                }()
+                if let boundary, boundary > remainder.startIndex {
+                    let head = String(remainder[..<boundary])
+                    if let scan = scanAmount(in: head), statesAmount(scan, for: match.row) {
+                        return text.index(text.startIndex, offsetBy: start)
+                    }
+                }
             }
             if remainder.isEmpty, let nextLine, let scan = scanAmount(in: trimmed(nextLine)),
                statesAmount(scan, for: match.row)
