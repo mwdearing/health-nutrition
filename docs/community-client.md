@@ -33,9 +33,9 @@ Logs and error text never carry a token, key, code or email. The error cases hol
 | `requestEmailCode(email:)` | POST `/auth/v1/otp` with `email` and `create_user: true` |
 | `verifyEmailCode(email:code:)` | POST `/auth/v1/verify` with `type: "email"`, `email`, `token` |
 | `validSession()` | POST `/auth/v1/token?grant_type=refresh_token` when the access token has less than 60 seconds left |
-| `signOut()` | POST `/auth/v1/logout`, best effort |
+| `signOut()` | POST `/auth/v1/logout?scope=local`, best effort for the current server session |
 
-Sign-in and renewal store the new session. A renewal rejected with 400, 401 or 403 clears the stored session and throws `signedOut`. A network failure during renewal keeps the session. Concurrent callers share one renewal, because the refresh token rotates. `signOut()` always clears the local session, even when the server call fails.
+Sign-in and renewal store the new session. A renewal rejected with 400, 401 or 403 clears the stored session and throws `signedOut`. A network failure during renewal keeps the session. Concurrent callers share one renewal, because the refresh token rotates. `signOut()` always clears the local session, even when the server call fails; the best-effort logout asks the server to end only this device's session.
 
 ## Account and catalog endpoints
 

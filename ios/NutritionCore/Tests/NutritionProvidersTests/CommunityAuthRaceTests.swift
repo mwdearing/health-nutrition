@@ -9,14 +9,21 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
     let entered: AsyncStream<String>
     private let refreshStatus: Int
     private let profileStatus: Int
+    private let authUserID: String
     private var gates: [String: AsyncStream<Void>] = [:]
     private var gateContinuations: [String: AsyncStream<Void>.Continuation] = [:]
     private var recorded: [String] = []
     private var recordedLogoutScopes: [String?] = []
 
-    init(gated: Set<String>, refreshStatus: Int = 200, profileStatus: Int = 401) {
+    init(
+        gated: Set<String>,
+        refreshStatus: Int = 200,
+        profileStatus: Int = 401,
+        authUserID: String = "22222222-3333-4444-5555-666666666666"
+    ) {
         self.profileStatus = profileStatus
         self.refreshStatus = refreshStatus
+        self.authUserID = authUserID
         (entered, enteredContinuation) = AsyncStream<String>.makeStream()
         for kind in gated {
             let (stream, continuation) = AsyncStream<Void>.makeStream()
@@ -61,7 +68,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         switch kind {
         case "signin", "verify":
             status = 200
-            body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"22222222-3333-4444-5555-666666666666","email":"new@example.com"}}"#
+            body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"\#(authUserID)","email":"new@example.com"}}"#
         case "refresh": status = refreshStatus; body = refreshStatus == 200 ? refreshedBody : "{}"
         case "delete": status = 204; body = ""
         case "profile": status = profileStatus; body = profileStatus == 403 ? #"{"code":"28000"}"# : "{}"
@@ -373,6 +380,26 @@ final class CommunityAuthRaceTests: XCTestCase {
         transport.release("refresh")
         await assertCommunityError(.signedOut) { try await refresh.value }
         XCTAssertNil(try store.load(), "an old refresh must not restore the deleted account")
+    }
+
+    func testSuccessfulDeleteFencesPendingSameAccountAuthentication() async throws {
+        let initial = testSession()
+        let store = InMemoryCommunitySessionStore(initial)
+        let transport = LifecycleTransport(gated: ["delete", "signin"], authUserID: initial.userID)
+        let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+        let signIn = Task { try await client.auth.signInWithApple(idToken: "same-id", nonce: "same-nonce") }
+        await transport.waitFor("signin")
+
+        transport.release("delete")
+        try await deletion.value
+        XCTAssertNil(try store.load())
+
+        transport.release("signin")
+        await assertCommunityError(.signedOut) { try await signIn.value }
+        XCTAssertNil(try store.load(), "a pending response for the deleted account must not restore credentials")
     }
 
     func testDeleteClearFailurePropagatesAfterServerSuccess() async throws {

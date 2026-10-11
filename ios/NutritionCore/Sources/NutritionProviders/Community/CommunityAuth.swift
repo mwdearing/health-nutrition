@@ -166,6 +166,7 @@ public actor CommunityAuth {
         }
         guard session?.userID == userID else { return false }
         generation += 1
+        authenticationIntent += 1
         do { try store.clear() } catch { throw CommunityError.storage }
         return true
     }
