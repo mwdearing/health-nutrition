@@ -103,9 +103,31 @@ def serialize(first_sql, second_sql, a, b):
     second.marker('SECOND_FINISHED'); second_result = second.close()
     return first_result, second_result
 
+def immutable_barcode_regressions(owner, other):
+    failures=[]
+    # Each path gets an independent barcode-free identity and an unused valid barcode.
+    for label, actor, prefix in [('owner update',owner,'77777777770'),
+                                 ('other account first contribution',other,'77777777771')]:
+        first=submit(owner,request(product('Synthetic immutable '+label)))
+        weighted=sum(int(digit)*(3 if index%2==0 else 1)
+                     for index,digit in enumerate(reversed(prefix)))
+        barcode=prefix+str((-weighted)%10)
+        candidate=request(product('Synthetic immutable '+label,barcode),first['product_id'],
+                          first['current_revision'] if actor==owner else None)
+        try:
+            expect_error(actor,'submit_catalog_product_v2',jsql(candidate),'invalid_request')
+        except AssertionError as error:
+            failures.append(label+': '+str(error))
+            continue
+        unchanged=rpc(owner,'get_my_catalog_contribution_v2',literal(first['product_id']))
+        assert unchanged['current_revision']==first['current_revision']
+        assert sql(f"select count(*) from catalog_v2.barcode_bindings where product_id={literal(first['product_id'])};")=='0'
+    assert not failures, '\n'.join(failures)
+
 def main():
     sql('update catalog.settings set daily_limit=1000,min_devices=2;')
     a, b = account(), account()
+    immutable_barcode_regressions(a,b)
     # Execute canonical fixtures in PostgreSQL, using the frozen cross-platform byte corpus.
     for filename, length in [('exact-16384-valid.json', 16384), ('oversize-16385-invalid.json', 16385)]:
         raw = json.loads((FIXTURES / filename).read_text())

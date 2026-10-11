@@ -292,7 +292,7 @@ language sql set search_path='' as $$
 create function catalog_v2.write_operation(body jsonb, withdrawing boolean) returns jsonb
 language plpgsql set search_path='' as $$
 declare a uuid; op uuid; pid uuid; code text; canonical_body text; prior catalog_v2.receipts%rowtype;
- c catalog_v2.contributions%rowtype; consent catalog_v2.consent%rowtype; rev bigint; used integer; content jsonb; source_name text;
+ c catalog_v2.contributions%rowtype; consent catalog_v2.consent%rowtype; rev bigint; used integer; content jsonb; source_name text; identity_created boolean:=false;
 begin
  a:=catalog_v2.live_account();
  if body is null or jsonb_typeof(body)<>'object' then perform catalog_v2.fail('invalid_request'); end if;
@@ -335,7 +335,10 @@ begin
    if pid is null then select product_id into pid from catalog_v2.barcode_bindings where barcode=code;
    elsif exists(select 1 from catalog_v2.barcode_bindings where barcode=code and product_id<>pid) then perform catalog_v2.fail('invalid_request'); end if;
   end if;
-  if pid is null then insert into catalog_v2.products default values returning id into pid; end if;
+  if pid is null then
+   insert into catalog_v2.products default values returning id into pid;
+   identity_created:=true;
+  end if;
  end if;
  perform 1 from catalog_v2.products where id=pid for update;
  if not found then perform catalog_v2.fail('invalid_request'); end if;
@@ -343,7 +346,7 @@ begin
   if exists(select 1 from catalog_v2.products where id=pid and kind is not null and kind<>body#>>'{product,kind}') then perform catalog_v2.fail('invalid_request'); end if;
   update catalog_v2.products set kind=body#>>'{product,kind}' where id=pid and kind is null;
   -- Barcode identities are immutable; adding/changing/removing one through an update is not permitted.
-  if exists(select 1 from catalog_v2.barcode_bindings b where b.product_id=pid and b.barcode is distinct from code) then perform catalog_v2.fail('invalid_request'); end if;
+  if not identity_created and (select b.barcode from catalog_v2.barcode_bindings b where b.product_id=pid) is distinct from code then perform catalog_v2.fail('invalid_request'); end if;
   if code is not null then insert into catalog_v2.barcode_bindings values(code,pid) on conflict do nothing; end if;
   if exists(select 1 from catalog_v2.rejections where product_id=pid) then perform catalog_v2.fail('rejected'); end if;
  end if;
