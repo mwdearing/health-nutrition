@@ -15,7 +15,10 @@
     "decimal": {
       "type": "string",
       "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$",
-      "description": "Additionally value <= 1000000000; preserve spelling for receipt identity."
+      "description": "Additionally value <= 1000000000; preserve spelling for receipt identity.",
+      "not": {
+        "pattern": "\u0000"
+      }
     },
     "unit": {
       "enum": [
@@ -70,7 +73,10 @@
         },
         "text": {
           "type": "string",
-          "maxLength": 80
+          "maxLength": 80,
+          "not": {
+            "pattern": "\u0000"
+          }
         }
       },
       "required": [
@@ -110,12 +116,18 @@
                 {
                   "pattern": "^ingredient:[\\s\\S]+$"
                 }
-              ]
+              ],
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             "display_name": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 120
+              "maxLength": 120,
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             "state": {
               "enum": [
@@ -167,12 +179,18 @@
                 {
                   "pattern": "^ingredient:[\\s\\S]+$"
                 }
-              ]
+              ],
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             "display_name": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 120
+              "maxLength": 120,
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             "state": {
               "enum": [
@@ -217,12 +235,18 @@
                 {
                   "pattern": "^ingredient:[\\s\\S]+$"
                 }
-              ]
+              ],
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             "display_name": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 120
+              "maxLength": 120,
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             "state": {
               "enum": [
@@ -248,13 +272,19 @@
         "name": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 120
+          "maxLength": 120,
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "brand": {
           "anyOf": [
             {
               "type": "string",
-              "maxLength": 80
+              "maxLength": 80,
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -265,7 +295,10 @@
           "anyOf": [
             {
               "type": "string",
-              "pattern": "^([0-9]{8}|[0-9]{12}|[0-9]{13})$"
+              "pattern": "^([0-9]{8}|[0-9]{12}|[0-9]{13})$",
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -320,17 +353,26 @@
       "properties": {
         "operation_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "client_revision_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "product_id": {
           "anyOf": [
             {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -341,7 +383,10 @@
           "anyOf": [
             {
               "type": "string",
-              "pattern": "^[1-9][0-9]*$"
+              "pattern": "^[1-9][0-9]*$",
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -354,7 +399,10 @@
         },
         "consent_generation": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "product": {
           "$ref": "#/$defs/product"
@@ -376,19 +424,31 @@
       "properties": {
         "operation_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "client_revision_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "product_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "expected_server_revision": {
           "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
         }
       },
       "required": [
@@ -440,11 +500,17 @@
       "properties": {
         "distinct_accounts": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "verification_threshold": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "not": {
+            "pattern": "\u0000"
+          }
         }
       },
       "required": [
@@ -458,14 +524,23 @@
       "properties": {
         "product_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "representative_revision": {
           "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "attribution": {
-          "type": "string"
+          "type": "string",
+          "not": {
+            "pattern": "\u0000"
+          }
         }
       },
       "required": [
@@ -480,7 +555,10 @@
       "properties": {
         "representative_revision": {
           "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "product": {
           "$ref": "#/$defs/product"
@@ -501,11 +579,17 @@
       "properties": {
         "product_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "representative_revision": {
           "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "product": {
           "$ref": "#/$defs/product"
@@ -556,19 +640,31 @@
       "properties": {
         "operation_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "product_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "acknowledged_revision": {
           "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "current_revision": {
           "type": "string",
-          "pattern": "^[1-9][0-9]*$"
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "current_state": {
           "enum": [
@@ -600,13 +696,19 @@
       "properties": {
         "product_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "current_revision": {
           "anyOf": [
             {
               "type": "string",
-              "pattern": "^[1-9][0-9]*$"
+              "pattern": "^[1-9][0-9]*$",
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -672,7 +774,10 @@
                 },
                 "generation": {
                   "type": "string",
-                  "pattern": "^(0|[1-9][0-9]*)$"
+                  "pattern": "^(0|[1-9][0-9]*)$",
+                  "not": {
+                    "pattern": "\u0000"
+                  }
                 }
               },
               "required": [
@@ -687,7 +792,10 @@
         },
         "consent_generation": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "sharing_permission": {
           "type": "boolean"
@@ -712,7 +820,10 @@
         },
         "generation": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "acknowledged": {
           "const": true
@@ -737,7 +848,10 @@
         "next_cursor": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "string",
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -786,13 +900,19 @@
           ]
         },
         "field": {
-          "type": "string"
+          "type": "string",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "current_revision": {
           "anyOf": [
             {
               "type": "string",
-              "pattern": "^[1-9][0-9]*$"
+              "pattern": "^[1-9][0-9]*$",
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -809,11 +929,17 @@
         },
         "consent_generation": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "retry_after_seconds": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)$"
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "not": {
+            "pattern": "\u0000"
+          }
         }
       },
       "required": [
@@ -827,7 +953,10 @@
         "p_query": {
           "type": "string",
           "minLength": 2,
-          "maxLength": 120
+          "maxLength": 120,
+          "not": {
+            "pattern": "\u0000"
+          }
         },
         "p_kind": {
           "anyOf": [
@@ -847,7 +976,10 @@
           "anyOf": [
             {
               "type": "string",
-              "description": "At most 1024 UTF-8 bytes; fingerprint bound"
+              "description": "At most 1024 UTF-8 bytes; fingerprint bound",
+              "not": {
+                "pattern": "\u0000"
+              }
             },
             {
               "type": "null"
@@ -870,7 +1002,10 @@
       "properties": {
         "p_product_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
         }
       },
       "required": [

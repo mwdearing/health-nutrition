@@ -49,6 +49,27 @@ final class CustomProductValidationTests: XCTestCase {
         }
         XCTAssertNoThrow(try CustomProductValidation.validate(product([fact("ingredient:a\nb", .unknown)])))
     }
+    func testNullScalarRejectedBeforeJSONBTransport() {
+        let nul = "\u{0000}"
+        let contents = [
+            product(name: "Synthetic" + nul),
+            CustomProductContent(name: "Synthetic", brand: "Brand" + nul, kind: .food, basis: .per100g),
+            product(serving: .init(quantity: 1, unit: .g, text: "Serving" + nul)),
+            product([fact("ingredient:synthetic" + nul, .unknown)]),
+            product([ProductFact(key: "protein", displayName: "Protein" + nul, value: .unknown)]),
+        ]
+        for content in contents {
+            XCTAssertThrowsError(try CustomProductValidation.validate(content))
+        }
+    }
+    func testNFCDisplayBoundsKeepPublicContentValid() {
+        let expanded = String(repeating: "\u{0344}", count: 61)
+        XCTAssertThrowsError(try CustomProductValidation.validate(product(name: expanded)))
+        XCTAssertThrowsError(try CustomProductValidation.validate(CustomProductContent(name: "Synthetic", brand: String(repeating: "\u{0344}", count: 41), kind: .food, basis: .per100g)))
+        XCTAssertThrowsError(try CustomProductValidation.validate(product(serving: .init(quantity: 1, unit: .g, text: String(repeating: "\u{0344}", count: 41)))))
+        XCTAssertThrowsError(try CustomProductValidation.validate(product([ProductFact(key: "protein", displayName: expanded, value: .unknown)])))
+        XCTAssertNoThrow(try CustomProductValidation.validate(product([fact("ingredient:" + String(repeating: "\u{0344}", count: 53), .unknown)])))
+    }
     func testBarcodeValidation() throws {
         for barcode in ["96385074", "036000291452", "0036000291452"] {
             XCTAssertNoThrow(try CustomProductValidation.validate(CustomProductContent(name: "Synthetic", barcode: barcode, kind: .food, basis: .per100g)))

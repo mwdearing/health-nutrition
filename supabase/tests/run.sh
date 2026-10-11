@@ -13,3 +13,5 @@ psql_() { "$engine" exec -i "$name" psql -U postgres -v ON_ERROR_STOP=1 -q "$@";
 psql_ -f - < supabase/tests/stub.sql
 for f in supabase/migrations/*.sql; do psql_ -f - < "$f"; done
 psql_ -f - < supabase/tests/community_catalog.sql
+psql_ -f - < supabase/tests/shared_products_v2.sql
+python3 supabase/tests/shared_products_v2_concurrency.py "$engine" "$name"

@@ -26,3 +26,5 @@ Additional semantic vectors: `amount-max-valid` accepts the numeric maximum; `am
 
 `key-identity-valid` keeps composed/decomposed accented keys distinct and accepts a newline in a nonempty ingredient suffix. Consumers must compare exact UTF-8 keys for uniqueness.
 `key-duplicate-invalid` repeats a byte-identical key and must fail semantic uniqueness validation.
+
+`renderer-sql-input.json`/`renderer-sql-expected.json` cover the JSONB-representable scalar domain. The abstract renderer fixture retains U+0000 for client algorithm conformance; PostgreSQL rejects it before an RPC. `nul-text-invalid.json` requires client/schema rejection and a SQL JSONB-decoder rejection check. SQL tests also execute the unchanged exact 16384/16385-byte fixtures.

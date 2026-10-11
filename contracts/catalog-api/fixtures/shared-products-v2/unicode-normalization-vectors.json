@@ -3,6 +3,10 @@
     {
       "input": "Café",
       "nfc": "Café"
+    },
+    {
+      "input": "̈́",
+      "nfc": "̈́"
     }
   ],
   "search": [

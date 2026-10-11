@@ -1,7 +1,7 @@
 import Foundation
 
 public struct CustomProductFieldError: Error, Sendable, Equatable {
-    public enum Code: String, Sendable { case required, tooLong, tooManyFacts, duplicateKey, unsupportedKey, invalidAmount, unsupportedDimension, servingRequired, invalidBarcode }
+    public enum Code: String, Sendable { case required, tooLong, tooManyFacts, duplicateKey, unsupportedKey, invalidAmount, unsupportedDimension, servingRequired, invalidBarcode, invalidText }
     public let field: String
     public let code: Code
     public init(field: String, code: Code) { self.field = field; self.code = code }
@@ -39,10 +39,10 @@ public enum CustomProductValidation {
         var keys = Set<Data>()
         for (index, fact) in content.facts.enumerated() {
             let path = "facts[\(index)]"
-            try text(fact.key, field: path + ".key", limit: 64, required: true)
+            try text(fact.key, field: path + ".key", limit: 64, required: true, display: false)
             try text(fact.displayName, field: path + ".display_name", limit: 120, required: true)
             guard keys.insert(Data(fact.key.utf8)).inserted else { throw CustomProductFieldError(field: path + ".key", code: .duplicateKey) }
-            guard standardDimensions[fact.key] != nil || (fact.key.hasPrefix("ingredient:") && fact.key.unicodeScalars.count > 11) else {
+            guard standardDimensions[fact.key] != nil || (fact.key.utf8.starts(with: "ingredient:".utf8) && fact.key.unicodeScalars.count > 11) else {
                 throw CustomProductFieldError(field: path + ".key", code: .unsupportedKey)
             }
             let unit: MeasureUnit?
@@ -59,9 +59,18 @@ public enum CustomProductValidation {
             }
         }
     }
-    private static func text(_ value: String, field: String, limit: Int, required: Bool = false) throws {
+    private static func text(_ value: String, field: String, limit: Int, required: Bool = false, display: Bool = true) throws {
+        guard !value.unicodeScalars.contains(where: { $0.value == 0 }) else { throw CustomProductFieldError(field: field, code: .invalidText) }
         if required && value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw CustomProductFieldError(field: field, code: .required) }
         guard value.unicodeScalars.count <= limit else { throw CustomProductFieldError(field: field, code: .tooLong) }
+        if display {
+            // Foundation's ICU transform preserves long combining-mark runs in the conformance tests.
+            // Some corelibs precomposedStringWithCanonicalMapping implementations truncate such runs.
+            guard let normalized = value.applyingTransform(StringTransform("NFC"), reverse: false) else {
+                throw CustomProductFieldError(field: field, code: .invalidText)
+            }
+            guard normalized.unicodeScalars.count <= limit else { throw CustomProductFieldError(field: field, code: .tooLong) }
+        }
     }
     private static func amount(_ value: Decimal, field: String, positive: Bool = false) throws {
         var input = value
