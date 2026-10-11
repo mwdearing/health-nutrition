@@ -42,7 +42,7 @@ def test_superseded_partial_restore_warning_is_separate_and_visible() -> None:
     warning = apply.index("if outcome.isPartialRestore")
     latest_import_fence = apply.index("guard generation == importGeneration")
     assert warning < latest_import_fence
-    assert "else if case .imported = outcome" in apply
+    assert "else if generation == importGeneration, case .imported = outcome" in apply
 
     clear_import = source.split("public func clearImport() {", maxsplit=1)[1].split("\n    }", maxsplit=1)[0]
     assert "incompleteRestoreWarning" not in clear_import

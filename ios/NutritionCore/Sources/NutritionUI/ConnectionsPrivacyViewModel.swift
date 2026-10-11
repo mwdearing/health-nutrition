@@ -757,8 +757,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         }
         if outcome.isPartialRestore {
             incompleteRestoreWarning = Self.partialRestoreWarningMessage
-        } else if case .imported = outcome {
-            // A complete restore can only follow an empty-store check, so no earlier partial rows remain.
+        } else if generation == importGeneration, case .imported = outcome {
+            // Only the current complete restore can replace a partial warning; a late older success must not
+            // conceal rows retained by a newer partial restore.
             incompleteRestoreWarning = nil
         }
 
