@@ -180,6 +180,9 @@ public final class GoalsViewModel: ObservableObject {
         self.preferences = preferences
     }
 
+    /// The unit system the screen shows amounts in, read from the same preferences as the rest of the app.
+    public var unitSystem: UnitSystem { preferences.unitSystem }
+
     /// Every offered nutrient, with a target's text where one is stored.
     public func load() {
         snapshotUnits = Self.snapshotValueUnits(in: journal)
@@ -336,6 +339,30 @@ public final class GoalsViewModel: ObservableObject {
         visibility.setGoalShownOnToday(nutrient, shown: shown)
         load()
         return true
+    }
+
+    /// The goal stored for one nutrient key exactly as it is stored, or nil when none is. A read that
+    /// fails is thrown, so a caller never takes a failed read for "no goal".
+    public func storedGoal(for nutrient: String) throws -> NutrientGoal? {
+        try store.goal(for: nutrient)
+    }
+
+    /// Puts a goal back exactly as it was read, or removes it when there was none. Used to undo a
+    /// partly finished save. Returns whether the store accepted the change.
+    @discardableResult
+    public func restoreGoal(_ goal: NutrientGoal?, for nutrient: String) -> Bool {
+        do {
+            if let goal {
+                try store.setGoal(goal)
+            } else {
+                try store.removeGoal(nutrient: nutrient)
+            }
+            load()
+            return true
+        } catch {
+            errorMessage = Self.saveFailedMessage
+            return false
+        }
     }
 
     /// Removes the target for `nutrient`, so the nutrient falls back to a plain total.

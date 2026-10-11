@@ -245,6 +245,31 @@ final class ScreenshotCaptureTests: XCTestCase {
         try capture("GoalsView") { NavigationStack { GoalsView(model: services.goals) } }
     }
 
+    /// A setup sheet on its results step with invented answers. A new model per capture, because closing
+    /// the sheet clears its answers and each light and dark picture opens its own sheet.
+    func testGoalSetupView() throws {
+        let services = try makeSeededServices()
+        services.goals.load()
+        try capture("GoalSetupView") {
+            NavigationStack { GoalSetupView(model: sampleGoalSetup(services.goals)) }
+        }
+    }
+
+    private func sampleGoalSetup(_ goals: GoalsViewModel) -> GoalSetupViewModel {
+        let model = GoalSetupViewModel(goals: goals)
+        model.aim = .maintain
+        model.sex = .female
+        model.ageText = "34"
+        model.heightCentimetersText = "165"
+        model.weightKilogramsText = "62"
+        model.activity = .moderate
+        model.next()
+        model.next()
+        model.next()
+        model.next()
+        return model
+    }
+
     func testConnectionsPrivacyView() throws {
         let services = try makeSeededServices()
         try capture("ConnectionsPrivacyView") {
