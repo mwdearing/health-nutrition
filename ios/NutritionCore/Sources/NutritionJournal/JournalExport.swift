@@ -411,6 +411,8 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case malformedFavoriteAmount(String, String)
     /// A date in the document cannot be represented as a finite timestamp.
     case nonFiniteDate
+    /// A finite timestamp falls outside the four-digit UTC date format this export writes.
+    case unrepresentableDate
 }
 
 /// One active intake with every one of its revisions, as read in a single pass.
@@ -640,6 +642,8 @@ public enum JournalExporter {
         let interval = date.timeIntervalSince1970
         guard interval.isFinite else { throw JournalExportError.nonFiniteDate }
         let whole = interval.rounded(.down)
+        // This export's existing contract floors seconds and rounds the positive remainder, so exact
+        // negative half-microseconds round toward positive infinity (for example, -0.5 μs becomes epoch).
         var microseconds = Int(((interval - whole) * 1_000_000).rounded())
         var seconds = whole
         if microseconds >= 1_000_000 {
@@ -648,7 +652,13 @@ public enum JournalExporter {
             seconds += 1
         }
         let digits = String(format: "%06d", microseconds)
-        return "\(formatter.string(from: Date(timeIntervalSince1970: seconds))).\(digits)Z"
+        let secondDate = Date(timeIntervalSince1970: seconds)
+        let secondText = try fourDigitUTCSecondText(seconds)
+        let formatted = formatter.string(from: secondDate)
+        // Foundation's Gregorian formatter uses a historical Julian/Gregorian cutover. Use the explicit
+        // proleptic-Gregorian text for older dates so their RFC-3339 meaning remains stable.
+        let prefix = formatted == secondText ? formatted : secondText
+        return "\(prefix).\(digits)Z"
     }
 
     /// Reads back fractional dates from earlier builds and other RFC-3339 writers. Fractions are converted
@@ -656,8 +666,10 @@ public enum JournalExporter {
     static func date(
         fromExportedText text: String, using formatter: DateFormatter, fallback: ISO8601DateFormatter
     ) -> Date? {
+        guard hasSupportedFourDigitYearPrefix(text) else { return nil }
         guard let dot = text.firstIndex(of: ".") else {
-            return finiteDate(formatter.date(from: text) ?? fallback.date(from: text))
+            return finiteDate(prolepticUTCDate(fromWholeSecondText: text)
+                ?? formatter.date(from: text) ?? fallback.date(from: text))
         }
         let zoneStart = text[text.index(after: dot)...].firstIndex {
             $0 == "Z" || $0 == "z" || $0 == "+" || $0 == "-"
@@ -667,7 +679,8 @@ public enum JournalExporter {
         guard !digits.isEmpty, digits.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
         let zone = zoneStart.map { String(text[$0...]) } ?? ""
         let secondsText = String(text[..<dot]) + zone
-        guard let seconds = formatter.date(from: secondsText) ?? fallback.date(from: secondsText) else { return nil }
+        guard let seconds = prolepticUTCDate(fromWholeSecondText: secondsText)
+                ?? formatter.date(from: secondsText) ?? fallback.date(from: secondsText) else { return nil }
 
         // Keep the conversion bounded even for hostile fractions. Leading zeroes do not consume the
         // significant-digit allowance, and arbitrary shorter fractions remain accepted.
@@ -686,6 +699,99 @@ public enum JournalExporter {
     private static func finiteDate(_ date: Date?) -> Date? {
         guard let date, date.timeIntervalSince1970.isFinite else { return nil }
         return date
+    }
+
+    private static func hasSupportedFourDigitYearPrefix(_ text: String) -> Bool {
+        let bytes = Array(text.utf8)
+        guard bytes.count >= 5, bytes[4] == 45,
+              (0..<4).allSatisfy({ (48...57).contains(bytes[$0]) }) else { return false }
+        return bytes[0..<4].contains(where: { $0 != 48 })
+    }
+
+    private static func prolepticUTCDate(fromWholeSecondText text: String) -> Date? {
+        let bytes = Array(text.utf8)
+        guard bytes.count == 20 || bytes.count == 25,
+              bytes[4] == 45, bytes[7] == 45, bytes[10] == 84,
+              bytes[13] == 58, bytes[16] == 58 else { return nil }
+        let digitPositions = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
+        guard digitPositions.allSatisfy({ (48...57).contains(bytes[$0]) }) else { return nil }
+        func number(_ start: Int, _ count: Int) -> Int {
+            bytes[start..<(start + count)].reduce(0) { $0 * 10 + Int($1 - 48) }
+        }
+        let year = number(0, 4)
+        let month = number(5, 2)
+        let day = number(8, 2)
+        let hour = number(11, 2)
+        let minute = number(14, 2)
+        let second = number(17, 2)
+        guard (1...9_999).contains(year), (1...12).contains(month),
+              (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second) else { return nil }
+        let leap = year.isMultiple(of: 4) && (!year.isMultiple(of: 100) || year.isMultiple(of: 400))
+        let daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        guard (1...daysInMonth[month - 1]).contains(day) else { return nil }
+
+        var offset = 0
+        if bytes.count == 20 {
+            guard bytes[19] == 90 || bytes[19] == 122 else { return nil }
+        } else {
+            guard (bytes[19] == 43 || bytes[19] == 45), bytes[22] == 58,
+                  (48...57).contains(bytes[20]), (48...57).contains(bytes[21]),
+                  (48...57).contains(bytes[23]), (48...57).contains(bytes[24]) else { return nil }
+            let offsetHour = number(20, 2)
+            let offsetMinute = number(23, 2)
+            guard (0...23).contains(offsetHour), (0...59).contains(offsetMinute) else { return nil }
+            let sign = bytes[19] == 43 ? 1 : -1
+            offset = sign * (offsetHour * 3_600 + offsetMinute * 60)
+        }
+
+        // Inverse of the proleptic-Gregorian day conversion used by the writer.
+        var adjustedYear = year
+        adjustedYear -= month <= 2 ? 1 : 0
+        let era = adjustedYear / 400
+        let yearOfEra = adjustedYear - era * 400
+        let adjustedMonth = month + (month > 2 ? -3 : 9)
+        let dayOfYear = (153 * adjustedMonth + 2) / 5 + day - 1
+        let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+        let daysSinceEpoch = era * 146_097 + dayOfEra - 719_468
+        let localSeconds = daysSinceEpoch * 86_400 + hour * 3_600 + minute * 60 + second
+        return Date(timeIntervalSince1970: TimeInterval(localSeconds - offset))
+    }
+
+    private static func fourDigitUTCSecondText(_ seconds: TimeInterval) throws -> String {
+        // The export contract writes UTC calendar years 0001 through 9999. Checking the seconds before the
+        // integer conversion avoids traps for huge but finite Date intervals.
+        let minimum = -62_135_596_800.0 // 0001-01-01T00:00:00Z
+        let maximum = 253_402_300_799.0 // 9999-12-31T23:59:59Z
+        guard seconds.isFinite, seconds >= minimum, seconds <= maximum,
+              seconds.rounded(.towardZero) == seconds else {
+            throw JournalExportError.unrepresentableDate
+        }
+
+        let timestamp = Int64(seconds)
+        var days = timestamp / 86_400
+        var secondOfDay = timestamp % 86_400
+        if secondOfDay < 0 {
+            days -= 1
+            secondOfDay += 86_400
+        }
+
+        // Proleptic Gregorian civil date conversion, based on days since 1970-01-01.
+        let shiftedDays = days + 719_468
+        let era = shiftedDays >= 0 ? shiftedDays / 146_097 : (shiftedDays - 146_096) / 146_097
+        let dayOfEra = shiftedDays - era * 146_097
+        let yearOfEra = (dayOfEra - dayOfEra / 1_460 + dayOfEra / 36_524 - dayOfEra / 146_096) / 365
+        var year = yearOfEra + era * 400
+        let dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
+        let monthPrime = (5 * dayOfYear + 2) / 153
+        let day = dayOfYear - (153 * monthPrime + 2) / 5 + 1
+        let month = monthPrime + (monthPrime < 10 ? 3 : -9)
+        year += month <= 2 ? 1 : 0
+
+        guard (1...9_999).contains(year) else { throw JournalExportError.unrepresentableDate }
+        let hour = secondOfDay / 3_600
+        let minute = secondOfDay % 3_600 / 60
+        let second = secondOfDay % 60
+        return String(format: "%04d-%02d-%02dT%02d:%02d:%02d", year, month, day, hour, minute, second)
     }
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.

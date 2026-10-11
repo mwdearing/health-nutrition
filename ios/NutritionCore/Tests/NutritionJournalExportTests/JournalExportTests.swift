@@ -456,11 +456,70 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
+    func testFiniteDatesOutsideTheFourDigitUTCContractFailClearly() {
+        let unrepresentableIntervals: [TimeInterval] = [
+            1e100,
+            -1e100,
+            253_402_300_800, // 10000-01-01T00:00:00Z
+            -62_167_219_200, // Year zero / 1 BCE; `yyyy` alone would mislabel its era.
+        ]
+        for interval in unrepresentableIntervals {
+            let document = JournalExport(
+                exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
+                intakes: [], tombstones: [], favorites: [])
+            XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+                XCTAssertEqual(error as? JournalExportError, .unrepresentableDate, "interval \(interval)")
+            }
+        }
+    }
+
+    func testExportSupportsTheFourDigitUTCYearBoundaries() throws {
+        let cases: [(TimeInterval, String)] = [
+            (-62_135_596_800, "0001-01-01T00:00:00.000000Z"),
+            (253_402_300_799, "9999-12-31T23:59:59.000000Z"),
+        ]
+        for (interval, expected) in cases {
+            let document = JournalExport(
+                exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
+                intakes: [], tombstones: [], favorites: [])
+            let data = try JournalExporter.encode(document)
+            let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+            XCTAssertTrue(text.contains(expected), text)
+            XCTAssertEqual(try JournalExporter.decode(data).exportedAt.timeIntervalSince1970, interval)
+        }
+    }
+
+    func testNegativeFractionAndHalfMicrosecondKeepExistingRoundingContract() throws {
+        let halfMicrosecond = JournalExport(
+            exportedAt: Date(timeIntervalSince1970: -0.000_000_5), appVersion: "0.1.0",
+            intakes: [], tombstones: [], favorites: [])
+        let beforeEpoch = JournalExport(
+            exportedAt: Date(timeIntervalSince1970: -1.25), appVersion: "0.1.0",
+            intakes: [], tombstones: [], favorites: [])
+        let halfText = try XCTUnwrap(String(data: JournalExporter.encode(halfMicrosecond), encoding: .utf8))
+        let negativeText = try XCTUnwrap(String(data: JournalExporter.encode(beforeEpoch), encoding: .utf8))
+        // Floor plus rounding the positive fractional remainder makes negative ties round toward +infinity.
+        XCTAssertTrue(halfText.contains("1970-01-01T00:00:00.000000Z"), halfText)
+        XCTAssertTrue(negativeText.contains("1969-12-31T23:59:58.750000Z"), negativeText)
+    }
+
     func testDateDecoderRejectsFractionsThatOverflowNumericConversion() throws {
         for fractionLength in [309, 310] {
             let date = "2024-01-15T09:15:00." + String(repeating: "9", count: fractionLength) + "Z"
             let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
             XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), "fraction length \(fractionLength)")
+        }
+    }
+
+    func testDateDecoderRejectsYearsOutsideTheFourDigitUTCContract() {
+        let dates = [
+            "10000-01-01T00:00:00Z",
+            "-0001-01-01T00:00:00Z",
+            "0000-01-01T00:00:00Z",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), date)
         }
     }
 
