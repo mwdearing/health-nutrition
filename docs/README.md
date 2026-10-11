@@ -14,6 +14,7 @@ Public architecture decisions and design notes for this project live here.
 - [Goal setup: estimated daily targets from a few answers](goal-setup.md)
 - [Accounts: sign-in, what is shared, what stays on the phone, deleting an account](accounts.md)
 - [Community client: configuration, endpoints and error mapping](community-client.md)
+- [Community catalog in the app: barcode fallback, sharing a saved label, what is sent](community-catalog-app.md)
 - [Accessibility: naming images and hiding decorative ones](accessibility.md)
 - [ADR 0002: HealthKit sync identifier and sync version](adr/0002-healthkit-sync.md)
 - [HealthKit writer: planning, delivery and lifecycle](healthkit-writer.md)
