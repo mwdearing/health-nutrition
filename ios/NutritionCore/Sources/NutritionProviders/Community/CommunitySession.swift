@@ -21,7 +21,7 @@ public struct CommunitySession: Codable, Equatable, Sendable {
 }
 
 public protocol CommunitySessionStore: Sendable {
-    func load() -> CommunitySession?
+    func load() throws -> CommunitySession?
     func save(_ session: CommunitySession) throws
     func clear() throws
 }
@@ -35,7 +35,7 @@ public final class InMemoryCommunitySessionStore: CommunitySessionStore, @unchec
         self.session = session
     }
 
-    public func load() -> CommunitySession? {
+    public func load() throws -> CommunitySession? {
         lock.withLock { session }
     }
 
@@ -59,17 +59,13 @@ public struct KeychainCommunitySessionStore: CommunitySessionStore {
         self.service = service
     }
 
-    public func load() -> CommunitySession? {
+    public func load() throws -> CommunitySession? {
         var query = baseQuery()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data
-        else {
-            return nil
-        }
-        return try? JSONDecoder().decode(CommunitySession.self, from: data)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        return try Self.decodeLoadResult(status: status, data: item as? Data)
     }
 
     public func save(_ session: CommunitySession) throws {
@@ -90,6 +86,16 @@ public struct KeychainCommunitySessionStore: CommunitySessionStore {
 
     static func validateDeleteStatus(_ status: OSStatus) throws {
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw CommunityError.storage
+        }
+    }
+
+    static func decodeLoadResult(status: OSStatus, data: Data?) throws -> CommunitySession? {
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data else { throw CommunityError.storage }
+        do {
+            return try JSONDecoder().decode(CommunitySession.self, from: data)
+        } catch {
             throw CommunityError.storage
         }
     }
