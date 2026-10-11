@@ -73,7 +73,7 @@ def is_agent_identity(text: str) -> bool:
     if _is_agent_name(_identity_name_candidate(identity)):
         return True
     opening = identity.find("<")
-    if opening < 0 or not identity.endswith(">") or ">" in identity[:opening]:
+    if opening < 0 or not identity.endswith(">"):
         return False
     email = identity[opening + 1:-1].strip()
     if "<" in email or ">" in email:

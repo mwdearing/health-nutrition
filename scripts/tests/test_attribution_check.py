@@ -118,3 +118,8 @@ def test_pr_body_attribution_enforcement_keeps_its_five_minute_deadline() -> Non
     raw = yaml.safe_load(workflow.read_text())
     (job,) = raw["jobs"].values()
     assert job["timeout-minutes"] == 5
+
+
+def test_agent_mailbox_is_rejected_despite_stray_display_name_bracket() -> None:
+    result = run_check(f"{COAUTHOR_TRAILER} Jane > <codex@openai.com>")
+    assert result.returncode == 1
