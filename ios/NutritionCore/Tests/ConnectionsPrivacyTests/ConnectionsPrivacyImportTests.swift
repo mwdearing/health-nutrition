@@ -169,6 +169,21 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
             "This journal export is too large to import.")
     }
 
+    func testAnOversizedSelectedFileIsRefusedWithoutChangingEitherStore() throws {
+        let journal = ImportStubStore()
+        let favorites = ImportStubFavorites()
+        let model = ConnectionsPrivacyViewModel(store: journal, favorites: favorites)
+
+        model.importFileTooLarge()
+
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertNil(model.importSummary)
+        XCTAssertEqual(model.importMessage, "This journal export is too large to import.")
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try journal.deletedIntakes().isEmpty)
+        XCTAssertTrue(try favorites.list().isEmpty)
+    }
+
     /// Stores on disk, so an erase that runs beside a restore is testing the real files.
     private func diskStores() throws -> (SwiftDataJournalStore, SwiftDataFavoritesStore) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -229,6 +244,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         // Queuing it instead would have restored a journal the person had just erased.
         XCTAssertEqual(model.importState, .failed)
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importDuringEraseMessage)
+        XCTAssertFalse(model.isImporting)
         XCTAssertNil(model.importSummary)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
     }
@@ -240,10 +256,12 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     /// does not fail the test, and bounded so a publish that never arrives fails it instead of hanging.
     private func importAndSettle(_ model: ConnectionsPrivacyViewModel, data: Data) async {
         model.importJournal(data: data)
+        XCTAssertTrue(model.isImporting, "the screen can show restore progress while stores are being written")
         let deadline = Date(timeIntervalSinceNow: 10)
         while model.importState == .idle, Date() < deadline {
             try? await Task.sleep(nanoseconds: 1_000_000)
         }
         XCTAssertNotEqual(model.importState, .idle, "the import never published an outcome")
+        XCTAssertFalse(model.isImporting)
     }
 }

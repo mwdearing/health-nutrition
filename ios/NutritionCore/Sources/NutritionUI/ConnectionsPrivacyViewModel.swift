@@ -184,12 +184,14 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var entryCount = 0
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
+    @Published public private(set) var isImporting = false
     @Published public private(set) var importSummary: JournalImportSummary?
     @Published public private(set) var importMessage: String?
     /// Counts how often data was erased, so a host holding this model can tell that the stores behind
     /// its other screens are empty now and reload them. The erase happens on this screen; the totals on
     /// Today and the rows in the Journal would otherwise still show what was just deleted.
     @Published public private(set) var eraseGeneration = 0
+    @Published public private(set) var isErasing = false
     /// Switch positions of the two connections. They stay off because the toggles are disabled.
     @Published public var appleHealthEnabled = false
     @Published public var healthRelayEnabled = false
@@ -244,7 +246,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
     private let importGate = ImportGate()
     /// True while an erase is running, so an import started in that window is refused rather than racing it.
-    private var isErasing = false
     /// Counts imports and erases. An import publishes only while its own number is still the current one,
     /// which is how the outcome of an import an erase overtook is dropped rather than shown.
     private var importGeneration = 0
@@ -649,6 +650,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             // landed afterwards would put back what they just deleted.
             importSummary = nil
             importState = .failed
+            isImporting = false
             importMessage = Self.importDuringEraseMessage
             return
         }
@@ -660,6 +662,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // so every outcome looks stale and none is ever published.
         importGeneration += 1
         let generation = importGeneration
+        isImporting = true
         let gate = importGate
         gate.begin()
         // Created here, on the main actor, and not inside the task below. The restore has to be *running*
@@ -693,6 +696,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// a moment later, and the screen saying "Imported 3 entries" would be describing a journal that is gone.
     private func apply(_ outcome: ImportOutcome, startedAt generation: Int) {
         guard generation == importGeneration else { return }
+        isImporting = false
         switch outcome {
         case .imported(let summary):
             // The export this screen was holding was made from the journal as it was before the restore, so
@@ -728,9 +732,18 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// nothing happened, so this is a failed import and not a cancellation: it says so rather than leaving
     /// the screen looking as if it were never asked.
     public func importCouldNotReadFile() {
+        isImporting = false
         importSummary = nil
         importState = .failed
         importMessage = Self.importFailedMessage
+    }
+
+    /// The selected file exceeded the import byte ceiling before it could be handed to the importer.
+    public func importFileTooLarge() {
+        isImporting = false
+        importSummary = nil
+        importState = .failed
+        importMessage = Self.importFailureText(for: .tooLarge)
     }
 
     /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
@@ -757,6 +770,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Returns the screen's import state to empty, so a later attempt does not read as part of an earlier
     /// one.
     public func clearImport() {
+        isImporting = false
         importState = .idle
         importSummary = nil
         importMessage = nil
