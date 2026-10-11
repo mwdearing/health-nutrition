@@ -156,13 +156,18 @@ public struct TodayView: View {
                 }
                 if self.otherWaterOpen {
                     HStack(spacing: DesignSpacing.s) {
-                        TextField(self.model.otherWaterFieldLabel, text: self.$otherWaterText)
+                        LabeledField(self.model.otherWaterFieldLabel, focus: self.$otherWaterFocused) { focus in
+                            TextField(text: self.$otherWaterText, prompt: Text("For example, 250")) {
+                                Text(self.model.otherWaterFieldLabel)
+                            }
+                            .labelsHidden()
                             .multilineTextAlignment(.trailing)
-                            .focused(self.$otherWaterFocused)
+                            .focused(focus)
                             .accessibilityLabel(self.model.otherWaterFieldLabel)
                             #if os(iOS)
                             .keyboardType(.decimalPad)
                             #endif
+                        }
                         Text(self.model.otherWaterUnitSymbol)
                             .foregroundStyle(TokenColors.textSecondary)
                             .accessibilityHidden(true)

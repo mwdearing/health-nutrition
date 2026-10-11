@@ -115,15 +115,25 @@ public struct DensityConversion: Equatable, Sendable {
     public let ingredientName: String
 }
 
+/// The fields of the Add form that can carry an error.
+public enum AddIntakeField: Sendable, Hashable {
+    case name
+    case amount
+}
+
 @MainActor
 public final class AddIntakeViewModel: ObservableObject {
     /// This form's own identity, so the sheet can be bound to the model rather than to a flag beside
     /// it. It is per instance, so a second add is always a new sheet.
     public nonisolated let formID = UUID()
-    @Published public var name: String = ""
+    @Published public var name: String = "" {
+        didSet { editedFields.insert(.name) }
+    }
     @Published public var brand: String = ""
     @Published public var barcode: String = ""
-    @Published public var amountText: String = ""
+    @Published public var amountText: String = "" {
+        didSet { editedFields.insert(.amount) }
+    }
     @Published public var unit: MeasureUnit = .g
     @Published public var category: String = "food"
     @Published public var occurredAt: Date
@@ -142,15 +152,22 @@ public final class AddIntakeViewModel: ObservableObject {
         didSet { hasChosenKind = true }
     }
     private var hasChosenKind = false
-    @Published public private(set) var nameError: String?
-    @Published public private(set) var amountError: String?
     @Published public private(set) var saveError: String?
-    /// Why the last tap of Save did nothing, or nil when it was not blocked.
+    /// Why the last tap of Save did nothing, or nil when it is not blocked: the sentence that points at the
+    /// marked fields, never a repeat of their errors, since each error is shown under its own field.
     ///
-    /// The same wording the field carries, kept for the line beside the Save button. A long form scrolls:
-    /// the message at the top of it is off screen by the time someone reaches the button, and a Save that
-    /// silently refused looks like a button that is broken rather than one that needs an amount.
-    @Published public private(set) var saveBlockedMessage: String?
+    /// It is derived from the current fields, so it goes as soon as both are right, without another tap of
+    /// Save. A long form scrolls, so the sentence sits beside the Save button, where a Save that silently
+    /// refused would otherwise look like a button that is broken.
+    public var saveBlockedMessage: String? {
+        hasAttemptedSave && (nameError != nil || amountError != nil) ? Self.fixFieldsMessage : nil
+    }
+    /// Whether a tap of Save has been made on this form. Once it has, every field that is wrong shows its error.
+    @Published public private(set) var hasAttemptedSave = false
+    /// The fields edited so far, and the fields focus has left since. An error shows under a field once
+    /// both are true, so a person is not told a field is wrong while they are still typing in it.
+    private var editedFields: Set<AddIntakeField> = []
+    private var leftFields: Set<AddIntakeField> = []
     @Published public private(set) var lookupState: BarcodeLookupState = .idle
     /// Nutrients prefilled from the last successful lookup; a nutrient the source did not give
     /// stays `.unknown` and is never stored as zero.
@@ -251,6 +268,48 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// The name as it is saved: trimmed, so the density lookup and the saved entry read the same text.
     private var typedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// The sentence beside Save when a tap of it was refused, because the fields it names carry their errors.
+    public static let fixFieldsMessage = "Fix the fields marked above."
+    private static let amountMessage = "Enter an amount greater than zero, using digits and a point."
+
+    /// Why the name will not save, whether or not its field shows that yet.
+    public var nameError: String? { typedName.isEmpty ? "Enter a name." : nil }
+
+    /// Why the amount will not save, whether or not its field shows that yet.
+    public var amountError: String? {
+        AmountParser.parseTyped(amountText) == nil ? Self.amountMessage : nil
+    }
+
+    /// The name's error as its field shows it: after a Save attempt, or once the name was edited and left.
+    public var visibleNameError: String? { showsError(for: .name) ? nameError : nil }
+
+    /// The amount's error as its field shows it: after a Save attempt, or once the amount was edited and left.
+    public var visibleAmountError: String? { showsError(for: .amount) ? amountError : nil }
+
+    private func showsError(for field: AddIntakeField) -> Bool {
+        hasAttemptedSave || (editedFields.contains(field) && leftFields.contains(field))
+    }
+
+    /// Called when focus leaves a field, so that an error the person was typing through shows once they are done.
+    public func fieldDidEnd(_ field: AddIntakeField) {
+        // The form reads the visible errors as values, so the change has to be announced for it to redraw.
+        objectWillChange.send()
+        leftFields.insert(field)
+    }
+
+    /// Called when focus enters a field: a new edit starts, so its error waits until the person leaves again.
+    public func fieldDidBegin(_ field: AddIntakeField) {
+        objectWillChange.send()
+        leftFields.remove(field)
+    }
+
+    /// Clears the attempted save and the per-field history, for when the form is reset.
+    public func resetFieldErrors() {
+        hasAttemptedSave = false
+        editedFields = []
+        leftFields = []
+    }
 
     /// The grams a volume typed in a cup, tablespoon or teaspoon is stored as, when a typical density
     /// applies to the food named. Nil when it does not, and the amount then stays in milliliters.
@@ -614,19 +673,15 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
     @discardableResult
     public func save(now: Date) -> Bool {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        nameError = trimmedName.isEmpty ? "Enter a name." : nil
+        hasAttemptedSave = true
+        let trimmedName = typedName
         let amount = AmountParser.parseTyped(amountText)
-        amountError = amount == nil ? "Enter an amount greater than zero, using digits and a point." : nil
         saveError = nil
         guard nameError == nil, let amount else {
-            // Repeated beside the Save button, because on a long form the message at the field is scrolled
-            // off by the time the button is reached. Both problems are named together: fixing one and
-            // tapping Save again would otherwise meet the same silent refusal.
-            saveBlockedMessage = [nameError, amountError].compactMap { $0 }.joined(separator: " ")
+            // The sentence beside the Save button points at the marked fields rather than repeating them, so the
+            // same words are not on the screen twice. It is derived from the fields, so it clears itself.
             return false
         }
-        saveBlockedMessage = nil
 
         let intake = Intake(
             id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier,

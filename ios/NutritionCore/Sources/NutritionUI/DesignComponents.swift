@@ -33,6 +33,77 @@ public struct Card<Content: View>: View {
     }
 }
 
+/// A text input with a caption that stays above it, the input in a box, and any error under the box.
+///
+/// The caption says what the field is for and never goes away: a placeholder vanishes as soon as something
+/// is typed, so the placeholder the input carries is an example, not a repeat of the caption. The caption
+/// is hidden from VoiceOver because the input is labeled by the caption's words, so the field is read once.
+///
+/// The box turns the accent color while the input has focus and the error color when an error is passed. The
+/// error is not read on its own: the caller gives it to the input as the hint, so the field is read once.
+/// Focus is the field's own unless the screen passes its focus state, which it does when it also moves focus
+/// itself. `onFocusEnd` runs when focus leaves, so a screen can show an error once the person is done with a
+/// field rather than while they are still typing.
+public struct LabeledField<Content: View>: View {
+    private let label: String
+    private let error: String?
+    private let externalFocus: FocusState<Bool>.Binding?
+    private let onFocusEnd: (() -> Void)?
+    private let onFocusBegin: (() -> Void)?
+    private let content: (FocusState<Bool>.Binding) -> Content
+    @FocusState private var ownFocus: Bool
+
+    public init(
+        _ label: String,
+        error: String? = nil,
+        focus: FocusState<Bool>.Binding? = nil,
+        onFocusEnd: (() -> Void)? = nil,
+        onFocusBegin: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping (FocusState<Bool>.Binding) -> Content
+    ) {
+        self.label = label
+        self.error = error
+        self.externalFocus = focus
+        self.onFocusEnd = onFocusEnd
+        self.onFocusBegin = onFocusBegin
+        self.content = content
+    }
+
+    private var focus: FocusState<Bool>.Binding { externalFocus ?? $ownFocus }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+            Text(label)
+                .font(.footnote)
+                .foregroundStyle(TokenColors.textSecondary)
+                .accessibilityHidden(true)
+            content(focus)
+                .padding(.horizontal, DesignSpacing.m)
+                .padding(.vertical, DesignSpacing.s)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .background(
+                    TokenColors.background,
+                    in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous)
+                        .stroke(strokeColor, lineWidth: 1))
+            if let error {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.error)
+            }
+        }
+        .onChange(of: focus.wrappedValue) { _, isFocused in
+            if isFocused { onFocusBegin?() } else { onFocusEnd?() }
+        }
+    }
+
+    private var strokeColor: Color {
+        if error != nil { return TokenColors.error }
+        return focus.wrappedValue ? TokenColors.accent : TokenColors.border
+    }
+}
+
 /// The one filled action on a screen: mint with the dark ink on it.
 public struct PrimaryCapsule: View {
     private let title: String

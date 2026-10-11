@@ -6,6 +6,8 @@ public struct GoalsView: View {
     @ObservedObject var model: GoalsViewModel
     @FocusState private var focusedNutrient: String?
     @State private var showingClearConfirmation = false
+    @State private var showingSetup = false
+    @State private var setupModel: GoalSetupViewModel?
 
     public init(model: GoalsViewModel) {
         self.model = model
@@ -17,6 +19,10 @@ public struct GoalsView: View {
                 Text("Set your own daily targets, or leave them empty.")
                     .font(.body)
                     .foregroundStyle(TokenColors.textSecondary)
+                Button("Help me set my goals") {
+                    self.setupModel = GoalSetupViewModel(goals: self.model)
+                    self.showingSetup = true
+                }
             }
             ForEach(model.sections) { section in
                 Section(section.title) {
@@ -44,6 +50,14 @@ public struct GoalsView: View {
         .onAppear { self.model.load() }
         .onChange(of: focusedNutrient) { previous, _ in
             if let previous { self.model.commitTarget(for: previous) }
+        }
+        .sheet(isPresented: $showingSetup, onDismiss: {
+            self.setupModel?.clearAnswers()
+            self.setupModel = nil
+        }) {
+            if let setupModel {
+                NavigationStack { GoalSetupView(model: setupModel) }
+            }
         }
         .confirmationDialog("Clear all goals?", isPresented: $showingClearConfirmation, titleVisibility: .visible) {
             Button("Clear all goals", role: .destructive) {

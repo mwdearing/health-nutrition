@@ -547,21 +547,25 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
     /// A tap of Save that refused an entry says so beside the Save button, not only at the field it
     /// names. On a long form the field is scrolled out of sight by the time someone reaches the button,
     /// and a refusal with nothing next to it reads as a button that does nothing at all.
+    ///
+    /// The line is the sentence that points at the marked fields, not a repeat of their errors: the
+    /// errors are shown under the fields themselves (see FieldClarityTests). This replaces the earlier
+    /// wording that repeated both errors, which said the same thing twice on one screen.
     func testSaveBlockedMessageNamesTheFieldsNextToSave() throws {
         let model = try makeModel(nil)
 
-        // Nothing filled in at all: both problems are named together, so fixing one and tapping Save
-        // again does not meet the same silent refusal.
+        // Nothing filled in at all: the line points at the fields, and both fields are marked.
         XCTAssertFalse(model.save(now: now))
-        let both = try XCTUnwrap(model.saveBlockedMessage)
-        XCTAssertTrue(both.contains(try XCTUnwrap(model.nameError)), both)
-        XCTAssertTrue(both.contains(try XCTUnwrap(model.amountError)), both)
+        XCTAssertEqual(model.saveBlockedMessage, AddIntakeViewModel.fixFieldsMessage)
+        XCTAssertNotNil(model.nameError)
+        XCTAssertNotNil(model.amountError)
 
-        // One field fixed leaves the other named, and the fixed one is not repeated.
+        // One field fixed leaves the other marked, and the line still points at the fields.
         model.name = "Rolled oats"
         XCTAssertFalse(model.save(now: now))
-        XCTAssertEqual(model.saveBlockedMessage, model.amountError)
+        XCTAssertEqual(model.saveBlockedMessage, AddIntakeViewModel.fixFieldsMessage)
         XCTAssertNil(model.nameError)
+        XCTAssertNotNil(model.amountError)
 
         // A save that succeeds clears it, so a stale refusal never follows a good entry.
         model.amountText = "40"

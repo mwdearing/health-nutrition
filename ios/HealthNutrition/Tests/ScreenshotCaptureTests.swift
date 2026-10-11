@@ -1,11 +1,46 @@
 import NutritionDomain
 import NutritionJournal
+import NutritionProviders
 import NutritionUI
 import SwiftUI
 import UIKit
 import XCTest
 
 @testable import HealthNutrition
+
+/// Answers the account calls from memory, so the account screens can be captured with no network. Every
+/// name, address and token here is invented.
+final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Sendable {
+    private let session: CommunitySession?
+
+    init(session: CommunitySession?) {
+        self.session = session
+    }
+
+    func restore() async -> CommunitySession? { session }
+
+    func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession {
+        throw CommunityError.network
+    }
+
+    func requestEmailCode(email: String) async throws {}
+
+    func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
+        throw CommunityError.network
+    }
+
+    func signOut() async {}
+
+    func profile() async throws -> CommunityProfile {
+        CommunityProfile(displayName: "Ann", shareLabels: true)
+    }
+
+    func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile {
+        CommunityProfile(displayName: displayName, shareLabels: shareLabels)
+    }
+
+    func deleteAccount() async throws {}
+}
 
 /// Writes a PNG of each screen, in light and dark, for the design system.
 ///
@@ -210,6 +245,31 @@ final class ScreenshotCaptureTests: XCTestCase {
         try capture("GoalsView") { NavigationStack { GoalsView(model: services.goals) } }
     }
 
+    /// A setup sheet on its results step with invented answers. A new model per capture, because closing
+    /// the sheet clears its answers and each light and dark picture opens its own sheet.
+    func testGoalSetupView() throws {
+        let services = try makeSeededServices()
+        services.goals.load()
+        try capture("GoalSetupView") {
+            NavigationStack { GoalSetupView(model: sampleGoalSetup(services.goals)) }
+        }
+    }
+
+    private func sampleGoalSetup(_ goals: GoalsViewModel) -> GoalSetupViewModel {
+        let model = GoalSetupViewModel(goals: goals)
+        model.aim = .maintain
+        model.sex = .female
+        model.ageText = "34"
+        model.heightCentimetersText = "165"
+        model.weightKilogramsText = "62"
+        model.activity = .moderate
+        model.next()
+        model.next()
+        model.next()
+        model.next()
+        return model
+    }
+
     func testConnectionsPrivacyView() throws {
         let services = try makeSeededServices()
         try capture("ConnectionsPrivacyView") {
@@ -329,5 +389,37 @@ final class ScreenshotCaptureTests: XCTestCase {
         try capture("StartupFailureView") {
             StartupFailureView(message: "The journal store file could not be opened.")
         }
+    }
+
+    private var sampleSession: CommunitySession {
+        CommunitySession(
+            accessToken: "screenshot-access", refreshToken: "screenshot-refresh",
+            expiresAt: Date(timeIntervalSinceNow: 3600), userID: "screenshot-user", email: "reader@example.com")
+    }
+
+    /// The Account section of Settings for a signed-in person who has read the sharing disclosure.
+    func testAccountSectionView() async throws {
+        let model = AccountViewModel(
+            service: ScreenshotAccountService(session: sampleSession), preferences: InMemoryDisplayPreferences())
+        await model.load()
+        model.acknowledgeDisclosure()
+        try capture("AccountSectionView") {
+            NavigationStack { Form { AccountSectionView(model: model) } }
+        }
+    }
+
+    /// The sign-in sheet as a person sees it before signing in: Sign in with Apple and the email step.
+    func testSignInSheet() throws {
+        let model = AccountViewModel(
+            service: ScreenshotAccountService(session: nil), preferences: InMemoryDisplayPreferences())
+        try capture("SignInSheet") { SignInSheet(model: model) }
+    }
+
+    /// The first-run sharing disclosure, shown once after the first sign-in on a device.
+    func testSharingDisclosureSheet() async throws {
+        let model = AccountViewModel(
+            service: ScreenshotAccountService(session: sampleSession), preferences: InMemoryDisplayPreferences())
+        await model.load()
+        try capture("SharingDisclosureSheet") { SharingDisclosureSheet(model: model) }
     }
 }

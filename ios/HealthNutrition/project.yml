@@ -44,6 +44,13 @@ targets:
     # in the target for a debug build to run on a device.
     entitlements:
       path: HealthNutrition.entitlements
+    # The Info.plist keys the account settings read. Their values are the build settings above, so the
+    # repository never holds a project address or key.
+    info:
+      path: Support/Info.plist
+      properties:
+        SUPABASE_URL: "$(SUPABASE_URL)"
+        SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutrition
@@ -75,6 +82,10 @@ targets:
         CODE_SIGN_STYLE: Automatic
         # No DEVELOPMENT_TEAM here: set your own team in Xcode, never commit it.
         SWIFT_EMIT_LOC_STRINGS: YES
+        # The project address and public key of the account settings. Empty here, so a build without them shows
+        # no account UI. The signed-beta workflow passes them on the command line from environment secrets.
+        SUPABASE_URL: ""
+        SUPABASE_ANON_KEY: ""
 
   # Unit tests for the app target itself. They depend on the app so the bundle is hosted by it, which
   # is what lets them read the app's own types through @testable and run against a real UIKit runtime.

@@ -5,6 +5,7 @@ public struct AppSettingsView: View {
     private let goals: GoalsViewModel?
     private let connections: ConnectionsPrivacyViewModel?
     private let reminders: ReminderController?
+    private let account: AccountViewModel?
     private let now: () -> Date
     private let opensGoals: Bool
     private let onShowWelcome: (() -> Void)?
@@ -12,12 +13,14 @@ public struct AppSettingsView: View {
     public init(
         goals: GoalsViewModel? = nil, connections: ConnectionsPrivacyViewModel? = nil,
         reminders: ReminderController? = nil,
+        account: AccountViewModel? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
         onShowWelcome: (() -> Void)? = nil
     ) {
         self.goals = goals
         self.connections = connections
         self.reminders = reminders
+        self.account = account
         self.now = now
         self.opensGoals = opensGoals
         self.onShowWelcome = onShowWelcome
@@ -25,7 +28,7 @@ public struct AppSettingsView: View {
 
     public var body: some View {
         if let connections {
-            SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders),
+            SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders, account: account),
                             now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome)
         }
     }
@@ -67,23 +70,30 @@ private struct SettingsContent: View {
                     }
                 }
             }
+            if let account = model.account {
+                AccountSectionView(model: account)
+            }
             Section("Units and logging") {
                 Picker("Units", selection: $model.unitSystem) {
                     Text("Metric").tag(UnitSystem.metric)
                     Text("US").tag(UnitSystem.usCustomary)
                 }
                 .pickerStyle(.segmented)
-                HStack {
-                    Text("Quick water amount")
-                    TextField(connections.quickWaterUnitSymbol, text: $model.quickWaterText)
+                LabeledField("Quick water amount", focus: $waterFocused) { focus in
+                    HStack {
+                        TextField(text: $model.quickWaterText, prompt: Text("For example, 250")) {
+                            Text("Quick water amount")
+                        }
+                        .labelsHidden()
                         .multilineTextAlignment(.trailing)
-                        .focused($waterFocused)
+                        .focused(focus)
                         .accessibilityLabel("Quick water amount in \(connections.quickWaterUnitSymbol)")
                         .onSubmit { self.model.commitQuickWater() }
                         #if os(iOS)
                         .keyboardType(.decimalPad)
                         #endif
-                    Text(connections.quickWaterUnitSymbol)
+                        Text(connections.quickWaterUnitSymbol)
+                    }
                 }
                 Text(model.quickWaterHelper).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                 if let error = model.quickWaterError {
@@ -185,6 +195,7 @@ private struct SettingsContent: View {
         .onChange(of: connections.eraseGeneration) { _, _ in
             self.model.load()
             self.model.reminders?.refreshFromPreferences()
+            self.model.account?.refreshAfterErase()
         }
         .confirmationDialog(
             ConnectionsPrivacyViewModel.eraseConfirmationTitle, isPresented: $confirmingErase,
