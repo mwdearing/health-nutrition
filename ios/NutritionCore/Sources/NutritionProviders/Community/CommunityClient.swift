@@ -129,8 +129,8 @@ public struct CommunityClient: Sendable {
         return items
     }
 
-    /// Auth failures are handled against the exact token used by the request. A delayed 401 can then never
-    /// remove a newer sign-in, while 403 remains an authorization decision and keeps the session intact.
+    /// A delayed 401 can never remove a newer sign-in. Other failures are mapped from their status and
+    /// recognized server error code; they never invalidate the local session.
     private func authenticatedSend(
         _ path: String,
         session: CommunitySession,
@@ -153,7 +153,6 @@ public struct CommunityClient: Sendable {
             catch { throw CommunityError.storage }
             throw invalidated ? CommunityError.signedOut : CommunityError.unauthorized
         }
-        if response.statusCode == 403 { throw CommunityError.permissionDenied }
         guard (200..<300).contains(response.statusCode) else {
             throw CommunityError.from(status: response.statusCode, body: data)
         }
