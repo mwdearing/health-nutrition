@@ -4,7 +4,10 @@ from __future__ import annotations
 import importlib.util
 import plistlib
 import re
+import shutil
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "ios/HealthNutrition/Resources/PrivacyInfo.xcprivacy"
@@ -36,6 +39,19 @@ def _table_rows(section: str) -> list[list[str]]:
 
 def _manifest() -> dict:
     return plistlib.loads(MANIFEST.read_bytes())
+
+
+def _latest_submit_label_body() -> str:
+    definition = re.compile(
+        r"\bcreate\s+(?:or\s+replace\s+)?function\s+public\.submit_label\b"
+        r".*?\bas\s+\$\$(.*?)\$\$\s*;",
+        re.IGNORECASE | re.DOTALL,
+    )
+    bodies = []
+    for migration in sorted((ROOT / "supabase/migrations").glob("*.sql")):
+        bodies.extend(match.group(1) for match in definition.finditer(migration.read_text(encoding="utf-8")))
+    assert bodies, "migrations must define public.submit_label"
+    return bodies[-1].lower()
 
 
 def _reset_preference_keys() -> set[str]:
@@ -159,6 +175,7 @@ def test_privacy_documentation_checks_run_for_docs_and_behavior_changes() -> Non
         "docs/privacy-manifest.md", "docs/journal-export.md",
         "scripts/tests/test_privacy_documentation_consistency.py",
         "scripts/tests/test_journal_restore_import_race.py",
+        "supabase/migrations/**",
     }
     for event in ("pull_request", "push"):
         assert watched <= set(triggers[event]["paths"])
@@ -213,9 +230,7 @@ def test_label_submission_copy_discloses_signed_in_account_linkage() -> None:
     client = (ROOT / "ios/NutritionCore/Sources/NutritionProviders/Community/CommunityClient.swift").read_text(
         encoding="utf-8"
     )
-    sql = (ROOT / "supabase/migrations/20261011203625_catalog_owner_verification.sql").read_text(
-        encoding="utf-8"
-    ).lower()
+    sql = _latest_submit_label_body()
 
     submit = client.split("public func submitLabel", 1)[1].split("public func", 1)[0]
     assert "authenticatedSend" in submit
@@ -231,3 +246,40 @@ def test_label_submission_copy_discloses_signed_in_account_linkage() -> None:
     )[0]
     assert "linked to your signed-in account" in summary
     assert "journal entries" in summary and "photo" in summary
+
+
+def test_label_submission_copy_guard_checks_latest_migration_override(tmp_path: Path, monkeypatch) -> None:
+    fixture_root = tmp_path / "repo"
+    for relative in (
+        "PRIVACY.md",
+        "docs/accounts.md",
+        "ios/NutritionCore/Sources/NutritionProviders/Community/CommunityClient.swift",
+    ):
+        destination = fixture_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, destination)
+
+    migrations = fixture_root / "supabase/migrations"
+    migrations.mkdir(parents=True)
+    shutil.copyfile(
+        ROOT / "supabase/migrations/20261011203625_catalog_owner_verification.sql",
+        migrations / "20261011203625_catalog_owner_verification.sql",
+    )
+    (migrations / "20261012235959_submit_label_replacement.sql").write_text(
+        """create or replace function public.submit_label(p_payload jsonb)
+returns uuid
+language plpgsql
+security definer
+as $$
+begin
+    insert into catalog.submissions (payload) values (p_payload);
+    return gen_random_uuid();
+end;
+$$;
+""",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(__import__(__name__), "ROOT", fixture_root)
+    with pytest.raises(AssertionError):
+        test_label_submission_copy_discloses_signed_in_account_linkage()
