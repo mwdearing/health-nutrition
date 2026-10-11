@@ -116,7 +116,14 @@ public actor CommunityAuth {
     @discardableResult
     public func invalidateSession(matchingAccessToken accessToken: String) throws -> Bool {
         let session: CommunitySession?
-        do { session = try store.load() } catch { throw CommunityError.storage }
+        do {
+            session = try store.load()
+        } catch {
+            // The matching session is unknown, so do not clear storage. Fence operations already in
+            // flight so none can write credentials after the invalidation could not be verified.
+            generation += 1
+            throw CommunityError.storage
+        }
         guard session?.accessToken == accessToken else { return false }
         generation += 1
         do { try store.clear() } catch { throw CommunityError.storage }
@@ -127,7 +134,14 @@ public actor CommunityAuth {
     @discardableResult
     public func invalidateSession(matchingUserID userID: String) throws -> Bool {
         let session: CommunitySession?
-        do { session = try store.load() } catch { throw CommunityError.storage }
+        do {
+            session = try store.load()
+        } catch {
+            // The matching session is unknown, so do not clear storage. Fence operations already in
+            // flight so none can write credentials after the invalidation could not be verified.
+            generation += 1
+            throw CommunityError.storage
+        }
         guard session?.userID == userID else { return false }
         generation += 1
         do { try store.clear() } catch { throw CommunityError.storage }
@@ -150,6 +164,11 @@ public actor CommunityAuth {
             do {
                 session = startedAt == generation ? try store.load() : nil
             } catch {
+                if startedAt == generation {
+                    // This rejected refresh cannot establish which session is stored. Keep it intact,
+                    // but prevent an older in-flight sign-in or refresh from writing afterward.
+                    generation += 1
+                }
                 throw CommunityError.storage
             }
             if session?.refreshToken == refreshToken {
