@@ -45,7 +45,8 @@ final class CommunityCaptchaTests: XCTestCase {
         CommunityAuth(config: try makeConfig(), transport: transport, store: store, captcha: captcha, now: { testNow })
     }
 
-    func testSignInWithAppleSendsAFreshCaptchaToken() async throws {
+    /// The sign-in service does not ask for a challenge on an Apple identity token, so none is requested.
+    func testSignInWithAppleNeedsNoCaptchaToken() async throws {
         let transport = FakeCommunityTransport([.response(status: 200, body: tokenBody)])
         let captcha = FakeCaptcha()
         let auth = try makeCaptchaAuth(transport, captcha: captcha)
@@ -53,10 +54,21 @@ final class CommunityCaptchaTests: XCTestCase {
         _ = try await auth.signInWithApple(idToken: "test-apple-token", nonce: "test-nonce")
 
         let request = try XCTUnwrap(transport.requests.first)
-        XCTAssertEqual(try captchaToken(in: request), "captcha-token-1")
-        XCTAssertEqual(captcha.issuedCount, 1)
-        let body = try bodyJSON(request)
-        XCTAssertEqual(body["id_token"] as? String, "test-apple-token")
+        XCTAssertNil(try captchaToken(in: request))
+        XCTAssertEqual(captcha.issuedCount, 0)
+        XCTAssertEqual(try bodyJSON(request)["id_token"] as? String, "test-apple-token")
+    }
+
+    /// Checking the emailed code is not challenged either: only asking for the code is.
+    func testVerifyingTheEmailCodeNeedsNoCaptchaToken() async throws {
+        let transport = FakeCommunityTransport([.response(status: 200, body: tokenBody)])
+        let captcha = FakeCaptcha()
+        let auth = try makeCaptchaAuth(transport, captcha: captcha)
+
+        _ = try await auth.verifyEmailCode(email: "person@example.com", code: "123456")
+
+        XCTAssertNil(try captchaToken(in: try XCTUnwrap(transport.requests.first)))
+        XCTAssertEqual(captcha.issuedCount, 0)
     }
 
     func testRequestEmailCodeSendsAFreshCaptchaToken() async throws {
@@ -72,16 +84,16 @@ final class CommunityCaptchaTests: XCTestCase {
         XCTAssertEqual(try bodyJSON(request)["create_user"] as? Bool, true)
     }
 
-    func testEachSignInUsesItsOwnToken() async throws {
+    func testEachCodeRequestUsesItsOwnToken() async throws {
         let transport = FakeCommunityTransport([
             .response(status: 200, body: "{}"),
-            .response(status: 200, body: tokenBody),
+            .response(status: 200, body: "{}"),
         ])
         let captcha = FakeCaptcha()
         let auth = try makeCaptchaAuth(transport, captcha: captcha)
 
         try await auth.requestEmailCode(email: "person@example.com")
-        _ = try await auth.verifyEmailCode(email: "person@example.com", code: "123456")
+        try await auth.requestEmailCode(email: "person@example.com")
 
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertEqual(try captchaToken(in: transport.requests[0]), "captcha-token-1")
@@ -145,8 +157,8 @@ final class CommunityCaptchaTests: XCTestCase {
         }
     }
 
-    func testClientPassesTheProviderToItsSignIn() async throws {
-        let transport = FakeCommunityTransport([.response(status: 200, body: tokenBody)])
+    func testClientPassesTheProviderToItsCodeRequest() async throws {
+        let transport = FakeCommunityTransport([.response(status: 200, body: "{}")])
         let captcha = FakeCaptcha()
         let client = CommunityClient(
             config: try makeConfig(),
@@ -156,7 +168,7 @@ final class CommunityCaptchaTests: XCTestCase {
             now: { testNow }
         )
 
-        _ = try await client.auth.signInWithApple(idToken: "test-apple-token", nonce: "test-nonce")
+        try await client.auth.requestEmailCode(email: "person@example.com")
 
         XCTAssertEqual(try captchaToken(in: try XCTUnwrap(transport.requests.first)), "captcha-token-1")
     }

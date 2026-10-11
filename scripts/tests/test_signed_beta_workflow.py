@@ -339,3 +339,14 @@ def test_the_site_key_is_never_printed() -> None:
     for step in _steps():
         run = str(step.get("run", ""))
         assert not re.search(r"(echo|printf|cat)[^\n]*HCAPTCHA_SITE_KEY", run)
+
+
+def test_account_settings_without_the_site_key_fail_the_signed_build() -> None:
+    """The hosted project requires a CAPTCHA token for email codes, so a build that has the project settings
+    but no site key would fail every email sign-in. The check step refuses it."""
+    check = next(s for s in _steps() if s.get("name") == "Check the signing secrets and write the key file")
+    env = cast("dict[str, object]", check["env"])
+    assert env["HCAPTCHA_SITE_KEY"] == "${{ secrets.HCAPTCHA_SITE_KEY }}"
+    run = str(check["run"])
+    assert 'fail "the account settings need HCAPTCHA_SITE_KEY' in run
+    assert not re.search(r"(echo|printf|cat)[^\n]*HCAPTCHA_SITE_KEY", run)
