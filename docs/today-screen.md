@@ -8,7 +8,7 @@ read live in `NutritionJournal`. The app target wires them together. Tests cover
   nutrient (see "Goal bars" below) and an "Edit goals" link, a **Water** card with the total, the quick-add water
   capsule and its undo, an **Other amount** capsule that opens a typed field with an Add button, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then
   Other), and one footer line when entries state no nutrition values. Each entry row opens that entry in the entry
-  screen, so a row logged late on the wrong day is corrected where it is noticed. Add is the "Add food or drink"
+  screen, so a row logged late on the wrong day is corrected where it is noticed. Add is the "Add food, drink, or supplement"
   capsule the app shell holds above the tab bar on every tab; Today has no Journal or Library link and no toolbar
   plus. Settings (and through it the daily goals and the privacy screen) is the gear on every tab.
 - **Add intake** (`AddIntakeView`, `AddIntakeViewModel`): name, amount text, unit, category, meal, time.
