@@ -875,7 +875,9 @@ def _copy_ios_tree(destination: Path) -> Path:
     """
     destination.mkdir(parents=True, exist_ok=True)
     tree = destination / "tree"
-    shutil.copytree(REPO_ROOT / "ios", tree / "ios", symlinks=True)
+    shutil.copytree(
+        REPO_ROOT / "ios", tree / "ios", symlinks=True, ignore=shutil.ignore_patterns(".build")
+    )
     return tree
 
 
@@ -1709,3 +1711,16 @@ def test_deliberately_absent_paths_are_still_absent() -> None:
         f"{sorted(present)}. Update the document and KNOWN_ABSENT together, or "
         "delete the file that made the absence claim false."
     )
+
+def test_mutation_fixture_copies_sources_without_generated_build_trees(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    generated = source / "ios/NutritionCore/.build"
+    generated.mkdir(parents=True)
+    (generated / "generated-marker").write_text("synthetic build output")
+    production = source / "ios/NutritionCore/Sources"
+    production.mkdir()
+    (production / "Source.swift").write_text("synthetic source")
+    with _repository_rooted_at(source):
+        copied = _copy_ios_tree(tmp_path / "copy")
+    assert (copied / "ios/NutritionCore/Sources/Source.swift").read_text() == "synthetic source"
+    assert not (copied / "ios/NutritionCore/.build").exists()
