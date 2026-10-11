@@ -62,7 +62,7 @@ A PostgREST error body with an SQLSTATE `code` wins over the HTTP status:
 | `22023` | `invalid` |
 | `53400` | `rateLimited` |
 
-Without a known code, the status maps as follows: 400 and 422 to `invalid`, 401 and 403 to `unauthorized`, 429 to `rateLimited`, anything else to `server(status)`. A request that gets no reply throws `network`. A reply that does not decode throws `server(status)`. A session that cannot be written to the Keychain throws `storage`.
+Without a known code, the status maps as follows: 400 and 422 to `invalid`, 401 to `unauthorized`, 403 to `permissionDenied`, 429 to `rateLimited`, anything else to `server(status)`. A request that gets no reply throws `network`. A reply that does not decode throws `server(status)`. A session that cannot be written to the Keychain throws `storage`.
 
 ## Settings and wiring
 
