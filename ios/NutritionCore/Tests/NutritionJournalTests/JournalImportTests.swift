@@ -155,6 +155,22 @@ class JournalImportTestCase: XCTestCase {
         try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    func replacingValue(in value: Any, path: [String], with replacement: Any) throws -> Any {
+        guard let key = path.first else { return replacement }
+        if var object = value as? [String: Any] {
+            guard let child = object[key] else { throw NSError(domain: "test path", code: 1) }
+            object[key] = try replacingValue(
+                in: child, path: Array(path.dropFirst()), with: replacement)
+            return object
+        }
+        if var array = value as? [Any], let index = Int(key), array.indices.contains(index) {
+            array[index] = try replacingValue(
+                in: array[index], path: Array(path.dropFirst()), with: replacement)
+            return array
+        }
+        throw NSError(domain: "test path", code: 2)
+    }
+
     /// One restored entry with the given number of revisions, for the tests that hand a plan straight to
     /// the store instead of going through a document.
     func entry(_ id: String, revisions revisionCount: Int) -> JournalRestoreEntry {
@@ -335,6 +351,62 @@ final class JournalImportTests: JournalImportTestCase {
                 encoding: .utf8))
         XCTAssertTrue(again.contains("\"amount\":\"55.5\""), again)
         XCTAssertTrue(again.contains("\"amount\":\"0.5\""), again)
+    }
+
+    func testNullableStringsMayBeEmptyAndArePreservedByImport() throws {
+        var root = try object(of: try exportData())
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        intakes[0]["meal"] = ""
+        intakes[0]["note"] = ""
+        for intakeIndex in intakes.indices {
+            var revisions = try XCTUnwrap(intakes[intakeIndex]["revisions"] as? [[String: Any]])
+            for revisionIndex in revisions.indices {
+                guard var nestedProvenance = revisions[revisionIndex]["provenance"] as? [String: Any] else {
+                    continue
+                }
+                nestedProvenance["brand"] = ""
+                nestedProvenance["barcode"] = ""
+                revisions[revisionIndex]["provenance"] = nestedProvenance
+            }
+            intakes[intakeIndex]["revisions"] = revisions
+        }
+        root["intakes"] = intakes
+
+        var products = try XCTUnwrap(root["products"] as? [[String: Any]])
+        products[0]["brand"] = ""
+        products[0]["barcode"] = ""
+        root["products"] = products
+        var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
+        let favoriteIndex = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-oats-1" })
+        favoriteList[favoriteIndex]["meal"] = ""
+        root["favorites"] = favoriteList
+
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        try JournalImporter.importExport(
+            try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
+        let exported = try object(of: JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt)))
+
+        let restoredIntakes = try XCTUnwrap(exported["intakes"] as? [[String: Any]])
+        XCTAssertEqual(restoredIntakes[0]["meal"] as? String, "")
+        XCTAssertEqual(restoredIntakes[0]["note"] as? String, "")
+        XCTAssertTrue(restoredIntakes[1]["meal"] is NSNull)
+        XCTAssertTrue(restoredIntakes[1]["note"] is NSNull)
+        let restoredRevisions = try XCTUnwrap(restoredIntakes[0]["revisions"] as? [[String: Any]])
+        let restoredProvenance = try XCTUnwrap(restoredRevisions[0]["provenance"] as? [String: Any])
+        XCTAssertEqual(restoredProvenance["brand"] as? String, "")
+        XCTAssertEqual(restoredProvenance["barcode"] as? String, "")
+        let restoredProducts = try XCTUnwrap(exported["products"] as? [[String: Any]])
+        XCTAssertEqual(restoredProducts[0]["brand"] as? String, "")
+        XCTAssertEqual(restoredProducts[0]["barcode"] as? String, "")
+        let restoredFavorites = try XCTUnwrap(exported["favorites"] as? [[String: Any]])
+        let restoredOats = try XCTUnwrap(restoredFavorites.first { $0["id"] as? String == "fav-oats-1" })
+        XCTAssertEqual(restoredOats["meal"] as? String, "")
+        let restoredTea = try XCTUnwrap(restoredFavorites.first { $0["id"] as? String == "fav-tea-1" })
+        XCTAssertTrue(restoredTea["meal"] is NSNull)
     }
 
     func testTheSummaryCountsWhatWasRestored() throws {
@@ -727,29 +799,161 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertTrue(try favoritesStore.list().isEmpty, line: line)
     }
 
-    func testAFavoriteWithNoComponentsIsRejected() throws {
-        // A favorite with nothing in it cannot be repeated: there are no amounts to repeat, so the row would
-        // show a name and no numbers, and the intake it created would claim nothing at all.
-        var root = try object(of: try exportData())
-        var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
-        let index = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-tea-1" })
-        favoriteList[index]["components"] = []
-        root["favorites"] = favoriteList
+    func testAnAppCreatedEmptyFavoriteExportsAndRestoresUnchanged() throws {
+        let source = try directory()
+        let sourceJournal = try store(source)
+        let sourceFavorites = try favorites(source)
+        try sourceFavorites.add(
+            FavoriteTemplate(id: "fav-empty-1", displayName: "Sample empty template", category: "food", components: []))
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: sourceJournal, favorites: sourceFavorites, appVersion: appVersion, exportedAt: exportedAt))
 
         let target = try directory()
         let journal = try store(target)
         let favoritesStore = try favorites(target)
-        do {
-            _ = try JournalImporter.importExport(
-                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
-            XCTFail("a favorite with no components must be refused")
-        } catch let error as JournalImportError {
-            guard case .corrupt = error else {
-                return XCTFail("expected a corrupt file, got \(error)")
+        let summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+        XCTAssertEqual(summary.favorites, 1)
+        XCTAssertEqual(try favoritesStore.list().first?.components.count, 0)
+        let restored = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
+        XCTAssertNil(try firstDifference(between: data, and: restored))
+    }
+
+    func testZeroCurrentRevisionAndEmptyHistoryAreRefusedBeforeEitherStoreWrites() throws {
+        for sourceData in [try exportData(), try versionOneExportData()] {
+            for emptyHistory in [false, true] {
+                var root = try object(of: sourceData)
+                var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+                intakes[0]["current_revision"] = 0
+                if emptyHistory { intakes[0]["revisions"] = [] }
+                root["intakes"] = intakes
+
+                let target = try directory()
+                let journal = try store(target)
+                let favoritesStore = try favorites(target)
+                XCTAssertThrowsError(
+                    try JournalImporter.importExport(
+                        try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore))
+                XCTAssertTrue(try journal.activeIntakes().isEmpty)
+                XCTAssertTrue(try journal.deletedIntakes().isEmpty)
+                XCTAssertTrue(try favoritesStore.list().isEmpty)
+                XCTAssertNil(try journal.product(snapshotID: "snap-oats-1"))
+                XCTAssertTrue(try journal.pendingOutbox().isEmpty)
             }
         }
-        XCTAssertTrue(try journal.activeIntakes().isEmpty)
-        XCTAssertTrue(try favoritesStore.list().isEmpty)
+    }
+
+    func testFortyThreeDigitAmountsAreRefusedBeforeEitherStoreWrites() throws {
+        let oversized = String(repeating: "1", count: 43)
+        for location in ["revision", "favorite"] {
+            var root = try object(of: try exportData())
+            if location == "revision" {
+                var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+                var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+                var components = try XCTUnwrap(revisions[0]["components"] as? [[String: Any]])
+                components[0]["amount"] = oversized
+                revisions[0]["components"] = components
+                intakes[0]["revisions"] = revisions
+                root["intakes"] = intakes
+            } else {
+                var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
+                let index = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-tea-1" })
+                var components = try XCTUnwrap(favoriteList[index]["components"] as? [[String: Any]])
+                components[0]["amount"] = oversized
+                favoriteList[index]["components"] = components
+                root["favorites"] = favoriteList
+            }
+
+            let target = try directory()
+            let journal = try store(target)
+            let favoritesStore = try favorites(target)
+            XCTAssertThrowsError(
+                try JournalImporter.importExport(
+                    try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)) {
+                guard case .corrupt = $0 as? JournalImportError else {
+                    return XCTFail("expected a corrupt file, got \($0)")
+                }
+            }
+            XCTAssertTrue(try journal.activeIntakes().isEmpty)
+            XCTAssertTrue(try journal.deletedIntakes().isEmpty)
+            XCTAssertTrue(try favoritesStore.list().isEmpty)
+            XCTAssertNil(try journal.product(snapshotID: "snap-oats-1"))
+            XCTAssertTrue(try journal.pendingOutbox().isEmpty)
+        }
+    }
+
+    func testThirtyEightSignificantDigitsWithPaddingRoundTripThroughFullImport() throws {
+        let padded = "12345678901234567890123456789012345678.000000000000"
+        var root = try object(of: try exportData())
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+        var revisionComponents = try XCTUnwrap(revisions[0]["components"] as? [[String: Any]])
+        revisionComponents[0]["amount"] = padded
+        revisions[0]["components"] = revisionComponents
+        intakes[0]["revisions"] = revisions
+        root["intakes"] = intakes
+
+        var favoriteList = try XCTUnwrap(root["favorites"] as? [[String: Any]])
+        let favoriteIndex = try XCTUnwrap(favoriteList.firstIndex { $0["id"] as? String == "fav-tea-1" })
+        var favoriteComponents = try XCTUnwrap(favoriteList[favoriteIndex]["components"] as? [[String: Any]])
+        favoriteComponents[0]["amount"] = padded
+        favoriteList[favoriteIndex]["components"] = favoriteComponents
+        root["favorites"] = favoriteList
+
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+
+        let expected = try XCTUnwrap(DecimalText.decode(padded))
+        XCTAssertEqual(try journal.revisions(of: oatsID).first?.components.first?.amount, expected)
+        XCTAssertEqual(try favoritesStore.list().first { $0.id == "fav-tea-1" }?.components.first?.amountText, padded)
+        let roundTrip = try object(of: try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt)))
+        let encodedIntakes = try XCTUnwrap(roundTrip["intakes"] as? [[String: Any]])
+        let encodedRevisions = try XCTUnwrap(encodedIntakes[0]["revisions"] as? [[String: Any]])
+        let encodedRevisionComponents = try XCTUnwrap(encodedRevisions[0]["components"] as? [[String: Any]])
+        XCTAssertEqual(
+            try XCTUnwrap(DecimalText.decode(try XCTUnwrap(encodedRevisionComponents[0]["amount"] as? String))),
+            expected)
+        let encodedFavorites = try XCTUnwrap(roundTrip["favorites"] as? [[String: Any]])
+        let encodedFavorite = try XCTUnwrap(encodedFavorites.first { $0["id"] as? String == "fav-tea-1" })
+        let encodedFavoriteComponents = try XCTUnwrap(encodedFavorite["components"] as? [[String: Any]])
+        XCTAssertEqual(encodedFavoriteComponents[0]["amount"] as? String, padded)
+    }
+
+    func testMaliciousDateFractionsAreRefusedBeforeEitherStoreWrites() throws {
+        let datePaths = [
+            "exported_at", "intakes.0.occurred_at", "intakes.0.revisions.0.created_at",
+            "tombstones.0.occurred_at",
+        ]
+        for sourceData in [try exportData(), try versionOneExportData()] {
+            for fractionLength in [309, 310] {
+                let hostileDate = "2024-01-15T09:15:00." + String(repeating: "9", count: fractionLength) + "Z"
+                for path in datePaths {
+                    var root = try object(of: sourceData)
+                    root = try XCTUnwrap(replacingValue(
+                        in: root, path: path.split(separator: ".").map(String.init), with: hostileDate)
+                        as? [String: Any])
+
+                    let target = try directory()
+                    let journal = try store(target)
+                    let favoritesStore = try favorites(target)
+                    XCTAssertThrowsError(
+                        try JournalImporter.importExport(
+                            try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore))
+                    XCTAssertTrue(try journal.activeIntakes().isEmpty)
+                    XCTAssertTrue(try journal.deletedIntakes().isEmpty)
+                    XCTAssertTrue(try favoritesStore.list().isEmpty)
+                    XCTAssertNil(try journal.product(snapshotID: "snap-oats-1"))
+                    XCTAssertTrue(try journal.pendingOutbox().isEmpty)
+                }
+            }
+        }
     }
 
     func testAnEntryWithoutATimeZoneIsRejected() throws {
