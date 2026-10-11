@@ -431,6 +431,26 @@ final class NutritionFactsParserTests: XCTestCase {
         }
     }
 
+    func testComparisonServingMeasuresRequireConfirmation() {
+        for line in ["Serving size >1 g", "Serving size ≥1 g", "Serving size ≤1 g"] {
+            let panel = parse([line])
+            XCTAssertNil(panel.servingSize?.quantity, "a comparison cannot supply one scaling basis: \(line)")
+            XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize], line)
+        }
+    }
+
+    func testRangeWithUnitsAtBothEndpointsRequiresConfirmation() {
+        let panel = parse(["Serving size 10 g - 12 g"])
+        XCTAssertNil(panel.servingSize?.quantity)
+        XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize])
+    }
+
+    func testEmptyPackagingValueDoesNotConsumeTheNextNutrientRow() throws {
+        let panel = parse(["Serving size 1 gummy LOT#: Calories 90 Protein 2g"])
+        XCTAssertEqual(try amount(.calories, panel), dec("90"))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"))
+    }
+
     /// A counted unit is a serving measure, never a nutrient row's. A panel states no nutrient per
     /// gummy, so a row whose amount sits behind such a word keeps no amount rather than one in a unit
     /// nobody printed for it, and an unknown word is still no unit at all.
