@@ -11,11 +11,11 @@ options:
 packages:
   NutritionCore:
     path: ../NutritionCore
-  # The human check of the sign-in requests. Pinned exactly, so a new SDK version is a deliberate change. It is
-  # linked by the app target only; the package's RxSwift dependency is resolved but not linked.
+  # The human check of sign-in requests. The upstream 3.1.0 tag maps to this commit; the package's
+  # RxSwift dependency is locked at its declared minimum but is not linked by this target.
   HCaptcha:
     url: https://github.com/hCaptcha/HCaptcha-ios-sdk
-    exactVersion: 3.1.0
+    revision: caea076bb9c4141c5d05c5009f894fede409342d
 
 settings:
   base:

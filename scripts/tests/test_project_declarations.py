@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import subprocess
 from typing import cast
 
 import yaml
 
-PROJECT = Path(__file__).resolve().parents[2] / "ios/HealthNutrition/project.yml"
+ROOT = Path(__file__).resolve().parents[2]
+PROJECT = ROOT / "ios/HealthNutrition/project.yml"
+RESOLVED = ROOT / "ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+HCAPTCHA_REVISION = "caea076bb9c4141c5d05c5009f894fede409342d"
+RXSWIFT_REVISION = "132aea4f236ccadc51590b38af0357a331d51fa2"
 
 
 def test_the_app_declares_that_it_uses_only_exempt_encryption() -> None:
@@ -26,13 +32,41 @@ def _target(name: str) -> dict[str, object]:
     return targets[name]
 
 
-def test_the_hcaptcha_package_is_pinned_to_an_exact_version() -> None:
-    # A challenge SDK update changes what the sign-in screen shows, so the version is chosen, not floated.
+def test_the_hcaptcha_package_is_pinned_to_the_verified_release_revision() -> None:
+    # The tag is checked against its commit so the project does not resolve a moved version tag.
     packages = cast("dict[str, object]", _project()["packages"])
     assert packages["HCaptcha"] == {
         "url": "https://github.com/hCaptcha/HCaptcha-ios-sdk",
-        "exactVersion": "3.1.0",
+        "revision": HCAPTCHA_REVISION,
     }
+
+
+def test_the_project_workspace_resolution_locks_hcaptcha_and_its_unlinked_rxswift_dependency() -> None:
+    resolved = json.loads(RESOLVED.read_text())
+    assert resolved["version"] == 2
+    assert "originHash" not in resolved
+    pins = {pin["identity"]: pin for pin in resolved["pins"]}
+    assert set(pins) == {"hcaptcha-ios-sdk", "rxswift"}
+    # A revision requirement is recorded as a commit, not as a version-tag claim.
+    assert pins["hcaptcha-ios-sdk"]["state"] == {"revision": HCAPTCHA_REVISION}
+    assert pins["rxswift"]["state"] == {
+        "revision": RXSWIFT_REVISION,
+        "version": "6.10.2",
+    }
+
+
+def test_only_the_resolution_file_is_unignored_inside_the_generated_project() -> None:
+    def is_ignored(path: Path) -> bool:
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "-q", str(path.relative_to(ROOT))],
+            cwd=ROOT,
+            check=False,
+        )
+        assert result.returncode in (0, 1)
+        return result.returncode == 0
+
+    assert not is_ignored(RESOLVED)
+    assert is_ignored(ROOT / "ios/HealthNutrition/HealthNutrition.xcodeproj/project.pbxproj")
 
 
 def test_only_the_app_target_links_the_hcaptcha_product() -> None:

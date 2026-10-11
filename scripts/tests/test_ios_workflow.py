@@ -38,6 +38,15 @@ def test_release_build_compiles_release_for_a_generic_device_without_signing() -
     assert "CODE_SIGNING_ALLOWED=NO" in words
     assert "CODE_SIGNING_REQUIRED=NO" in words
     assert 'CODE_SIGN_IDENTITY=' in words
+    assert "-disableAutomaticPackageResolution" in words
+
+
+def test_every_ios_project_build_uses_the_committed_swiftpm_resolution() -> None:
+    for workflow_name in ("ios.yml", "screenshots.yml"):
+        text = (WORKFLOWS / workflow_name).read_text()
+        commands = [line for line in text.splitlines() if "xcodebuild" in line and "-project HealthNutrition.xcodeproj" in line]
+        assert commands, workflow_name
+        assert all("-disableAutomaticPackageResolution" in line for line in commands), (workflow_name, commands)
 
 
 def test_release_build_uses_the_signed_upload_runner_image() -> None:
