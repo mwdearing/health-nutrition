@@ -220,6 +220,24 @@ final class CommunityClientTests: XCTestCase {
         XCTAssertEqual(store.load(), session)
     }
 
+    func testForbiddenSQLStateErrorsAreMappedAndRetainSession() async throws {
+        let cases: [(code: String, expected: CommunityError)] = [
+            ("28000", .signedOut),
+            ("42501", .sharingOff),
+        ]
+        for testCase in cases {
+            let transport = FakeCommunityTransport([
+                .response(status: 403, body: #"{"code":"\#(testCase.code)","message":"test message"}"#),
+            ])
+            let session = testSession()
+            let store = InMemoryCommunitySessionStore(session)
+            let community = try client(transport, store: store)
+
+            await assertCommunityError(testCase.expected) { try await community.submitLabel(submission()) }
+            XCTAssertEqual(store.load(), session)
+        }
+    }
+
     func testTransportFailureIsNetwork() async throws {
         let transport = FakeCommunityTransport([.failure(URLError(.notConnectedToInternet))])
         let community = try client(transport)
