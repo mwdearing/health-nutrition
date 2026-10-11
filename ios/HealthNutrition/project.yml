@@ -52,6 +52,10 @@ targets:
     # in the target for a debug build to run on a device.
     entitlements:
       path: HealthNutrition.entitlements
+      # XcodeGen rewrites the file from these properties during generation.
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.developer.healthkit: true
     # The Info.plist keys the account settings read. Their values are the build settings above, so the
     # repository never holds a project address or key.
     info:
@@ -64,7 +68,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutrition
         PRODUCT_NAME: HealthNutrition
-        MARKETING_VERSION: "0.1.1"
+        MARKETING_VERSION: "0.1.2"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: HealthNutrition

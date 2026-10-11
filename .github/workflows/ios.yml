@@ -118,6 +118,16 @@ jobs:
       - name: Generate the Xcode project
         working-directory: ios/HealthNutrition
         run: xcodegen generate
+      - name: Verify generated account and HealthKit entitlements
+        working-directory: ios/HealthNutrition
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          with open("HealthNutrition.entitlements", "rb") as handle:
+              entitlements = plistlib.load(handle)
+          assert entitlements.get("com.apple.developer.applesignin") == ["Default"]
+          assert entitlements.get("com.apple.developer.healthkit") is True
+          PY
       - name: Build the app in Release for a generic iOS device
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build

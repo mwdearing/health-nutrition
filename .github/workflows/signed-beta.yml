@@ -57,6 +57,16 @@ jobs:
       - name: Generate the Xcode project
         run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
 
+      - name: Verify generated account and HealthKit entitlements
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          with open("HealthNutrition.entitlements", "rb") as handle:
+              entitlements = plistlib.load(handle)
+          assert entitlements.get("com.apple.developer.applesignin") == ["Default"]
+          assert entitlements.get("com.apple.developer.healthkit") is True
+          PY
+
       - name: Check the signing secrets and write the key file
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
