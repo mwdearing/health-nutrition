@@ -378,6 +378,15 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(parse(["Serving size", "1 cup (240mL)"]).servingSize?.text, "1 cup (240mL)")
     }
 
+    func testServingSizeOnFollowingLineLeavesFlattenedNutrientsForParsing() throws {
+        let panel = parse(["Serving size", "1 cup (240mL) Calories 90 Protein 2g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 cup (240mL)")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+        XCTAssertEqual(try amount(.calories, panel), dec("90"))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"))
+    }
+
     func testPackagingColonDoesNotHideFlattenedNutrientsBehindServingSize() throws {
         let panel = parse(["Serving size 3 Gummies LOT#:260628007 Calories 90 Protein 2g"])
         XCTAssertEqual(panel.servingSize?.text, "3 Gummies")
