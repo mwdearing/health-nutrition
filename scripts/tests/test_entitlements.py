@@ -9,6 +9,8 @@ from __future__ import annotations
 import plistlib
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 ENTITLEMENTS = ROOT / "ios/HealthNutrition/HealthNutrition.entitlements"
 WORKFLOW = ROOT / ".github/workflows/ios.yml"
@@ -31,6 +33,15 @@ def test_healthkit_stays_enabled() -> None:
 
 def test_no_other_capability_is_declared() -> None:
     assert set(_entitlements()) == {APPLE_SIGN_IN, HEALTHKIT}
+
+
+def test_project_generation_preserves_account_and_health_capabilities() -> None:
+    # XcodeGen writes these properties over the plist; a path alone produces an empty file.
+    project = yaml.safe_load((ROOT / "ios/HealthNutrition/project.yml").read_text())
+    declaration = project["targets"]["HealthNutrition"]["entitlements"]
+    assert declaration.get("properties", {}) == {
+        APPLE_SIGN_IN: ["Default"], HEALTHKIT: True,
+    }
 
 
 def test_the_ios_workflow_runs_this_test_on_every_relevant_change() -> None:
