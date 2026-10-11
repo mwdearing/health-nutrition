@@ -5,9 +5,6 @@ import SwiftUI
 /// sharing switch, sign out and delete.
 public struct AccountSectionView: View {
     @ObservedObject var model: AccountViewModel
-    @State private var showingSignIn = false
-    @State private var showingDisclosure = false
-    @State private var confirmingDelete = false
     @FocusState private var nameFocused: Bool
 
     public init(model: AccountViewModel) {
@@ -17,7 +14,7 @@ public struct AccountSectionView: View {
     public var body: some View {
         Section {
             if model.phase == .signedOut {
-                Button("Sign in") { showingSignIn = true }
+                Button("Sign in") { model.presentingSignIn = true }
                     .disabled(model.isBusy)
             } else {
                 TextField("Name", text: $model.displayName)
@@ -39,7 +36,7 @@ public struct AccountSectionView: View {
                 }
                 Button("Sign out") { Task { await model.signOut() } }
                     .disabled(model.isBusy)
-                Button("Delete account", role: .destructive) { confirmingDelete = true }
+                Button("Delete account", role: .destructive) { model.presentingDeleteConfirmation = true }
                     .disabled(model.isBusy)
             }
             if let message = model.message {
@@ -56,34 +53,63 @@ public struct AccountSectionView: View {
         .onChange(of: nameFocused) { _, focused in
             if !focused { saveName() }
         }
-        .sheet(isPresented: $showingSignIn, onDismiss: {
-            // Read after the sign-in sheet has gone away, so the two sheets are never up together.
-            showingDisclosure = model.needsDisclosure
-        }) {
-            SignInSheet(model: model)
-        }
-        .sheet(isPresented: $showingDisclosure) {
-            SharingDisclosureSheet(model: model)
-        }
-        .confirmationDialog(
-            "Delete your account?", isPresented: $confirmingDelete, titleVisibility: .visible
-        ) {
-            Button("Delete account", role: .destructive) { Task { await model.deleteAccount() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The account and every label it shared are deleted. Data on this device is kept.")
-        }
-        .onChange(of: model.needsDisclosure) { _, needed in
-            if needed && !showingSignIn { showingDisclosure = true }
-        }
-        .task {
-            await model.load()
-            showingDisclosure = model.needsDisclosure && !showingSignIn
-        }
     }
 
     private func saveName() {
         let text = model.displayName
         Task { await model.saveName(text) }
+    }
+}
+
+/// The sheets and the delete confirmation of the Account section. They are attached to the Settings form
+/// itself, not to the Section: a presentation anchored to one lazily managed row is dropped when that row is
+/// rebuilt (for example when the busy state flips), which took the sign-in sheet down with it. The Section's
+/// buttons only set `presentingSignIn` and `presentingDeleteConfirmation` on the model.
+struct AccountPresentations: ViewModifier {
+    @ObservedObject var model: AccountViewModel
+    @State private var showingDisclosure = false
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $model.presentingSignIn, onDismiss: {
+                // Read after the sign-in sheet has gone away, so the two sheets are never up together.
+                showingDisclosure = model.needsDisclosure
+            }) {
+                SignInSheet(model: model)
+            }
+            .sheet(isPresented: $showingDisclosure) {
+                SharingDisclosureSheet(model: model)
+            }
+            .confirmationDialog(
+                "Delete your account?", isPresented: $model.presentingDeleteConfirmation, titleVisibility: .visible
+            ) {
+                Button("Delete account", role: .destructive) { Task { await model.deleteAccount() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The account and every label it shared are deleted. Data on this device is kept.")
+            }
+            .onChange(of: model.needsDisclosure) { _, needed in
+                if needed && !model.presentingSignIn { showingDisclosure = true }
+            }
+            .onAppear {
+                showingDisclosure = model.needsDisclosure && !model.presentingSignIn
+            }
+            // Brings the stored sign-in back when Settings opens, if the launch restore could not.
+            .task {
+                await model.load()
+                showingDisclosure = model.needsDisclosure && !model.presentingSignIn
+            }
+    }
+}
+
+extension View {
+    /// Attaches the Account section's sheets and confirmation to this view (the Settings form).
+    @ViewBuilder
+    func accountPresentations(_ model: AccountViewModel?) -> some View {
+        if let model {
+            modifier(AccountPresentations(model: model))
+        } else {
+            self
+        }
     }
 }
