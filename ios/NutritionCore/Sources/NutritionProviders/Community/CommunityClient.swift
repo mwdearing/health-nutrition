@@ -83,7 +83,7 @@ public struct CommunityClient: Sendable {
             session: session,
             body: Data("{}".utf8)
         )
-        try await auth.discardSession()
+        _ = try await auth.invalidateSession(matchingAccessToken: session.accessToken)
     }
 
     public func submitLabel(_ submission: CommunityLabelSubmission) async throws -> CommunitySubmitResult {

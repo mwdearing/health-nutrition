@@ -32,6 +32,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         case "/auth/v1/logout": kind = "logout"
         case "/auth/v1/verify": kind = "verify"
         case "/rest/v1/profiles": kind = "profile"
+        case "/rest/v1/rpc/delete_my_account": kind = "delete"
         case "/auth/v1/token":
             kind = request.url?.query?.contains("refresh_token") == true ? "refresh" : "signin"
         default: kind = "other"
@@ -52,6 +53,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
             status = 200
             body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"22222222-3333-4444-5555-666666666666","email":"new@example.com"}}"#
         case "refresh": status = 200; body = refreshedBody
+        case "delete": status = 204; body = ""
         case "profile": status = 401; body = "{}"
         default: status = 204; body = ""
         }
@@ -140,6 +142,36 @@ final class CommunityAuthRaceTests: XCTestCase {
         transport.release("profile")
         await assertCommunityError(.unauthorized) { try await profile.value }
         XCTAssertEqual(store.load(), newSession, "an old 401 must not clear the newer stored session")
+    }
+
+    func testDeletingOldAccountCannotClearNewerSignIn() async throws {
+        let store = InMemoryCommunitySessionStore(testSession())
+        let transport = LifecycleTransport(gated: ["delete"])
+        let client = CommunityClient(
+            config: try makeConfig(), transport: transport, store: store, now: { testNow }
+        )
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+        let newSession = try await client.auth.signInWithApple(idToken: "new-id", nonce: "new-nonce")
+        XCTAssertNotEqual(newSession.accessToken, testSession().accessToken)
+
+        transport.release("delete")
+        try await deletion.value
+        XCTAssertEqual(store.load(), newSession, "a completed delete for account A must preserve account B")
+    }
+
+    func testDeleteClearFailurePropagatesAfterServerSuccess() async throws {
+        let stored = testSession()
+        let store = FailingClearStore(stored)
+        let transport = LifecycleTransport(gated: [])
+        let client = CommunityClient(
+            config: try makeConfig(), transport: transport, store: store, now: { testNow }
+        )
+
+        await assertCommunityError(.storage) { try await client.deleteAccount() }
+        XCTAssertEqual(transport.operations, ["delete"], "server deletion must happen before local clear")
+        XCTAssertEqual(store.load(), stored)
     }
 
     func testClearFailureIsPropagatedAndSkipsServerLogout() async throws {
