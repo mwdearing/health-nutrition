@@ -127,17 +127,17 @@ final class CommunityClientTests: XCTestCase {
         XCTAssertEqual([first, second, third], [.received, .shared, .verified])
     }
 
-    func testLookupLabelDecodesVerifiedAndUnverifiedLabels() async throws {
+    func testLookupLabelUsesV2AndRequiresExplicitVerificationSource() async throws {
         let body = """
-        [{"basis":"per_100g","serving_text":null,"product_name":"Oat Bar","brand":"Acme","nutrients":{"energyKcal":400,"protein":10},"supporting_devices":5,"verified":true},\
-        {"basis":"per_serving","serving_text":"1 bar (40 g)","product_name":"Oat Bar","brand":null,"nutrients":{"energyKcal":160},"supporting_devices":2,"verified":false}]
+        [{"basis":"per_100g","serving_text":null,"product_name":"Oat Bar","brand":"Acme","nutrients":{"energyKcal":400,"protein":10},"supporting_devices":5,"verified":true,"verification_source":"community"},\
+        {"basis":"per_serving","serving_text":"1 bar (40 g)","product_name":"Oat Bar","brand":null,"nutrients":{"energyKcal":160},"supporting_devices":9,"verified":true,"verification_source":"owner_reviewed"}]
         """
         let transport = FakeCommunityTransport([.response(status: 200, body: body)])
         let labels = try await client(transport).lookupLabel(barcode: barcode)
 
         XCTAssertEqual(labels.count, 2)
         let request = try XCTUnwrap(transport.requests.first)
-        XCTAssertEqual(request.url?.path, "/rest/v1/rpc/lookup_label")
+        XCTAssertEqual(request.url?.path, "/rest/v1/rpc/lookup_label_v2")
         XCTAssertEqual(try bodyJSON(request)["p_barcode"] as? String, barcode)
         XCTAssertEqual(labels[0].barcode, barcode)
         XCTAssertEqual(labels[0].basis, .per100g)
@@ -146,12 +146,28 @@ final class CommunityClientTests: XCTestCase {
         XCTAssertEqual(labels[0].brand, "Acme")
         XCTAssertEqual(labels[0].nutrients["energyKcal"], Decimal(400))
         XCTAssertEqual(labels[0].supportingAccounts, 5)
-        XCTAssertTrue(labels[0].verified)
+        XCTAssertEqual(labels[0].verificationSource, .community)
+        XCTAssertFalse(labels[0].verified, "a legacy consensus bit cannot verify a community row")
         XCTAssertEqual(labels[1].basis, .perServing)
         XCTAssertEqual(labels[1].servingText, "1 bar (40 g)")
         XCTAssertNil(labels[1].brand)
-        XCTAssertEqual(labels[1].supportingAccounts, 2)
-        XCTAssertFalse(labels[1].verified)
+        XCTAssertEqual(labels[1].verificationSource, .ownerReviewed)
+        XCTAssertEqual(labels[1].supportingAccounts, 0, "owner review must not claim community supporters")
+        XCTAssertTrue(labels[1].verified)
+    }
+
+    func testLookupLabelRejectsMissingOrUnknownVerificationSource() async throws {
+        let rows = [
+            #"[{"basis":"per_100g","serving_text":null,"product_name":"Oat Bar","brand":null,"nutrients":{"energyKcal":400},"supporting_devices":5,"verified":true}]"#,
+            #"[{"basis":"per_100g","serving_text":null,"product_name":"Oat Bar","brand":null,"nutrients":{"energyKcal":400},"supporting_devices":5,"verified":true,"verification_source":"consensus"}]"#,
+        ]
+        for row in rows {
+            let transport = FakeCommunityTransport([.response(status: 200, body: row)])
+            await assertCommunityError(.server(200)) {
+                try await client(transport).lookupLabel(barcode: barcode)
+            }
+            XCTAssertEqual(transport.requests.first?.url?.path, "/rest/v1/rpc/lookup_label_v2")
+        }
     }
 
     func testLookupWithoutSessionIsSignedOutWithoutARequest() async throws {

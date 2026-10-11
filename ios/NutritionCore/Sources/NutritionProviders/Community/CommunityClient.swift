@@ -101,7 +101,7 @@ public struct CommunityClient: Sendable {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(LookupBody(barcode: barcode))
         let (data, response) = try await authenticatedSend(
-            "/rest/v1/rpc/lookup_label",
+            "/rest/v1/rpc/lookup_label_v2",
             session: session,
             body: body
         )
@@ -114,8 +114,11 @@ public struct CommunityClient: Sendable {
                 productName: row.productName,
                 brand: row.brand,
                 nutrients: row.nutrients,
-                verified: row.verified,
-                supportingAccounts: row.supportingDevices
+                // The versioned source is authoritative. A legacy `verified` bit can never
+                // turn a community aggregate into an owner-reviewed label.
+                verified: row.verificationSource == .ownerReviewed,
+                supportingAccounts: row.verificationSource == .community ? row.supportingDevices : 0,
+                verificationSource: row.verificationSource
             )
         }
     }
@@ -221,5 +224,15 @@ private struct LabelRow: Decodable {
     let brand: String?
     let nutrients: [String: Decimal]
     let supportingDevices: Int
-    let verified: Bool
+    let verificationSource: CommunityVerificationSource
+
+    enum CodingKeys: String, CodingKey {
+        case basis
+        case servingText
+        case productName
+        case brand
+        case nutrients
+        case supportingDevices
+        case verificationSource
+    }
 }

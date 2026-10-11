@@ -33,8 +33,8 @@ public enum CommunityLabelLimits {
     }
 }
 
-/// Turns what the community catalog shows for a barcode into the product the form reads, and says how
-/// many people agree on it. The values are carried as the catalog gives them: nothing is rounded or guessed.
+/// Turns what the community catalog shows for a barcode into the product the form reads, and states
+/// the explicit verification source. The values are carried as given: nothing is rounded or guessed.
 public enum CommunityLabelMapping {
     /// The catalog's identifier, stored with an entry as its origin so a reader can tell where the values came from.
     public static let source = "community"
@@ -54,21 +54,27 @@ public enum CommunityLabelMapping {
                 barcode: barcode, name: String(label.productName.prefix(CommunityLabelLimits.nameLength)),
                 brand: label.brand.map { String($0.prefix(CommunityLabelLimits.brandLength)) },
                 basis: lookupBasis(basis), nutrients: nutrients,
-                attribution: attribution(verified: label.verified, supportingAccounts: label.supportingAccounts),
+                attribution: attribution(source: label.verificationSource, supportingAccounts: label.supportingAccounts),
                 serving: basis == .perServing
                     ? ServingDefinition(quantity: nil, unit: nil, text: label.servingText) : nil)
         }
         return nil
     }
 
-    /// The line that goes next to the values. A verified label and an unverified one read differently, so a
-    /// person can tell which values the community has settled on.
-    public static func attribution(verified: Bool, supportingAccounts: Int) -> ProductAttribution {
-        let agreement = supportingAccounts == 1 ? "1 person agrees" : "\(supportingAccounts) people agree"
-        let text = verified
-            ? "Verified by the community: \(agreement) on these values."
-            : "Shared by the community, not yet verified: \(agreement)."
-        return ProductAttribution(source: source, text: text, url: "")
+    /// The line that goes next to the values. Agreement counts never imply verification.
+    public static func attribution(
+        source verificationSource: CommunityVerificationSource,
+        supportingAccounts: Int
+    ) -> ProductAttribution {
+        let text: String
+        switch verificationSource {
+        case .community:
+            let agreement = supportingAccounts == 1 ? "1 person agrees" : "\(supportingAccounts) people agree"
+            text = "Shared by the community, not yet verified: \(agreement)."
+        case .ownerReviewed:
+            text = "Reviewed by the catalog owner"
+        }
+        return ProductAttribution(source: Self.source, text: text, url: "")
     }
 
     /// The unit each standard nutrient is stored in: energy in kcal, sodium in mg, the rest in grams.
