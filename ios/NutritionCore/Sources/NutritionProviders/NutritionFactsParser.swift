@@ -87,7 +87,7 @@ public enum NutritionFactsParser {
         var panelPerContainer: Decimal?
         var preheadingPerContainer: Decimal?
         var amounts: [String: NutrientValue] = [:]
-        var recordedScans: [String: ScannedAmount] = [:]
+        var boundThresholds: [String: Decimal] = [:]
         var reviews: [String: ParsedValueReview] = [:]
         var extra: [ParsedAdditionalNutrient] = []
         var displayNames: [String: String] = [:]
@@ -156,7 +156,7 @@ public enum NutritionFactsParser {
                 : following
             let read = absorbRows(
                 in: residual, following: rowFollowing, amounts: &amounts,
-                recordedScans: &recordedScans, reviews: &reviews)
+                boundThresholds: &boundThresholds, reviews: &reviews)
             // Whatever the named rows left on the line may still be a row the panel printed: a
             // supplement lists compounds the table does not name, and they are read as their own rows.
             // The whole line is scanned, not only the text behind the last named row, because a
@@ -167,7 +167,7 @@ public enum NutritionFactsParser {
             // the named rows' own text here is safe.
             let additionalUsedNextLine = absorbAdditionalRows(
                 in: residual, next: read.usedNextLine ? nil : rowFollowing, into: &extra,
-                amounts: &amounts, recordedScans: &recordedScans,
+                amounts: &amounts, boundThresholds: &boundThresholds,
                 reviews: &reviews, displayNames: &displayNames)
             let consumedNextLine = read.usedNextLine || additionalUsedNextLine
             index += usedFollowingForServing ? (consumedNextLine ? 3 : 2) : (consumedNextLine ? 2 : 1)
@@ -740,7 +740,7 @@ public enum NutritionFactsParser {
         in line: String,
         following nextLine: String?,
         amounts: inout [String: NutrientValue],
-        recordedScans: inout [String: ScannedAmount],
+        boundThresholds: inout [String: Decimal],
         reviews: inout [String: ParsedValueReview]
     ) -> (usedNextLine: Bool, remaining: String) {
         var cursor = line
@@ -759,7 +759,7 @@ public enum NutritionFactsParser {
             if isBreakdownLine(context: rowContext(around: match, in: cursor), for: row) { break }
             let remainder = afterRowPunctuation(String(cursor[match.end...]))
             if let scan = scanAmount(in: remainder), statesAmount(scan, for: row) {
-                record(scan, for: row, amounts: &amounts, recordedScans: &recordedScans, reviews: &reviews)
+                record(scan, for: row, amounts: &amounts, boundThresholds: &boundThresholds, reviews: &reviews)
                 cursor = scan.remaining
                 continue
             }
@@ -779,7 +779,7 @@ public enum NutritionFactsParser {
             if row.usualUnit == .kcal, let calorieBoundary, calorieBoundary > remainder.startIndex {
                 let head = String(remainder[..<calorieBoundary])
                 if let scan = scanAmount(in: head), statesAmount(scan, for: row) {
-                    record(scan, for: row, amounts: &amounts, recordedScans: &recordedScans, reviews: &reviews)
+                    record(scan, for: row, amounts: &amounts, boundThresholds: &boundThresholds, reviews: &reviews)
                     cursor = scan.remaining + String(remainder[calorieBoundary...])
                     continue
                 }
@@ -788,7 +788,7 @@ public enum NutritionFactsParser {
             // Sugars". The rest of the line is still read, because a flattened panel runs the rows that
             // follow on the same line.
             if let scan = leadingAmount(before: String(cursor[..<match.nameStart]), for: row), statesAmount(scan, for: row) {
-                record(scan, for: row, amounts: &amounts, recordedScans: &recordedScans, reviews: &reviews)
+                record(scan, for: row, amounts: &amounts, boundThresholds: &boundThresholds, reviews: &reviews)
                 cursor = remainder
                 continue
             }
@@ -798,7 +798,7 @@ public enum NutritionFactsParser {
                 // A name and its amount can also land on separate lines when the panel was read column by
                 // column. The text left beside that amount on the same line belongs to the rows behind
                 // it, so it is read before the line is left behind as well.
-                record(scan, for: row, amounts: &amounts, recordedScans: &recordedScans, reviews: &reviews)
+                record(scan, for: row, amounts: &amounts, boundThresholds: &boundThresholds, reviews: &reviews)
                 usedNextLine = true
                 guard scan.remaining != cursor else { break }
                 cursor = scan.remaining
@@ -969,7 +969,7 @@ public enum NutritionFactsParser {
         _ scan: ScannedAmount,
         for row: PanelRow,
         amounts: inout [String: NutrientValue],
-        recordedScans: inout [String: ScannedAmount],
+        boundThresholds: inout [String: Decimal],
         reviews: inout [String: ParsedValueReview]
     ) {
         var reasons = scan.reasons
@@ -982,18 +982,16 @@ public enum NutritionFactsParser {
         let key = row.key.rawValue
         let value = scan.isBound ? NutrientValue.belowReportingThreshold(unit) : .known(scan.amount, unit)
         if let existing = amounts[key] {
-            let priorScan = recordedScans[key]
-            let samePrintedAmount = priorScan.map {
-                $0.amount == scan.amount && $0.unit == scan.unit && $0.isBound == scan.isBound
-            } ?? (existing == value)
-            guard !samePrintedAmount else { return }
+            let conflicts = existing != value
+                || (scan.isBound && boundThresholds[key].map { $0 != scan.amount } == true)
+            guard conflicts else { return }
             var mergedReasons = reviews[key]?.reasons ?? []
             mergedReasons.insert(.conflictingDuplicate)
             reviews[key] = ParsedValueReview(reasons: mergedReasons)
             return
         }
         amounts[key] = value
-        recordedScans[key] = scan
+        if scan.isBound { boundThresholds[key] = scan.amount }
         if !reasons.isEmpty {
             reviews[key] = ParsedValueReview(reasons: reasons)
         }
@@ -1045,7 +1043,7 @@ public enum NutritionFactsParser {
         next nextLine: String?,
         into collected: inout [ParsedAdditionalNutrient],
         amounts: inout [String: NutrientValue],
-        recordedScans: inout [String: ScannedAmount],
+        boundThresholds: inout [String: Decimal],
         reviews: inout [String: ParsedValueReview],
         displayNames: inout [String: String]
     ) -> Bool {
@@ -1079,7 +1077,7 @@ public enum NutritionFactsParser {
                 usedNextLine = true
                 rest = absorbRows(
                     in: row.remaining, following: nil, amounts: &amounts,
-                    recordedScans: &recordedScans, reviews: &reviews).remaining
+                    boundThresholds: &boundThresholds, reviews: &reviews).remaining
             } else {
                 rest = trimmed(row.remaining)
             }
