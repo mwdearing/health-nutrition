@@ -325,3 +325,17 @@ def test_the_stored_bundle_is_rewrapped_in_the_form_the_keychain_reads() -> None
     cleanup = str(_steps()[-1]["run"])
     assert "signing-keychain.p12" in cleanup
     assert "signing.pem" in cleanup
+
+
+def test_the_site_key_is_an_optional_secret_passed_only_to_the_archive() -> None:
+    text = WORKFLOW.read_text()
+    assert "HCAPTCHA_SITE_KEY: ${{ secrets.HCAPTCHA_SITE_KEY }}" in text
+    archive = next(s for s in _steps() if s.get("name") == "Archive with automatic signing")
+    assert cast("dict[str, object]", archive["env"])["HCAPTCHA_SITE_KEY"] == "${{ secrets.HCAPTCHA_SITE_KEY }}"
+    assert '"HCAPTCHA_SITE_KEY=${HCAPTCHA_SITE_KEY:-}"' in str(archive["run"])
+
+
+def test_the_site_key_is_never_printed() -> None:
+    for step in _steps():
+        run = str(step.get("run", ""))
+        assert not re.search(r"(echo|printf|cat)[^\n]*HCAPTCHA_SITE_KEY", run)

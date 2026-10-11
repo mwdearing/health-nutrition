@@ -146,6 +146,15 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertNil(model.message)
     }
 
+    func testCaptchaFailureShowsTheCaptchaSentenceAndStaysSignedOut() async throws {
+        let (model, service, _) = makeModel()
+        service.appleResult = .failure(CommunityError.captcha)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertEqual(model.message, "We could not confirm you are a person. Try again.")
+        XCTAssertEqual(model.message, AccountViewModel.captchaMessage)
+    }
+
     func testAppleSignInFailureStaysSignedOutWithAShortMessage() async throws {
         let (model, service, _) = makeModel()
         service.appleResult = .failure(CommunityError.network)
