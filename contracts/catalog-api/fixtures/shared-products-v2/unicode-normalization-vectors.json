@@ -1,0 +1,18 @@
+{
+  "display": [
+    {
+      "input": "Café",
+      "nfc": "Café"
+    }
+  ],
+  "search": [
+    {
+      "input": " ＯＡＴＳ ",
+      "normalized": "oats"
+    },
+    {
+      "input": "a  b",
+      "normalized": "a b"
+    }
+  ]
+}

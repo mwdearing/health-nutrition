@@ -1,0 +1,894 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/catalog-api/shared-products-v2.schema.json",
+  "title": "Shared catalog products v2",
+  "description": "Validate selected $defs by RPC. Semantic validation and canonical byte limit are normative in shared-products-v2.md.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/publish_request"
+    },
+    {
+      "$ref": "#/$defs/withdraw_request"
+    }
+  ],
+  "$defs": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$",
+      "description": "Additionally value <= 1000000000; preserve spelling for receipt identity."
+    },
+    "unit": {
+      "enum": [
+        "g",
+        "mg",
+        "mcg",
+        "kg",
+        "oz",
+        "mL",
+        "L",
+        "fl oz",
+        "cup",
+        "tbsp",
+        "tsp",
+        "kcal",
+        "serving",
+        "scoop",
+        "tablet",
+        "capsule",
+        "piece",
+        "gummy",
+        "IU"
+      ]
+    },
+    "serving": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "quantity": {
+          "$ref": "#/$defs/decimal"
+        },
+        "unit": {
+          "enum": [
+            "g",
+            "mg",
+            "mcg",
+            "kg",
+            "oz",
+            "mL",
+            "L",
+            "fl oz",
+            "cup",
+            "tbsp",
+            "tsp",
+            "serving",
+            "scoop",
+            "tablet",
+            "capsule",
+            "piece",
+            "gummy"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "quantity",
+        "unit"
+      ]
+    },
+    "fact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "maxLength": 64,
+              "anyOf": [
+                {
+                  "enum": [
+                    "energyKcal",
+                    "fat",
+                    "saturatedFat",
+                    "transFat",
+                    "cholesterol",
+                    "sodium",
+                    "carbohydrates",
+                    "fiber",
+                    "sugars",
+                    "addedSugars",
+                    "protein",
+                    "vitaminD",
+                    "calcium",
+                    "iron",
+                    "potassium"
+                  ]
+                },
+                {
+                  "pattern": "^ingredient:.+$"
+                }
+              ]
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "state": {
+              "enum": [
+                "known"
+              ]
+            },
+            "amount": {
+              "$ref": "#/$defs/decimal"
+            },
+            "unit": {
+              "$ref": "#/$defs/unit"
+            }
+          },
+          "required": [
+            "key",
+            "display_name",
+            "state",
+            "amount",
+            "unit"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "maxLength": 64,
+              "anyOf": [
+                {
+                  "enum": [
+                    "energyKcal",
+                    "fat",
+                    "saturatedFat",
+                    "transFat",
+                    "cholesterol",
+                    "sodium",
+                    "carbohydrates",
+                    "fiber",
+                    "sugars",
+                    "addedSugars",
+                    "protein",
+                    "vitaminD",
+                    "calcium",
+                    "iron",
+                    "potassium"
+                  ]
+                },
+                {
+                  "pattern": "^ingredient:.+$"
+                }
+              ]
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "state": {
+              "enum": [
+                "unknown",
+                "not_applicable"
+              ]
+            }
+          },
+          "required": [
+            "key",
+            "display_name",
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "type": "string",
+              "maxLength": 64,
+              "anyOf": [
+                {
+                  "enum": [
+                    "energyKcal",
+                    "fat",
+                    "saturatedFat",
+                    "transFat",
+                    "cholesterol",
+                    "sodium",
+                    "carbohydrates",
+                    "fiber",
+                    "sugars",
+                    "addedSugars",
+                    "protein",
+                    "vitaminD",
+                    "calcium",
+                    "iron",
+                    "potassium"
+                  ]
+                },
+                {
+                  "pattern": "^ingredient:.+$"
+                }
+              ]
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "state": {
+              "enum": [
+                "below_reporting_threshold"
+              ]
+            },
+            "unit": {
+              "$ref": "#/$defs/unit"
+            }
+          },
+          "required": [
+            "key",
+            "display_name",
+            "state"
+          ]
+        }
+      ]
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "brand": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 80
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "barcode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^([0-9]{8}|[0-9]{12}|[0-9]{13})$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "food",
+            "drink",
+            "supplement"
+          ]
+        },
+        "basis": {
+          "enum": [
+            "per_100_g",
+            "per_100_ml",
+            "per_serving"
+          ]
+        },
+        "serving": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/serving"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "name",
+        "brand",
+        "barcode",
+        "kind",
+        "basis",
+        "serving",
+        "facts"
+      ]
+    },
+    "publish_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "client_revision_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "product_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_server_revision": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consent_version": {
+          "const": 2,
+          "type": "integer"
+        },
+        "consent_generation": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "product": {
+          "$ref": "#/$defs/product"
+        }
+      },
+      "required": [
+        "operation_id",
+        "client_revision_id",
+        "product_id",
+        "expected_server_revision",
+        "consent_version",
+        "consent_generation",
+        "product"
+      ]
+    },
+    "withdraw_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "client_revision_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "product_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expected_server_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "operation_id",
+        "client_revision_id",
+        "product_id",
+        "expected_server_revision"
+      ]
+    },
+    "verification": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "source"
+          ],
+          "properties": {
+            "status": {
+              "const": "shared_unverified"
+            },
+            "source": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "source"
+          ],
+          "properties": {
+            "status": {
+              "const": "verified"
+            },
+            "source": {
+              "const": "owner_reviewed"
+            }
+          }
+        }
+      ]
+    },
+    "support": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "distinct_accounts": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "verification_threshold": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "distinct_accounts",
+        "verification_threshold"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "representative_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "attribution": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_id",
+        "representative_revision",
+        "attribution"
+      ]
+    },
+    "alternative": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "representative_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "product": {
+          "$ref": "#/$defs/product"
+        },
+        "support": {
+          "$ref": "#/$defs/support"
+        }
+      },
+      "required": [
+        "representative_revision",
+        "product",
+        "support"
+      ]
+    },
+    "public_product": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "representative_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "product": {
+          "$ref": "#/$defs/product"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        },
+        "support": {
+          "$ref": "#/$defs/support"
+        },
+        "missing_facts": {
+          "type": "boolean"
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/alternative"
+          }
+        }
+      },
+      "required": [
+        "product_id",
+        "representative_revision",
+        "product",
+        "source",
+        "verification",
+        "support",
+        "missing_facts",
+        "alternatives"
+      ]
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/public_product"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "product_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "acknowledged_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "current_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "current_state": {
+          "enum": [
+            "active",
+            "withdrawn",
+            "rejected"
+          ]
+        },
+        "publication": {
+          "$ref": "#/$defs/publication"
+        },
+        "replayed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "operation_id",
+        "product_id",
+        "acknowledged_revision",
+        "current_revision",
+        "current_state",
+        "publication",
+        "replayed"
+      ]
+    },
+    "own_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "current_revision": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current_state": {
+          "enum": [
+            "none",
+            "active",
+            "withdrawn",
+            "rejected"
+          ]
+        }
+      },
+      "required": [
+        "product_id",
+        "current_revision",
+        "current_state"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "supported_version": {
+          "const": 2
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_envelope_bytes": {
+              "const": 16384
+            },
+            "max_facts": {
+              "const": 64
+            },
+            "max_search_limit": {
+              "const": 20
+            }
+          },
+          "required": [
+            "max_envelope_bytes",
+            "max_facts",
+            "max_search_limit"
+          ]
+        },
+        "current_consent_version": {
+          "const": 2
+        },
+        "caller_acknowledgment": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "version": {
+                  "const": 2
+                },
+                "generation": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)$"
+                }
+              },
+              "required": [
+                "version",
+                "generation"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consent_generation": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "sharing_permission": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "supported_version",
+        "enabled",
+        "limits",
+        "current_consent_version",
+        "caller_acknowledgment",
+        "consent_generation",
+        "sharing_permission"
+      ]
+    },
+    "consent_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "generation": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "acknowledged": {
+          "const": true
+        }
+      },
+      "required": [
+        "version",
+        "generation",
+        "acknowledged"
+      ]
+    },
+    "search_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "products": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/public_product"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "products",
+        "next_cursor"
+      ]
+    },
+    "detail_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "product": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/public_product"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "product"
+      ]
+    },
+    "error_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_request",
+            "unauthorized",
+            "consent_required",
+            "revision_conflict",
+            "operation_conflict",
+            "rejected",
+            "rate_limited",
+            "unavailable"
+          ]
+        },
+        "field": {
+          "type": "string"
+        },
+        "current_revision": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current_state": {
+          "enum": [
+            "none",
+            "active",
+            "withdrawn",
+            "rejected"
+          ]
+        },
+        "consent_generation": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "retry_after_seconds": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "code"
+      ]
+    },
+    "search_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "p_query": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "p_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "food",
+                "drink",
+                "supplement"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "p_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "At most 1024 UTF-8 bytes; fingerprint bound"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "p_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "p_query"
+      ]
+    },
+    "detail_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "p_product_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "p_product_id"
+      ]
+    },
+    "consent_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "p_version": {
+          "const": 2,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "p_version"
+      ]
+    }
+  }
+}
