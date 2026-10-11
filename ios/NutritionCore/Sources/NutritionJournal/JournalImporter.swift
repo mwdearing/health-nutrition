@@ -1,8 +1,8 @@
 import Foundation
 import NutritionDomain
 
-/// Why an import did not happen. Every case is a refusal: the importer never leaves a journal half
-/// restored, so anything it cannot do as a whole it does not do at all.
+/// Why an import did not complete. Most failures leave both stores unchanged; `partialRestore` means the
+/// favorites write and its protected journal undo both failed, so restored journal rows may remain.
 public enum JournalImportError: Error, Sendable, Equatable {
     /// The encoded file or its combined collections exceed the import limits for this build.
     case tooLarge
@@ -16,6 +16,9 @@ public enum JournalImportError: Error, Sendable, Equatable {
     /// The file is a version 1 export that cannot be restored as it stands: a snapshot nothing defines,
     /// a revision history that does not line up, an amount that is not exact decimal text.
     case corrupt(String)
+    /// Favorites could not be restored and the journal refused its narrow undo. These counts describe
+    /// rows from the restore that may remain; no entry content or underlying store error is exposed.
+    case partialRestore(retainedIntakes: Int, retainedTombstones: Int)
 }
 
 /// What one import wrote. Counts, not content: the journal itself is the record of what was restored.
@@ -116,9 +119,9 @@ public enum JournalImporter {
     /// from a version this build does not read, or internally inconsistent changes nothing.
     ///
     /// The journal is written first, in one save that queues no delivery work, and the favorites after it.
-    /// That order is what makes the import all-or-nothing: the journal is the larger write and the one that
-    /// can be put back, so when the favorites write fails afterwards the journal is emptied again and the
-    /// import reports a failure with both stores as it found them.
+    /// When the favorites write fails, a narrow undo puts the journal back if its rows are untouched. If a
+    /// concurrent write means that undo would throw away somebody's work, a typed partial outcome reports
+    /// how many imported rows may remain rather than mislabeling the file as corrupt.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
         limits: JournalImportLimits = .default
@@ -149,16 +152,16 @@ public enum JournalImporter {
         if let favoritesTarget {
             do {
                 try favoritesTarget.restore(plan.favorites)
-            } catch {
-                let failure = error
+            } catch let favoritesFailure {
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
-                    throw JournalImportError.corrupt(
-                        "the favorites could not be restored (\(failure)) and the journal could not be put "
-                            + "back either (\(error))")
+                    let retainedIntakes = receipt.intakes.filter { $0.lifecycle == .active }.count
+                    let retainedTombstones = receipt.intakes.filter { $0.lifecycle == .deleted }.count
+                    throw JournalImportError.partialRestore(
+                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
-                throw failure
+                throw favoritesFailure
             }
         }
         return JournalImportSummary(

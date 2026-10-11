@@ -193,6 +193,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// its other screens are empty now and reload them. The erase happens on this screen; the totals on
     /// Today and the rows in the Journal would otherwise still show what was just deleted.
     @Published public private(set) var eraseGeneration = 0
+    /// Counts completed journal restores, including partial restores, so the host reloads screens that hold
+    /// their own journal snapshot. Kept distinct from import/erase fencing generations.
+    @Published public private(set) var journalRestoreGeneration = 0
+    /// True while an erase is running, so an import started in that window is refused rather than racing it.
     @Published public private(set) var isErasing = false
     /// Switch positions of the two connections. They stay off because the toggles are disabled.
     @Published public var appleHealthEnabled = false
@@ -249,7 +253,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// because the two sides of that wait are on different actors: the restore finishes on a background
     /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
     private let importGate = ImportGate()
-    /// True while an erase is running, so an import started in that window is refused rather than racing it.
     /// Counts imports and erases. An import publishes only while its own number is still the current one,
     /// which is how the outcome of an import an erase overtook is dropped rather than shown.
     private var importGeneration = 0
@@ -723,7 +726,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             importSummary = summary
             importState = .imported
             importMessage = Self.importSummaryText(summary)
+            journalRestoreGeneration += 1
         case .failed(let failure):
+            if case .refused(.partialRestore) = failure {
+                // Undo refused to discard concurrent journal work, so rows from the import may remain.
+                // A previously exported copy now describes the wrong journal and other tabs must reload.
+                removeExportFile()
+                exportState = .idle
+                entryCount = 0
+                errorMessage = nil
+                journalRestoreGeneration += 1
+            }
             importSummary = nil
             importState = .failed
             importMessage = Self.importFailureText(for: failure)
@@ -778,6 +791,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return "This journal export is too large to import."
         case .malformed, .corrupt:
             return importFailedMessage
+        case .partialRestore:
+            return "The journal restore was incomplete; entries may already be present. "
+                + "Check your journal before importing this file again."
         }
     }
 

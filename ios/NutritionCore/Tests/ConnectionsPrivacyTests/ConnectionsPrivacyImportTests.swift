@@ -18,6 +18,7 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     struct Unsupported: Error {}
 
     var failNextSaveForTesting = false
+    var failUndoForTesting = false
     var intakes: [Intake] = []
     var deleted: [Intake] = []
     var revisionsByIntake: [String: [IntakeRevision]] = [:]
@@ -55,23 +56,39 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
             revisionsByIntake[entry.intake.id] = entry.revisions
         }
         deleted.append(contentsOf: plan.tombstones)
-        return JournalRestoreReceipt(intakes: [], insertedProductSnapshotIDs: [])
+        let restored = plan.entries.map { entry in
+            JournalRestoredIntake(
+                intakeID: entry.intake.id, lifecycle: .active,
+                currentRevision: entry.intake.currentRevision,
+                revisionNumbers: entry.revisions.map(\.number))
+        } + plan.tombstones.map { tombstone in
+            JournalRestoredIntake(
+                intakeID: tombstone.id, lifecycle: .deleted,
+                currentRevision: tombstone.currentRevision, revisionNumbers: [])
+        }
+        return JournalRestoreReceipt(intakes: restored, insertedProductSnapshotIDs: [])
     }
 
     func undoRestore(_ receipt: JournalRestoreReceipt) throws {
+        if failUndoForTesting { throw JournalImportError.corrupt("injected undo refusal") }
         intakes.removeAll()
         deleted.removeAll()
         revisionsByIntake = [:]
     }
 }
 
-private final class ImportStubFavorites: FavoritesStore, @unchecked Sendable {
+private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget, @unchecked Sendable {
     var items: [FavoriteTemplate] = []
+    var failRestoreForTesting = false
 
     func add(_ favorite: FavoriteTemplate) throws { items.append(favorite) }
     func remove(id: String) throws { items.removeAll { $0.id == id } }
     func list() throws -> [FavoriteTemplate] { items }
     func contains(id: String) throws -> Bool { items.contains { $0.id == id } }
+    func restore(_ favorites: [FavoriteTemplate]) throws {
+        if failRestoreForTesting { throw FavoritesError.injectedSaveFailure }
+        items = favorites
+    }
     func close() {}
 }
 
@@ -81,7 +98,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     private let entryID = "1f0c9d2a-6b3e-4a7f-9c5d-0e2b6f8a1d33"
 
     /// A version 1 export with one entry, as the screen would have been handed by a file picker.
-    private func export() throws -> Data {
+    private func export(includeFavorite: Bool = false) throws -> Data {
         let journal = ImportStubStore()
         journal.intakes = [
             Intake(
@@ -95,9 +112,19 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
                     componentID: "oats", name: "Oats", amount: Decimal(string: "37.5")!, unit: .g)],
                 productSnapshotID: nil, changeReason: "created", createdAt: now)
         ]
+        let favorites: ImportStubFavorites?
+        if includeFavorite {
+            let source = ImportStubFavorites()
+            source.items = [FavoriteTemplate(
+                id: "favorite-tea", displayName: "Tea", category: "drink",
+                components: [FavoriteComponent(componentID: "tea", name: "Tea", amountText: "250", unitSymbol: "mL")])]
+            favorites = source
+        } else {
+            favorites = nil
+        }
         return try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: journal, favorites: nil, appVersion: "0.1.0", exportedAt: now))
+                store: journal, favorites: favorites, appVersion: "0.1.0", exportedAt: now))
     }
 
     func testASuccessfulImportPublishesTheSummaryAndRestoresTheJournal() async throws {
@@ -106,6 +133,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         await importAndSettle(model, data: try export())
 
         XCTAssertEqual(model.importState, .imported)
+        XCTAssertEqual(model.journalRestoreGeneration, 1)
         XCTAssertEqual(model.importSummary?.intakes, 1)
         XCTAssertEqual(model.importMessage, "Imported 1 entry.")
         XCTAssertNil(model.errorMessage)
@@ -125,7 +153,55 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.importState, .failed)
         XCTAssertNil(model.importSummary)
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
         XCTAssertTrue(journal.restoredPlans.isEmpty, "a refused import writes nothing")
+    }
+
+    func testPartialRestoreWarnsEntriesMayRemainAndClearsTheStaleExport() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        var removed: [URL] = []
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites, writer: { _, _, _ in },
+            remover: { removed.append($0) })
+        XCTAssertTrue(model.export(now: now))
+        let staleExport = try XCTUnwrap(model.exportFileURL)
+
+        await importAndSettle(model, data: try export(includeFavorite: true))
+
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertNil(model.importSummary)
+        XCTAssertTrue(model.importMessage?.contains("may already be present") == true)
+        XCTAssertFalse(model.importMessage?.localizedCaseInsensitiveContains("retry") == true)
+        XCTAssertEqual(model.journalRestoreGeneration, 1)
+        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
+        XCTAssertNil(model.exportFileURL)
+        XCTAssertEqual(model.entryCount, 0)
+        XCTAssertEqual(model.exportState, .idle)
+        XCTAssertEqual(removed.map(\.path), [staleExport.path])
+    }
+
+    func testFavoritesFailureWithSuccessfulUndoKeepsTheOrdinaryFailureState() async throws {
+        let journal = ImportStubStore()
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        var removed: [URL] = []
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites, writer: { _, _, _ in },
+            remover: { removed.append($0) })
+        XCTAssertTrue(model.export(now: now))
+        let originalExport = try XCTUnwrap(model.exportFileURL)
+
+        await importAndSettle(model, data: try export(includeFavorite: true))
+
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importFailedMessage)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertEqual(model.exportFileURL, originalExport)
+        XCTAssertTrue(removed.isEmpty)
     }
 
     func testASuccessfulImportRemovesTheStaleExportThisScreenWasHolding() async throws {

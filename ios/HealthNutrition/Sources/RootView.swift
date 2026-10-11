@@ -263,6 +263,11 @@ struct RootView: View {
             services.goals.load()
             services.firstDayChecklist.load()
         }
+        // A restore writes the journal without going through the normal view-model reload path. This
+        // generation advances for a successful or partial restore so held Today/Journal rows catch up.
+        .onChange(of: connections.journalRestoreGeneration) { _, _ in
+            reload()
+        }
         #if DEBUG
         // A restore on the Connections and privacy screen writes the journal without going through
         // `reload()`, so it is watched here. The restore queues nothing of its own; this is here so a

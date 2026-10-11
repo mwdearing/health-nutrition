@@ -3,9 +3,30 @@ import NutritionDomain
 import XCTest
 @testable import NutritionJournal
 
-/// That an import is all or nothing: nothing is written unless everything can be, and a journal that is
-/// no longer empty is refused from inside the same transaction that would have done the writing.
+/// That an import validates before writing, compensates for a failed second-store write when it safely can,
+/// and reports when concurrent work prevents that compensation.
 final class JournalImportAtomicityTests: JournalImportTestCase {
+    private final class FavoritesThatEditsJournalThenFails: FavoritesStore, FavoritesRestoreTarget,
+        @unchecked Sendable
+    {
+        private let editJournal: () throws -> Void
+
+        init(editJournal: @escaping () throws -> Void) {
+            self.editJournal = editJournal
+        }
+
+        func add(_ favorite: FavoriteTemplate) throws {}
+        func remove(id: String) throws {}
+        func list() throws -> [FavoriteTemplate] { [] }
+        func contains(id: String) throws -> Bool { false }
+        func close() {}
+
+        func restore(_ favorites: [FavoriteTemplate]) throws {
+            try editJournal()
+            throw FavoritesError.injectedSaveFailure
+        }
+    }
+
     func testTheStoreItselfRefusesToRestoreIntoAJournalThatIsNoLongerEmpty() throws {
         // The emptiness check lives inside the store's restore transaction, under the same write lock as
         // the inserts, so a write that lands between the importer's check and the inserts cannot turn an
@@ -65,7 +86,9 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         let favoritesStore = try favorites(target)
         favoritesStore.failNextSaveForTesting = true
 
-        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? FavoritesError, .injectedSaveFailure)
+        }
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
         XCTAssertTrue(try journal.deletedIntakes().isEmpty)
         XCTAssertTrue(try journal.revisions(of: oatsID).isEmpty)
@@ -80,6 +103,28 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         let summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
         XCTAssertEqual(summary.intakes, 2)
         XCTAssertEqual(summary.favorites, 2)
+    }
+
+    func testFavoritesFailureAndConcurrentEditRefusalReportsRetainedJournal() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favorites = FavoritesThatEditsJournalThenFails {
+            try journal.edit(
+                intakeID: oatsID, components: [oats("99")], product: nil, changeReason: "concurrent edit",
+                now: base.addingTimeInterval(9_000), occurredAt: nil, timeZoneIdentifier: nil)
+        }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favorites)) {
+            guard case .partialRestore(retainedIntakes: 2, retainedTombstones: 1) = $0 as? JournalImportError else {
+                return XCTFail("expected a partial restore outcome, got \($0)")
+            }
+            XCTAssertFalse(String(describing: $0).contains("injectedSaveFailure"))
+        }
+        XCTAssertEqual(Set(try journal.activeIntakes().map(\.id)), Set([oatsID, waterID]))
+        XCTAssertEqual(try journal.revisions(of: oatsID).map(\.number), [1, 2, 3])
+        XCTAssertEqual(try journal.revisions(of: oatsID).last?.changeReason, "concurrent edit")
+        XCTAssertEqual(try journal.deletedIntakes().map(\.id), [goneID])
     }
 
     func testAFailedJournalWriteLeavesTheFavoritesAlone() throws {
