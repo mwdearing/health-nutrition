@@ -5,7 +5,14 @@ import XCTest
 
 /// Reads the recorded DSLD fixtures that live in `contracts/providers/dsld` in the repository, found
 /// relative to this file so the tests need no bundled resources and no network.
-private enum DSLDFixtures {
+enum DSLDFixtures {
+    enum PathError: Error, Equatable {
+        case emptyName
+        case absoluteName
+        case parentTraversal
+        case escapesRoot
+    }
+
     struct Recorded {
         let file: String
         let labelIdentifier: Int?
@@ -24,8 +31,8 @@ private enum DSLDFixtures {
 
     /// Every label file listed in MANIFEST.json, in manifest order.
     static func recordedLabels(file: StaticString = #filePath) throws -> [Recorded] {
-        let manifestURL = directory(file: file).appendingPathComponent("MANIFEST.json")
-        let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
+        let manifestData = try data("MANIFEST.json", file: file)
+        let manifest = try JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
         let entries = manifest?["files"] as? [[String: Any]] ?? []
         return entries.compactMap { entry in
             guard let name = entry["file"] as? String, name.contains("labels/") else { return nil }
@@ -39,7 +46,33 @@ private enum DSLDFixtures {
     }
 
     static func data(_ name: String, file: StaticString = #filePath) throws -> Data {
-        try Data(contentsOf: directory(file: file).appendingPathComponent(name))
+        try data(name, in: directory(file: file))
+    }
+
+    static func data(_ name: String, in root: URL) throws -> Data {
+        try Data(contentsOf: canonicalURL(for: name, in: root))
+    }
+
+    /// Resolves a fixture only when its canonical path remains beneath the canonical fixture root.
+    /// Component comparison avoids treating a sibling such as `fixtures-backup` as a child of `fixtures`.
+    static func canonicalURL(for name: String, in root: URL) throws -> URL {
+        guard !name.isEmpty else { throw PathError.emptyName }
+        guard !NSString(string: name).isAbsolutePath else { throw PathError.absoluteName }
+        guard !name.split(separator: "/", omittingEmptySubsequences: false).contains("..") else {
+            throw PathError.parentTraversal
+        }
+
+        let canonicalRoot = root.standardizedFileURL.resolvingSymlinksInPath().standardizedFileURL
+        let candidate = canonicalRoot.appendingPathComponent(name).standardizedFileURL
+            .resolvingSymlinksInPath().standardizedFileURL
+        let rootComponents = canonicalRoot.pathComponents
+        let candidateComponents = candidate.pathComponents
+        guard candidateComponents.count >= rootComponents.count,
+              Array(candidateComponents.prefix(rootComponents.count)) == rootComponents
+        else {
+            throw PathError.escapesRoot
+        }
+        return candidate
     }
 
     /// A label by its DSLD identifier, for example 204235.
@@ -57,6 +90,61 @@ final class DSLDLabelAdapterTests: XCTestCase {
 
     private func parseInline(_ text: String) throws -> DSLDSupplementLabel {
         try adapter.parse(Data(text.utf8))
+    }
+
+    func testFixtureReaderRejectsTraversalBeforeReadingOutsideBytes() throws {
+        let fixtureRoot = DSLDFixtures.directory()
+        var projectRoot = fixtureRoot
+        for _ in 0..<3 { projectRoot.deleteLastPathComponent() }
+        let testSpace = projectRoot.appendingPathComponent(
+            ".build/task-fixture-containment", isDirectory: true)
+        try FileManager.default.createDirectory(at: testSpace, withIntermediateDirectories: true)
+        let outsideFile = testSpace.appendingPathComponent("synthetic-outside.json")
+        try Data("synthetic outside bytes".utf8).write(to: outsideFile)
+
+        let rootComponents = fixtureRoot.standardizedFileURL.pathComponents
+        let fileComponents = outsideFile.standardizedFileURL.pathComponents
+        var commonCount = 0
+        while commonCount < min(rootComponents.count, fileComponents.count),
+              rootComponents[commonCount] == fileComponents[commonCount] {
+            commonCount += 1
+        }
+        let relativeName = (Array(repeating: "..", count: rootComponents.count - commonCount)
+            + fileComponents.dropFirst(commonCount)).joined(separator: "/")
+
+        XCTAssertThrowsError(try DSLDFixtures.data(relativeName))
+    }
+
+    func testFixturePathsAllowRootFilesAndRejectAbsoluteTraversalAndSymlinkEscape() throws {
+        var projectRoot = URL(fileURLWithPath: String(describing: #filePath))
+        for _ in 0..<3 { projectRoot.deleteLastPathComponent() }
+        let testSpace = projectRoot.appendingPathComponent(
+            ".build/task-fixture-containment-cases", isDirectory: true)
+        let fixtureRoot = testSpace.appendingPathComponent("root", isDirectory: true)
+        let outsideRoot = testSpace.appendingPathComponent("root-sibling", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: fixtureRoot.appendingPathComponent("labels"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideRoot, withIntermediateDirectories: true)
+
+        let insideData = Data("synthetic in-root bytes".utf8)
+        let outsideData = Data("synthetic outside bytes".utf8)
+        try insideData.write(to: fixtureRoot.appendingPathComponent("labels/in-root.json"))
+        let outsideFile = outsideRoot.appendingPathComponent("outside.json")
+        try outsideData.write(to: outsideFile)
+        let symlink = fixtureRoot.appendingPathComponent("labels/escape.json")
+        if !FileManager.default.fileExists(atPath: symlink.path) {
+            try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: outsideFile)
+        }
+
+        XCTAssertEqual(try DSLDFixtures.data("labels/in-root.json", in: fixtureRoot), insideData)
+        XCTAssertThrowsError(try DSLDFixtures.data("../root-sibling/outside.json", in: fixtureRoot))
+        XCTAssertThrowsError(try DSLDFixtures.canonicalURL(for: outsideFile.path, in: fixtureRoot)) { error in
+            XCTAssertEqual(error as? DSLDFixtures.PathError, .absoluteName)
+        }
+        XCTAssertThrowsError(try DSLDFixtures.data(outsideFile.path, in: fixtureRoot))
+        XCTAssertThrowsError(try DSLDFixtures.data("labels/escape.json", in: fixtureRoot)) { error in
+            XCTAssertEqual(error as? DSLDFixtures.PathError, .escapesRoot)
+        }
     }
 
     // MARK: - Every recorded label
