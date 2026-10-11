@@ -17,7 +17,7 @@ public enum CommunityError: Error, Equatable, Sendable {
     case network
     /// The reply had an unexpected HTTP status.
     case server(Int)
-    /// The session could not be written to the Keychain.
+    /// The session could not be read from or written to the Keychain.
     case storage
     /// The human check was not completed, or the sign-in service refused it.
     case captcha

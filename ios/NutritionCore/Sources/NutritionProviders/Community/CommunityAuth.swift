@@ -73,7 +73,13 @@ public actor CommunityAuth {
 
     /// The stored session, renewed first when it is about to expire. A rejected renewal ends the session.
     public func validSession() async throws -> CommunitySession {
-        guard let session = store.load() else {
+        let session: CommunitySession?
+        do {
+            session = try store.load()
+        } catch {
+            throw CommunityError.storage
+        }
+        guard let session else {
             throw CommunityError.signedOut
         }
         guard session.expiresAt.timeIntervalSince(now()) < Self.refreshMargin else {
@@ -92,7 +98,9 @@ public actor CommunityAuth {
     /// Clears this device first, then ends the server session on a best-effort basis.
     public func signOut() async throws {
         generation += 1
-        let session = store.load()
+        // Reading the bearer is only for best-effort server logout. A read failure must not prevent
+        // clearing credentials from this device.
+        let session = try? store.load()
         do { try store.clear() } catch { throw CommunityError.storage }
         guard let session else { return }
         _ = try? await api.send("/auth/v1/logout", bearer: session.accessToken)
@@ -107,7 +115,9 @@ public actor CommunityAuth {
     /// Clears the stored session only when a response belongs to the session still stored on this device.
     @discardableResult
     public func invalidateSession(matchingAccessToken accessToken: String) throws -> Bool {
-        guard store.load()?.accessToken == accessToken else { return false }
+        let session: CommunitySession?
+        do { session = try store.load() } catch { throw CommunityError.storage }
+        guard session?.accessToken == accessToken else { return false }
         generation += 1
         do { try store.clear() } catch { throw CommunityError.storage }
         return true
@@ -116,7 +126,9 @@ public actor CommunityAuth {
     /// Clears a deleted account's current session, including tokens rotated while deletion was in flight.
     @discardableResult
     public func invalidateSession(matchingUserID userID: String) throws -> Bool {
-        guard store.load()?.userID == userID else { return false }
+        let session: CommunitySession?
+        do { session = try store.load() } catch { throw CommunityError.storage }
+        guard session?.userID == userID else { return false }
         generation += 1
         do { try store.clear() } catch { throw CommunityError.storage }
         return true
@@ -134,7 +146,13 @@ public actor CommunityAuth {
         case 200..<300:
             return try accept(data, response, startedAt: startedAt)
         case 400, 401, 403:
-            if startedAt == generation, store.load()?.refreshToken == refreshToken {
+            let session: CommunitySession?
+            do {
+                session = startedAt == generation ? try store.load() : nil
+            } catch {
+                throw CommunityError.storage
+            }
+            if session?.refreshToken == refreshToken {
                 generation += 1
                 do { try store.clear() } catch { throw CommunityError.storage }
             }
