@@ -6,5 +6,7 @@
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SUPABASE_URL</key>
 	<string>$(SUPABASE_URL)</string>
+	<key>HCAPTCHA_SITE_KEY</key>
+	<string>$(HCAPTCHA_SITE_KEY)</string>
 </dict>
 </plist>

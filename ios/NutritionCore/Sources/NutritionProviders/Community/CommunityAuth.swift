@@ -7,6 +7,8 @@ public actor CommunityAuth {
 
     private let api: CommunityAPI
     private let store: CommunitySessionStore
+    /// Supplies a challenge token for each sign-in request the service protects. Nil in a build without one.
+    private let captcha: (any CommunityCaptcha)?
     private let now: @Sendable () -> Date
     /// One renewal at a time: the refresh token rotates, so a second concurrent refresh would be rejected.
     private var refreshing: Task<CommunitySession, Error>?
@@ -18,17 +20,33 @@ public actor CommunityAuth {
         config: CommunityConfig,
         transport: CommunityTransport,
         store: CommunitySessionStore,
+        captcha: (any CommunityCaptcha)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.api = CommunityAPI(config: config, transport: transport)
         self.store = store
+        self.captcha = captcha
         self.now = now
+    }
+
+    /// A fresh challenge token for the one request the sign-in service protects, the emailed code request, or nil when no provider is set. A failed challenge ends the
+    /// request before it is sent.
+    private func captchaSecurity() async throws -> GoTrueSecurity? {
+        guard let captcha else { return nil }
+        let token: String
+        do {
+            token = try await captcha.token()
+        } catch {
+            throw CommunityError.captcha
+        }
+        return GoTrueSecurity(captchaToken: token)
     }
 
     /// Signs in with the identity token from Sign in with Apple: POST /auth/v1/token?grant_type=id_token.
     /// The nonce is the raw nonce whose hash was sent to Apple.
     public func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession {
-        let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce))
+        // The sign-in service does not ask for a challenge on an identity token, so none is requested.
+        let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
         let (data, response) = try await api.send(
             "/auth/v1/token",
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
@@ -39,12 +57,14 @@ public actor CommunityAuth {
 
     /// Emails a one-time code. The address also creates the account on first use.
     public func requestEmailCode(email: String) async throws {
-        let body = try CommunityAPI.encode(EmailCodeBody(email: email))
+        let security = try await captchaSecurity()
+        let body = try CommunityAPI.encode(EmailCodeBody(email: email, metaSecurity: security))
         _ = try await api.send("/auth/v1/otp", body: body)
     }
 
     public func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
-        let body = try CommunityAPI.encode(VerifyBody(email: email, token: code))
+        // Checking the emailed code is not challenged either; only asking for it is.
+        let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: nil))
         let (data, response) = try await api.send("/auth/v1/verify", body: body)
         return try accept(data, response, replacing: true)
     }
@@ -126,21 +146,25 @@ private struct AppleBody: Encodable {
     let provider = "apple"
     let idToken: String
     let nonce: String
+    var metaSecurity: GoTrueSecurity? = nil
 
     enum CodingKeys: String, CodingKey {
         case provider
         case idToken = "id_token"
         case nonce
+        case metaSecurity = "gotrue_meta_security"
     }
 }
 
 private struct EmailCodeBody: Encodable {
     let email: String
     let createUser = true
+    var metaSecurity: GoTrueSecurity? = nil
 
     enum CodingKeys: String, CodingKey {
         case email
         case createUser = "create_user"
+        case metaSecurity = "gotrue_meta_security"
     }
 }
 
@@ -148,6 +172,21 @@ private struct VerifyBody: Encodable {
     let type = "email"
     let email: String
     let token: String
+    var metaSecurity: GoTrueSecurity? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case type, email, token
+        case metaSecurity = "gotrue_meta_security"
+    }
+}
+
+/// The GoTrue security object that carries the challenge token of a protected request.
+struct GoTrueSecurity: Encodable, Equatable {
+    let captchaToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case captchaToken = "captcha_token"
+    }
 }
 
 private struct RefreshBody: Encodable {

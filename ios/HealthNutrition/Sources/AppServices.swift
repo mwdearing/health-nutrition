@@ -100,9 +100,11 @@ final class AppServices {
 
     /// The community client, or nil when the build carries no project settings. The client reads them from the
     /// bundle's Info.plist and keeps the session in the Keychain. One client serves the account, the barcode
-    /// lookup and the label uploads.
+    /// lookup and the label uploads. A build with a site key also gets the human check for the emailed code.
     private static func makeCommunity() -> CommunityClient? {
-        try? CommunityClient.make(infoDictionary: Bundle.main.infoDictionary, store: KeychainCommunitySessionStore())
+        try? CommunityClient.make(
+            infoDictionary: Bundle.main.infoDictionary, store: KeychainCommunitySessionStore(),
+            captcha: makeCaptcha())
     }
 
     /// Open Food Facts first. A barcode it does not find is asked of the community catalog, for a person who is
@@ -113,6 +115,20 @@ final class AppServices {
         guard let community, let account else { return primary }
         return CommunityFallbackLookup(
             primary: primary, community: community, isSignedIn: { account.phase == .signedIn })
+    }
+
+    /// The human check for sign-in, or nil when the build has no site key. Without a provider the sign-in
+    /// requests are sent as before, which is what a project without the check expects.
+    private static func makeCaptcha() -> (any CommunityCaptcha)? {
+        #if os(iOS)
+        #if canImport(HCaptcha)
+        return HCaptchaProvider.make(infoDictionary: Bundle.main.infoDictionary)
+        #else
+        return nil
+        #endif
+        #else
+        return nil
+        #endif
     }
 
     /// The marketing version from the bundle; the provider requires a User-Agent that names the app

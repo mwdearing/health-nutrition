@@ -791,3 +791,21 @@ def test_a_symlinked_source_file_leaving_the_checkout_is_refused(tmp_path: Path)
     result = run(root)
     assert result.returncode == 2, result.stdout + result.stderr
     assert "regular file" in (result.stdout + result.stderr)
+
+
+def test_an_external_package_product_in_the_app_does_not_break_the_scan(tmp_path: Path) -> None:
+    # The app links a third-party SDK. Only first-party sources are scanned, so the scan must still run and pass.
+    project = PROJECT_YML + "      - package: HCaptcha\n        product: HCaptcha\n"
+    root = write_tree(
+        tmp_path,
+        {
+            "NutritionCore/Sources/NutritionProviders/Client.swift": (
+                "import Foundation\n"
+                "func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }\n"
+            )
+        },
+        manifest=manifest_xml(declared=[BOOT_TIME]),
+        project_yml=project,
+    )
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr

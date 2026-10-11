@@ -17,9 +17,15 @@ public enum CommunityError: Error, Equatable, Sendable {
     case server(Int)
     /// The session could not be written to the Keychain.
     case storage
+    /// The human check was not completed, or the sign-in service refused it.
+    case captcha
 
     /// Maps a failed reply. The body is read only for a PostgREST error code (SQLSTATE) and is not kept.
     static func from(status: Int, body: Data) -> CommunityError {
+        // GoTrue reports its own error_code next to an integer code, so it is read separately from PostgREST's code.
+        if (try? JSONDecoder().decode(AuthErrorBody.self, from: body))?.errorCode == "captcha_failed" {
+            return .captcha
+        }
         if let code = (try? JSONDecoder().decode(ErrorBody.self, from: body))?.code {
             switch code {
             case "28000": return .signedOut
@@ -39,5 +45,13 @@ public enum CommunityError: Error, Equatable, Sendable {
 
     private struct ErrorBody: Decodable {
         let code: String?
+    }
+
+    private struct AuthErrorBody: Decodable {
+        let errorCode: String?
+
+        enum CodingKeys: String, CodingKey {
+            case errorCode = "error_code"
+        }
     }
 }
