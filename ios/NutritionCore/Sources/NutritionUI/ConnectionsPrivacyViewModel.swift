@@ -118,6 +118,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// that landed afterwards would put back what the person had just deleted.
     public static let importDuringEraseMessage =
         "Data was being erased, so nothing was imported. Try again once that is finished."
+    public static let partialRestoreWarningMessage =
+        "The journal restore was incomplete; entries may already be present. Check your journal before importing this file again."
     /// An erase that found a restore still running and would not wait any longer.
     public static let eraseWaitTimedOutMessage =
         "An import was still running, so nothing was erased. Try again in a moment."
@@ -189,6 +191,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var isImporting = false
     @Published public private(set) var importSummary: JournalImportSummary?
     @Published public private(set) var importMessage: String?
+    /// A partial restore can be superseded by another import result, but its retained rows still need review.
+    /// This warning remains until a successful restore or a successful erase confirms the journal is replaced.
+    @Published public private(set) var incompleteRestoreWarning: String?
     /// Counts how often data was erased, so a host holding this model can tell that the stores behind
     /// its other screens are empty now and reload them. The erase happens on this screen; the totals on
     /// Today and the rows in the Journal would otherwise still show what was just deleted.
@@ -574,6 +579,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         entryCount = 0
         exportState = .idle
         errorMessage = failed ? Self.eraseFailedMessage : nil
+        if !failed { incompleteRestoreWarning = nil }
         eraseGeneration += 1
         if !failed { afterSuccessfulErase() }
         return !failed
@@ -647,6 +653,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             case .failed:
                 return false
             }
+        }
+
+        var isPartialRestore: Bool {
+            if case .failed(.refused(.partialRestore)) = self { return true }
+            return false
         }
     }
 
@@ -744,6 +755,12 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             errorMessage = nil
             journalRestoreGeneration += 1
         }
+        if outcome.isPartialRestore {
+            incompleteRestoreWarning = Self.partialRestoreWarningMessage
+        } else if case .imported = outcome {
+            // A complete restore can only follow an empty-store check, so no earlier partial rows remain.
+            incompleteRestoreWarning = nil
+        }
 
         guard generation == importGeneration else { return }
         isImporting = false
@@ -808,8 +825,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         case .malformed, .corrupt:
             return importFailedMessage
         case .partialRestore:
-            return "The journal restore was incomplete; entries may already be present. "
-                + "Check your journal before importing this file again."
+            return partialRestoreWarningMessage
         }
     }
 

@@ -172,7 +172,9 @@ that was canceled returns the screen to its empty import state, while a file tha
 reported as a failed import: the person asked for it and nothing happened. A successful or partial restore
 also removes the exported file this screen was holding, because that copy was made from the journal as it was
 *before* the restore and sharing it would hand over the wrong journal. Nothing is sent anywhere: the file was
-already on the device, or somewhere the person opened it from.
+already on the device, or somewhere the person opened it from. If a later import result supersedes a partial
+restore, its warning remains visible separately from that latest result until a complete restore or successful
+erase replaces the journal.
 
 ## Fields
 | Field | Meaning |

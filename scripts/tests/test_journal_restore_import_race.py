@@ -31,3 +31,23 @@ def test_journal_export_docs_describe_partial_restore_in_the_error_contract() ->
     assert "instead of writing part of a file" not in docs
     assert "| `partialRestore` |" in docs
     assert "inspect the journal before trying that file again" in normalized
+
+
+def test_superseded_partial_restore_warning_is_separate_and_visible() -> None:
+    source = VIEW_MODEL.read_text()
+    assert "var incompleteRestoreWarning: String?" in source
+    apply = source.split("private func apply(\n", maxsplit=1)[1].split(
+        "private static func importFailureText", maxsplit=1
+    )[0]
+    warning = apply.index("if outcome.isPartialRestore")
+    latest_import_fence = apply.index("guard generation == importGeneration")
+    assert warning < latest_import_fence
+    assert "else if case .imported = outcome" in apply
+
+    clear_import = source.split("public func clearImport() {", maxsplit=1)[1].split("\n    }", maxsplit=1)[0]
+    assert "incompleteRestoreWarning" not in clear_import
+    assert "if !failed { incompleteRestoreWarning = nil }" in source
+
+    settings = (ROOT / "ios/NutritionCore/Sources/NutritionUI/AppSettingsView.swift").read_text()
+    assert "connections.incompleteRestoreWarning" in settings
+    assert "warning != connections.importMessage" in settings

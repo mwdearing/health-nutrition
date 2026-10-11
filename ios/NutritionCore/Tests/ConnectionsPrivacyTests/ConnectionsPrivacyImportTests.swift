@@ -14,12 +14,13 @@ import XCTest
 /// A journal store held in memory, standing in for the real one. It reproduces the two things the screen
 /// can be shown: a restore that lands, and a refusal with the reason the importer would give.
 private final class ImportStubStore: JournalStore, JournalTombstoneSource, JournalRestoreTarget,
-    @unchecked Sendable
+    JournalErasing, @unchecked Sendable
 {
     struct Unsupported: Error {}
 
     var failNextSaveForTesting = false
     var failUndoForTesting = false
+    var failEraseForTesting = false
     var pauseAfterRestoreForTesting = false
     let restorePausedForTesting = DispatchSemaphore(value: 0)
     let resumeRestoreForTesting = DispatchSemaphore(value: 0)
@@ -48,6 +49,13 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     func activeIntakesFromBackground() async throws -> [Intake] { try activeIntakes() }
     func close() {}
     func deletedIntakes() throws -> [Intake] { deleted }
+    func eraseAll() throws {
+        if failEraseForTesting { throw Unsupported() }
+        intakes = []
+        deleted = []
+        revisionsByIntake = [:]
+        products = [:]
+    }
 
     /// The real store refuses a journal that already holds an intake row, from inside its own transaction,
     /// and the importer reports whatever the store throws. The screen is what these tests are about, so the
@@ -86,7 +94,7 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     }
 }
 
-private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget, @unchecked Sendable {
+private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget, JournalErasing, @unchecked Sendable {
     var items: [FavoriteTemplate] = []
     var failRestoreForTesting = false
 
@@ -98,6 +106,7 @@ private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget,
         if failRestoreForTesting { throw FavoritesError.injectedSaveFailure }
         items = favorites
     }
+    func eraseAll() throws { items = [] }
     func close() {}
 }
 
@@ -184,6 +193,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertNil(model.importSummary)
         XCTAssertTrue(model.importMessage?.contains("may already be present") == true)
         XCTAssertFalse(model.importMessage?.localizedCaseInsensitiveContains("retry") == true)
+        XCTAssertEqual(model.incompleteRestoreWarning, model.importMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 1)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
         XCTAssertNil(model.exportFileURL)
@@ -220,12 +230,15 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.importState, .failed)
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
+        XCTAssertNil(model.incompleteRestoreWarning)
 
         journal.resumeRestoreForTesting.signal()
         let olderMutationWasPublished = await waitForSignal(removalObserved)
         XCTAssertTrue(olderMutationWasPublished)
         XCTAssertEqual(model.journalRestoreGeneration, 1)
         XCTAssertEqual(removed.map(\.path), [staleExport.path])
+        XCTAssertEqual(
+            model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
         XCTAssertNil(model.exportFileURL)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
 
@@ -266,6 +279,34 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
         XCTAssertEqual(model.importState, .failed)
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+        XCTAssertNil(model.incompleteRestoreWarning)
+    }
+
+    func testPartialRestoreWarningSurvivesClearImportAndALaterNotEmptyFailure() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(store: journal, favorites: favorites)
+
+        await importAndSettle(model, data: try export(includeFavorite: true))
+        XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
+
+        model.clearImport()
+        XCTAssertEqual(model.importState, .idle)
+        XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
+
+        await importAndSettle(model, data: try export())
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+        XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
+
+        try journal.eraseAll()
+        journal.failUndoForTesting = false
+        favorites.failRestoreForTesting = false
+        model.clearImport()
+        await importAndSettle(model, data: try export())
+        XCTAssertEqual(model.importState, .imported)
+        XCTAssertNil(model.incompleteRestoreWarning)
     }
 
     func testFavoritesFailureWithSuccessfulUndoKeepsTheOrdinaryFailureState() async throws {
@@ -391,6 +432,71 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertNotEqual(model.importState, .imported)
         XCTAssertNil(model.importSummary)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
+    }
+
+    func testEraseFenceSuppressesAnInFlightPartialWarning() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        journal.pauseAfterRestoreForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites, erasers: [journal, favorites])
+
+        model.importJournal(data: try export(includeFavorite: true))
+        let restorePaused = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(restorePaused)
+
+        let resumeRestore = journal.resumeRestoreForTesting
+        let release = Task.detached {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            resumeRestore.signal()
+        }
+        let erased = await model.eraseAllData()
+        await release.value
+        XCTAssertTrue(erased)
+        await Task.yield()
+
+        XCTAssertNil(model.incompleteRestoreWarning)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertEqual(model.eraseGeneration, 1)
+    }
+
+    func testSuccessfulEraseClearsAnExistingIncompleteRestoreWarning() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites, erasers: [journal, favorites])
+
+        await importAndSettle(model, data: try export(includeFavorite: true))
+        XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
+
+        let erased = await model.eraseAllData()
+        XCTAssertTrue(erased)
+        XCTAssertNil(model.incompleteRestoreWarning)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try favorites.list().isEmpty)
+    }
+
+    func testFailedEraseKeepsAnExistingIncompleteRestoreWarning() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites, erasers: [journal, favorites])
+
+        await importAndSettle(model, data: try export(includeFavorite: true))
+        XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
+
+        journal.failEraseForTesting = true
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
+        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
     func testAnImportStartedWhileAnEraseRunsIsRefused() async throws {

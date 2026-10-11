@@ -151,6 +151,10 @@ private struct SettingsContent: View {
                     Text(message).font(.footnote)
                         .foregroundStyle(connections.importState == .failed ? TokenColors.error : TokenColors.textSecondary)
                 }
+                if let warning = connections.incompleteRestoreWarning,
+                   warning != connections.importMessage {
+                    Text(warning).font(.footnote).foregroundStyle(TokenColors.error)
+                }
                 HStack { placeholderText("keepHistory"); Spacer(); LaterBadge() }
                     .disabled(true).accessibilityValue("Not available yet")
                 if connections.canEraseAll {
