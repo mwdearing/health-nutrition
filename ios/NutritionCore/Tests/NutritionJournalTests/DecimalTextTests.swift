@@ -22,7 +22,7 @@ final class DecimalTextTests: XCTestCase {
         XCTAssertNil(DecimalText.decode("--1"))
         XCTAssertNil(DecimalText.decode("1234567890123456789012345678901234567890123")) // 43 digits
         XCTAssertNil(DecimalText.decode("1e128"))
-        XCTAssertNil(DecimalText.decode("1e-128"))
+        XCTAssertNil(DecimalText.decode("1e-129"))
     }
 
     func testThirtyEightSignificantDigitsAndZeroPaddingRemainExact() throws {
@@ -41,12 +41,24 @@ final class DecimalTextTests: XCTestCase {
         XCTAssertEqual(DecimalText.encode(try XCTUnwrap(DecimalText.decode("1." + String(repeating: "0", count: 40)))), "1")
     }
 
-    func testAdjustedExponentBoundsMatchProviderPolicy() throws {
-        for text in ["1e127", "1e-127", "0e0"] {
+    func testExponentBoundariesMatchFoundationDecimal() throws {
+        for text in ["1e127", "1e-127", "1e-128", "0e0"] {
             XCTAssertNotNil(DecimalText.decode(text), text)
         }
-        for text in ["1e128", "1e-128"] {
+        for text in ["1e128", "1e-129"] {
             XCTAssertNil(DecimalText.decode(text), text)
+        }
+    }
+
+    func testFullRepresentableDecimalExponentAndCoefficientBoundariesRoundTripExactly() throws {
+        let maxCoefficient = "12345678901234567890123456789012345678"
+        let cases = ["1e-128", maxCoefficient + "e127"]
+        for source in cases {
+            let value = try XCTUnwrap(Decimal(string: source, locale: DecimalText.locale), source)
+            let encoded = DecimalText.encode(value)
+            XCTAssertTrue(DecimalText.isValidDecimalText(encoded), source)
+            XCTAssertEqual(DecimalText.decode(encoded), value, source)
+            XCTAssertEqual(DecimalText.encode(try XCTUnwrap(DecimalText.decode(encoded))), encoded, source)
         }
     }
 }

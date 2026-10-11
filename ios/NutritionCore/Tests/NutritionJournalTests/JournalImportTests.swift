@@ -973,8 +973,14 @@ final class JournalImportTests: JournalImportTestCase {
                     try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
                 XCTFail("a time zone of \"\(identifier)\" must be refused")
             } catch let error as JournalImportError {
-                guard case .corrupt = error else {
-                    return XCTFail("expected a corrupt file, got \(error)")
+                if identifier.isEmpty {
+                    guard case .malformed = error else {
+                        return XCTFail("expected an empty-field schema error, got \(error)")
+                    }
+                } else {
+                    guard case .corrupt = error else {
+                        return XCTFail("expected an invalid time-zone error, got \(error)")
+                    }
                 }
             }
             XCTAssertTrue(try journal.activeIntakes().isEmpty)
@@ -994,8 +1000,8 @@ final class JournalImportTests: JournalImportTestCase {
                 try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
             XCTFail("a tombstone with no time zone must be refused")
         } catch let error as JournalImportError {
-            guard case .corrupt = error else {
-                return XCTFail("expected a corrupt file, got \(error)")
+            guard case .malformed = error else {
+                return XCTFail("expected an empty-field schema error, got \(error)")
             }
         }
         XCTAssertTrue(try journal.deletedIntakes().isEmpty)

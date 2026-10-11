@@ -88,7 +88,9 @@ enum DecimalText {
         return value
     }
 
-    /// A normalized key for a finite decimal spelling that fits the provider's exactness policy.
+    /// A normalized numeric key whose coefficient fits Decimal's significant-digit capacity.
+    /// Foundation's Decimal parser and the encode/decode comparison decide the representable exponent
+    /// range; a bound on the adjusted exponent would reject valid boundary values.
     /// Trailing zeros change place value but do not use Decimal's significant-digit capacity.
     private static func exactValueKey(_ text: String) -> String? {
         let bytes = Array(text.utf8)
@@ -141,7 +143,6 @@ enum DecimalText {
         guard significantCount <= 38 else { return nil }
 
         let adjustedExponent = integerDigits.count - 1 - leadingZeroCount + literalExponent
-        guard (-127...127).contains(adjustedExponent) else { return nil }
         let coefficient = String(decoding: digits[leadingZeroCount..<significantEnd], as: UTF8.self)
         return "\(negative ? "-" : "+")\(coefficient)e\(adjustedExponent)"
     }

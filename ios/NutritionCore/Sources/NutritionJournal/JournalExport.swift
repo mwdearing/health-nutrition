@@ -410,10 +410,59 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case malformedFavoriteAmount(String, String)
     /// A revision with no components cannot be restored under the journal export contract.
     case emptyRevisionComponents(String, Int)
+    /// An active intake without any revision history cannot be restored under the journal export contract.
+    case emptyRevisionHistory(String)
     /// A date in the document cannot be represented as a finite timestamp.
     case nonFiniteDate
     /// A finite timestamp falls outside the four-digit UTC date format this export writes.
     case unrepresentableDate
+    /// A stored value is empty where the journal export schema requires a nonempty string.
+    case emptyRequiredField(String)
+}
+
+private func requireExportText(_ text: String, field: String) throws {
+    guard !text.isEmpty else { throw JournalExportError.emptyRequiredField(field) }
+}
+
+private func validateExportProvenance(_ provenance: JournalExportProvenance, path: String) throws {
+    try requireExportText(provenance.snapshotID, field: "\(path).snapshot_id")
+    try requireExportText(provenance.productID, field: "\(path).product_id")
+    try requireExportText(provenance.name, field: "\(path).name")
+    try requireExportText(provenance.labelBasis, field: "\(path).label_basis")
+    try requireExportText(provenance.catalogOrigin, field: "\(path).catalog_origin")
+    try requireExportText(provenance.catalogVersion, field: "\(path).catalog_version")
+}
+
+private func validateExportRequiredFields(_ document: JournalExport) throws {
+    try requireExportText(document.appVersion, field: "app_version")
+    for (index, intake) in document.intakes.enumerated() {
+        let path = "intakes[\(index)]"
+        try requireExportText(intake.category, field: "\(path).category")
+        try requireExportText(intake.timeZoneIdentifier, field: "\(path).time_zone")
+        guard !intake.revisions.isEmpty else {
+            throw JournalExportError.emptyRevisionHistory(intake.id)
+        }
+        for (revisionIndex, revision) in intake.revisions.enumerated() {
+            guard !revision.components.isEmpty else {
+                throw JournalExportError.emptyRevisionComponents(intake.id, revision.number)
+            }
+            if let provenance = revision.provenance {
+                try validateExportProvenance(provenance, path: "\(path).revisions[\(revisionIndex)].provenance")
+            }
+        }
+    }
+    for (index, tombstone) in document.tombstones.enumerated() {
+        try requireExportText(tombstone.timeZoneIdentifier, field: "tombstones[\(index)].time_zone")
+    }
+    for (index, favorite) in document.favorites.enumerated() {
+        let path = "favorites[\(index)]"
+        try requireExportText(favorite.id, field: "\(path).id")
+        try requireExportText(favorite.displayName, field: "\(path).display_name")
+        try requireExportText(favorite.category, field: "\(path).category")
+    }
+    for (index, product) in document.products.enumerated() {
+        try validateExportProvenance(product, path: "products[\(index)]")
+    }
 }
 
 /// One active intake with every one of its revisions, as read in a single pass.
@@ -538,7 +587,7 @@ public enum JournalExporter {
                 productsByID[snapshotID] = JournalExportProvenance(product: product)
             }
         }
-        return JournalExport(
+        let document = JournalExport(
             exportedAt: exportedAt, appVersion: appVersion,
             intakes: intakes.sorted { $0.id < $1.id },
             tombstones: deletedIntakes.map { JournalExportTombstone(intake: $0) }.sorted { $0.intakeID < $1.intakeID },
@@ -546,11 +595,14 @@ public enum JournalExporter {
             // store lists newest first, which would otherwise make the order depend on when things were added.
             favorites: favoriteList.sorted { $0.id < $1.id },
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID })
+        try validateExportRequiredFields(document)
+        return document
     }
 
     /// Deterministic JSON: sorted keys and ISO-8601 dates with microsecond precision, so the same journal
     /// encodes to the same bytes and no timestamp is rounded on its way out.
     public static func encode(_ export: JournalExport) throws -> Data {
+        try validateExportRequiredFields(export)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.userInfo[exportSchemaVersionKey] = export.schemaVersion
@@ -678,13 +730,18 @@ public enum JournalExporter {
             let zoneStart = text[text.index(after: dot)...].firstIndex {
                 $0 == "Z" || $0 == "z" || $0 == "+" || $0 == "-"
             }
-            let fractionEnd = zoneStart ?? text.endIndex
+            guard let zoneStart else { return nil }
+            let fractionEnd = zoneStart
             let fraction = text[text.index(after: dot)..<fractionEnd]
             guard !fraction.isEmpty, fraction.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
             digits = fraction
-            let zone = zoneStart.map { String(text[$0...]) } ?? ""
+            let zone = String(text[zoneStart...])
+            guard isValidRFC3339Zone(zone) else { return nil }
             secondsText = String(text[..<dot]) + zone
         } else {
+            guard text.count > 19 else { return nil }
+            let zoneStart = text.index(text.startIndex, offsetBy: 19)
+            guard isValidRFC3339Zone(String(text[zoneStart...])) else { return nil }
             digits = nil
             secondsText = text
         }
@@ -704,10 +761,11 @@ public enum JournalExporter {
 
         guard let digits else { return finiteDate(seconds) }
 
-        // Keep the conversion bounded even for hostile fractions. Leading zeroes do not consume the
-        // significant-digit allowance, and arbitrary shorter fractions remain accepted.
-        let significant = digits.drop { $0 == "0" }
-        guard significant.count <= 308 else { return nil }
+        // Keep the conversion bounded even for hostile fractions. Leading and trailing zeroes do not
+        // consume the significant-digit allowance, and arbitrary shorter fractions remain accepted.
+        let significantStart = digits.firstIndex { $0 != "0" } ?? digits.endIndex
+        let significantEnd = digits.lastIndex { $0 != "0" }.map { digits.index(after: $0) } ?? significantStart
+        guard digits.distance(from: significantStart, to: significantEnd) <= 308 else { return nil }
         var scaled: TimeInterval = 0
         var place: TimeInterval = 0.1 // Date fractional seconds use TimeInterval. // lint-allow: binary-float
         for character in digits {
@@ -716,6 +774,16 @@ public enum JournalExporter {
             place /= 10
         }
         return finiteDate(seconds.addingTimeInterval(scaled))
+    }
+
+    private static func isValidRFC3339Zone(_ zone: String) -> Bool {
+        if zone == "Z" || zone == "z" { return true }
+        let bytes = Array(zone.utf8)
+        guard bytes.count == 6, bytes[0] == 43 || bytes[0] == 45, bytes[3] == 58,
+              [1, 2, 4, 5].allSatisfy({ (48...57).contains(bytes[$0]) }) else { return false }
+        let hour = Int(bytes[1] - 48) * 10 + Int(bytes[2] - 48)
+        let minute = Int(bytes[4] - 48) * 10 + Int(bytes[5] - 48)
+        return hour <= 23 && minute <= 59
     }
 
     private static func finiteDate(_ date: Date?) -> Date? {
