@@ -774,6 +774,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         successfulEraseEpochAtStart: Int, exportRevisionAtStart: Int
     ) {
         if activeImportCompletions > 0 { activeImportCompletions -= 1 }
+        // Whatever happens to this outcome below, the screen is importing only while a restore is still running.
+        isImporting = activeImportCompletions > 0
         // A successful erase owns the stores after it completes. A failed erase does not: retain any
         // restore effects that arrived while it was suspended and publish them once its result is known.
         guard successfulEraseEpochAtStart == successfulEraseEpoch else { return }
