@@ -126,8 +126,9 @@ public enum IntakeContextSnapshotBasis: Equatable {
     /// count the whole package.
     public static func scalingFactor(labelBasis: String, logged components: [IntakeComponent]) -> Decimal? {
         guard let basis = parse(labelBasis) else { return nil }
-        if let factor = basis.factor(forLogged: components) { return factor }
-        return statedServingFactor(labelBasis: labelBasis, basis: basis, logged: components)
+        // An explicit denominator applies even when its unit is itself "serving".
+        if let factor = statedServingFactor(labelBasis: labelBasis, basis: basis, logged: components) { return factor }
+        return basis.factor(forLogged: components)
     }
 
     /// A structured serving keeps the original per-serving label amount. Compatible mass/volume

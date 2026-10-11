@@ -58,6 +58,21 @@ final class IntakeContextSnapshotBasisTests: XCTestCase {
             logged: [logged("40", .mL)]))
     }
 
+    func testStructuredServingDenominatorPrecedesGenericServingCount() {
+        let cases: [(String, MeasureUnit, Decimal)] = [
+            ("per serving (3 serving)", .serving, 2),
+            ("per_serving", .serving, 6),
+            ("Per serving; yield 3 servings", .serving, 6),
+            ("per serving (3 gummy)", .gummy, 2),
+            ("per serving (3 gummy)", .serving, 6),
+            ("Per gummy; yield 3 gummy", .gummy, 6),
+        ]
+        for (basis, unit, expected) in cases {
+            XCTAssertEqual(IntakeContextSnapshotBasis.scalingFactor(labelBasis: basis,
+                logged: [logged("6", unit)]), expected, basis)
+        }
+    }
+
     /// The shapes that resolved before must not change, including the counted yield and the household serving.
     func testExistingBasesKeepTheirFactors() {
         XCTAssertEqual(

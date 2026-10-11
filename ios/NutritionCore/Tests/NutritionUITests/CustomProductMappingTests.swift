@@ -20,6 +20,18 @@ final class CustomProductMappingTests: XCTestCase {
         XCTAssertEqual(revision.content.serving?.quantity, 3)
     }
 
+    func testStructuredServingUnitUsesTheProductServingQuantity() throws {
+        let revision = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content:
+            CustomProductContent(name: "Synthetic servings", kind: .food, basis: .perServing,
+                serving: ProductServing(quantity: 3, unit: .serving),
+                facts: [ProductFact(key: "protein", displayName: "Protein", value: .known(2, .g))]))
+        let snapshot = try CustomProductMapping.snapshot(for: revision)
+        XCTAssertEqual(snapshot.labelBasis, "per serving (3 serving)")
+        XCTAssertEqual(snapshot.nutrients["protein"], .known(2, .g))
+        XCTAssertEqual(IntakeContextSnapshotBasis.scalingFactor(labelBasis: snapshot.labelBasis,
+            logged: [IntakeComponent(componentID: "portion", name: "Portion", amount: 6, unit: .serving)]), 2)
+    }
+
     func testIngredientKeysKeepExactUTF8IdentityAndDisplayNames() throws {
         let content = CustomProductContent(name: "Synthetic", kind: .supplement, basis: .per100g, facts: [
             ProductFact(key: "ingredient:é", displayName: "First", value: .known(1, .mg)),
