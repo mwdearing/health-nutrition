@@ -232,6 +232,40 @@ class JournalImportTestCase: XCTestCase {
 final class JournalImportTests: JournalImportTestCase {
     // MARK: The happy path
 
+    func testLegacyPreCutoverBackupRestoresItsOriginalInstant() throws {
+        let instant = Date(timeIntervalSince1970: -14_831_769_600 + 0.123_456)
+        let formatter = JournalExporter.dateFormatter()
+        let oldExporterTimestamp = formatter.string(from: instant) + ".123456Z"
+        XCTAssertEqual(oldExporterTimestamp, "1499-12-23T00:00:00.123456Z")
+
+        var root = try object(of: exportData())
+        root["exported_at"] = oldExporterTimestamp
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        var oats = try XCTUnwrap(intakes.first { $0["id"] as? String == oatsID })
+        oats["occurred_at"] = oldExporterTimestamp
+        var revisions = try XCTUnwrap(oats["revisions"] as? [[String: Any]])
+        revisions[0]["created_at"] = oldExporterTimestamp
+        oats["revisions"] = revisions
+        let oatsIndex = try XCTUnwrap(intakes.firstIndex { $0["id"] as? String == oatsID })
+        intakes[oatsIndex] = oats
+        root["intakes"] = intakes
+
+        let target = try directory()
+        let journal = try store(target)
+        try JournalImporter.importExport(try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+
+        let restoredIntake = try XCTUnwrap(journal.activeIntakes().first { $0.id == oatsID })
+        let restoredRevision = try XCTUnwrap(journal.revisions(of: oatsID).first)
+        XCTAssertEqual(
+            restoredIntake.occurredAt.timeIntervalSince1970,
+            instant.timeIntervalSince1970,
+            accuracy: 0.000_001)
+        XCTAssertEqual(
+            restoredRevision.createdAt.timeIntervalSince1970,
+            instant.timeIntervalSince1970,
+            accuracy: 0.000_001)
+    }
+
     func testExportImportExportRoundTripsToTheSameBytes() throws {
         let data = try exportData()
         let target = try directory()

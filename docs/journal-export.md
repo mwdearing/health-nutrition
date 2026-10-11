@@ -11,6 +11,12 @@ cached `DateFormatter` per run and writes the fraction itself, reading it back t
 whole-second dates written by earlier builds still import. Favorites are written in id order, so two exports
 of the same favorites are the same document.
 
+Versions 1 and 2 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
+the 1582 cutover. Earlier exports used that calendar, so interpreting their text proleptically would shift
+some restored timestamps; the reader requires exact calendar round-tripping and rejects dates Foundation
+would normalize, including the skipped cutover days. This compatibility rule does not change the v1 or v2
+schema shape.
+
 The contract lives in the repository next to the code:
 - `contracts/journal-export/v2.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
 - `contracts/journal-export/example.v2.json` - a small synthetic document that validates against it.

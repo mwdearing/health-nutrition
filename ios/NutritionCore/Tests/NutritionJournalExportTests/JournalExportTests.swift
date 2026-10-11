@@ -475,7 +475,8 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
 
     func testExportSupportsTheFourDigitUTCYearBoundaries() throws {
         let cases: [(TimeInterval, String)] = [
-            (-62_135_596_800, "0001-01-01T00:00:00.000000Z"),
+            (-62_135_769_600, "0001-01-01T00:00:00.000000Z"), // earliest Julian-calendar date
+            (-62_135_596_800, "0001-01-03T00:00:00.000000Z"),
             (253_402_300_799, "9999-12-31T23:59:59.000000Z"),
         ]
         for (interval, expected) in cases {
@@ -487,6 +488,56 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             XCTAssertTrue(text.contains(expected), text)
             XCTAssertEqual(try JournalExporter.decode(data).exportedAt.timeIntervalSince1970, interval)
         }
+    }
+
+    func testV1AndV2LegacyCalendarTimestampsKeepTheirOriginalInstants() throws {
+        // Before this build's strict date parser, DateFormatter's Gregorian calendar used the historical
+        // Julian/Gregorian cutover. Build the same text the old exporter wrote, then restore it through each
+        // supported schema version.
+        let formatter = JournalExporter.dateFormatter()
+        let cases: [(TimeInterval, String)] = [
+            (-62_135_769_600, "0001-01-01T00:00:00"), // earliest valid legacy date
+            (-14_831_769_600, "1499-12-23T00:00:00"), // proleptic 1500-01-01
+            (-14_825_894_400, "1500-02-29T00:00:00"), // proleptic 1500-03-10, Julian leap day
+            (-12_219_379_200, "1582-10-04T00:00:00"), // last Julian calendar day
+            (-12_219_292_800, "1582-10-15T00:00:00"), // first Gregorian calendar day
+            (-11_670_998_400, "1600-02-29T00:00:00"), // Gregorian leap day
+        ]
+
+        for schemaVersion in JournalExport.readableSchemaVersions {
+            for (instant, expectedLegacyText) in cases {
+                let instantDate = Date(timeIntervalSince1970: instant)
+                XCTAssertEqual(formatter.string(from: instantDate), expectedLegacyText)
+                let timestamp = expectedLegacyText + ".123456Z"
+                let json = #"{"schema_version":\#(schemaVersion),"exported_at":"\#(timestamp)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+                let restored = try JournalExporter.decode(Data(json.utf8))
+                XCTAssertEqual(restored.schemaVersion, schemaVersion)
+                XCTAssertEqual(
+                    restored.exportedAt.timeIntervalSince1970,
+                    instantDate.addingTimeInterval(0.123456).timeIntervalSince1970,
+                    accuracy: 0.000_001,
+                    "schema \(schemaVersion), legacy date \(expectedLegacyText)")
+                let reencoded = try JournalExporter.encode(restored)
+                let reencodedRoot = try XCTUnwrap(
+                    try JSONSerialization.jsonObject(with: reencoded) as? [String: Any])
+                let reencodedTimestamp = try XCTUnwrap(reencodedRoot["exported_at"] as? String)
+                XCTAssertTrue(reencodedTimestamp.hasPrefix(expectedLegacyText + "."))
+            }
+        }
+    }
+
+    func testCurrentExportUsesLegacyCutoverTextWithoutLosingFractions() throws {
+        let instant = Date(timeIntervalSince1970: -14_831_769_600 + 0.123_456)
+        let document = JournalExport(exportedAt: instant, appVersion: "0.1.0", intakes: [], tombstones: [], favorites: [])
+        let encoded = try JournalExporter.encode(document)
+        let text = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        let legacySecond = JournalExporter.dateFormatter().string(from: instant)
+        XCTAssertTrue(text.contains("\(legacySecond)."), text)
+        XCTAssertFalse(text.contains("1500-01-01T00:00:00."), text)
+        XCTAssertEqual(
+            try JournalExporter.decode(encoded).exportedAt.timeIntervalSince1970,
+            instant.timeIntervalSince1970,
+            accuracy: 0.000_001)
     }
 
     func testNegativeFractionAndHalfMicrosecondKeepExistingRoundingContract() throws {

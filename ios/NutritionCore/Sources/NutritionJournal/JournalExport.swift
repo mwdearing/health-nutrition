@@ -653,7 +653,9 @@ public enum JournalExporter {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let text = try container.decode(String.self)
-            if let date = date(fromExportedText: text, using: formatter, fallback: fallback) {
+            if let date = date(
+                fromExportedText: text, schemaVersion: version, using: formatter, fallback: fallback
+            ) {
                 return date
             }
             throw DecodingError.dataCorruptedError(
@@ -718,18 +720,29 @@ public enum JournalExporter {
         }
         let digits = String(format: "%06d", microseconds)
         let secondDate = Date(timeIntervalSince1970: seconds)
-        let secondText = try fourDigitUTCSecondText(seconds)
+        guard seconds.isFinite, seconds >= earliestLegacyExportableUTCSecond,
+              seconds <= latestExportableUTCSecond else {
+            throw JournalExportError.unrepresentableDate
+        }
         let formatted = formatter.string(from: secondDate)
-        // Foundation's Gregorian formatter uses a historical Julian/Gregorian cutover. Use the explicit
-        // proleptic-Gregorian text for older dates so their RFC-3339 meaning remains stable.
-        let prefix = formatted == secondText ? formatted : secondText
-        return "\(prefix).\(digits)Z"
+        // Versions 1 and 2 wrote Foundation's historical Julian/Gregorian calendar text. Keep doing so
+        // while those versions remain current, or a backup made before the cutover would restore to a
+        // different instant. The round-trip also prevents Foundation from normalizing an unrepresentable
+        // calendar date at the year boundaries.
+        guard let legacyDate = legacyUTCDate(fromWholeSecondText: formatted, using: formatter),
+              legacyDate.timeIntervalSince1970 == seconds else {
+            throw JournalExportError.unrepresentableDate
+        }
+        return "\(formatted).\(digits)Z"
     }
 
     /// Reads back fractional dates from earlier builds and other RFC-3339 writers. Fractions are converted
     /// with a bounded decimal accumulator, while leading zeroes do not consume the significant-digit bound.
     static func date(
-        fromExportedText text: String, using formatter: DateFormatter, fallback: ISO8601DateFormatter
+        fromExportedText text: String,
+        schemaVersion: Int,
+        using formatter: DateFormatter,
+        fallback: ISO8601DateFormatter
     ) -> Date? {
         guard hasSupportedFourDigitYearPrefix(text) else { return nil }
         let dot = text.firstIndex(of: ".")
@@ -757,10 +770,19 @@ public enum JournalExporter {
 
         let seconds: Date
         if hasCanonicalISOWholeSecondShape(secondsText) {
-            // A canonical four-digit ISO timestamp that fails strict Gregorian parsing is invalid. Do not
-            // let DateFormatter normalize it (for example, February 29 in a non-leap Gregorian year).
-            guard let parsed = prolepticUTCDate(fromWholeSecondText: secondsText) else { return nil }
-            seconds = parsed
+            // V1/v2 backups were written and read with Foundation's historical Julian/Gregorian calendar.
+            // Keep that meaning for the schemas people already hold, while requiring a formatter round-trip
+            // so invalid or normalized calendar dates are still refused.
+            if (1...2).contains(schemaVersion), (secondsText.hasSuffix("Z") || secondsText.hasSuffix("z")) {
+                guard let parsed = legacyUTCDate(
+                    fromWholeSecondText: String(secondsText.dropLast()), using: formatter) else { return nil }
+                seconds = parsed
+            } else {
+                // A canonical four-digit timestamp that fails strict Gregorian parsing is invalid. Do not
+                // let DateFormatter normalize it (for example, February 29 in a non-leap Gregorian year).
+                guard let parsed = prolepticUTCDate(fromWholeSecondText: secondsText) else { return nil }
+                seconds = parsed
+            }
         } else {
             guard let parsed = formatter.date(from: secondsText) ?? fallback.date(from: secondsText) else {
                 return nil
@@ -768,7 +790,10 @@ public enum JournalExporter {
             seconds = parsed
         }
 
-        guard let digits else { return finiteDate(seconds) }
+        let earliest = (1...2).contains(schemaVersion)
+            ? earliestLegacyExportableUTCSecond
+            : earliestExportableUTCSecond
+        guard let digits else { return finiteDate(seconds, earliest: earliest) }
 
         // All digits were validated above. Once the binary place underflows to zero, later
         // fractional digits cannot affect the representable TimeInterval, so very long valid
@@ -781,7 +806,19 @@ public enum JournalExporter {
             scaled += digit * place
             place /= 10
         }
-        return finiteDate(seconds.addingTimeInterval(scaled))
+        return finiteDate(seconds.addingTimeInterval(scaled), earliest: earliest)
+    }
+
+    /// Parses a whole-second UTC date using Foundation's historic Gregorian cutover. Exact formatting back
+    /// to the same text rejects values Foundation would otherwise normalize, including the skipped 1582 days.
+    private static func legacyUTCDate(fromWholeSecondText text: String, using formatter: DateFormatter) -> Date? {
+        let bytes = Array(text.utf8)
+        guard bytes.count == 19, bytes[4] == 45, bytes[7] == 45, bytes[10] == 84,
+              bytes[13] == 58, bytes[16] == 58,
+              (0..<4).allSatisfy({ (48...57).contains(bytes[$0]) }),
+              (0..<4).contains(where: { bytes[$0] != 48 }) else { return nil }
+        guard let date = formatter.date(from: text), formatter.string(from: date) == text else { return nil }
+        return date.timeIntervalSince1970.isFinite ? date : nil
     }
 
     private static func isValidRFC3339Zone(_ zone: String) -> Bool {
@@ -794,14 +831,14 @@ public enum JournalExporter {
         return hour <= 23 && minute <= 59
     }
 
-    private static func finiteDate(_ date: Date?) -> Date? {
+    private static func finiteDate(_ date: Date?, earliest: TimeInterval = earliestExportableUTCSecond) -> Date? {
         guard let date else { return nil }
         let interval = date.timeIntervalSince1970
         guard interval.isFinite else { return nil }
         let whole = interval.rounded(.down)
         let microseconds = ((interval - whole) * 1_000_000).rounded()
         let exportedSecond = microseconds >= 1_000_000 ? whole + 1 : whole
-        guard exportedSecond >= earliestExportableUTCSecond,
+        guard exportedSecond >= earliest,
               exportedSecond <= latestExportableUTCSecond else { return nil }
         return date
     }
@@ -875,42 +912,8 @@ public enum JournalExporter {
         return Date(timeIntervalSince1970: TimeInterval(localSeconds - offset))
     }
 
-    private static func fourDigitUTCSecondText(_ seconds: TimeInterval) throws -> String {
-        // The export contract writes UTC calendar years 0001 through 9999. Checking the seconds before the
-        // integer conversion avoids traps for huge but finite Date intervals.
-        guard seconds.isFinite, seconds >= earliestExportableUTCSecond, seconds <= latestExportableUTCSecond,
-              seconds.rounded(.towardZero) == seconds else {
-            throw JournalExportError.unrepresentableDate
-        }
-
-        let timestamp = Int64(seconds)
-        var days = timestamp / 86_400
-        var secondOfDay = timestamp % 86_400
-        if secondOfDay < 0 {
-            days -= 1
-            secondOfDay += 86_400
-        }
-
-        // Proleptic Gregorian civil date conversion, based on days since 1970-01-01.
-        let shiftedDays = days + 719_468
-        let era = shiftedDays >= 0 ? shiftedDays / 146_097 : (shiftedDays - 146_096) / 146_097
-        let dayOfEra = shiftedDays - era * 146_097
-        let yearOfEra = (dayOfEra - dayOfEra / 1_460 + dayOfEra / 36_524 - dayOfEra / 146_096) / 365
-        var year = yearOfEra + era * 400
-        let dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
-        let monthPrime = (5 * dayOfYear + 2) / 153
-        let day = dayOfYear - (153 * monthPrime + 2) / 5 + 1
-        let month = monthPrime + (monthPrime < 10 ? 3 : -9)
-        year += month <= 2 ? 1 : 0
-
-        guard (1...9_999).contains(year) else { throw JournalExportError.unrepresentableDate }
-        let hour = secondOfDay / 3_600
-        let minute = secondOfDay % 3_600 / 60
-        let second = secondOfDay % 60
-        return String(format: "%04d-%02d-%02dT%02d:%02d:%02d", year, month, day, hour, minute, second)
-    }
-
-    private static let earliestExportableUTCSecond = -62_135_596_800.0 // 0001-01-01T00:00:00Z; Date boundary uses TimeInterval. // lint-allow: binary-float
+    private static let earliestExportableUTCSecond = -62_135_596_800.0 // Proleptic 0001-01-01T00:00:00Z. // lint-allow: binary-float
+    private static let earliestLegacyExportableUTCSecond = -62_135_769_600.0 // Julian 0001-01-01T00:00:00Z. // lint-allow: binary-float
     private static let latestExportableUTCSecond = 253_402_300_799.0 // 9999-12-31T23:59:59Z; Date boundary uses TimeInterval. // lint-allow: binary-float
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.
