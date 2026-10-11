@@ -1,6 +1,6 @@
 # Nutrition store protection and local erasure design
 
-Status: design for owner review; implementation has not been approved by this document.
+Status: owner approved the proposed approach on 2026-10-11, retaining the physical-device gate. Implementation and the final protection-class choice remain pending measured device evidence.
 
 This design is the coordinated local-store erasure work for #119, covering the related #228 concern. It keeps one erase flow for the four local stores, states the limits of file removal plainly, and makes the protection policy depend on measurements from a real iOS device. It does not create a competing project or claim secure or forensic deletion.
 
