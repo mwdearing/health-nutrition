@@ -9,7 +9,7 @@ filled in.
 
 ## Add flow
 
-The shared **Add food or drink** action opens Add home in a full-screen cover with one
+The shared **Add food, drink, or supplement** action opens Add home in a full-screen cover with one
 navigation stack and Cancel. **Add to Lunch** (and the other meal sections on Today) opens
 the same home with that meal selected. None, Breakfast, Lunch, Dinner and Snack are explicit
 choices; the selected meal is carried into barcode, label, Library and typed Details.

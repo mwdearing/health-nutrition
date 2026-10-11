@@ -299,12 +299,12 @@ struct RootView: View {
         }
     }
 
-    /// The shared "Add food or drink" capsule, laid over the bottom of every tab.
+    /// The shared "Add food, drink, or supplement" capsule, laid over the bottom of every tab.
     private var addCapsule: some View {
-        PrimaryCapsule("Add food or drink", systemImage: "plus") {
+        PrimaryCapsule("Add food, drink, or supplement", systemImage: "plus") {
             startAddingIntake()
         }
-        .accessibilityLabel("Add food or drink")
+        .accessibilityLabel("Add food, drink, or supplement")
         .padding(.horizontal, DesignSpacing.m)
         .padding(.bottom, DesignSpacing.s)
     }
