@@ -680,7 +680,7 @@ final class AccountViewModelTests: XCTestCase {
         let service = FakeAccountService(session: AccountTestSupport.session)
         service.profileValue = CommunityProfile(displayName: nil, shareLabels: false)
         service.updateError = CommunityError.network
-        let model = AccountViewModel(service: service, preferences: InMemoryCommunityDisclosurePreferences())
+        let model = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences())
         await model.load()
         let gate = CallGate()
         service.updateGate = gate
@@ -700,7 +700,7 @@ final class AccountViewModelTests: XCTestCase {
         let service = FakeAccountService(session: nil)
         let gate = CallGate()
         service.discardGate = gate
-        let model = AccountViewModel(service: service, preferences: InMemoryCommunityDisclosurePreferences())
+        let model = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences())
         let erasing = Task { try await model.discardLocalSession() }
         await waitUntil { gate.entered }
 
@@ -716,7 +716,7 @@ final class AccountViewModelTests: XCTestCase {
     func testKeychainFailureStillClearsAccountPresentation() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session)
         service.discardError = CommunityError.storage
-        let model = AccountViewModel(service: service, preferences: InMemoryCommunityDisclosurePreferences())
+        let model = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences())
         await model.load()
         XCTAssertEqual(model.phase, .signedIn)
 
@@ -739,7 +739,7 @@ final class AccountViewModelTests: XCTestCase {
         let service = FakeAccountService(session: AccountTestSupport.session)
         let gate = CallGate()
         service.restoreGate = gate
-        let model = AccountViewModel(service: service, preferences: InMemoryCommunityDisclosurePreferences())
+        let model = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences())
         let loading = Task { await model.load() }
         while !gate.entered { await Task.yield() }
 
@@ -757,7 +757,7 @@ final class AccountViewModelTests: XCTestCase {
         let service = FakeAccountService(session: nil)
         let gate = CallGate()
         service.profileGate = gate
-        let model = AccountViewModel(service: service, preferences: InMemoryCommunityDisclosurePreferences())
+        let model = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences())
         let signingIn = Task { await model.signInWithApple(idToken: "synthetic", nonce: "synthetic") }
         await waitUntil { gate.entered }
         XCTAssertEqual(model.phase, .signedIn)
@@ -776,7 +776,7 @@ final class AccountViewModelTests: XCTestCase {
         let service = FakeAccountService(session: nil)
         let gate = CallGate()
         service.appleGate = gate
-        let model = AccountViewModel(service: service, preferences: InMemoryCommunityDisclosurePreferences())
+        let model = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences())
         let signingIn = Task { await model.signInWithApple(idToken: "synthetic", nonce: "synthetic") }
         while !gate.entered { await Task.yield() }
 
