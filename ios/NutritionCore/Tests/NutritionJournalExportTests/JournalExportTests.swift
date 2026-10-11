@@ -595,7 +595,51 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
+    func testFavoriteAmountOutsideDecimalPrecisionFailsExport() throws {
+        let amount = "1234567890123456789012345678901234567890123"
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-too-precise", displayName: "Sample precise", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: amount, unitSymbol: "g")])]
+
+        XCTAssertThrowsError(
+            try JournalExporter.makeExport(
+                store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+        ) { error in
+            XCTAssertEqual(error as? JournalExportError, .malformedFavoriteAmount("fav-too-precise", amount))
+        }
+    }
+
+    func testActiveIntakeWithEmptyRevisionCannotBeExported() throws {
+        let store = StubJournalStore()
+        store.intakes = [intake(firstID)]
+        store.revisionsByIntake[firstID] = [revision(firstID, number: 1, components: [])]
+
+        XCTAssertThrowsError(
+            try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now)
+        ) { error in
+            XCTAssertEqual(error as? JournalExportError, .emptyRevisionComponents(firstID, 1))
+        }
+    }
+
+    func testSwiftDataActiveIntakeWithEmptyRevisionCannotBeExported() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let entry = intake(firstID)
+        _ = try store.create(entry, components: [], product: nil, now: now)
+
+        XCTAssertThrowsError(
+            try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now)
+        ) { error in
+            XCTAssertEqual(error as? JournalExportError, .emptyRevisionComponents(firstID, 1))
+        }
+    }
+
     func testWellFormedFavoriteAmountsAreStillExported() throws {
+        let exactPrecision = "123456789012345678901234567890123456"
+        let padded = "000" + exactPrecision + ".1200"
         let favoritesStore = StubFavoritesStore()
         favoritesStore.items = [
             FavoriteTemplate(
@@ -605,13 +649,17 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 id: "fav-b-1", displayName: "Sample decimal", category: "food",
                 components: [FavoriteComponent(
                     componentID: "oats", name: "Oats", amountText: "0.5", unitSymbol: "g")]),
+            FavoriteTemplate(
+                id: "fav-c-1", displayName: "Sample exact precision", category: "food",
+                components: [FavoriteComponent(
+                    componentID: "oats", name: "Oats", amountText: padded, unitSymbol: "g")]),
         ]
         let document = try JournalExporter.makeExport(
             store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
         // Sorted by id, not by the order the store happens to list them in, so two exports of the same
         // favorites are the same document.
-        XCTAssertEqual(document.favorites.map(\.id), ["fav-a-1", "fav-b-1"])
-        XCTAssertEqual(document.favorites.map(\.components.first?.amount), ["250", "0.5"])
+        XCTAssertEqual(document.favorites.map(\.id), ["fav-a-1", "fav-b-1", "fav-c-1"])
+        XCTAssertEqual(document.favorites.map(\.components.first?.amount), ["250", "0.5", padded])
         let reversed = StubFavoritesStore()
         reversed.items = favoritesStore.items.reversed()
         let other = try JournalExporter.makeExport(

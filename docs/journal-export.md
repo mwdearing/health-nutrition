@@ -190,9 +190,13 @@ already resolved is reused instead of being fetched again for every revision tha
 - Every key a `required` list names is always present. A value that is not known is written as an explicit
   JSON `null` - `meal`, `note`, `product_snapshot_id`, `provenance`, `brand`, `barcode` and an unknown
   `amount` - because the schema marks them required-but-nullable and a missing key does not validate.
-- A favorite's stored amount text is checked against the schema's decimal pattern before it is written. The
-  favorites store accepts text such as `1.2.3`, which the pattern does not allow, so the export fails with
-  `JournalExportError.malformedFavoriteAmount` rather than writing a backup no reader could use.
+- A favorite's stored amount text must match the schema's decimal pattern and decode losslessly as `Decimal`.
+  The favorites store accepts malformed text such as `1.2.3` and values beyond Decimal's precision, so export
+  fails with `JournalExportError.malformedFavoriteAmount` rather than writing a backup no reader could use.
+- An active intake revision must contain at least one component. An empty revision fails export with
+  `JournalExportError.emptyRevisionComponents` rather than producing a document rejected by restore.
+- Empty favorites collections remain valid. Favorite amounts at Decimal's exact precision boundary remain
+  unchanged in the export, including leading and trailing zeroes.
 - A stored intake whose lifecycle value is neither `active` nor `deleted` is corrupt, so the snapshot read
   fails with `JournalError.corruptRecord` instead of treating the row as live data.
 

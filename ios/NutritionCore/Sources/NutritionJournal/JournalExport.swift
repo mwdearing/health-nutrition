@@ -318,16 +318,15 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
         self.components = components
     }
 
-    /// A stored favorite holds decimal text that the favorites store does not itself validate, so a malformed
-    /// amount such as `"1.2.3"` reaches this initializer. Writing it out with `value_state: known` would
-    /// produce a document that fails the schema's decimal pattern, so the export fails loudly instead of
-    /// producing a backup that no reader can use.
+    /// A stored favorite holds decimal text that the favorites store does not itself validate. Writing a
+    /// malformed or inexact amount as `value_state: known` would produce a document that cannot be restored.
     public init(favorite: FavoriteTemplate) throws {
         self.init(
             id: favorite.id, displayName: favorite.displayName, category: favorite.category, meal: favorite.meal,
             productSnapshotID: favorite.productSnapshotID,
             components: try favorite.components.map { component in
-                guard DecimalText.isValidDecimalText(component.amountText) else {
+                guard DecimalText.isValidDecimalText(component.amountText),
+                      DecimalText.decode(component.amountText) != nil else {
                     throw JournalExportError.malformedFavoriteAmount(favorite.id, component.amountText)
                 }
                 return JournalExportComponent(
@@ -409,6 +408,8 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case unsupportedSchemaVersion(Int)
     /// A stored favorite holds an amount that is not exact decimal text, which the schema cannot express.
     case malformedFavoriteAmount(String, String)
+    /// A revision with no components cannot be restored under the journal export contract.
+    case emptyRevisionComponents(String, Int)
     /// A date in the document cannot be represented as a finite timestamp.
     case nonFiniteDate
     /// A finite timestamp falls outside the four-digit UTC date format this export writes.
@@ -497,6 +498,9 @@ public enum JournalExporter {
             let intake = item.intake
             var revisions: [JournalExportRevision] = []
             for revision in item.revisions {
+                guard !revision.components.isEmpty else {
+                    throw JournalExportError.emptyRevisionComponents(intake.id, revision.number)
+                }
                 var provenance: JournalExportProvenance?
                 if let snapshotID = revision.productSnapshotID {
                     // A snapshot is immutable, so one that is already resolved needs no second query. A long
