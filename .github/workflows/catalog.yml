@@ -53,4 +53,4 @@ jobs:
         run: uv sync --frozen --extra test
       - name: Test
         working-directory: catalog
-        run: uv run --frozen python -m pytest -q
+        run: uv run --frozen python -m pytest -q tests ../scripts/tests/test_dependency_workflow_locks.py
