@@ -705,7 +705,7 @@ public enum JournalExporter {
         let significant = digits.drop { $0 == "0" }
         guard significant.count <= 308 else { return nil }
         var scaled: TimeInterval = 0
-        var place: TimeInterval = 0.1
+        var place: TimeInterval = 0.1 // Date fractional seconds use TimeInterval. // lint-allow: binary-float
         for character in digits {
             let digit = TimeInterval(character.wholeNumberValue!)
             scaled += digit * place
@@ -830,8 +830,8 @@ public enum JournalExporter {
         return String(format: "%04d-%02d-%02dT%02d:%02d:%02d", year, month, day, hour, minute, second)
     }
 
-    private static let earliestExportableUTCSecond = -62_135_596_800.0 // 0001-01-01T00:00:00Z
-    private static let latestExportableUTCSecond = 253_402_300_799.0 // 9999-12-31T23:59:59Z
+    private static let earliestExportableUTCSecond = -62_135_596_800.0 // 0001-01-01T00:00:00Z; Date boundary uses TimeInterval. // lint-allow: binary-float
+    private static let latestExportableUTCSecond = 253_402_300_799.0 // 9999-12-31T23:59:59Z; Date boundary uses TimeInterval. // lint-allow: binary-float
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.
     public static func fileName(exportedAt: Date) -> String {
