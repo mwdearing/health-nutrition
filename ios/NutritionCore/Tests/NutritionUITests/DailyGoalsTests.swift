@@ -709,7 +709,7 @@ final class DailyGoalsTests: XCTestCase {
 
     /// A goal the person set survives the erase with everything else, which is what the Connections
     /// and privacy screen promises when it says "erase all data".
-    func testAnEraseRemovesTheGoalsAlongWithEverythingElse() throws {
+    func testAnEraseRemovesTheGoalsAlongWithEverythingElse() async throws {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
@@ -718,7 +718,8 @@ final class DailyGoalsTests: XCTestCase {
             store: journal, erasers: [journal, goals])
         XCTAssertTrue(connections.canEraseAll)
 
-        XCTAssertTrue(connections.eraseAllData())
+        let eraseResult1 = await connections.eraseAllData()
+        XCTAssertTrue(eraseResult1)
 
         XCTAssertTrue(try goals.goals().isEmpty)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)

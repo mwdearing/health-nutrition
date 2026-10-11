@@ -64,11 +64,14 @@ public final class AccountViewModel: ObservableObject {
     /// Counts running service calls. A counter, not a flag, so a call nested inside another does not clear
     /// the busy state while the outer call is still running.
     private var busyCount = 0 {
-        didSet { isBusy = busyCount > 0 }
+        didSet { isBusy = busyCount > 0 || isErasingLocalData }
     }
     /// Counts sign-ins that completed. `load()` compares it across the restore, so a sign-in that finished while
     /// the restore was running is never cleared by the restore's answer.
     private var signInCount = 0
+    /// Invalidates every completion that began before local account erasure.
+    private var sessionGeneration = 0
+    private var isErasingLocalData = false
 
     public init(service: CommunityAccountServicing, preferences: CommunityDisclosurePreferences) {
         self.service = service
@@ -78,10 +81,13 @@ public final class AccountViewModel: ObservableObject {
     /// Restores a stored sign-in when Settings opens. Signed out when nothing can be restored. The model is busy
     /// for the whole call, so the sign-in controls stay disabled until the restore has answered.
     public func load() async {
+        guard !isErasingLocalData else { return }
         busyCount += 1
         defer { busyCount -= 1 }
+        let generation = sessionGeneration
         let signInsBefore = signInCount
         guard let session = await service.restore() else {
+            guard generation == sessionGeneration, !isErasingLocalData else { return }
             // A sign-in that completed during the restore is newer than its empty answer; keep it.
             if phase == .signedOut || signInCount == signInsBefore {
                 clearSignedInState()
@@ -89,7 +95,7 @@ public final class AccountViewModel: ObservableObject {
             return
         }
         // Same reason: a sign-in that finished during the restore wins over the restored session.
-        guard signInCount == signInsBefore else { return }
+        guard generation == sessionGeneration, !isErasingLocalData, signInCount == signInsBefore else { return }
         signIn(with: session)
         // A sign-in restored before the disclosure was read still has to show it.
         needsDisclosure = !currentAccountAcknowledged
@@ -104,28 +110,35 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signInWithApple(idToken: String, nonce: String) async {
+        guard !isErasingLocalData else { return }
+        let generation = sessionGeneration
         guard let session = await run(Self.signInFailedMessage, {
             try await self.service.signInWithApple(idToken: idToken, nonce: nonce)
         }) else { return }
+        guard generation == sessionGeneration, !isErasingLocalData else { return }
         completeSignIn(session)
         await refreshProfile()
     }
 
     /// Called when Sign in with Apple ends without a usable identity token.
     public func reportAppleFailure() {
+        guard !isErasingLocalData else { return }
         message = Self.signInFailedMessage
     }
 
     /// Emails a one-time code to the address. Nothing is sent when the address has no at sign.
     public func requestCode(email address: String) async {
+        guard !isErasingLocalData else { return }
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.contains("@") else {
             message = Self.addressMessage
             return
         }
+        let generation = sessionGeneration
         guard await run(Self.codeRequestFailedMessage, {
             try await self.service.requestEmailCode(email: trimmed)
         }) != nil else { return }
+        guard generation == sessionGeneration, !isErasingLocalData else { return }
         pendingEmail = trimmed
         emailStep = .enterCode
         message = Self.codeSentMessage
@@ -134,6 +147,7 @@ public final class AccountViewModel: ObservableObject {
     /// Emails a new code to the address the first code went to. Does nothing once the person has chosen a
     /// different address.
     public func resendCode() async {
+        guard !isErasingLocalData else { return }
         let address = pendingEmail
         guard !address.isEmpty else { return }
         await requestCode(email: address)
@@ -141,7 +155,7 @@ public final class AccountViewModel: ObservableObject {
 
     /// Goes back to the address step, forgetting the address the code went to.
     public func useDifferentAddress() {
-        guard !isBusy else { return }
+        guard !isBusy, !isErasingLocalData else { return }
         emailStep = .enterAddress
         pendingEmail = ""
         message = nil
@@ -149,6 +163,7 @@ public final class AccountViewModel: ObservableObject {
 
     /// Checks the code that was emailed to the address given to `requestCode(email:)`.
     public func verify(code: String) async {
+        guard !isErasingLocalData else { return }
         let digits = code.trimmingCharacters(in: .whitespacesAndNewlines)
         let sixDigits = digits.count == 6 && digits.allSatisfy({ $0.isASCII && $0.isNumber })
         guard sixDigits else {
@@ -156,10 +171,12 @@ public final class AccountViewModel: ObservableObject {
             return
         }
         guard emailStep == .enterCode else { return }
+        let generation = sessionGeneration
         let address = pendingEmail
         guard let session = await run(Self.codeWrongMessage, {
             try await self.service.verifyEmailCode(email: address, code: digits)
         }) else { return }
+        guard generation == sessionGeneration, !isErasingLocalData else { return }
         completeSignIn(session)
         await refreshProfile()
     }
@@ -167,21 +184,24 @@ public final class AccountViewModel: ObservableObject {
     /// Turns sharing on or off. The switch shows the new value at once and goes back when the save fails.
     /// Nothing is sent until the profile has been read.
     public func setSharing(_ on: Bool) async {
+        guard !isErasingLocalData else { return }
         await serialized { await self.applySharing(on) }
     }
 
     private func applySharing(_ on: Bool) async {
+        guard !isErasingLocalData else { return }
         guard profileReady else {
             message = Self.profileNotReadyMessage
             return
         }
         let previous = shareLabels
+        let generation = sessionGeneration
         let name = savedName
         shareLabels = on
         guard await run(Self.genericMessage, {
             try await self.service.updateProfile(displayName: name, shareLabels: on)
         }) != nil else {
-            shareLabels = previous
+            if generation == sessionGeneration, !isErasingLocalData { shareLabels = previous }
             return
         }
     }
@@ -189,10 +209,12 @@ public final class AccountViewModel: ObservableObject {
     /// Saves the name: trimmed, capped at `nameLimit`, and empty means no name. Nothing is sent until the
     /// profile has been read.
     public func saveName(_ text: String) async {
+        guard !isErasingLocalData else { return }
         await serialized { await self.applyName(text) }
     }
 
     private func applyName(_ text: String) async {
+        guard !isErasingLocalData else { return }
         guard profileReady else {
             message = Self.profileNotReadyMessage
             return
@@ -201,32 +223,58 @@ public final class AccountViewModel: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let name: String? = capped.isEmpty ? nil : capped
         let sharing = shareLabels
+        let generation = sessionGeneration
         guard let profile = await run(Self.genericMessage, {
             try await self.service.updateProfile(displayName: name, shareLabels: sharing)
         }) else { return }
+        guard generation == sessionGeneration, !isErasingLocalData else { return }
         savedName = profile.displayName
         displayName = profile.displayName ?? ""
     }
 
     /// Reads the profile again after a failed read. Does nothing when nobody is signed in.
     public func retryProfile() async {
+        guard !isErasingLocalData else { return }
         guard phase == .signedIn else { return }
         await refreshProfile()
     }
 
     public func signOut() async {
+        guard !isErasingLocalData else { return }
+        let generation = sessionGeneration
         guard await run(Self.genericMessage, { try await self.service.signOut() }) != nil else { return }
+        guard generation == sessionGeneration, !isErasingLocalData else { return }
         clearSignedInState()
     }
 
     /// Deletes the account on the server. The session is forgotten here only after the server agrees.
     public func deleteAccount() async {
+        guard !isErasingLocalData else { return }
+        let generation = sessionGeneration
         guard await run(Self.genericMessage, { try await self.service.deleteAccount() }) != nil else { return }
+        guard generation == sessionGeneration, !isErasingLocalData else { return }
         // The deleted account's own acknowledgment goes with it; the other accounts' entries stay.
         if let userID = currentUserID {
             preferences.setHasSeenCommunityDisclosure(false, for: userID)
         }
         clearSignedInState()
+    }
+
+    /// Clears this device's account presentation and stored session as part of Erase all data. It never
+    /// signs out from or deletes anything on the server. The UI is cleared before the Keychain call can fail,
+    /// and the generation makes every older service completion stale.
+    public func discardLocalSession() async throws {
+        guard !isErasingLocalData else { return }
+        isErasingLocalData = true
+        isBusy = true
+        sessionGeneration += 1
+        signInCount += 1
+        clearSignedInState()
+        defer {
+            isErasingLocalData = false
+            isBusy = busyCount > 0
+        }
+        try await service.discardLocalSession()
     }
 
     /// Called after Erase all data cleared the stored preferences: a signed-in person who has not read the
@@ -270,12 +318,17 @@ public final class AccountViewModel: ObservableObject {
 
     /// Runs one service call with the busy flag set. A failure sets `message` and returns nil.
     private func run<T>(_ fallback: String, _ call: () async throws -> T) async -> T? {
+        guard !isErasingLocalData else { return nil }
+        let generation = sessionGeneration
         busyCount += 1
         defer { busyCount -= 1 }
         message = nil
         do {
-            return try await call()
+            let result = try await call()
+            guard generation == sessionGeneration, !isErasingLocalData else { return nil }
+            return result
         } catch {
+            guard generation == sessionGeneration, !isErasingLocalData else { return nil }
             let text = Self.message(for: error, fallback: fallback)
             // The sign-in ended (the session could not be renewed): stop showing the account.
             if phase == .signedIn, case .signedOut? = error as? CommunityError {
@@ -317,8 +370,11 @@ public final class AccountViewModel: ObservableObject {
     /// Reads the name and the sharing switch the server holds. Until this succeeds the profile is not ready, and
     /// a failure shows a message and keeps the defaults.
     private func refreshProfile() async {
+        let generation = sessionGeneration
+        guard !isErasingLocalData else { return }
         profileReady = false
         guard let profile = await run(Self.genericMessage, { try await self.service.profile() }) else { return }
+        guard generation == sessionGeneration, !isErasingLocalData else { return }
         savedName = profile.displayName
         displayName = profile.displayName ?? ""
         shareLabels = profile.shareLabels
@@ -326,6 +382,8 @@ public final class AccountViewModel: ObservableObject {
     }
 
     private func clearSignedInState() {
+        presentingSignIn = false
+        presentingDeleteConfirmation = false
         phase = .signedOut
         currentUserID = nil
         email = ""

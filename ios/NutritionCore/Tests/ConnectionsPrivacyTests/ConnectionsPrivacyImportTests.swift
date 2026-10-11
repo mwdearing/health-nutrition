@@ -189,7 +189,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         }
     }
 
-    func testAnEraseAfterAStartedImportLeavesTheStoresEmpty() throws {
+    func testAnEraseAfterAStartedImportLeavesTheStoresEmpty() async throws {
         // The two write the same journal. Run together they could land in either order, and "erase
         // everything" that a restore then undoes is the failure this guards: the erase waits for the restore
         // it found in flight, so the journal it empties is the one the import wrote.
@@ -198,7 +198,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
             store: journal, favorites: favoritesStore, erasers: [journal, favoritesStore], remover: { _ in })
         model.importJournal(data: try export())
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult1 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult1)
 
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
         XCTAssertTrue(try journal.deletedIntakes().isEmpty)
@@ -209,7 +210,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertNil(model.importSummary)
     }
 
-    func testAnImportStartedWhileAnEraseRunsIsRefused() throws {
+    func testAnImportStartedWhileAnEraseRunsIsRefused() async throws {
         let (journal, favoritesStore) = try diskStores()
         let eraser = EraserThatStartsAnImport()
         let model = ConnectionsPrivacyViewModel(
@@ -218,7 +219,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         eraser.model = model
         eraser.data = try export()
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult2 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult2)
 
         // Queuing it instead would have restored a journal the person had just erased.
         XCTAssertEqual(model.importState, .failed)

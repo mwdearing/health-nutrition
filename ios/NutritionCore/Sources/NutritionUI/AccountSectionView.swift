@@ -89,7 +89,11 @@ struct AccountPresentations: ViewModifier {
                 Text("The account and every label it shared are deleted. Data on this device is kept.")
             }
             .onChange(of: model.needsDisclosure) { _, needed in
-                if needed && !model.presentingSignIn { showingDisclosure = true }
+                if needed && !model.presentingSignIn {
+                    showingDisclosure = true
+                } else if !needed {
+                    showingDisclosure = false
+                }
             }
             .onAppear {
                 showingDisclosure = model.needsDisclosure && !model.presentingSignIn

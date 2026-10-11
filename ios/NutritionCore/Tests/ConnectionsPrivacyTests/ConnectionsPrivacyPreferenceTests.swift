@@ -230,7 +230,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
     /// Erase all data promises to remove everything this app stores on the device, and a unit system
     /// and a glass size are stored values like any other: both keys are removed from the defaults
     /// domain, not overwritten, and the screen is put back to what a fresh install shows.
-    func testEraseAllDataRemovesTheStoredUnitPreferencesAndResetsTheScreen() throws {
+    func testEraseAllDataRemovesTheStoredUnitPreferencesAndResetsTheScreen() async throws {
         let defaults = makeSuite("erase-units")
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
         let store = try makeStore()
@@ -245,7 +245,8 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
             preferences.quickWaterMilliliters,
             Decimal(string: "17744.1177375", locale: AmountParser.locale))
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult1 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult1)
 
         // The keys themselves are gone, so nothing of this app's is left in the domain.
         let unitKey = UserDefaultsDisplayPreferences.keyPrefix + "unitSystem"
@@ -267,7 +268,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
     /// The in-memory implementation clears the same way, so the two cannot disagree about what an
     /// erase leaves behind.
-    func testEraseAllDataClearsTheInMemoryPreferencesToo() throws {
+    func testEraseAllDataClearsTheInMemoryPreferencesToo() async throws {
         let preferences = InMemoryDisplayPreferences(
             unitSystem: .usCustomary, quickWaterMilliliters: Decimal(600))
         let store = try makeStore()
@@ -280,7 +281,8 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
             preferences.quickWaterMilliliters,
             Decimal(string: "22180.147171875", locale: AmountParser.locale))
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult2 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult2)
 
         XCTAssertEqual(preferences.unitSystem, DisplayPreferenceDefaults.unitSystem)
         XCTAssertEqual(preferences.quickWaterMilliliters, DisplayPreferenceDefaults.quickWaterMilliliters)

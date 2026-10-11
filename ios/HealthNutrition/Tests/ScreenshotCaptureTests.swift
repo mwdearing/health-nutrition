@@ -31,6 +31,8 @@ final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Send
 
     func signOut() async throws {}
 
+    func discardLocalSession() async throws {}
+
     func profile() async throws -> CommunityProfile {
         CommunityProfile(displayName: "Ann", shareLabels: true)
     }

@@ -57,11 +57,17 @@ final class AppServices {
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
         recipeStore: SwiftDataRecipeStore, goalStore: SwiftDataGoalStore,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
-        reminderScheduler: ReminderScheduling
+        reminderScheduler: ReminderScheduling, accountServiceOverride: CommunityAccountServicing? = nil
     ) {
         self.displayPreferences = displayPreferences
         let community = Self.makeCommunity()
-        let account = community.map { AccountViewModel(service: $0, preferences: displayPreferences) }
+        let accountService: CommunityAccountServicing?
+        if let accountServiceOverride = accountServiceOverride {
+            accountService = accountServiceOverride
+        } else {
+            accountService = community
+        }
+        let account = accountService.map { AccountViewModel(service: $0, preferences: displayPreferences) }
         self.community = community
         self.account = account
         let reminderErasures = ReminderErasures()
@@ -86,7 +92,11 @@ final class AppServices {
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
             erasers: [journalStore, favoritesStore, recipeStore, goalStore, reminderEraser],
-            preferences: displayPreferences)
+            preferences: displayPreferences,
+            eraseLocalAccount: {
+                guard let account else { return }
+                try await account.discardLocalSession()
+            })
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
@@ -145,10 +155,12 @@ final class AppServices {
     ///   its own store rather than writing into the standard defaults domain.
     /// - Parameter reminderScheduler: the system's local notifications by default. A test passes a fake so
     ///   no notification is scheduled on the test device.
+    /// - Parameter accountServiceOverride: a synthetic service for checking the local-session erase wiring.
     static func make(
         directory: URL = defaultDirectory,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
-        reminderScheduler: ReminderScheduling
+        reminderScheduler: ReminderScheduling,
+        accountServiceOverride: CommunityAccountServicing? = nil
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.
@@ -200,7 +212,7 @@ final class AppServices {
             return AppServices(
                 journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
                 goalStore: goalStore, displayPreferences: displayPreferences,
-                reminderScheduler: reminderScheduler)
+                reminderScheduler: reminderScheduler, accountServiceOverride: accountServiceOverride)
         } catch {
             recipeStore.close()
             favoritesStore.close()

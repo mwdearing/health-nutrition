@@ -203,7 +203,7 @@ private struct SettingsContent: View {
             titleVisibility: .visible
         ) {
             Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
-                self.connections.eraseAllData()
+                Task { await self.connections.eraseAllData() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

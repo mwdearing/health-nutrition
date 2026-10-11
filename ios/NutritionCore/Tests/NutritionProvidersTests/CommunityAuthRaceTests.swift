@@ -111,6 +111,21 @@ final class CommunityAuthRaceTests: XCTestCase {
         XCTAssertNil(store.load())
     }
 
+    func testSignInReplyAfterLocalDiscardCannotCreateSession() async throws {
+        let store = InMemoryCommunitySessionStore()
+        let transport = LifecycleTransport(gated: ["signin"])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let signIn = Task { try await auth.signInWithApple(idToken: "test-id", nonce: "test-nonce") }
+        await transport.waitFor("signin")
+        try await auth.discardSession()
+        XCTAssertNil(store.load())
+
+        transport.release("signin")
+        await assertCommunityError(.signedOut) { try await signIn.value }
+        XCTAssertNil(store.load())
+    }
+
     func testSignInReplyAfterLogoutCannotCreateSession() async throws {
         let store = InMemoryCommunitySessionStore()
         let transport = LifecycleTransport(gated: ["signin"])

@@ -128,14 +128,16 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "Every entry, favorite, recipe and daily goal this app stores on this device is deleted, and the daily reminder "
         + "is switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
-        + "it there yourself."
+        + "it there yourself. Erasing also signs you out on this phone; your community account and any "
+        + "shared labels remain on the server."
     public static let eraseConfirmationTitle = "Erase all data?"
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
     /// only in the dialog that follows.
     public static let eraseFooterMessage =
         "Erases the journal, favorites, recipes and daily goals this app stores on this device and switches off the daily "
         + "reminder, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
-        + "or in another app — is not erased: delete it there yourself."
+        + "or in another app — is not erased: delete it there yourself. Erasing signs you out on this phone; "
+        + "your community account and any shared labels remain on the server."
     public static let eraseFailedMessage =
         "Some stored data could not be erased. Quit and reopen the app, then try again."
     /// The names the exporter writes, as `fileName(exportedAt:)` builds them. The erase sweeps the
@@ -234,6 +236,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// One entry per store file this app keeps. `eraseAllData()` runs them all; the app injects the real
     /// stores, and a test injects recorders or a store that refuses.
     private let erasers: [JournalErasing]
+    /// Forgets an optional community session on this device; the default keeps account-free builds standalone.
+    private let eraseLocalAccount: () async throws -> Void
 
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
     private var importTask: Task<Void, Never>?
@@ -274,7 +278,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
         erasers: [JournalErasing] = [],
         remover: @escaping ConnectionsPrivacyExportRemover = ConnectionsPrivacyViewModel.removeExport,
-        preferences: DisplayPreferencesWriting = InMemoryDisplayPreferences()
+        preferences: DisplayPreferencesWriting = InMemoryDisplayPreferences(),
+        eraseLocalAccount: @escaping () async throws -> Void = {}
     ) {
         self.store = store
         self.favorites = favorites
@@ -283,6 +288,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.erasers = erasers
         self.remover = remover
         self.preferences = preferences
+        self.eraseLocalAccount = eraseLocalAccount
         self.unitSystem = preferences.unitSystem
         // Computed from the store rather than read back through `quickWaterDraftAmount`: an initializer
         // cannot read itself before every stored property is set, and this is the last one.
@@ -495,15 +501,16 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         errorMessage = nil
     }
 
-    /// Deletes everything this app stores on this device: every journal entry with its revision history,
-    /// product snapshots, queued outbox operations, favorites and personal recipes, plus the exported
-    /// copy this screen was holding. Nothing is sent anywhere, so nothing has to be retracted there.
+    /// Deletes everything this app stores on this device, including the optional community session,
+    /// every journal entry with its revision history, product snapshots, queued outbox operations,
+    /// favorites and personal recipes, plus the exported copy this screen was holding. It never calls
+    /// a server-side account or sign-out endpoint.
     ///
     /// One store failing does not stop the rest: each store erases itself and the person is told that
     /// something was left behind, so they can try again rather than believe the data is gone when it is
     /// not. Returns whether every store erased itself.
     @discardableResult
-    public func eraseAllData() -> Bool {
+    public func eraseAllData() async -> Bool {
         // An import writes the whole journal in one save and an erase writes it away in another. Run
         // together they could land in either order, and the screen would end up claiming whichever came
         // second. So the two never overlap: an import started while an erase runs is refused, and an erase
@@ -518,7 +525,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // clearing afterwards would throw that away - and it is the only thing on the screen explaining why
         // the file they chose did nothing.
         clearImport()
-        // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
+        // Invalidate completions before either the import wait or account cleanup can suspend.
         importGeneration += 1
         importTask?.cancel()
         guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
@@ -529,6 +536,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         defer { isErasing = false }
 
         var failed = false
+        do {
+            try await eraseLocalAccount()
+        } catch {
+            failed = true
+        }
         for eraser in erasers {
             do {
                 try eraser.eraseAll()
