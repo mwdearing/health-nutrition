@@ -28,3 +28,9 @@ Additional semantic vectors: `amount-max-valid` accepts the numeric maximum; `am
 `key-duplicate-invalid` repeats a byte-identical key and must fail semantic uniqueness validation.
 
 `renderer-sql-input.json`/`renderer-sql-expected.json` cover the JSONB-representable scalar domain. The abstract renderer fixture retains U+0000 for client algorithm conformance; PostgreSQL rejects it before an RPC. `nul-text-invalid.json` requires client/schema rejection and a SQL JSONB-decoder rejection check. SQL tests also execute the unchanged exact 16384/16385-byte fixtures.
+
+Legacy read fixtures: `legacy-public-product-valid.json` and
+`legacy-alternative-valid.json` validate as `public_product`;
+`legacy-detail-response-valid.json`, `legacy-search-response-valid.json`, and
+`legacy-receipt-valid.json` validate as their corresponding response definitions.
+Legacy content is deliberately invalid as publish `product` content.

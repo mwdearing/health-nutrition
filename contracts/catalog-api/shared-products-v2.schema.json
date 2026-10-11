@@ -550,27 +550,13 @@
       ]
     },
     "alternative": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "representative_revision": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]*$",
-          "not": {
-            "pattern": "\u0000"
-          }
+      "oneOf": [
+        {
+          "$ref": "#/$defs/custom_alternative"
         },
-        "product": {
-          "$ref": "#/$defs/product"
-        },
-        "support": {
-          "$ref": "#/$defs/support"
+        {
+          "$ref": "#/$defs/legacy_alternative"
         }
-      },
-      "required": [
-        "representative_revision",
-        "product",
-        "support"
       ]
     },
     "public_product": {
@@ -592,7 +578,7 @@
           }
         },
         "product": {
-          "$ref": "#/$defs/product"
+          "$ref": "#/$defs/read_product"
         },
         "source": {
           "$ref": "#/$defs/source"
@@ -622,6 +608,59 @@
         "support",
         "missing_facts",
         "alternatives"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "product": {
+                "required": [
+                  "content_type"
+                ],
+                "properties": {
+                  "content_type": {
+                    "const": "legacy_label"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "product": {
+                  "properties": {
+                    "legacy_source": {
+                      "const": "community"
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "verification": {
+                  "properties": {
+                    "status": {
+                      "const": "shared_unverified"
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "verification": {
+                  "properties": {
+                    "status": {
+                      "const": "verified"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       ]
     },
     "publication": {
@@ -1023,6 +1062,241 @@
       },
       "required": [
         "p_version"
+      ]
+    },
+    "legacy_label": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "const": "legacy_label"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
+        "brand": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 80,
+              "not": {
+                "pattern": "\u0000"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "barcode": {
+          "type": "string",
+          "pattern": "^([0-9]{8}|[0-9]{13})$"
+        },
+        "kind": {
+          "type": "null"
+        },
+        "basis": {
+          "enum": [
+            "per_100g",
+            "per_100ml",
+            "per_serving"
+          ]
+        },
+        "serving": {
+          "type": "null"
+        },
+        "raw_serving_text": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 80,
+              "not": {
+                "pattern": "\u0000"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nutrients": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 3,
+          "properties": {
+            "energyKcal": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 9000
+            },
+            "protein": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "carbohydrates": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "sugars": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "fat": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "saturatedFat": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "fiber": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "salt": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "sodium": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000
+            }
+          }
+        },
+        "legacy_source": {
+          "enum": [
+            "community",
+            "owner_reviewed"
+          ]
+        }
+      },
+      "required": [
+        "content_type",
+        "name",
+        "brand",
+        "barcode",
+        "kind",
+        "basis",
+        "serving",
+        "raw_serving_text",
+        "nutrients",
+        "legacy_source"
+      ]
+    },
+    "custom_alternative": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "representative_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
+        "product": {
+          "$ref": "#/$defs/product"
+        },
+        "support": {
+          "$ref": "#/$defs/support"
+        }
+      },
+      "required": [
+        "representative_revision",
+        "product",
+        "support"
+      ]
+    },
+    "legacy_alternative": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "representative_revision": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$",
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
+        "product": {
+          "$ref": "#/$defs/legacy_label"
+        },
+        "support": {
+          "$ref": "#/$defs/support"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        }
+      },
+      "required": [
+        "representative_revision",
+        "product",
+        "support",
+        "source",
+        "verification"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "product": {
+                "properties": {
+                  "legacy_source": {
+                    "const": "community"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "verification": {
+                "properties": {
+                  "status": {
+                    "const": "shared_unverified"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "verification": {
+                "properties": {
+                  "status": {
+                    "const": "verified"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "read_product": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/product"
+        },
+        {
+          "$ref": "#/$defs/legacy_label"
+        }
       ]
     }
   }

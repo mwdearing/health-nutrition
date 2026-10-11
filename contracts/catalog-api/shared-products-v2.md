@@ -51,3 +51,40 @@ Render recursively: object keys sorted lexicographically by Unicode scalar value
 ## Errors
 
 Application errors use SQLSTATE `P0001` and JSON DETAIL matching `error_detail`. Codes are `invalid_request`, `unauthorized`, `consent_required`, `revision_conflict`, `operation_conflict`, `rejected`, `rate_limited`, `unavailable`. Optional metadata is restricted to field path, current revision/state, consent generation and retry-after seconds; never include request bodies, identities or private server details. Invalid payloads use `invalid_request`; revision conflicts provide current revision/state; consent errors may provide generation; throttling may provide retry-after. Reject reasons use `rejected` without freeform private messages. Clients additionally handle HTTP 401/403 as authorization failures, 409 as conflicts, 429 as rate limiting, 5xx as unavailable, malformed responses as unavailable, and cancellation as cancellation without retry publication. Error responses do not count as delivery acknowledgments.
+
+### Legacy read content
+
+Publication content (`public_product.product` and each `alternative.product`) is a
+`read_product` union. Custom content keeps the strict existing `product` shape.
+Legacy content has the exclusive `content_type: "legacy_label"` discriminator and
+exact fields `name`, `brand`, `barcode`, `kind: null`, `basis`, `serving: null`,
+`raw_serving_text`, `nutrients`, and `legacy_source`. Legacy basis retains
+`per_100g`, `per_100ml`, or `per_serving`; nutrients retain the original bounded
+numeric object, including `salt` in grams and `sodium` in milligrams. Original
+nullable serving text is preserved up to 80 Unicode scalars. No kind or structured
+serving is inferred. These read shapes are also used by search, detail, and receipt
+publication, including replay. The publication request schema remains unchanged.
+
+`legacy_source` is `community` or `owner_reviewed`. A legacy alternative carries
+its own required `source` and `verification` alongside revision, product and
+support. Custom alternatives retain their existing shape. Only the exact
+owner-reviewed legacy payload can have its legacy verified badge; automatic
+legacy agreement is unverified on the v2 surface. Legacy and custom support counts
+are independent even for matching facts. Root `product_id` is shared by all bases
+of a canonical barcode; UPC-A and its leading-zero EAN-13 share that identity.
+Legacy source revisions are allocated immutable snapshot identifiers, never
+wall-clock timestamps, and do not identify an account or a submission.
+
+Importing unresolved legacy content creates a staged editor draft. The user must
+choose a kind and, when needed, a numeric serving before constructing a valid
+custom revision or publishing. Import and logging alone never add support. The
+completed revision retains source attribution and original serving text.
+
+Both API generations use the existing daily submission ledger. Every account
+operation locks its live profile before the complete sorted signed-bigint advisory
+key set (v2 barcode and all three legacy barcode/basis keys), followed by products
+in UUID order, contributions, usage and derived rows. Account erasure precollects
+all affected identities and removes both generations through `delete_my_account`.
+Root rejection suppresses both lookup generations; legacy basis rejection also
+suppresses corresponding custom alternatives. Receipt replay reflects current
+visibility without consuming quota or changing the accepted revision.
