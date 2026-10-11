@@ -37,6 +37,9 @@ the display name). Nothing else is declared. The reasoning for the rest:
   here, not the recipient (`ios/NutritionCore/Sources/NutritionUI/ConnectionsPrivacyView.swift`).
 - The account is optional. A signed-in account sends the three values above to
   the project's server. Logged-out use sends nothing to that server.
+- Signing in may show a challenge from hCaptcha first. It is a third-party SDK
+  in the app target, not first-party code, so the scanner does not read it. Its
+  data handling is described in `PRIVACY.md`.
 - Scanned-label values sent when sharing is on (product name, brand, barcode and
   nutrient amounts) are described in `PRIVACY.md`. They are not declared as a
   collected type in this manifest yet.
