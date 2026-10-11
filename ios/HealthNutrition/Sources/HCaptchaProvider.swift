@@ -2,6 +2,7 @@
 import Foundation
 import NutritionProviders
 import UIKit
+import WebKit
 #if canImport(HCaptcha)
 import HCaptcha
 
@@ -36,8 +37,8 @@ final class HCaptchaProvider: CommunityCaptcha {
         }
     }
 
-    /// Shows the challenge over the top view controller. The SDK object is kept alive by the completion
-    /// closure until the challenge ends, so the widget is not released while it is on screen.
+    /// Shows the challenge over the top view controller. The SDK object is held by `once` until the challenge
+    /// reports, and the web view the SDK adds to the screen is removed when it ends.
     @MainActor
     private static func present(siteKey: String, once: ResumeOnce) {
         guard let top = topViewController() else {
@@ -51,14 +52,19 @@ final class HCaptchaProvider: CommunityCaptcha {
             once.finish(.failure(CommunityError.captcha))
             return
         }
-        hcaptcha.validate(on: top.view, resetOnError: false) { result in
-            withExtendedLifetime(hcaptcha) {
-                do {
-                    once.finish(.success(try result.dematerialize()))
-                } catch {
-                    // The person closed the check or it failed. The text of the SDK error is not kept.
-                    once.finish(.failure(CommunityError.captcha))
-                }
+        once.hold(hcaptcha)
+        let anchor: UIView = top.view
+        // The SDK sizes its web view with this hook when it is not sized yet, as its own example does.
+        hcaptcha.configureWebView { [once] webView in
+            webView.frame = anchor.bounds
+            once.track(webView)
+        }
+        hcaptcha.validate(on: anchor, resetOnError: false) { [once] result in
+            do {
+                once.finish(.success(try result.dematerialize()))
+            } catch {
+                // The person closed the check or it failed. The text of the SDK error is not kept.
+                once.finish(.failure(CommunityError.captcha))
             }
         }
     }
@@ -76,22 +82,37 @@ final class HCaptchaProvider: CommunityCaptcha {
     }
 }
 
-/// Resumes a continuation once. The SDK reports through a completion, so a second report is ignored.
+/// Resumes a continuation once. The SDK reports through a completion, so a second report is ignored. It also holds
+/// the SDK object and the web view until the challenge ends, then releases both.
 private final class ResumeOnce: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<String, Error>?
+    private var challenge: HCaptcha?
+    private var webView: WKWebView?
 
     init(_ continuation: CheckedContinuation<String, Error>) {
         self.continuation = continuation
     }
 
+    func hold(_ challenge: HCaptcha) {
+        lock.withLock { self.challenge = challenge }
+    }
+
+    func track(_ webView: WKWebView) {
+        lock.withLock { self.webView = webView }
+    }
+
     func finish(_ result: Result<String, Error>) {
-        let pending = lock.withLock { () -> CheckedContinuation<String, Error>? in
-            let current = continuation
+        let ended = lock.withLock { () -> (CheckedContinuation<String, Error>?, WKWebView?) in
+            let pending = continuation
+            let shown = webView
             continuation = nil
-            return current
+            challenge = nil
+            webView = nil
+            return (pending, shown)
         }
-        pending?.resume(with: result)
+        ended.1?.removeFromSuperview()
+        ended.0?.resume(with: result)
     }
 }
 #endif
