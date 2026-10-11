@@ -41,3 +41,12 @@ def test_the_tab_view_itself_carries_no_add_capsule_inset() -> None:
     after_tabs = text[text.index(".tag(AppTab.library)") :]
     assert not INSET.search(after_tabs)
     assert len(INSET.findall(text)) == len(TABS)
+
+
+def test_add_actions_include_supplements_in_visible_and_accessible_labels() -> None:
+    text = ROOT_VIEW.read_text()
+    assert 'PrimaryCapsule("Add food, drink, or supplement"' in text
+    assert '.accessibilityLabel("Add food, drink, or supplement")' in text
+    ui = ROOT_VIEW.parents[2] / "NutritionCore/Sources/NutritionUI"
+    for name in ("TodayView.swift", "JournalView.swift"):
+        assert '"Add food, drink, or supplement"' in (ui / name).read_text()
