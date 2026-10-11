@@ -78,10 +78,76 @@ enum DecimalText {
     }
 
     static func decode(_ text: String) -> Decimal? {
-        guard !text.isEmpty else { return nil }
+        guard let sourceValue = exactValueKey(text) else { return nil }
         let value = Decimal(string: text, locale: locale)
         guard let value, !value.isNaN else { return nil }
+        // Foundation accepts some malformed prefixes and silently rounds values that exceed Decimal's
+        // precision or range. Compare the normalized numeric value with its Decimal rendering so a
+        // successful parse is also a lossless parse.
+        guard let decodedValue = exactValueKey(encode(value)), sourceValue == decodedValue else { return nil }
         return value
+    }
+
+    /// A normalized key for a finite decimal spelling that fits the provider's exactness policy.
+    /// Trailing zeros change place value but do not use Decimal's significant-digit capacity.
+    private static func exactValueKey(_ text: String) -> String? {
+        let bytes = Array(text.utf8)
+        guard !bytes.isEmpty else { return nil }
+        var index = 0
+        var negative = false
+        if bytes[index] == 45 || bytes[index] == 43 {
+            negative = bytes[index] == 45
+            index += 1
+        }
+
+        let integerStart = index
+        while index < bytes.count, isASCIIDigit(bytes[index]) { index += 1 }
+        let integerDigits = Array(bytes[integerStart..<index])
+        var fractionDigits: [UInt8] = []
+        if index < bytes.count, bytes[index] == 46 {
+            index += 1
+            let fractionStart = index
+            while index < bytes.count, isASCIIDigit(bytes[index]) { index += 1 }
+            fractionDigits = Array(bytes[fractionStart..<index])
+        }
+        guard !integerDigits.isEmpty || !fractionDigits.isEmpty else { return nil }
+
+        var literalExponent = 0
+        if index < bytes.count, bytes[index] == 101 || bytes[index] == 69 {
+            index += 1
+            var exponentIsNegative = false
+            if index < bytes.count, bytes[index] == 45 || bytes[index] == 43 {
+                exponentIsNegative = bytes[index] == 45
+                index += 1
+            }
+            let exponentStart = index
+            var magnitude = 0
+            while index < bytes.count, isASCIIDigit(bytes[index]) {
+                magnitude = min(1_000_000, magnitude * 10 + Int(bytes[index] - 48))
+                index += 1
+            }
+            guard index > exponentStart else { return nil }
+            literalExponent = exponentIsNegative ? -magnitude : magnitude
+        }
+        guard index == bytes.count else { return nil }
+
+        let digits = integerDigits + fractionDigits
+        var leadingZeroCount = 0
+        while leadingZeroCount < digits.count, digits[leadingZeroCount] == 48 { leadingZeroCount += 1 }
+        guard leadingZeroCount < digits.count else { return "0" }
+        var significantEnd = digits.count
+        while significantEnd > leadingZeroCount, digits[significantEnd - 1] == 48 { significantEnd -= 1 }
+        let significantCount = significantEnd - leadingZeroCount
+        guard significantCount <= 38 else { return nil }
+
+        let adjustedExponent = integerDigits.count - 1 - leadingZeroCount + literalExponent
+        guard (-127...127).contains(adjustedExponent) else { return nil }
+        let coefficient = String(decoding: digits[leadingZeroCount..<significantEnd], as: UTF8.self)
+        return "\(negative ? "-" : "+")\(coefficient)e\(adjustedExponent)"
+    }
+
+    private static func isASCIIDigit(_ byte: UInt8) -> Bool {
+        (48...57).contains(byte)
     }
 }
 
