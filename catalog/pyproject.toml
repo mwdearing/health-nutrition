@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "health-nutrition-catalog"
 version = "0.0.1"
 description = "Shared food and nutrient catalog service"
+# CI verifies the catalog on Ubuntu Linux x86_64 with Python 3.12; the package floor is 3.12.
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
