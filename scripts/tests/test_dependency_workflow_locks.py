@@ -159,10 +159,12 @@ def test_ios_and_swift_lint_run_the_pin_guards_when_bootstrap_workflows_change()
 
 
 def test_catalog_frozen_gate_runs_when_either_ci_requirements_input_changes():
-    import yaml
-    raw = yaml.safe_load((ROOT / ".github/workflows/catalog.yml").read_text())
-    events = raw.get("on", raw.get(True))
+    text = workflow(WORKFLOWS[0])
     for event in ("pull_request", "push"):
-        paths = events[event]["paths"]
+        match = re.search(
+            rf"(?ms)^  {event}:\n(.*?)(?=^  [a-z_]+:\n|^permissions:|\Z)", text
+        )
+        assert match is not None
+        paths = re.findall(r'^\s+- "([^"]+)"', match.group(1), re.MULTILINE)
         assert "scripts/ci-requirements.in" in paths
         assert "scripts/ci-requirements.txt" in paths
