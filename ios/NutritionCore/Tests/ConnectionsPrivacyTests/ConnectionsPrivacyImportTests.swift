@@ -163,6 +163,12 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importFailedMessage)
     }
 
+    func testAnOversizedImportExplainsThatTheFileExceedsTheLimit() {
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .tooLarge),
+            "This journal export is too large to import.")
+    }
+
     /// Stores on disk, so an erase that runs beside a restore is testing the real files.
     private func diskStores() throws -> (SwiftDataJournalStore, SwiftDataFavoritesStore) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

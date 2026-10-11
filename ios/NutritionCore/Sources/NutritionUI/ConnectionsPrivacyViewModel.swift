@@ -747,6 +747,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importUnsupportedVersionMessage
         case .notEmpty:
             return importNotEmptyMessage
+        case .tooLarge:
+            return "This journal export is too large to import."
         case .malformed, .corrupt:
             return importFailedMessage
         }
