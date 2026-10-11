@@ -278,10 +278,25 @@ public enum NutritionFactsParser {
     /// Package identifiers and weights are not panel amounts. Remove their labeled token before the
     /// row scanner sees its digits, while leaving any nutrient rows after the token in place.
     private static func withoutPackagingMetadata(in text: String) -> String {
-        guard let regex = try? Regex("(?i)(?:lot\\s*#?|net\\s*wt|best\\s*by|use\\s*by|exp)\\s*:\\s*[^\\s]+") else {
+        guard let regex = try? Regex("(?i)(?:lot\\s*#?|net\\s*wt|best\\s*by|use\\s*by|exp)\\s*:\\s*") else {
             return text
         }
-        return trimmed(text.replacing(regex, with: " "))
+        var result = text
+        while let field = result.firstMatch(of: regex) {
+            let prefix = String(result[..<field.range.lowerBound])
+            let tail = String(result[field.range.upperBound...])
+            let startsWithRow = firstRow(in: tail)?.nameStart == tail.startIndex
+                || firstAdditionalRow(in: tail)?.nameStart == tail.startIndex
+            let remainder: String
+            if startsWithRow {
+                remainder = tail
+            } else {
+                let valueEnd = tail.firstIndex(where: { $0 == " " || $0 == "\t" }) ?? tail.endIndex
+                remainder = String(tail[valueEnd...])
+            }
+            result = trimmed(prefix + " " + remainder)
+        }
+        return result
     }
 
     /// Where the measure a serving description states ends, or nil when it states none: after the
@@ -290,6 +305,7 @@ public enum NutritionFactsParser {
     /// An amount with no unit behind it is not one — "2/3 cup" is a fraction of a cup the registry does
     /// not carry, and stopping at the `2` would keep a third of what the label printed.
     private static func measureEnd(in text: String) -> String.Index? {
+        if let rangeEnd = ambiguousServingRangeEnd(in: text) { return rangeEnd }
         let characters = Array(text)
         var digits = ""
         var index = 0
@@ -567,6 +583,7 @@ public enum NutritionFactsParser {
     /// The corrections the measure needed come back with it, because the serving size scales every
     /// nutrient saved from this panel.
     private static func servingMeasure(in text: String) -> (quantity: Quantity?, review: ParsedValueReview?) {
+        if hasAmbiguousServingRange(text) { return uncertainServingMeasure() }
         if let open = text.firstIndex(of: "("),
            let close = text[open...].firstIndex(of: ")"),
            close > open
@@ -581,17 +598,27 @@ public enum NutritionFactsParser {
             if scan.isBound { return uncertainServingMeasure() }
             return measure(from: scan, unit: unit)
         }
-        if hasAmbiguousServingRange(text) { return uncertainServingMeasure() }
         return (nil, nil)
     }
 
     /// A range does not identify a single serving measure, even when one of its endpoints and the unit
     /// are legible. Keep the printed text, leave quantity unknown, and require the user to confirm it.
     private static func hasAmbiguousServingRange(_ text: String) -> Bool {
-        guard let pattern = try? Regex(
-            #"(?:[<>≤≥]|\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?)\s*[[:alpha:]µμ]+"#
-        ) else { return false }
-        return text.firstMatch(of: pattern) != nil
+        ambiguousServingRangeEnd(in: text) != nil
+    }
+
+    /// Finds a comparison or range through its final unit, so the parser neither accepts its first
+    /// endpoint as a quantity nor truncates away the evidence before review is assigned.
+    private static func ambiguousServingRangeEnd(in text: String) -> String.Index? {
+        let patterns = [
+            #"[<>≤≥]\s*\d+(?:[.,]\d+)?\s*[[:alpha:]µμ]+"#,
+            #"\d+(?:[.,]\d+)?\s*(?:[[:alpha:]µμ]+\s*)?[-–]\s*\d+(?:[.,]\d+)?\s*[[:alpha:]µμ]+"#,
+        ]
+        for pattern in patterns {
+            guard let regex = try? Regex(pattern), let match = text.firstMatch(of: regex) else { continue }
+            return match.range.upperBound
+        }
+        return nil
     }
 
     private static func uncertainServingMeasure() -> (quantity: Quantity?, review: ParsedValueReview?) {

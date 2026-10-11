@@ -8,11 +8,13 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
     private let enteredContinuation: AsyncStream<String>.Continuation
     let entered: AsyncStream<String>
     private let refreshStatus: Int
+    private let profileStatus: Int
     private var gates: [String: AsyncStream<Void>] = [:]
     private var gateContinuations: [String: AsyncStream<Void>.Continuation] = [:]
     private var recorded: [String] = []
 
-    init(gated: Set<String>, refreshStatus: Int = 200) {
+    init(gated: Set<String>, refreshStatus: Int = 200, profileStatus: Int = 401) {
+        self.profileStatus = profileStatus
         self.refreshStatus = refreshStatus
         (entered, enteredContinuation) = AsyncStream<String>.makeStream()
         for kind in gated {
@@ -56,7 +58,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
             body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"22222222-3333-4444-5555-666666666666","email":"new@example.com"}}"#
         case "refresh": status = refreshStatus; body = refreshStatus == 200 ? refreshedBody : "{}"
         case "delete": status = 204; body = ""
-        case "profile": status = 401; body = "{}"
+        case "profile": status = profileStatus; body = profileStatus == 403 ? #"{"code":"28000"}"# : "{}"
         default: status = 204; body = ""
         }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
@@ -210,6 +212,24 @@ final class CommunityAuthRaceTests: XCTestCase {
         transport.release("profile")
         await assertCommunityError(.unauthorized) { try await profile.value }
         XCTAssertEqual(try store.load(), newSession, "an old 401 must not clear the newer stored session")
+    }
+
+    func testOldForbiddenSignedOutReplyCannotClearNewerSignIn() async throws {
+        let oldSession = testSession()
+        let store = InMemoryCommunitySessionStore(oldSession)
+        let transport = LifecycleTransport(gated: ["profile"], profileStatus: 403)
+        let client = CommunityClient(
+            config: try makeConfig(), transport: transport, store: store, now: { testNow }
+        )
+
+        let profile = Task { try await client.profile() }
+        await transport.waitFor("profile")
+        let newSession = try await client.auth.signInWithApple(idToken: "new-id", nonce: "new-nonce")
+        XCTAssertNotEqual(newSession.accessToken, oldSession.accessToken)
+
+        transport.release("profile")
+        await assertCommunityError(.unauthorized) { try await profile.value }
+        XCTAssertEqual(try store.load(), newSession, "an old 403 must not clear the newer stored session")
     }
 
     func testDeletingOldAccountCannotClearNewerSignIn() async throws {

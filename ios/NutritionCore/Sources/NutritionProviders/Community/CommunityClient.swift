@@ -132,8 +132,8 @@ public struct CommunityClient: Sendable {
         return items
     }
 
-    /// A delayed 401 can never remove a newer sign-in. Other failures are mapped from their status and
-    /// recognized server error code; they never invalidate the local session.
+    /// A delayed authentication rejection can never remove a newer sign-in. Ordinary forbidden
+    /// operations retain the session; a forbidden signed-out SQLSTATE invalidates matching credentials.
     private func authenticatedSend(
         _ path: String,
         session: CommunitySession,
@@ -150,14 +150,15 @@ public struct CommunityClient: Sendable {
             body: body,
             prefer: prefer
         )
-        if response.statusCode == 401 {
+        let mappedError = CommunityError.from(status: response.statusCode, body: data)
+        if response.statusCode == 401 || (response.statusCode == 403 && mappedError == .signedOut) {
             let invalidated: Bool
             do { invalidated = try await auth.invalidateSession(matchingAccessToken: session.accessToken) }
             catch { throw CommunityError.storage }
             throw invalidated ? CommunityError.signedOut : CommunityError.unauthorized
         }
         guard (200..<300).contains(response.statusCode) else {
-            throw CommunityError.from(status: response.statusCode, body: data)
+            throw mappedError
         }
         return (data, response)
     }
