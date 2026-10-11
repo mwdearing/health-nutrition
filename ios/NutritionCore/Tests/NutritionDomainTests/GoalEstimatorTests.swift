@@ -92,6 +92,57 @@ final class GoalEstimatorTests: XCTestCase {
         XCTAssertEqual(target.adjustmentNote, "We raised your daily calories to the minimum we suggest.")
     }
 
+    func testLowMaintenanceForAManUsesThe1500FloorAndExistingNote() throws {
+        // Daily maintenance is 1483.5 kcal, below the male floor.
+        let target = try estimate(profile(
+            age: 70, cm: 165, kg: 55, activity: .sedentary, aim: .maintain))
+        XCTAssertEqual(target.energyKcal, 1500)
+        XCTAssertEqual(target.adjustmentNote, GoalEstimator.floorNote)
+    }
+
+    func testLowMaintenanceForAWomanUsesThe1200FloorAndExistingNote() throws {
+        // Daily maintenance is 1051.8 kcal, below the floor for female/unspecified.
+        let target = try estimate(profile(
+            sex: .female, age: 70, cm: 150, kg: 45, activity: .sedentary, aim: .maintain))
+        XCTAssertEqual(target.energyKcal, 1200)
+        XCTAssertEqual(target.adjustmentNote, GoalEstimator.floorNote)
+    }
+
+    func testLowMaintenanceWithoutASexUsesThe1200FloorAndExistingNote() throws {
+        // Daily maintenance is 1151.4 kcal, below the floor for female/unspecified.
+        let target = try estimate(profile(
+            sex: .unspecified, age: 70, cm: 150, kg: 45, activity: .sedentary, aim: .maintain))
+        XCTAssertEqual(target.energyKcal, 1200)
+        XCTAssertEqual(target.adjustmentNote, GoalEstimator.floorNote)
+    }
+
+    func testMaintenanceAtTheMaleFloorDoesNotAddAnAdjustmentNote() throws {
+        // Daily maintenance is exactly 1500 kcal; the floor does not raise it.
+        let target = try estimate(profile(
+            age: 70, cm: 165, kg: Decimal(string: "56.375")!,
+            activity: .sedentary, aim: .maintain))
+        XCTAssertEqual(target.energyKcal, 1500)
+        XCTAssertNil(target.adjustmentNote)
+    }
+
+    func testMaintenanceJustBelowTheMaleFloorIsRaisedBeforeRounding() throws {
+        // Daily maintenance is exactly 1498.5 kcal. It would round to 1500, but the floor must
+        // still report that it raised the unrounded estimate.
+        let target = try estimate(profile(
+            age: 70, cm: 165, kg: Decimal(string: "56.25")!,
+            activity: .sedentary, aim: .maintain))
+        XCTAssertEqual(target.energyKcal, 1500)
+        XCTAssertEqual(target.adjustmentNote, GoalEstimator.floorNote)
+    }
+
+    func testMaintenanceAboveTheMaleFloorIsUnchanged() throws {
+        let target = try estimate(profile(
+            age: 70, cm: 165, kg: Decimal(string: "57")!,
+            activity: .sedentary, aim: .maintain))
+        XCTAssertEqual(target.energyKcal, 1510)
+        XCTAssertNil(target.adjustmentNote)
+    }
+
     func testTheCapAndTheFloorTogetherJoinTheirNotes() throws {
         // Woman, 70, 150 cm, 45 kg, sedentary, losing 1.0 kg a week.
         // Daily 1051.8; the change 1100 is capped to 1000, leaving 51.8, below the 1200 floor, so 1200.
