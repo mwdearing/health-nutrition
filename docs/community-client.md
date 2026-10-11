@@ -1,6 +1,6 @@
 # Community client
 
-The community client is the app's side of the shared label catalog: sign-in, the account profile and the catalog calls. It lives in `ios/NutritionCore/Sources/NutritionProviders/Community/` and is used by the Account section of Settings. The catalog integration (sending and reading labels) comes in a later change.
+The community client is the app's side of the shared label catalog: sign-in, the account profile and the catalog calls. It lives in `ios/NutritionCore/Sources/NutritionProviders/Community/` and is used by the Account section of Settings. The app uses it for sending saved labels and for the barcode fallback; see [the community catalog in the app](community-catalog-app.md).
 
 ## Configuration
 
@@ -73,7 +73,6 @@ Without a known code, the status maps as follows: 400 and 422 to `invalid`, 401 
 
 ## Not done yet
 
-- No catalog integration: the label capture does not submit yet, and barcode lookup does not consult the community catalog yet.
-- No privacy manifest, App Privacy or `PRIVACY.md` changes.
+- No retry queue: a label whose upload fails is not sent again.
 - The Keychain store is compiled only where Security is available. It has not been run on a device.
 - The account code has not been compiled on this host. CI is the first build.

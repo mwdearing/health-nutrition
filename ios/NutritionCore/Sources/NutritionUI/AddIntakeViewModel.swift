@@ -185,6 +185,9 @@ public final class AddIntakeViewModel: ObservableObject {
     /// looking a barcode up. It is written as the snapshot on save, with `catalogOrigin` naming the
     /// capture, and it is nil again as soon as anything else puts values into the form.
     @Published public private(set) var labelValues: ProductDefinition?
+    /// Whether `labelValues` was handed over by the label capture itself. A panel reused from an entry or a
+    /// Library repeat arrives through the same method but is not a capture, so it is never shared.
+    private var prefilledFromCapture = false
     private var storedProduct: ProductDefinition?
     /// The name and brand the last successful lookup filled in, so a later lookup can tell an edited
     /// field from one it filled itself.
@@ -203,6 +206,12 @@ public final class AddIntakeViewModel: ObservableObject {
     private let preferences: DisplayPreferences
     private let makeID: () -> String
     private let lookup: BarcodeProductLookup?
+    /// Where a label the person captured is sent for the community catalog. Nil means nothing is sent.
+    private let labelSubmitter: CommunityLabelSubmitting?
+    /// Whether the person has sharing on at this moment. It is asked after each save, never remembered.
+    private let isSharingAllowed: @MainActor () -> Bool
+    /// The upload started by the last save, when one was. The form never waits for it; tests do.
+    private(set) var uploadTask: Task<Void, Never>?
     /// Whether this device can scan a label. The wording that points a person at the scanner depends on it.
     public let labelScannerAvailable: Bool
     /// Counts the lookups this form has started. A reply is applied only if it is still the newest
@@ -218,7 +227,9 @@ public final class AddIntakeViewModel: ObservableObject {
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         lookup: BarcodeProductLookup? = nil,
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
-        labelScannerAvailable: Bool = true
+        labelScannerAvailable: Bool = true,
+        labelSubmitter: CommunityLabelSubmitting? = nil,
+        isSharingAllowed: @escaping @MainActor () -> Bool = { false }
     ) {
         self.store = store
         self.occurredAt = now
@@ -227,6 +238,8 @@ public final class AddIntakeViewModel: ObservableObject {
         self.lookup = lookup
         self.preferences = preferences
         self.labelScannerAvailable = labelScannerAvailable
+        self.labelSubmitter = labelSubmitter
+        self.isSharingAllowed = isSharingAllowed
     }
 
     private var prefilledProduct: ProductDefinition? { storedProduct ?? labelValues }
@@ -558,11 +571,15 @@ public final class AddIntakeViewModel: ObservableObject {
     /// and the product snapshot are attached, so saving writes the values with the origin the capture
     /// recorded. A later lookup or another capture replaces them through the same invalidation as a
     /// failed lookup, because a value from one product must never be stored under another.
-    public func applyLabelProduct(_ product: ProductDefinition) {
+    ///
+    /// Only the label capture passes `fromLabelCapture: true`. Any other caller, such as a repeat of an entry
+    /// with several parts, fills the form the same way but its values are never sent to the community catalog.
+    public func applyLabelProduct(_ product: ProductDefinition, fromLabelCapture: Bool = false) {
         lookupGeneration += 1
         invalidateLookup()
         lookupState = .idle
         labelValues = product
+        prefilledFromCapture = fromLabelCapture
         fillProductValues(product)
     }
 
@@ -634,6 +651,7 @@ public final class AddIntakeViewModel: ObservableObject {
         attribution = nil
         lookedUp = nil
         labelValues = nil
+        prefilledFromCapture = false
         storedProduct = nil
     }
 
@@ -691,11 +709,32 @@ public final class AddIntakeViewModel: ObservableObject {
             componentID: Self.slug(trimmedName), name: trimmedName, amount: storedAmount, unit: storedUnit)
         do {
             try store.create(intake, components: [component], product: productSnapshot(), now: now)
-            return true
         } catch {
             saveError = "Could not save the entry."
             return false
         }
+        submitLabelIfShared()
+        return true
+    }
+
+    /// Sends a captured label to the community catalog once it is saved, when sharing is on and the label
+    /// qualifies. The upload runs in a task that holds the submitter and the payload, never the form, and its
+    /// outcome is not read, so it can neither delay nor fail the save.
+    private func submitLabelIfShared() {
+        guard let labelSubmitter, isSharingAllowed(), let submission = communitySubmission() else { return }
+        uploadTask = Task { await labelSubmitter.submit(submission) }
+    }
+
+    /// The upload for the captured label in the form, or nil. A Library entry, a repeat and a barcode lookup
+    /// are never uploaded, and neither is a label whose barcode fails the shape check.
+    private func communitySubmission() -> CommunityLabelSubmission? {
+        guard prefilledFromCapture, lookedUp == nil, storedProduct == nil, let captured = labelValues else {
+            return nil
+        }
+        let code = barcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard BarcodeShape.isValid(code) else { return nil }
+        return CommunityLabelUpload.submission(
+            for: captured, barcode: code, name: typedName, brand: brand, kind: kind, serving: serving)
     }
 
     /// What is actually stored for an amount entered in `unit` when no density applies: ounces, cups and

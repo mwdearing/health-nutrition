@@ -18,7 +18,7 @@ The Account section appears only in a build that carries the project settings (s
 - A label is shown to others once at least two people agree on it, and gets a verified badge once more people agree.
 - The name you enter is shown with the labels you share. It is at most 60 characters. Leave it empty to share without a name.
 
-The catalog integration that sends labels arrives in a later change. Until then the switch only records your choice.
+While sharing is on, a label you capture and save is sent to the catalog. When you are signed in, a barcode that Open Food Facts does not know is looked up there, whether or not sharing is on. See [the community catalog in the app](community-catalog-app.md) for the exact rules.
 
 ## What stays on this device
 

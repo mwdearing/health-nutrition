@@ -49,6 +49,9 @@ final class AppServices {
     /// The account, shown in Settings. Nil in a build without the project settings (an unsigned, CI or self
     /// build): then there is no account section and no account call is ever made.
     let account: AccountViewModel?
+    /// The community catalog client, shared by the account, the barcode lookup and label uploads. Nil in the
+    /// same builds as `account`, and then no catalog call is made.
+    let community: CommunityClient?
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
@@ -57,7 +60,10 @@ final class AppServices {
         reminderScheduler: ReminderScheduling
     ) {
         self.displayPreferences = displayPreferences
-        self.account = Self.makeAccount(preferences: displayPreferences)
+        let community = Self.makeCommunity()
+        let account = community.map { AccountViewModel(service: $0, preferences: displayPreferences) }
+        self.community = community
+        self.account = account
         let reminderErasures = ReminderErasures()
         self.reminders = ReminderController(
             preferences: displayPreferences, scheduler: reminderScheduler, erasures: reminderErasures)
@@ -81,8 +87,9 @@ final class AppServices {
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
             erasers: [journalStore, favoritesStore, recipeStore, goalStore, reminderEraser],
             preferences: displayPreferences)
-        barcodeLookup = OpenFoodFactsProductLookup(
+        let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
+        barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
         let totals = JournalSnapshotTotals(store: journalStore)
         healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,
@@ -91,15 +98,21 @@ final class AppServices {
         )
     }
 
-    /// The account model, or nil when the build carries no project settings. The client reads them from the
-    /// bundle's Info.plist and keeps the session in the Keychain.
-    private static func makeAccount(preferences: CommunityDisclosurePreferences) -> AccountViewModel? {
-        guard let client = try? CommunityClient.make(
-            infoDictionary: Bundle.main.infoDictionary, store: KeychainCommunitySessionStore())
-        else {
-            return nil
-        }
-        return AccountViewModel(service: client, preferences: preferences)
+    /// The community client, or nil when the build carries no project settings. The client reads them from the
+    /// bundle's Info.plist and keeps the session in the Keychain. One client serves the account, the barcode
+    /// lookup and the label uploads.
+    private static func makeCommunity() -> CommunityClient? {
+        try? CommunityClient.make(infoDictionary: Bundle.main.infoDictionary, store: KeychainCommunitySessionStore())
+    }
+
+    /// Open Food Facts first. A barcode it does not find is asked of the community catalog, for a person who is
+    /// signed in. Without an account the lookup is Open Food Facts alone, as before accounts existed.
+    private static func makeBarcodeLookup(
+        primary: BarcodeProductLookup, community: CommunityClient?, account: AccountViewModel?
+    ) -> BarcodeProductLookup {
+        guard let community, let account else { return primary }
+        return CommunityFallbackLookup(
+            primary: primary, community: community, isSignedIn: { account.phase == .signedIn })
     }
 
     /// The marketing version from the bundle; the provider requires a User-Agent that names the app
