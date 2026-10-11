@@ -777,3 +777,17 @@ def test_shipped_manifest_declares_the_account_data() -> None:
 def test_shipped_tree_passes_the_check() -> None:
     result = run(REPO_ROOT / "ios")
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_symlinked_source_file_leaving_the_checkout_is_refused(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "Leak.swift"
+    secret.write_text("import Foundation\nlet flags = UserDefaults.standard\n", encoding="utf-8")
+    root = write_tree(
+        tmp_path, {"HealthNutrition/Sources/App.swift": "import Foundation\n"}, manifest=manifest_xml(declared=[BOOT_TIME])
+    )
+    (root / "HealthNutrition" / "Sources" / "Hang.swift").symlink_to(secret)
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "regular file" in (result.stdout + result.stderr)

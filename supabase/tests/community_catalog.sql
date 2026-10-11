@@ -164,4 +164,14 @@ select pg_temp.check(not has_function_privilege('anon', 'public.touch_profile()'
 select pg_temp.check(catalog.valid_nutrients('{"energyKcal":120.55,"protein":3,"fat":2}'::jsonb), 'a normal payload is valid');
 select pg_temp.check(not catalog.valid_nutrients(jsonb_build_object('energyKcal', 1, 'protein', 1, 'fat', ('0.' || repeat('0', 5000) || '1')::numeric)), 'a payload with thousands of digits is refused');
 select pg_temp.check(not catalog.valid_nutrients('{"energyKcal":1.2345,"protein":1,"fat":1}'::jsonb), 'a value with more than three decimals is refused');
+-- Rows stored under an older, looser validator are removed and the entries rebuilt.
+insert into auth.users (id) values ('00000000-0000-0000-0000-000000000071'), ('00000000-0000-0000-0000-000000000072') on conflict do nothing;
+insert into catalog.submissions (device_id, barcode, basis, product_name, nutrients)
+values ('00000000-0000-0000-0000-000000000071', '0123456000315', 'per_100g', 'Old', '{"energyKcal":1.23456,"protein":1,"fat":1}'),
+       ('00000000-0000-0000-0000-000000000072', '0123456000315', 'per_100g', 'Old', '{"energyKcal":1,"protein":1,"fat":1}');
+insert into catalog.entries (barcode, basis, product_name, nutrients, supporting_devices, verified)
+values ('0123456000315', 'per_100g', 'Old', '{"energyKcal":1.23456,"protein":1,"fat":1}', 2, false);
+select catalog.revalidate_all();
+select pg_temp.check((select count(*) from catalog.submissions where barcode = '0123456000315') = 1, 'an over-precise stored row is removed');
+select pg_temp.check((select count(*) from catalog.entries where barcode = '0123456000315') = 0, 'the entry is rebuilt from the valid rows only');
 select 'ALL OK' as result;
