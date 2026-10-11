@@ -28,6 +28,7 @@ public final class AccountViewModel: ObservableObject {
     public static let sessionEndedMessage = "Your sign-in has ended. Sign in again to continue."
     public static let rateLimitedMessage = "Too many attempts. Wait a few minutes and try again."
     public static let storageMessage = "Could not keep your sign-in on this phone. Try again."
+    public static let captchaMessage = "We could not confirm you are a person. Try again."
     public static let genericMessage = "Something went wrong. Try again."
     public static let profileNotReadyMessage = "Your profile has not loaded yet. Try again once it has."
 
@@ -278,6 +279,7 @@ public final class AccountViewModel: ObservableObject {
         case .signedOut?: return sessionEndedMessage
         case .rateLimited?: return rateLimitedMessage
         case .storage?: return storageMessage
+        case .captcha?: return captchaMessage
         default: return fallback
         }
     }

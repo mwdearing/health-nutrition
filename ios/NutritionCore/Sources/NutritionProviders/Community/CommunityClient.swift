@@ -21,22 +21,24 @@ public struct CommunityClient: Sendable {
     public static func make(
         infoDictionary: [String: Any]?,
         transport: CommunityTransport = URLSessionCommunityTransport(),
-        store: CommunitySessionStore
+        store: CommunitySessionStore,
+        captcha: (any CommunityCaptcha)? = nil
     ) throws -> CommunityClient {
         guard let config = CommunityConfig(infoDictionary: infoDictionary) else {
             throw CommunityError.notConfigured
         }
-        return CommunityClient(config: config, transport: transport, store: store)
+        return CommunityClient(config: config, transport: transport, store: store, captcha: captcha)
     }
 
     public init(
         config: CommunityConfig,
         transport: CommunityTransport,
         store: CommunitySessionStore,
+        captcha: (any CommunityCaptcha)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.api = CommunityAPI(config: config, transport: transport)
-        self.auth = CommunityAuth(config: config, transport: transport, store: store, now: now)
+        self.auth = CommunityAuth(config: config, transport: transport, store: store, captcha: captcha, now: now)
     }
 
     /// The profile of the signed-in account. A missing row (not expected) reads as the defaults.
