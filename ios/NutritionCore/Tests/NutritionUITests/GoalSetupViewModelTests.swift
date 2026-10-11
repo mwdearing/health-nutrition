@@ -44,6 +44,57 @@ final class ThirdWriteFailingGoalStore: GoalStore, @unchecked Sendable {
     }
 }
 
+/// A goal store that lets the first mutation through and refuses every later one, so a restore fails too.
+final class FailsAfterFirstWriteGoalStore: GoalStore, @unchecked Sendable {
+    private struct WriteFailed: Error {}
+
+    private let lock = NSLock()
+    private var stored: [String: NutrientGoal] = [:]
+    private var mutations = 0
+
+    init(goals: [NutrientGoal]) {
+        for goal in goals { stored[goal.nutrient] = goal }
+    }
+
+    func goals() throws -> [NutrientGoal] {
+        lock.withLock { stored.values.sorted { $0.nutrient < $1.nutrient } }
+    }
+
+    func goal(for nutrient: String) throws -> NutrientGoal? {
+        lock.withLock { stored[nutrient] }
+    }
+
+    func setGoal(_ goal: NutrientGoal) throws {
+        try goal.validate()
+        try mutate { stored[goal.nutrient] = goal }
+    }
+
+    func removeGoal(nutrient: String) throws {
+        try mutate { _ = stored.removeValue(forKey: nutrient) }
+    }
+
+    func close() {}
+
+    private func mutate(_ change: () -> Void) throws {
+        try lock.withLock {
+            mutations += 1
+            if mutations > 1 { throw WriteFailed() }
+            change()
+        }
+    }
+}
+
+/// A goal store whose goals cannot be read.
+final class UnreadableGoalStore: GoalStore, @unchecked Sendable {
+    private struct ReadFailed: Error {}
+
+    func goals() throws -> [NutrientGoal] { throw ReadFailed() }
+    func goal(for nutrient: String) throws -> NutrientGoal? { throw ReadFailed() }
+    func setGoal(_ goal: NutrientGoal) throws {}
+    func removeGoal(nutrient: String) throws {}
+    func close() {}
+}
+
 /// The guided goal setup: its steps, its unit conversions, what it saves and what it forgets.
 @MainActor
 final class GoalSetupViewModelTests: XCTestCase {
@@ -392,6 +443,35 @@ final class GoalSetupViewModelTests: XCTestCase {
             "Your current targets are unchanged. You can change or remove them on the Goals screen.")
         XCTAssertFalse(model.save())
         XCTAssertEqual(try store.goals(), [water])
+    }
+
+    /// When the targets cannot be read, the result must not claim there are none.
+    func testJustTrackDoesNotClaimNoTargetsWhenTheStoreCannotBeRead() {
+        let goalsModel = GoalsViewModel(
+            store: UnreadableGoalStore(), preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goalsModel.load()
+        let model = GoalSetupViewModel(goals: goalsModel)
+        model.aim = .justTrack
+        model.next()
+        XCTAssertEqual(
+            model.justTrackMessage,
+            "We could not read your current targets, so they are unchanged. Check them on the Goals screen.")
+    }
+
+    /// A restore that also fails must be reported as such, not as an ordinary failed save.
+    func testAFailedRestoreIsReportedAsPossiblyPartial() {
+        let energy = NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)
+        let store = FailsAfterFirstWriteGoalStore(goals: [energy])
+        let goalsModel = GoalsViewModel(
+            store: store, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goalsModel.load()
+        let model = GoalSetupViewModel(goals: goalsModel)
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(
+            model.resultError,
+            "Some goals may not have been put back. Check your targets on the Goals screen.")
     }
 
     func testJustTrackWithNoTargetsSaysTheDayShowsTotals() {
