@@ -2,6 +2,14 @@
 -- Approved payloads are independent, bounded snapshots with no submitter or submission linkage.
 begin;
 
+-- A call already running the prior refresh_entry body can outlive this migration's function replacement.
+-- Enforce the community invariant at the table boundary before demoting old rows or rebuilding aggregates.
+alter table catalog.entries
+  add constraint catalog_entries_community_unverified_check check (not verified) not valid;
+update catalog.entries
+set verified = false, verified_at = now()
+where verified;
+
 create table catalog.approved_entries (
   barcode text not null,
   basis text not null check (basis in ('per_100g', 'per_100ml', 'per_serving')),
@@ -343,5 +351,6 @@ grant execute on function public.lookup_label_v2(text) to authenticated;
 
 -- Existing automatic consensus badges are downgraded; nothing is promoted without an explicit owner review.
 select catalog.revalidate_all();
+alter table catalog.entries validate constraint catalog_entries_community_unverified_check;
 
 commit;

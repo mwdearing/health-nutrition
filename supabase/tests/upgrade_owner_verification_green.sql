@@ -7,6 +7,17 @@ end $$;
 select pg_temp.check((select not verified and supporting_devices = 5
   from catalog.entries where barcode = '0123456070004' and basis = 'per_100g'),
   'upgrade demotes the old automatic verified row');
+do $$ begin
+  begin
+    insert into catalog.entries (barcode, basis, product_name, nutrients, supporting_devices, verified)
+    values ('0123456070004', 'per_100g', 'Old Writer', '{"energyKcal":400,"protein":10,"fat":12}', 5, true)
+    on conflict (barcode, basis) do update set verified = excluded.verified;
+  exception when check_violation then null;
+  end;
+  if exists (select 1 from catalog.entries where barcode = '0123456070004' and basis = 'per_100g' and verified) then
+    raise exception 'FAILED: old pre-migration writer restored automatic verification after upgrade';
+  end if;
+end $$;
 select pg_temp.check(not exists (select 1 from catalog.approved_entries),
   'upgrade does not bulk-promote legacy rows into approved snapshots');
 select pg_temp.check(exists (select 1 from catalog.rejections where barcode = '0123456070110'

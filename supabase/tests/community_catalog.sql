@@ -28,6 +28,30 @@ select pg_temp.check((select supporting_devices from public.lookup_label('012345
 select pg_temp.check((select not verified from public.lookup_label('0123456070004')), 'five accounts never verify a community label');
 select pg_temp.check((select verification_source = 'community' and not verified from public.lookup_label_v2('0123456070004')), 'v2 marks five-account label as community, not verified');
 select pg_temp.check((select (nutrients->>'energyKcal')::numeric from public.lookup_label('0123456070004')) = 400, 'median energy');
+-- A submit_label call that began on the old function body cannot restore automatic verification after the upgrade.
+reset role;
+do $$ begin
+  begin
+    insert into catalog.entries (barcode, basis, product_name, nutrients, supporting_devices, verified)
+    values ('0123456070996', 'per_100g', 'Old Writer Insert', '{"energyKcal":400,"protein":10,"fat":12}', 5, true);
+  exception when check_violation then null;
+  end;
+  if exists (select 1 from catalog.entries where barcode = '0123456070996' and basis = 'per_100g' and verified) then
+    raise exception 'FAILED: old community writer can insert a verified entry';
+  end if;
+end $$;
+do $$ begin
+  begin
+    insert into catalog.entries (barcode, basis, product_name, nutrients, supporting_devices, verified)
+    values ('0123456070004', 'per_100g', 'Old Writer Update', '{"energyKcal":400,"protein":10,"fat":12}', 5, true)
+    on conflict (barcode, basis) do update set verified = excluded.verified;
+  exception when check_violation then null;
+  end;
+  if exists (select 1 from catalog.entries where barcode = '0123456070004' and basis = 'per_100g' and verified) then
+    raise exception 'FAILED: old community writer can restore a verified entry';
+  end if;
+end $$;
+select pg_temp.as_device(5);
 -- The same device twice does not count twice.
 select pg_temp.as_device(5); select public.submit_label('0123456070004','per_100g',null,'Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}');
 select pg_temp.check((select supporting_devices from public.lookup_label('0123456070004')) = 5, 'a device counts once');
