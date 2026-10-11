@@ -46,6 +46,9 @@ public enum CommunityLabelUpload {
             guard !text.isEmpty else { return nil }
             servingText = text
         }
+        guard CommunityLabelLimits.fits(name: productName, brand: brand?.trimmingCharacters(in: .whitespacesAndNewlines), serving: servingText) else {
+            return nil
+        }
         let nutrients = canonicalNutrients(captured.nutrients)
         guard nutrients.count >= minimumKnownNutrients else { return nil }
         return CommunityLabelSubmission(
@@ -72,7 +75,9 @@ public enum CommunityLabelUpload {
             guard let converted = try? Quantity(value: amount, unit: unit).converted(
                 to: CommunityLabelMapping.unit(for: key))
             else { continue }
-            out[key] = converted.value
+            let rounded = DisplayRounding.rounded(converted.value, fractionDigits: CommunityLabelLimits.fractionDigits)
+            guard CommunityLabelLimits.accepts(rounded, for: key) else { continue }
+            out[key] = rounded
         }
         return out
     }

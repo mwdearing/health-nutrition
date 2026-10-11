@@ -2,6 +2,35 @@ import Foundation
 import NutritionDomain
 import NutritionProviders
 
+/// The limits the catalog enforces on what it stores. The app sends nothing outside them and trusts nothing
+/// outside them when it reads a label back, because every value is something another person typed.
+public enum CommunityLabelLimits {
+    public static let nameLength = 120
+    public static let brandLength = 80
+    public static let servingLength = 80
+    /// Decimal places the catalog keeps.
+    public static let fractionDigits = 3
+
+    /// The largest amount the catalog accepts for a standard nutrient, in the unit it is stored in.
+    public static func maximum(for key: String) -> Decimal {
+        switch key {
+        case LookedUpProduct.energyKcal: return 9_000
+        case LookedUpProduct.sodium: return 100_000
+        default: return 1_000
+        }
+    }
+
+    /// Whether an amount is inside the catalog's range for the nutrient.
+    public static func accepts(_ amount: Decimal, for key: String) -> Bool {
+        amount >= 0 && amount <= maximum(for: key)
+    }
+
+    /// Whether the text fields are short enough for the catalog to take.
+    public static func fits(name: String, brand: String?, serving: String?) -> Bool {
+        name.count <= nameLength && (brand?.count ?? 0) <= brandLength && (serving?.count ?? 0) <= servingLength
+    }
+}
+
 /// Turns what the community catalog shows for a barcode into the product the form reads, and says how
 /// many people agree on it. The values are carried as the catalog gives them: nothing is rounded or guessed.
 public enum CommunityLabelMapping {
@@ -20,7 +49,8 @@ public enum CommunityLabelMapping {
             let nutrients = nutrients(label.nutrients)
             guard !nutrients.isEmpty else { return nil }
             return LookedUpProduct(
-                barcode: barcode, name: label.productName, brand: label.brand,
+                barcode: barcode, name: String(label.productName.prefix(CommunityLabelLimits.nameLength)),
+                brand: label.brand.map { String($0.prefix(CommunityLabelLimits.brandLength)) },
                 basis: lookupBasis(basis), nutrients: nutrients,
                 attribution: attribution(verified: label.verified, supportingAccounts: label.supportingAccounts),
                 serving: basis == .perServing
@@ -53,7 +83,7 @@ public enum CommunityLabelMapping {
     static func nutrients(_ values: [String: Decimal]) -> [String: NutrientValue] {
         var out: [String: NutrientValue] = [:]
         for key in LookedUpProduct.standardKeys {
-            guard let amount = values[key] else { continue }
+            guard let amount = values[key], CommunityLabelLimits.accepts(amount, for: key) else { continue }
             out[key] = .known(amount, unit(for: key))
         }
         return out
