@@ -128,7 +128,14 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     assert "hcaptcha" in privacy and "browser" in privacy and "signals" in privacy
     assert "logged-out use sends nothing" not in privacy
     assert "signing into another account does not partition" in accounts
-    assert "healthkit and relay settings" in accounts
+    assert "healthkit and relay settings" not in accounts
+    assert "connection settings and export files are stored" not in privacy
+    assert "applehealthavailable = false" in view_model.lower()
+    assert "healthrelayavailable = false" in view_model.lower()
+    assert "@published public var applehealthenabled = false" in view_model.lower()
+    assert "@published public var healthrelayenabled = false" in view_model.lower()
+    assert "neither connection can be enabled in release builds" in privacy
+    assert "not saved as connection settings" in privacy
     assert "reviewed by the catalog owner" in accounts
     assert "community agreement does not verify" in accounts
     assert "five people" not in accounts and "five accounts" not in accounts

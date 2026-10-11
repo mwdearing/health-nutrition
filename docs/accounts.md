@@ -29,7 +29,7 @@ An owner-reviewed label is a separate product-catalog snapshot, not a contributo
 
 ## What stays on this device
 
-Entries, product snapshots, goals, recipes, favorites, reminders, HealthKit and relay settings, and export files stay on this device. Signing into another account does not partition, merge or replace them. They remain available after sign-out or account deletion. Your device backup may also include its local app data, depending on your backup settings.
+Entries, product snapshots, goals, recipes, favorites, reminders and export files stay on this device. The unavailable Apple Health and HealthRelay controls are not saved as settings. Signing into another account does not partition, merge or replace local data. It remains available after sign-out or account deletion. Your device backup may also include its local app data, depending on your backup settings.
 
 ## Sign out, delete and erase
 
