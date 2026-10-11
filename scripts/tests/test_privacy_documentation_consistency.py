@@ -204,3 +204,30 @@ def test_public_privacy_copy_discloses_debug_journal_delivery_and_conditional_ca
     )[0]
     assert "debug" in summary and "healthkit" in summary and "journal" in summary
     assert "camera access" in summary and "email sign-in" in summary
+
+
+def test_label_submission_copy_discloses_signed_in_account_linkage() -> None:
+    accounts = (ROOT / "docs/accounts.md").read_text(encoding="utf-8").lower()
+    privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8").lower()
+    view_model = VIEW_MODEL.read_text(encoding="utf-8").lower()
+    client = (ROOT / "ios/NutritionCore/Sources/NutritionProviders/Community/CommunityClient.swift").read_text(
+        encoding="utf-8"
+    )
+    sql = (ROOT / "supabase/migrations/20261011203625_catalog_owner_verification.sql").read_text(
+        encoding="utf-8"
+    ).lower()
+
+    submit = client.split("public func submitLabel", 1)[1].split("public func", 1)[0]
+    assert "authenticatedSend" in submit
+    assert "device uuid := auth.uid()" in sql
+    assert "insert into catalog.submissions as s (device_id" in sql
+
+    for document in (accounts, privacy):
+        assert "linked to your signed-in account" in document
+        assert "journal entries" in document and "photo" in document
+        assert "account identifier" not in document or "is linked" in document
+    summary = view_model.split("public static let privacysummary =", 1)[1].split(
+        "public static let exportbuttontitle", 1
+    )[0]
+    assert "linked to your signed-in account" in summary
+    assert "journal entries" in summary and "photo" in summary
