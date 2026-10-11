@@ -27,7 +27,9 @@ public enum CommunityLabelLimits {
 
     /// Whether the text fields are short enough for the catalog to take.
     public static func fits(name: String, brand: String?, serving: String?) -> Bool {
-        name.count <= nameLength && (brand?.count ?? 0) <= brandLength && (serving?.count ?? 0) <= servingLength
+        // The catalog counts Unicode characters (char_length), not the grapheme clusters String.count gives.
+        name.unicodeScalars.count <= nameLength && (brand?.unicodeScalars.count ?? 0) <= brandLength
+            && (serving?.unicodeScalars.count ?? 0) <= servingLength
     }
 }
 

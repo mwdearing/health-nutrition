@@ -226,6 +226,9 @@ struct RootView: View {
         // The daily reminder's pending request is brought in line with its setting at launch. It never
         // asks for permission here; that happens only when a person switches the reminder on.
         .task { await self.services.reminders.syncOnLaunch() }
+        // Restore a stored sign-in at launch, not when Settings first opens, so the catalog lookup and the
+        // upload gate work from the first screen.
+        .task { await self.services.account?.load() }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
