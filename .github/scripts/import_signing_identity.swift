@@ -61,21 +61,25 @@ func importIdentity(from p12Path: String, into keychainPath: String, passphrase:
     // https://github.com/apple-oss-distributions/Security/blob/db15acbe6a7f257a859ad9a3bb86097bfe0679d9/keychain/headers/SecImportExport.h
     // https://github.com/apple-oss-distributions/Security/blob/db15acbe6a7f257a859ad9a3bb86097bfe0679d9/OSX/include/security_keychain/SecAccess.h
     // https://github.com/apple-oss-distributions/Security/blob/db15acbe6a7f257a859ad9a3bb86097bfe0679d9/OSX/include/security_keychain/SecTrustedApplication.h
-    parameters.passphrase = passphrase as CFString
+    let cfPassphrase = passphrase as CFString
+    parameters.passphrase = cfPassphrase
     parameters.accessRef = access
 
     var format = kSecFormatPKCS12
     var itemType = kSecItemTypeAggregate
     var importedItems: CFArray?
-    let status = SecItemImport(
-        data as CFData,
-        ".p12" as CFString,
-        &format,
-        &itemType,
-        SecItemImportExportFlags(rawValue: 0),
-        &parameters,
-        keychain,
-        &importedItems)
+    // The C parameter struct contains borrowed CF references. Keep their owners alive through the call.
+    let status = withExtendedLifetime((cfPassphrase, access)) {
+        SecItemImport(
+            data as CFData,
+            ".p12" as CFString,
+            &format,
+            &itemType,
+            SecItemImportExportFlags(rawValue: 0),
+            &parameters,
+            keychain,
+            &importedItems)
+    }
     guard status == errSecSuccess, let importedItems, CFArrayGetCount(importedItems) > 0 else {
         throw SigningImportFailure.importFailed
     }

@@ -310,7 +310,7 @@ def test_the_import_helper_uses_secitemimport_with_cfstring_and_restricted_acl()
     source = SIGNING_IMPORT_HELPER.read_text()
     assert "SecItemImport(" in source
     assert "ProcessInfo.processInfo.environment[\"SIGNING_CERT_PASSWORD\"]" in source
-    assert "parameters.passphrase = passphrase as CFString" in source
+    assert "parameters.passphrase = cfPassphrase" in source
     assert "parameters.accessRef = access" in source
     assert "SecAccessCreate(" in source
     assert '"/usr/bin/codesign"' in source
@@ -406,3 +406,9 @@ def test_account_settings_without_the_site_key_fail_the_signed_build() -> None:
     run = str(check["run"])
     assert 'fail "the account settings need HCAPTCHA_SITE_KEY' in run
     assert not re.search(r"(echo|printf|cat)[^\n]*HCAPTCHA_SITE_KEY", run)
+
+
+def test_import_keeps_cf_bridge_and_access_alive_across_c_call() -> None:
+    source = (WORKFLOW.parents[1] / "scripts/import_signing_identity.swift").read_text()
+    assert "let cfPassphrase = passphrase as CFString" in source
+    assert "withExtendedLifetime((cfPassphrase, access))" in source
