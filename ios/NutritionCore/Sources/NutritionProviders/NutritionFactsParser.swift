@@ -93,7 +93,9 @@ public enum NutritionFactsParser {
             var usedFollowingForServing = false
             let residualLower = residual.lowercased()
             if let following, let marker = residualLower.range(of: "serving size"),
-               trimmed(String(residual[self.index(marker.upperBound, in: residual, lowercased: residualLower)...])).isEmpty,
+               ["", ":"].contains(trimmed(String(
+                   residual[self.index(marker.upperBound, in: residual, lowercased: residualLower)...]
+               ))),
                let read = servingSize(in: "\(residual) \(following)")
             {
                 if size == nil { size = read }
@@ -253,6 +255,7 @@ public enum NutritionFactsParser {
     private static func packagingFieldBoundary(in text: String) -> String.Index {
         let lower = text.lowercased()
         let labels = ["lot", "net wt", "best by", "use by", "exp"]
+        var earliest = lower.endIndex
         for label in labels {
             guard let range = lower.range(of: label) else { continue }
             let prefix = String(lower[..<range.lowerBound])
@@ -260,10 +263,11 @@ public enum NutritionFactsParser {
             var tail = String(lower[range.upperBound...])
             while let first = tail.first, first == " " || first == "\t" || first == "#" { tail.removeFirst() }
             if tail.first == ":" {
-                return text.index(text.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: range.lowerBound))
+                earliest = min(earliest, range.lowerBound)
             }
         }
-        return text.endIndex
+        guard earliest != lower.endIndex else { return text.endIndex }
+        return text.index(text.startIndex, offsetBy: lower.distance(from: lower.startIndex, to: earliest))
     }
 
     /// Package identifiers and weights are not panel amounts. Remove their labeled token before the
@@ -579,7 +583,9 @@ public enum NutritionFactsParser {
     /// A range does not identify a single serving measure, even when one of its endpoints and the unit
     /// are legible. Keep the printed text, leave quantity unknown, and require the user to confirm it.
     private static func hasAmbiguousServingRange(_ text: String) -> Bool {
-        guard let pattern = try? Regex("(?:[<>≤≥]|\\d\\s*[-–]\\s*\\d)\\s*[[:alpha:]µμ]+") else { return false }
+        guard let pattern = try? Regex(
+            #"(?:[<>≤≥]|\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?)\s*[[:alpha:]µμ]+"#
+        ) else { return false }
         return text.firstMatch(of: pattern) != nil
     }
 

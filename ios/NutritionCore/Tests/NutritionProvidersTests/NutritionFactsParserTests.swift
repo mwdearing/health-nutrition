@@ -387,6 +387,20 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("2"))
     }
 
+    func testServingSizeColonMarkerConsumesImmediateNextLine() {
+        let panel = parse(["Serving size:", "1 cup (240mL)"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 cup (240mL)")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+    }
+
+    func testHouseholdServingStopsAtEarliestPackagingField() {
+        let panel = parse(["Serving size 1 large biscuit Best by:2027 LOT#:ABC"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 large biscuit")
+        XCTAssertNil(panel.servingSize?.quantity, "a household description has no invented measure")
+    }
+
     func testPackagingColonDoesNotHideFlattenedNutrientsBehindServingSize() throws {
         let panel = parse(["Serving size 3 Gummies LOT#:260628007 Calories 90 Protein 2g"])
         XCTAssertEqual(panel.servingSize?.text, "3 Gummies")
@@ -406,6 +420,14 @@ final class NutritionFactsParserTests: XCTestCase {
             let panel = parse([line])
             XCTAssertNil(panel.servingSize?.quantity, "an uncertain bound cannot supply a single scaling basis")
             XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize])
+        }
+    }
+
+    func testMultiDigitServingRangesRequireConfirmation() {
+        for line in ["Serving size 10-12 g", "Serving size 1–20 g"] {
+            let panel = parse([line])
+            XCTAssertNil(panel.servingSize?.quantity, "a range cannot supply one scaling basis: \(line)")
+            XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize], line)
         }
     }
 
