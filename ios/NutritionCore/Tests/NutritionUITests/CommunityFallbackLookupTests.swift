@@ -80,6 +80,7 @@ final class CommunityFallbackLookupTests: XCTestCase {
         XCTAssertEqual(product.name, "Community bar")
     }
 
+    /// A signed-out person's barcode lookup never asks the catalog, so the catalog is not called at all.
     func testSignedOutNeverAsksTheCatalog() async {
         let primary = CountingBarcodeLookup(result: notFound())
         let community = FakeCommunityLookup(labels: [label()])
