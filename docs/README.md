@@ -2,6 +2,7 @@
 
 Public architecture decisions and design notes for this project live here.
 
+- [Python support and CI matrix](python-ci.md)
 - [Open Food Facts data source determination](providers/open-food-facts.md)
 - [NIH DSLD label import](providers/dsld.md)
 - [Journal store: revisions, projections and outbox](journal-store.md)

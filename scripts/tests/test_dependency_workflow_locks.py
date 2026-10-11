@@ -36,6 +36,37 @@ def test_catalog_ci_installs_the_frozen_test_lock():
     assert '"catalog/uv.lock"' in text or '"catalog/**"' in text
 
 
+def test_catalog_ci_checks_the_frozen_lock_and_python_tool_hashes_on_macos_without_a_database():
+    text = workflow(WORKFLOWS[0])
+    assert '"docs/python-ci.md"' in text
+    assert '"docs/README.md"' in text
+    match = re.search(r"(?ms)^  pytest-macos-frozen:\n(.*?)(?=^  [a-z0-9_-]+:\n|\Z)", text)
+    assert match is not None
+    mac_job = match.group(1)
+    assert "runs-on: macos-latest" in mac_job
+    assert "services:" not in mac_job
+    assert "DATABASE_URL" not in mac_job
+    assert 'python-version: "3.12"' in mac_job
+    assert SETUP_UV in mac_job
+    assert re.search(r"version:\s*['\"]?0\.12\.19", mac_job)
+    assert "uv lock --check" in mac_job
+    assert "uv sync --frozen --extra test" in mac_job
+    assert "-m 'not db'" in mac_job
+    assert "--require-hashes scripts/ci-requirements.txt" in mac_job
+    assert 'ci-tools/bin/python" -m pytest' in mac_job
+
+
+def test_python_ci_doc_states_the_catalog_floor_and_supported_validation_matrix():
+    text = (ROOT / "docs/python-ci.md").read_text()
+    assert 'requires-python = ">=3.12"' in text
+    assert "ubuntu-latest" in text
+    assert "macos-latest" in text
+    assert "PostgreSQL 16" in text
+    assert "PostgreSQL 17" in text
+    assert "non-database catalog tests" in text
+    assert "Claim macOS validation only after that hosted job has completed successfully." in text
+
+
 def test_catalog_build_backend_is_hash_locked():
     project = tomllib.loads((ROOT / "catalog/pyproject.toml").read_text())
     assert project["build-system"]["requires"] == ["setuptools>=68"]
