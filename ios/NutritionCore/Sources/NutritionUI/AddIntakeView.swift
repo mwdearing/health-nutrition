@@ -258,11 +258,15 @@ public struct AddIntakeView: View {
         if let source = model.sourceLine {
             Text(source).font(.footnote).foregroundStyle(TokenColors.textSecondary)
         }
-        if let attribution = model.attribution,
-            let attributionTitle = model.attributionTitle, let url = URL(string: attribution.url) {
-            Link(attributionTitle, destination: url)
-                .font(.footnote)
-                .accessibilityLabel("Read the license for these nutrition facts")
+        // A source with no link (the community catalog) still shows its line, so a person can tell the values' origin.
+        if let attribution = model.attribution, let attributionTitle = model.attributionTitle {
+            if !attribution.url.isEmpty, let url = URL(string: attribution.url) {
+                Link(attributionTitle, destination: url)
+                    .font(.footnote)
+                    .accessibilityLabel("Read the license for these nutrition facts")
+            } else {
+                Text(attributionTitle).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
         }
     }
 

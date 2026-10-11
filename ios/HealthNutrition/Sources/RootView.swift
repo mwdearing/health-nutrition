@@ -319,11 +319,14 @@ struct RootView: View {
     }
 
     private func makeAddHome(meal: MealLabel?) -> AddHomeViewModel {
-        AddHomeViewModel(
-            store: self.services.journalStore, meal: meal,
+        let services = self.services
+        return AddHomeViewModel(
+            store: services.journalStore, meal: meal,
             scannerAvailability: AddScannerAvailability(
                 barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
-            lookup: self.services.barcodeLookup, preferences: self.services.displayPreferences)
+            lookup: services.barcodeLookup, preferences: services.displayPreferences,
+            labelSubmitter: services.community,
+            isSharingAllowed: { services.account?.sharingAllowed ?? false })
     }
 
     /// Opens Add on its details form, prefilled from a Library item. Nothing is logged until Save.
@@ -393,7 +396,7 @@ struct RootView: View {
         case .labelScanner:
             if let capture = self.labelCapture, let model = self.addIntakeModel {
                 LabelCaptureSheet(model: capture) { product in
-                    model.applyLabelProduct(product)
+                    model.applyLabelProduct(product, fromLabelCapture: true)
                     self.addNavigation.path.append(.details(AddPrefill(model: model)))
                 }
             }

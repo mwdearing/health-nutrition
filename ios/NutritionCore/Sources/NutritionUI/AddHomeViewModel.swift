@@ -32,18 +32,24 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     private let lookup: BarcodeProductLookup?
     private let preferences: DisplayPreferences
     private let now: () -> Date
+    private let labelSubmitter: CommunityLabelSubmitting?
+    private let isSharingAllowed: @MainActor () -> Bool
 
     public init(store: JournalStore, meal: MealLabel? = nil,
         scannerAvailability: AddScannerAvailability = AddScannerAvailability(),
         lookup: BarcodeProductLookup? = nil,
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
-        now: @escaping () -> Date = { Date() }) {
+        now: @escaping () -> Date = { Date() },
+        labelSubmitter: CommunityLabelSubmitting? = nil,
+        isSharingAllowed: @escaping @MainActor () -> Bool = { false }) {
         self.store = store
         self.meal = meal
         self.scannerAvailability = scannerAvailability
         self.lookup = lookup
         self.preferences = preferences
         self.now = now
+        self.labelSubmitter = labelSubmitter
+        self.isSharingAllowed = isSharingAllowed
     }
 
     public func load() {
@@ -56,7 +62,8 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     public func makeDetails(now: Date) -> AddIntakeViewModel {
         let model = AddIntakeViewModel(
             store: store, now: now, lookup: lookup, preferences: preferences,
-            labelScannerAvailable: scannerAvailability.label)
+            labelScannerAvailable: scannerAvailability.label,
+            labelSubmitter: labelSubmitter, isSharingAllowed: isSharingAllowed)
         model.meal = meal
         return model
     }
