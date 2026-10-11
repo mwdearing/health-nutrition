@@ -636,6 +636,18 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private enum ImportOutcome: Sendable {
         case imported(JournalImportSummary)
         case failed(ImportFailure)
+
+        /// The outcome may have changed the journal even if another import now owns the screen state.
+        var changedJournal: Bool {
+            switch self {
+            case .imported:
+                return true
+            case .failed(.refused(.partialRestore)):
+                return true
+            case .failed:
+                return false
+            }
+        }
     }
 
     /// Why an import did not happen.
@@ -679,6 +691,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // so every outcome looks stale and none is ever published.
         importGeneration += 1
         let generation = importGeneration
+        let startedAtEraseGeneration = eraseGeneration
         isImporting = true
         let gate = importGate
         gate.begin()
@@ -703,7 +716,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             let outcome = await restore.value
             // Named rather than inherited: the task's own isolation decides where this would run, and the
             // state it updates is main-actor state, so the hop is stated instead of assumed.
-            await MainActor.run { self?.apply(outcome, startedAt: generation) }
+            await MainActor.run {
+                self?.apply(
+                    outcome, startedAt: generation, eraseGenerationAtStart: startedAtEraseGeneration)
+            }
         }
     }
 
@@ -711,32 +727,32 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ///
     /// An outcome from an import that an erase has overtaken is dropped: the stores it restored were deleted
     /// a moment later, and the screen saying "Imported 3 entries" would be describing a journal that is gone.
-    private func apply(_ outcome: ImportOutcome, startedAt generation: Int) {
-        guard generation == importGeneration else { return }
-        isImporting = false
-        switch outcome {
-        case .imported(let summary):
-            // The export this screen was holding was made from the journal as it was before the restore, so
-            // the share control would still offer the wrong journal. It goes, and the screen stops offering
-            // it, rather than leaving a file of the pre-import journal one tap away.
+    private func apply(
+        _ outcome: ImportOutcome, startedAt generation: Int, eraseGenerationAtStart: Int
+    ) {
+        // An erase owns the store once it starts. Ignore any import outcome it waited for or overtook,
+        // including the store-change notifications below: the erase will publish its own final reload.
+        guard !isErasing, eraseGenerationAtStart == eraseGeneration else { return }
+
+        // Store mutations outlive import presentation. A newer import may already have published a refusal,
+        // but an earlier successful or partial restore still changed the journal, invalidated the held
+        // export and requires every journal snapshot to reload.
+        if outcome.changedJournal {
             removeExportFile()
             exportState = .idle
             entryCount = 0
             errorMessage = nil
+            journalRestoreGeneration += 1
+        }
+
+        guard generation == importGeneration else { return }
+        isImporting = false
+        switch outcome {
+        case .imported(let summary):
             importSummary = summary
             importState = .imported
             importMessage = Self.importSummaryText(summary)
-            journalRestoreGeneration += 1
         case .failed(let failure):
-            if case .refused(.partialRestore) = failure {
-                // Undo refused to discard concurrent journal work, so rows from the import may remain.
-                // A previously exported copy now describes the wrong journal and other tabs must reload.
-                removeExportFile()
-                exportState = .idle
-                entryCount = 0
-                errorMessage = nil
-                journalRestoreGeneration += 1
-            }
             importSummary = nil
             importState = .failed
             importMessage = Self.importFailureText(for: failure)

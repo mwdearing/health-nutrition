@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 import NutritionDomain
 import NutritionJournal
 import XCTest
@@ -19,6 +20,9 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
 
     var failNextSaveForTesting = false
     var failUndoForTesting = false
+    var pauseAfterRestoreForTesting = false
+    let restorePausedForTesting = DispatchSemaphore(value: 0)
+    let resumeRestoreForTesting = DispatchSemaphore(value: 0)
     var intakes: [Intake] = []
     var deleted: [Intake] = []
     var revisionsByIntake: [String: [IntakeRevision]] = [:]
@@ -56,6 +60,11 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
             revisionsByIntake[entry.intake.id] = entry.revisions
         }
         deleted.append(contentsOf: plan.tombstones)
+        if pauseAfterRestoreForTesting {
+            pauseAfterRestoreForTesting = false
+            restorePausedForTesting.signal()
+            _ = resumeRestoreForTesting.wait(timeout: .now() + 5)
+        }
         let restored = plan.entries.map { entry in
             JournalRestoredIntake(
                 intakeID: entry.intake.id, lifecycle: .active,
@@ -183,6 +192,82 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(removed.map(\.path), [staleExport.path])
     }
 
+    func testSupersededPartialRestoreStillRefreshesJournalAndRemovesStaleExport() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        journal.pauseAfterRestoreForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        var removed: [URL] = []
+        let removalObserved = DispatchSemaphore(value: 0)
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: favorites, writer: { _, _, _ in },
+            remover: { url in
+                removed.append(url)
+                removalObserved.signal()
+            })
+        XCTAssertTrue(model.export(now: now))
+        let staleExport = try XCTUnwrap(model.exportFileURL)
+
+        model.importJournal(data: try export(includeFavorite: true))
+        let olderRestoreReachedStore = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(olderRestoreReachedStore)
+
+        // The older import has committed journal rows but is paused before its favorites write. The newer
+        // import becomes current and is refused by the store's same-transaction not-empty check.
+        model.importJournal(data: try export())
+        await waitForCurrentFailure(model)
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
+
+        journal.resumeRestoreForTesting.signal()
+        let olderMutationWasPublished = await waitForSignal(removalObserved)
+        XCTAssertTrue(olderMutationWasPublished)
+        XCTAssertEqual(model.journalRestoreGeneration, 1)
+        XCTAssertEqual(removed.map(\.path), [staleExport.path])
+        XCTAssertNil(model.exportFileURL)
+        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
+
+        // The older partial result must not replace the newer import's presentation.
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+    }
+
+    func testSupersededSuccessfulRestoreStillRefreshesJournalAndRemovesStaleExport() async throws {
+        let journal = ImportStubStore()
+        journal.pauseAfterRestoreForTesting = true
+        var removed: [URL] = []
+        let removalObserved = DispatchSemaphore(value: 0)
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: ImportStubFavorites(), writer: { _, _, _ in },
+            remover: { url in
+                removed.append(url)
+                removalObserved.signal()
+            })
+        XCTAssertTrue(model.export(now: now))
+        let staleExport = try XCTUnwrap(model.exportFileURL)
+
+        model.importJournal(data: try export())
+        let olderRestoreReachedStore = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(olderRestoreReachedStore)
+
+        model.importJournal(data: try export())
+        await waitForCurrentFailure(model)
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+
+        journal.resumeRestoreForTesting.signal()
+        let olderMutationWasPublished = await waitForSignal(removalObserved)
+        XCTAssertTrue(olderMutationWasPublished)
+        XCTAssertEqual(model.journalRestoreGeneration, 1)
+        XCTAssertEqual(removed.map(\.path), [staleExport.path])
+        XCTAssertNil(model.exportFileURL)
+        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+    }
+
     func testFavoritesFailureWithSuccessfulUndoKeepsTheOrdinaryFailureState() async throws {
         let journal = ImportStubStore()
         let favorites = ImportStubFavorites()
@@ -305,6 +390,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         // And the import's own outcome is dropped rather than shown: it would describe a journal that is gone.
         XCTAssertNotEqual(model.importState, .imported)
         XCTAssertNil(model.importSummary)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
     }
 
     func testAnImportStartedWhileAnEraseRunsIsRefused() async throws {
@@ -341,5 +427,18 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         }
         XCTAssertNotEqual(model.importState, .idle, "the import never published an outcome")
         XCTAssertFalse(model.isImporting)
+    }
+
+    private func waitForSignal(_ semaphore: DispatchSemaphore) async -> Bool {
+        await Task.detached {
+            semaphore.wait(timeout: .now() + 2) == .success
+        }.value
+    }
+
+    private func waitForCurrentFailure(_ model: ConnectionsPrivacyViewModel) async {
+        let deadline = Date(timeIntervalSinceNow: 10)
+        while (model.importState != .failed || model.isImporting), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
     }
 }

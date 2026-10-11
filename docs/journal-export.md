@@ -55,8 +55,11 @@ let summary = try JournalImporter.importExport(data, into: store, favorites: fav
 ```
 
 `JournalImporter.importExport(_:into:favorites:)` reads the whole file, checks it, and only then writes.
-It returns a `JournalImportSummary` counting the intakes, revisions, tombstones, favorites and product
-snapshots it wrote, and it throws `JournalImportError` instead of writing part of a file:
+On success it returns a `JournalImportSummary` counting the intakes, revisions, tombstones, favorites and
+product snapshots it wrote. Most failures happen before a write or leave both stores unchanged through
+compensation. One typed error, `partialRestore`, means the journal write remains because a later favorites
+write failed and the narrow undo could not safely remove rows after concurrent journal changes; inspect the
+journal before trying that file again. The importer throws `JournalImportError` for these cases:
 
 | Case | Meaning |
 |---|---|
@@ -65,6 +68,7 @@ snapshots it wrote, and it throws `JournalImportError` instead of writing part o
 | `tooLarge` | The file is over the import ceiling of 20 MiB or its collections contain over 100,000 aggregate elements. The app refuses the whole file; it never truncates it. |
 | `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
 | `corrupt` | The file is an export that cannot be restored as it stands. |
+| `partialRestore` | The favorites write failed after the journal was restored, and undo refused to remove rows that may include concurrent edits. Journal entries may remain; inspect the journal before importing the file again. |
 
 The file picker checks available file-size metadata first, then reads in bounded chunks and stops at the first byte over 20 MiB. The importer separately checks the byte and aggregate-element ceilings before constructing restore objects. A missing or inaccurate file-size value cannot bypass the read ceiling, and canceling a read closes the file and releases any security-scoped access. These are import limits only: exports are still complete and are not capped or shortened. A journal whose backup exceeds either restore limit remains exportable, but this app cannot restore that file; keep a copy and use a reader that supports the full file rather than editing or truncating the backup.
 
