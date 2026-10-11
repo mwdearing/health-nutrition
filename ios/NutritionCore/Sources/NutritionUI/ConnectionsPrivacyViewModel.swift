@@ -100,10 +100,12 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     // acceptance mask string literals with a pattern that pairs quotes naively, and a run of three
     // quotes shifts every pairing after it far enough to swallow real code.
     public static let privacySummary =
-        "Your journal stays on this device. Nothing is uploaded and nothing is sent to Apple or to a server "
-        + "unless you ask for it. The export below is the only way data leaves this screen, and only because "
-        + "you tap it: it writes a JSON copy into a temporary file that the system share sheet can hand to "
-        + "an app you choose."
+        "Your journal stays on this device and is not uploaded as a whole. Signing in sends your account email, "
+        + "account ID and optional display name to the project's server. A barcode lookup you start sends the "
+        + "barcode to Open Food Facts and, if no product is found and you are signed in, to the community catalog. "
+        + "Share labels off stops new label submissions but does not disable barcode lookup. For email sign-in, "
+        + "hCaptcha can process browser/device signals and sends a verification result; it does not receive your "
+        + "journal. Export writes a local JSON file for a destination you choose in the share sheet."
     public static let exportButtonTitle = "Export journal"
     public static let shareButtonTitle = "Share the export"
     public static let exportFailedMessage = "Could not export the journal."

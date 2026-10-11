@@ -2,98 +2,57 @@
 
 Status: Current. Reviewed whenever a store is added or a connection starts writing anywhere.
 
-**Settings > Your data**, reached from the gear on every tab, has an **Erase all data** action. It removes everything this app
-stores on the device, after a confirmation that says what goes and that it cannot be undone. The app
-also signs out by removing this phone's stored community session. The community account and any shared
-labels remain on the server; the erase does not sign out remotely, delete the account or retract labels.
-No erase request is sent to a server, and no other app on the device is touched.
+**Settings > Your data** offers **Erase all data** after a confirmation that says what is removed and that the action cannot be undone. Erase runs each local store eraser, resets the app's display preferences and reminder, removes export files the app can still reach, and clears the community session from this phone's Keychain. It does not contact the community server: the server account, shared submissions and any independently approved catalog snapshot remain. It does not remove copies already shared to another app or service.
 
 Code: `ios/NutritionCore/Sources/NutritionJournal/JournalErase.swift` holds the
-`JournalErasing` protocol; the screen runs the injected stores in
-`ConnectionsPrivacyViewModel.eraseAllData()`.
+`JournalErasing` protocol; `ConnectionsPrivacyViewModel.eraseAllData()` runs the
+injected local stores and cleanup operations. Erase does not call server sign-out,
+account deletion or label retraction.
 
 ## What is erased
 
-Four store files, each under Application Support. Each store deletes its own rows in one save, so a
-failure leaves that file as it was rather than half emptied.
+The four SwiftData stores live under Application Support. Erase deletes rows using the same store containers, which stay open afterwards; it does not close and recreate store files.
 
-| File | Store | What goes |
+| File | Store | Rows removed |
 | --- | --- | --- |
-| `journal.store` | `SwiftDataJournalStore` | every intake entry, every revision of every entry, every product snapshot, every projection and every queued outbox operation. Deleted entries leave no tombstone either: a tombstone only exists so a later export can retract the entry. |
-| `favorites.store` | `SwiftDataFavoritesStore` | every favorite template. A favorite is a copy of an entry's amounts, so it is personal data of the same kind. |
-| `recipes.store` | `SwiftDataRecipeStore` | every recipe version and every tombstone of a recipe that was deleted. |
-| `goals.store` | `SwiftDataGoalStore` | every daily nutrient target. |
+| `journal.store` | `SwiftDataJournalStore` | Intake entries, revision history, product snapshots, projections and queued outbox operations, including deletion tombstones. |
+| `favorites.store` | `SwiftDataFavoritesStore` | Favorite templates. |
+| `recipes.store` | `SwiftDataRecipeStore` | Recipe versions and recipe tombstones. |
+| `goals.store` | `SwiftDataGoalStore` | Daily nutrient targets. |
 
-Plus, on the screen that offers the action:
+Each store saves its own row deletion. If a store fails, erase reports a partial failure and still attempts the other local cleanup steps. The screen must not report full success when an eraser fails.
 
-- The community session stored in this phone's Keychain. A Keychain failure is reported as a partial erase,
-  while the app still attempts every other local eraser. The account view clears its identity immediately;
-  the erase never calls server sign-out, account deletion or label retraction.
+### Display preferences
 
-- Every journal export this app wrote into the temporary directory, found by its
-  `journal-export-….json` name rather than by the one file the screen happens to remember. The app can
-  be terminated after an export and relaunched into a screen that has no URL for the file it left, so
-  the erase sweeps the directory. A file it cannot delete is reported as a failed erase rather than
-  quietly skipped. See [journal export](journal-export.md).
-- The display preferences: the unit system and the quick-water amount are stored values like any other,
-  so both keys are removed from the defaults domain rather than overwritten with their defaults, and the
-  screen is put back to what a fresh install shows. See [today-screen.md](today-screen.md).
-- The first-run flags: the welcome flag, the hidden state of the first-day checklist and the "units
-  reviewed" step. They are stored under the same `display.` prefix (`display.hasSeenWelcome`,
-  `display.checklistHidden`, `display.hasReviewedUnits`), so, together with the unit system, quick-water amount, reminder switch and time, hidden daily goals and
-  the community sharing disclosure, the erase removes nine stored preference keys in all. Afterwards the first-day checklist returns on Today at once, with its steps undone. The welcome
-  is not shown straight away: it shows again the next time the app starts, because its flag is gone.
-- The daily reminder: its pending notification is removed, and its stored switch and time are cleared with the display settings. See [daily reminder](reminders.md).
-- The screen's own state: the entry count goes back to zero and the export is no longer offered.
+Erase removes all nine keys owned by `UserDefaultsDisplayPreferences` from the app's defaults domain:
 
-The stores stay open afterwards. The app carries on with an empty journal, and a new entry, favorite
-or recipe can be written straight away. If one store cannot erase, the others still run and the screen
-says so, because being told the erase worked when it did not would be the worse failure.
+| Category | Keys removed |
+| --- | --- |
+| Units and quick water (2) | `display.unitSystem`, `display.quickWaterMilliliters` |
+| First-run state (3) | `display.hasSeenWelcome`, `display.checklistHidden`, `display.hasReviewedUnits` |
+| Daily reminder (2) | `display.reminder.on`, `display.reminder.time` |
+| Today goal visibility (1) | `display.goals.hiddenOnToday` |
+| Sharing disclosure, separately acknowledged per account (1) | `display.community.disclosureSeen` |
 
-An exported file the person already shared out of the app is a copy the app no longer has a handle
-on. The erase cannot reach it; that is what sharing it in the first place meant.
+Removing the keys restores defaults; it does not write replacement values. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this phone.
 
-## What is not erased, and why
+### Other local cleanup
 
-- **A copy you already shared or saved somewhere else.** Sharing an export through the system share
-  sheet hands it to Files, mail, cloud storage or another app, and that app keeps its own copy. The
-  erase cannot reach it: the app has no handle on where the share sheet put it. The button says so, in
-  the footer and again in the confirmation, because erasing the local journal and assuming the shared
-  copy went with it would leave it behind without the person knowing.
-- **The community account and shared labels.** Erasing forgets the session on this phone only. The account
-  remains on the server and already shared labels are not retracted. The person must use the account's own
-  server-side controls if they want to delete it or manage shared labels.
-- **The app sent nothing to any server by itself.** No relay is running in this release and the
-  delivery worker writes to Apple Health only after a person turns Health delivery on, so there is no
-  server-side copy of the journal to delete or retract.
-- **Apple Health.** Delivery is off in every release build: the store is opened with no enabled
-  destinations, so no HealthKit operation is ever queued and no sample this app names has ever been
-  written. There is nothing in Health to remove. A debug build queues HealthKit operations, so a debug
-  erase can leave samples behind — the worker acknowledges nothing it did not deliver, and the erase
-  does not retract through HealthKit yet.
-- **When Health delivery is turned on, the erase has to grow.** A written sample is removed by the sync
-  identifier the write plan already stamps on it (`[ADR 0002](adr/0002-healthkit-sync.md)`, and the
-  write plan in [healthkit-writer.md](healthkit-writer.md)), not by deleting the local row: the Health
-  app keeps its own store and the local journal is not its only copy. The erase therefore has to read
-  the sync identifiers the journal wrote, delete those samples through HealthKit first, and only then
-  drop the local rows — in that order, because once the rows are gone the identifiers are too. While
-  delivery is off, no sample exists and the erase does not claim to remove one.
-- **The same applies to the relay** when it is turned on. Outbox operations are deleted with the journal, which
-  stops anything further being sent, but a receiver the person configured and owns has its own copy and
-  is the person's to clear.
+- The local Keychain session stored on this phone is cleared. A Keychain failure is reported as a partial erase, while other local erasers still run. This is local credential removal only; no server logout or account deletion request is made.
+- Export files named `journal-export-….json` in the temporary directory are removed, including files left by an earlier app launch. A file that cannot be deleted is reported as a failed cleanup.
+- The screen clears its export state and entry count when erase begins so it does not keep offering data that is being removed.
+
+## What remains
+
+- **The community server account and submissions.** Local erase does not call the server. Use account controls to sign out or delete an account. Account deletion removes that profile and its submissions; an independently approved owner-reviewed catalog snapshot can remain without contributor identity.
+- **Export copies outside the app.** A file shared through the system share sheet belongs to Files, mail, cloud storage or another destination. This app no longer has a handle to that copy and cannot remove it.
+- **Apple Health.** Release builds cannot enable HealthKit delivery and do not queue HealthKit writes. The debug build includes a HealthKit test flow and can write samples; local row deletion cannot retract debug samples already written to the Health app. HealthKit has its own store.
+- **HealthRelay.** It is unavailable in this version, so there is no active relay destination for this erase to contact.
+
+Deleting rows from the existing store containers is a logical app-level erase. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered. Device-level protection and physical erase behavior have not been established by this change.
 
 ## Checking it
 
-`ios/NutritionCore/Tests/NutritionJournalTests/JournalEraseTests.swift` covers each store: the journal
-comes back empty including pending outbox operations and revisions, favorites and recipes come back
-empty, a `create()` after an erase succeeds, and a closed store throws its own `.closed` error instead
-of reporting a successful erase.
-`ios/NutritionCore/Tests/NutritionUITests/ConnectionsPrivacyEraseTests.swift` covers the screen: every
-injected store runs, every export file in the temporary directory is removed including one the screen
-never wrote, a file that cannot be deleted is reported as a failed erase, and a local account cleanup
-failure is reported while the other erasers still run. `AccountViewModelTests.swift` covers delayed
-restore/sign-in/profile replies after erase. `AppServicesEraseTests.swift` verifies the app supplies its
-local account cleanup hook without calling server sign-out or account deletion.
-`ios/NutritionCore/Tests/ConnectionsPrivacyTests/ConnectionsPrivacyPreferenceTests.swift` covers the
-display preferences: the display keys are removed from the defaults domain by the erase, the screen goes back
-to the defaults, and the in-memory implementation clears the same way.
+`ios/NutritionCore/Tests/NutritionJournalTests/JournalEraseTests.swift` covers each store: the journal comes back empty including pending outbox operations and revisions, favorites and recipes come back empty, a `create()` after an erase succeeds, and a closed store throws its own `.closed` error instead of reporting success.
+`ios/NutritionCore/Tests/NutritionUITests/ConnectionsPrivacyEraseTests.swift` covers the screen: every injected store runs, every reachable export file is removed, a file that cannot be deleted is reported as a failed erase, and a local account cleanup failure is reported while the other erasers still run. `AccountViewModelTests.swift` covers delayed restore/sign-in/profile replies after erase. `AppServicesEraseTests.swift` verifies the app supplies its local account cleanup hook without calling server sign-out or account deletion.
+`ios/NutritionCore/Tests/ConnectionsPrivacyTests/ConnectionsPrivacyPreferenceTests.swift` covers the display preferences: the owned keys are removed from the defaults domain by the erase, the screen goes back to its defaults, and the in-memory implementation clears the same way.

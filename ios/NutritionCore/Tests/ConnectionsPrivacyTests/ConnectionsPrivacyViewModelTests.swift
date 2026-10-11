@@ -101,11 +101,17 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         XCTAssertTrue(model.connections.allSatisfy { !$0.isEnabled })
     }
 
-    func testPrivacyTextSaysDataStaysOnTheDeviceAndExportIsUserInitiated() {
+    func testPrivacyTextExplainsAccountLookupAndSharingBoundaries() {
         let model = ConnectionsPrivacyViewModel(store: filledStore())
-        XCTAssertTrue(model.privacyText.contains("stays on this device"))
-        XCTAssertTrue(model.privacyText.lowercased().contains("unless you ask"))
-        XCTAssertTrue(model.privacyText.lowercased().contains("tap"))
+        let text = model.privacyText.lowercased()
+        XCTAssertTrue(text.contains("stays on this device"))
+        XCTAssertTrue(text.contains("open food facts"))
+        XCTAssertTrue(text.contains("community catalog"))
+        XCTAssertTrue(text.contains("share labels off"))
+        XCTAssertTrue(text.contains("does not disable barcode lookup"))
+        XCTAssertTrue(text.contains("hcaptcha"))
+        XCTAssertTrue(text.contains("export"))
+        XCTAssertFalse(text.contains("nothing is uploaded"))
     }
 
     func testExportWritesALocalFileThatDecodesAsVersionTwo() throws {
