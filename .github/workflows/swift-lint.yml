@@ -5,6 +5,7 @@ on:
     paths:
       - "ios/**"
       - ".github/scripts/attribution_check.py"
+      - ".github/workflows/attribution-check.yml"
       - ".github/workflows/ios.yml"
       - "scripts/lint_swift_sources.py"
       - "scripts/tests/test_attribution_check.py"
@@ -16,6 +17,7 @@ on:
     paths:
       - "ios/**"
       - ".github/scripts/attribution_check.py"
+      - ".github/workflows/attribution-check.yml"
       - ".github/workflows/ios.yml"
       - "scripts/lint_swift_sources.py"
       - "scripts/tests/test_attribution_check.py"

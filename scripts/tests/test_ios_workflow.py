@@ -66,12 +66,14 @@ def test_attribution_scanner_tests_run_in_the_unprivileged_swift_workflow() -> N
     assert isinstance(pull_request, dict)
     paths = set(cast("list[str]", cast("dict[str, object]", pull_request)["paths"]))
     assert ".github/scripts/attribution_check.py" in paths
+    assert ".github/workflows/attribution-check.yml" in paths
     assert "scripts/tests/test_attribution_check.py" in paths
     assert "scripts/tests/test_ios_workflow.py" in paths
     push = cast("dict[str, object]", triggers)["push"]
     assert isinstance(push, dict)
     push_paths = set(cast("list[str]", cast("dict[str, object]", push)["paths"]))
     assert ".github/scripts/attribution_check.py" in push_paths
+    assert ".github/workflows/attribution-check.yml" in push_paths
     assert "scripts/tests/test_attribution_check.py" in push_paths
     assert "scripts/tests/test_ios_workflow.py" in push_paths
 

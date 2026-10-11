@@ -59,19 +59,19 @@ def git(*args: str) -> str:
 def is_agent_identity(text: str) -> bool:
     # Parse the optional angle-bracket mailbox with bounded string operations.
     # The old overlapping lazy/whitespace regex could backtrack quadratically on
-    # malformed identities containing a long whitespace run.
+    # malformed identities containing a long whitespace run. A recognizable
+    # agent name remains authoritative when a structurally delimited mailbox is
+    # malformed internally (for example, when it contains a second opening bracket).
     identity = text.strip()
-    email = ""
-    if "<" in identity or ">" in identity:
-        opening = identity.find("<")
-        if opening < 0 or not identity.endswith(">") or ">" in identity[:opening]:
-            return False
-        name = identity[:opening].strip()
-        email = identity[opening + 1:-1].strip()
-        if "<" in email or ">" in email:
-            return False
-    else:
-        name = identity
+    if "<" not in identity and ">" not in identity:
+        return bool(AGENT_NAME.match(identity))
+    opening = identity.find("<")
+    if opening < 0 or not identity.endswith(">") or ">" in identity[:opening]:
+        return False
+    name = identity[:opening].strip()
+    email = identity[opening + 1:-1].strip()
+    if "<" in email or ">" in email:
+        return bool(AGENT_NAME.match(name))
     return bool(AGENT_NAME.match(name) or AGENT_EMAIL.search(email))
 
 

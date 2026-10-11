@@ -47,6 +47,12 @@ def test_person_identity_with_agent_like_name_and_company_address_is_allowed() -
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_agent_name_is_rejected_even_when_mailbox_syntax_is_malformed() -> None:
+    result = run_check(f"{COAUTHOR_TRAILER} Claude Code <<bot@example.com>")
+    assert result.returncode == 1
+    assert f"PR body: {COAUTHOR_TRAILER[:-1]} trailer naming an agent" in result.stdout
+
+
 def test_malformed_identity_with_hostile_whitespace_is_bounded_and_ignored() -> None:
     body = COAUTHOR_TRAILER + " Claude Code" + (" " * 80_000) + "<noreply@openai.com"
     result = run_check(body)
