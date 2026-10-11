@@ -116,7 +116,11 @@ public enum NutritionFactsParser {
                 index += usedFollowingForServing ? 2 : 1
                 continue
             }
-            let rowFollowing = usedFollowingForServing ? nil : following
+            // A serving-size-only line may consume the next line's measure while leaving a nutrient
+            // name behind it. That suffix still pairs with the next unconsumed line for its amount.
+            let rowFollowing = usedFollowingForServing
+                ? (index + 2 < cleaned.count ? cleaned[index + 2] : nil)
+                : following
             let read = absorbRows(in: residual, following: rowFollowing, amounts: &amounts, reviews: &reviews)
             // Whatever the named rows left on the line may still be a row the panel printed: a
             // supplement lists compounds the table does not name, and they are read as their own rows.
@@ -127,9 +131,10 @@ public enum NutritionFactsParser {
             // `displayNames`. A name that is a named row itself is never collected twice, so scanning
             // the named rows' own text here is safe.
             let additionalUsedNextLine = absorbAdditionalRows(
-                in: residual, next: (read.usedNextLine || usedFollowingForServing) ? nil : following, into: &extra,
+                in: residual, next: read.usedNextLine ? nil : rowFollowing, into: &extra,
                 amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
-            index += (usedFollowingForServing || read.usedNextLine || additionalUsedNextLine) ? 2 : 1
+            let consumedNextLine = read.usedNextLine || additionalUsedNextLine
+            index += usedFollowingForServing ? (consumedNextLine ? 3 : 2) : (consumedNextLine ? 2 : 1)
         }
 
         return ParsedNutritionFacts(
