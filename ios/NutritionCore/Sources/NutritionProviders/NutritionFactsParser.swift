@@ -78,7 +78,8 @@ public enum NutritionFactsParser {
     public static func parse(lines: [String]) -> ParsedNutritionFacts {
         let cleaned = lines.map { cleanLine($0) }
         let panelHeading = cleaned.enumerated().compactMap { index, line in
-            panelHeadingRange(in: line).map { (index, $0) }
+            let following = index + 1 < cleaned.count ? cleaned[index + 1] : nil
+            return panelHeadingRange(in: line, next: following).map { (index, $0) }
         }.first
         let panelStart = panelHeading?.0 ?? 0
         var panelSize: ParsedServingSize?
@@ -183,7 +184,7 @@ public enum NutritionFactsParser {
     /// A flattened heading may follow a complete nutrient callout and precede the first panel row,
     /// so both sides are checked independently. In particular, "for sodium content" is prose after
     /// the words "nutrition facts", not a panel boundary.
-    private static func panelHeadingRange(in line: String) -> Range<String.Index>? {
+    private static func panelHeadingRange(in line: String, next nextLine: String? = nil) -> Range<String.Index>? {
         for heading in ["nutrition facts", "supplement facts"] {
             guard let range = line.range(of: heading, options: [.caseInsensitive, .diacriticInsensitive]) else {
                 continue
@@ -192,19 +193,20 @@ public enum NutritionFactsParser {
             let after = trimmed(String(line[range.upperBound...]))
                 .trimmingCharacters(in: CharacterSet(charactersIn: ":–—- "))
             let validPrefix = before.isEmpty || firstRowThatStatesAmount(in: before) == before.startIndex
-            guard validPrefix, startsPanelContent(after) else { continue }
+            guard validPrefix, startsPanelContent(after, next: nextLine) else { continue }
             return range
         }
         return nil
     }
 
-    private static func startsPanelContent(_ text: String) -> Bool {
+    private static func startsPanelContent(_ text: String, next nextLine: String? = nil) -> Bool {
         guard !text.isEmpty else { return true }
         let lower = text.lowercased()
         if ["serving", "servings", "amount per serving", "daily value", "% daily value"].contains(where: {
             lower.hasPrefix($0)
         }) { return true }
-        return firstRowThatStatesAmount(in: text) == text.startIndex
+        if servingsPerContainer(in: text) != nil { return true }
+        return firstRowThatStatesAmount(in: text, next: nextLine) == text.startIndex
     }
 
     /// Which panel these lines are: a **Supplement Facts** panel when its heading is among them, and a

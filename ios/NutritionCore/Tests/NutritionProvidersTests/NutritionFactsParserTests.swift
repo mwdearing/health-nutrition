@@ -534,6 +534,23 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("6"))
     }
 
+    func testInlineNutritionHeadingRecognizesSplitFirstRow() throws {
+        let panel = parse(["Protein 20g Nutrition Facts Protein", "6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein), "the preheading callout is not a panel duplicate")
+    }
+
+    func testInlineNutritionHeadingRecognizesFlattenedServingCount() throws {
+        for heading in ["Nutrition Facts About 8 servings per container", "Nutrition Facts 8 servings per container"] {
+            let panel = parse(["Protein 20g", heading, "Protein 6g"])
+
+            XCTAssertEqual(panel.servingsPerContainer, dec("8"), heading)
+            XCTAssertEqual(try amount(.protein, panel), dec("6"), heading)
+            XCTAssertFalse(panel.needsReview(.protein), heading)
+        }
+    }
+
     func testHeadingWithColonKeepsPanelPrecedence() throws {
         let panel = parse(["Protein 20g", "Nutrition Facts:", "Protein 6g"])
         XCTAssertEqual(try amount(.protein, panel), dec("6"))
