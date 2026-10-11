@@ -113,6 +113,15 @@ public actor CommunityAuth {
         return true
     }
 
+    /// Clears a deleted account's current session, including tokens rotated while deletion was in flight.
+    @discardableResult
+    public func invalidateSession(matchingUserID userID: String) throws -> Bool {
+        guard store.load()?.userID == userID else { return false }
+        generation += 1
+        do { try store.clear() } catch { throw CommunityError.storage }
+        return true
+    }
+
     /// POST /auth/v1/token?grant_type=refresh_token. A rejected refresh token ends the session.
     private func refresh(_ refreshToken: String, startedAt: Int) async throws -> CommunitySession {
         let body = try CommunityAPI.encode(RefreshBody(refreshToken: refreshToken))

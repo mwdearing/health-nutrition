@@ -161,6 +161,53 @@ final class CommunityAuthRaceTests: XCTestCase {
         XCTAssertEqual(store.load(), newSession, "a completed delete for account A must preserve account B")
     }
 
+    func testSuccessfulDeleteClearsRotatedSessionForSameAccount() async throws {
+        let clock = MutableCommunityClock(testNow)
+        let initial = testSession(expiresAt: testNow.addingTimeInterval(3600))
+        let store = InMemoryCommunitySessionStore(initial)
+        let transport = LifecycleTransport(gated: ["delete"])
+        let client = CommunityClient(
+            config: try makeConfig(), transport: transport, store: store, now: { clock.read() }
+        )
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+
+        clock.advance(by: 3601)
+        let refreshed = try await client.auth.validSession()
+        XCTAssertEqual(refreshed.userID, initial.userID)
+        XCTAssertNotEqual(refreshed.accessToken, initial.accessToken)
+
+        transport.release("delete")
+        try await deletion.value
+        XCTAssertNil(store.load(), "successful deletion must clear a rotated session for the deleted account")
+    }
+
+    func testSuccessfulDeleteStopsInFlightRefreshFromRestoringDeletedAccount() async throws {
+        let clock = MutableCommunityClock(testNow)
+        let initial = testSession(expiresAt: testNow.addingTimeInterval(3600))
+        let store = InMemoryCommunitySessionStore(initial)
+        let transport = LifecycleTransport(gated: ["delete", "refresh"])
+        let client = CommunityClient(
+            config: try makeConfig(), transport: transport, store: store, now: { clock.read() }
+        )
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+
+        clock.advance(by: 3601)
+        let refresh = Task { try await client.auth.validSession() }
+        await transport.waitFor("refresh")
+
+        transport.release("delete")
+        try await deletion.value
+        XCTAssertNil(store.load())
+
+        transport.release("refresh")
+        await assertCommunityError(.signedOut) { try await refresh.value }
+        XCTAssertNil(store.load(), "an old refresh must not restore the deleted account")
+    }
+
     func testDeleteClearFailurePropagatesAfterServerSuccess() async throws {
         let stored = testSession()
         let store = FailingClearStore(stored)
@@ -182,5 +229,18 @@ final class CommunityAuthRaceTests: XCTestCase {
         await assertCommunityError(.storage) { try await auth.signOut() }
         XCTAssertEqual(store.load(), testSession())
         XCTAssertTrue(transport.operations.isEmpty, "server logout must wait until local clear succeeds")
+    }
+}
+
+private final class MutableCommunityClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var date: Date
+
+    init(_ date: Date) { self.date = date }
+
+    func read() -> Date { lock.withLock { date } }
+
+    func advance(by interval: TimeInterval) {
+        lock.withLock { date = date.addingTimeInterval(interval) }
     }
 }
