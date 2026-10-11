@@ -8,6 +8,7 @@ fi
 [[ -n "${RUNNER_TEMP:-}" ]] || { echo "RUNNER_TEMP is required." >&2; exit 2; }
 [[ $# -eq 1 && -x "$1" ]] || { echo "Pass the compiled signing identity import helper." >&2; exit 2; }
 
+umask 077
 HELPER="$1"
 WORK="$(mktemp -d "$RUNNER_TEMP/signing-import.XXXXXXXX")"
 KEYCHAIN="$WORK/synthetic.keychain-db"
@@ -15,17 +16,56 @@ KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
 SYNTHETIC_PASSWORD="pr12-synthetic-passphrase"
 WRONG_PASSWORD="pr12-wrong-synthetic-passphrase"
 KEYCHAIN_CREATED=0
+TRUST_ADDED=0
 
 cleanup() {
-  if [[ "$KEYCHAIN_CREATED" -eq 1 ]]; then
-    security delete-keychain "$KEYCHAIN" >/dev/null 2>&1 || true
+  local failed=0
+  if [[ "$TRUST_ADDED" -eq 1 ]]; then
+    if security remove-trusted-cert "$WORK/root.crt" >"$WORK/keychain.log" 2>&1; then
+      TRUST_ADDED=0
+    else
+      echo "Could not remove the synthetic certificate from user Trust Settings." >&2
+      failed=1
+    fi
   fi
-  case "$WORK" in
-    "$RUNNER_TEMP"/signing-import.*) rm -rf -- "$WORK" ;;
-    *) echo "Refusing to remove an unexpected synthetic test path." >&2 ;;
-  esac
+  if [[ "$KEYCHAIN_CREATED" -eq 1 ]]; then
+    if security delete-keychain "$KEYCHAIN" >/dev/null 2>&1; then
+      KEYCHAIN_CREATED=0
+    else
+      echo "Could not delete the synthetic keychain." >&2
+      failed=1
+    fi
+  fi
+  if [[ "$failed" -eq 0 ]]; then
+    case "$WORK" in
+      "$RUNNER_TEMP"/signing-import.*)
+        if ! rm -rf -- "$WORK"; then
+          echo "Could not remove the synthetic signing test files." >&2
+          failed=1
+        fi
+        ;;
+      *)
+        echo "Refusing to remove an unexpected synthetic test path." >&2
+        failed=1
+        ;;
+    esac
+  fi
+  if [[ "$failed" -ne 0 ]]; then
+    echo "Synthetic signing cleanup failed; remaining files were retained for recovery." >&2
+    return 1
+  fi
 }
-trap cleanup EXIT INT TERM
+finish() {
+  local status=$?
+  trap - EXIT INT TERM
+  if ! cleanup; then
+    status=1
+  fi
+  exit "$status"
+}
+trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 openssl genrsa -out "$WORK/root.key" 2048 >"$WORK/openssl.log" 2>&1 || {
   echo "Could not create the synthetic root key." >&2
@@ -84,6 +124,7 @@ security add-trusted-cert -r trustRoot -k "$KEYCHAIN" "$WORK/root.crt" \
   echo "Could not trust the synthetic certificate in its temporary keychain." >&2
   exit 1
 }
+TRUST_ADDED=1
 
 cat >"$WORK/helper-wrapper.sh" <<'SH'
 #!/usr/bin/env bash
@@ -167,7 +208,9 @@ security find-identity -v -p codesigning "$KEYCHAIN" >"$WORK/identities.log" 2>&
   exit 1
 }
 
-cleanup
+if ! cleanup; then
+  exit 1
+fi
 trap - EXIT INT TERM
 [[ ! -e "$WORK" && ! -e "$KEYCHAIN" ]] || {
   echo "The synthetic keychain or test files were not removed." >&2
