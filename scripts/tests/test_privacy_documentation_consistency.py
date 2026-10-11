@@ -147,3 +147,21 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     for phrase in ("stays on this device", "open food facts", "community catalog", "share labels", "hcaptcha"):
         assert phrase in summary
     assert "nothing is uploaded" not in summary
+
+
+def test_privacy_documentation_checks_run_for_docs_and_behavior_changes() -> None:
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ios.yml").read_text())
+    triggers = workflow.get("on", workflow.get(True))
+    watched = {
+        "PRIVACY.md", "docs/accounts.md", "docs/erase-all-data.md",
+        "docs/privacy-manifest.md", "docs/journal-export.md",
+        "scripts/tests/test_privacy_documentation_consistency.py",
+        "scripts/tests/test_journal_restore_import_race.py",
+    }
+    for event in ("pull_request", "push"):
+        assert watched <= set(triggers[event]["paths"])
+    commands = "\n".join(step.get("run", "") for step in workflow["jobs"]["privacy-manifest"]["steps"])
+    assert "scripts/tests/test_privacy_documentation_consistency.py" in commands
+    assert "scripts/tests/test_journal_restore_import_race.py" in commands
