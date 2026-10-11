@@ -741,6 +741,27 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
     }
 
+    func testExporterRefusesFavoriteUnitsTheImporterCannotRestore() {
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-1", displayName: "Sample favorite", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "cupful")])]
+        XCTAssertThrowsError(try JournalExporter.makeExport(
+            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unknownFavoriteUnit("favorites[0].components[0].unit"))
+            XCTAssertFalse(String(describing: error).contains("cupful"))
+        }
+
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0", intakes: [], tombstones: [],
+            favorites: [JournalExportFavorite(
+                id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
+                productSnapshotID: nil,
+                components: [JournalExportComponent(
+                    componentID: "oats", name: "Oats", amount: "40", unit: "cupful", valueState: .known)])])
+        XCTAssertThrowsError(try JournalExporter.encode(document))
+    }
+
     func testExporterRefusesProductRequiredMetadataThatStrictImportRejects() {
         for (snapshotID, productID, name, labelBasis, catalogOrigin, catalogVersion) in [
             ("", "product-oats", "Oats", "per100g", "sample", "1"),

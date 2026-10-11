@@ -418,6 +418,8 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case unrepresentableDate
     /// A stored value is empty where the journal export schema requires a nonempty string.
     case emptyRequiredField(String)
+    /// A favorite uses a unit the importer cannot restore; the field path is safe to show in diagnostics.
+    case unknownFavoriteUnit(String)
 }
 
 private func requireExportText(_ text: String, field: String) throws {
@@ -460,7 +462,11 @@ private func validateExportRequiredFields(_ document: JournalExport) throws {
         try requireExportText(favorite.displayName, field: "\(path).display_name")
         try requireExportText(favorite.category, field: "\(path).category")
         for (componentIndex, component) in favorite.components.enumerated() {
-            try requireExportText(component.unit, field: "\(path).components[\(componentIndex)].unit")
+            let field = "\(path).components[\(componentIndex)].unit"
+            try requireExportText(component.unit, field: field)
+            guard (try? MeasureUnit(symbol: component.unit)) != nil else {
+                throw JournalExportError.unknownFavoriteUnit(field)
+            }
         }
     }
     for (index, product) in document.products.enumerated() {
