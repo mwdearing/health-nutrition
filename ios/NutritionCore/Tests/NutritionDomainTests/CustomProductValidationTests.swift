@@ -32,6 +32,23 @@ final class CustomProductValidationTests: XCTestCase {
         XCTAssertNoThrow(try CustomProductValidation.validate(product(name: String(repeating: "🧪", count: 120))))
         XCTAssertThrowsError(try CustomProductValidation.validate(product(name: String(repeating: "🧪", count: 121))))
     }
+    func testProductFactEqualityPreservesKeyScalars() {
+        let composed = fact("ingredient:é", .unknown)
+        let decomposed = fact("ingredient:e\u{0301}", .unknown)
+        XCTAssertNotEqual(composed, decomposed)
+        XCTAssertEqual(Set([composed, decomposed]).count, 2)
+        XCTAssertNotEqual(product([composed]), product([decomposed]))
+        XCTAssertEqual(Set([composed, composed]).count, 1)
+    }
+    func testFactKeyIdentityUsesUnnormalizedUTF8() throws {
+        let composed = fact("ingredient:é", .unknown)
+        let decomposed = fact("ingredient:e\u{0301}", .unknown)
+        XCTAssertNoThrow(try CustomProductValidation.validate(product([composed, decomposed])))
+        XCTAssertThrowsError(try CustomProductValidation.validate(product([composed, composed]))) { error in
+            XCTAssertEqual(error as? CustomProductFieldError, .init(field: "facts[1].key", code: .duplicateKey))
+        }
+        XCTAssertNoThrow(try CustomProductValidation.validate(product([fact("ingredient:a\nb", .unknown)])))
+    }
     func testBarcodeValidation() throws {
         for barcode in ["96385074", "036000291452", "0036000291452"] {
             XCTAssertNoThrow(try CustomProductValidation.validate(CustomProductContent(name: "Synthetic", barcode: barcode, kind: .food, basis: .per100g)))

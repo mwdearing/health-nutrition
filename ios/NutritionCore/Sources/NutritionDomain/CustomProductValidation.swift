@@ -34,12 +34,14 @@ public enum CustomProductValidation {
             if let value = serving.text { try text(value, field: "serving.text", limit: 80) }
         }
         guard content.facts.count <= 64 else { throw CustomProductFieldError(field: "facts", code: .tooManyFacts) }
-        var keys = Set<String>()
+        // Swift String equality merges canonically equivalent Unicode sequences.
+        // Wire key identity instead preserves the exact scalar sequence (UTF-8 bytes).
+        var keys = Set<Data>()
         for (index, fact) in content.facts.enumerated() {
             let path = "facts[\(index)]"
             try text(fact.key, field: path + ".key", limit: 64, required: true)
             try text(fact.displayName, field: path + ".display_name", limit: 120, required: true)
-            guard keys.insert(fact.key).inserted else { throw CustomProductFieldError(field: path + ".key", code: .duplicateKey) }
+            guard keys.insert(Data(fact.key.utf8)).inserted else { throw CustomProductFieldError(field: path + ".key", code: .duplicateKey) }
             guard standardDimensions[fact.key] != nil || (fact.key.hasPrefix("ingredient:") && fact.key.unicodeScalars.count > 11) else {
                 throw CustomProductFieldError(field: path + ".key", code: .unsupportedKey)
             }

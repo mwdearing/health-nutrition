@@ -108,7 +108,7 @@
                   ]
                 },
                 {
-                  "pattern": "^ingredient:.+$"
+                  "pattern": "^ingredient:[\\s\\S]+$"
                 }
               ]
             },
@@ -165,7 +165,7 @@
                   ]
                 },
                 {
-                  "pattern": "^ingredient:.+$"
+                  "pattern": "^ingredient:[\\s\\S]+$"
                 }
               ]
             },
@@ -215,7 +215,7 @@
                   ]
                 },
                 {
-                  "pattern": "^ingredient:.+$"
+                  "pattern": "^ingredient:[\\s\\S]+$"
                 }
               ]
             },

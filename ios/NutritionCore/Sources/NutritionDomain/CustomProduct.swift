@@ -22,6 +22,17 @@ public struct ProductFact: Sendable, Hashable, Codable {
     public init(key: String, displayName: String, value: NutrientValue) {
         self.key = key; self.displayName = displayName; self.value = value
     }
+
+    /// Keys use exact scalar identity; display names retain ordinary String equality.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.key.utf8.elementsEqual(rhs.key.utf8) && lhs.displayName == rhs.displayName && lhs.value == rhs.value
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(Data(key.utf8))
+        hasher.combine(displayName)
+        hasher.combine(value)
+    }
 }
 
 /// Display facts remain as entered. Wire encoding is defined by shared-products-v2,
