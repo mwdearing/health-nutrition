@@ -44,13 +44,26 @@ def _manifest() -> dict:
 def _latest_submit_label_body() -> str:
     definition = re.compile(
         r"\bcreate\s+(?:or\s+replace\s+)?function\s+public\.submit_label\b"
-        r".*?\bas\s+\$\$(.*?)\$\$\s*;",
+        r"\s*\((.*?)\)\s*returns\s+text\b.*?\bas\s+\$\$(.*?)\$\$\s*;",
         re.IGNORECASE | re.DOTALL,
     )
     bodies = []
     for migration in sorted((ROOT / "supabase/migrations").glob("*.sql")):
-        bodies.extend(match.group(1) for match in definition.finditer(migration.read_text(encoding="utf-8")))
-    assert bodies, "migrations must define public.submit_label"
+        for match in definition.finditer(migration.read_text(encoding="utf-8")):
+            parameters = tuple(
+                (name.lower(), kind.lower())
+                for name, kind in re.findall(r"\b(p_\w+)\s+(text|jsonb)\b", match.group(1))
+            )
+            if parameters == (
+                ("p_barcode", "text"),
+                ("p_basis", "text"),
+                ("p_serving_text", "text"),
+                ("p_product_name", "text"),
+                ("p_brand", "text"),
+                ("p_nutrients", "jsonb"),
+            ):
+                bodies.append(match.group(2))
+    assert bodies, "migrations must define the six-argument public.submit_label used by the app"
     return bodies[-1].lower()
 
 
@@ -265,7 +278,7 @@ def test_label_submission_copy_guard_checks_latest_migration_override(tmp_path: 
         ROOT / "supabase/migrations/20261011203625_catalog_owner_verification.sql",
         migrations / "20261011203625_catalog_owner_verification.sql",
     )
-    (migrations / "20261012235959_submit_label_replacement.sql").write_text(
+    (migrations / "20261012235959_submit_label_overload.sql").write_text(
         """create or replace function public.submit_label(p_payload jsonb)
 returns uuid
 language plpgsql
@@ -281,5 +294,22 @@ $$;
     )
 
     monkeypatch.setattr(__import__(__name__), "ROOT", fixture_root)
+    test_label_submission_copy_discloses_signed_in_account_linkage()
+
+    (migrations / "20261013235959_submit_label_replacement.sql").write_text(
+        """create or replace function public.submit_label(
+    p_barcode text, p_basis text, p_serving_text text, p_product_name text, p_brand text, p_nutrients jsonb
+) returns text
+language plpgsql
+security definer
+as $$
+begin
+    insert into catalog.submissions (payload) values (p_nutrients);
+    return gen_random_uuid()::text;
+end;
+$$;
+""",
+        encoding="utf-8",
+    )
     with pytest.raises(AssertionError):
         test_label_submission_copy_discloses_signed_in_account_linkage()
