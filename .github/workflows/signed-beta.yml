@@ -66,10 +66,16 @@ jobs:
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          HCAPTCHA_SITE_KEY: ${{ secrets.HCAPTCHA_SITE_KEY }}
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
+          # The hosted project asks for a challenge on every emailed-code request, so account settings without a
+          # site key would fail every email sign-in. Remove this rule only if the hosted check is turned off.
+          if [[ -n "$SUPABASE_URL" && -z "$HCAPTCHA_SITE_KEY" ]]; then
+            fail "the account settings need HCAPTCHA_SITE_KEY while the hosted sign-in check is on"
+          fi
           # The account settings are both set or both empty. Naming the values in the message would print them,
           # so the message only says which rule failed.
           if [[ -n "$SUPABASE_URL" || -n "$SUPABASE_ANON_KEY" ]]; then

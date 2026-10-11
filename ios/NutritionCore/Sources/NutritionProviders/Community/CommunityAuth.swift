@@ -29,7 +29,7 @@ public actor CommunityAuth {
         self.now = now
     }
 
-    /// A fresh challenge token for one protected request, or nil when no provider is set. A failed challenge ends the
+    /// A fresh challenge token for the one request the sign-in service protects, the emailed code request, or nil when no provider is set. A failed challenge ends the
     /// request before it is sent.
     private func captchaSecurity() async throws -> GoTrueSecurity? {
         guard let captcha else { return nil }
@@ -45,8 +45,8 @@ public actor CommunityAuth {
     /// Signs in with the identity token from Sign in with Apple: POST /auth/v1/token?grant_type=id_token.
     /// The nonce is the raw nonce whose hash was sent to Apple.
     public func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession {
-        let security = try await captchaSecurity()
-        let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: security))
+        // The sign-in service does not ask for a challenge on an identity token, so none is requested.
+        let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
         let (data, response) = try await api.send(
             "/auth/v1/token",
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
@@ -63,8 +63,8 @@ public actor CommunityAuth {
     }
 
     public func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
-        let security = try await captchaSecurity()
-        let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: security))
+        // Checking the emailed code is not challenged either; only asking for it is.
+        let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: nil))
         let (data, response) = try await api.send("/auth/v1/verify", body: body)
         return try accept(data, response, replacing: true)
     }
