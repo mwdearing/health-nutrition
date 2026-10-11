@@ -534,6 +534,13 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("6"))
     }
 
+    func testFlattenedHeadingAfterModifiedCalloutKeepsPanelRow() throws {
+        let panel = parse(["High Protein 20g Nutrition Facts Protein 6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein), "the modified callout is outside the panel")
+    }
+
     func testInlineNutritionHeadingRecognizesSplitFirstRow() throws {
         let panel = parse(["Protein 20g Nutrition Facts Protein", "6g"])
 

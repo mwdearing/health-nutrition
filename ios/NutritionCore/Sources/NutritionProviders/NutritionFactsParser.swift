@@ -204,8 +204,8 @@ public enum NutritionFactsParser {
                 let after = trimmed(String(line[range.upperBound...]))
                     .trimmingCharacters(in: CharacterSet(charactersIn: ":–—- "))
                 let validPrefix = before.isEmpty
-                    || firstRowThatStatesAmount(in: before) == before.startIndex
-                    || firstAdditionalRow(in: before)?.nameStart == before.startIndex
+                    || firstRowThatStatesAmount(in: before) != nil
+                    || firstAdditionalRow(in: before) != nil
                 if startsPanelContent(after, next: nextLine), validPrefix || priorMentionWasProse {
                     return range
                 }
