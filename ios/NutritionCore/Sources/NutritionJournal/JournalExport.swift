@@ -408,6 +408,12 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case unsupportedSchemaVersion(Int)
     /// A stored favorite holds an amount that is not exact decimal text, which the schema cannot express.
     case malformedFavoriteAmount(String, String)
+    /// A known component amount cannot be represented by the importer's exact Decimal parser.
+    case unrepresentableKnownAmount(String)
+    /// A favorite component has an unknown amount, which the importer does not accept for templates.
+    case unknownFavoriteAmount(String)
+    /// A revision uses a unit the importer cannot restore; the field path contains no user-provided value.
+    case unknownRevisionUnit(String)
     /// A revision with no components cannot be restored under the journal export contract.
     case emptyRevisionComponents(String, Int)
     /// An active intake without any revision history cannot be restored under the journal export contract.
@@ -435,6 +441,14 @@ private func validateExportProvenance(_ provenance: JournalExportProvenance, pat
     try requireExportText(provenance.catalogVersion, field: "\(path).catalog_version")
 }
 
+private func validateKnownExportAmount(_ component: JournalExportComponent, path: String) throws {
+    guard component.valueState == .known else { return }
+    guard let amount = component.amount,
+          DecimalText.isValidDecimalText(amount), DecimalText.decode(amount) != nil else {
+        throw JournalExportError.unrepresentableKnownAmount(path)
+    }
+}
+
 private func validateExportRequiredFields(_ document: JournalExport) throws {
     try requireExportText(document.appVersion, field: "app_version")
     for (index, intake) in document.intakes.enumerated() {
@@ -447,6 +461,13 @@ private func validateExportRequiredFields(_ document: JournalExport) throws {
         for (revisionIndex, revision) in intake.revisions.enumerated() {
             guard !revision.components.isEmpty else {
                 throw JournalExportError.emptyRevisionComponents(intake.id, revision.number)
+            }
+            for (componentIndex, component) in revision.components.enumerated() {
+                let componentPath = "\(path).revisions[\(revisionIndex)].components[\(componentIndex)]"
+                try validateKnownExportAmount(component, path: "\(componentPath).amount")
+                guard (try? MeasureUnit(symbol: component.unit)) != nil else {
+                    throw JournalExportError.unknownRevisionUnit("\(componentPath).unit")
+                }
             }
             if let provenance = revision.provenance {
                 try validateExportProvenance(provenance, path: "\(path).revisions[\(revisionIndex)].provenance")
@@ -462,7 +483,12 @@ private func validateExportRequiredFields(_ document: JournalExport) throws {
         try requireExportText(favorite.displayName, field: "\(path).display_name")
         try requireExportText(favorite.category, field: "\(path).category")
         for (componentIndex, component) in favorite.components.enumerated() {
-            let field = "\(path).components[\(componentIndex)].unit"
+            let componentPath = "\(path).components[\(componentIndex)]"
+            guard component.valueState == .known else {
+                throw JournalExportError.unknownFavoriteAmount("\(componentPath).value_state")
+            }
+            try validateKnownExportAmount(component, path: "\(componentPath).amount")
+            let field = "\(componentPath).unit"
             try requireExportText(component.unit, field: field)
             guard (try? MeasureUnit(symbol: component.unit)) != nil else {
                 throw JournalExportError.unknownFavoriteUnit(field)

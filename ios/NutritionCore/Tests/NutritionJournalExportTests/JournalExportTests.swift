@@ -710,6 +710,88 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
+    func testDirectExportRefusesKnownRevisionAmountsOutsideDecimalPrecision() {
+        let amount = "1234567890123456789012345678901234567890123"
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0",
+            intakes: [JournalExportIntake(
+                id: firstID, category: "food", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                meal: nil, note: nil, currentRevision: 1,
+                revisions: [JournalExportRevision(
+                    number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
+                    provenance: nil, components: [JournalExportComponent(
+                        componentID: "oats", name: "Oats", amount: amount, unit: "g", valueState: .known)])])],
+            tombstones: [], favorites: [])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unrepresentableKnownAmount("intakes[0].revisions[0].components[0].amount"))
+            XCTAssertFalse(String(describing: error).contains(amount))
+        }
+    }
+
+    func testDirectExportRefusesKnownFavoriteAmountsOutsideDecimalPrecision() {
+        let amount = "1234567890123456789012345678901234567890123"
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0", intakes: [], tombstones: [],
+            favorites: [JournalExportFavorite(
+                id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
+                productSnapshotID: nil, components: [JournalExportComponent(
+                    componentID: "oats", name: "Oats", amount: amount, unit: "g", valueState: .known)])])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unrepresentableKnownAmount("favorites[0].components[0].amount"))
+            XCTAssertFalse(String(describing: error).contains(amount))
+        }
+    }
+
+    func testDirectExportKeepsUnknownComponentAmountsNullable() throws {
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0",
+            intakes: [JournalExportIntake(
+                id: firstID, category: "food", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                meal: nil, note: nil, currentRevision: 1,
+                revisions: [JournalExportRevision(
+                    number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
+                    provenance: nil, components: [JournalExportComponent(
+                        componentID: "water", name: "Water", amount: nil, unit: "mL", valueState: .unknown)])])],
+            tombstones: [], favorites: [])
+
+        let text = try XCTUnwrap(String(data: JournalExporter.encode(document), encoding: .utf8))
+        XCTAssertTrue(text.contains("\"amount\":null"), text)
+        XCTAssertTrue(text.contains("\"value_state\":\"unknown\""), text)
+    }
+
+    func testDirectExportRefusesUnknownFavoriteAmounts() {
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0", intakes: [], tombstones: [],
+            favorites: [JournalExportFavorite(
+                id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
+                productSnapshotID: nil, components: [JournalExportComponent(
+                    componentID: "oats", name: "Oats", amount: nil, unit: "g", valueState: .unknown)])])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unknownFavoriteAmount("favorites[0].components[0].value_state"))
+        }
+    }
+
+    func testDirectExportRefusesRevisionUnitsTheImporterCannotRestore() {
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0",
+            intakes: [JournalExportIntake(
+                id: firstID, category: "food", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                meal: nil, note: nil, currentRevision: 1,
+                revisions: [JournalExportRevision(
+                    number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
+                    provenance: nil, components: [JournalExportComponent(
+                        componentID: "oats", name: "Oats", amount: "40", unit: "cupful", valueState: .known)])])],
+            tombstones: [], favorites: [])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unknownRevisionUnit("intakes[0].revisions[0].components[0].unit"))
+            XCTAssertFalse(String(describing: error).contains("cupful"))
+        }
+    }
+
     func testActiveIntakeWithEmptyRevisionCannotBeExported() throws {
         let store = StubJournalStore()
         store.intakes = [intake(firstID)]
