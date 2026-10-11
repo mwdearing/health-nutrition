@@ -109,7 +109,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         let data = try exportData()
         let target = try directory()
         let journal = try store(target)
-        let favorites = FavoritesThatEditsJournalThenFails {
+        let favorites = FavoritesThatEditsJournalThenFails { [self] in
             try journal.edit(
                 intakeID: oatsID, components: [oats("99")], product: nil, changeReason: "concurrent edit",
                 now: base.addingTimeInterval(9_000), occurredAt: nil, timeZoneIdentifier: nil)
