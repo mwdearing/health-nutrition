@@ -35,9 +35,12 @@ authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.
 
 The HealthRelay destination is unavailable in this version. Release builds do
-not enable Apple Health delivery either; the debug build includes a HealthKit
-test flow. Photos and personal intake details such as amounts eaten, meal and
-time are not sent with label submissions. Nothing is sold or used for tracking.
+not enable Apple Health delivery either. In a debug build, after Health access
+is granted, nutrients from real logged food and water entries can be written to
+HealthKit; the debug HealthKit screen can also write separate test samples.
+Erasing local journal rows does not remove HealthKit samples already written.
+Photos and personal intake details such as amounts eaten, meal and time are not
+sent with label submissions. Nothing is sold or used for tracking.
 
 ## Declared required-reason APIs
 

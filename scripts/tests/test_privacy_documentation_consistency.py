@@ -165,3 +165,42 @@ def test_privacy_documentation_checks_run_for_docs_and_behavior_changes() -> Non
     commands = "\n".join(step.get("run", "") for step in workflow["jobs"]["privacy-manifest"]["steps"])
     assert "scripts/tests/test_privacy_documentation_consistency.py" in commands
     assert "scripts/tests/test_journal_restore_import_race.py" in commands
+
+
+def test_public_privacy_copy_discloses_debug_journal_delivery_and_conditional_camera_check() -> None:
+    privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8").lower()
+    accounts = (ROOT / "docs/accounts.md").read_text(encoding="utf-8").lower()
+    erase = (ROOT / "docs/erase-all-data.md").read_text(encoding="utf-8").lower()
+    manifest_docs = (ROOT / "docs/privacy-manifest.md").read_text(encoding="utf-8").lower()
+    view_model = VIEW_MODEL.read_text(encoding="utf-8").lower()
+    app_services = APP_SERVICES.read_text(encoding="utf-8")
+    root_view = (ROOT / "ios/HealthNutrition/Sources/RootView.swift").read_text(encoding="utf-8")
+    project = (ROOT / "ios/HealthNutrition/project.yml").read_text(encoding="utf-8").lower()
+
+    destination_setup = app_services.split("// Which destinations the journal queues work for.", 1)[1].split(
+        "        } catch {", 1
+    )[0]
+    debug_delivery = destination_setup.split("#if DEBUG", 1)[1].split("#else", 1)[0]
+    release_delivery = destination_setup.split("#else", 1)[1].split("#endif", 1)[0]
+    assert "enabledDestinations: [.healthKit]" in debug_delivery
+    assert "enabledDestinations: []" in release_delivery
+    assert "deliverToHealthKit(now: now)" in root_view
+    assert "healthkit" in project and "entries you log" in project and "nutrients" in project
+    assert "rare camera check when you ask for an emailed sign-in code" in project
+
+    for document in (privacy, erase, manifest_docs):
+        assert "debug build" in document
+        assert "real logged food and water entries" in document
+        assert "nutrients" in document and "healthkit" in document
+        assert "test samples" in document
+    for document in (privacy, erase):
+        assert "already written" in document
+        assert "does not remove" in document or "does not retract" in document
+    for document in (privacy, accounts):
+        assert "rare cases the challenge may request camera access" in document
+
+    summary = view_model.split("public static let privacysummary =", 1)[1].split(
+        "public static let exportbuttontitle", 1
+    )[0]
+    assert "debug" in summary and "healthkit" in summary and "journal" in summary
+    assert "camera access" in summary and "email sign-in" in summary

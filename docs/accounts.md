@@ -9,7 +9,7 @@ An account is optional. It is used for the community catalog and its account fea
 - The first sign-in of each account on a phone shows a sharing disclosure before the sharing switch can authorize submissions. Acknowledgment is stored separately for each account on this device.
 - The Account section appears only in a build that carries the project settings (see [the community client](community-client.md) and the [iOS app README](../ios/HealthNutrition/README.md)). A local, unsigned or CI build with no account service makes no account calls.
 
-Requesting an email sign-in code may first show an hCaptcha human check. Its embedded browser challenge can process browser/device signals and sends a verification result with the sign-in request. The app does not send the journal or label facts to hCaptcha. Sign in with Apple does not show this email-code check.
+Requesting an email sign-in code may first show an hCaptcha human check. Its embedded browser challenge can process browser/device signals and sends a verification result with the sign-in request. In rare cases the challenge may request camera access. The app does not send the journal or label facts to hCaptcha. Sign in with Apple does not show this email-code check.
 
 ## What the account sends
 
