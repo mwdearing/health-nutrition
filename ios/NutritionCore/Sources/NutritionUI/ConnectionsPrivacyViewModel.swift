@@ -189,6 +189,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
     @Published public private(set) var isImporting = false
+    /// Main-actor count of restores whose outcomes have not yet reached `apply`. The store-write gate is
+    /// cross-thread; this published count also keeps export availability current for every overlapping run.
+    @Published private var activeImportCompletions = 0
     @Published public private(set) var importSummary: JournalImportSummary?
     @Published public private(set) var importMessage: String?
     /// A partial restore can be superseded by another import result, but its retained rows still need review.
@@ -482,10 +485,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         ]
     }
 
-    /// The export action stays available after a failure: the message explains what went wrong, and the person
-    /// can tap export again. Nothing on this screen can clear the error state, so disabling the button on it
-    /// would strand the person on a screen with no working way out.
-    public var canExport: Bool { true }
+    /// Export waits until every overlapping import has published its result, and while an erase runs. An
+    /// export during a restore could capture the old journal just before the restore writes into it.
+    public var canExport: Bool { !isErasing && activeImportCompletions == 0 }
 
     /// The erase action is offered only when the screen was given the stores to erase. Without one it
     /// would report an erase it never ran, which is worse than not offering it.
@@ -494,6 +496,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Builds the export document, encodes it and writes it to a temporary file. Nothing is sent anywhere.
     @discardableResult
     public func export(now: Date) -> Bool {
+        guard canExport else { return false }
         exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
@@ -726,6 +729,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let generation = importGeneration
         let startedAtSuccessfulEraseEpoch = successfulEraseEpoch
         let exportRevisionAtStart = exportRevision
+        activeImportCompletions += 1
         isImporting = true
         let gate = importGate
         gate.begin()
@@ -767,6 +771,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         _ outcome: ImportOutcome, startedAt generation: Int,
         successfulEraseEpochAtStart: Int, exportRevisionAtStart: Int
     ) {
+        if activeImportCompletions > 0 { activeImportCompletions -= 1 }
         // A successful erase owns the stores after it completes. A failed erase does not: retain any
         // restore effects that arrived while it was suspended and publish them once its result is known.
         guard successfulEraseEpochAtStart == successfulEraseEpoch else { return }

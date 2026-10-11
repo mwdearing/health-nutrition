@@ -21,7 +21,10 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     var failNextSaveForTesting = false
     var failUndoForTesting = false
     var failEraseForTesting = false
+    var pauseBeforeRestoreForTesting = false
     var pauseAfterRestoreForTesting = false
+    let restorePausedBeforeWriteForTesting = DispatchSemaphore(value: 0)
+    let resumeRestoreBeforeWriteForTesting = DispatchSemaphore(value: 0)
     let restorePausedForTesting = DispatchSemaphore(value: 0)
     let resumeRestoreForTesting = DispatchSemaphore(value: 0)
     var intakes: [Intake] = []
@@ -61,6 +64,11 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     /// and the importer reports whatever the store throws. The screen is what these tests are about, so the
     /// stub refuses exactly as the store does and lets the refusal travel the same path.
     func restore(_ plan: JournalRestorePlan) throws -> JournalRestoreReceipt {
+        if pauseBeforeRestoreForTesting {
+            pauseBeforeRestoreForTesting = false
+            restorePausedBeforeWriteForTesting.signal()
+            _ = resumeRestoreBeforeWriteForTesting.wait(timeout: .now() + 5)
+        }
         guard intakes.isEmpty, deleted.isEmpty else { throw JournalImportError.notEmpty }
         restoredPlans.append(plan)
         intakes.append(contentsOf: plan.entries.map(\.intake))
@@ -356,34 +364,90 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.exportState, .idle)
     }
 
-    func testRestoreDoesNotDeleteAnExportCreatedAfterItsStoreMutation() async throws {
+    func testExportIsUnavailableUntilRestorePublishesAfterItsStoreMutation() async throws {
         let journal = ImportStubStore()
         journal.pauseAfterRestoreForTesting = true
         var written: [URL] = []
-        var removed: [URL] = []
         let model = ConnectionsPrivacyViewModel(
             store: journal, favorites: ImportStubFavorites(),
             writer: { _, url, _ in written.append(url) },
-            remover: { removed.append($0) })
+            remover: { _ in })
 
         model.importJournal(data: try export())
         let restorePaused = await waitForSignal(journal.restorePausedForTesting)
         XCTAssertTrue(restorePaused)
-        // The import has changed the store but has not published its result. This copy reflects the
-        // restored entry and must survive the older import completion, even at the same export URL.
-        XCTAssertTrue(model.export(now: now))
-        let freshExport = try XCTUnwrap(model.exportFileURL)
-        XCTAssertEqual(model.entryCount, 1)
+        // The import has changed the store but has not published its result. Keep export unavailable until
+        // that restore finishes, then allow a fresh copy that includes its entry.
+        XCTAssertFalse(model.canExport)
+        XCTAssertFalse(model.export(now: now))
+        XCTAssertNil(model.exportFileURL)
+        XCTAssertTrue(written.isEmpty)
 
         journal.resumeRestoreForTesting.signal()
         await waitForImportToSettle(model)
 
         XCTAssertEqual(model.journalRestoreGeneration, 1)
-        XCTAssertEqual(model.exportFileURL, freshExport)
+        XCTAssertTrue(model.canExport)
+        XCTAssertTrue(model.export(now: now))
+        let freshExport = try XCTUnwrap(model.exportFileURL)
         XCTAssertEqual(model.exportState, .ready)
         XCTAssertEqual(model.entryCount, 1)
         XCTAssertEqual(written, [freshExport])
-        XCTAssertTrue(removed.isEmpty, "a newer export of the restored journal must remain available")
+    }
+
+    func testExportIsRefusedBeforeAnImportMutatesTheStore() async throws {
+        let journal = ImportStubStore()
+        journal.pauseBeforeRestoreForTesting = true
+        var written: [URL] = []
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: ImportStubFavorites(),
+            writer: { _, url, _ in written.append(url) }, remover: { _ in })
+
+        model.importJournal(data: try export())
+        let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
+        XCTAssertTrue(restorePaused)
+
+        XCTAssertFalse(model.canExport)
+        XCTAssertFalse(model.export(now: now))
+        XCTAssertNil(model.exportFileURL)
+        XCTAssertTrue(written.isEmpty)
+
+        journal.resumeRestoreBeforeWriteForTesting.signal()
+        await waitForImportToSettle(model)
+        XCTAssertTrue(model.canExport)
+        XCTAssertTrue(model.export(now: now))
+        XCTAssertEqual(model.entryCount, 1)
+        XCTAssertEqual(written.count, 1)
+    }
+
+    func testLatestFailureDoesNotEnableExportWhileOlderRestoreStillWrites() async throws {
+        let journal = ImportStubStore()
+        journal.pauseAfterRestoreForTesting = true
+        var written: [URL] = []
+        let model = ConnectionsPrivacyViewModel(
+            store: journal, favorites: ImportStubFavorites(),
+            writer: { _, url, _ in written.append(url) }, remover: { _ in })
+
+        model.importJournal(data: try export())
+        let olderRestorePaused = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(olderRestorePaused)
+        model.importJournal(data: try export())
+        await waitForCurrentFailure(model)
+
+        XCTAssertFalse(model.isImporting, "the newer refusal owns the import message")
+        XCTAssertFalse(model.canExport, "the older restore still owns the store write")
+        XCTAssertFalse(model.export(now: now))
+        XCTAssertTrue(written.isEmpty)
+
+        journal.resumeRestoreForTesting.signal()
+        let deadline = Date(timeIntervalSinceNow: 10)
+        while !model.canExport, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertTrue(model.canExport, "export should return after every restore completion")
+        XCTAssertTrue(model.export(now: now))
+        XCTAssertEqual(model.entryCount, 1)
+        XCTAssertEqual(written.count, 1)
     }
 
     func testAFileThatCannotBeReadIsAFailureRatherThanACancellation() {

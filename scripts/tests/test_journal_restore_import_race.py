@@ -74,3 +74,29 @@ def test_superseded_partial_restore_warning_is_separate_and_visible() -> None:
     settings = (ROOT / "ios/NutritionCore/Sources/NutritionUI/AppSettingsView.swift").read_text()
     assert "connections.incompleteRestoreWarning" in settings
     assert "warning != connections.importMessage" in settings
+
+
+def test_export_is_blocked_until_every_import_completion_has_published() -> None:
+    source = VIEW_MODEL.read_text()
+    assert "@Published private var activeImportCompletions = 0" in source
+    can_export = source.split("public var canExport:", maxsplit=1)[1].split(
+        "/// The erase action", maxsplit=1
+    )[0]
+    assert "!isErasing && activeImportCompletions == 0" in can_export
+
+    export = source.split("public func export(now: Date) -> Bool {", maxsplit=1)[1].split(
+        "/// Removes the exported file", maxsplit=1
+    )[0]
+    assert export.index("guard canExport else { return false }") < export.index("JournalExporter.makeExport")
+
+    import_start = source.split("public func importJournal(data: Data) {", maxsplit=1)[1].split(
+        "/// Publishes an import's outcome", maxsplit=1
+    )[0]
+    assert import_start.index("activeImportCompletions += 1") < import_start.index("Task.detached")
+
+    apply = source.split("private func apply(\n", maxsplit=1)[1].split(
+        "private func applyStoreEffects(", maxsplit=1
+    )[0]
+    assert apply.index("activeImportCompletions -= 1") < apply.index(
+        "guard successfulEraseEpochAtStart == successfulEraseEpoch"
+    )
