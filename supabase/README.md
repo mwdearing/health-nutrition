@@ -10,7 +10,13 @@ Community label catalog (see `migrations/`). Signed-in accounts with sharing on 
 - Test: `supabase/tests/run.sh` (needs podman or docker).
 
 ## Configuration
-`config.toml` mirrors the hosted Auth settings (Apple on, email confirmation on, six-digit email codes, anonymous sign-ins off). `supabase config push` applies it to the project at once and has no confirmation step, so run it only when the file matches what you want live, with the Apple values supplied as the `SUPABASE_AUTH_EXTERNAL_APPLE_CLIENT_ID` (the bundle identifier and the Services ID, separated by a comma) and `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` environment variables. Neither is committed: this repository is public. Email templates cannot be changed on the free plan with the default mail service; a custom mail sender is needed first.
+The checked-in `config.toml` records the repository's intended Auth values: anonymous sign-ins off (`auth.enable_anonymous_sign_ins`), email confirmation on and six-digit OTPs (`auth.email.enable_confirmations` and `auth.email.otp_length`), and Apple enabled (`auth.external.apple.enabled`). See Supabase's [local-development config reference](https://supabase.com/docs/guides/local-development/cli/config) for the file's scope. The Apple client ID and secret are environment references, not committed values. These fields are intended to stay aligned with the hosted project, but the file and its tests only describe repository state; they do not prove the current hosted settings.
+
+The app's email sign-in flow expects a one-time code: it requests an email OTP and verifies the submitted code. The six-digit setting controls the code length; the hosted [Magic Link email template](https://supabase.com/docs/guides/auth/auth-email-passwordless#with-otp) must include `{{ .Token }}` to deliver a code instead of a link. The commented `[auth.captcha]` example in the Auth section is ignored by TOML and does not prove that hosted CAPTCHA enforcement is enabled or disabled. Verify that separately in read-only hosted evidence.
+
+The checked-in database network-restriction and SSL sections are also not evidence of hosted posture. In particular, `[db.network_restrictions]` describes values in this file, while `[db.ssl_enforcement]` is commented out. The hosted network allowlist, database TLS enforcement, and hosted password-policy settings remain unknown until independently verified from a sanitized, read-only hosted settings view. Missing or unverifiable fields are unknown, not compliant. This repository change does not resolve those open checks.
+
+`supabase config push` applies the local file to the linked project immediately ([CLI reference](https://supabase.com/docs/reference/cli/supabase-config-push)). It is a live configuration change, not a preview or dry run; never use it to inspect or preview hosted settings. Review the full config and obtain separate approval before any push.
 
 ## Shared products v2 migration order
 
