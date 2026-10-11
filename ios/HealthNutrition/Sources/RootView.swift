@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import NutritionJournal
 import NutritionDomain
 import NutritionUI
@@ -45,6 +46,7 @@ struct RootView: View {
     /// its routes through one method a test can call.
     @StateObject private var recipeNavigation = RecipeNavigation()
     @State private var recipeList: RecipeListViewModel
+    @StateObject private var privacyShield = PrivacyShieldController()
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
     /// The design-system screenshots run a debug build with `SCREENSHOT_DIR` set. They leave out the
@@ -168,6 +170,12 @@ struct RootView: View {
             }
             #endif
         }
+        .background {
+            PrivacyShieldWindowAttachment(controller: privacyShield, phase: scenePhase)
+                .frame(width: 1, height: 1)
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
+        }
         // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
         // name an entry into `selectedIntakeID` and one sheet presents over whichever tab is showing.
         // Hanging it on a single tab would leave the other tab's rows dead.
@@ -242,6 +250,7 @@ struct RootView: View {
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
+            privacyShield.update(phase: phase)
             if phase == .active {
                 reload()
                 Task { await self.services.reminders.syncOnLaunch() }
@@ -250,6 +259,10 @@ struct RootView: View {
                     await self.services.productSharing?.runDueOperations(now: Date())
                 }
             }
+        }
+        // UIKit posts this before the app-switcher snapshot; the scene-phase update follows later.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            privacyShield.coverBeforeSnapshot()
         }
         // An erase in Settings empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.

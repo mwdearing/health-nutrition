@@ -13,6 +13,13 @@ struct HealthNutritionApp: App {
     @State private var startupError: String?
 
     init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--privacy-shield-test") {
+            _services = State(initialValue: nil)
+            _startupError = State(initialValue: nil)
+            return
+        }
+        #endif
         do {
             _services = State(initialValue: try AppServices.make(reminderScheduler: SystemReminderScheduler()))
         } catch {
@@ -23,11 +30,21 @@ struct HealthNutritionApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--privacy-shield-test") {
+                PrivacyShieldCaptureHost()
+            } else if let services {
+                RootView(services: services)
+            } else {
+                StartupFailureView(message: startupError)
+            }
+            #else
             if let services {
                 RootView(services: services)
             } else {
                 StartupFailureView(message: startupError)
             }
+            #endif
         }
     }
 }

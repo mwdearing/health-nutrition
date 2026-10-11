@@ -1,0 +1,94 @@
+name: privacy-shield
+
+on:
+  pull_request:
+    paths:
+      - "ios/HealthNutrition/Sources/HealthNutritionApp.swift"
+      - "ios/HealthNutrition/Sources/PrivacyShield.swift"
+      - "ios/HealthNutrition/Sources/RootView.swift"
+      - "ios/HealthNutrition/Tests/PrivacyShieldTests.swift"
+      - "ios/HealthNutrition/Tests/PrivacyShieldUITests/**"
+      - "ios/HealthNutrition/project.yml"
+      - ".github/workflows/privacy-shield.yml"
+      - ".github/scripts/install-xcodegen.sh"
+  push:
+    branches: [main]
+    paths:
+      - "ios/HealthNutrition/Sources/HealthNutritionApp.swift"
+      - "ios/HealthNutrition/Sources/PrivacyShield.swift"
+      - "ios/HealthNutrition/Sources/RootView.swift"
+      - "ios/HealthNutrition/Tests/PrivacyShieldTests.swift"
+      - "ios/HealthNutrition/Tests/PrivacyShieldUITests/**"
+      - "ios/HealthNutrition/project.yml"
+      - ".github/workflows/privacy-shield.yml"
+      - ".github/scripts/install-xcodegen.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  simulator-capture:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      # Byte-identical companion to the reviewed shared installer, so this branch's capture job is standalone.
+      - name: Install XcodeGen (pinned release, checksum verified)
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/install-xcodegen.sh"
+      - name: Generate the unsigned simulator project
+        working-directory: ios/HealthNutrition
+        run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
+      - name: Pick an available iPhone simulator
+        id: simulator
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
+          name=$(python3 - "$RUNNER_TEMP/simulators.json" <<'PY'
+          import json
+          import sys
+
+          devices = json.load(open(sys.argv[1]))["devices"]
+          names = [
+              device["name"]
+              for runtime in sorted(devices)
+              for device in devices[runtime]
+              if device.get("isAvailable") and device["name"].startswith("iPhone")
+          ]
+          print(names[0] if names else "")
+          PY
+          )
+          if [ -z "$name" ]; then
+            echo "No available iPhone simulator on this runner." >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Capture inactive app-switcher privacy behavior
+        working-directory: ios/HealthNutrition
+        env:
+          SIMULATOR: ${{ steps.simulator.outputs.name }}
+        run: >-
+          xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutritionPrivacy
+          -destination "platform=iOS Simulator,name=$SIMULATOR"
+          -only-testing:HealthNutritionPrivacyUITests CODE_SIGNING_ALLOWED=NO
+          -resultBundlePath "$RUNNER_TEMP/privacy-shield.xcresult" test
+      - name: Export synthetic privacy screenshots
+        if: always()
+        run: |
+          if [ -d "$RUNNER_TEMP/privacy-shield.xcresult" ]; then
+            xcrun xcresulttool export attachments \
+              --path "$RUNNER_TEMP/privacy-shield.xcresult" \
+              --output-path "$RUNNER_TEMP/privacy-shield-captures"
+          fi
+      - name: Retain simulator capture and test result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: privacy-shield-simulator-capture
+          path: |
+            ${{ runner.temp }}/privacy-shield-captures
+            ${{ runner.temp }}/privacy-shield.xcresult
+          if-no-files-found: warn
+          retention-days: 7
