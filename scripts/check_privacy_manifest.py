@@ -541,6 +541,11 @@ def main(argv: list[str] | None = None) -> int:
     used: dict[str, list[str]] = {}
     for directory in directories:
         for path in sorted(directory.rglob("*.swift")):
+            # A pull request can add a symlink named like a Swift file. Only a regular file that stays inside the
+            # checkout is read, so the check cannot be pointed at the machine it runs on.
+            if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root.resolve()):
+                print(f"{path}: not a regular file inside the checkout")
+                return 2
             try:
                 source = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:

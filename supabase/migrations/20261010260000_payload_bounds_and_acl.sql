@@ -31,3 +31,20 @@ $$;
 revoke all on public.profiles from public, anon, authenticated;
 grant select, insert, update on public.profiles to authenticated;
 revoke all on function public.touch_profile() from public, anon, authenticated;
+
+-- Rows stored before this validator existed are checked again: a submission that would not be accepted now is
+-- removed, and every entry is rebuilt from what is left. The function is kept so the same step can be run again.
+create function catalog.revalidate_all() returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  l record;
+begin
+  delete from catalog.submissions where not catalog.valid_nutrients(nutrients);
+  delete from catalog.entries;
+  for l in select distinct barcode, basis from catalog.submissions order by barcode, basis loop
+    perform catalog.refresh_entry(l.barcode, l.basis);
+  end loop;
+end;
+$$;
+revoke all on function catalog.revalidate_all() from public, anon, authenticated;
+select catalog.revalidate_all();

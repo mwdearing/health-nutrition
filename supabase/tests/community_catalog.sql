@@ -167,11 +167,11 @@ select pg_temp.check(not catalog.valid_nutrients('{"energyKcal":1.2345,"protein"
 -- Rows stored under an older, looser validator are removed and the entries rebuilt.
 insert into auth.users (id) values ('00000000-0000-0000-0000-000000000071'), ('00000000-0000-0000-0000-000000000072') on conflict do nothing;
 insert into catalog.submissions (device_id, barcode, basis, product_name, nutrients)
-values ('00000000-0000-0000-0000-000000000071', '0123456000315', 'per_100g', 'Old', '{"energyKcal":1.23456,"protein":1,"fat":1}'),
-       ('00000000-0000-0000-0000-000000000072', '0123456000315', 'per_100g', 'Old', '{"energyKcal":1,"protein":1,"fat":1}');
+values ('00000000-0000-0000-0000-000000000071', '0000000099990', 'per_100g', 'Old', '{"energyKcal":1.23456,"protein":1,"fat":1}'),
+       ('00000000-0000-0000-0000-000000000072', '0000000099990', 'per_100g', 'Old', '{"energyKcal":1,"protein":1,"fat":1}');
 insert into catalog.entries (barcode, basis, product_name, nutrients, supporting_devices, verified)
-values ('0123456000315', 'per_100g', 'Old', '{"energyKcal":1.23456,"protein":1,"fat":1}', 2, false);
+values ('0000000099990', 'per_100g', 'Old', '{"energyKcal":1.23456,"protein":1,"fat":1}', 2, false);
 select catalog.revalidate_all();
-select pg_temp.check((select count(*) from catalog.submissions where barcode = '0123456000315') = 1, 'an over-precise stored row is removed');
-select pg_temp.check((select count(*) from catalog.entries where barcode = '0123456000315') = 0, 'the entry is rebuilt from the valid rows only');
+select pg_temp.check((select count(*) from catalog.submissions where barcode = '0000000099990') = 1, 'an over-precise stored row is removed');
+select pg_temp.check((select count(*) from catalog.entries where barcode = '0000000099990') = 0, 'the entry is rebuilt from the valid rows only');
 select 'ALL OK' as result;
