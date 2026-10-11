@@ -795,11 +795,13 @@ public enum JournalExporter {
         }
 
         let seconds: Date
+        let usesLegacyUTCCalendar = (1...2).contains(schemaVersion)
+            && (secondsText.hasSuffix("Z") || secondsText.hasSuffix("z"))
         if hasCanonicalISOWholeSecondShape(secondsText) {
             // V1/v2 backups were written and read with Foundation's historical Julian/Gregorian calendar.
             // Keep that meaning for the schemas people already hold, while requiring a formatter round-trip
             // so invalid or normalized calendar dates are still refused.
-            if (1...2).contains(schemaVersion), (secondsText.hasSuffix("Z") || secondsText.hasSuffix("z")) {
+            if usesLegacyUTCCalendar {
                 guard let parsed = legacyUTCDate(
                     fromWholeSecondText: String(secondsText.dropLast()), using: formatter) else { return nil }
                 seconds = parsed
@@ -816,7 +818,9 @@ public enum JournalExporter {
             seconds = parsed
         }
 
-        let earliest = (1...2).contains(schemaVersion)
+        // Explicit offsets remain subject to the strict proleptic four-digit UTC range. Only legacy
+        // UTC Z/z timestamps use the earlier Julian-calendar year-one boundary.
+        let earliest = usesLegacyUTCCalendar
             ? earliestLegacyExportableUTCSecond
             : earliestExportableUTCSecond
         guard let digits else { return finiteDate(seconds, earliest: earliest) }

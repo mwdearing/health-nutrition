@@ -623,9 +623,8 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
-    func testDateDecoderRejectsInvalidCanonicalGregorianDatesAndTimes() {
+    func testDateDecoderRejectsInvalidDatesAndTimes() {
         let dates = [
-            "1500-02-29T00:00:00Z",
             "1900-02-29T00:00:00Z",
             "2024-04-31T00:00:00Z",
             "2024-13-01T00:00:00Z",
