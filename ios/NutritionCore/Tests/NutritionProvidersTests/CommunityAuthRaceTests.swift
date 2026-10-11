@@ -172,11 +172,11 @@ final class CommunityAuthRaceTests: XCTestCase {
         let signIn = Task { try await auth.signInWithApple(idToken: "test-id", nonce: "test-nonce") }
         await transport.waitFor("signin")
         try await auth.discardSession()
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
 
         transport.release("signin")
         await assertCommunityError(.signedOut) { try await signIn.value }
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testSignInReplyAfterLogoutCannotCreateSession() async throws {
