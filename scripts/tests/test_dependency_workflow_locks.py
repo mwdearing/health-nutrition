@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,8 +23,34 @@ def test_catalog_ci_installs_the_frozen_test_lock():
     assert SETUP_UV in text
     assert re.search(r"version:\s*['\"]?0\.12\.19", text)
     assert "uv sync --frozen --extra test" in text
+    assert "uv run --frozen python -m pytest -q tests ../scripts/tests/test_dependency_workflow_locks.py" in text
     assert "pip install" not in text
     assert '"catalog/uv.lock"' in text or '"catalog/**"' in text
+
+
+def test_catalog_build_backend_is_hash_locked():
+    project = tomllib.loads((ROOT / "catalog/pyproject.toml").read_text())
+    assert project["build-system"]["requires"] == ["setuptools>=68"]
+
+    constraints = project["tool"]["uv"]["build-constraint-dependencies"]
+    assert constraints == [
+        {
+            "requirement": "setuptools==84.0.0",
+            "hashes": [
+                "sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670",
+                "sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73",
+            ],
+        }
+    ]
+
+    lock = tomllib.loads((ROOT / "catalog/uv.lock").read_text())
+    assert lock["manifest"]["build-constraints"] == [
+        {
+            "name": "setuptools",
+            "specifier": "==84.0.0",
+            "hashes": constraints[0]["hashes"],
+        }
+    ]
 
 
 def test_script_workflows_use_one_hash_locked_requirements_file():
