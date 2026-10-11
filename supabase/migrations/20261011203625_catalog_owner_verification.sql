@@ -199,6 +199,7 @@ language sql stable security definer set search_path = '' as $$
     and exists (select 1 from public.profiles p where p.id = auth.uid())
     and e.barcode = catalog.canonical_barcode(p_barcode)
     and not e.verified
+    and not exists (select 1 from catalog.approved_entries a where a.barcode = e.barcode and a.basis = e.basis)
     and not exists (select 1 from catalog.rejections r where r.barcode = e.barcode and r.basis = e.basis);
 $$;
 

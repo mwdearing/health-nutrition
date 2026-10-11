@@ -198,11 +198,8 @@ select pg_temp.check(
    from public.lookup_label_v2('0123456070004')),
   'owner approval returns the exact owner-reviewed snapshot with no supporter count'
 );
-select pg_temp.check(
-  (select product_name <> 'Owner Oat Bar' and not verified
-   from public.lookup_label('0123456070004')),
-  'legacy lookup returns only an unverified community row'
-);
+select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')),
+  'legacy lookup hides the community row while an owner-approved canonical is active');
 select pg_temp.check(
   (select count(*) = 1 and min(action) = 'approve' and min(payload_digest) is not null
    from catalog.moderation_audit where barcode = '0123456070004' and basis = 'per_100g'),
@@ -234,6 +231,8 @@ select pg_temp.check(
    from public.lookup_label_v2('0123456070004')),
   '101 newer candidates cannot replace the approved canonical snapshot'
 );
+select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')),
+  'legacy lookup still hides the community row after candidate flooding while canonical approval is active');
 -- Invalid canonical payloads and incomplete serving definitions fail atomically.
 do $$ begin
   perform catalog.owner_approve_label('0123456070004','per_serving',null,'Bad','Brand',
@@ -272,6 +271,8 @@ select catalog.owner_approve_label('0123456070004','per_100g',null,'Owner Oat Ba
 select catalog.owner_revoke_label('0123456070004','per_100g','withdrawn');
 select pg_temp.check((select verification_source = 'community' and not verified
   from public.lookup_label_v2('0123456070004')), 'revocation falls back to unverified community entry');
+select pg_temp.check((select count(*) = 1 and bool_and(not verified) from public.lookup_label('0123456070004')),
+  'legacy lookup exposes the community fallback again after revocation');
 select pg_temp.check(not exists (select 1 from catalog.approved_entries where barcode = '0123456070004'), 'revocation removes active canonical');
 select pg_temp.check((select count(*) = 1 from catalog.moderation_audit where barcode = '0123456070004' and action = 'revoke'), 'revocation is audited');
 -- A revoked approval with no eligible community aggregate does not return a row.
