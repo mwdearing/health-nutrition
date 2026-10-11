@@ -195,6 +195,13 @@ final class LabelCaptureViewModelTests: XCTestCase {
         )
     }
 
+    func testConflictingDuplicateHasAnActionableReviewMessage() {
+        XCTAssertEqual(
+            LabelCaptureRow.summarize([.conflictingDuplicate], name: "protein"),
+            "Check this value: the panel states this nutrient with different values."
+        )
+    }
+
     // MARK: The product
 
     func testUnknownRowsStayUnknownInTheProduct() throws {

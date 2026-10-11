@@ -77,6 +77,7 @@ public enum NutritionFactsParser {
     /// surrounding print, a brand line or a footnote cannot turn into a value.
     public static func parse(lines: [String]) -> ParsedNutritionFacts {
         let cleaned = lines.map { cleanLine($0) }
+        let panelStart = cleaned.firstIndex(where: isPanelHeading) ?? 0
         var size: ParsedServingSize?
         var perContainer: Decimal?
         var amounts: [String: NutrientValue] = [:]
@@ -116,6 +117,12 @@ public enum NutritionFactsParser {
                 index += usedFollowingForServing ? 2 : 1
                 continue
             }
+            // When a heading is present, rows before it are callouts or surrounding print, not the
+            // panel's table. Captures without a readable heading continue to use all their rows.
+            if index < panelStart {
+                index += usedFollowingForServing ? 2 : 1
+                continue
+            }
             // A serving-size-only line may consume the next line's measure while leaving a nutrient
             // name behind it. That suffix still pairs with the next unconsumed line for its amount.
             let rowFollowing = usedFollowingForServing
@@ -149,6 +156,12 @@ public enum NutritionFactsParser {
     }
 
     // MARK: The panel's own heading
+
+    private static func isPanelHeading(_ line: String) -> Bool {
+        ["nutrition facts", "supplement facts"].contains { heading in
+            line.range(of: heading, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
 
     /// Which panel these lines are: a **Supplement Facts** panel when its heading is among them, and a
     /// **Nutrition Facts** panel otherwise.
@@ -670,7 +683,15 @@ public enum NutritionFactsParser {
 
         while let match = firstRow(in: cursor) {
             let row = match.row
-            if isBreakdownLine(cursor, context: rowContext(around: match, in: cursor), for: row) { break }
+            if row.key == .calories,
+               let breakdownEnd = caloriesFromFatBreakdownEnd(in: cursor, after: match.end)
+            {
+                // The phrase is a breakdown attached to the preceding calories row. Step over this
+                // occurrence alone so later named rows on the flattened line are still read.
+                cursor = String(cursor[breakdownEnd...])
+                continue
+            }
+            if isBreakdownLine(context: rowContext(around: match, in: cursor), for: row) { break }
             let remainder = afterRowPunctuation(String(cursor[match.end...]))
             if let scan = scanAmount(in: remainder), statesAmount(scan, for: row) {
                 record(scan, for: row, amounts: &amounts, reviews: &reviews)
@@ -752,6 +773,22 @@ public enum NutritionFactsParser {
         let tail = String(cursor[match.end...])
         let after = firstRow(in: tail).map { String(tail[..<$0.nameStart]) } ?? tail
         return before + " " + after
+    }
+
+    /// The end of the `from Fat` breakdown label immediately after this Calories occurrence.
+    private static func caloriesFromFatBreakdownEnd(in line: String, after nameEnd: String.Index) -> String.Index? {
+        var cursor = nameEnd
+        while cursor < line.endIndex, line[cursor].isWhitespace { cursor = line.index(after: cursor) }
+        let fromStart = cursor
+        while cursor < line.endIndex, line[cursor].isLetter { cursor = line.index(after: cursor) }
+        guard line[fromStart..<cursor].lowercased() == "from" else { return nil }
+        while cursor < line.endIndex, line[cursor].isWhitespace { cursor = line.index(after: cursor) }
+        let fatStart = cursor
+        while cursor < line.endIndex, line[cursor].isLetter { cursor = line.index(after: cursor) }
+        guard line[fatStart..<cursor].lowercased() == "fat" else { return nil }
+        guard cursor == line.endIndex || !line[cursor].isLetter else { return nil }
+        while cursor < line.endIndex, line[cursor].isWhitespace { cursor = line.index(after: cursor) }
+        return cursor
     }
 
     /// Whether a scanned number is the row's amount rather than a number the row did not print a unit for.
@@ -850,33 +887,25 @@ public enum NutritionFactsParser {
         return RowMatch(row: best.row, nameStart: nameStart, end: end)
     }
 
-    /// Whether a line names a nutrient without stating its own amount.
+    /// Whether this row occurrence is a breakdown rather than its own nutrient amount.
     ///
-    /// - "Calories from Fat" is the fat inside the calories, not the calories themselves.
     /// - "Saturated Fat ... Includes 2g Trans Fat" states the trans fat inside the saturated fat, which
     ///   is a breakdown of another row and not a row of its own. Only an `Includes` in the text that
     ///   qualifies this occurrence marks it: on a flattened panel the `Includes` of a later added-sugars
     ///   row belongs to that row and must not reject the trans fat in front of it.
-    /// - A Daily Value heading names the column and no amount.
-    private static func isBreakdownLine(_ line: String, context: String, for row: PanelRow) -> Bool {
-        let lower = line.lowercased()
-        if lower.contains("daily value") { return true }
-        if row.key == .calories, lower.contains("from fat") { return true }
+    private static func isBreakdownLine(context: String, for row: PanelRow) -> Bool {
         if row.key == .transFat, context.lowercased().contains("includes") { return true }
         return false
     }
 
-    /// Stores the first amount read for a nutrient. A nutrient the panel states twice keeps the first
-    /// row that carried an amount.
+    /// Stores the first amount read for a nutrient. A later disagreement keeps that value and adds a
+    /// review reason instead of silently replacing it.
     private static func record(
         _ scan: ScannedAmount,
         for row: PanelRow,
         amounts: inout [String: NutrientValue],
         reviews: inout [String: ParsedValueReview]
     ) {
-        let key = row.key.rawValue
-        guard amounts[key] == nil else { return }
-
         var reasons = scan.reasons
         if let printed = scan.unit, printed != row.usualUnit {
             // The amount is kept exactly as printed. A nutrient in a unit it does not usually carry is
@@ -884,7 +913,17 @@ public enum NutritionFactsParser {
             reasons.insert(.unexpectedUnit)
         }
         let unit = scan.unit ?? row.usualUnit
-        amounts[key] = scan.isBound ? .belowReportingThreshold(unit) : .known(scan.amount, unit)
+        let key = row.key.rawValue
+        let value = scan.isBound ? NutrientValue.belowReportingThreshold(unit) : .known(scan.amount, unit)
+        if let existing = amounts[key] {
+            guard existing != value else { return }
+            reasons.insert(.conflictingDuplicate)
+            var mergedReasons = reviews[key]?.reasons ?? []
+            mergedReasons.formUnion(reasons)
+            reviews[key] = ParsedValueReview(reasons: mergedReasons)
+            return
+        }
+        amounts[key] = value
         if !reasons.isEmpty {
             reviews[key] = ParsedValueReview(reasons: reasons)
         }

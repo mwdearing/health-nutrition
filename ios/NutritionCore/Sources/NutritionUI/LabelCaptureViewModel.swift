@@ -209,6 +209,9 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         if reasons.contains(.uncertainServingSize) {
             sentences.append("the serving size is unclear, so its measure needs checking")
         }
+        if reasons.contains(.conflictingDuplicate) {
+            sentences.append("the panel states this nutrient with different values")
+        }
         return "Check this value: " + sentences.joined(separator: ", ") + "."
     }
 

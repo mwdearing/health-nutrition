@@ -528,6 +528,58 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.sodium, panel), dec("300"))
     }
 
+    func testHeadingMakesPanelRowsTakePrecedenceOverCallouts() throws {
+        let panel = parse(["Protein 20g", "Nutrition Facts", "Serving size 1 bar", "Protein 6g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertEqual(try amount(.protein, parse(["Protein 6g"])), dec("6"), "captures without a heading remain supported")
+    }
+
+    func testRepeatedPanelHeadingsRetainRowsAndFlagConflictingAmounts() throws {
+        let panel = parse([
+            "Nutrition Facts", "Serving size 1 bar", "Protein 6g",
+            "Nutrition Facts", "Serving size 1 bar", "Protein 7g",
+        ])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"), "the first panel row is retained deterministically")
+        XCTAssertTrue(panel.needsReview(.protein), "a later disagreeing panel row needs confirmation")
+        XCTAssertEqual(reviewReasons(.protein, panel), [.conflictingDuplicate])
+    }
+
+    func testSameAmountOnRepeatedPanelPageDoesNotNeedReview() throws {
+        let panel = parse([
+            "Nutrition Facts", "Serving size 1 bar", "Protein 6g",
+            "Nutrition Facts", "Serving size 1 bar", "Protein 6g",
+        ])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein))
+    }
+
+    func testFlattenedCaloriesBreakdownDoesNotDiscardFollowingRows() throws {
+        let panel = parse(["Calories 110 Calories from Fat 30 Total Fat 3g Protein 5g"])
+
+        XCTAssertEqual(try amount(.calories, panel), dec("110"))
+        XCTAssertEqual(try amount(.fat, panel), dec("3"))
+        XCTAssertEqual(try amount(.protein, panel), dec("5"))
+    }
+
+    func testDailyValueWordsBeforeNextRowDoNotDiscardIt() throws {
+        let panel = parse(["Zinc", "15mg Daily Value Protein 5g"])
+
+        XCTAssertEqual(panel.additionalNutrients.first(where: { $0.name == "Zinc" })?.value, .known(dec("15"), .mg))
+        XCTAssertEqual(try amount(.protein, panel), dec("5"))
+    }
+
+    func testUnicodeCrashExamplesRemainSafeToParse() {
+        for lines in [["İ Sodium"], ["İ Protein"], ["İİİ Total Fat"]] {
+            _ = parse(lines)
+        }
+    }
+
     func testAddedSugarsIsNotReadAsSugars() throws {
         let panel = parse([
             "Total Sugars 12g",
