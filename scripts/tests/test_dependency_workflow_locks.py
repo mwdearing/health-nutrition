@@ -12,6 +12,14 @@ WORKFLOWS = (
     ".github/workflows/design-system-tests.yml",
 )
 SETUP_UV = "astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0"
+XCODEGEN_SCRIPT = '.github/scripts/install-xcodegen.sh'
+XCODEGEN_WORKFLOWS = (
+    ".github/workflows/ios.yml",
+    ".github/workflows/screenshots.yml",
+    ".github/workflows/signed-beta.yml",
+)
+POSTGRES_16_DIGEST = "ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d"
+POSTGRES_17_ALPINE_DIGEST = "b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24"
 
 
 def workflow(path: str) -> str:
@@ -74,3 +82,46 @@ def test_ci_requirements_are_hash_locked_for_pytest_and_pyyaml():
 
 def test_all_script_workflows_trigger_on_the_guard_test():
     assert '"scripts/tests/test_dependency_workflow_locks.py"' in workflow(WORKFLOWS[2])
+
+
+def test_all_app_workflows_reuse_the_checksum_verified_xcodegen_bootstrap():
+    installer = ROOT / XCODEGEN_SCRIPT
+    text = installer.read_text()
+    assert 'XCODEGEN_VERSION="2.46.0"' in text
+    assert 'XCODEGEN_SHA256="4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"' in text
+    assert "releases/download/$XCODEGEN_VERSION/xcodegen.zip" in text
+    assert "shasum -a 256 -c -" in text
+    assert text.index("shasum -a 256 -c -") < text.index("unzip -q")
+
+    for path in XCODEGEN_WORKFLOWS:
+        workflow_text = workflow(path)
+        assert XCODEGEN_SCRIPT in workflow_text, path
+        assert "brew install xcodegen" not in workflow_text, path
+        assert 'xcodegen-dist/xcodegen/bin/xcodegen' in workflow_text, path
+
+
+def test_postgres_ci_images_keep_their_major_version_and_pin_the_verified_index_digest():
+    catalog = workflow(".github/workflows/catalog.yml")
+    sql_runner = (ROOT / "supabase/tests/run.sh").read_text()
+
+    assert f"docker.io/library/postgres:16@sha256:{POSTGRES_16_DIGEST}" in catalog
+    assert f"docker.io/library/postgres:17-alpine@sha256:{POSTGRES_17_ALPINE_DIGEST}" in sql_runner
+
+
+def test_catalog_workflow_runs_the_tool_and_image_pin_guards_when_they_change():
+    catalog = workflow(".github/workflows/catalog.yml")
+    for path in (
+        '"scripts/tests/test_dependency_workflow_locks.py"',
+        '"supabase/tests/run.sh"',
+    ):
+        assert path in catalog
+
+
+def test_ios_and_swift_lint_run_the_pin_guards_when_bootstrap_workflows_change():
+    ios = workflow(".github/workflows/ios.yml")
+    swift_lint = workflow(".github/workflows/swift-lint.yml")
+    for workflow_text in (ios, swift_lint):
+        assert '".github/scripts/install-xcodegen.sh"' in workflow_text
+        assert '".github/workflows/screenshots.yml"' in workflow_text
+        assert '".github/workflows/signed-beta.yml"' in workflow_text
+        assert "scripts/tests/test_dependency_workflow_locks.py" in workflow_text

@@ -5,7 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 engine=$(command -v podman || command -v docker)
 name=catalog-test-$$
-"$engine" run -d --rm --name "$name" -e POSTGRES_PASSWORD=x docker.io/library/postgres:17-alpine >/dev/null
+# Pin the Docker Hub multi-platform index (verified with skopeo inspect --raw on 2026-10-11) while retaining
+# the SQL runner's PostgreSQL 17 Alpine base.
+image=docker.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+"$engine" run -d --rm --name "$name" -e POSTGRES_PASSWORD=x "$image" >/dev/null
 trap '"$engine" rm -f "$name" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 40); do "$engine" exec "$name" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 2; done
 sleep 3
