@@ -33,61 +33,17 @@
         "verification_threshold": "5"
       },
       "missing_facts": false,
-      "alternatives": []
-    },
-    {
-      "product_id": "00000000-0000-4000-8000-000000000003",
-      "representative_revision": "1",
-      "product": {
-        "name": "Synthetic oats",
-        "brand": null,
-        "barcode": null,
-        "kind": "food",
-        "basis": "per_100_g",
-        "serving": null,
-        "facts": []
-      },
-      "source": {
-        "product_id": "00000000-0000-4000-8000-000000000003",
-        "representative_revision": "1",
-        "attribution": "Community contribution"
-      },
-      "verification": {
-        "status": "shared_unverified",
-        "source": null
-      },
-      "support": {
-        "distinct_accounts": "1",
-        "verification_threshold": "5"
-      },
-      "missing_facts": true,
       "alternatives": [
         {
-          "representative_revision": "1",
+          "representative_revision": "2",
           "product": {
-            "content_type": "legacy_label",
-            "name": "Synthetic original label",
+            "name": "Synthetic oats",
             "brand": null,
             "barcode": "0012345678905",
-            "kind": null,
-            "basis": "per_serving",
+            "kind": "food",
+            "basis": "per_100_g",
             "serving": null,
-            "raw_serving_text": "one original scoop",
-            "nutrients": {
-              "protein": 4,
-              "fat": 2,
-              "salt": 1
-            },
-            "legacy_source": "community"
-          },
-          "source": {
-            "product_id": "00000000-0000-4000-8000-000000000003",
-            "representative_revision": "1",
-            "attribution": "Legacy label catalog"
-          },
-          "verification": {
-            "status": "shared_unverified",
-            "source": null
+            "facts": []
           },
           "support": {
             "distinct_accounts": "1",
