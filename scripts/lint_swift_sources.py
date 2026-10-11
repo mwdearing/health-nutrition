@@ -180,8 +180,6 @@ BINARY_FLOAT_LITERAL = re.compile(
     r"(?![0-9A-Za-z_])"
 )
 
-ALLOW_COMMENT = re.compile(r"//\s*lint-allow:\s*(?P<rules>[A-Za-z0-9_,\s-]+?)\s*$")
-
 IMAGE_CALL = re.compile(r"\bImage\s*\(")
 
 RULES = (
@@ -212,27 +210,6 @@ MESSAGES = {
 def _blank(text: str) -> str:
     """Replace every character with a space, keeping newlines and length."""
     return "".join("\n" if ch == "\n" else " " for ch in text)
-
-
-def _string_start(source: str, i: int) -> tuple[int, bool] | None:
-    """Return ``(hashes, multiline)`` if a string literal starts at ``i``.
-
-    Swift extended literals use hash delimiters (``#"raw"#``, ``##'''raw'''##``)
-    and may contain unescaped quotes, so the number of opening hashes decides
-    what actually closes the literal. ``None`` means no literal starts here.
-    """
-    ch = source[i]
-    hashes = 0
-    while i + hashes < len(source) and source[i + hashes] == "#":
-        hashes += 1
-    if ch == "#" and hashes == 0:
-        return None
-    j = i + hashes
-    if not source.startswith('"', j):
-        return None
-    if ch != "#" and hashes:
-        return None
-    return hashes, source.startswith('"""', j)
 
 
 def _mask_block_comment(source: str, i: int, out: list[str], keep_comments: bool = False) -> int:
@@ -417,14 +394,12 @@ def _mask_code(
             prev = " "
             word = ""
             continue
-        if ch == '"' or ch == "#":
-            start = _string_start(source, i)
-            if start is not None:
-                hashes, multiline = start
-                i = _mask_string(source, i, hashes, multiline, out, keep_comments)
-                prev = '"'
-                word = ""
-                continue
+        if ch == '"':
+            multiline = source.startswith('"""', i)
+            i = _mask_string(source, i, 0, multiline, out, keep_comments)
+            prev = '"'
+            word = ""
+            continue
         if ch == "/" and _regex_may_start(prev, word):
             end = _mask_regex(source, i, 0, out)
             if end is not None:
@@ -433,16 +408,30 @@ def _mask_code(
                 word = ""
                 continue
         if ch == "#":
-            hashes = 0
-            while i + hashes < n and source[i + hashes] == "#":
-                hashes += 1
-            if hashes and i + hashes < n and source[i + hashes] == "/":
+            hash_end = i + 1
+            while hash_end < n and source[hash_end] == "#":
+                hash_end += 1
+            hashes = hash_end - i
+            if hash_end < n and source[hash_end] == '"':
+                multiline = source.startswith('"""', hash_end)
+                i = _mask_string(source, i, hashes, multiline, out, keep_comments)
+                prev = '"'
+                word = ""
+                continue
+            if hash_end < n and source[hash_end] == "/":
                 end = _mask_regex(source, i, hashes, out)
                 if end is not None:
                     i = end
                     prev = '"'
                     word = ""
                     continue
+            # A maximal run that does not open a raw literal is consumed once.
+            # Advancing one hash at a time would rescan each remaining suffix.
+            out.append(source[i:hash_end])
+            i = hash_end
+            prev = "#"
+            word = ""
+            continue
         if ch == "\n":
             prev = "\n"
             word = ""
@@ -1312,11 +1301,38 @@ def fixed_font_sizes(masked: str) -> list[int]:
 
 def allowed_rules(line: str) -> set[str]:
     """Rule names allowed on this line by a trailing ``lint-allow`` comment."""
-    match = ALLOW_COMMENT.search(line.rstrip())
-    if not match:
-        return set()
-    names = {part.strip() for part in re.split(r"[,\s]+", match.group("rules")) if part.strip()}
-    return {name.replace("_", "-") for name in names}
+    # Parse the directive in bounded passes. The old overlapping whitespace
+    # quantifiers could revisit a long run once per character on a malformed
+    # trailing comment.
+    marker = "lint-allow:"
+    search_from = 0
+    while True:
+        marker_start = line.find(marker, search_from)
+        if marker_start < 0:
+            return set()
+        slash = line.rfind("//", 0, marker_start)
+        if slash >= 0 and not line[slash + 2:marker_start].strip():
+            rules_start = marker_start + len(marker)
+            while rules_start < len(line) and line[rules_start].isspace():
+                rules_start += 1
+            rules_end = rules_start
+            while rules_end < len(line) and (
+                line[rules_end].isspace()
+                or (
+                    line[rules_end].isascii()
+                    and (line[rules_end].isalnum() or line[rules_end] in "_,-")
+                )
+            ):
+                rules_end += 1
+            if line[rules_end:].strip():
+                return set()
+            names = {
+                part.strip()
+                for part in re.split(r"[,\s]+", line[rules_start:rules_end])
+                if part.strip()
+            }
+            return {name.replace("_", "-") for name in names}
+        search_from = marker_start + len(marker)
 
 
 def applies(rel: str, prefixes: tuple[str, ...]) -> bool:

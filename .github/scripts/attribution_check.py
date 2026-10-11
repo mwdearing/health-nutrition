@@ -41,7 +41,6 @@ AGENT_EMAIL = re.compile(
     re.IGNORECASE,
 )
 DEPENDABOT_BRANCH = re.compile(r"^dependabot/[a-z0-9][a-z0-9._/-]*$")
-IDENTITY_PARTS = re.compile(r"^\s*(?P<name>.*?)\s*(<(?P<email>[^>]*)>)?\s*$")
 BRANCH_ALLOWED = re.compile(
     r"^(feature|bugfix|hotfix|docs|chore|refactor|ci|test)/[a-z0-9][a-z0-9._-]*$"
 )
@@ -58,12 +57,22 @@ def git(*args: str) -> str:
 
 
 def is_agent_identity(text: str) -> bool:
-    match = IDENTITY_PARTS.match(text)
-    if not match:
-        return False
-    name = match.group("name") or ""
-    email = match.group("email") or ""
-    return bool(AGENT_NAME.match(name.strip()) or AGENT_EMAIL.search(email.strip()))
+    # Parse the optional angle-bracket mailbox with bounded string operations.
+    # The old overlapping lazy/whitespace regex could backtrack quadratically on
+    # malformed identities containing a long whitespace run.
+    identity = text.strip()
+    email = ""
+    if "<" in identity or ">" in identity:
+        opening = identity.find("<")
+        if opening < 0 or not identity.endswith(">") or ">" in identity[:opening]:
+            return False
+        name = identity[:opening].strip()
+        email = identity[opening + 1:-1].strip()
+        if "<" in email or ">" in email:
+            return False
+    else:
+        name = identity
+    return bool(AGENT_NAME.match(name) or AGENT_EMAIL.search(email))
 
 
 def branch_problem(head_ref: str, author: str = "") -> str | None:

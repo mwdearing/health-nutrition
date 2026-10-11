@@ -45,3 +45,12 @@ def test_release_build_uses_the_signed_upload_runner_image() -> None:
     (signed,) = _jobs("signed-beta.yml").values()
     assert release["runs-on"] == signed["runs-on"]
     assert not str(release["runs-on"]).endswith("-latest")
+
+
+def test_scanner_and_ios_jobs_have_bounded_deadlines() -> None:
+    swift = _jobs("swift-lint.yml")["lint"]
+    ios = _jobs("ios.yml")
+    assert swift["timeout-minutes"] == 10
+    assert ios["privacy-manifest"]["timeout-minutes"] == 10
+    for name in ("swift-test", "app-build", "release-build", "app-test", "unsigned-ipa"):
+        assert ios[name]["timeout-minutes"] == 30

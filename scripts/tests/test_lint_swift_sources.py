@@ -1600,5 +1600,35 @@ def test_missing_root_is_reported_as_an_error(tmp_path: Path) -> None:
     assert result.returncode == 2
 
 
+def test_long_hash_run_is_scanned_linearly_under_an_outer_deadline(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/HashRun.swift": ("#" * 80_000) + "\nlet value = 1\n",
+    })
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(root)],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_hostile_lint_allow_whitespace_is_bounded_and_does_not_allow(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/HostileAllow.swift": (
+            "// lint-allow:" + (" " * 80_000) + "!!!\n"
+            "let tint = Color(red: 1, green: 0, blue: 0)\n"
+        ),
+    })
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(root)],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 1
+    assert findings(result) == [("HostileAllow.swift", 2, "color-literal")]
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__]))

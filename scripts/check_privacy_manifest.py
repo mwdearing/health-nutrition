@@ -230,15 +230,20 @@ def mask(source: str) -> str:
             i = end
             continue
         if ch == "#":
-            hashes = len(re.match(r"#+", source[i:]).group(0))  # type: ignore[union-attr]
-            if source[i + hashes : i + hashes + 1] == '"':
+            hash_end = i + 1
+            while hash_end < n and source[hash_end] == "#":
+                hash_end += 1
+            hashes = hash_end - i
+            if hash_end < n and source[hash_end] == '"':
                 end, body = scan_string(source, i + hashes, hashes)
                 out.append(blank(source[i:i + hashes]))
                 out.append(body)
                 i = end
                 continue
-            out.append(ch)
-            i += 1
+            # Consume a nonliteral hash run in one pass instead of rescanning
+            # every remaining suffix to rediscover its length.
+            out.append(source[i:hash_end])
+            i = hash_end
             continue
         if ch == '"':
             end, body = scan_string(source, i, 0)
