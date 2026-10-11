@@ -761,14 +761,13 @@ public enum JournalExporter {
 
         guard let digits else { return finiteDate(seconds) }
 
-        // Keep the conversion bounded even for hostile fractions. Leading and trailing zeroes do not
-        // consume the significant-digit allowance, and arbitrary shorter fractions remain accepted.
-        let significantStart = digits.firstIndex { $0 != "0" } ?? digits.endIndex
-        let significantEnd = digits.lastIndex { $0 != "0" }.map { digits.index(after: $0) } ?? significantStart
-        guard digits.distance(from: significantStart, to: significantEnd) <= 308 else { return nil }
+        // All digits were validated above. Once the binary place underflows to zero, later
+        // fractional digits cannot affect the representable TimeInterval, so very long valid
+        // fractions remain compatible without an unbounded numeric-conversion loop.
         var scaled: TimeInterval = 0
         var place: TimeInterval = 0.1 // Date fractional seconds use TimeInterval. // lint-allow: binary-float
         for character in digits {
+            if place == 0 { break }
             let digit = TimeInterval(character.wholeNumberValue!)
             scaled += digit * place
             place /= 10

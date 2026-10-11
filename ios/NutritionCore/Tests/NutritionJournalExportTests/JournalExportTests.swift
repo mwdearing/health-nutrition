@@ -503,12 +503,18 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertTrue(negativeText.contains("1969-12-31T23:59:58.750000Z"), negativeText)
     }
 
-    func testDateDecoderRejectsFractionsThatOverflowNumericConversion() throws {
-        for fractionLength in [309, 310] {
+    func testDateDecoderAcceptsLongValidFractionsButRejectsMalformedDigits() throws {
+        for fractionLength in [309, 310, 10_000] {
             let date = "2024-01-15T09:15:00." + String(repeating: "9", count: fractionLength) + "Z"
             let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
-            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), "fraction length \(fractionLength)")
+            let decoded = try JournalExporter.decode(Data(json.utf8))
+            XCTAssertTrue(decoded.exportedAt.timeIntervalSince1970.isFinite, "fraction length \(fractionLength)")
+            XCTAssertEqual(decoded.exportedAt.timeIntervalSince1970, 1_705_310_101, accuracy: 0.000_001)
         }
+
+        let malformedDate = "2024-01-15T09:15:00." + String(repeating: "1", count: 309) + "xZ"
+        let malformedJSON = #"{"schema_version":1,"exported_at":"\#(malformedDate)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+        XCTAssertThrowsError(try JournalExporter.decode(Data(malformedJSON.utf8)))
     }
 
     func testDateDecoderAllowsLongFractionsWhoseExcessDigitsAreOnlyTrailingZeros() throws {
