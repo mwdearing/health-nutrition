@@ -39,6 +39,7 @@ final class IntakeContextSnapshotBasisTests: XCTestCase {
             "Per g",
             "Per g; yield 0 g",
             "Per kg; yield -0.8 kg",
+            "Per kg; yield −0.8 kg",
             "Per serving; yield -4 servings",
             "Per kcal; yield 2000 kcal",
             "per glass",
@@ -70,9 +71,8 @@ final class IntakeContextSnapshotBasisTests: XCTestCase {
             IntakeContextSnapshotBasis.scalingFactor(
                 labelBasis: "Per gummy; yield 25 gummy", logged: [logged("2", .gummy)]),
             dec("2"))
-        XCTAssertNil(
+        XCTAssertEqual(
             IntakeContextSnapshotBasis.scalingFactor(
-                labelBasis: "per serving (30 g)", logged: [logged("60", .g)]),
-            "a household serving is still answered by the totals builder, not the encoder")
+                labelBasis: "per serving (30 g)", logged: [logged("60", .g)]), 2)
     }
 }
