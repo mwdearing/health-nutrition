@@ -1,4 +1,5 @@
 import SwiftUI
+import NutritionJournal
 import UniformTypeIdentifiers
 
 public struct AppSettingsView: View {
