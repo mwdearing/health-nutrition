@@ -523,6 +523,48 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
+    func testDateDecoderRejectsInvalidCanonicalGregorianDatesAndTimes() {
+        let dates = [
+            "1500-02-29T00:00:00Z",
+            "1900-02-29T00:00:00Z",
+            "2024-04-31T00:00:00Z",
+            "2024-13-01T00:00:00Z",
+            "2024-01-01T24:00:00Z",
+            "2024-01-01T23:60:00Z",
+            "2024-01-01T23:59:60Z",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), date)
+        }
+    }
+
+    func testDateDecoderRejectsOffsetsThatMoveUTCOutsideFourDigitYearRange() {
+        let dates = [
+            "0001-01-01T00:00:00+01:00",
+            "9999-12-31T23:59:59-01:00",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), date)
+        }
+    }
+
+    func testDateDecoderKeepsValidGregorianCutoverAndLeapDates() throws {
+        let dates = [
+            "1582-10-15T00:00:00Z",
+            "1600-02-29T00:00:00Z",
+            "2000-02-29T00:00:00Z",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            let decoded = try JournalExporter.decode(Data(json.utf8))
+            XCTAssertTrue(decoded.exportedAt.timeIntervalSince1970.isFinite, date)
+            let encoded = try XCTUnwrap(String(data: JournalExporter.encode(decoded), encoding: .utf8))
+            XCTAssertTrue(encoded.contains(date.replacingOccurrences(of: "Z", with: ".000000Z")), encoded)
+        }
+    }
+
     func testDateDecoderKeepsSupportedFractionsOffsetsAndLongLeadingZeroesFinite() throws {
         let cases: [(String, TimeInterval)] = [
             ("2024-01-15T09:15:00.250Z", 1_705_310_100.25),

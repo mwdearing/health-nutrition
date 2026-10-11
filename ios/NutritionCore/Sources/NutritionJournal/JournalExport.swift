@@ -667,20 +667,38 @@ public enum JournalExporter {
         fromExportedText text: String, using formatter: DateFormatter, fallback: ISO8601DateFormatter
     ) -> Date? {
         guard hasSupportedFourDigitYearPrefix(text) else { return nil }
-        guard let dot = text.firstIndex(of: ".") else {
-            return finiteDate(prolepticUTCDate(fromWholeSecondText: text)
-                ?? formatter.date(from: text) ?? fallback.date(from: text))
+        let dot = text.firstIndex(of: ".")
+        let digits: Substring?
+        let secondsText: String
+        if let dot {
+            let zoneStart = text[text.index(after: dot)...].firstIndex {
+                $0 == "Z" || $0 == "z" || $0 == "+" || $0 == "-"
+            }
+            let fractionEnd = zoneStart ?? text.endIndex
+            let fraction = text[text.index(after: dot)..<fractionEnd]
+            guard !fraction.isEmpty, fraction.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
+            digits = fraction
+            let zone = zoneStart.map { String(text[$0...]) } ?? ""
+            secondsText = String(text[..<dot]) + zone
+        } else {
+            digits = nil
+            secondsText = text
         }
-        let zoneStart = text[text.index(after: dot)...].firstIndex {
-            $0 == "Z" || $0 == "z" || $0 == "+" || $0 == "-"
+
+        let seconds: Date
+        if hasCanonicalISOWholeSecondShape(secondsText) {
+            // A canonical four-digit ISO timestamp that fails strict Gregorian parsing is invalid. Do not
+            // let DateFormatter normalize it (for example, February 29 in a non-leap Gregorian year).
+            guard let parsed = prolepticUTCDate(fromWholeSecondText: secondsText) else { return nil }
+            seconds = parsed
+        } else {
+            guard let parsed = formatter.date(from: secondsText) ?? fallback.date(from: secondsText) else {
+                return nil
+            }
+            seconds = parsed
         }
-        let fractionEnd = zoneStart ?? text.endIndex
-        let digits = text[text.index(after: dot)..<fractionEnd]
-        guard !digits.isEmpty, digits.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
-        let zone = zoneStart.map { String(text[$0...]) } ?? ""
-        let secondsText = String(text[..<dot]) + zone
-        guard let seconds = prolepticUTCDate(fromWholeSecondText: secondsText)
-                ?? formatter.date(from: secondsText) ?? fallback.date(from: secondsText) else { return nil }
+
+        guard let digits else { return finiteDate(seconds) }
 
         // Keep the conversion bounded even for hostile fractions. Leading zeroes do not consume the
         // significant-digit allowance, and arbitrary shorter fractions remain accepted.
@@ -697,8 +715,28 @@ public enum JournalExporter {
     }
 
     private static func finiteDate(_ date: Date?) -> Date? {
-        guard let date, date.timeIntervalSince1970.isFinite else { return nil }
+        guard let date else { return nil }
+        let interval = date.timeIntervalSince1970
+        guard interval.isFinite else { return nil }
+        let whole = interval.rounded(.down)
+        let microseconds = ((interval - whole) * 1_000_000).rounded()
+        let exportedSecond = microseconds >= 1_000_000 ? whole + 1 : whole
+        guard exportedSecond >= earliestExportableUTCSecond,
+              exportedSecond <= latestExportableUTCSecond else { return nil }
         return date
+    }
+
+    private static func hasCanonicalISOWholeSecondShape(_ text: String) -> Bool {
+        let bytes = Array(text.utf8)
+        guard (bytes.count == 20 || bytes.count == 25),
+              bytes[4] == 45, bytes[7] == 45, bytes[10] == 84,
+              bytes[13] == 58, bytes[16] == 58,
+              [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
+                .allSatisfy({ (48...57).contains(bytes[$0]) }) else { return false }
+        if bytes.count == 20 { return bytes[19] == 90 || bytes[19] == 122 }
+        return (bytes[19] == 43 || bytes[19] == 45) && bytes[22] == 58
+            && (48...57).contains(bytes[20]) && (48...57).contains(bytes[21])
+            && (48...57).contains(bytes[23]) && (48...57).contains(bytes[24])
     }
 
     private static func hasSupportedFourDigitYearPrefix(_ text: String) -> Bool {
@@ -760,9 +798,7 @@ public enum JournalExporter {
     private static func fourDigitUTCSecondText(_ seconds: TimeInterval) throws -> String {
         // The export contract writes UTC calendar years 0001 through 9999. Checking the seconds before the
         // integer conversion avoids traps for huge but finite Date intervals.
-        let minimum = -62_135_596_800.0 // 0001-01-01T00:00:00Z
-        let maximum = 253_402_300_799.0 // 9999-12-31T23:59:59Z
-        guard seconds.isFinite, seconds >= minimum, seconds <= maximum,
+        guard seconds.isFinite, seconds >= earliestExportableUTCSecond, seconds <= latestExportableUTCSecond,
               seconds.rounded(.towardZero) == seconds else {
             throw JournalExportError.unrepresentableDate
         }
@@ -793,6 +829,9 @@ public enum JournalExporter {
         let second = secondOfDay % 60
         return String(format: "%04d-%02d-%02dT%02d:%02d:%02d", year, month, day, hour, minute, second)
     }
+
+    private static let earliestExportableUTCSecond = -62_135_596_800.0 // 0001-01-01T00:00:00Z
+    private static let latestExportableUTCSecond = 253_402_300_799.0 // 9999-12-31T23:59:59Z
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.
     public static func fileName(exportedAt: Date) -> String {
