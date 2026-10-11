@@ -542,18 +542,28 @@ public enum NutritionFactsParser {
            close > open
         {
             let inner = String(text[text.index(after: open)..<close])
-            if let scan = scanAmount(in: inner, allowsCountedUnits: true), let unit = scan.unit,
-               !scan.isBound
-            {
+            if let scan = scanAmount(in: inner, allowsCountedUnits: true), let unit = scan.unit {
+                if scan.isBound { return uncertainServingMeasure() }
                 return measure(from: scan, unit: unit)
             }
         }
-        if let scan = scanAmount(in: text, allowsCountedUnits: true), let unit = scan.unit,
-           !scan.isBound
-        {
+        if let scan = scanAmount(in: text, allowsCountedUnits: true), let unit = scan.unit {
+            if scan.isBound { return uncertainServingMeasure() }
             return measure(from: scan, unit: unit)
         }
+        if hasAmbiguousServingRange(text) { return uncertainServingMeasure() }
         return (nil, nil)
+    }
+
+    /// A range does not identify a single serving measure, even when one of its endpoints and the unit
+    /// are legible. Keep the printed text, leave quantity unknown, and require the user to confirm it.
+    private static func hasAmbiguousServingRange(_ text: String) -> Bool {
+        guard let pattern = try? Regex("(?:[<>≤≥]|\\d\\s*[-–]\\s*\\d)\\s*[[:alpha:]µμ]+") else { return false }
+        return text.firstMatch(of: pattern) != nil
+    }
+
+    private static func uncertainServingMeasure() -> (quantity: Quantity?, review: ParsedValueReview?) {
+        (nil, ParsedValueReview(reasons: [.uncertainServingSize]))
     }
 
     /// The measure one scan read, with the reasons it needed a correction, or none when it was read
@@ -594,13 +604,21 @@ public enum NutritionFactsParser {
             // The Calories row prints no unit, so on a flattened line its amount is scanned only up to
             // the compound row behind it: "Calories 30 Creatine 3g" would otherwise lose its 30 to the
             // compound's name, which the unit scan reads as one long unsupported unit.
-            if row.usualUnit == .kcal, let boundary = firstRow(in: remainder),
-               boundary.nameStart > remainder.startIndex
-            {
-                let head = String(remainder[..<boundary.nameStart])
+            let namedBoundary = firstRow(in: remainder)?.nameStart
+            let compoundBoundary = firstAdditionalRow(in: remainder)?.nameStart
+            let calorieBoundary: String.Index? = {
+                switch (namedBoundary, compoundBoundary) {
+                case let (named?, compound?): return min(named, compound)
+                case let (named?, nil): return named
+                case let (nil, compound?): return compound
+                case (nil, nil): return nil
+                }
+            }()
+            if row.usualUnit == .kcal, let calorieBoundary, calorieBoundary > remainder.startIndex {
+                let head = String(remainder[..<calorieBoundary])
                 if let scan = scanAmount(in: head), statesAmount(scan, for: row) {
                     record(scan, for: row, amounts: &amounts, reviews: &reviews)
-                    cursor = scan.remaining + String(remainder[boundary.nameStart...])
+                    cursor = scan.remaining + String(remainder[calorieBoundary...])
                     continue
                 }
             }

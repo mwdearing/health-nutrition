@@ -54,6 +54,8 @@ public struct ParsedValueReview: Sendable, Hashable {
         case unexpectedUnit
         /// A microgram symbol OCR spelled as `µg`, `μg` or `ug` was normalized to `mcg`.
         case normalizedMicrogramSymbol
+        /// The serving text states a bound or an ambiguous measure, so it cannot safely scale nutrients.
+        case uncertainServingSize
     }
 
     public let reasons: Set<Reason>

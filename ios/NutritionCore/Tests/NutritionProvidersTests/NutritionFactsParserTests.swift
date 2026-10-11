@@ -393,8 +393,11 @@ final class NutritionFactsParserTests: XCTestCase {
     }
 
     func testBoundServingMeasureDoesNotBecomeAQuantity() {
-        let panel = parse(["Serving size 1-2 g"])
-        XCTAssertNil(panel.servingSize?.quantity, "a range cannot supply a single scaling basis")
+        for line in ["Serving size 1-2 g", "Serving size <1 g"] {
+            let panel = parse([line])
+            XCTAssertNil(panel.servingSize?.quantity, "an uncertain bound cannot supply a single scaling basis")
+            XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize])
+        }
     }
 
     /// A counted unit is a serving measure, never a nutrient row's. A panel states no nutrient per
