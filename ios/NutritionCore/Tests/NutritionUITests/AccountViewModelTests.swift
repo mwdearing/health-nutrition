@@ -104,6 +104,14 @@ enum AccountTestSupport {
         userID: "00000000-0000-0000-0000-000000000001",
         email: "person@example.com"
     )
+
+    static let otherSession = CommunitySession(
+        accessToken: "other-access-token",
+        refreshToken: "other-refresh-token",
+        expiresAt: Date(timeIntervalSince1970: 1_900_000_000),
+        userID: "00000000-0000-0000-0000-000000000002",
+        email: "other@example.com"
+    )
 }
 
 /// An error whose text carries a token, a code and an address, to prove that no message repeats it.
@@ -191,7 +199,7 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertTrue(model.needsDisclosure)
         model.acknowledgeDisclosure()
         XCTAssertFalse(model.needsDisclosure)
-        XCTAssertTrue(preferences.hasSeenCommunityDisclosure)
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
 
         await model.signOut()
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
@@ -218,7 +226,7 @@ final class AccountViewModelTests: XCTestCase {
 
     func testDisclosureIsNotShownWhenItWasSeenBefore() async throws {
         let preferences = InMemoryDisplayPreferences()
-        preferences.setHasSeenCommunityDisclosure(true)
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
         let (model, _, _) = makeModel(preferences: preferences)
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
         XCTAssertFalse(model.needsDisclosure)
@@ -273,10 +281,133 @@ final class AccountViewModelTests: XCTestCase {
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
         model.acknowledgeDisclosure()
         XCTAssertTrue(model.sharingAllowed)
-        preferences.setHasSeenCommunityDisclosure(false)
+        preferences.resetToDefaults()
         model.refreshAfterErase()
         XCTAssertTrue(model.needsDisclosure)
         XCTAssertFalse(model.sharingAllowed)
+    }
+
+    /// A second person signing in on the same phone has not read the disclosure, even though the first person has.
+    func testASecondAccountStillNeedsTheDisclosureAfterTheFirstAcknowledgedIt() async throws {
+        let (model, service, _) = makeModel()
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+        XCTAssertTrue(model.sharingAllowed)
+        await model.signOut()
+
+        service.appleResult = .success(AccountTestSupport.otherSession)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertEqual(model.email, "other@example.com")
+        XCTAssertTrue(model.needsDisclosure)
+        XCTAssertFalse(model.sharingAllowed)
+
+        model.acknowledgeDisclosure()
+        XCTAssertFalse(model.needsDisclosure)
+        XCTAssertTrue(model.sharingAllowed)
+    }
+
+    /// The first person signing in again on the same phone does not see the disclosure a second time.
+    func testAFirstAccountReturningDoesNotNeedTheDisclosureAgain() async throws {
+        let (model, service, preferences) = makeModel()
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+        await model.signOut()
+        service.appleResult = .success(AccountTestSupport.otherSession)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+        await model.signOut()
+
+        service.appleResult = .success(AccountTestSupport.session)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertFalse(model.needsDisclosure)
+        XCTAssertTrue(model.sharingAllowed)
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.otherSession.userID))
+    }
+
+    /// Signing out keeps every account's acknowledgement, so the person who signs in again is not asked again.
+    func testSignOutKeepsTheAcknowledgementOfTheAccountThatSignedOut() async throws {
+        let (model, _, preferences) = makeModel()
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+        await model.signOut()
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
+    }
+
+    /// Deleting an account removes only that account's entry; the other account keeps its acknowledgement.
+    func testDeleteAccountRemovesOnlyTheDeletedAccountsAcknowledgement() async throws {
+        let (model, service, preferences) = makeModel()
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+        await model.signOut()
+        service.appleResult = .success(AccountTestSupport.otherSession)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+
+        await model.deleteAccount()
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.otherSession.userID))
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
+
+        service.appleResult = .success(AccountTestSupport.session)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertFalse(model.needsDisclosure)
+        XCTAssertTrue(model.sharingAllowed)
+    }
+
+    /// A failed delete keeps the account and its acknowledgement.
+    func testAFailedDeleteKeepsTheAcknowledgement() async throws {
+        let (model, service, preferences) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        model.acknowledgeDisclosure()
+        service.deleteError = CommunityError.network
+        await model.deleteAccount()
+        XCTAssertEqual(model.phase, .signedIn)
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
+    }
+
+    /// Erase all data clears every account's acknowledgement, so the signed-in person is asked again.
+    func testEraseClearsEveryAccountsAcknowledgement() async throws {
+        let (model, service, preferences) = makeModel()
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+        await model.signOut()
+        service.appleResult = .success(AccountTestSupport.otherSession)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        model.acknowledgeDisclosure()
+
+        preferences.resetToDefaults()
+        model.refreshAfterErase()
+        XCTAssertTrue(model.needsDisclosure)
+        XCTAssertFalse(model.sharingAllowed)
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.otherSession.userID))
+    }
+
+    /// The restore path uses the ID of the restored session: a stored sign-in for an account that already
+    /// acknowledged the disclosure is not asked again, and the other account is.
+    func testRestoreUsesTheRestoredSessionsAccount() async throws {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
+
+        let (other, _, _) = makeModel(session: AccountTestSupport.otherSession, preferences: preferences)
+        await other.load()
+        XCTAssertEqual(other.phase, .signedIn)
+        XCTAssertTrue(other.needsDisclosure)
+        XCTAssertFalse(other.sharingAllowed)
+
+        let (first, _, _) = makeModel(session: AccountTestSupport.session, preferences: preferences)
+        await first.load()
+        XCTAssertFalse(first.needsDisclosure)
+        XCTAssertTrue(first.sharingAllowed)
+    }
+
+    /// Without a signed-in account there is no one to acknowledge for, so nothing is stored.
+    func testAcknowledgingWhileSignedOutStoresNothing() async throws {
+        let (model, _, preferences) = makeModel()
+        model.acknowledgeDisclosure()
+        XCTAssertFalse(model.sharingAllowed)
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
     }
 
     func testNameIsSavedTrimmed() async throws {
@@ -363,7 +494,7 @@ final class AccountViewModelTests: XCTestCase {
 
     func testSharingIsNotAllowedWhileTheProfileIsNotRead() async throws {
         let preferences = InMemoryDisplayPreferences()
-        preferences.setHasSeenCommunityDisclosure(true)
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
         let (model, service, _) = makeModel(session: AccountTestSupport.session, preferences: preferences)
         service.profileError = CommunityError.network
         await model.load()
@@ -416,14 +547,14 @@ final class AccountViewModelTests: XCTestCase {
 
         model.acknowledgeDisclosure()
         XCTAssertTrue(model.needsDisclosure)
-        XCTAssertFalse(preferences.hasSeenCommunityDisclosure)
+        XCTAssertFalse(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
 
         gate.open()
         await loading.value
         XCTAssertFalse(model.isBusy)
         model.acknowledgeDisclosure()
         XCTAssertFalse(model.needsDisclosure)
-        XCTAssertTrue(preferences.hasSeenCommunityDisclosure)
+        XCTAssertTrue(preferences.hasSeenCommunityDisclosure(for: AccountTestSupport.session.userID))
     }
 
     func testUsingADifferentAddressReturnsToTheAddressStep() async throws {
