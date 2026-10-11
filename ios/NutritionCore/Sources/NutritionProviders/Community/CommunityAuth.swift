@@ -70,21 +70,33 @@ public actor CommunityAuth {
     }
 
     /// The stored session, renewed first when it is about to expire. A rejected renewal ends the session.
-    public func validSession() async throws -> CommunitySession {
-        guard let session = store.load() else {
-            throw CommunityError.signedOut
-        }
-        guard session.expiresAt.timeIntervalSince(now()) < Self.refreshMargin else {
-            return session
-        }
+    public func validSession(expectedOwnerID: UUID? = nil) async throws -> CommunitySession {
+        try Task.checkCancellation()
+        guard let session = store.load() else { throw CommunityError.signedOut }
+        try requireOwner(session, expected: expectedOwnerID)
+        guard session.expiresAt.timeIntervalSince(now()) < Self.refreshMargin else { return session }
+        let renewed: CommunitySession
         if let inFlight = refreshing {
-            return try await inFlight.value
+            renewed = try await inFlight.value
+        } else {
+            let started = generation
+            let task = Task { try await self.refresh(session.refreshToken, startedAt: started, owner: session.userID) }
+            refreshing = task
+            defer { refreshing = nil }
+            renewed = try await task.value
         }
-        let started = generation
-        let task = Task { try await self.refresh(session.refreshToken, startedAt: started) }
-        refreshing = task
-        defer { refreshing = nil }
-        return try await task.value
+        try Task.checkCancellation()
+        try requireOwner(renewed, expected: expectedOwnerID)
+        // Reentrancy during renewal may have replaced the stored account.
+        if let expectedOwnerID {
+            guard let current = store.load() else { throw CommunityError.signedOut }
+            try requireOwner(current, expected: expectedOwnerID)
+        }
+        return renewed
+    }
+
+    private func requireOwner(_ session: CommunitySession, expected: UUID?) throws {
+        if let expected, UUID(uuidString: session.userID) != expected { throw ProductAPIError.ownerMismatch }
     }
 
     /// Ends the session on the server, best effort, and always forgets it on this device.
@@ -103,7 +115,7 @@ public actor CommunityAuth {
     }
 
     /// POST /auth/v1/token?grant_type=refresh_token. A rejected refresh token ends the session.
-    private func refresh(_ refreshToken: String, startedAt: Int) async throws -> CommunitySession {
+    private func refresh(_ refreshToken: String, startedAt: Int, owner: String) async throws -> CommunitySession {
         let body = try CommunityAPI.encode(RefreshBody(refreshToken: refreshToken))
         let (data, response) = try await api.raw(
             "/auth/v1/token",
@@ -114,7 +126,7 @@ public actor CommunityAuth {
         case 200..<300:
             // The session changed while the request was out (signed out, or signed in again): drop the result.
             guard startedAt == generation else { throw CommunityError.signedOut }
-            return try accept(data, response, replacing: false)
+            return try accept(data, response, replacing: false, expectedUserID: owner)
         case 400, 401, 403:
             if startedAt == generation { store.clear() }
             throw CommunityError.signedOut
@@ -123,8 +135,19 @@ public actor CommunityAuth {
         }
     }
 
-    private func accept(_ data: Data, _ response: HTTPURLResponse, replacing: Bool) throws -> CommunitySession {
+    private func accept(_ data: Data, _ response: HTTPURLResponse, replacing: Bool, expectedUserID: String? = nil) throws -> CommunitySession {
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
+        if let expectedUserID {
+            // A refresh may rotate tokens but cannot replace the account. Check before saving.
+            let sameOwner: Bool
+            if let expected = UUID(uuidString: expectedUserID), let actual = UUID(uuidString: reply.user.id) {
+                sameOwner = expected == actual
+            } else {
+                // Existing synthetic/legacy callers can use opaque IDs; retain their exact identity.
+                sameOwner = expectedUserID.utf8.elementsEqual(reply.user.id.utf8)
+            }
+            guard sameOwner else { throw CommunityError.signedOut }
+        }
         if replacing { generation += 1 }
         let session = CommunitySession(
             accessToken: reply.accessToken,

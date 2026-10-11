@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 
 /// The profile row of the signed-in account.
 public struct CommunityProfile: Equatable, Sendable {
@@ -13,7 +14,7 @@ public struct CommunityProfile: Equatable, Sendable {
 }
 
 /// Account and catalog calls for a signed-in person. Every call renews the session first when needed.
-public struct CommunityClient: Sendable {
+public struct CommunityClient: Sendable, CommunityProductServicing {
     public let auth: CommunityAuth
     private let api: CommunityAPI
 
@@ -120,6 +121,55 @@ public struct CommunityClient: Sendable {
         }
     }
 
+    private var productsAPI: CommunityProductsAPI { CommunityProductsAPI(api: api, auth: auth) }
+
+    public func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        let body: Data
+        do { body = try request.canonicalBody() }
+        catch let field as CustomProductFieldError { throw ProductAPIError.invalidRequest(field: field.field) }
+        catch { throw ProductAPIError.invalidRequest(field: nil) }
+        let receipt: ProductDeliveryReceipt = try await productsAPI.call("submit_catalog_product_v2", body: CommunityProductsAPI.wrapped(body), owner: expectedOwnerID)
+        guard receipt.operationID == UUID(uuidString: request.operationID), request.productID == nil || receipt.productID == UUID(uuidString: request.productID!) else { throw ProductAPIError.unavailable }
+        return receipt
+    }
+
+    public func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        let body: Data
+        do { body = try request.canonicalBody() } catch { throw ProductAPIError.invalidRequest(field: nil) }
+        let receipt: ProductDeliveryReceipt = try await productsAPI.call("withdraw_catalog_product_v2", body: CommunityProductsAPI.wrapped(body), owner: expectedOwnerID)
+        guard receipt.operationID == UUID(uuidString: request.operationID), receipt.productID == UUID(uuidString: request.productID) else { throw ProductAPIError.unavailable }
+        return receipt
+    }
+
+    public func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (2...120).contains(query.unicodeScalars.count), !query.unicodeScalars.contains(where: { $0.value == 0 }) else { throw ProductAPIError.invalidRequest(field: "p_query") }
+        if let cursor, cursor.utf8.count > 1024 || cursor.unicodeScalars.contains(where: { $0.value == 0 }) { throw ProductAPIError.invalidRequest(field: "p_cursor") }
+        return try await productsAPI.call("search_catalog_products_v2", body: CommunityProductsAPI.body(["p_query": query, "p_kind": kind?.rawValue as Any? ?? NSNull(), "p_cursor": cursor as Any? ?? NSNull(), "p_limit": 20]))
+    }
+
+    public func product(id: UUID) async throws -> CommunityProduct {
+        let response: ProductDetailResponse = try await productsAPI.call("get_catalog_product_v2", body: CommunityProductsAPI.body(["p_product_id": id.uuidString]))
+        guard let product = response.product else { throw ProductAPIError.notFound }
+        guard product.productID == id else { throw ProductAPIError.unavailable }
+        return product
+    }
+
+    public func capabilities() async throws -> ProductCatalogCapabilities {
+        try await productsAPI.call("catalog_capabilities_v2", body: Data("{}".utf8), capability: true)
+    }
+
+    public func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState {
+        guard version == 2 else { throw ProductAPIError.invalidRequest(field: "p_version") }
+        return try await productsAPI.call("acknowledge_catalog_consent_v2", body: CommunityProductsAPI.body(["p_version": version]), owner: expectedOwnerID)
+    }
+
+    public func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState {
+        let state: ProductContributionState = try await productsAPI.call("get_my_catalog_contribution_v2", body: CommunityProductsAPI.body(["p_product_id": productID.uuidString]), owner: expectedOwnerID)
+        guard state.productID == productID else { throw ProductAPIError.unavailable }
+        return state
+    }
+
     private static func ownRow(_ userID: String, select: String?) -> [URLQueryItem] {
         var items: [URLQueryItem] = []
         if let select {
@@ -192,4 +242,13 @@ private struct LabelRow: Decodable {
     let nutrients: [String: Decimal]
     let supportingDevices: Int
     let verified: Bool
+}
+
+private struct ProductDetailResponse: Decodable {
+    let product: CommunityProduct?
+    enum CodingKeys: String, CodingKey { case product }
+    init(from decoder: Decoder) throws {
+        try ProductWire.keys(decoder, required: ["product"])
+        product = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(CommunityProduct.self, forKey: .product)
+    }
 }

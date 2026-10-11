@@ -34,3 +34,5 @@ Legacy read fixtures: `legacy-public-product-valid.json` and
 `legacy-detail-response-valid.json`, `legacy-search-response-valid.json`, and
 `legacy-receipt-valid.json` validate as their corresponding response definitions.
 Legacy content is deliberately invalid as publish `product` content.
+
+Run `python3 contracts/catalog-api/test_shared_products_v2_schema.py` (requires `jsonschema`) for schema and synthetic fixture conformance. Whole-string decimal, revision, generation, count and barcode grammars reject terminal line separators; UUID format checks require canonical hyphenated spelling. Raw `ingredient:` suffixes still permit line terminators.
