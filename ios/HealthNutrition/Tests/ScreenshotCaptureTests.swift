@@ -29,7 +29,7 @@ final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Send
         throw CommunityError.network
     }
 
-    func signOut() async {}
+    func signOut() async throws {}
 
     func profile() async throws -> CommunityProfile {
         CommunityProfile(displayName: "Ann", shareLabels: true)

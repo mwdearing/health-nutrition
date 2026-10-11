@@ -23,7 +23,7 @@ public struct CommunitySession: Codable, Equatable, Sendable {
 public protocol CommunitySessionStore: Sendable {
     func load() -> CommunitySession?
     func save(_ session: CommunitySession) throws
-    func clear()
+    func clear() throws
 }
 
 /// Keeps the session in memory only. Used by tests and by previews.
@@ -43,7 +43,7 @@ public final class InMemoryCommunitySessionStore: CommunitySessionStore, @unchec
         lock.withLock { self.session = session }
     }
 
-    public func clear() {
+    public func clear() throws {
         lock.withLock { session = nil }
     }
 }
@@ -83,8 +83,15 @@ public struct KeychainCommunitySessionStore: CommunitySessionStore {
         }
     }
 
-    public func clear() {
-        _ = SecItemDelete(baseQuery() as CFDictionary)
+    public func clear() throws {
+        let status = SecItemDelete(baseQuery() as CFDictionary)
+        try Self.validateDeleteStatus(status)
+    }
+
+    static func validateDeleteStatus(_ status: OSStatus) throws {
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw CommunityError.storage
+        }
     }
 
     private func baseQuery() -> [String: Any] {

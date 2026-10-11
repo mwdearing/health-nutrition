@@ -189,8 +189,8 @@ final class CommunityClientTests: XCTestCase {
     func testStatusErrorsAreMapped() async throws {
         let cases: [(status: Int, expected: CommunityError)] = [
             (400, .invalid),
-            (401, .unauthorized),
-            (403, .unauthorized),
+            (401, .signedOut),
+            (403, .permissionDenied),
             (429, .rateLimited),
             (500, .server(500)),
         ]
@@ -199,6 +199,25 @@ final class CommunityClientTests: XCTestCase {
             let community = try client(transport)
             await assertCommunityError(testCase.expected) { try await community.submitLabel(submission()) }
         }
+    }
+
+    func testUnauthorizedReplyClearsOnlyTheMatchingStoredSession() async throws {
+        let transport = FakeCommunityTransport([.response(status: 401, body: "")])
+        let store = InMemoryCommunitySessionStore(testSession())
+        let community = try client(transport, store: store)
+
+        await assertCommunityError(.signedOut) { try await community.profile() }
+        XCTAssertNil(store.load())
+    }
+
+    func testForbiddenReplyIsPermissionDeniedAndRetainsSession() async throws {
+        let transport = FakeCommunityTransport([.response(status: 403, body: "")])
+        let session = testSession()
+        let store = InMemoryCommunitySessionStore(session)
+        let community = try client(transport, store: store)
+
+        await assertCommunityError(.permissionDenied) { try await community.profile() }
+        XCTAssertEqual(store.load(), session)
     }
 
     func testTransportFailureIsNetwork() async throws {

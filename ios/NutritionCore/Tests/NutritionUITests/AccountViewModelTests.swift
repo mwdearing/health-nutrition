@@ -35,6 +35,8 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
     var profileError: Error?
     var updateError: Error?
     var deleteError: Error?
+    var signOutError: Error?
+    var signOutGate: CallGate?
     /// When set, `restore()` waits at this gate before it answers.
     var restoreGate: CallGate?
     /// When set, `profile()` waits at this gate before it answers.
@@ -72,8 +74,10 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
         return try verifyResult.get()
     }
 
-    func signOut() async {
+    func signOut() async throws {
         signOutCount += 1
+        await signOutGate?.pass()
+        if let signOutError { throw signOutError }
     }
 
     func profile() async throws -> CommunityProfile {
@@ -441,6 +445,33 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .signedOut)
         XCTAssertEqual(model.email, "")
         XCTAssertEqual(service.signOutCount, 1)
+    }
+
+    func testSignOutStaysBusyUntilServiceCompletes() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        let gate = CallGate()
+        service.signOutGate = gate
+        let signingOut = Task { await model.signOut() }
+        await waitUntil { gate.entered }
+
+        XCTAssertTrue(model.isBusy)
+        XCTAssertEqual(model.phase, .signedIn)
+        gate.open()
+        await signingOut.value
+        XCTAssertFalse(model.isBusy)
+        XCTAssertEqual(model.phase, .signedOut)
+    }
+
+    func testFailedSignOutShowsSafeMessageAndKeepsAccountVisible() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        service.signOutError = CommunityError.storage
+
+        await model.signOut()
+
+        XCTAssertEqual(model.phase, .signedIn)
+        XCTAssertEqual(model.message, AccountViewModel.storageMessage)
     }
 
     func testDeleteAccountClearsTheSession() async throws {

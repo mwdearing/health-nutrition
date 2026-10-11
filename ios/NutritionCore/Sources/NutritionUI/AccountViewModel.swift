@@ -215,7 +215,7 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signOut() async {
-        await service.signOut()
+        guard await run(Self.genericMessage, { try await self.service.signOut() }) != nil else { return }
         clearSignedInState()
     }
 

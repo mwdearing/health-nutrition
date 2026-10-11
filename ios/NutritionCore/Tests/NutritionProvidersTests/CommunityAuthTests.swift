@@ -121,7 +121,7 @@ final class CommunityAuthTests: XCTestCase {
         let store = InMemoryCommunitySessionStore(testSession())
         let auth = try makeAuth(transport: transport, store: store)
 
-        await auth.signOut()
+        try await auth.signOut()
 
         let request = try XCTUnwrap(transport.requests.first)
         XCTAssertEqual(request.httpMethod, "POST")
@@ -135,7 +135,7 @@ final class CommunityAuthTests: XCTestCase {
         let store = InMemoryCommunitySessionStore(testSession())
         let auth = try makeAuth(transport: transport, store: store)
 
-        await auth.signOut()
+        try await auth.signOut()
 
         XCTAssertNil(store.load())
     }

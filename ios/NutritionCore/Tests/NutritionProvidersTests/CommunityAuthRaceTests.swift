@@ -2,53 +2,153 @@ import Foundation
 import XCTest
 @testable import NutritionProviders
 
-/// A transport that holds a token refresh until the test lets it go, so a sign out can land in between.
-final class GatedRefreshTransport: CommunityTransport, @unchecked Sendable {
-    let entered: AsyncStream<Void>
-    private let enteredContinuation: AsyncStream<Void>.Continuation
-    private let gate: AsyncStream<Void>
-    private let gateContinuation: AsyncStream<Void>.Continuation
+/// A request transport with per-operation gates so lifecycle races are ordered by the test, not timing.
+final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private let enteredContinuation: AsyncStream<String>.Continuation
+    let entered: AsyncStream<String>
+    private var gates: [String: AsyncStream<Void>] = [:]
+    private var gateContinuations: [String: AsyncStream<Void>.Continuation] = [:]
+    private var recorded: [String] = []
 
-    init() {
-        (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
-        (gate, gateContinuation) = AsyncStream<Void>.makeStream()
+    init(gated: Set<String>) {
+        (entered, enteredContinuation) = AsyncStream<String>.makeStream()
+        for kind in gated {
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            gates[kind] = stream
+            gateContinuations[kind] = continuation
+        }
     }
 
-    func release() {
-        gateContinuation.yield(())
+    var operations: [String] { lock.withLock { recorded } }
+
+    func release(_ kind: String) {
+        lock.withLock { gateContinuations[kind] }?.yield(())
     }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let isRefresh = request.url?.absoluteString.contains("grant_type=refresh_token") == true
-        if isRefresh {
-            enteredContinuation.yield(())
+        let kind: String
+        switch request.url?.path {
+        case "/auth/v1/logout": kind = "logout"
+        case "/auth/v1/verify": kind = "verify"
+        case "/rest/v1/profiles": kind = "profile"
+        case "/auth/v1/token":
+            kind = request.url?.query?.contains("refresh_token") == true ? "refresh" : "signin"
+        default: kind = "other"
+        }
+        let gate = lock.withLock {
+            recorded.append(kind)
+            return gates[kind]
+        }
+        if let gate {
+            enteredContinuation.yield(kind)
             for await _ in gate { break }
         }
-        let body = isRefresh ? refreshedBody : "{}"
-        let http = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-        return (Data(body.utf8), http)
+
+        let status: Int
+        let body: String
+        switch kind {
+        case "signin":
+            status = 200
+            body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"22222222-3333-4444-5555-666666666666","email":"new@example.com"}}"#
+        case "refresh": status = 200; body = refreshedBody
+        case "profile": status = 401; body = "{}"
+        default: status = 204; body = ""
+        }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        return (Data(body.utf8), response)
+    }
+
+    func waitFor(_ expected: String) async {
+        for await event in entered {
+            if event == expected { return }
+        }
+        XCTFail("request did not reach its gate")
     }
 }
 
+final class FailingClearStore: CommunitySessionStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var session: CommunitySession?
+
+    init(_ session: CommunitySession?) { self.session = session }
+    func load() -> CommunitySession? { lock.withLock { session } }
+    func save(_ session: CommunitySession) throws { lock.withLock { self.session = session } }
+    func clear() throws { throw CommunityError.storage }
+}
+
 final class CommunityAuthRaceTests: XCTestCase {
-    /// A refresh that finishes after the person signed out must not write the session back.
-    func testSignOutDuringRefreshIsNotUndone() async throws {
-        let store = InMemoryCommunitySessionStore()
-        try store.save(testSession(expiresAt: testNow.addingTimeInterval(10)))
-        let transport = GatedRefreshTransport()
+    func testLogoutClearsBeforeWaitingForServerAndRefreshCannotStart() async throws {
+        let store = InMemoryCommunitySessionStore(testSession())
+        let transport = LifecycleTransport(gated: ["logout"])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let logout = Task { try await auth.signOut() }
+        await transport.waitFor("logout")
+
+        XCTAssertNil(store.load(), "local credentials must be cleared before server logout finishes")
+        await assertCommunityError(.signedOut) { try await auth.validSession() }
+        XCTAssertEqual(transport.operations, ["logout"], "refresh must not run after logout begins")
+
+        transport.release("logout")
+        try await logout.value
+    }
+
+    func testRefreshInFlightThenLogoutCannotRestoreSession() async throws {
+        let store = InMemoryCommunitySessionStore(testSession(expiresAt: testNow.addingTimeInterval(10)))
+        let transport = LifecycleTransport(gated: ["refresh"])
         let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
 
         let refresh = Task { try await auth.validSession() }
-        var inFlight = transport.entered.makeAsyncIterator()
-        _ = await inFlight.next()
-
-        await auth.signOut()
-        transport.release()
-        let result = await refresh.result
-
+        await transport.waitFor("refresh")
+        try await auth.signOut()
         XCTAssertNil(store.load())
-        if case .success = result {
-            XCTFail("the refresh must not hand back a session after sign out")
-        }
+
+        transport.release("refresh")
+        await assertCommunityError(.signedOut) { try await refresh.value }
+        XCTAssertNil(store.load())
+    }
+
+    func testSignInReplyAfterLogoutCannotCreateSession() async throws {
+        let store = InMemoryCommunitySessionStore()
+        let transport = LifecycleTransport(gated: ["signin"])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let signIn = Task { try await auth.signInWithApple(idToken: "test-id", nonce: "test-nonce") }
+        await transport.waitFor("signin")
+        try await auth.signOut()
+        XCTAssertNil(store.load())
+
+        transport.release("signin")
+        await assertCommunityError(.signedOut) { try await signIn.value }
+        XCTAssertNil(store.load())
+    }
+
+    func testOldUnauthorizedReplyCannotClearNewerSignIn() async throws {
+        let oldSession = testSession()
+        let store = InMemoryCommunitySessionStore(oldSession)
+        let transport = LifecycleTransport(gated: ["profile"])
+        let client = CommunityClient(
+            config: try makeConfig(), transport: transport, store: store, now: { testNow }
+        )
+
+        let profile = Task { try await client.profile() }
+        await transport.waitFor("profile")
+        let newSession = try await client.auth.signInWithApple(idToken: "new-id", nonce: "new-nonce")
+        XCTAssertNotEqual(newSession.accessToken, oldSession.accessToken)
+
+        transport.release("profile")
+        await assertCommunityError(.unauthorized) { try await profile.value }
+        XCTAssertEqual(store.load(), newSession, "an old 401 must not clear the newer stored session")
+    }
+
+    func testClearFailureIsPropagatedAndSkipsServerLogout() async throws {
+        let store = FailingClearStore(testSession())
+        let transport = LifecycleTransport(gated: [])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        await assertCommunityError(.storage) { try await auth.signOut() }
+        XCTAssertEqual(store.load(), testSession())
+        XCTAssertTrue(transport.operations.isEmpty, "server logout must wait until local clear succeeds")
     }
 }

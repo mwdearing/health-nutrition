@@ -44,11 +44,11 @@ public struct CommunityClient: Sendable {
     /// The profile of the signed-in account. A missing row (not expected) reads as the defaults.
     public func profile() async throws -> CommunityProfile {
         let session = try await auth.validSession()
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/profiles",
+            session: session,
             method: "GET",
-            query: Self.ownRow(session.userID, select: "display_name,share_labels"),
-            bearer: session.accessToken
+            query: Self.ownRow(session.userID, select: "display_name,share_labels")
         )
         let rows = try CommunityAPI.decode([ProfileRow].self, from: data, status: response.statusCode)
         guard let row = rows.first else {
@@ -60,11 +60,11 @@ public struct CommunityClient: Sendable {
     public func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(ProfileUpdate(displayName: displayName, shareLabels: shareLabels))
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/profiles",
+            session: session,
             method: "PATCH",
             query: Self.ownRow(session.userID, select: nil),
-            bearer: session.accessToken,
             body: body,
             prefer: "return=representation"
         )
@@ -78,20 +78,20 @@ public struct CommunityClient: Sendable {
     /// Deletes the account and everything it submitted. The local session is forgotten only after the server agrees.
     public func deleteAccount() async throws {
         let session = try await auth.validSession()
-        _ = try await api.send(
+        _ = try await authenticatedSend(
             "/rest/v1/rpc/delete_my_account",
-            bearer: session.accessToken,
+            session: session,
             body: Data("{}".utf8)
         )
-        await auth.discardSession()
+        try await auth.discardSession()
     }
 
     public func submitLabel(_ submission: CommunityLabelSubmission) async throws -> CommunitySubmitResult {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(SubmitBody(submission: submission))
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/rpc/submit_label",
-            bearer: session.accessToken,
+            session: session,
             body: body
         )
         return try CommunityAPI.decode(CommunitySubmitResult.self, from: data, status: response.statusCode)
@@ -100,9 +100,9 @@ public struct CommunityClient: Sendable {
     public func lookupLabel(barcode: String) async throws -> [CommunityLabel] {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(LookupBody(barcode: barcode))
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/rpc/lookup_label",
-            bearer: session.accessToken,
+            session: session,
             body: body
         )
         let rows = try CommunityAPI.decode([LabelRow].self, from: data, status: response.statusCode)
@@ -127,6 +127,37 @@ public struct CommunityClient: Sendable {
         }
         items.append(URLQueryItem(name: "id", value: "eq.\(userID)"))
         return items
+    }
+
+    /// Auth failures are handled against the exact token used by the request. A delayed 401 can then never
+    /// remove a newer sign-in, while 403 remains an authorization decision and keeps the session intact.
+    private func authenticatedSend(
+        _ path: String,
+        session: CommunitySession,
+        method: String = "POST",
+        query: [URLQueryItem] = [],
+        body: Data? = nil,
+        prefer: String? = nil
+    ) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await api.raw(
+            path,
+            method: method,
+            query: query,
+            bearer: session.accessToken,
+            body: body,
+            prefer: prefer
+        )
+        if response.statusCode == 401 {
+            let invalidated: Bool
+            do { invalidated = try await auth.invalidateSession(matchingAccessToken: session.accessToken) }
+            catch { throw CommunityError.storage }
+            throw invalidated ? CommunityError.signedOut : CommunityError.unauthorized
+        }
+        if response.statusCode == 403 { throw CommunityError.permissionDenied }
+        guard (200..<300).contains(response.statusCode) else {
+            throw CommunityError.from(status: response.statusCode, body: data)
+        }
+        return (data, response)
     }
 }
 

@@ -45,6 +45,7 @@ public actor CommunityAuth {
     /// Signs in with the identity token from Sign in with Apple: POST /auth/v1/token?grant_type=id_token.
     /// The nonce is the raw nonce whose hash was sent to Apple.
     public func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession {
+        let startedAt = generation
         // The sign-in service does not ask for a challenge on an identity token, so none is requested.
         let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
         let (data, response) = try await api.send(
@@ -52,7 +53,7 @@ public actor CommunityAuth {
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
             body: body
         )
-        return try accept(data, response, replacing: true)
+        return try accept(data, response, startedAt: startedAt)
     }
 
     /// Emails a one-time code. The address also creates the account on first use.
@@ -63,10 +64,11 @@ public actor CommunityAuth {
     }
 
     public func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
+        let startedAt = generation
         // Checking the emailed code is not challenged either; only asking for it is.
         let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: nil))
         let (data, response) = try await api.send("/auth/v1/verify", body: body)
-        return try accept(data, response, replacing: true)
+        return try accept(data, response, startedAt: startedAt)
     }
 
     /// The stored session, renewed first when it is about to expire. A rejected renewal ends the session.
@@ -87,19 +89,28 @@ public actor CommunityAuth {
         return try await task.value
     }
 
-    /// Ends the session on the server, best effort, and always forgets it on this device.
-    public func signOut() async {
+    /// Clears this device first, then ends the server session on a best-effort basis.
+    public func signOut() async throws {
         generation += 1
-        if let session = store.load() {
-            _ = try? await api.send("/auth/v1/logout", bearer: session.accessToken)
-        }
-        store.clear()
+        let session = store.load()
+        do { try store.clear() } catch { throw CommunityError.storage }
+        guard let session else { return }
+        _ = try? await api.send("/auth/v1/logout", bearer: session.accessToken)
     }
 
     /// Forgets the session on this device without a server call, for example after the account was deleted.
-    public func discardSession() {
+    public func discardSession() throws {
         generation += 1
-        store.clear()
+        do { try store.clear() } catch { throw CommunityError.storage }
+    }
+
+    /// Clears the stored session only when a response belongs to the session still stored on this device.
+    @discardableResult
+    public func invalidateSession(matchingAccessToken accessToken: String) throws -> Bool {
+        guard store.load()?.accessToken == accessToken else { return false }
+        generation += 1
+        do { try store.clear() } catch { throw CommunityError.storage }
+        return true
     }
 
     /// POST /auth/v1/token?grant_type=refresh_token. A rejected refresh token ends the session.
@@ -112,20 +123,22 @@ public actor CommunityAuth {
         )
         switch response.statusCode {
         case 200..<300:
-            // The session changed while the request was out (signed out, or signed in again): drop the result.
-            guard startedAt == generation else { throw CommunityError.signedOut }
-            return try accept(data, response, replacing: false)
+            return try accept(data, response, startedAt: startedAt)
         case 400, 401, 403:
-            if startedAt == generation { store.clear() }
+            if startedAt == generation, store.load()?.refreshToken == refreshToken {
+                generation += 1
+                do { try store.clear() } catch { throw CommunityError.storage }
+            }
             throw CommunityError.signedOut
         default:
             throw CommunityError.from(status: response.statusCode, body: data)
         }
     }
 
-    private func accept(_ data: Data, _ response: HTTPURLResponse, replacing: Bool) throws -> CommunitySession {
+    private func accept(_ data: Data, _ response: HTTPURLResponse, startedAt: Int) throws -> CommunitySession {
+        // A sign-in or refresh reply is usable only in the generation that started it.
+        guard startedAt == generation else { throw CommunityError.signedOut }
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
-        if replacing { generation += 1 }
         let session = CommunitySession(
             accessToken: reply.accessToken,
             refreshToken: reply.refreshToken,
@@ -138,6 +151,7 @@ public actor CommunityAuth {
         } catch {
             throw CommunityError.storage
         }
+        generation += 1
         return session
     }
 }

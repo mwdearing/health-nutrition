@@ -111,7 +111,7 @@ final class CommunityCaptchaTests: XCTestCase {
         let auth = try makeCaptchaAuth(transport, captcha: captcha, store: store)
 
         _ = try await auth.validSession()
-        await auth.signOut()
+        try await auth.signOut()
 
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertEqual(transport.requests[0].url?.query, "grant_type=refresh_token")
