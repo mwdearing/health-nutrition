@@ -20,7 +20,7 @@ Tests use a made-up project host and fake keys only.
 - `CommunitySession`: access token, refresh token, expiry, user id and email. `CommunitySessionStore` keeps it. `KeychainCommunitySessionStore` writes one generic password (service `communityaccount` by default), accessible after the first unlock on this device only. `InMemoryCommunitySessionStore` is for tests and previews.
 - `CommunityAuth` (actor): sign-in, sign-out and session upkeep.
 - `CommunityClient`: profile and catalog calls. It exposes `auth` for the sign-in flow.
-- `CommunityLabelSubmission`, `CommunityLabel`, `CommunityBasis`, `CommunitySubmitResult`, `CommunityProfile`.
+- `CommunityLabelSubmission`, `CommunityLabel`, `CommunityBasis`, `CommunityVerificationSource`, `CommunitySubmitResult`, `CommunityProfile`.
 - `CommunityError`: the failure cases the app handles.
 
 Logs and error text never carry a token, key, code or email. The error cases hold no text, and transport errors are dropped instead of being wrapped.
@@ -33,9 +33,9 @@ Logs and error text never carry a token, key, code or email. The error cases hol
 | `requestEmailCode(email:)` | POST `/auth/v1/otp` with `email` and `create_user: true` |
 | `verifyEmailCode(email:code:)` | POST `/auth/v1/verify` with `type: "email"`, `email`, `token` |
 | `validSession()` | POST `/auth/v1/token?grant_type=refresh_token` when the access token has less than 60 seconds left |
-| `signOut()` | POST `/auth/v1/logout`, best effort |
+| `signOut()` | POST `/auth/v1/logout?scope=local`, best effort for the current server session |
 
-Sign-in and renewal store the new session. A renewal rejected with 400, 401 or 403 clears the stored session and throws `signedOut`. A network failure during renewal keeps the session. Concurrent callers share one renewal, because the refresh token rotates. `signOut()` always clears the local session, even when the server call fails.
+Sign-in and renewal store the new session. A renewal rejected with 400, 401 or 403 clears the matching stored session and throws `signedOut`; an older renewal cannot clear a replacement session. A storage-read or clear failure is reported as `storage`; an unreadable stored session is not cleared. A network failure during renewal keeps the session. Concurrent callers share one renewal, because the refresh token rotates. `signOut()` clears the local session before its best-effort server call. If local storage cannot be cleared, it reports a storage error and skips the server call. A server-call failure does not restore local credentials; the logout asks the server to end only this device's session.
 
 ## Account and catalog endpoints
 
@@ -46,8 +46,12 @@ Every call first gets a valid session from `validSession()`, so a signed-out cal
 | `profile()` | GET `/rest/v1/profiles` for the signed-in user's row. A missing row reads as no name and sharing on. |
 | `updateProfile(displayName:shareLabels:)` | PATCH `/rest/v1/profiles` for the user's row with `Prefer: return=representation`. A cleared name is sent as null. |
 | `deleteAccount()` | POST `/rest/v1/rpc/delete_my_account`. The local session is cleared only after the server accepts. |
-| `submitLabel(_:)` | POST `/rest/v1/rpc/submit_label` with `p_barcode`, `p_basis`, `p_serving_text`, `p_product_name`, `p_brand`, `p_nutrients`. Returns `received`, `shared` or `verified`. |
-| `lookupLabel(barcode:)` | POST `/rest/v1/rpc/lookup_label` with `p_barcode`. Returns each label with `verified` and `supportingAccounts`. |
+| `submitLabel(_:)` | POST `/rest/v1/rpc/submit_label` with `p_barcode`, `p_basis`, `p_serving_text`, `p_product_name`, `p_brand`, `p_nutrients`. The decoder accepts `received`, `shared` and the legacy `verified` reply for compatibility; community agreement must not produce a `verified` reply. |
+| `lookupLabel(barcode:)` | POST `/rest/v1/rpc/lookup_label_v2` with `p_barcode`. Returns each label with an explicit `verificationSource` (`community` or `owner_reviewed`), plus compatibility `verified` and `supportingAccounts` values. |
+
+The versioned lookup requires `verification_source`. A missing or unknown value makes the reply fail decoding; the client never guesses a source from the legacy `verified` boolean. It normalizes community rows to `verified == false`, even if a reply carries a stale true bit. Owner-reviewed rows use the explicit source, set the compatibility `verified` value to true, and expose zero supporting accounts so the UI cannot present a contributor count for an owner-maintained snapshot.
+
+Community agreement is not verification. The five-account threshold is not a verification signal; only an explicit owner-reviewed source receives owner-review wording. Owner review describes the review action, not nutrition or medical accuracy. This documents the source-aware API expected by the app and does not assert that a hosted migration has been applied.
 
 Basis values are the catalog's own: `per_100g`, `per_100ml`, `per_serving`. Nutrient keys are `energyKcal`, `protein`, `carbohydrates`, `sugars`, `fat`, `saturatedFat`, `fiber`, `sodium`, `salt`. Energy is kcal, sodium is mg, the rest are grams.
 
@@ -62,7 +66,7 @@ A PostgREST error body with an SQLSTATE `code` wins over the HTTP status:
 | `22023` | `invalid` |
 | `53400` | `rateLimited` |
 
-Without a known code, the status maps as follows: 400 and 422 to `invalid`, 401 and 403 to `unauthorized`, 429 to `rateLimited`, anything else to `server(status)`. A request that gets no reply throws `network`. A reply that does not decode throws `server(status)`. A session that cannot be written to the Keychain throws `storage`.
+Without a known code, the status maps as follows: 400 and 422 to `invalid`, 401 to `unauthorized`, 403 to `permissionDenied`, 429 to `rateLimited`, anything else to `server(status)`. A request that gets no reply throws `network`. A reply that does not decode throws `server(status)`. A session that cannot be written to the Keychain throws `storage`.
 
 ## Settings and wiring
 
@@ -74,8 +78,16 @@ Without a known code, the status maps as follows: 400 and 422 to `invalid`, 401 
 - The app target links the hCaptcha SDK, pinned to exactly `3.1.0` in `project.yml` and linked by the app target only. The package's RxSwift dependency is resolved but not linked. The site key is the build setting `HCAPTCHA_SITE_KEY` (empty in the repository, read from Info.plist), passed by the signed-beta workflow from the optional environment secret of the same name. With no key, no provider is created.
 - A build setting value written as `https://...` in an xcconfig file must escape the `//`, because xcconfig reads `//` as a comment. The values in `project.yml` and on the `xcodebuild` command line are not read as xcconfig.
 
-## Not done yet
+## Validation limits
 
-- No retry queue: a label whose upload fails is not sent again.
-- The Keychain store is compiled only where Security is available. It has not been run on a device.
-- The account code has not been compiled on this host. CI is the first build.
+- The legacy scanned-label upload still has no retry queue; custom-product delivery has its own durable queue.
+- The Keychain implementation requires Apple Security. Portable provider tests do not validate actual Keychain behavior.
+- Actual Apple package compilation, simulator tests/captures and Release builds remain required on the integrated source.
+
+## Shared products v2
+
+The additive custom-product API provides eight RPCs: `catalog_capabilities_v2`, `acknowledge_catalog_consent_v2`, `submit_catalog_product_v2`, `withdraw_catalog_product_v2`, `get_my_catalog_contribution_v2`, `get_catalog_product_v2`, `search_catalog_products_v2`, and `resolve_catalog_publish_for_withdrawal_v2`. The last resolves a possibly committed publication or installs a durable cancellation fence without publishing it. The exact request envelope remains immutable across retries.
+
+Authenticated writes and owner-state reads check the expected account before token refresh, check the refreshed account before saving credentials, and check ownership again after refresh. Both legacy and v2 requests invalidate only the matching access token on HTTP 401 or HTTP 403 with SQLSTATE `28000`. Ordinary permission/consent failures, including typed v2 authorization errors, retain credentials. Replacement sign-in intent survives a rejection of the older token in either response order. Logout clears local credentials first and uses server scope `local`; storage failures remain errors and leave delivery paused.
+
+The Community transport uses [bounded response loading](providers/response-limits.md). Cancellation remains distinct from network failures. See the [shared-products design](superpowers/specs/2026-10-11-shared-custom-products-design.md) for consent, durable delivery, explicit review and release gates.

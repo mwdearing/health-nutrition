@@ -1,6 +1,8 @@
 -- Behavior test for the community catalog migration. Runs against a plain Postgres with a stubbed auth.uid().
 -- Run: psql -v ON_ERROR_STOP=1 -f supabase/tests/community_catalog.sql (after the stub and the migration).
 \set ON_ERROR_STOP on
+-- Keep caller-provided upgrade seeds intact while exercising destructive fixture resets.
+begin;
 create or replace function pg_temp.as_device(n int) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claim.sub', ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0')), false);
@@ -350,3 +352,5 @@ select pg_temp.check((select count(*) = 0 from public.lookup_label_v2('012345607
 select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')), 'deleted account stale token cannot use legacy lookup');
 reset role;
 select 'ALL OK' as result;
+
+rollback;
