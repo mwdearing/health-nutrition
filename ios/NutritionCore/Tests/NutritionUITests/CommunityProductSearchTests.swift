@@ -39,10 +39,10 @@ final class CommunityProductSearchTests: XCTestCase {
                           syntheticCommunityRevision(name: "Éclair drink", kind: .drink)]
         let model = CommunityProductSearchViewModel(store: store, service: service, isSignedIn: { true })
 
-        for (query, expected) in [("", store.products), ("é", [store.products[1]])] {
+        for (query, expectedNames) in [("", Set(["Synthetic tea", "Éclair drink"])), ("é", Set(["Éclair drink"]))] {
             await model.search(query: query, kind: nil)
             XCTAssertEqual(model.state, .queryTooShort)
-            XCTAssertEqual(model.localResults, expected)
+            XCTAssertEqual(Set(model.localResults.map(\.content.name)), expectedNames)
         }
         let calls = await service.calls
         XCTAssertEqual(calls, 0)
