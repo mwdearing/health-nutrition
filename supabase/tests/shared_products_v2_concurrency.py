@@ -124,9 +124,43 @@ def immutable_barcode_regressions(owner, other):
         assert sql(f"select count(*) from catalog_v2.barcode_bindings where product_id={literal(first['product_id'])};")=='0'
     assert not failures, '\n'.join(failures)
 
+def two_account_product_journey(a, b):
+    # Integrate the product-only wire surface for all three kinds, including one compound.
+    for kind in ['food', 'drink', 'supplement']:
+        content = product('Synthetic integrated ' + kind)
+        content['kind'] = kind
+        if kind == 'drink': content['basis'] = 'per_100_ml'
+        if kind == 'supplement':
+            content.update(basis='per_serving', serving=dict(quantity='1', unit='capsule', text='One capsule'))
+            content['facts'] = [dict(key='ingredient:synthetic', display_name='Synthetic ingredient', state='known', amount='5', unit='mg')]
+        envelope = request(content)
+        first = submit(a, envelope)
+        found = rpc(b, 'search_catalog_products_v2', literal(content['name']))['products']
+        published = next(x for x in found if x['product_id'] == first['product_id'])
+        assert published['product']['kind'] == kind
+        assert published['verification'] == dict(status='shared_unverified', source=None)
+        assert set(published['product']) == {'name','brand','barcode','kind','basis','serving','facts'}
+        assert set(published['product']['facts'][0]) == {'key','display_name','state','amount','unit'}
+        assert not any(key in json.dumps(published) for key in ['account_id','device_id','meal','intake_time','notes','consent_generation'])
+        original = json.loads(json.dumps(published))
+        edited = json.loads(json.dumps(content)); edited['facts'][0]['amount'] = '7'
+        newer = submit(a, request(edited, first['product_id'], first['current_revision']))
+        assert rpc(b, 'get_catalog_product_v2', literal(first['product_id']))['product']['product']['facts'][0]['amount'] == '7'
+        assert original['product']['facts'][0]['amount'] != '7'
+        replay = submit(a, envelope)
+        assert replay['acknowledged_revision'] == first['acknowledged_revision']
+        assert replay['current_revision'] == newer['current_revision'] and replay['replayed']
+    name_only = product('Synthetic integrated name only'); name_only['facts'] = []
+    first = submit(a, request(name_only))
+    submit(b, request(name_only, first['product_id']))
+    found = rpc(b, 'get_catalog_product_v2', literal(first['product_id']))['product']
+    assert found['missing_facts'] and found['verification']['status'] == 'shared_unverified'
+    print('TWO-ACCOUNT FOOD, DRINK, SUPPLEMENT, NAME-ONLY AND CURRENT-RECEIPT JOURNEYS OK')
+
 def main():
     sql('update catalog.settings set daily_limit=1000,min_devices=2;')
     a, b = account(), account()
+    two_account_product_journey(a,b)
     immutable_barcode_regressions(a,b)
     # Execute canonical fixtures in PostgreSQL, using the frozen cross-platform byte corpus.
     for filename, length in [('exact-16384-valid.json', 16384), ('oversize-16385-invalid.json', 16385)]:

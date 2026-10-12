@@ -10,7 +10,7 @@ public protocol CommunityAccountServicing: Sendable {
     func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession
     func requestEmailCode(email: String) async throws
     func verifyEmailCode(email: String, code: String) async throws -> CommunitySession
-    func signOut() async
+    func signOut() async throws
     func profile() async throws -> CommunityProfile
     func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile
     func deleteAccount() async throws
@@ -34,7 +34,7 @@ extension CommunityClient: CommunityAccountServicing {
         try await auth.verifyEmailCode(email: email, code: code)
     }
 
-    public func signOut() async {
-        await auth.signOut()
+    public func signOut() async throws {
+        try await auth.signOut()
     }
 }

@@ -42,6 +42,7 @@ SQL
   fi
   psql_ -f - < "$f"
 done
+if [[ ${CATALOG_TEST_FOCUS:-} != upgrade ]]; then
 psql_ -f - < supabase/tests/shared_products_v2_resolution.sql
 if [[ ${CATALOG_TEST_FOCUS:-} == resolution ]]; then
   python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"
@@ -54,3 +55,44 @@ if [[ ${CATALOG_TEST_FOCUS:-} != bridge && ${CATALOG_TEST_FOCUS:-} != refresh ]]
 fi
 python3 supabase/tests/shared_products_v2_concurrency.py "$engine" "$name"
 python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"
+
+fi
+
+# Exercise the forward migration against the pre-migration schema in a second database within the same disposable
+# Postgres container. This reproduces a verified legacy row before applying the upgrade.
+upgrade_db=catalog_upgrade
+upgrade_migration=supabase/migrations/20261011203625_catalog_owner_verification.sql
+"$engine" exec "$name" createdb -U postgres "$upgrade_db"
+psql_upgrade_() { "$engine" exec -i "$name" psql -U postgres -d "$upgrade_db" -v ON_ERROR_STOP=1 -q "$@"; }
+psql_upgrade_ -f - < supabase/tests/upgrade_owner_verification_stub.sql
+found_upgrade_migration=0
+for f in supabase/migrations/*.sql; do
+  if [[ "$f" == "$upgrade_migration" ]]; then
+    found_upgrade_migration=1
+    break
+  fi
+  psql_upgrade_ -f - < "$f"
+done
+if [[ "$found_upgrade_migration" != 1 ]]; then
+  echo "upgrade migration not found: $upgrade_migration" >&2
+  exit 1
+fi
+psql_upgrade_ -f - < supabase/tests/upgrade_owner_verification_seed.sql
+if upgrade_red_output=$(psql_upgrade_ -f - < supabase/tests/upgrade_owner_verification_red.sql 2>&1); then
+  echo "pre-migration RED assertion unexpectedly passed" >&2
+  exit 1
+fi
+if [[ "$upgrade_red_output" != *"FAILED: pre-upgrade community row is still automatically verified"* ]]; then
+  printf '%s\n' "$upgrade_red_output" >&2
+  echo "pre-migration RED assertion failed for an unexpected reason" >&2
+  exit 1
+fi
+echo "RED reproduced: the seeded legacy community entry is automatically verified before upgrade"
+# Negative control and current SQL run from identical legacy state, in disposable databases.
+"$engine" exec "$name" createdb -U postgres -T "$upgrade_db" catalog_upgrade_race_red
+python3 supabase/tests/owner_verification_upgrade_race.py "$engine" "$name" catalog_upgrade_race_red negative-control
+python3 supabase/tests/owner_verification_upgrade_race.py "$engine" "$name" "$upgrade_db" protected
+# Exercise the demotion/lookup assertions through the final active v2/bridge wrappers too.
+for f in supabase/migrations/*shared_products_v2*.sql; do psql_upgrade_ -f - < "$f"; done
+psql_upgrade_ -f - < supabase/tests/upgrade_owner_verification_green.sql
+echo "Upgrade path OK"

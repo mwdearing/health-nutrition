@@ -42,6 +42,9 @@ struct CommunityAPI: Sendable {
             try Task.checkCancellation()
             let reply = try await transport.send(request)
             try Task.checkCancellation()
+            guard reply.0.count <= BoundedResponseLimits.community else {
+                throw BoundedResponseError.responseTooLarge
+            }
             return reply
         } catch is CancellationError {
             throw CancellationError()

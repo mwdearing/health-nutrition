@@ -39,6 +39,12 @@ struct CommunityProductsAPI: Sendable {
             try Task.checkCancellation()
             let (data, response) = try await api.raw("/rest/v1/rpc/" + rpc, bearer: session.accessToken, body: body)
             guard (200..<300).contains(response.statusCode) else {
+                // Only a definite rejected session invalidates credentials. Permission/consent failures
+                // and typed authorization errors retain them, and a delayed old token cannot clear a new one.
+                if response.statusCode == 401 ||
+                    (response.statusCode == 403 && (try? JSONDecoder().decode(Failure.self, from: data))?.code == "28000") {
+                    try await auth.invalidateSession(matchingAccessToken: session.accessToken)
+                }
                 throw Self.error(status: response.statusCode, data: data, response: response, capability: capability)
             }
             do { return try JSONDecoder().decode(T.self, from: data) }

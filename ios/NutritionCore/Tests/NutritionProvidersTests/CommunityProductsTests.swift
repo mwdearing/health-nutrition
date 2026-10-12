@@ -123,7 +123,7 @@ final class CommunityProductsTests: XCTestCase {
         let wrong = FakeCommunityTransport([.response(status: 200, body: refreshedBody.replacingOccurrences(of: testUserID, with: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))])
         let c = CommunityClient(config: try makeConfig(), transport: wrong, store: store, now: { testNow })
         await expect(.unauthorized) { try await c.resolvePublishForWithdrawal(request, expectedOwnerID: self.owner) }
-        XCTAssertEqual(store.load(), original)
+        XCTAssertEqual(try store.load(), original)
         XCTAssertEqual(wrong.requests.count, 1)
         XCTAssertFalse(wrong.requests.contains { $0.url!.path.contains("/rpc/") })
     }
@@ -359,7 +359,7 @@ final class CommunityProductsTests: XCTestCase {
             } else {
                 do { _ = try await c.auth.validSession() } catch {}
             }
-            XCTAssertEqual(store.load(), original, "a refresh cannot change stored owner")
+            XCTAssertEqual(try store.load(), original, "a refresh cannot change stored owner")
             XCTAssertEqual(transport.requests.count, 1)
         }
     }
@@ -390,7 +390,7 @@ final class CommunityProductsTests: XCTestCase {
             let c = CommunityClient(config: try makeConfig(), transport: t, store: store, now: { testNow })
             let renewed = try await c.auth.validSession()
             XCTAssertEqual(renewed.userID, id.lowercased())
-            XCTAssertEqual(store.load(), renewed); XCTAssertEqual(t.requests.count, 1)
+            XCTAssertEqual(try store.load(), renewed); XCTAssertEqual(t.requests.count, 1)
         }
     }
 

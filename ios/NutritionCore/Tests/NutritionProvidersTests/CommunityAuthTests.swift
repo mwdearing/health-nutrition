@@ -23,7 +23,7 @@ final class CommunityAuthTests: XCTestCase {
         XCTAssertEqual(session.accessToken, "test-access-token")
         XCTAssertEqual(session.userID, testUserID)
         XCTAssertEqual(session.expiresAt, testNow.addingTimeInterval(3600))
-        XCTAssertEqual(store.load(), session)
+        XCTAssertEqual(try store.load(), session)
     }
 
     func testRequestEmailCodeSendsAddressAndCreatesAccount() async throws {
@@ -56,7 +56,7 @@ final class CommunityAuthTests: XCTestCase {
         XCTAssertEqual(body["email"] as? String, "person@example.com")
         XCTAssertEqual(body["token"] as? String, "123456")
         XCTAssertEqual(session.email, "person@example.com")
-        XCTAssertEqual(store.load(), session)
+        XCTAssertEqual(try store.load(), session)
     }
 
     func testFreshSessionIsReturnedWithoutARequest() async throws {
@@ -84,7 +84,7 @@ final class CommunityAuthTests: XCTestCase {
         XCTAssertEqual(try bodyJSON(request)["refresh_token"] as? String, "test-refresh-token")
         XCTAssertEqual(session.accessToken, "refreshed-access-token")
         XCTAssertEqual(session.refreshToken, "refreshed-refresh-token")
-        XCTAssertEqual(store.load(), session)
+        XCTAssertEqual(try store.load(), session)
     }
 
     func testRejectedRefreshClearsStore() async throws {
@@ -95,7 +95,7 @@ final class CommunityAuthTests: XCTestCase {
         let auth = try makeAuth(transport: transport, store: store)
 
         await assertCommunityError(.signedOut) { try await auth.validSession() }
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testNetworkFailureDuringRefreshKeepsStore() async throws {
@@ -105,7 +105,7 @@ final class CommunityAuthTests: XCTestCase {
         let auth = try makeAuth(transport: transport, store: store)
 
         await assertCommunityError(.network) { try await auth.validSession() }
-        XCTAssertEqual(store.load(), stored)
+        XCTAssertEqual(try store.load(), stored)
     }
 
     func testMissingSessionIsSignedOutWithoutARequest() async throws {
@@ -121,13 +121,13 @@ final class CommunityAuthTests: XCTestCase {
         let store = InMemoryCommunitySessionStore(testSession())
         let auth = try makeAuth(transport: transport, store: store)
 
-        await auth.signOut()
+        try await auth.signOut()
 
         let request = try XCTUnwrap(transport.requests.first)
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.path, "/auth/v1/logout")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 
     func testSignOutClearsStoreEvenWhenRequestFails() async throws {
@@ -135,8 +135,8 @@ final class CommunityAuthTests: XCTestCase {
         let store = InMemoryCommunitySessionStore(testSession())
         let auth = try makeAuth(transport: transport, store: store)
 
-        await auth.signOut()
+        try await auth.signOut()
 
-        XCTAssertNil(store.load())
+        XCTAssertNil(try store.load())
     }
 }

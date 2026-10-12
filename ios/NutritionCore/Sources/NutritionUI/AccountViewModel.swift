@@ -254,7 +254,7 @@ public final class AccountViewModel: ObservableObject {
         automaticRestoreClosed = true
         // Remove every source of local eligibility before logout can suspend with a valid session.
         clearSignedInState()
-        await service.signOut()
+        _ = await run(Self.genericMessage, { try await self.service.signOut() })
     }
 
     /// Deletes the account on the server. The session is forgotten here only after the server agrees.

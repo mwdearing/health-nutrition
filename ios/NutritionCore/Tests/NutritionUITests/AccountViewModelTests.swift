@@ -34,6 +34,7 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
     var profileValue = CommunityProfile(displayName: nil, shareLabels: true)
     var profileError: Error?
     var updateError: Error?
+    var signOutError: Error?
     var deleteError: Error?
     /// When set, `restore()` waits at this gate before it answers.
     var restoreGate: CallGate?
@@ -74,9 +75,10 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
         return try verifyResult.get()
     }
 
-    func signOut() async {
+    func signOut() async throws {
         signOutCount += 1
         await signOutGate?.pass()
+        if let signOutError { throw signOutError }
     }
 
     func profile() async throws -> CommunityProfile {
@@ -131,6 +133,20 @@ final class AccountViewModelTests: XCTestCase {
         let service = FakeAccountService(session: session)
         let model = AccountViewModel(service: service, preferences: preferences)
         return (model, service, preferences)
+    }
+
+    func testFailedCredentialClearKeepsDeliveryClosedAndReportsFailure() async {
+        let service = FakeAccountService(session: AccountTestSupport.session)
+        let preferences = InMemoryDisplayPreferences()
+        let model = AccountViewModel(service: service, preferences: preferences)
+        await model.load()
+        service.signOutError = CommunityError.storage
+        await model.signOut()
+        XCTAssertFalse(model.sharingAllowed)
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertNotNil(model.message)
+        await model.load()
+        XCTAssertEqual(model.phase, .signedOut, "automatic restore stays closed after failed credential deletion")
     }
 
     func testSignedOutAtStart() async throws {

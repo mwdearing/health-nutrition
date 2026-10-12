@@ -12,7 +12,7 @@ begin if ok is not true then raise exception 'FAILED: %', msg; end if; end $$;
 
 reset role;
 insert into auth.users (id) select ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid from generate_series(1, 10) n;
--- Five devices send agreeing values: the fifth makes it verified; the first four never leak.
+-- Five devices send agreeing values: the fifth makes the unverified community label visible.
 select pg_temp.as_device(1);
 select pg_temp.check(public.submit_label('0123456070004','per_100g',null,'Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}') = 'received', 'first is received');
 select pg_temp.check((select count(*) from public.lookup_label('0123456070004')) = 0, 'a single submission is not shown');
@@ -23,9 +23,35 @@ select pg_temp.as_device(4); select public.submit_label('0123456070004','per_100
 -- An outlier does not join the group and does not block it.
 select pg_temp.as_device(6); select pg_temp.check(public.submit_label('0123456070004','per_100g',null,'Oat Bar','Acme','{"energyKcal":250,"protein":3,"carbohydrates":30,"fat":1}') = 'shared', 'outlier does not change the shown label');
 select pg_temp.as_device(5);
-select pg_temp.check(public.submit_label('0123456070004','per_100g',null,'Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}') = 'verified', 'fifth agreeing device verifies');
-select pg_temp.check((select supporting_devices from public.lookup_label('0123456070004')) = 5, 'five supporters');
+select pg_temp.check(public.submit_label('0123456070004','per_100g',null,'Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}') = 'shared', 'fifth agreeing device remains community shared');
+select pg_temp.check((select supporting_devices from public.lookup_label('0123456070004')) = 5, 'five community supporters');
+select pg_temp.check((select not verified from public.lookup_label('0123456070004')), 'five accounts never verify a community label');
+select pg_temp.check((select verification_source = 'community' and not verified from public.lookup_label_v2('0123456070004')), 'v2 marks five-account label as community, not verified');
 select pg_temp.check((select (nutrients->>'energyKcal')::numeric from public.lookup_label('0123456070004')) = 400, 'median energy');
+-- A submit_label call that began on the old function body cannot restore automatic verification after the upgrade.
+reset role;
+do $$ begin
+  begin
+    insert into catalog.entries (barcode, basis, product_name, nutrients, supporting_devices, verified)
+    values ('0123456070996', 'per_100g', 'Old Writer Insert', '{"energyKcal":400,"protein":10,"fat":12}', 5, true);
+  exception when check_violation then null;
+  end;
+  if exists (select 1 from catalog.entries where barcode = '0123456070996' and basis = 'per_100g' and verified) then
+    raise exception 'FAILED: old community writer can insert a verified entry';
+  end if;
+end $$;
+do $$ begin
+  begin
+    insert into catalog.entries (barcode, basis, product_name, nutrients, supporting_devices, verified)
+    values ('0123456070004', 'per_100g', 'Old Writer Update', '{"energyKcal":400,"protein":10,"fat":12}', 5, true)
+    on conflict (barcode, basis) do update set verified = excluded.verified;
+  exception when check_violation then null;
+  end;
+  if exists (select 1 from catalog.entries where barcode = '0123456070004' and basis = 'per_100g' and verified) then
+    raise exception 'FAILED: old community writer can restore a verified entry';
+  end if;
+end $$;
+select pg_temp.as_device(5);
 -- The same device twice does not count twice.
 select pg_temp.as_device(5); select public.submit_label('0123456070004','per_100g',null,'Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}');
 select pg_temp.check((select supporting_devices from public.lookup_label('0123456070004')) = 5, 'a device counts once');
@@ -73,7 +99,7 @@ select ('00000000-0000-0000-0000-' || lpad((200 + n)::text, 12, '0'))::uuid, '01
   '{"energyKcal":50,"protein":1,"fat":1}'::jsonb
 from generate_series(1, 5) n;
 select catalog.refresh_entry('0123456881006', 'per_100g');
-select pg_temp.check((select verified from catalog.entries where barcode = '0123456881006'), 'five agreeing devices verify');
+select pg_temp.check((select not verified from catalog.entries where barcode = '0123456881006'), 'five agreeing devices never verify');
 update catalog.settings set min_devices = 6;
 select pg_temp.check((select not verified from catalog.entries where barcode = '0123456881006'), 'raising the bar removes the badge');
 update catalog.settings set min_devices = 5;
@@ -174,4 +200,153 @@ values ('0000000099990', 'per_100g', 'Old', '{"energyKcal":1.23456,"protein":1,"
 select catalog.revalidate_all();
 select pg_temp.check((select count(*) from catalog.submissions where barcode = '0000000099990') = 1, 'an over-precise stored row is removed');
 select pg_temp.check((select count(*) from catalog.entries where barcode = '0000000099990') = 0, 'the entry is rebuilt from the valid rows only');
+-- Owner-maintained snapshots are separate from the capped community candidate window.
+reset role;
+insert into auth.users (id)
+select ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid
+from generate_series(1000, 1100) n on conflict do nothing;
+select pg_temp.as_device(1000); select public.submit_label('0123456070004','per_100g',null,'Community Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}');
+select pg_temp.as_device(1001); select public.submit_label('0123456070004','per_100g',null,'Community Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}');
+select pg_temp.as_device(1002); select public.submit_label('0123456070004','per_100g',null,'Community Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}');
+select pg_temp.as_device(1003); select public.submit_label('0123456070004','per_100g',null,'Community Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}');
+select pg_temp.as_device(1004); select public.submit_label('0123456070004','per_100g',null,'Community Oat Bar','Acme','{"energyKcal":400,"protein":10,"carbohydrates":60,"fat":12}');
+select pg_temp.as_device(8); reset role;
+select catalog.owner_approve_label(
+  '0123456070004', 'per_100g', null, 'Owner Oat Bar', 'Reviewed Acme',
+  '{"energyKcal":410,"protein":11,"carbohydrates":61,"fat":13}'::jsonb,
+  'reviewed'
+);
+select pg_temp.check(
+  (select product_name = 'Owner Oat Bar' and nutrients = '{"energyKcal":410,"protein":11,"carbohydrates":61,"fat":13}'::jsonb
+        and verified and supporting_devices = 0 and verification_source = 'owner_reviewed'
+   from public.lookup_label_v2('0123456070004')),
+  'owner approval returns the exact owner-reviewed snapshot with no supporter count'
+);
+select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')),
+  'legacy lookup hides the community row while an owner-approved canonical is active');
+select pg_temp.check(
+  (select count(*) = 1 and min(action) = 'approve' and min(payload_digest) is not null
+   from catalog.moderation_audit where barcode = '0123456070004' and basis = 'per_100g'),
+  'approval is audited with a payload digest'
+);
+select pg_temp.check(
+  not exists (select 1 from information_schema.columns where table_schema = 'catalog'
+    and table_name in ('approved_entries', 'moderation_audit')
+    and column_name in ('device_id', 'submitter_id', 'submission_id')),
+  'canonical and audit rows have no source account or submission identifier'
+);
+-- Newer submissions are accepted under normal limits and cannot alter the canonical snapshot.
+do $$
+declare n integer;
+begin
+  for n in 1000..1100 loop
+    perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-' || lpad(n::text, 12, '0'), false);
+    perform set_config('request.jwt.claims', '{"is_anonymous": false}', false);
+    perform set_config('role', 'authenticated', false);
+    perform public.submit_label('0123456070004','per_100g',null,'Flood Label','Flood Brand',
+      '{"energyKcal":800,"protein":100,"carbohydrates":100,"fat":100}'::jsonb);
+  end loop;
+end $$;
+reset role;
+select catalog.refresh_entry('0123456070004', 'per_100g');
+select pg_temp.check(
+  (select product_name = 'Owner Oat Bar' and nutrients->>'energyKcal' = '410'
+        and verification_source = 'owner_reviewed' and verified and supporting_devices = 0
+   from public.lookup_label_v2('0123456070004')),
+  '101 newer candidates cannot replace the approved canonical snapshot'
+);
+select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')),
+  'legacy lookup still hides the community row after candidate flooding while canonical approval is active');
+-- Invalid canonical payloads and incomplete serving definitions fail atomically.
+do $$ begin
+  perform catalog.owner_approve_label('0123456070004','per_serving',null,'Bad','Brand',
+    '{"energyKcal":410,"protein":11,"fat":13}'::jsonb,'reviewed');
+  raise exception 'per-serving approval without a serving was accepted';
+exception when sqlstate '22023' then null; end $$;
+select pg_temp.check((select product_name = 'Owner Oat Bar' from catalog.approved_entries
+  where barcode = '0123456070004' and basis = 'per_100g'), 'failed approval left prior canonical untouched');
+do $$ begin
+  perform catalog.owner_approve_label('0123456070004','per_100g',null,'Bad','Brand',
+    '{"energyKcal":99999,"protein":11,"fat":13}'::jsonb,'reviewed');
+  raise exception 'out-of-bounds nutrient approval was accepted';
+exception when sqlstate '22023' then null; end $$;
+select pg_temp.check((select product_name = 'Owner Oat Bar' from catalog.approved_entries
+  where barcode = '0123456070004' and basis = 'per_100g'), 'invalid nutrient approval left prior canonical untouched');
+-- Rejection suppresses both sources, even after more submissions and refreshes.
+select catalog.owner_reject_label('0123456070004','per_100g','needs_recheck');
+select pg_temp.check((select count(*) = 0 from public.lookup_label_v2('0123456070004')), 'rejection hides canonical from v2');
+select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')), 'rejection hides community from legacy');
+select pg_temp.check(not exists (select 1 from catalog.approved_entries where barcode = '0123456070004'), 'rejection removes active canonical');
+select pg_temp.as_device(1005);
+select pg_temp.check(public.submit_label('0123456070004','per_100g',null,'Flood Label','Flood Brand',
+  '{"energyKcal":800,"protein":100,"carbohydrates":100,"fat":100}'::jsonb) = 'received',
+  'rejected keys continue accepting submissions under normal limits');
+reset role; select catalog.refresh_entry('0123456070004', 'per_100g');
+select pg_temp.check((select count(*) = 0 from public.lookup_label_v2('0123456070004')), 'refresh and new submissions cannot restore rejected v2 visibility');
+select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')), 'refresh and new submissions cannot restore rejected legacy visibility');
+select pg_temp.check((select count(*) = 1 from catalog.moderation_audit where barcode = '0123456070004' and action = 'reject'), 'rejection is audited');
+select pg_temp.check((select count(distinct payload_digest) = 1 and bool_and(payload_digest is not null) from catalog.moderation_audit where barcode = '0123456070004' and basis = 'per_100g' and action in ('approve', 'reject')), 'approval and rejection share the canonical payload digest');
+select catalog.owner_clear_rejection('0123456070004','per_100g','reviewed');
+select pg_temp.check((select verification_source = 'community' and not verified
+  from public.lookup_label_v2('0123456070004')), 'clearing rejection shows community only and does not verify it');
+select pg_temp.check((select count(*) = 1 from catalog.moderation_audit where barcode = '0123456070004' and action = 'clear_rejection'), 'clear rejection is separately audited');
+-- Revocation removes the canonical and falls back to community without a badge.
+select catalog.owner_approve_label('0123456070004','per_100g',null,'Owner Oat Bar','Reviewed Acme',
+  '{"energyKcal":410,"protein":11,"carbohydrates":61,"fat":13}'::jsonb,'reviewed');
+select catalog.owner_revoke_label('0123456070004','per_100g','withdrawn');
+select pg_temp.check((select verification_source = 'community' and not verified
+  from public.lookup_label_v2('0123456070004')), 'revocation falls back to unverified community entry');
+select pg_temp.check((select count(*) = 1 and bool_and(not verified) from public.lookup_label('0123456070004')),
+  'legacy lookup exposes the community fallback again after revocation');
+select pg_temp.check(not exists (select 1 from catalog.approved_entries where barcode = '0123456070004'), 'revocation removes active canonical');
+select pg_temp.check((select count(*) = 1 from catalog.moderation_audit where barcode = '0123456070004' and action = 'revoke'), 'revocation is audited');
+select pg_temp.check((select count(distinct payload_digest) = 1 and bool_and(payload_digest is not null) from catalog.moderation_audit where barcode = '0123456070004' and basis = 'per_100g' and action in ('approve', 'reject', 'revoke')), 'identical reviewed payloads keep one digest across reapproval and revocation');
+-- A revoked approval with no eligible community aggregate does not return a row.
+select catalog.owner_approve_label('0123456070110','per_100g',null,'Isolated Label','Acme',
+  '{"energyKcal":200,"protein":5,"carbohydrates":20}'::jsonb,'reviewed');
+select catalog.owner_revoke_label('0123456070110','per_100g','withdrawn');
+select pg_temp.check((select count(*) = 0 from public.lookup_label_v2('0123456070110')), 'revocation without community fallback returns no row');
+-- Revoked values require another explicit approval to return as owner-reviewed.
+select catalog.owner_approve_label('0123456070004','per_100g',null,'Owner Oat Bar','Reviewed Acme',
+  '{"energyKcal":410,"protein":11,"carbohydrates":61,"fat":13}'::jsonb,'reviewed');
+-- Withdrawal and deletion remove source submissions while preserving the independent snapshot.
+select pg_temp.check((select count(*) > 0 from catalog.submissions where device_id = '00000000-0000-0000-0000-000000001000'
+  and barcode = '0123456070004'), 'source account submitted the approved label');
+select pg_temp.as_device(1000); select public.withdraw_my_submissions(); reset role;
+select pg_temp.check((select product_name = 'Owner Oat Bar' and nutrients = '{"energyKcal":410,"protein":11,"carbohydrates":61,"fat":13}'::jsonb
+  and verified and supporting_devices = 0 from public.lookup_label_v2('0123456070004')), 'withdrawal preserves the exact canonical snapshot');
+select pg_temp.check(not exists (select 1 from catalog.submissions where device_id = '00000000-0000-0000-0000-000000001000'
+  and barcode = '0123456070004'), 'withdrawal removes source submission');
+select pg_temp.as_device(2); select public.delete_my_account(); reset role;
+select pg_temp.as_device(8); reset role;
+select pg_temp.check((select product_name = 'Owner Oat Bar' from public.lookup_label_v2('0123456070004')),
+  'account deletion preserves independent canonical for another signed-in account');
+-- App roles cannot invoke owner functions, read/write snapshots or read/alter audit rows.
+select pg_temp.check(not has_function_privilege('anon', 'catalog.owner_approve_label(text,text,text,text,text,jsonb,text)', 'EXECUTE'), 'anon cannot approve');
+select pg_temp.check(not has_function_privilege('anon', 'catalog.owner_reject_label(text,text,text)', 'EXECUTE'), 'anon cannot reject');
+select pg_temp.check(not has_function_privilege('anon', 'catalog.owner_clear_rejection(text,text,text)', 'EXECUTE'), 'anon cannot clear rejection');
+select pg_temp.check(not has_function_privilege('anon', 'catalog.owner_revoke_label(text,text,text)', 'EXECUTE'), 'anon cannot revoke');
+select pg_temp.check(not has_function_privilege('authenticated', 'catalog.owner_approve_label(text,text,text,text,text,jsonb,text)', 'EXECUTE'), 'authenticated cannot approve');
+select pg_temp.check(not has_function_privilege('authenticated', 'catalog.owner_reject_label(text,text,text)', 'EXECUTE'), 'authenticated cannot reject');
+select pg_temp.check(not has_function_privilege('authenticated', 'catalog.owner_clear_rejection(text,text,text)', 'EXECUTE'), 'authenticated cannot clear rejection');
+select pg_temp.check(not has_function_privilege('authenticated', 'catalog.owner_revoke_label(text,text,text)', 'EXECUTE'), 'authenticated cannot revoke');
+select pg_temp.check(not has_table_privilege('authenticated', 'catalog.approved_entries', 'SELECT,INSERT,UPDATE,DELETE'), 'authenticated cannot access canonical table');
+select pg_temp.check(not has_table_privilege('authenticated', 'catalog.moderation_audit', 'SELECT,INSERT,UPDATE,DELETE'), 'authenticated cannot access audit table');
+select pg_temp.check(not has_table_privilege('anon', 'catalog.approved_entries', 'SELECT,INSERT,UPDATE,DELETE'), 'anon cannot access canonical table');
+select pg_temp.check(not has_table_privilege('anon', 'catalog.moderation_audit', 'SELECT,INSERT,UPDATE,DELETE'), 'anon cannot access audit table');
+select pg_temp.check((select relrowsecurity from pg_class where oid = 'catalog.approved_entries'::regclass), 'canonical table has RLS enabled');
+select pg_temp.check((select relrowsecurity from pg_class where oid = 'catalog.moderation_audit'::regclass), 'audit table has RLS enabled');
+select pg_temp.check(not has_table_privilege('authenticated', 'catalog.approved_entries', 'TRUNCATE'), 'authenticated cannot truncate canonical table');
+select pg_temp.check(not has_table_privilege('authenticated', 'catalog.moderation_audit', 'TRUNCATE'), 'authenticated cannot truncate audit table');
+-- Audit history rejects UPDATE and DELETE, even from the SQL owner interface.
+do $$ begin update catalog.moderation_audit set reason = 'changed' where barcode = '0123456070004';
+  raise exception 'audit row was mutable'; exception when sqlstate '42501' then null; end $$;
+do $$ begin delete from catalog.moderation_audit where barcode = '0123456070004';
+  raise exception 'audit row was deletable'; exception when sqlstate '42501' then null; end $$;
+-- A deleted user's stale token remains unable to use either lookup.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000002', false), set_config('request.jwt.claims', '{"is_anonymous": false}', false);
+set role authenticated;
+select pg_temp.check((select count(*) = 0 from public.lookup_label_v2('0123456070004')), 'deleted account stale token cannot use v2 lookup');
+select pg_temp.check((select count(*) = 0 from public.lookup_label('0123456070004')), 'deleted account stale token cannot use legacy lookup');
+reset role;
 select 'ALL OK' as result;

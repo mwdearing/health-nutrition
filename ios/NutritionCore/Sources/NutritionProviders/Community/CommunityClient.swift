@@ -45,11 +45,11 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
     /// The profile of the signed-in account. A missing row (not expected) reads as the defaults.
     public func profile() async throws -> CommunityProfile {
         let session = try await auth.validSession()
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/profiles",
+            session: session,
             method: "GET",
-            query: Self.ownRow(session.userID, select: "display_name,share_labels"),
-            bearer: session.accessToken
+            query: Self.ownRow(session.userID, select: "display_name,share_labels")
         )
         let rows = try CommunityAPI.decode([ProfileRow].self, from: data, status: response.statusCode)
         guard let row = rows.first else {
@@ -61,11 +61,11 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
     public func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(ProfileUpdate(displayName: displayName, shareLabels: shareLabels))
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/profiles",
+            session: session,
             method: "PATCH",
             query: Self.ownRow(session.userID, select: nil),
-            bearer: session.accessToken,
             body: body,
             prefer: "return=representation"
         )
@@ -79,20 +79,20 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
     /// Deletes the account and everything it submitted. The local session is forgotten only after the server agrees.
     public func deleteAccount() async throws {
         let session = try await auth.validSession()
-        _ = try await api.send(
+        _ = try await authenticatedSend(
             "/rest/v1/rpc/delete_my_account",
-            bearer: session.accessToken,
+            session: session,
             body: Data("{}".utf8)
         )
-        await auth.discardSession()
+        _ = try await auth.invalidateSession(matchingUserID: session.userID)
     }
 
     public func submitLabel(_ submission: CommunityLabelSubmission) async throws -> CommunitySubmitResult {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(SubmitBody(submission: submission))
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/rpc/submit_label",
-            bearer: session.accessToken,
+            session: session,
             body: body
         )
         return try CommunityAPI.decode(CommunitySubmitResult.self, from: data, status: response.statusCode)
@@ -101,9 +101,9 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
     public func lookupLabel(barcode: String) async throws -> [CommunityLabel] {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(LookupBody(barcode: barcode))
-        let (data, response) = try await api.send(
-            "/rest/v1/rpc/lookup_label",
-            bearer: session.accessToken,
+        let (data, response) = try await authenticatedSend(
+            "/rest/v1/rpc/lookup_label_v2",
+            session: session,
             body: body
         )
         let rows = try CommunityAPI.decode([LabelRow].self, from: data, status: response.statusCode)
@@ -115,10 +115,22 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
                 productName: row.productName,
                 brand: row.brand,
                 nutrients: row.nutrients,
-                verified: row.verified,
-                supportingAccounts: row.supportingDevices
+                // The versioned source is authoritative. A legacy `verified` bit can never
+                // turn a community aggregate into an owner-reviewed label.
+                verified: row.verificationSource == .ownerReviewed,
+                supportingAccounts: row.verificationSource == .community ? row.supportingDevices : 0,
+                verificationSource: row.verificationSource
             )
         }
+    }
+
+    private static func ownRow(_ userID: String, select: String?) -> [URLQueryItem] {
+        var items: [URLQueryItem] = []
+        if let select {
+            items.append(URLQueryItem(name: "select", value: select))
+        }
+        items.append(URLQueryItem(name: "id", value: "eq.\(userID)"))
+        return items
     }
 
     private var productsAPI: CommunityProductsAPI { CommunityProductsAPI(api: api, auth: auth) }
@@ -188,13 +200,35 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
         return state
     }
 
-    private static func ownRow(_ userID: String, select: String?) -> [URLQueryItem] {
-        var items: [URLQueryItem] = []
-        if let select {
-            items.append(URLQueryItem(name: "select", value: select))
+    /// A delayed authentication rejection can never remove a newer sign-in. Ordinary forbidden
+    /// operations retain the session; a forbidden signed-out SQLSTATE invalidates matching credentials.
+    private func authenticatedSend(
+        _ path: String,
+        session: CommunitySession,
+        method: String = "POST",
+        query: [URLQueryItem] = [],
+        body: Data? = nil,
+        prefer: String? = nil
+    ) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await api.raw(
+            path,
+            method: method,
+            query: query,
+            bearer: session.accessToken,
+            body: body,
+            prefer: prefer
+        )
+        let mappedError = CommunityError.from(status: response.statusCode, body: data)
+        if response.statusCode == 401 || (response.statusCode == 403 && mappedError == .signedOut) {
+            let invalidated: Bool
+            do { invalidated = try await auth.invalidateSession(matchingAccessToken: session.accessToken) }
+            catch { throw CommunityError.storage }
+            throw invalidated ? CommunityError.signedOut : CommunityError.unauthorized
         }
-        items.append(URLQueryItem(name: "id", value: "eq.\(userID)"))
-        return items
+        guard (200..<300).contains(response.statusCode) else {
+            throw mappedError
+        }
+        return (data, response)
     }
 }
 
@@ -259,7 +293,17 @@ private struct LabelRow: Decodable {
     let brand: String?
     let nutrients: [String: Decimal]
     let supportingDevices: Int
-    let verified: Bool
+    let verificationSource: CommunityVerificationSource
+
+    enum CodingKeys: String, CodingKey {
+        case basis
+        case servingText
+        case productName
+        case brand
+        case nutrients
+        case supportingDevices
+        case verificationSource
+    }
 }
 
 private struct ProductDetailResponse: Decodable {
