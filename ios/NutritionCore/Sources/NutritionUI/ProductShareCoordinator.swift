@@ -109,8 +109,9 @@ public enum ProductShareStatus: String, Sendable {
     @discardableResult public func requestWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation {
         guard let context = accountContext, operation.ownerID == context.ownerID,
               operation.epoch == context.localSessionEpoch, !lifecycleBlocked else { throw CustomProductStoreError.obsoleteOperation }
-        // Invalidates even transports that ignore cancellation, before the atomic durable intent.
-        generation = UUID(); running?.cancel()
+        // The atomic store mutation cancels only this product's publications. Its persisted status
+        // rejects their late replies; unrelated transport retains its admission token and exact envelope.
+        // A failed enqueue leaves the worker and every operation unchanged.
         return try store.enqueueProductWithdrawal(operation, expectedStoreEpoch: expectedStoreEpoch)
     }
 
@@ -259,7 +260,10 @@ public enum ProductShareStatus: String, Sendable {
                 epoch: active.epoch, storeEpoch: epoch, status: .acknowledged, serverProductID: receipt.productID.uuidString.lowercased(),
                 acknowledgedRevision: receipt.acknowledgedRevision, currentRevision: receipt.currentRevision, currentState: Self.state(receipt.currentState)))
         } catch is CancellationError {
-            if generation == token && accountContext == context { closeGate(reason: .unavailable) }
+            if generation == token && accountContext == context,
+               Task.isCancelled || (try? current(active, context: context, token: token)) != nil {
+                closeGate(reason: .unavailable)
+            }
         }
         catch { handle(error, operation: active, preparationSource: nil, context: context, token: token) }
     }

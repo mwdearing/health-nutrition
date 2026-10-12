@@ -57,6 +57,8 @@ public final class AccountViewModel: ObservableObject {
     private let productSharing: ProductShareCoordinator?
     private var productCapabilities: ProductCatalogCapabilities?
     private var accountIdentity = UUID()
+    /// An explicit sign-out bars automatic restore until a later deliberate sign-in succeeds.
+    private var automaticRestoreClosed = false
 
     private let service: CommunityAccountServicing
     private let preferences: CommunityDisclosurePreferences
@@ -87,6 +89,7 @@ public final class AccountViewModel: ObservableObject {
     /// Restores a stored sign-in when Settings opens. Signed out when nothing can be restored. The model is busy
     /// for the whole call, so the sign-in controls stay disabled until the restore has answered.
     public func load() async {
+        guard !automaticRestoreClosed else { return }
         busyCount += 1
         defer { busyCount -= 1 }
         let signInsBefore = signInCount
@@ -116,9 +119,10 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signInWithApple(idToken: String, nonce: String) async {
+        let identity = accountIdentity
         guard let session = await run(Self.signInFailedMessage, {
             try await self.service.signInWithApple(idToken: idToken, nonce: nonce)
-        }) else { return }
+        }), accountIdentity == identity else { return }
         completeSignIn(session)
         await refreshProfile()
     }
@@ -169,9 +173,10 @@ public final class AccountViewModel: ObservableObject {
         }
         guard emailStep == .enterCode else { return }
         let address = pendingEmail
+        let identity = accountIdentity
         guard let session = await run(Self.codeWrongMessage, {
             try await self.service.verifyEmailCode(email: address, code: digits)
-        }) else { return }
+        }), accountIdentity == identity else { return }
         completeSignIn(session)
         await refreshProfile()
     }
@@ -234,12 +239,10 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signOut() async {
-        productSharing?.closeGate(reason: .signOut)
-        accountIdentity = UUID()
-        let identity = accountIdentity
-        await service.signOut()
-        guard accountIdentity == identity else { return }
+        automaticRestoreClosed = true
+        // Remove every source of local eligibility before logout can suspend with a valid session.
         clearSignedInState()
+        await service.signOut()
     }
 
     /// Deletes the account on the server. The session is forgotten here only after the server agrees.
@@ -416,6 +419,7 @@ public final class AccountViewModel: ObservableObject {
     }
 
     private func completeSignIn(_ session: CommunitySession) {
+        automaticRestoreClosed = false
         signInCount += 1
         signIn(with: session)
         emailStep = .enterAddress

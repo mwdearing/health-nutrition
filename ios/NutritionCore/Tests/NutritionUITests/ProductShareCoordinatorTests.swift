@@ -20,6 +20,7 @@ final class ProductShareCoordinatorTests: XCTestCase {
 private final class DeliveryStorePort: CustomProductStore, @unchecked Sendable {
     var operations: [ProductShareOperation] = []
     var updates: [ProductDeliveryUpdate] = []
+    var withdrawalEnqueue: ((ProductShareOperation, UUID) throws -> ProductShareOperation)?
     func saveCustomProduct(_ command: CustomProductSave, now: Date) throws -> CustomProductRevision { command.revision }
     func enqueueProductOperation(_ operation: ProductShareOperation) throws { operations.append(operation) }
     func customProducts() throws -> [CustomProductRevision] { [] }
@@ -52,7 +53,10 @@ private final class DeliveryStorePort: CustomProductStore, @unchecked Sendable {
         for index in operations.indices where operations[index].ownerID == ownerID && operations[index].kind == .publish && operations[index].status != .acknowledged { operations[index].status = .cancelled }
     }
     func removeProductAccountState(ownerID: UUID) throws { operations.removeAll { $0.ownerID == ownerID } }
-    func enqueueProductWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation { throw CustomProductStoreError.invalidOperation }
+    func enqueueProductWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation {
+        guard let withdrawalEnqueue else { throw CustomProductStoreError.invalidOperation }
+        return try withdrawalEnqueue(operation, expectedStoreEpoch)
+    }
     func recordProductWithdrawalPreparation(_ update: ProductWithdrawalPreparationUpdate) throws -> ProductShareOperation { throw CustomProductStoreError.invalidOperation }
 }
 
@@ -483,3 +487,180 @@ extension ProductShareCoordinatorTests {
         XCTAssertEqual(coordinator.status(localProductID: second.localProductID), .shared)
     }
 }
+
+
+extension ProductShareCoordinatorTests {
+    @MainActor func testSuspendedSignOutRefusesFreshForegroundRefreshAndRestore() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService(), store = DeliveryStorePort()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
+        let coordinator = ProductShareCoordinator(store: store, service: products)
+        let account = AccountViewModel(service: service, preferences: preferences, productService: products, productSharing: coordinator)
+        await account.load()
+        let context = try XCTUnwrap(coordinator.accountContext)
+        let operation = queued(owner: context.ownerID, epoch: context.localSessionEpoch)
+        store.operations = [operation]
+        let gate = CallGate(); service.signOutGate = gate
+        let logout = Task { await account.signOut() }
+        for _ in 0..<1000 { if gate.entered { break }; await Task.yield() }
+        XCTAssertTrue(gate.entered)
+        await account.refreshProductSharing()
+        XCTAssertFalse(account.sharingAllowed)
+        XCTAssertNotNil(coordinator.pauseReason)
+        var deliveryFinished = false
+        let delivery = Task { await coordinator.runDueOperations(now: Date()); deliveryFinished = true }
+        for _ in 0..<1000 {
+            let count = await products.bodies.count
+            if deliveryFinished || count > 0 { break }
+            await Task.yield()
+        }
+        let calls = await products.bodies.count
+        XCTAssertEqual(calls, 0)
+        if calls > 0 { await products.finish(0, .success(receipt(operation))) }
+        await delivery.value
+        // A restore started after logout admission must not re-admit the still-valid stored session.
+        await account.load()
+        XCTAssertEqual(account.phase, .signedOut)
+        gate.open(); await logout.value
+        await account.refreshProductSharing(); await account.load()
+        XCTAssertEqual(account.phase, .signedOut)
+        XCTAssertNil(coordinator.accountContext)
+        // Only a fresh, deliberate sign-in may re-establish eligibility.
+        await account.signInWithApple(idToken: "synthetic", nonce: "synthetic")
+        XCTAssertEqual(account.phase, .signedIn)
+    }
+
+    @MainActor func testUnrelatedWithdrawalAndEnqueueFailureLeaveActiveSendRecoverableInSameContext() async throws {
+        for enqueueFails in [false, true] {
+            let owner = UUID(), epoch = UUID(), store = DeliveryStorePort(), service = SuspendedProductService()
+            let first = queued(owner: owner, epoch: epoch), removal = queued(owner: owner, epoch: epoch, kind: .withdraw)
+            store.operations = [first]
+            store.withdrawalEnqueue = { [unowned store] operation, expectedEpoch in
+                if enqueueFails { throw CustomProductStoreError.invalidOperation }
+                var saved = operation; saved.storeEpoch = expectedEpoch
+                // Keep the test focused on A's recovery. The real-store variant below also delivers B.
+                saved.nextAttemptAt = Date.distantFuture
+                store.operations.append(saved)
+                return saved
+            }
+            let now = Date(timeIntervalSince1970: 1000)
+            let coordinator = ProductShareCoordinator(store: store, service: service, clock: { now }, jitter: { 1 })
+            let initialContext = context(owner, epoch)
+            coordinator.updateAccountContext(initialContext)
+            let sending = Task { await coordinator.runDueOperations(now: now) }; await service.waitForRequests(1)
+            if enqueueFails { XCTAssertThrowsError(try coordinator.requestWithdrawal(removal, expectedStoreEpoch: removal.storeEpoch!)) }
+            else { _ = try coordinator.requestWithdrawal(removal, expectedStoreEpoch: removal.storeEpoch!) }
+            await service.finish(0, .failure(ProductAPIError.unavailable)); await sending.value
+            let saved = try XCTUnwrap(store.operations.first)
+            XCTAssertEqual(coordinator.accountContext, initialContext)
+            XCTAssertEqual(saved.status, .pending)
+            XCTAssertEqual(saved.nextAttemptAt, now.addingTimeInterval(2))
+            XCTAssertEqual(saved.operationID, first.operationID)
+            XCTAssertEqual(saved.attempts, 1)
+            // Avoid hanging a failing implementation whose row is stranded in .sending.
+            if saved.status == .pending {
+                let replay = Task { await coordinator.runDueOperations(now: now.addingTimeInterval(2)) }; await service.waitForRequests(2)
+                await service.finish(1, .success(receipt(first))); await replay.value
+                let bodies = await service.bodies
+                XCTAssertEqual(bodies[0], bodies[1])
+                XCTAssertEqual(store.operations.first?.status, .acknowledged)
+            }
+        }
+    }
+}
+
+extension ProductShareCoordinatorTests {
+    @MainActor func testSameProductWithdrawalDropsCanceledReplyWithoutClosingOtherWork() async throws {
+        let owner = UUID(), epoch = UUID(), store = DeliveryStorePort(), service = SuspendedProductService()
+        let source = queued(owner: owner, epoch: epoch)
+        store.operations = [source]
+        store.withdrawalEnqueue = { [unowned store] operation, expectedEpoch in
+            store.operations[0].status = .cancelled
+            var saved = operation; saved.storeEpoch = expectedEpoch; saved.nextAttemptAt = Date.distantFuture
+            store.operations.append(saved)
+            return saved
+        }
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(context(owner, epoch))
+        let run = Task { await coordinator.runDueOperations(now: Date()) }; await service.waitForRequests(1)
+        let intent = ProductShareOperation(ownerID: owner, localProductID: source.localProductID, operationID: UUID(),
+            clientRevisionID: source.clientRevisionID, kind: .withdraw, epoch: epoch)
+        _ = try coordinator.requestWithdrawal(intent, expectedStoreEpoch: source.storeEpoch!)
+        await service.finish(0, .success(receipt(source))); await run.value
+        XCTAssertEqual(store.operations.first?.status, .cancelled)
+        XCTAssertNil(coordinator.pauseReason)
+        XCTAssertFalse(store.updates.contains { $0.status == .acknowledged })
+    }
+}
+
+#if canImport(SwiftData)
+extension ProductShareCoordinatorTests {
+    @MainActor func testRealStoreUnrelatedWithdrawalSuccessOrRollbackPreservesSameContextReplayAndRemoval() async throws {
+        for enqueueFails in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("synthetic.store"))
+            let owner = UUID(), epoch = UUID(), now = Date(timeIntervalSince1970: 1000), remoteB = UUID()
+            let service = SuspendedProductService()
+            let b = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic B", kind: .food, basis: .per100g))
+            let bPublication = ProductShareOperation(ownerID: owner, localProductID: b.localProductID, operationID: UUID(),
+                clientRevisionID: b.revisionID, kind: .publish, content: b.content, consentGeneration: "1", epoch: epoch)
+            try store.saveCustomProduct(CustomProductSave(revision: b, publication: bPublication), now: now)
+            let bStored = try XCTUnwrap(try store.productOperations(ownerID: owner).first), bStoreEpoch = try XCTUnwrap(bStored.storeEpoch)
+            try store.recordProductDelivery(ProductDeliveryUpdate(operationID: bPublication.operationID, ownerID: owner, epoch: epoch,
+                storeEpoch: bStoreEpoch, status: .sending, envelope: ProductShareDeliveryWorker.publishRequest(bStored).canonicalBody()))
+            try store.recordProductDelivery(ProductDeliveryUpdate(operationID: bPublication.operationID, ownerID: owner, epoch: epoch,
+                storeEpoch: bStoreEpoch, status: .acknowledged, serverProductID: remoteB.uuidString.lowercased(), acknowledgedRevision: "1", currentRevision: "1", currentState: .active))
+            let a = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic A", kind: .food, basis: .per100g))
+            let aPublication = ProductShareOperation(ownerID: owner, localProductID: a.localProductID, operationID: UUID(),
+                clientRevisionID: a.revisionID, kind: .publish, content: a.content, consentGeneration: "1", epoch: epoch)
+            try store.saveCustomProduct(CustomProductSave(revision: a, publication: aPublication), now: now)
+            let coordinator = ProductShareCoordinator(store: store, service: service, clock: { now }, jitter: { 1 })
+            let initialContext = context(owner, epoch)
+            coordinator.updateAccountContext(initialContext)
+            let firstRun = Task { await coordinator.runDueOperations(now: now) }; await service.waitForRequests(1)
+            let original = try XCTUnwrap(try store.productOperations(ownerID: owner).first(where: { $0.operationID == aPublication.operationID }))
+            let removal = ProductShareOperation(ownerID: owner, localProductID: b.localProductID, operationID: UUID(),
+                clientRevisionID: b.revisionID, kind: .withdraw, epoch: epoch)
+            if enqueueFails {
+                store.failNextSaveForTesting = true
+                XCTAssertThrowsError(try coordinator.requestWithdrawal(removal, expectedStoreEpoch: bStoreEpoch))
+                XCTAssertFalse(try store.productOperations(ownerID: owner).contains { $0.operationID == removal.operationID })
+            } else { _ = try coordinator.requestWithdrawal(removal, expectedStoreEpoch: bStoreEpoch) }
+            await service.finish(0, .failure(ProductAPIError.unavailable))
+            let removalReceipt = ProductDeliveryReceipt(operationID: removal.operationID, productID: remoteB,
+                acknowledgedRevision: "2", currentRevision: "2", currentState: .withdrawn, replayed: false)
+            if !enqueueFails {
+                await service.waitForRequests(2)
+                await service.finish(1, .success(removalReceipt))
+            }
+            await firstRun.value
+            let pending = try XCTUnwrap(try store.productOperations(ownerID: owner).first(where: { $0.operationID == aPublication.operationID }))
+            XCTAssertEqual(pending.status, .pending)
+            XCTAssertEqual(pending.envelope, original.envelope)
+            XCTAssertEqual(pending.operationID, original.operationID)
+            XCTAssertEqual(pending.nextAttemptAt, now.addingTimeInterval(2))
+            XCTAssertEqual(coordinator.accountContext, initialContext)
+            if enqueueFails { _ = try coordinator.requestWithdrawal(removal, expectedStoreEpoch: bStoreEpoch) }
+            let retry = Task { await coordinator.runDueOperations(now: now.addingTimeInterval(2)) }
+            let replayIndex = enqueueFails ? 1 : 2
+            await service.waitForRequests(replayIndex + 1)
+            await service.finish(replayIndex, .success(receipt(aPublication)))
+            if enqueueFails {
+                await service.waitForRequests(3)
+                await service.finish(2, .success(removalReceipt))
+            }
+            await retry.value
+            let bodies = await service.bodies
+            XCTAssertEqual(bodies[0], bodies[replayIndex])
+            let final = try store.productOperations(ownerID: owner)
+            XCTAssertEqual(final.first(where: { $0.operationID == aPublication.operationID })?.status, .acknowledged)
+            XCTAssertEqual(final.first(where: { $0.operationID == aPublication.operationID })?.attempts, 2)
+            XCTAssertEqual(final.first(where: { $0.operationID == removal.operationID })?.status, .acknowledged)
+            XCTAssertEqual(coordinator.status(localProductID: b.localProductID), .removed)
+            XCTAssertEqual(coordinator.accountContext, initialContext)
+        }
+    }
+}
+#endif
