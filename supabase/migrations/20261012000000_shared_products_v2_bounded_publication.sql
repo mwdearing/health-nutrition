@@ -96,7 +96,7 @@ returns jsonb language plpgsql security definer set search_path='' as $$ begin
 end $$;
 create or replace function public.search_catalog_products_v2(p_query text,p_kind text default null,p_cursor text default null,p_limit integer default 20) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare q text; fingerprint text; parts text[]; source_name text; last_name text; last_id uuid; row record; products jsonb:='[]'; next_cursor text; n integer:=0; candidate jsonb; candidate_cursor text;
+declare q text; fingerprint text; parts text[]; source_name text; last_name text; last_id uuid; scan_name text; scan_id uuid; row record; products jsonb:='[]'; next_cursor text; n integer:=0; batch_count integer; done boolean; candidate jsonb;
 begin
  perform catalog_v2.live_account(); q:=catalog_v2.search_name(p_query);
  if q is null or char_length(catalog_v2.trim_whitespace(p_query)) not between 2 and 120 or q='' or p_limit is null or p_limit not between 1 and 20 or (p_kind is not null and p_kind not in ('food','drink','supplement')) then perform catalog_v2.fail('invalid_request'); end if;
@@ -113,27 +113,38 @@ begin
    if last_name='' then perform catalog_v2.fail('invalid_request'); end if;
   exception when others then perform catalog_v2.fail('invalid_request'); end;
  end if;
- for row in
-  with candidates as materialized (
-   select stored.product_id,stored.normalized_name,stored.source_name
-   from catalog_v2.entries stored
-   where strpos(stored.normalized_name,q)>0 and (p_kind is null or stored.kind=p_kind)
-    and (last_id is null or (stored.normalized_name,stored.product_id)>(last_name collate "C",last_id))
-   order by stored.normalized_name collate "C",stored.product_id limit p_limit+1
-  ), rebuilt as materialized (
-   select candidates.product_id,candidates.normalized_name,candidates.source_name,
-    catalog_v2.publication(candidates.product_id) publication from candidates
-  )
-  select rebuilt.product_id,rebuilt.publication,rebuilt.normalized_name,rebuilt.source_name from rebuilt
-  where rebuilt.publication is not null order by rebuilt.normalized_name collate "C",rebuilt.product_id loop
-  n:=n+1;
-  if n>p_limit then next_cursor:='2.'||fingerprint||'.'||last_id::text||'.'||replace(encode(convert_to(source_name,'UTF8'),'base64'),E'\n',''); exit; end if;
-  candidate_cursor:='2.'||fingerprint||'.'||row.product_id::text||'.'||replace(encode(convert_to(row.source_name,'UTF8'),'base64'),E'\n','');
-  candidate:=jsonb_build_object('products',products||jsonb_build_array(row.publication),'next_cursor',candidate_cursor);
-  if octet_length(candidate::text)>786432 then
-   next_cursor:='2.'||fingerprint||'.'||last_id::text||'.'||replace(encode(convert_to(source_name,'UTF8'),'base64'),E'\n',''); exit;
-  end if;
-  products:=products||jsonb_build_array(row.publication); last_name:=row.normalized_name; last_id:=row.product_id; source_name:=row.source_name;
+ -- Old derived entries can outlive their last contribution. Scan bounded candidate batches so such rows
+ -- cannot consume the output limit or hide later live publications from a page.
+ loop
+  batch_count:=0; done:=false;
+  for row in
+   with candidates as materialized (
+    select stored.product_id,stored.normalized_name,stored.source_name
+    from catalog_v2.entries stored
+    where strpos(stored.normalized_name,q)>0 and (p_kind is null or stored.kind=p_kind)
+     and (last_id is null or (stored.normalized_name,stored.product_id)>(last_name collate "C",last_id))
+     and (scan_id is null or (stored.normalized_name,stored.product_id)>(scan_name collate "C",scan_id))
+    order by stored.normalized_name collate "C",stored.product_id limit 20
+   ), rebuilt as materialized (
+    select candidates.product_id,candidates.normalized_name,candidates.source_name,
+     catalog_v2.publication(candidates.product_id) publication from candidates
+   )
+   select rebuilt.product_id,rebuilt.publication,rebuilt.normalized_name,rebuilt.source_name from rebuilt
+   order by rebuilt.normalized_name collate "C",rebuilt.product_id loop
+   batch_count:=batch_count+1; scan_name:=row.normalized_name; scan_id:=row.product_id;
+   if row.publication is null then continue; end if;
+   n:=n+1;
+   if n>p_limit then
+    next_cursor:='2.'||fingerprint||'.'||last_id::text||'.'||replace(encode(convert_to(source_name,'UTF8'),'base64'),E'\n',''); done:=true; exit;
+   end if;
+   candidate:=jsonb_build_object('products',products||jsonb_build_array(row.publication),
+    'next_cursor','2.'||fingerprint||'.'||row.product_id::text||'.'||replace(encode(convert_to(row.source_name,'UTF8'),'base64'),E'\n',''));
+   if octet_length(candidate::text)>786432 then
+    next_cursor:='2.'||fingerprint||'.'||last_id::text||'.'||replace(encode(convert_to(source_name,'UTF8'),'base64'),E'\n',''); done:=true; exit;
+   end if;
+   products:=products||jsonb_build_array(row.publication); last_name:=row.normalized_name; last_id:=row.product_id; source_name:=row.source_name;
+  end loop;
+  if done or batch_count=0 then exit; end if;
  end loop;
  return jsonb_build_object('products',products,'next_cursor',next_cursor);
 end $$;

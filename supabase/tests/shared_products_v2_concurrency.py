@@ -343,8 +343,14 @@ def main():
     e = account(); ids=[]
     for name in ['Synthetic cursor A','Synthetic cursor B','Synthetic cursor C']:
         ids.append(submit(e,request(product(name)))['product_id'])
+    # Simulate a stale derived row left after an out-of-band profile cascade removed its contributor.
+    # It sorts before the live products and must not consume the bounded output page.
+    stale = str(uuid.uuid4())
+    sql(f"insert into catalog_v2.products(id,kind) values({literal(stale)},'food');"
+        f"insert into catalog_v2.entries(product_id,normalized_name,kind,publication,source_name) "
+        f"values({literal(stale)},catalog_v2.search_name('Synthetic cursor 0 stale'),'food','{{}}'::jsonb,'Synthetic cursor 0 stale');")
     page = rpc(e,'search_catalog_products_v2',"'Synthetic cursor',null,null,1")
-    assert len(page['products'])==1 and page['next_cursor']
+    assert [p['product_id'] for p in page['products']]==[ids[0]] and page['next_cursor']
     cursor = page['next_cursor']
     expect_error(e,'search_catalog_products_v2',f"'Different query',null,{literal(cursor)},1",'invalid_request')
     expect_error(e,'search_catalog_products_v2',"'Synthetic',null,'malformed',1",'invalid_request')
