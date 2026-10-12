@@ -325,6 +325,8 @@ private final class ControlledURLProtocol: URLProtocol {
     }
 
     private static let state = LockedState()
+    private let lifecycleLock = NSLock()
+    private var stopped = false
 
     static func requestCount() -> Int { state.currentRequestCount() }
 
@@ -339,35 +341,44 @@ private final class ControlledURLProtocol: URLProtocol {
 
     override func startLoading() {
         let current = Self.state.beginRequest()
-        if let redirectTo = current.redirectTo, request.url != redirectTo {
-            let response = HTTPURLResponse(
-                url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
-                headerFields: ["Location": redirectTo.absoluteString])!
-            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: redirectTo), redirectResponse: response)
-            return
+        // URLSession may buffer protocol callbacks that all arrive synchronously from
+        // startLoading. Deliver asynchronously so these fixtures exercise real streaming behavior.
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            guard isActive else { return }
+            if let redirectTo = current.redirectTo, request.url != redirectTo {
+                let response = HTTPURLResponse(
+                    url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+                    headerFields: ["Location": redirectTo.absoluteString])!
+                client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: redirectTo), redirectResponse: response)
+                return
+            }
+            let response: URLResponse
+            if current.nonHTTP {
+                response = URLResponse(url: request.url!, mimeType: "text/plain", expectedContentLength: -1,
+                                       textEncodingName: nil)
+            } else {
+                var headers = [String: String]()
+                if let contentLength = current.contentLength { headers["Content-Length"] = String(contentLength) }
+                response = HTTPURLResponse(
+                    url: request.url!, statusCode: current.status, httpVersion: "HTTP/1.1", headerFields: headers)!
+            }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            for chunk in current.chunks {
+                guard isActive else { return }
+                client?.urlProtocol(self, didLoad: chunk)
+                current.onChunk?()
+            }
+            if !current.holdOpen, isActive { client?.urlProtocolDidFinishLoading(self) }
         }
-        let response: URLResponse
-        if current.nonHTTP {
-            response = URLResponse(url: request.url!, mimeType: "text/plain", expectedContentLength: -1,
-                                   textEncodingName: nil)
-        } else {
-            var headers = [String: String]()
-            if let contentLength = current.contentLength { headers["Content-Length"] = String(contentLength) }
-            response = HTTPURLResponse(
-                url: request.url!, statusCode: current.status, httpVersion: "HTTP/1.1", headerFields: headers)!
-        }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        for chunk in current.chunks {
-            client?.urlProtocol(self, didLoad: chunk)
-            current.onChunk?()
-        }
-        if !current.holdOpen { client?.urlProtocolDidFinishLoading(self) }
     }
 
     override func stopLoading() {
+        lifecycleLock.withLock { stopped = true }
         let callback = Self.state.stopCallback()
         callback?()
     }
+
+    private var isActive: Bool { lifecycleLock.withLock { !stopped } }
 }
 
 private final class RedirectRefusingDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
