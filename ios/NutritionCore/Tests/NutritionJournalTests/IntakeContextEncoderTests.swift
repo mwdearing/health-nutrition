@@ -1063,6 +1063,17 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertEqual(fact.string("component_id"), componentID)
     }
 
+    func testLongCustomFactKeysUseBoundedCollisionResistantComponentIDs() {
+        let firstKey = "customfact_utf8_" + String(repeating: "a", count: 128)
+        let secondKey = "customfact_utf8_" + String(repeating: "b", count: 128)
+        let first = IntakeContextFactCatalog.nutrientSlug(for: firstKey)
+        let second = IntakeContextFactCatalog.nutrientSlug(for: secondKey)
+        XCTAssertEqual(first.count, 64)
+        XCTAssertTrue(IntakeContextFactCatalog.isSlug(first), first)
+        XCTAssertTrue(first.hasPrefix("c"))
+        XCTAssertNotEqual(first, second)
+    }
+
     /// The scope's own fields are part of the envelope the receiver validates, so a configuration mistake is a
     /// local refusal rather than a permanent failure after a delivery attempt.
     func testProducerScopeFieldsAreValidated() throws {

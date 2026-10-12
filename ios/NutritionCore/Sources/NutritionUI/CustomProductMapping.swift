@@ -3,7 +3,7 @@ import NutritionDomain
 import NutritionJournal
 import NutritionProviders
 
-public enum CustomProductMappingError: Error { case requiresExplicitChoices, unsupportedLegacyFact, unresolvedBasis }
+public enum CustomProductMappingError: Error { case requiresExplicitChoices, unsupportedLegacyFact, unresolvedBasis, sourcedIdentityIsFixed }
 
 /// An editor staging value, never a saved strict revision. The original source remains available
 /// while the person resolves missing choices; a historical snapshot cannot reconstruct lost facts.

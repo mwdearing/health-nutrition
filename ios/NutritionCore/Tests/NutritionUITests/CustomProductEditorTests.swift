@@ -185,6 +185,18 @@ final class CustomProductEditorTests: XCTestCase {
         XCTAssertEqual(store.commands.last?.expectedLocalRevision, original.revisionID)
         XCTAssertTrue(store.operations.isEmpty)
     }
+    @MainActor func testImportedProductKindAndBarcodeCannotBeChanged() throws {
+        let original = CustomProductRevision(localProductID: UUID(), revisionID: UUID(),
+            content: .init(name: "Synthetic", barcode: "0012345678905", kind: .food, basis: .per100g),
+            source: .init(productID: UUID(), representativeRevision: "1", attribution: "Community"))
+        for change in ["barcode", "kind"] {
+            let store = ProductEditorStorePort(); store.products = [original]
+            let model = CustomProductEditorViewModel(store: store, revision: original)
+            if change == "barcode" { model.barcode = "0098765432100" } else { model.kind = .supplement }
+            XCTAssertThrowsError(try model.save(now: Date()), change)
+            XCTAssertTrue(store.commands.isEmpty, change)
+        }
+    }
     @MainActor func testInvalidDecimalDoesNotPartiallyParseOrSave() async throws {
         for text in ["1e2", "1garbage", "-1", "0.0000001"] {
             let store = ProductEditorStorePort()

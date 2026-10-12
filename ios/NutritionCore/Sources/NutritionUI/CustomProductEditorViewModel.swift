@@ -90,6 +90,10 @@ public struct ProductFactInput: Identifiable, Equatable {
     }
     @discardableResult public func save(now: Date) throws -> CustomProductRevision {
         do {
+            if let original = revision, original.source != nil,
+               (kind != original.content.kind || Self.optional(barcode) != original.content.barcode) {
+                throw CustomProductMappingError.sourcedIdentityIsFixed
+            }
             let result = CustomProductRevision(localProductID: localProductID, revisionID: UUID(), content: try content(), source: revision?.source ?? legacy?.source)
             var publication: ProductShareOperation?
             if revision == nil, legacy == nil, let sharing, let eligibility = try sharing.newProductEligibility(using: store) {
@@ -119,6 +123,7 @@ public struct ProductFactInput: Identifiable, Equatable {
     }
     public static func message(for error: Error) -> String {
         if let field = error as? CustomProductFieldError { return "Check \(field.field): \(field.code.rawValue)." }
+        if error as? CustomProductMappingError == .sourcedIdentityIsFixed { return "This imported product's kind and barcode are fixed. Keep them to edit this product." }
         if error is CustomProductMappingError { return "Choose a product kind, facts basis and explicit serving before saving." }
         if error as? CustomProductStoreError == .barcodeBindingRequiresReview { return "This shared product's barcode is fixed. Keep its barcode to edit this product." }
         if error as? CustomProductStoreError == .localRevisionConflict { return "This product changed. Reopen its latest version before editing." }

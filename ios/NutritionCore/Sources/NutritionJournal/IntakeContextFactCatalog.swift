@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import NutritionDomain
 
 /// One member of a proprietary blend, as the label prints it.
@@ -148,6 +149,10 @@ public enum IntakeContextFactCatalog {
     /// so `energyKcal` is the canonical `energy` and `vitaminD` is `vitamin-d`.
     public static func nutrientSlug(for key: String) -> String {
         let canonical = HealthKitWritePlanner.canonicalKey(for: key)
+        if canonical.hasPrefix("customfact_utf8_"), canonical.utf8.count > 64 {
+            let digest = SHA256.hash(data: Data(canonical.utf8))
+            return "c" + String(digest.map { String(format: "%02x", $0) }.joined().prefix(63))
+        }
         var slug = ""
         for character in canonical {
             if character.isUppercase, !slug.isEmpty { slug.append("-") }
