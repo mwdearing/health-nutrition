@@ -51,7 +51,7 @@ public final class FirstDayChecklistModel: ObservableObject {
         }
         items = [
             FirstDayChecklistItem(
-                kind: .logFirst, title: "Log your first food or drink", detail: nil,
+                kind: .logFirst, title: "Log your first food, drink, or supplement", detail: nil,
                 isDone: hasEntry, isPlaceholder: false),
             FirstDayChecklistItem(
                 kind: .setGoal, title: "Set a daily goal", detail: nil,

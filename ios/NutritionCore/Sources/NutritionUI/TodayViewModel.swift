@@ -91,7 +91,7 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var goalBars: [GoalBarModel] = []
     /// The water bar, only where a water goal is set; without one the water card shows the total alone.
     @Published public private(set) var waterBar: GoalBarModel?
-    /// The day's food and drink entries grouped by meal: Breakfast, Lunch, Dinner, Snack, then Other for
+    /// The day's food, drink, and supplement entries grouped by meal: Breakfast, Lunch, Dinner, Snack, then Other for
     /// an entry with no meal or a free-text one. Sections with no entry are left out, and water entries
     /// are not listed (see `waterEntryCount`).
     @Published public private(set) var mealSections: [TodayMealSection] = []

@@ -301,10 +301,10 @@ struct RootView: View {
 
     /// The shared "Add food, drink, or supplement" capsule, laid over the bottom of every tab.
     private var addCapsule: some View {
-        PrimaryCapsule("Add food, drink, or supplement", systemImage: "plus") {
+        PrimaryCapsule(ActionLabels.addFoodDrinkOrSupplement, systemImage: "plus") {
             startAddingIntake()
         }
-        .accessibilityLabel("Add food, drink, or supplement")
+        .accessibilityLabel(ActionLabels.addFoodDrinkOrSupplement)
         .padding(.horizontal, DesignSpacing.m)
         .padding(.bottom, DesignSpacing.s)
     }
