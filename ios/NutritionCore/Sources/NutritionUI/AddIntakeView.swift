@@ -316,7 +316,7 @@ public struct AddIntakeView: View {
 /// `keyboardType` and the text-input modifiers do not exist, so they stay behind this one door.
 extension View {
     @ViewBuilder
-    private func digitsOnlyKeyboard() -> some View {
+    fileprivate func digitsOnlyKeyboard() -> some View {
         #if os(iOS)
         self.keyboardType(.numberPad).textContentType(nil)
         #else
