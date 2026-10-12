@@ -30,3 +30,16 @@ def test_presentations_carry_sign_in_disclosure_and_delete() -> None:
     tail = text[text.index("struct AccountPresentations") :]
     for needle in ("SignInSheet(model: model)", "SharingDisclosureSheet(model: model)", "Delete your account?"):
         assert needle in tail
+
+
+def test_v2_disclosure_states_expanded_scope_automatic_creation_and_owner_only_verification() -> None:
+    text = (UI / "SharingDisclosureSheet.swift").read_text()
+    for wording in (
+        "manually created foods, drinks and supplements, with or without a barcode",
+        "Agreement is support only", "Only catalog-owner review of the exact facts verifies",
+        "automatically queued to share, including when offline", "Imports, edits and older local products",
+        "Photos, consumed amounts, intake times, meals, journal entries, notes and goals are never shared",
+        "does not remove earlier contributions", "Remove my contribution", "version 2",
+    ):
+        assert wording in text
+    assert "Agreement from distinct accounts and review determine verification" not in text

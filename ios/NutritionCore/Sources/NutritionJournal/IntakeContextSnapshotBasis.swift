@@ -32,7 +32,7 @@ public enum IntakeContextSnapshotBasis: Equatable {
     public static func parse(_ labelBasis: String) -> IntakeContextSnapshotBasis? {
         // A negative yield is not a yield. The spelling below drops hyphens, which would turn "-0.8" into
         // "0.8", so the sign is checked on the text as written.
-        if labelBasis.range(of: #"yield\s*[-\u{2212}]\s*[0-9]"#, options: [.regularExpression, .caseInsensitive]) != nil {
+        if labelBasis.range(of: #"yield\s*[-−]\s*[0-9]"#, options: [.regularExpression, .caseInsensitive]) != nil {
             return nil
         }
         var compact = ""
@@ -126,30 +126,26 @@ public enum IntakeContextSnapshotBasis: Equatable {
     /// count the whole package.
     public static func scalingFactor(labelBasis: String, logged components: [IntakeComponent]) -> Decimal? {
         guard let basis = parse(labelBasis) else { return nil }
-        if let factor = basis.factor(forLogged: components) { return factor }
-        return countedServingFactor(labelBasis: labelBasis, basis: basis, logged: components)
+        // An explicit denominator applies even when its unit is itself "serving".
+        if let factor = statedServingFactor(labelBasis: labelBasis, basis: basis, logged: components) { return factor }
+        return basis.factor(forLogged: components)
     }
 
-    /// The factor for a per-count basis whose serving is stated as a count of the thing logged, and the
-    /// entry records that thing rather than a serving: "per serving (3 gummy)" with six gummies logged is
-    /// two servings. A label that says "Serving size 3 gummies" is stored in this shape.
-    ///
-    /// Only the one counted component, in the unit the serving is stated in, scales, so the factor is exact.
-    /// An entry that records another count beside it ("six gummies and a tablet") does not say how many
-    /// servings were eaten, so it is nil. A serving stated in weight or volume ("per serving (30 g)") is not
-    /// answered here, because the encoder and the HealthKit totals do not say how much was eaten from a
-    /// weight the entry does not record in that dimension. A serving with no quantity
-    /// ("per serving (1 large biscuit)") is nil.
-    private static func countedServingFactor(
+    /// A structured serving keeps the original per-serving label amount. Compatible mass/volume
+    /// consumption is divided by that serving quantity; count units must match exactly.
+    private static func statedServingFactor(
         labelBasis: String, basis: IntakeContextSnapshotBasis, logged components: [IntakeComponent]
     ) -> Decimal? {
-        guard case .perCount = basis,
-              let serving = statedServingQuantity(labelBasis),
-              serving.unit.dimension == .count
-        else { return nil }
-        let counts = components.filter { $0.unit.dimension == .count }
-        guard counts.count == 1, counts[0].unit == serving.unit else { return nil }
-        return counts[0].amount / serving.value
+        guard case .perCount(.serving) = basis,
+              let serving = statedServingQuantity(labelBasis) else { return nil }
+        if serving.unit.dimension == .count {
+            let counts = components.filter { $0.unit.dimension == .count }
+            guard counts.count == 1, counts[0].unit == serving.unit else { return nil }
+            return counts[0].amount / serving.value
+        }
+        guard [.mass, .volume].contains(serving.unit.dimension),
+              let amount = loggedAmount(components, in: serving.unit) else { return nil }
+        return amount / serving.value
     }
 
     /// The quantity one serving is, from a basis that states it: "per serving (30 g)" is 30 g and

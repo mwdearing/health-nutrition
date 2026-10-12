@@ -13,11 +13,13 @@ final class CommunityLabelMappingTests: XCTestCase {
 
     private func label(
         _ basis: CommunityBasis, servingText: String? = nil, verified: Bool = true, accounts: Int = 2,
+        source: CommunityVerificationSource = .community,
         nutrients: [String: Decimal]? = nil
     ) -> CommunityLabel {
         CommunityLabel(
             barcode: barcode, basis: basis, servingText: servingText, productName: "Community bar",
-            brand: "Acme", nutrients: nutrients ?? self.nutrients, verified: verified, supportingAccounts: accounts)
+            brand: "Acme", nutrients: nutrients ?? self.nutrients, verified: verified,
+            supportingAccounts: accounts, verificationSource: source)
     }
 
     func testPerHundredGramLabelMapsToPer100gBasisAndName() throws {
@@ -79,12 +81,21 @@ final class CommunityLabelMappingTests: XCTestCase {
         XCTAssertEqual(product.value(for: LookedUpProduct.salt), .unknown)
     }
 
-    func testVerifiedAttributionSaysHowManyPeopleAgree() throws {
+    func testCommunityAttributionNeverUsesLegacyVerifiedBit() throws {
         let product = try XCTUnwrap(
-            CommunityLabelMapping.product(barcode: barcode, labels: [label(.per100g, verified: true, accounts: 5)]))
+            CommunityLabelMapping.product(barcode: barcode, labels: [label(.per100g, verified: true, accounts: 500)]))
 
         XCTAssertEqual(
-            product.attribution?.text, "Verified by the community: 5 people agree on these values.")
+            product.attribution?.text, "Shared by the community, not yet verified: 500 people agree.")
+    }
+
+    func testOwnerReviewedAttributionUsesExactTextWithoutSupporterCount() throws {
+        let product = try XCTUnwrap(CommunityLabelMapping.product(
+            barcode: barcode,
+            labels: [label(.per100g, verified: true, accounts: 0, source: .ownerReviewed)]))
+
+        XCTAssertEqual(product.attribution?.text, "Reviewed by the catalog owner")
+        XCTAssertFalse(product.attribution?.text.contains("agree") ?? true)
     }
 
     func testUnverifiedAttributionSaysTheValuesAreNotYetVerified() throws {
@@ -95,7 +106,7 @@ final class CommunityLabelMappingTests: XCTestCase {
     }
 
     func testASingleAgreementReadsAsOnePerson() {
-        let attribution = CommunityLabelMapping.attribution(verified: false, supportingAccounts: 1)
+        let attribution = CommunityLabelMapping.attribution(source: .community, supportingAccounts: 1)
 
         XCTAssertEqual(attribution.text, "Shared by the community, not yet verified: 1 person agrees.")
     }

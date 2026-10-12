@@ -7,11 +7,17 @@ public enum CommunityBasis: String, Codable, Equatable, Sendable {
     case perServing = "per_serving"
 }
 
-/// What the catalog answered for a submission: kept as received, agreed with other devices, or verified.
+/// What the catalog answered for a submission. `verified` remains decodable for older server replies.
 public enum CommunitySubmitResult: String, Codable, Equatable, Sendable {
     case received
     case shared
     case verified
+}
+
+/// The explicit authority behind a label's verification state in lookup_label_v2.
+public enum CommunityVerificationSource: String, Codable, Equatable, Sendable {
+    case community
+    case ownerReviewed = "owner_reviewed"
 }
 
 /// One label a person captured. Energy is kcal, sodium is mg, every other nutrient is grams.
@@ -49,9 +55,12 @@ public struct CommunityLabel: Equatable, Sendable {
     public let productName: String
     public let brand: String?
     public let nutrients: [String: Decimal]
+    /// Compatibility bit; only the explicit source controls how the app describes verification.
     public let verified: Bool
     /// How many accounts agree with this label.
     public let supportingAccounts: Int
+    /// Explicit source of verification. Community agreement is never verification.
+    public let verificationSource: CommunityVerificationSource
 
     public init(
         barcode: String,
@@ -61,7 +70,8 @@ public struct CommunityLabel: Equatable, Sendable {
         brand: String?,
         nutrients: [String: Decimal],
         verified: Bool,
-        supportingAccounts: Int
+        supportingAccounts: Int,
+        verificationSource: CommunityVerificationSource = .community
     ) {
         self.barcode = barcode
         self.basis = basis
@@ -69,7 +79,10 @@ public struct CommunityLabel: Equatable, Sendable {
         self.productName = productName
         self.brand = brand
         self.nutrients = nutrients
-        self.verified = verified
-        self.supportingAccounts = supportingAccounts
+        // Keep the legacy argument label for source compatibility, but never use its bit to
+        // determine verification. Only the explicit source carries that authority.
+        self.verified = verificationSource == .ownerReviewed
+        self.supportingAccounts = verificationSource == .community ? supportingAccounts : 0
+        self.verificationSource = verificationSource
     }
 }

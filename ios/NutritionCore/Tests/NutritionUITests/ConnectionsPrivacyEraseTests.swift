@@ -43,6 +43,7 @@ private final class EraseStubFavorites: FavoritesStore, @unchecked Sendable {
 /// cannot erase, e.g. one that was closed.
 private final class RecordingEraser: JournalErasing, @unchecked Sendable {
     var eraseCount = 0
+    var beforeErase: (() -> Void)?
     var failure: Error?
 
     init(failure: Error? = nil) {
@@ -50,6 +51,7 @@ private final class RecordingEraser: JournalErasing, @unchecked Sendable {
     }
 
     func eraseAll() throws {
+        beforeErase?()
         eraseCount += 1
         if let failure { throw failure }
     }
@@ -64,6 +66,30 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
     private func makeModel(_ erasers: [JournalErasing]) -> ConnectionsPrivacyViewModel {
         ConnectionsPrivacyViewModel(store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: erasers)
+    }
+
+    func testDeliveryGateClosesBeforeFirstEraserEvenWhenEraseFails() {
+        var closed = false
+        let eraser = RecordingEraser(failure: EraseFailure())
+        eraser.beforeErase = { XCTAssertTrue(closed) }
+        let model = ConnectionsPrivacyViewModel(store: EraseStubStore(), erasers: [eraser], beforeErase: { closed = true })
+        XCTAssertFalse(model.eraseAllData())
+        XCTAssertTrue(closed)
+        XCTAssertEqual(eraser.eraseCount, 1)
+    }
+
+    func testSuccessfulEraseCallbackRunsAfterAllErasersAndNeverAfterFailure() {
+        for fails in [false, true] {
+            var closed = false, finished = false
+            let first = RecordingEraser(), last = RecordingEraser(failure: fails ? EraseFailure() : nil)
+            first.beforeErase = { XCTAssertTrue(closed); XCTAssertFalse(finished) }
+            last.beforeErase = { XCTAssertTrue(closed); XCTAssertFalse(finished) }
+            let model = ConnectionsPrivacyViewModel(store: EraseStubStore(), erasers: [first, last], beforeErase: { closed = true }, afterSuccessfulErase: {
+                XCTAssertEqual(first.eraseCount, 1); XCTAssertEqual(last.eraseCount, 1); finished = true
+            })
+            XCTAssertEqual(model.eraseAllData(), !fails)
+            XCTAssertEqual(finished, !fails)
+        }
     }
 
     func testEraseAllDataRunsEveryInjectedStore() {

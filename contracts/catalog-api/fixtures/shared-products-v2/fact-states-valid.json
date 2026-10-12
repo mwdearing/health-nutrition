@@ -1,0 +1,41 @@
+{
+  "operation_id": "00000000-0000-4000-8000-000000000001",
+  "client_revision_id": "00000000-0000-4000-8000-000000000002",
+  "product_id": null,
+  "expected_server_revision": null,
+  "consent_version": 2,
+  "consent_generation": "0",
+  "product": {
+    "name": "Synthetic oats",
+    "brand": null,
+    "barcode": null,
+    "kind": "food",
+    "basis": "per_100_g",
+    "serving": null,
+    "facts": [
+      {
+        "key": "protein",
+        "display_name": "Protein",
+        "state": "known",
+        "amount": "0.000000",
+        "unit": "g"
+      },
+      {
+        "key": "ingredient:unknown",
+        "display_name": "Unknown",
+        "state": "unknown"
+      },
+      {
+        "key": "ingredient:absent",
+        "display_name": "Absent",
+        "state": "not_applicable"
+      },
+      {
+        "key": "ingredient:threshold",
+        "display_name": "Threshold",
+        "state": "below_reporting_threshold",
+        "unit": "IU"
+      }
+    ]
+  }
+}

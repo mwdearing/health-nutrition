@@ -2,6 +2,7 @@ import Foundation
 import NutritionJournal
 import NutritionProviders
 import NutritionUI
+import Network
 
 /// The stores and view models the app runs on.
 ///
@@ -52,16 +53,27 @@ final class AppServices {
     /// The community catalog client, shared by the account, the barcode lookup and label uploads. Nil in the
     /// same builds as `account`, and then no catalog call is made.
     let community: CommunityClient?
+    let productService: (any CommunityProductServicing)?
+    let productSharing: ProductShareCoordinator?
+    private var connectivityMonitor: NWPathMonitor?
+
+    deinit { connectivityMonitor?.cancel() }
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
         recipeStore: SwiftDataRecipeStore, goalStore: SwiftDataGoalStore,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
-        reminderScheduler: ReminderScheduling
+        reminderScheduler: ReminderScheduling,
+        productService: (any CommunityProductServicing)? = nil
     ) {
         self.displayPreferences = displayPreferences
         let community = Self.makeCommunity()
-        let account = community.map { AccountViewModel(service: $0, preferences: displayPreferences) }
+        let products: (any CommunityProductServicing)? = productService ?? community
+        self.productService = products
+        let productSharing = products.map { ProductShareCoordinator(store: journalStore, service: $0) }
+        self.productSharing = productSharing
+        let account = community.map { AccountViewModel(service: $0, preferences: displayPreferences,
+            productService: products, productSharing: productSharing) }
         self.community = community
         self.account = account
         let reminderErasures = ReminderErasures()
@@ -78,7 +90,8 @@ final class AppServices {
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         journal = JournalViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
-        library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
+        library = LibraryViewModel(store: journalStore, favorites: favoritesStore, productStore: journalStore,
+            productSharing: CustomProductSharingModel(store: journalStore, coordinator: productSharing, service: products))
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)
@@ -86,7 +99,18 @@ final class AppServices {
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
             erasers: [journalStore, favoritesStore, recipeStore, goalStore, reminderEraser],
-            preferences: displayPreferences)
+            preferences: displayPreferences,
+            beforeErase: {
+                if let owner = productSharing?.accountContext?.ownerID {
+                    displayPreferences.setProductSharingPause(.erase, for: owner.uuidString)
+                }
+                account?.pauseSharingForErase()
+                productSharing?.closeGate(reason: .erase)
+            },
+            afterSuccessfulErase: {
+                displayPreferences.clearProductSharingPausesAfterErase()
+                account?.refreshAfterErase()
+            })
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
@@ -96,6 +120,15 @@ final class AppServices {
             writer: HealthKitSampleWriter(),
             totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
         )
+        if let productSharing {
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { [weak productSharing] path in
+                guard path.status == .satisfied else { return }
+                Task { @MainActor in await productSharing?.runDueOperations(now: Date()) }
+            }
+            connectivityMonitor = monitor
+            monitor.start(queue: DispatchQueue(label: "product-sharing-connectivity"))
+        }
     }
 
     /// The community client, or nil when the build carries no project settings. The client reads them from the
@@ -148,7 +181,8 @@ final class AppServices {
     static func make(
         directory: URL = defaultDirectory,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
-        reminderScheduler: ReminderScheduling
+        reminderScheduler: ReminderScheduling,
+        productService: (any CommunityProductServicing)? = nil
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.
@@ -200,7 +234,7 @@ final class AppServices {
             return AppServices(
                 journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
                 goalStore: goalStore, displayPreferences: displayPreferences,
-                reminderScheduler: reminderScheduler)
+                reminderScheduler: reminderScheduler, productService: productService)
         } catch {
             recipeStore.close()
             favoritesStore.close()

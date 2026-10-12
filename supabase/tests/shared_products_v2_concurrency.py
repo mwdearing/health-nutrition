@@ -1,0 +1,603 @@
+#!/usr/bin/env python3
+"""Synthetic fixtures, adversarial behavior and real blocked-session races on run.sh's database."""
+import json
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from pathlib import Path
+
+ENGINE, CONTAINER = sys.argv[1:]
+BASE = [ENGINE, 'exec', '-i', CONTAINER, 'psql', '-X', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atq']
+FIXTURES = Path('contracts/catalog-api/fixtures/shared-products-v2')
+
+def literal(value):
+    return "'" + value.replace("'", "''") + "'"
+
+def jsql(value):
+    return literal(json.dumps(value, ensure_ascii=False)) + '::jsonb'
+
+def sql(query):
+    result = subprocess.run(BASE, input=query, text=True, capture_output=True, timeout=30, check=False)
+    if result.returncode:
+        raise AssertionError(result.stderr)
+    return result.stdout.strip()
+
+def identity(account):
+    return f"set role authenticated; set request.jwt.claim.sub={literal(account)}; set request.jwt.claims='{{\"is_anonymous\":false}}';"
+
+def rpc(account, name, arg=''):
+    return json.loads(sql(identity(account) + f'select public.{name}({arg});'))
+
+def expect_error(account, name, arg, code):
+    # Inspect machine-readable DETAIL, not merely an exception of any kind.
+    query = f"""do $test$ declare d text; begin
+      begin perform public.{name}({arg}); raise exception 'unexpected success' using errcode='XX000';
+      exception when sqlstate 'P0001' then get stacked diagnostics d=pg_exception_detail;
+      assert d::jsonb->>'code'={literal(code)}; end;
+    end $test$;"""
+    sql(identity(account) + query)
+
+def product(name='Synthetic race product', barcode=None):
+    return {'name': name, 'brand': None, 'barcode': barcode, 'kind': 'food', 'basis': 'per_100_g', 'serving': None,
+                'facts': [{'key': 'protein', 'display_name': 'Protein', 'state': 'known', 'amount': '1', 'unit': 'g'}]}
+
+def request(content=None, pid=None, expected=None, generation='0'):
+    return {'operation_id': str(uuid.uuid4()), 'client_revision_id': str(uuid.uuid4()), 'product_id': pid,
+                'expected_server_revision': expected, 'consent_version': 2, 'consent_generation': generation,
+                'product': content or product()}
+
+def submit(a, body):
+    return rpc(a, 'submit_catalog_product_v2', jsql(body))
+
+def account():
+    a = str(uuid.uuid4())
+    sql(f'insert into auth.users(id) values({literal(a)});')
+    rpc(a, 'acknowledge_catalog_consent_v2', '2')
+    return a
+
+class Session:
+    def __init__(self, name, a=None):
+        self.name = name
+        self.p = subprocess.Popen(BASE, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True, bufsize=1)
+        self.lines = []
+        self.thread = threading.Thread(target=lambda: self.lines.extend(self.p.stdout), daemon=True)
+        self.thread.start()
+        self.send(f'set application_name={literal(name)}; set statement_timeout=15000;' + (identity(a) if a else ''))
+    def send(self, query):
+        self.p.stdin.write(query + '\n'); self.p.stdin.flush()
+    def marker(self, marker):
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            if any(line.strip() == marker for line in self.lines):
+                return
+            if self.p.poll() is not None:
+                raise AssertionError(self.p.stderr.read())
+            time.sleep(.03)
+        raise AssertionError('session barrier timeout: ' + self.name)
+    def close(self):
+        self.p.stdin.close()
+        self.p.wait(timeout=20); self.thread.join(timeout=2)
+        assert self.p.returncode == 0, self.p.stderr.read()
+        return [json.loads(line) for line in self.lines if line.startswith('{')]
+
+def blocked(session):
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        count = sql(f"select count(*) from pg_stat_activity where application_name={literal(session.name)} and wait_event_type='Lock';")
+        if count == '1':
+            return
+        time.sleep(.05)
+    raise AssertionError('second database session never reached lock barrier')
+
+def serialize(first_sql, second_sql, a, b):
+    first = Session('v2-first-' + uuid.uuid4().hex, a)
+    second = Session('v2-second-' + uuid.uuid4().hex, b)
+    first.send("begin; " + first_sql + "; select 'FIRST_HELD';")
+    first.marker('FIRST_HELD')
+    second.send(second_sql + "; select 'SECOND_FINISHED';")
+    blocked(second)  # Demonstrates overlapping transactions, not sequential calls labelled as a race.
+    first.send('commit;'); first_result = first.close()
+    second.marker('SECOND_FINISHED'); second_result = second.close()
+    return first_result, second_result
+
+def immutable_barcode_regressions(owner, other):
+    failures=[]
+    # Each path gets an independent barcode-free identity and an unused valid barcode.
+    for label, actor, prefix in [('owner update',owner,'77777777770'),
+                                 ('other account first contribution',other,'77777777771')]:
+        first=submit(owner,request(product('Synthetic immutable '+label)))
+        weighted=sum(int(digit)*(3 if index%2==0 else 1)
+                     for index,digit in enumerate(reversed(prefix)))
+        barcode=prefix+str((-weighted)%10)
+        candidate=request(product('Synthetic immutable '+label,barcode),first['product_id'],
+                          first['current_revision'] if actor==owner else None)
+        try:
+            expect_error(actor,'submit_catalog_product_v2',jsql(candidate),'invalid_request')
+        except AssertionError as error:
+            failures.append(label+': '+str(error))
+            continue
+        unchanged=rpc(owner,'get_my_catalog_contribution_v2',literal(first['product_id']))
+        assert unchanged['current_revision']==first['current_revision']
+        assert sql(f"select count(*) from catalog_v2.barcode_bindings where product_id={literal(first['product_id'])};")=='0'
+    assert not failures, '\n'.join(failures)
+
+def two_account_product_journey(a, b):
+    # Integrate the product-only wire surface for all three kinds, including one compound.
+    for kind in ['food', 'drink', 'supplement']:
+        content = product('Synthetic integrated ' + kind)
+        content['kind'] = kind
+        if kind == 'drink': content['basis'] = 'per_100_ml'
+        if kind == 'supplement':
+            content.update(basis='per_serving', serving={'quantity': '1', 'unit': 'capsule', 'text': 'One capsule'})
+            content['facts'] = [{'key': 'ingredient:synthetic', 'display_name': 'Synthetic ingredient', 'state': 'known', 'amount': '5', 'unit': 'mg'}]
+        envelope = request(content)
+        first = submit(a, envelope)
+        found = rpc(b, 'search_catalog_products_v2', literal(content['name']))['products']
+        published = next(x for x in found if x['product_id'] == first['product_id'])
+        assert published['product']['kind'] == kind
+        assert published['verification'] == {'status': 'shared_unverified', 'source': None}
+        assert set(published['product']) == {'name','brand','barcode','kind','basis','serving','facts'}
+        assert set(published['product']['facts'][0]) == {'key','display_name','state','amount','unit'}
+        assert not any(key in json.dumps(published) for key in ['account_id','device_id','meal','intake_time','notes','consent_generation'])
+        original = json.loads(json.dumps(published))
+        edited = json.loads(json.dumps(content)); edited['facts'][0]['amount'] = '7'
+        newer = submit(a, request(edited, first['product_id'], first['current_revision']))
+        assert rpc(b, 'get_catalog_product_v2', literal(first['product_id']))['product']['product']['facts'][0]['amount'] == '7'
+        assert original['product']['facts'][0]['amount'] != '7'
+        replay = submit(a, envelope)
+        assert replay['acknowledged_revision'] == first['acknowledged_revision']
+        assert replay['current_revision'] == newer['current_revision'] and replay['replayed']
+    name_only = product('Synthetic integrated name only'); name_only['facts'] = []
+    first = submit(a, request(name_only))
+    submit(b, request(name_only, first['product_id']))
+    found = rpc(b, 'get_catalog_product_v2', literal(first['product_id']))['product']
+    assert found['missing_facts'] and found['verification']['status'] == 'shared_unverified'
+    print('TWO-ACCOUNT FOOD, DRINK, SUPPLEMENT, NAME-ONLY AND CURRENT-RECEIPT JOURNEYS OK')
+
+def main():
+    sql('update catalog.settings set daily_limit=1000,min_devices=2;')
+    a, b = account(), account()
+    two_account_product_journey(a,b)
+    immutable_barcode_regressions(a,b)
+    # Execute canonical fixtures in PostgreSQL, using the frozen cross-platform byte corpus.
+    for filename, length in [('exact-16384-valid.json', 16384), ('oversize-16385-invalid.json', 16385)]:
+        raw = json.loads((FIXTURES / filename).read_text())
+        assert int(sql(f'select octet_length(catalog_v2.canonical({jsql(raw)}));')) == length
+    renderer = json.loads((FIXTURES / 'renderer-sql-input.json').read_text())
+    expected = (FIXTURES / 'renderer-sql-expected.json').read_text().rstrip('\n')
+    assert sql(f'select catalog_v2.canonical({jsql(renderer)});') == expected
+    abstract = json.loads((FIXTURES / 'renderer-input.json').read_text())
+    # The actual jsonb decoder (pre-RPC) fails with 22P05, not our application error.
+    sql(f"""do $test$ begin begin perform {jsql(abstract)}; raise exception 'NUL accepted';
+        exception when sqlstate '22P05' then null; end; end $test$;""")
+    for vector in json.loads((FIXTURES / 'unicode-normalization-vectors.json').read_text())['search']:
+        assert sql(f'select catalog_v2.search_name({literal(vector["input"])});') == vector['normalized']
+    for filename in ['name-only-valid.json','fact-states-valid.json','unicode-120-valid.json',
+                     'barcode-valid.json','amount-max-valid.json','key-identity-valid.json']:
+        body = json.loads((FIXTURES / filename).read_text())
+        body['operation_id'] = str(uuid.uuid4())
+        submit(a, body)
+    for filename in ['nested-private-invalid.json','serving-private-invalid.json','unicode-121-invalid.json',
+                     'barcode-checksum-invalid.json','amount-over-max-invalid.json','dimension-invalid.json',
+                     'unknown-standard-invalid.json','threshold-amount-invalid.json','key-duplicate-invalid.json']:
+        body = json.loads((FIXTURES / filename).read_text())
+        body['operation_id'] = str(uuid.uuid4())
+        expect_error(a,'submit_catalog_product_v2',jsql(body),'invalid_request')
+    exact = json.loads((FIXTURES / 'exact-16384-valid.json').read_text())
+    exact['operation_id'] = str(uuid.uuid4())
+    submit(a, exact)
+    over = json.loads((FIXTURES / 'oversize-16385-invalid.json').read_text())
+    expect_error(a,'submit_catalog_product_v2',jsql(over),'invalid_request')
+
+    # Every public object and nested object has an allowlist; mutation tests exercise each layer.
+    body = request()
+    mutations = [dict(body, notes='private'), dict(body, operation_id=None), dict(body, client_revision_id=2),
+                 dict(body, operation_id=uuid.uuid4().hex), dict(body, consent_version='2'), dict(body, expected_server_revision='0')]
+    for path in [('product',), ('product','facts',0)]:
+        changed = json.loads(json.dumps(body)); target = changed
+        for component in path: target = target[component]
+        target['notes'] = 'private'; mutations.append(changed)
+    for changed in mutations: expect_error(a,'submit_catalog_product_v2',jsql(changed),'invalid_request')
+
+    # Deep unexpected nesting must produce a typed validation error, not exhaust the SQL stack.
+    nested = '0'
+    for _ in range(2000): nested = '{"x":'+nested+'}'
+    sql(identity(a)+f"""do $test$ declare d text; begin begin
+      perform public.submit_catalog_product_v2({literal(nested)}::jsonb);
+      raise exception 'deep object accepted' using errcode='XX000';
+      exception when sqlstate 'P0001' then get stacked diagnostics d=pg_exception_detail;
+      assert d::jsonb->>'code'='invalid_request'; end; end $test$;""")
+
+    # Exact decimal factors across every supported dimension, without binary rounding.
+    for first_unit, first_amount, second_unit, second_amount, equal in [
+        ('oz','8000','g','226796.185',True), ('kg','1','mcg','1000000000',True),
+        ('L','1','mL','1000',True), ('fl oz','16','cup','2',True),
+        ('tbsp','1','tsp','3',True), ('capsule','1','tablet','1',False),
+        ('IU','1','mcg','1',False), ('kcal','1','g','1',False)]:
+        x=product();y=product()
+        x['facts'][0].update(key='ingredient:synthetic',unit=first_unit,amount=first_amount)
+        y['facts'][0].update(key='ingredient:synthetic',unit=second_unit,amount=second_amount)
+        assert sql(f'select catalog_v2.equivalence({jsql(x)})=catalog_v2.equivalence({jsql(y)});') == ('t' if equal else 'f')
+    # Canonical uppercase UUIDs are valid; aliases and changed body spelling are not identical retries.
+    uppercase=request();uppercase['operation_id']=uppercase['operation_id'].upper();uppercase['client_revision_id']=uppercase['client_revision_id'].upper()
+    ack=submit(a,uppercase)
+    assert ack['operation_id']==str(uuid.UUID(uppercase['operation_id']))
+    expect_error(a,'submit_catalog_product_v2',jsql(dict(uppercase,operation_id=uppercase['operation_id'].lower())),'operation_conflict')
+    # Numeric serving defines agreement; human serving text stays on the actual representative.
+    x=product('Synthetic serving agreement');x.update(basis='per_serving',serving={'quantity': '1','unit': 'capsule','text': 'First display'})
+    first=submit(a,request(x));y=json.loads(json.dumps(x));y['serving']['text']='Other display'
+    second=submit(b,request(y,first['product_id']))
+    assert second['publication']['support']['distinct_accounts']=='2'
+    assert second['publication']['product']['serving']['text']=='First display'
+
+    # Actual profile lock race: duplicate lost reply is one revision and one receipt.
+    body = request()
+    one, two = serialize(f'select public.submit_catalog_product_v2({jsql(body)})',
+                         f'select public.submit_catalog_product_v2({jsql(body)})', a, a)
+    assert one[0]['product_id'] == two[0]['product_id'] and two[0]['replayed']
+    assert one[0]['acknowledged_revision'] == two[0]['acknowledged_revision']
+    # Different accounts overlap at the canonical barcode advisory lock.
+    upc = request(product(barcode='012345678905'))
+    ean = request(product(barcode='0012345678905'))
+    one, two = serialize(f'select public.submit_catalog_product_v2({jsql(upc)})',
+                         f'select public.submit_catalog_product_v2({jsql(ean)})', a, b)
+    assert one[0]['product_id'] == two[0]['product_id']
+    pid = one[0]['product_id']
+    publication = rpc(a,'get_catalog_product_v2',literal(pid))['product']
+    assert publication['support']['distinct_accounts'] == '2'
+    assert publication['verification'] == {'status': 'shared_unverified','source': None}
+    # Exact supported unit equivalence, spelling preserved, one account cannot add votes.
+    current = rpc(b,'get_my_catalog_contribution_v2',literal(pid))
+    content = product(barcode='0012345678905'); content['facts'][0].update(amount='1000.000000',unit='mg')
+    update = request(content,pid,current['current_revision'])
+    equivalent = submit(b,update)
+    assert equivalent['publication']['support']['distinct_accounts']=='2'
+    assert equivalent['publication']['alternatives']==[]
+    content['facts'][0]['amount']='2000'
+    conflicting = submit(b,request(content,pid,equivalent['current_revision']))
+    assert conflicting['publication']['support']['distinct_accounts']=='1'
+    assert len(conflicting['publication']['alternatives'])==1
+    # Owner reviews the exact immutable representative; no app executable grant.
+    rep = conflicting['publication']['representative_revision']
+    sql(f'select catalog_v2.moderate({literal(pid)},false,{rep});')
+    assert rpc(a,'get_catalog_product_v2',literal(pid))['product']['verification']['status']=='verified'
+    sql(f'select catalog_v2.moderate({literal(pid)},true);')
+    assert rpc(a,'get_catalog_product_v2',literal(pid))['product'] is None
+    expect_error(a,'submit_catalog_product_v2',jsql(request(product(barcode='012345678905'),pid,one[0]['current_revision'])),'rejected')
+
+    own = rpc(a,'get_my_catalog_contribution_v2',literal(pid))
+    assert own['current_state']=='rejected' and own['current_revision']==one[0]['current_revision']
+    replay = submit(a,upc)
+    assert replay['current_state']=='rejected' and replay['acknowledged_revision']==one[0]['acknowledged_revision']
+    withdrawal={'operation_id': str(uuid.uuid4()),'client_revision_id': str(uuid.uuid4()),'product_id': pid,'expected_server_revision': own['current_revision']}
+    removed=rpc(a,'withdraw_catalog_product_v2',jsql(withdrawal))
+    assert removed['current_state']=='withdrawn'
+    assert submit(a,upc)['current_state']=='withdrawn'
+    sql(f'select catalog_v2.moderate({literal(pid)},false);')
+    assert rpc(b,'get_catalog_product_v2',literal(pid))['product'] is not None
+    assert rpc(a,'get_my_catalog_contribution_v2',literal(pid))['current_state']=='withdrawn'
+    # Identity kind persists after all contributions retire; it is never inferred for legacy-only IDs.
+    before=rpc(b,'get_my_catalog_contribution_v2',literal(pid))
+    withdrawal.update(operation_id=str(uuid.uuid4()),expected_server_revision=before['current_revision'])
+    rpc(b,'withdraw_catalog_product_v2',jsql(withdrawal))
+    changed=product(barcode='012345678905'); changed['kind']='supplement'
+    expect_error(account(),'submit_catalog_product_v2',jsql(request(changed)),'invalid_request')
+
+    # Opt-out holds the profile lock before racing publication; no stale permission acceptance.
+    c = account(); body = request()
+    query = f"do $test$ declare d text; begin begin perform public.submit_catalog_product_v2({jsql(body)}); raise exception 'accepted'; exception when sqlstate 'P0001' then get stacked diagnostics d=pg_exception_detail; assert d::jsonb->>'code'='consent_required'; end; end $test$"
+    serialize('update public.profiles set share_labels=false where id=auth.uid()',query,c,c)
+    assert rpc(c,'catalog_capabilities_v2')['consent_generation']=='1'
+
+    # Concurrent CAS: second request observes first's committed revision and fails, never overwrites.
+    d = account(); first = submit(d,request()); update1=request(pid=first['product_id'],expected=first['current_revision']); update2=request(pid=first['product_id'],expected=first['current_revision'])
+    query=f"do $test$ declare d text; begin begin perform public.submit_catalog_product_v2({jsql(update2)}); raise exception 'accepted'; exception when sqlstate 'P0001' then get stacked diagnostics d=pg_exception_detail; assert d::jsonb->>'code'='revision_conflict'; end; end $test$"
+    serialize(f'select public.submit_catalog_product_v2({jsql(update1)})',query,d,d)
+
+    # Withdrawal racing an old publish replay never resurrects the retired contribution.
+    racer=account(); old=request(); accepted=submit(racer,old)
+    withdrawal={'operation_id': str(uuid.uuid4()),'client_revision_id': str(uuid.uuid4()),'product_id': accepted['product_id'],'expected_server_revision': accepted['current_revision']}
+    _, replayed=serialize(f'select public.withdraw_catalog_product_v2({jsql(withdrawal)})',
+                          f'select public.submit_catalog_product_v2({jsql(old)})',racer,racer)
+    assert replayed[0]['current_state']=='withdrawn' and replayed[0]['publication'] is None
+    # Disabled writes and stale acknowledgments fail, but receipts and withdrawals remain usable.
+    gate=account(); body=request(); ack=submit(gate,body)
+    sql('update catalog_v2.settings set enabled=false;')
+    expect_error(gate,'submit_catalog_product_v2',jsql(request()),'unavailable')
+    assert submit(gate,body)['replayed']
+    sql('update catalog_v2.settings set enabled=true;')
+    sql(identity(gate)+'update public.profiles set share_labels=false where id=auth.uid(); update public.profiles set share_labels=true where id=auth.uid();')
+    expect_error(gate,'submit_catalog_product_v2',jsql(request(generation='1')),'consent_required')
+    rpc(gate,'acknowledge_catalog_consent_v2','2')
+    submit(gate,request(generation='1'))
+    # Server usage is one per new accepted operation; retry and withdrawal never reset the limit.
+    limited=account(); sql('update catalog.settings set daily_limit=1;')
+    body=request(); ack=submit(limited,body)
+    assert submit(limited,body)['replayed']
+    expect_error(limited,'submit_catalog_product_v2',jsql(request()),'rate_limited')
+    withdrawal={'operation_id': str(uuid.uuid4()),'client_revision_id': str(uuid.uuid4()),'product_id': ack['product_id'],'expected_server_revision': ack['current_revision']}
+    assert rpc(limited,'withdraw_catalog_product_v2',jsql(withdrawal))['current_state']=='withdrawn'
+    expect_error(limited,'submit_catalog_product_v2',jsql(request()),'rate_limited')
+    sql('update catalog.settings set daily_limit=1000;')
+    # Greatest-support alternative selects real content; unknown-only content cannot be owner verified.
+    voters=[account(),account(),account()]
+    one=submit(voters[0],request(product('Synthetic support winner')))
+    other=product('Synthetic alternate winner');other['facts'][0]['amount']='7'
+    two=submit(voters[1],request(other,one['product_id']))
+    three=submit(voters[2],request(other,one['product_id']))
+    assert three['publication']['representative_revision']==two['current_revision']
+    assert three['publication']['support']['distinct_accounts']=='2'
+    assert three['publication']['product']['facts'][0]['amount']=='7'
+    blank=product('Synthetic incomplete');blank['facts']=[{'key': 'protein','display_name': 'Protein','state': 'unknown'}]
+    incomplete=submit(voters[0],request(blank))
+    assert incomplete['publication']['missing_facts'] is True
+    sql(f"""do $test$ declare d text; begin begin
+      perform catalog_v2.moderate({literal(incomplete['product_id'])},false,{incomplete['current_revision']});
+      raise exception 'incomplete reviewed' using errcode='XX000';
+      exception when sqlstate 'P0001' then get stacked diagnostics d=pg_exception_detail; assert d::jsonb->>'code'='invalid_request'; end; end $test$;""")
+
+    # Stable literal keyset pages, mismatched/malformed cursors, and live moderation after page one.
+    e = account(); ids=[]
+    for name in ['Synthetic cursor A','Synthetic cursor B','Synthetic cursor C']:
+        ids.append(submit(e,request(product(name)))['product_id'])
+    # Simulate a stale derived row left after an out-of-band profile cascade removed its contributor.
+    # It sorts before the live products and must not consume the bounded output page.
+    stale = str(uuid.uuid4())
+    sql(f"insert into catalog_v2.products(id,kind) values({literal(stale)},'food');"
+        f"insert into catalog_v2.entries(product_id,normalized_name,kind,publication,source_name) "
+        f"values({literal(stale)},catalog_v2.search_name('Synthetic cursor 0 stale'),'food','{{}}'::jsonb,'Synthetic cursor 0 stale');")
+    page = rpc(e,'search_catalog_products_v2',"'Synthetic cursor',null,null,1")
+    assert [p['product_id'] for p in page['products']]==[ids[0]] and page['next_cursor']
+    cursor = page['next_cursor']
+    expect_error(e,'search_catalog_products_v2',f"'Different query',null,{literal(cursor)},1",'invalid_request')
+    expect_error(e,'search_catalog_products_v2',"'Synthetic',null,'malformed',1",'invalid_request')
+    for limit in [0,21]: expect_error(e,'search_catalog_products_v2',f"'Synthetic',null,null,{limit}",'invalid_request')
+    sql(f'select catalog_v2.moderate({literal(ids[1])},true);')
+    page2=rpc(e,'search_catalog_products_v2',f"'Synthetic cursor',null,{literal(cursor)},1")
+    assert [p['product_id'] for p in page2['products']]==[ids[2]]
+    assert page2['next_cursor'] is None
+    # Compact cursor reconstructs a long NFKC key from its bounded original source.
+    expanding = '\ufdfa' * 110
+    for suffix in [' A',' B',' C']:
+        submit(e,request(product(expanding+suffix)))
+    q = 'صلى'
+    page=rpc(e,'search_catalog_products_v2',f"{literal(q)},null,null,1")
+    assert len(page['next_cursor'].encode())<=1024
+    page2=rpc(e,'search_catalog_products_v2',f"{literal(q)},null,{literal(page['next_cursor'])},1")
+    assert page2['products'][0]['product_id']!=page['products'][0]['product_id']
+    expanded=product('\u0344'*61)
+    expect_error(e,'submit_catalog_product_v2',jsql(request(expanded)),'invalid_request')
+    # Query length is measured after Unicode whitespace trimming, before normalization.
+    padded = '\u2003' * 121 + 'Synthetic cursor' + '\u00a0'
+    assert rpc(e,'search_catalog_products_v2',literal(padded))['products']
+    # New identity publication cannot smuggle a CAS update through a null product ID.
+    expect_error(e,'submit_catalog_product_v2',jsql(request(product(),expected='1')),'invalid_request')
+    # Account checks and private ACLs include stale/deleted identities and true anonymous users.
+    deleted = account(); sql(f'delete from auth.users where id={literal(deleted)};')
+    expect_error(deleted,'catalog_capabilities_v2','','unauthorized')
+    expect_error(deleted,'submit_catalog_product_v2',jsql(request()),'unauthorized')
+    anonymous=str(uuid.uuid4()); sql(f'insert into auth.users(id,is_anonymous) values({literal(anonymous)},true);')
+    expect_error(anonymous,'catalog_capabilities_v2','','unauthorized')
+    expect_error(str(uuid.uuid4()),'catalog_capabilities_v2','','unauthorized')
+    assert sql("select has_schema_privilege('authenticated','catalog_v2','usage');")=='f'
+    assert sql("select has_function_privilege('anon','public.catalog_capabilities_v2()','execute');")=='f'
+    assert sql("select has_function_privilege('authenticated','catalog_v2.moderate(uuid,boolean,bigint)','execute');")=='f'
+    for table in ['products','revisions','receipts','contributions','owner_reviews']:
+        assert sql(f"select has_table_privilege('authenticated','catalog_v2.{table}','select');")=='f'
+    sql("""set role authenticated; do $test$ begin begin perform 1 from catalog_v2.products;
+      raise exception 'private table exposed' using errcode='XX000';
+      exception when insufficient_privilege then null; end; end $test$;""")
+    sql("""set role anon; do $test$ begin begin perform public.catalog_capabilities_v2();
+      raise exception 'anonymous RPC exposed' using errcode='XX000';
+      exception when insufficient_privilege then null; end; end $test$;""")
+    print('SHARED PRODUCTS V2 FIXTURES, BEHAVIOR AND TWO-SESSION RACES OK')
+
+def legacy_args(code='012345678905', basis='per_serving', name='Synthetic bridge label', protein=4):
+    return ','.join([literal(code),literal(basis),literal('one original scoop'),literal(name),'null',
+                     jsql({'protein': protein,'fat': 2,'salt': 1})])
+
+def legacy_submit(a, **kw):
+    return sql(identity(a)+f'select public.submit_label({legacy_args(**kw)});')
+
+def expected_statement_error(statement, state, code=None):
+    detail = f"assert d::jsonb->>'code'={literal(code)};" if code else ''
+    return f"""do $test$ declare d text; begin begin {statement};
+      raise exception 'unexpected success' using errcode='XX000';
+      exception when sqlstate {literal(state)} then get stacked diagnostics d=pg_exception_detail; {detail}
+      end; end $test$"""
+
+def refresh_lock_tests():
+    sql('update catalog.settings set daily_limit=1000;')
+    a=account()
+    row=submit(a,request(product('Synthetic direct refresh','7613034626844')))
+    pid=row['product_id']
+    serialize("select catalog_v2.lock_identities(array['7613034626844'])",
+              f'select catalog_v2.refresh({literal(pid)})',None,None)
+    # Pause maintenance at an old identity, then commit a NEW identity after its snapshot.
+    blocker=Session('bridge-maintenance-blocker-'+uuid.uuid4().hex)
+    maintenance=Session('bridge-maintenance-'+uuid.uuid4().hex)
+    late=Session('bridge-maintenance-late-'+uuid.uuid4().hex)
+    blocker.send("begin; select catalog_v2.lock_identities(array['7613034626844']); select 'IDENTITY_HELD';")
+    blocker.marker('IDENTITY_HELD')
+    maintenance.send("do $$ begin perform catalog_v2.backfill_legacy(); end $$; select 'MAINTENANCE_FINISHED';")
+    blocked(maintenance)
+    late_account=account()
+    submit(late_account,request(product('Synthetic newly committed identity','9780201379624')))
+    late.send("begin; select catalog_v2.lock_identities(array['9780201379624']); select 'LATE_HELD';")
+    late.marker('LATE_HELD')
+    blocker.send('commit;');blocker.close()
+    # Must finish while the late identity is still held: it was outside the captured set.
+    maintenance.marker('MAINTENANCE_FINISHED');maintenance.close()
+    late.send('commit;');late.close()
+    print('DIRECT REFRESH AND CAPTURED MAINTENANCE LOCK BARRIERS OK')
+
+def bridge_tests():
+    import os
+    sql('update catalog.settings set daily_limit=1000,min_shown=2,min_devices=2;')
+    owner_installed=sql("select to_regclass('catalog.approved_entries') is not null;")=='t'
+    if os.environ.get('CATALOG_TEST_SEEDED')=='1':
+        assert sql("select submissions from catalog.usage where device_id='30000000-0000-4000-8000-000000000001' and day=current_date;")=='2'
+        assert sql("select submissions from catalog_v2.usage where account_id='30000000-0000-4000-8000-000000000001' and day=current_date;")=='1'
+    a,b=account(),account()
+    for actor in (a,b): legacy_submit(actor)
+    rows=rpc(a,'search_catalog_products_v2',"'Synthetic bridge label'")['products']
+    assert len(rows)==1, 'legacy catalog must be visible in v2 search'
+    label=rows[0]; pid=label['product_id']; original_revision=label['representative_revision']
+    assert label['product']['content_type']=='legacy_label'
+    assert label['product']['kind'] is None and label['product']['serving'] is None
+    assert label['product']['raw_serving_text']=='one original scoop'
+    assert label['product']['nutrients']['salt']==1
+    assert label['verification']['status']=='shared_unverified'
+    old=json.loads(sql(identity(a)+"select to_jsonb(l) from public.lookup_label('012345678905') l;"))
+    assert old['verified']==(not owner_installed), 'retain installed legacy badge policy'
+    assert set(old)=={'basis','serving_text','product_name','brand','nutrients','supporting_devices','verified'}
+    # Idempotent maintenance never allocates another snapshot or identity.
+    sql('select catalog_v2.backfill_legacy(); select catalog_v2.backfill_legacy();')
+    assert rpc(a,'get_catalog_product_v2',literal(pid))['product']['representative_revision']==original_revision
+    assert sql("select count(*) from catalog_v2.barcode_bindings where barcode='0012345678905';")=='1'
+    # Legacy and custom support never sum, even from the same two accounts.
+    body=request(product('Synthetic bridge custom','012345678905'))
+    first=submit(a,body)
+    assert first['product_id']==pid
+    second=submit(b,request(product('Synthetic bridge custom','0012345678905')))
+    assert second['product_id']==pid
+    pub=second['publication']
+    all_groups=[pub]+pub['alternatives']
+    assert sorted(x['support']['distinct_accounts'] for x in all_groups)==['2','2']
+    assert sum(x['product'].get('content_type')=='legacy_label' for x in all_groups)==1
+    assert pub['verification']['status']=='shared_unverified'
+    assert sql(f"select kind from catalog_v2.products where id={literal(pid)};")=='food'
+    # Two updates in ONE transaction with the same now() still get distinct immutable revisions.
+    baseline_count=int(sql(f'select count(*) from catalog_v2.legacy_revisions where product_id={literal(pid)};'))
+    sql(identity(a)+f"begin; select public.submit_label({legacy_args(name='Synthetic changed one')}); select public.submit_label({legacy_args(name='Synthetic changed two')}); commit;")
+    assert int(sql(f'select count(*) from catalog_v2.legacy_revisions where product_id={literal(pid)};'))==baseline_count+2
+    assert sql(f"select content->>'name' from catalog_v2.legacy_revisions where revision={original_revision};")=='Synthetic bridge label'
+    # Legacy basis suppression removes both matching legacy and custom alternatives, immediately.
+    sql("insert into catalog.rejections(barcode,basis) values('012345678905','per_100g');")
+    current=rpc(a,'get_catalog_product_v2',literal(pid))['product']
+    assert current['product']['content_type']=='legacy_label' and current['alternatives']==[]
+    assert submit(a,body)['current_state']=='rejected'
+    assert submit(a,body)['acknowledged_revision']==first['acknowledged_revision']
+    expect_error(a,'submit_catalog_product_v2',jsql(request(product('Rejected custom','012345678905'),pid,first['current_revision'])),'rejected')
+    sql("delete from catalog.rejections where barcode='0012345678905' and basis='per_100g';")
+    assert submit(a,body)['current_state']=='active'
+    # Root rejection hides all API surfaces without changing CAS revisions.
+    sql(f'select catalog_v2.moderate({literal(pid)},true);')
+    assert rpc(a,'get_catalog_product_v2',literal(pid))['product'] is None
+    assert rpc(a,'search_catalog_products_v2',"'Synthetic bridge'")['products']==[]
+    assert sql(identity(a)+"select count(*) from public.lookup_label('012345678905');")=='0'
+    if owner_installed: assert sql(identity(a)+"select count(*) from public.lookup_label_v2('012345678905');")=='0'
+    assert submit(a,body)['current_state']=='rejected'
+    sql(f'select catalog_v2.moderate({literal(pid)},false);')
+    assert submit(a,body)['current_state']=='active'
+    # Optional owner payload survives account deletion, but its badge cannot transfer to custom facts.
+    if owner_installed:
+        sql("select catalog.owner_approve_label("+legacy_args(name='Synthetic owner exact',protein=17)+",'reviewed');")
+        pub=rpc(a,'get_catalog_product_v2',literal(pid))['product']
+        legacy=next(g for g in [pub]+pub['alternatives'] if g['product'].get('content_type')=='legacy_label')
+        assert legacy['verification']=={'status':'verified','source':'owner_reviewed'}
+        assert legacy['product']['nutrients']['protein']==17
+        assert pub['verification']['status']=='shared_unverified', 'owner badge cannot transfer to custom representative'
+        sql("select catalog.owner_reject_label('012345678905','per_serving','incorrect_label');")
+        assert sql(identity(a)+"select count(*) from public.lookup_label_v2('012345678905');")=='0'
+        assert all(g['product'].get('content_type')!='legacy_label' for g in [rpc(a,'get_catalog_product_v2',literal(pid))['product']]+rpc(a,'get_catalog_product_v2',literal(pid))['product']['alternatives'])
+        sql("select catalog.owner_clear_rejection('012345678905','per_serving','reviewed');")
+        sql("select catalog.owner_approve_label("+legacy_args(name='Synthetic owner exact',protein=17)+",'reviewed');")
+    # Quota shared across both generations, with a real blocked race on one remaining slot.
+    quota=account(); sql('update catalog.settings set daily_limit=2;')
+    legacy_submit(quota,code='4006381333931')
+    qbody=request(product('Synthetic quota accepted'))
+    serialize(f'select public.submit_catalog_product_v2({jsql(qbody)})',
+              expected_statement_error(f'perform public.submit_label({legacy_args(code="96385074")})','53400'),quota,quota)
+    expect_error(quota,'submit_catalog_product_v2',jsql(request()),'rate_limited')
+    assert submit(quota,qbody)['replayed']
+    assert sql(f'select submissions from catalog.usage where device_id={literal(quota)} and day=current_date;')=='2'
+    # Reverse order also shares the last slot.
+    quota2=account(); submit(quota2,request())
+    serialize(f'select public.submit_label({legacy_args(code="96385074")})',
+              expected_statement_error(f'perform public.submit_catalog_product_v2({jsql(request())})','P0001','rate_limited'),quota2,quota2)
+    sql('update catalog.settings set daily_limit=1000;')
+    # Legacy direct profile PATCH invalidates generation and blocks racing new publication.
+    patch=account()
+    serialize('update public.profiles set share_labels=false where id=auth.uid()',
+              expected_statement_error(f'perform public.submit_catalog_product_v2({jsql(request())})','P0001','consent_required'),patch,patch)
+    assert rpc(patch,'catalog_capabilities_v2')['consent_generation']=='1'
+    # Existing delete RPC waits for a new publication, then removes receipts, consent and all private account rows.
+    doomed=account(); live=account(); shared=request(product('Synthetic survives erase','5901234123457'))
+    survivor=submit(live,shared); doomedbody=request(product('Synthetic survives erase','5901234123457'))
+    serialize(f'select public.submit_catalog_product_v2({jsql(doomedbody)})','select public.delete_my_account()',doomed,doomed)
+    for table in ['revisions','contributions','receipts','tombstones','consent','usage']:
+        assert sql(f'select count(*) from catalog_v2.{table} where account_id={literal(doomed)};')=='0'
+    assert rpc(live,'get_catalog_product_v2',literal(survivor['product_id']))['product']['support']['distinct_accounts']=='1'
+    expect_error(doomed,'submit_catalog_product_v2',jsql(doomedbody),'unauthorized')
+    sql(identity(doomed)+expected_statement_error(f'perform public.submit_label({legacy_args()})','28000'))
+    doomed2=account()
+    serialize('select public.delete_my_account()',expected_statement_error(f'perform public.submit_catalog_product_v2({jsql(request())})','P0001','unauthorized'),doomed2,doomed2)
+    # Cross-account, overlapping multi-product erasures use full sorted identity sets.
+    d1,d2,keeper=account(),account(),account()
+    ids=[]
+    for code in ('5012345678900','73513537'):
+        for actor in (d1,d2,keeper):
+            legacy_submit(actor,code=code,name='Synthetic overlap')
+            r=submit(actor,request(product('Synthetic overlap',code)))
+        ids.append(r['product_id'])
+    serialize('select public.delete_my_account()','select public.delete_my_account()',d1,d2)
+    for product_id in ids:
+        pub=rpc(keeper,'get_catalog_product_v2',literal(product_id))['product']
+        assert pub['support']['distinct_accounts']=='1' and pub['alternatives']==[]
+    # Deletion holds BOTH products while independent-account publication waits on a shared identity.
+    d3=account()
+    for code in ('5012345678900','73513537'): submit(d3,request(product('Synthetic overlap',code)))
+    independent=account()
+    serialize('select public.delete_my_account()',f'select public.submit_catalog_product_v2({jsql(request(product("Synthetic overlap","73513537")))})',d3,independent)
+    # Independent owner moderation holds an identity; multi-product account erasure must wait and complete.
+    d4=account()
+    for code in ('5012345678900','73513537'): submit(d4,request(product('Synthetic overlap',code)))
+    serialize(f'select catalog_v2.moderate({literal(ids[0])},true)','select public.delete_my_account()',None,d4)
+    assert rpc(keeper,'get_catalog_product_v2',literal(ids[0]))['product'] is None
+    sql(f'select catalog_v2.moderate({literal(ids[0])},false);')
+    # Erase old contributions as well; retained independent owner payload survives all submitting accounts.
+    sql(identity(a)+'select public.delete_my_account();')
+    sql(identity(b)+'select public.delete_my_account();')
+    for actor in (a,b):
+        assert sql(f'select count(*) from catalog.submissions where device_id={literal(actor)};')=='0'
+        assert sql(f'select count(*) from catalog.usage where device_id={literal(actor)};')=='0'
+    pub=rpc(keeper,'get_catalog_product_v2',literal(pid))['product']
+    if owner_installed:
+        assert pub['verification']['status']=='verified' and pub['support']['distinct_accounts']=='0'
+        sql("select catalog.owner_revoke_label('012345678905','per_serving','withdrawn');")
+        assert rpc(keeper,'get_catalog_product_v2',literal(pid))['product'] is None
+    else: assert pub is None
+    # Private retained implementations have no callable public aliases or role privileges.
+    assert sql("select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('catalog_v2','catalog') and (has_function_privilege('authenticated',p.oid,'execute') or has_function_privilege('anon',p.oid,'execute'));")=='0'
+    assert sql("select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and (p.proname like '%pre_bridge%' or p.proname like 'legacy_%');")=='0'
+    sql(identity(keeper)+expected_statement_error('perform catalog_v2.legacy_submit('+legacy_args()+')','42501'))
+    sql(identity(keeper)+expected_statement_error('perform catalog_v2.backfill_legacy()','42501'))
+    if os.environ.get('CATALOG_TEST_SEEDED')=='1':
+        seed='30000000-0000-4000-8000-000000000001'
+        entries=rpc(seed,'search_catalog_products_v2',"'Synthetic upgrade seed'")['products']
+        assert len(entries)==1 and entries[0]['product']['kind'] is None
+        before=entries[0]; sql('select catalog_v2.backfill_legacy(); select catalog_v2.backfill_legacy();')
+        assert rpc(seed,'get_catalog_product_v2',literal(before['product_id']))['product']==before
+        assert sql("select count(*) from catalog_v2.barcode_bindings where barcode='4006381333931';")=='1'
+        rpc(seed,'acknowledge_catalog_consent_v2','2')
+        expect_error(seed,'submit_catalog_product_v2',jsql(request(product('Seeded rejected','4006381333931'))),'rejected')
+        upgraded=submit(seed,request(product('Synthetic upgrade custom','96385074')))
+        assert upgraded['product_id']==before['product_id']
+        assert sorted(g['support']['distinct_accounts'] for g in [upgraded['publication']]+upgraded['publication']['alternatives'])==['1','2']
+        sql(identity(seed)+'select public.delete_my_account();')
+        assert sql(f'select count(*) from catalog.usage where device_id={literal(seed)};')=='0'
+        assert sql(f'select count(*) from catalog_v2.usage where account_id={literal(seed)};')=='0'
+    print('SHARED PRODUCTS LEGACY BRIDGE, QUOTA, ERASURE AND CROSS-ACCOUNT MULTI-PRODUCT RACES OK; owner_dependency='+str(owner_installed))
+
+if __name__=='__main__':
+    import os
+    if os.environ.get('CATALOG_TEST_FOCUS')=='refresh': refresh_lock_tests()
+    elif os.environ.get('CATALOG_TEST_FOCUS')=='bridge': bridge_tests()
+    else:
+        main()
+        bridge_tests()
+        refresh_lock_tests()

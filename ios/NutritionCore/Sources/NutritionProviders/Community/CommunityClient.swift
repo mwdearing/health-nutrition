@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 
 /// The profile row of the signed-in account.
 public struct CommunityProfile: Equatable, Sendable {
@@ -13,7 +14,7 @@ public struct CommunityProfile: Equatable, Sendable {
 }
 
 /// Account and catalog calls for a signed-in person. Every call renews the session first when needed.
-public struct CommunityClient: Sendable {
+public struct CommunityClient: Sendable, CommunityProductServicing {
     public let auth: CommunityAuth
     private let api: CommunityAPI
 
@@ -44,11 +45,11 @@ public struct CommunityClient: Sendable {
     /// The profile of the signed-in account. A missing row (not expected) reads as the defaults.
     public func profile() async throws -> CommunityProfile {
         let session = try await auth.validSession()
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/profiles",
+            session: session,
             method: "GET",
-            query: Self.ownRow(session.userID, select: "display_name,share_labels"),
-            bearer: session.accessToken
+            query: Self.ownRow(session.userID, select: "display_name,share_labels")
         )
         let rows = try CommunityAPI.decode([ProfileRow].self, from: data, status: response.statusCode)
         guard let row = rows.first else {
@@ -60,11 +61,11 @@ public struct CommunityClient: Sendable {
     public func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(ProfileUpdate(displayName: displayName, shareLabels: shareLabels))
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/profiles",
+            session: session,
             method: "PATCH",
             query: Self.ownRow(session.userID, select: nil),
-            bearer: session.accessToken,
             body: body,
             prefer: "return=representation"
         )
@@ -78,20 +79,20 @@ public struct CommunityClient: Sendable {
     /// Deletes the account and everything it submitted. The local session is forgotten only after the server agrees.
     public func deleteAccount() async throws {
         let session = try await auth.validSession()
-        _ = try await api.send(
+        _ = try await authenticatedSend(
             "/rest/v1/rpc/delete_my_account",
-            bearer: session.accessToken,
+            session: session,
             body: Data("{}".utf8)
         )
-        await auth.discardSession()
+        _ = try await auth.invalidateSession(matchingUserID: session.userID)
     }
 
     public func submitLabel(_ submission: CommunityLabelSubmission) async throws -> CommunitySubmitResult {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(SubmitBody(submission: submission))
-        let (data, response) = try await api.send(
+        let (data, response) = try await authenticatedSend(
             "/rest/v1/rpc/submit_label",
-            bearer: session.accessToken,
+            session: session,
             body: body
         )
         return try CommunityAPI.decode(CommunitySubmitResult.self, from: data, status: response.statusCode)
@@ -100,9 +101,9 @@ public struct CommunityClient: Sendable {
     public func lookupLabel(barcode: String) async throws -> [CommunityLabel] {
         let session = try await auth.validSession()
         let body = try CommunityAPI.encode(LookupBody(barcode: barcode))
-        let (data, response) = try await api.send(
-            "/rest/v1/rpc/lookup_label",
-            bearer: session.accessToken,
+        let (data, response) = try await authenticatedSend(
+            "/rest/v1/rpc/lookup_label_v2",
+            session: session,
             body: body
         )
         let rows = try CommunityAPI.decode([LabelRow].self, from: data, status: response.statusCode)
@@ -114,8 +115,11 @@ public struct CommunityClient: Sendable {
                 productName: row.productName,
                 brand: row.brand,
                 nutrients: row.nutrients,
-                verified: row.verified,
-                supportingAccounts: row.supportingDevices
+                // The versioned source is authoritative. A legacy `verified` bit can never
+                // turn a community aggregate into an owner-reviewed label.
+                verified: row.verificationSource == .ownerReviewed,
+                supportingAccounts: row.verificationSource == .community ? row.supportingDevices : 0,
+                verificationSource: row.verificationSource
             )
         }
     }
@@ -127,6 +131,111 @@ public struct CommunityClient: Sendable {
         }
         items.append(URLQueryItem(name: "id", value: "eq.\(userID)"))
         return items
+    }
+
+    private var productsAPI: CommunityProductsAPI { CommunityProductsAPI(api: api, auth: auth) }
+
+    public func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        let body: Data
+        do { body = try request.canonicalBody() }
+        catch let field as CustomProductFieldError { throw ProductAPIError.invalidRequest(field: field.field) }
+        catch { throw ProductAPIError.invalidRequest(field: nil) }
+        let receipt: ProductDeliveryReceipt = try await productsAPI.call("submit_catalog_product_v2", body: CommunityProductsAPI.wrapped(body), owner: expectedOwnerID)
+        guard receipt.operationID == UUID(uuidString: request.operationID), request.productID == nil || receipt.productID == UUID(uuidString: request.productID!) else { throw ProductAPIError.unavailable }
+        return receipt
+    }
+
+    public func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution {
+        let body: Data
+        do { body = try request.canonicalBody() }
+        catch let field as CustomProductFieldError { throw ProductAPIError.invalidRequest(field: field.field) }
+        catch { throw ProductAPIError.invalidRequest(field: nil) }
+        // Owner-bind both calls; account replacement between capability and resolution is rejected.
+        let capabilities: ProductCatalogCapabilities = try await productsAPI.call("catalog_capabilities_v2", body: Data("{}".utf8), owner: expectedOwnerID, capability: true)
+        guard capabilities.supportsPublishResolution else { throw ProductAPIError.unsupportedBackend }
+        let result: ProductPublishResolution = try await productsAPI.call("resolve_catalog_publish_for_withdrawal_v2", body: CommunityProductsAPI.wrapped(body), owner: expectedOwnerID)
+        switch result {
+        case .committed(let receipt):
+            guard receipt.operationID == UUID(uuidString: request.operationID), request.productID == nil || receipt.productID == UUID(uuidString: request.productID!) else { throw ProductAPIError.unavailable }
+        case .canceledBeforeCommit(let operationID, _):
+            guard operationID == UUID(uuidString: request.operationID) else { throw ProductAPIError.unavailable }
+        }
+        return result
+    }
+
+    public func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        let body: Data
+        do { body = try request.canonicalBody() } catch { throw ProductAPIError.invalidRequest(field: nil) }
+        let receipt: ProductDeliveryReceipt = try await productsAPI.call("withdraw_catalog_product_v2", body: CommunityProductsAPI.wrapped(body), owner: expectedOwnerID)
+        guard receipt.operationID == UUID(uuidString: request.operationID), receipt.productID == UUID(uuidString: request.productID) else { throw ProductAPIError.unavailable }
+        return receipt
+    }
+
+    public func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (2...120).contains(query.unicodeScalars.count), !query.unicodeScalars.contains(where: { $0.value == 0 }) else { throw ProductAPIError.invalidRequest(field: "p_query") }
+        if let cursor, cursor.utf8.count > 1024 || cursor.unicodeScalars.contains(where: { $0.value == 0 }) { throw ProductAPIError.invalidRequest(field: "p_cursor") }
+        return try await productsAPI.call("search_catalog_products_v2", body: CommunityProductsAPI.body(["p_query": query, "p_kind": kind?.rawValue as Any? ?? NSNull(), "p_cursor": cursor as Any? ?? NSNull(), "p_limit": 20]))
+    }
+
+    public func alternatives(productID: UUID, cursor: String?) async throws -> ProductAlternativesPage {
+        if let cursor, cursor.isEmpty || cursor.utf8.count > 1024 || cursor.contains("\0") { throw ProductAPIError.invalidRequest(field: "p_cursor") }
+        let page: ProductAlternativesPage = try await productsAPI.call("get_catalog_product_alternatives_v2", body: CommunityProductsAPI.body(["p_product_id": productID.uuidString, "p_cursor": cursor as Any? ?? NSNull(), "p_limit": 20]))
+        guard page.productID == productID else { throw ProductAPIError.unavailable }
+        return page
+    }
+
+    public func product(id: UUID) async throws -> CommunityProduct {
+        let response: ProductDetailResponse = try await productsAPI.call("get_catalog_product_v2", body: CommunityProductsAPI.body(["p_product_id": id.uuidString]))
+        guard let product = response.product else { throw ProductAPIError.notFound }
+        guard product.productID == id else { throw ProductAPIError.unavailable }
+        return product
+    }
+
+    public func capabilities() async throws -> ProductCatalogCapabilities {
+        try await productsAPI.call("catalog_capabilities_v2", body: Data("{}".utf8), capability: true)
+    }
+
+    public func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState {
+        guard version == 2 else { throw ProductAPIError.invalidRequest(field: "p_version") }
+        return try await productsAPI.call("acknowledge_catalog_consent_v2", body: CommunityProductsAPI.body(["p_version": version]), owner: expectedOwnerID)
+    }
+
+    public func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState {
+        let state: ProductContributionState = try await productsAPI.call("get_my_catalog_contribution_v2", body: CommunityProductsAPI.body(["p_product_id": productID.uuidString]), owner: expectedOwnerID)
+        guard state.productID == productID else { throw ProductAPIError.unavailable }
+        return state
+    }
+
+    /// A delayed authentication rejection can never remove a newer sign-in. Ordinary forbidden
+    /// operations retain the session; a forbidden signed-out SQLSTATE invalidates matching credentials.
+    private func authenticatedSend(
+        _ path: String,
+        session: CommunitySession,
+        method: String = "POST",
+        query: [URLQueryItem] = [],
+        body: Data? = nil,
+        prefer: String? = nil
+    ) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await api.raw(
+            path,
+            method: method,
+            query: query,
+            bearer: session.accessToken,
+            body: body,
+            prefer: prefer
+        )
+        let mappedError = CommunityError.from(status: response.statusCode, body: data)
+        if response.statusCode == 401 || (response.statusCode == 403 && mappedError == .signedOut) {
+            let invalidated: Bool
+            do { invalidated = try await auth.invalidateSession(matchingAccessToken: session.accessToken) }
+            catch { throw CommunityError.storage }
+            throw invalidated ? CommunityError.signedOut : CommunityError.unauthorized
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw mappedError
+        }
+        return (data, response)
     }
 }
 
@@ -191,5 +300,24 @@ private struct LabelRow: Decodable {
     let brand: String?
     let nutrients: [String: Decimal]
     let supportingDevices: Int
-    let verified: Bool
+    let verificationSource: CommunityVerificationSource
+
+    enum CodingKeys: String, CodingKey {
+        case basis
+        case servingText
+        case productName
+        case brand
+        case nutrients
+        case supportingDevices
+        case verificationSource
+    }
+}
+
+private struct ProductDetailResponse: Decodable {
+    let product: CommunityProduct?
+    enum CodingKeys: String, CodingKey { case product }
+    init(from decoder: Decoder) throws {
+        try ProductWire.keys(decoder, required: ["product"])
+        product = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(CommunityProduct.self, forKey: .product)
+    }
 }

@@ -26,10 +26,12 @@ struct RootView: View {
     /// One presentation is never switched off and another on in the same action: the second is asked
     /// for here and shown when the first has finished going away.
     @State private var settingsAfterWelcome = false
+    @State private var settingsAfterAdding = false
     @State private var welcomeAfterSettings = false
 
     @State private var selection: AppTab = .today
     @State private var addHome: AddHomeViewModel?
+    @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var labelCapture: LabelCaptureViewModel?
     @StateObject private var addNavigation = AddNavigationModel()
@@ -133,7 +135,12 @@ struct RootView: View {
             NavigationStack {
                 LibraryView(
                     model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
-                    onOpen: { template in self.openAddDetails(prefilledFrom: template) }
+                    onOpen: { template in self.openAddDetails(prefilledFrom: template) },
+                    onProduct: { product in self.startProductDetails(product) },
+                    onEditProduct: { product in self.startProductEditor(revision: product) },
+                    onLegacyProduct: { draft in self.startProductEditor(legacy: draft) },
+                    onSearchProducts: { self.startProductSearch() },
+                    onNewProduct: { self.startProductEditor() }
                 )
                 .navigationTitle("Library")
                 .toolbar { settingsToolbar }
@@ -228,13 +235,20 @@ struct RootView: View {
         .task { await self.services.reminders.syncOnLaunch() }
         // Restore a stored sign-in at launch, not when Settings first opens, so the catalog lookup and the
         // upload gate work from the first screen.
-        .task { await self.services.account?.load() }
+        .task {
+            await self.services.account?.load()
+            await self.services.productSharing?.runDueOperations(now: Date())
+        }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 reload()
                 Task { await self.services.reminders.syncOnLaunch() }
+                Task {
+                    await self.services.account?.refreshProductSharing()
+                    await self.services.productSharing?.runDueOperations(now: Date())
+                }
             }
         }
         // An erase in Settings empties the stores these tabs read, so their
@@ -263,7 +277,10 @@ struct RootView: View {
             deliverToHealthKit()
         }
         #endif
-        .fullScreenCover(item: $addHome, onDismiss: { self.addNavigation.reset(); self.reload() }) { home in
+        .fullScreenCover(item: $addHome, onDismiss: {
+            self.addNavigation.reset(); self.reload()
+            if self.settingsAfterAdding { self.settingsAfterAdding = false; self.openSettings(goals: false) }
+        }) { home in
             NavigationStack(path: self.$addNavigation.path) {
                 AddHomeView(
                     model: home,
@@ -271,7 +288,9 @@ struct RootView: View {
                     onLabel: { self.openAddRoute(.labelScanner, home: home) },
                     onLibrary: { self.openAddRoute(.library, home: home) },
                     onType: { self.openAddRoute(.details(nil), home: home) },
-                    onChanged: { self.reload() }
+                    onChanged: { self.reload() },
+                    onNewProduct: { self.openProductEditor(home: home) },
+                    onSearchProducts: { self.openAddRoute(.productSearch, home: home) }
                 )
                 .navigationDestination(for: AddRoute.self) { route in
                     self.addDestination(route, home: home)
@@ -299,12 +318,12 @@ struct RootView: View {
         }
     }
 
-    /// The shared "Add food, drink, or supplement" capsule, laid over the bottom of every tab.
+    /// The shared AddIntakeAction.title capsule, laid over the bottom of every tab.
     private var addCapsule: some View {
-        PrimaryCapsule(ActionLabels.addFoodDrinkOrSupplement, systemImage: "plus") {
+        PrimaryCapsule(AddIntakeAction.title, systemImage: "plus") {
             startAddingIntake()
         }
-        .accessibilityLabel(ActionLabels.addFoodDrinkOrSupplement)
+        .accessibilityLabel(AddIntakeAction.title)
         .padding(.horizontal, DesignSpacing.m)
         .padding(.bottom, DesignSpacing.s)
     }
@@ -355,11 +374,33 @@ struct RootView: View {
         self.addNavigation.path.append(.details(AddPrefill(model: model)))
     }
 
+    private func openProductDetails(_ product: CustomProductRevision, home: AddHomeViewModel) {
+        do { try addNavigation.openProduct(product, home: home, now: Date()); services.library.load() }
+        catch { addFlowError = "Could not open product details." }
+    }
+    private func startProductDetails(_ product: CustomProductRevision) {
+        startAddingIntake()
+        if let home = addHome { openProductDetails(product, home: home) }
+    }
+    private func openProductEditor(home: AddHomeViewModel, revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
+        let editor = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy, sharing: services.productSharing)
+        addNavigation.path.append(.productEditor(ProductEditorPrefill(model: editor)))
+    }
+    private func startProductEditor(revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
+        startAddingIntake()
+        if let home = addHome { openProductEditor(home: home, revision: revision, legacy: legacy) }
+    }
+    private func startProductSearch() {
+        startAddingIntake()
+        if let home = addHome { openAddRoute(.productSearch, home: home) }
+    }
+
     private func finishAdding() {
         self.addNavigation.reset()
         self.addHome = nil
         self.addIntakeModel = nil
         self.labelCapture = nil
+        self.productSearchModel = nil
         self.reload()
     }
 
@@ -372,7 +413,10 @@ struct RootView: View {
             self.addIntakeModel = home.makeDetails(now: Date())
         case .details:
             self.addIntakeModel = home.makeDetails(now: Date())
-        case .library: break
+        case .productSearch:
+            self.productSearchModel = CommunityProductSearchViewModel(store: services.journalStore, service: services.productService,
+                isSignedIn: { services.account?.phase == .signedIn })
+        case .productEditor, .library: break
         }
         self.addNavigation.path.append(route)
     }
@@ -428,10 +472,23 @@ struct RootView: View {
                     } catch {
                         self.addFlowError = "Could not read this recipe."
                     }
-                })
+                }, onProduct: { self.openProductDetails($0, home: home) },
+                onSearchProducts: { self.openAddRoute(.productSearch, home: home) })
                 .overlay(alignment: .bottom) {
                     if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                 }
+        case .productEditor(let editor):
+            CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
+                services.library.load()
+                if openDetails { self.openProductDetails(product, home: home) }
+            }
+        case .productSearch:
+            if let search = productSearchModel {
+                CommunityProductSearchView(model: search,
+                    onSelect: { self.openProductDetails($0, home: home) },
+                    onLegacy: { self.openProductEditor(home: home, legacy: $0) },
+                    onSignIn: { self.settingsAfterAdding = true; self.finishAdding() })
+            }
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {
                 AddIntakeView(model: model, now: { Date() },

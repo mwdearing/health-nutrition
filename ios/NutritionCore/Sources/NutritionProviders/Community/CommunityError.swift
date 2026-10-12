@@ -11,11 +11,13 @@ public enum CommunityError: Error, Equatable, Sendable {
     case invalid
     case rateLimited
     case unauthorized
+    /// The account is valid but this operation is not allowed.
+    case permissionDenied
     /// The request never got a reply.
     case network
     /// The reply had an unexpected HTTP status.
     case server(Int)
-    /// The session could not be written to the Keychain.
+    /// The session could not be read from or written to the Keychain.
     case storage
     /// The human check was not completed, or the sign-in service refused it.
     case captcha
@@ -37,7 +39,8 @@ public enum CommunityError: Error, Equatable, Sendable {
         }
         switch status {
         case 400, 422: return .invalid
-        case 401, 403: return .unauthorized
+        case 401: return .unauthorized
+        case 403: return .permissionDenied
         case 429: return .rateLimited
         default: return .server(status)
         }

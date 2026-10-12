@@ -4,8 +4,9 @@
 restores a local-development default would weaken the live project.
 """
 import re
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 CONFIG = Path(__file__).resolve().parents[2] / "supabase" / "config.toml"
 

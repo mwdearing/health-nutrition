@@ -2,6 +2,7 @@ import Foundation
 import NutritionDomain
 import NutritionJournal
 import NutritionUI
+import NutritionProviders
 import XCTest
 
 @testable import HealthNutrition
@@ -25,6 +26,40 @@ final class AppServicesEraseTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return (try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler()), directory)
+    }
+
+    func testEraseClosesProductDeliveryBeforeClearingActualStoreAndDropsSuspendedReceipt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let productService = EraseProductService()
+        let suite = "synthetic.product.erase.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let services = try AppServices.make(directory: directory, displayPreferences: UserDefaultsDisplayPreferences(defaults: defaults),
+            reminderScheduler: RecordingReminderScheduler(), productService: productService)
+        let coordinator = try XCTUnwrap(services.productSharing), owner = UUID(), epoch = UUID()
+        let revision = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic", kind: .food, basis: .per100g))
+        let publication = ProductShareOperation(ownerID: owner, localProductID: revision.localProductID, operationID: UUID(), clientRevisionID: revision.revisionID,
+            kind: .publish, content: revision.content, consentGeneration: "1", epoch: epoch)
+        try services.journalStore.saveCustomProduct(CustomProductSave(revision: revision, publication: publication), now: when)
+        coordinator.updateAccountContext(ProductShareAccountContext(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let delivery = Task { await coordinator.runDueOperations(now: when) }
+        let publicationStarted = await productService.waitForPublication(timeoutSeconds: 5)
+        guard publicationStarted else {
+            XCTAssertTrue(services.connections.eraseAllData())
+            await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
+                currentRevision: "1", currentState: .active, replayed: false))
+            await delivery.value
+            XCTFail("Product delivery did not reach publish within five seconds")
+            return
+        }
+        XCTAssertTrue(services.connections.eraseAllData())
+        XCTAssertEqual(coordinator.pauseReason, .erase)
+        await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
+            currentRevision: "1", currentState: .active, replayed: false))
+        await delivery.value
+        XCTAssertTrue(try services.journalStore.productOperations(ownerID: owner).isEmpty)
+        XCTAssertTrue(try services.journalStore.customProducts().isEmpty)
     }
 
     private func sampleIntake() -> Intake {
@@ -211,4 +246,39 @@ final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable 
         defer { lock.unlock() }
         return body()
     }
+}
+
+
+private actor EraseProductService: CommunityProductServicing {
+    private var reply: CheckedContinuation<ProductDeliveryReceipt, Never>?
+    private var arrival: CheckedContinuation<Bool, Never>?
+    func waitForPublication(timeoutSeconds: Double) async -> Bool {
+        if reply != nil { return true }
+        return await withCheckedContinuation { continuation in
+            arrival = continuation
+            Task {
+                try? await Task.sleep(for: .seconds(timeoutSeconds))
+                await self.expirePublicationWait()
+            }
+        }
+    }
+    private func expirePublicationWait() {
+        arrival?.resume(returning: false)
+        arrival = nil
+    }
+    func finish(_ receipt: ProductDeliveryReceipt) { reply?.resume(returning: receipt) }
+    func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        await withCheckedContinuation { reply = $0; arrival?.resume(returning: true); arrival = nil }
+    }
+    func capabilities() async throws -> ProductCatalogCapabilities {
+        ProductCatalogCapabilities(supportedVersion: 2, enabled: true, limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20),
+            currentConsentVersion: 2, callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true,
+            boundedPublicationVersion: 1)
+    }
+    func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution { throw ProductAPIError.unavailable }
+    func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
+    func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState { throw ProductAPIError.unavailable }
+    func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState { throw ProductAPIError.unavailable }
+    func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage { throw ProductAPIError.unavailable }
+    func product(id: UUID) async throws -> CommunityProduct { throw ProductAPIError.unavailable }
 }

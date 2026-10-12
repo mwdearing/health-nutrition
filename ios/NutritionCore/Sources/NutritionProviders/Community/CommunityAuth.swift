@@ -15,6 +15,25 @@ public actor CommunityAuth {
     /// Bumped whenever the session is replaced or ended, so a refresh that was already in flight cannot write
     /// its result back over a newer state, for example a session the person just signed out of.
     private var generation = 0
+    /// Explicit authentication attempts supersede refreshes, but an old session's rejected request
+    /// must not cancel a sign-in or verification already in progress.
+    private var authenticationIntent = 0
+    /// Successful deletion fences this owner's late replies even if token rejection emptied storage.
+    /// A deliberate new authentication intent retires these fences; other owners remain eligible.
+    private var deletedOwners: Set<AccountIdentity> = []
+
+    private enum AccountIdentity: Hashable {
+        case uuid(UUID)
+        case opaque(Data)
+
+        init(_ userID: String) {
+            if let uuid = UUID(uuidString: userID) {
+                self = .uuid(uuid)
+            } else {
+                self = .opaque(Data(userID.utf8))
+            }
+        }
+    }
 
     public init(
         config: CommunityConfig,
@@ -47,12 +66,15 @@ public actor CommunityAuth {
     public func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession {
         // The sign-in service does not ask for a challenge on an identity token, so none is requested.
         let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
+        authenticationIntent += 1
+        deletedOwners.removeAll()
+        let startedAtIntent = authenticationIntent
         let (data, response) = try await api.send(
             "/auth/v1/token",
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
             body: body
         )
-        return try accept(data, response, replacing: true)
+        return try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
     }
 
     /// Emails a one-time code. The address also creates the account on first use.
@@ -65,45 +87,127 @@ public actor CommunityAuth {
     public func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
         // Checking the emailed code is not challenged either; only asking for it is.
         let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: nil))
+        authenticationIntent += 1
+        deletedOwners.removeAll()
+        let startedAtIntent = authenticationIntent
         let (data, response) = try await api.send("/auth/v1/verify", body: body)
-        return try accept(data, response, replacing: true)
+        return try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
     }
 
     /// The stored session, renewed first when it is about to expire. A rejected renewal ends the session.
-    public func validSession() async throws -> CommunitySession {
-        guard let session = store.load() else {
-            throw CommunityError.signedOut
-        }
-        guard session.expiresAt.timeIntervalSince(now()) < Self.refreshMargin else {
-            return session
-        }
+    public func validSession(expectedOwnerID: UUID? = nil) async throws -> CommunitySession {
+        try Task.checkCancellation()
+        let session = try loadSession()
+        guard let session else { throw CommunityError.signedOut }
+        try requireOwner(session, expected: expectedOwnerID)
+        guard session.expiresAt.timeIntervalSince(now()) < Self.refreshMargin else { return session }
+        let renewed: CommunitySession
         if let inFlight = refreshing {
-            return try await inFlight.value
+            renewed = try await inFlight.value
+        } else {
+            let started = generation
+            let startedIntent = authenticationIntent
+            let task = Task {
+                try await self.refresh(session.refreshToken, startedAt: started,
+                                       startedAtIntent: startedIntent, owner: session.userID)
+            }
+            refreshing = task
+            defer { refreshing = nil }
+            renewed = try await task.value
         }
-        let started = generation
-        let task = Task { try await self.refresh(session.refreshToken, startedAt: started) }
-        refreshing = task
-        defer { refreshing = nil }
-        return try await task.value
+        try Task.checkCancellation()
+        try requireOwner(renewed, expected: expectedOwnerID)
+        if let expectedOwnerID {
+            guard let current = try loadSession() else { throw CommunityError.signedOut }
+            try requireOwner(current, expected: expectedOwnerID)
+        }
+        return renewed
     }
 
-    /// Ends the session on the server, best effort, and always forgets it on this device.
-    public func signOut() async {
-        generation += 1
-        if let session = store.load() {
-            _ = try? await api.send("/auth/v1/logout", bearer: session.accessToken)
+    private func loadSession() throws -> CommunitySession? {
+        do { return try store.load() }
+        catch {
+            generation += 1
+            authenticationIntent += 1
+            throw CommunityError.storage
         }
-        store.clear()
+    }
+
+    private func requireOwner(_ session: CommunitySession, expected: UUID?) throws {
+        if let expected, UUID(uuidString: session.userID) != expected { throw ProductAPIError.ownerMismatch }
+    }
+
+    /// Clears this device first, then ends the server session on a best-effort basis.
+    public func signOut() async throws {
+        generation += 1
+        authenticationIntent += 1
+        // Reading the bearer is only for best-effort server logout. A read failure must not prevent
+        // clearing credentials from this device.
+        let session = try? store.load()
+        do { try store.clear() } catch { throw CommunityError.storage }
+        guard let session else { return }
+        _ = try? await api.send(
+            "/auth/v1/logout",
+            query: [URLQueryItem(name: "scope", value: "local")],
+            bearer: session.accessToken
+        )
     }
 
     /// Forgets the session on this device without a server call, for example after the account was deleted.
-    public func discardSession() {
+    public func discardSession() throws {
         generation += 1
-        store.clear()
+        authenticationIntent += 1
+        do { try store.clear() } catch { throw CommunityError.storage }
+    }
+
+    /// Clears the stored session only when a response belongs to the session still stored on this device.
+    @discardableResult
+    public func invalidateSession(matchingAccessToken accessToken: String) throws -> Bool {
+        let session: CommunitySession?
+        do {
+            session = try store.load()
+        } catch {
+            // The matching session is unknown, so do not clear storage. Fence operations already in
+            // flight so none can write credentials after the invalidation could not be verified.
+            generation += 1
+            authenticationIntent += 1
+            throw CommunityError.storage
+        }
+        guard session?.accessToken == accessToken else { return false }
+        generation += 1
+        do { try store.clear() } catch { throw CommunityError.storage }
+        return true
+    }
+
+    /// Fences a deleted account's pending replies and clears its current session, including rotated tokens.
+    /// Returns whether stored credentials were cleared; the owner fence applies even when storage is empty.
+    @discardableResult
+    public func invalidateSession(matchingUserID userID: String) throws -> Bool {
+        let deletedOwner = AccountIdentity(userID)
+        deletedOwners.insert(deletedOwner)
+        let session: CommunitySession?
+        do {
+            session = try store.load()
+        } catch {
+            // The matching session is unknown, so do not clear storage. Fence operations already in
+            // flight so none can write credentials after the invalidation could not be verified.
+            generation += 1
+            authenticationIntent += 1
+            throw CommunityError.storage
+        }
+        guard let session, AccountIdentity(session.userID) == deletedOwner else { return false }
+        generation += 1
+        do { try store.clear() } catch { throw CommunityError.storage }
+        return true
     }
 
     /// POST /auth/v1/token?grant_type=refresh_token. A rejected refresh token ends the session.
-    private func refresh(_ refreshToken: String, startedAt: Int) async throws -> CommunitySession {
+    private func refresh(
+        _ refreshToken: String,
+        startedAt: Int,
+        startedAtIntent: Int,
+        owner: String
+    ) async throws -> CommunitySession {
         let body = try CommunityAPI.encode(RefreshBody(refreshToken: refreshToken))
         let (data, response) = try await api.raw(
             "/auth/v1/token",
@@ -112,20 +216,68 @@ public actor CommunityAuth {
         )
         switch response.statusCode {
         case 200..<300:
-            // The session changed while the request was out (signed out, or signed in again): drop the result.
-            guard startedAt == generation else { throw CommunityError.signedOut }
-            return try accept(data, response, replacing: false)
+            return try acceptRefresh(
+                data, response, startedAt: startedAt, startedAtIntent: startedAtIntent, owner: owner
+            )
         case 400, 401, 403:
-            if startedAt == generation { store.clear() }
+            let session: CommunitySession?
+            do {
+                // Load the session even if an explicit auth attempt has started since this refresh.
+                // An unreadable store still has to fence that pending attempt, while a readable
+                // stale refresh must not clear or replace it.
+                session = startedAt == generation ? try store.load() : nil
+            } catch {
+                if startedAt == generation {
+                    // This rejected refresh cannot establish which session is stored. Keep it intact,
+                    // but prevent an older in-flight sign-in or refresh from writing afterward.
+                    generation += 1
+                    authenticationIntent += 1
+                }
+                throw CommunityError.storage
+            }
+            if startedAtIntent == authenticationIntent, session?.refreshToken == refreshToken {
+                generation += 1
+                do { try store.clear() } catch { throw CommunityError.storage }
+            }
             throw CommunityError.signedOut
         default:
             throw CommunityError.from(status: response.statusCode, body: data)
         }
     }
 
-    private func accept(_ data: Data, _ response: HTTPURLResponse, replacing: Bool) throws -> CommunitySession {
+    private func acceptAuthentication(
+        _ data: Data,
+        _ response: HTTPURLResponse,
+        startedAtIntent: Int
+    ) throws -> CommunitySession {
+        // A session-replacement request remains valid across failures to invalidate an older token,
+        // but a later auth attempt, logout, or unknown storage state fences it.
+        guard startedAtIntent == authenticationIntent else { throw CommunityError.signedOut }
+        return try save(data, response)
+    }
+
+    private func acceptRefresh(
+        _ data: Data,
+        _ response: HTTPURLResponse,
+        startedAt: Int,
+        startedAtIntent: Int,
+        owner: String
+    ) throws -> CommunitySession {
+        // Refreshes must still own both the stored-session generation and auth intent.
+        guard startedAt == generation, startedAtIntent == authenticationIntent else {
+            throw CommunityError.signedOut
+        }
+        return try save(data, response, expectedUserID: owner)
+    }
+
+    private func save(_ data: Data, _ response: HTTPURLResponse, expectedUserID: String? = nil) throws -> CommunitySession {
+        try Task.checkCancellation()
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
-        if replacing { generation += 1 }
+        let owner = AccountIdentity(reply.user.id)
+        guard !deletedOwners.contains(owner) else { throw CommunityError.signedOut }
+        if let expectedUserID {
+            guard AccountIdentity(expectedUserID) == owner else { throw CommunityError.signedOut }
+        }
         let session = CommunitySession(
             accessToken: reply.accessToken,
             refreshToken: reply.refreshToken,
@@ -138,6 +290,7 @@ public actor CommunityAuth {
         } catch {
             throw CommunityError.storage
         }
+        generation += 1
         return session
     }
 }

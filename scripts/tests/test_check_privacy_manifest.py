@@ -155,6 +155,7 @@ def run(root: Path, manifest: Path | None = None) -> subprocess.CompletedProcess
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

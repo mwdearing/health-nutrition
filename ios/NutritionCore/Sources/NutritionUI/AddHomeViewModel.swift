@@ -68,6 +68,12 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         return model
     }
 
+    public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {
+        let model = makeDetails(now: now)
+        try model.applyCustomProduct(product)
+        return model
+    }
+
     public func makeDetails(prefill: RepeatTemplate, now: Date) throws -> AddIntakeViewModel {
         let model = makeDetails(now: now)
         guard let component = prefill.components.first else { throw JournalError.corruptRecord("empty template") }

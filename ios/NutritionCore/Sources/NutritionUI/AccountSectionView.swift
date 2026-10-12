@@ -34,6 +34,12 @@ public struct AccountSectionView: View {
                     Button("Try again") { Task { await model.retryProfile() } }
                         .disabled(model.isBusy)
                 }
+                if model.productDeliveryPausedAfterDeletion {
+                    Text("Sharing is paused after an account deletion or data erase attempt. Resume only when you want this account to share again.")
+                        .font(.footnote)
+                    Button("Resume sharing") { Task { await model.recoverSharingAfterFailedDeletion() } }
+                        .disabled(model.isBusy)
+                }
                 Button("Sign out") { Task { await model.signOut() } }
                     .disabled(model.isBusy)
                 Button("Delete account", role: .destructive) { model.presentingDeleteConfirmation = true }

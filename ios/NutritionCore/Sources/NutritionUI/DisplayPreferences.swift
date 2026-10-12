@@ -56,6 +56,9 @@ public protocol FirstRunPreferences: AnyObject {
 public protocol CommunityDisclosurePreferences: AnyObject {
     func hasSeenCommunityDisclosure(for userID: String) -> Bool
     func setHasSeenCommunityDisclosure(_ seen: Bool, for userID: String)
+    func productSharingPause(for userID: String) -> ProductSharePauseReason?
+    func setProductSharingPause(_ reason: ProductSharePauseReason?, for userID: String)
+    func clearProductSharingPausesAfterErase()
 }
 
 /// The defaults a person has before they change anything: metric, and a 250 mL glass.
@@ -135,6 +138,23 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
             defaults.set(ids, forKey: communityDisclosureKey)
         }
     }
+
+    // Safety state is independent of display defaults. Partial erase must not silently resume delivery.
+    private var productSharingPauseKey: String { "community.productSharing.lifecyclePauses" }
+    public func productSharingPause(for userID: String) -> ProductSharePauseReason? {
+        guard let owner = UUID(uuidString: userID)?.uuidString.lowercased(),
+              let raw = defaults.dictionary(forKey: productSharingPauseKey)?[owner] as? String,
+              let reason = ProductSharePauseReason(rawValue: raw), [.accountDeletion, .erase].contains(reason) else { return nil }
+        return reason
+    }
+    public func setProductSharingPause(_ reason: ProductSharePauseReason?, for userID: String) {
+        guard let owner = UUID(uuidString: userID)?.uuidString.lowercased(), reason == nil || reason == .accountDeletion || reason == .erase else { return }
+        var pauses = defaults.dictionary(forKey: productSharingPauseKey) as? [String: String] ?? [:]
+        pauses[owner] = reason?.rawValue
+        if pauses.isEmpty { defaults.removeObject(forKey: productSharingPauseKey) }
+        else { defaults.set(pauses, forKey: productSharingPauseKey) }
+    }
+    public func clearProductSharingPausesAfterErase() { defaults.removeObject(forKey: productSharingPauseKey) }
 
     /// The stored time when it reads as a clock time, 20:00 otherwise.
     public var reminderTime: ReminderTime {
@@ -236,6 +256,16 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
     public private(set) var isReminderOn = false
     public private(set) var reminderTime = ReminderTime.standard
     public private(set) var hiddenTodayGoals: Set<String> = []
+    private var productSharingPauses: [UUID: ProductSharePauseReason] = [:]
+    public func productSharingPause(for userID: String) -> ProductSharePauseReason? {
+        guard let owner = UUID(uuidString: userID) else { return nil }
+        return productSharingPauses[owner]
+    }
+    public func setProductSharingPause(_ reason: ProductSharePauseReason?, for userID: String) {
+        guard let owner = UUID(uuidString: userID), reason == nil || reason == .accountDeletion || reason == .erase else { return }
+        productSharingPauses[owner] = reason
+    }
+    public func clearProductSharingPausesAfterErase() { productSharingPauses = [:] }
     private var acknowledgedAccountIDs: Set<String> = []
 
     public func hasSeenCommunityDisclosure(for userID: String) -> Bool {

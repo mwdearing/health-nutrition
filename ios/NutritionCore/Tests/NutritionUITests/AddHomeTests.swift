@@ -173,3 +173,23 @@ final class AddHomeTests: XCTestCase {
 private struct MissingProductLookup: BarcodeProductLookup {
     func lookUp(barcode: String) async -> BarcodeLookupResult { .notFound }
 }
+
+extension AddHomeTests {
+    func testStandaloneProductOpensDetailsWithoutInventingHistoryOrOperation() throws {
+        let store = try makeStore(), item = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: .init(name: "Synthetic capsule", kind: .supplement, basis: .perServing))
+        try store.saveCustomProduct(.init(revision: item), now: now)
+        let home = AddHomeViewModel(store: store, meal: .lunch)
+        let details = try home.makeDetails(product: item, now: now)
+        XCTAssertEqual(details.name, item.content.name)
+        XCTAssertEqual(details.kind, .supplement)
+        XCTAssertEqual(details.meal, .lunch)
+        XCTAssertEqual(details.amountText, "")
+        XCTAssertTrue(details.isCustomProduct)
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+        XCTAssertTrue(try store.productOperations(ownerID: UUID()).isEmpty)
+        details.amountText = "2"; details.unit = .capsule
+        XCTAssertTrue(details.save(now: now))
+        XCTAssertEqual(try store.activeIntakes().count, 1)
+        XCTAssertEqual(details.productSnapshot()?.snapshotID, item.revisionID.uuidString)
+    }
+}

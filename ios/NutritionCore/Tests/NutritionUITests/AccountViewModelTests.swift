@@ -8,20 +8,31 @@ import XCTest
 /// Stands in for the community client. Every call is recorded, and each reply is set by the test.
 /// Holds one service call open until the test opens the gate, so a test can look at the model while it is busy.
 final class CallGate: @unchecked Sendable {
+    private let lock = NSLock()
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var isOpen = false
-    private(set) var entered = false
+    private var hasEntered = false
+    var entered: Bool { lock.withLock { hasEntered } }
 
     func pass() async {
-        entered = true
-        if isOpen { return }
-        await withCheckedContinuation { waiters.append($0) }
+        await withCheckedContinuation { continuation in
+            let alreadyOpen = lock.withLock {
+                hasEntered = true
+                if isOpen { return true }
+                waiters.append(continuation)
+                return false
+            }
+            if alreadyOpen { continuation.resume() }
+        }
     }
 
     func open() {
-        isOpen = true
-        let pending = waiters
-        waiters = []
+        let pending = lock.withLock {
+            isOpen = true
+            let pending = waiters
+            waiters = []
+            return pending
+        }
         for waiter in pending { waiter.resume() }
     }
 }
@@ -34,9 +45,12 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
     var profileValue = CommunityProfile(displayName: nil, shareLabels: true)
     var profileError: Error?
     var updateError: Error?
+    var signOutError: Error?
     var deleteError: Error?
     /// When set, `restore()` waits at this gate before it answers.
     var restoreGate: CallGate?
+    var signOutGate: CallGate?
+    var deleteGate: CallGate?
     /// When set, `profile()` waits at this gate before it answers.
     var profileGate: CallGate?
     private(set) var appleCalls: [(idToken: String, nonce: String)] = []
@@ -72,8 +86,10 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
         return try verifyResult.get()
     }
 
-    func signOut() async {
+    func signOut() async throws {
         signOutCount += 1
+        await signOutGate?.pass()
+        if let signOutError { throw signOutError }
     }
 
     func profile() async throws -> CommunityProfile {
@@ -92,6 +108,7 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
 
     func deleteAccount() async throws {
         deleteCount += 1
+        await deleteGate?.pass()
         if let deleteError { throw deleteError }
     }
 }
@@ -127,6 +144,20 @@ final class AccountViewModelTests: XCTestCase {
         let service = FakeAccountService(session: session)
         let model = AccountViewModel(service: service, preferences: preferences)
         return (model, service, preferences)
+    }
+
+    func testFailedCredentialClearKeepsDeliveryClosedAndReportsFailure() async {
+        let service = FakeAccountService(session: AccountTestSupport.session)
+        let preferences = InMemoryDisplayPreferences()
+        let model = AccountViewModel(service: service, preferences: preferences)
+        await model.load()
+        service.signOutError = CommunityError.storage
+        await model.signOut()
+        XCTAssertFalse(model.sharingAllowed)
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertNotNil(model.message)
+        await model.load()
+        XCTAssertEqual(model.phase, .signedOut, "automatic restore stays closed after failed credential deletion")
     }
 
     func testSignedOutAtStart() async throws {
@@ -443,12 +474,119 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertEqual(service.signOutCount, 1)
     }
 
+    func testSuspendedSignOutBarsAppleAndEmailAdmissionsUntilCompletion() async throws {
+        for useApple in [true, false] {
+            let (model, service, _) = makeModel(session: AccountTestSupport.session)
+            await model.load()
+            await model.requestCode(email: "person@example.com")
+            let gate = CallGate()
+            service.signOutGate = gate
+            let logout = Task { await model.signOut() }
+            while !gate.entered { await Task.yield() }
+
+            XCTAssertEqual(model.phase, .signedOut)
+            XCTAssertFalse(model.sharingAllowed)
+            XCTAssertTrue(model.isBusy)
+            await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+            await model.requestCode(email: "person@example.com")
+            await model.resendCode()
+            await model.verify(code: "123456")
+            XCTAssertTrue(service.appleCalls.isEmpty)
+            XCTAssertEqual(service.codeRequests.count, 1)
+            XCTAssertTrue(service.verifyCalls.isEmpty)
+            XCTAssertEqual(model.phase, .signedOut)
+            XCTAssertEqual(model.emailStep, .enterAddress)
+            XCTAssertTrue(model.isBusy)
+
+            gate.open()
+            await logout.value
+            XCTAssertFalse(model.isBusy)
+            if useApple {
+                await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+                XCTAssertEqual(service.appleCalls.count, 1)
+            } else {
+                await model.requestCode(email: "person@example.com")
+                await model.verify(code: "123456")
+                XCTAssertEqual(service.verifyCalls.count, 1)
+            }
+            XCTAssertEqual(model.phase, .signedIn)
+            XCTAssertTrue(model.profileReady)
+            XCTAssertFalse(model.isBusy)
+        }
+    }
+
+    func testConcurrentSignOutCallsShareOneLogoutBoundary() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        let gate = CallGate()
+        service.signOutGate = gate
+        let first = Task { await model.signOut() }
+        while !gate.entered { await Task.yield() }
+        var secondStarted = false
+        let second = Task {
+            secondStarted = true
+            await model.signOut()
+        }
+        while !secondStarted { await Task.yield() }
+        XCTAssertEqual(service.signOutCount, 1)
+        XCTAssertTrue(model.isBusy)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertTrue(service.appleCalls.isEmpty)
+        gate.open()
+        await first.value
+        await second.value
+        XCTAssertEqual(service.signOutCount, 1)
+        XCTAssertFalse(model.isBusy)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertEqual(service.appleCalls.count, 1)
+        XCTAssertEqual(model.phase, .signedIn)
+    }
+
     func testDeleteAccountClearsTheSession() async throws {
         let (model, service, _) = makeModel(session: AccountTestSupport.session)
         await model.load()
         await model.deleteAccount()
         XCTAssertEqual(model.phase, .signedOut)
         XCTAssertEqual(service.deleteCount, 1)
+    }
+
+    func testLifecyclePauseSurvivesPreferencesReopenWithNoOperationsAndRecoveryFailure() async throws {
+        let suite = "synthetic.lifecycle.\(UUID().uuidString)", owner = AccountTestSupport.session.userID
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        let service = FakeAccountService(session: AccountTestSupport.session)
+        let first = AccountViewModel(service: service, preferences: preferences)
+        await first.load(); service.deleteError = CommunityError.network; await first.deleteAccount()
+        XCTAssertEqual(preferences.productSharingPause(for: owner), .accountDeletion)
+        preferences.resetToDefaults()
+        let reopened = UserDefaultsDisplayPreferences(defaults: try XCTUnwrap(UserDefaults(suiteName: suite)))
+        let second = AccountViewModel(service: service, preferences: reopened)
+        await second.load()
+        XCTAssertTrue(second.productDeliveryPausedAfterDeletion)
+        service.profileError = CommunityError.network
+        await second.recoverSharingAfterFailedDeletion()
+        XCTAssertEqual(reopened.productSharingPause(for: owner), .accountDeletion)
+        service.profileError = nil
+        await second.recoverSharingAfterFailedDeletion()
+        XCTAssertNil(reopened.productSharingPause(for: owner))
+        reopened.setProductSharingPause(.erase, for: AccountTestSupport.otherSession.userID)
+        service.deleteError = nil; await second.deleteAccount()
+        XCTAssertEqual(reopened.productSharingPause(for: AccountTestSupport.otherSession.userID), .erase)
+        reopened.clearProductSharingPausesAfterErase()
+        XCTAssertNil(reopened.productSharingPause(for: AccountTestSupport.otherSession.userID))
+    }
+
+    func testFailedDeletionRequiresExplicitRecoveryEvenAfterAutomaticProfileRefresh() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        service.deleteError = CommunityError.network
+        await model.deleteAccount()
+        XCTAssertTrue(model.productDeliveryPausedAfterDeletion)
+        await model.retryProfile()
+        XCTAssertTrue(model.productDeliveryPausedAfterDeletion)
+        await model.recoverSharingAfterFailedDeletion()
+        XCTAssertFalse(model.productDeliveryPausedAfterDeletion)
     }
 
     func testFailedDeleteKeepsTheAccountSignedIn() async throws {

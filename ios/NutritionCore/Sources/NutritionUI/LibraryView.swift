@@ -3,6 +3,11 @@ import SwiftUI
 
 public struct LibraryView: View {
     @ObservedObject var model: LibraryViewModel
+    private let onProduct: ((CustomProductRevision) -> Void)?
+    private let onEditProduct: ((CustomProductRevision) -> Void)?
+    private let onLegacyProduct: ((LegacyCustomProductDraft) -> Void)?
+    private let onSearchProducts: (() -> Void)?
+    private let onNewProduct: (() -> Void)?
     private let now: () -> Date
     private let onAdded: () -> Void
     /// When given, the Library screen offers the way in to personal recipes.
@@ -19,8 +24,14 @@ public struct LibraryView: View {
         // now, and the Library no longer shows either, so both are ignored.
         connections: ConnectionsPrivacyViewModel? = nil, goals: GoalsViewModel? = nil,
         onPick: ((RepeatTemplate) -> Void)? = nil, sectionTitle: String? = nil,
-        onOpen: ((RepeatTemplate) -> Void)? = nil
+        onOpen: ((RepeatTemplate) -> Void)? = nil,
+        onProduct: ((CustomProductRevision) -> Void)? = nil,
+        onEditProduct: ((CustomProductRevision) -> Void)? = nil,
+        onLegacyProduct: ((LegacyCustomProductDraft) -> Void)? = nil,
+        onSearchProducts: (() -> Void)? = nil, onNewProduct: (() -> Void)? = nil
     ) {
+        self.onProduct = onProduct; self.onEditProduct = onEditProduct; self.onLegacyProduct = onLegacyProduct
+        self.onSearchProducts = onSearchProducts; self.onNewProduct = onNewProduct
         self.model = model
         self.now = now
         self.onAdded = onAdded
@@ -35,7 +46,11 @@ public struct LibraryView: View {
             if onPick != nil {
                 pickSections
             } else {
-                searchPlaceholder
+                LabeledField("Search on this phone") { focus in
+                    TextField("Search on this phone", text: $model.searchText).focused(focus)
+                }
+                if let onSearchProducts { Button("Find shared products", action: onSearchProducts) }
+                if let onNewProduct { Button("Create product", action: onNewProduct) }
                 Picker("Library segment", selection: $model.segment) {
                     ForEach(LibrarySegment.allCases) { segment in
                         Text(segment.title).tag(segment)
@@ -52,6 +67,7 @@ public struct LibraryView: View {
         .background(TokenColors.background)
         .navigationTitle("Library")
         .onAppear { self.model.load() }
+        .task { await model.observeProductStatus() }
         // The Undo window ends with this screen: its ten-second task is canceled with the toast.
         .onDisappear { if self.onPick == nil { self.model.clearUndo() } }
         .safeAreaInset(edge: .bottom) {
@@ -72,10 +88,11 @@ public struct LibraryView: View {
     /// Pick mode (Add's "From Library") keeps the plain list of both sections, no segments and no Add.
     @ViewBuilder
     private var pickSections: some View {
+        if sectionTitle == "Products" { standaloneRows }
         ForEach(model.sections.filter { self.sectionTitle == nil || $0.title == self.sectionTitle }) { section in
             Section(section.title) {
                 if section.items.isEmpty {
-                    Text(model.emptyText(for: section.title == "Favorites" ? .favorites : .recent).message)
+                    Text(model.emptyText(for: section.title == "Favorites" ? .favorites : section.title == "Products" ? .products : .recent).message)
                         .font(.footnote).foregroundStyle(TokenColors.textSecondary)
                 }
                 ForEach(section.items) { item in
@@ -85,23 +102,12 @@ public struct LibraryView: View {
         }
     }
 
-    /// Search is not built yet: a disabled row that says so.
-    private var searchPlaceholder: some View {
-        HStack {
-            Label("Search the Library", systemImage: "magnifyingglass")
-                .foregroundStyle(TokenColors.textSecondary)
-            Spacer()
-            LaterBadge()
-        }
-        .accessibilityElement(children: .combine)
-        .laterPlaceholder()
-    }
-
     @ViewBuilder
     private var segmentContent: some View {
         switch model.segment {
-        case .favorites, .recent, .foods:
-            if model.visibleItems.isEmpty {
+        case .favorites, .recent, .products:
+            if model.segment == .products { standaloneRows }
+            if model.visibleItems.isEmpty && (model.segment != .products || model.filteredProducts.isEmpty) {
                 emptyState(for: model.segment)
             } else {
                 ForEach(model.visibleItems) { item in
@@ -116,6 +122,31 @@ public struct LibraryView: View {
                     .accessibilityHint("Opens your personal recipes")
             } else {
                 emptyState(for: .recipes)
+            }
+        }
+    }
+
+    @ViewBuilder private var standaloneRows: some View {
+        ForEach(model.filteredProducts, id: \.localProductID) { product in
+            VStack(alignment: .leading, spacing: DesignSpacing.s) {
+                Button { onProduct?(product) } label: {
+                    VStack(alignment: .leading) {
+                        Text(product.content.name).font(.headline)
+                        Text(product.content.kind.displayName).font(.footnote)
+                        if LibraryProductPresentation(product).missingFacts { Text("Missing facts").font(.footnote) }
+                        if let source = product.source { Text("Imported from \(source.attribution)").font(.footnote) }
+                    }
+                }
+                .buttonStyle(.borderless)
+                .accessibilityHint("Opens intake details without adding an entry")
+                Text(LibraryProductPresentation(product).verificationText)
+                    .font(.footnote).accessibilityIdentifier("productVerificationStatus")
+                if let sharing = model.productSharing {
+                    Text(sharing.status(product).rawValue).accessibilityIdentifier("productDeliveryStatus")
+                    Text(sharing.detail(product)).font(.footnote)
+                    if sharing.canRetry(product) { Button("Retry") { Task { await sharing.retry(product); model.load() } } }
+                }
+                if let onEditProduct { Button("Edit and sharing review") { onEditProduct(product) } }
             }
         }
     }
@@ -153,6 +184,17 @@ public struct LibraryView: View {
             .accessibilityLabel(item.accessibilityLabel(forPick: opensDetails))
             .modifier(DetailsHint(isOn: opensDetails))
             Spacer()
+            if let onLegacyProduct, model.canCompleteProduct(item) {
+                Button(item.template.productSnapshotID == nil ? "Complete product" : "Edit product") {
+                    do {
+                        if let product = try model.standaloneProduct(for: item), let onEditProduct {
+                            onEditProduct(product)
+                        } else {
+                            onLegacyProduct(try model.legacyDraft(item))
+                        }
+                    } catch { model.reportOpenFailure() }
+                }.buttonStyle(.borderless)
+            }
             if onPick == nil {
                 QuietCapsule("Add") {
                     if self.model.quickAdd(item, now: self.now()) { self.onAdded() }

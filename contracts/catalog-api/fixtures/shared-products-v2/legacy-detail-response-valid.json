@@ -1,0 +1,37 @@
+{
+  "product": {
+    "product_id": "00000000-0000-4000-8000-000000000003",
+    "representative_revision": "1",
+    "product": {
+      "content_type": "legacy_label",
+      "name": "Synthetic original label",
+      "brand": null,
+      "barcode": "0012345678905",
+      "kind": null,
+      "basis": "per_serving",
+      "serving": null,
+      "raw_serving_text": "one original scoop",
+      "nutrients": {
+        "protein": 4,
+        "fat": 2,
+        "salt": 1
+      },
+      "legacy_source": "community"
+    },
+    "source": {
+      "product_id": "00000000-0000-4000-8000-000000000003",
+      "representative_revision": "1",
+      "attribution": "Legacy label catalog"
+    },
+    "verification": {
+      "status": "shared_unverified",
+      "source": null
+    },
+    "support": {
+      "distinct_accounts": "1",
+      "verification_threshold": "5"
+    },
+    "missing_facts": false,
+    "alternatives": []
+  }
+}

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The only network seam of the community client. Tests inject a fake.
 public protocol CommunityTransport: Sendable {
@@ -13,10 +16,7 @@ public struct URLSessionCommunityTransport: CommunityTransport {
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
-        return (data, http)
+        try await BoundedResponseLoader.data(
+            for: request, session: session, maxBytes: BoundedResponseLimits.community)
     }
 }

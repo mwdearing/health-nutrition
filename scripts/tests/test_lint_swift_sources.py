@@ -33,6 +33,7 @@ def run(root: Path) -> subprocess.CompletedProcess[str]:
         [sys.executable, str(SCRIPT), str(root)],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -1594,6 +1595,7 @@ def test_missing_root_is_reported_as_an_error(tmp_path: Path) -> None:
         [sys.executable, str(SCRIPT), str(tmp_path / "nope")],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 2
 

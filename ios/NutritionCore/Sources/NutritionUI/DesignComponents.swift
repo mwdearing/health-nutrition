@@ -15,11 +15,6 @@ public enum DesignRadius {
     public static let control: CGFloat = 12
 }
 
-/// Shared wording for the primary action that adds any intake type.
-public enum ActionLabels {
-    public static let addFoodDrinkOrSupplement = "Add food, drink, or supplement"
-}
-
 /// A rounded container on the surface color, for content composed of more than standard rows.
 public struct Card<Content: View>: View {
     private let content: Content
@@ -107,6 +102,11 @@ public struct LabeledField<Content: View>: View {
         if error != nil { return TokenColors.error }
         return focus.wrappedValue ? TokenColors.accent : TokenColors.border
     }
+}
+
+/// Shared visible and accessible wording for starting an intake.
+public enum AddIntakeAction {
+    public static let title = "Add food, drink, or supplement"
 }
 
 /// The one filled action on a screen: mint with the dark ink on it.

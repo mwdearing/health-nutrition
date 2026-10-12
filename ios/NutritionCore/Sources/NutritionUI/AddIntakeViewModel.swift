@@ -126,6 +126,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// This form's own identity, so the sheet can be bound to the model rather than to a flag beside
     /// it. It is per instance, so a second add is always a new sheet.
     public nonisolated let formID = UUID()
+    @Published public private(set) var customProduct: CustomProductRevision?
+    public var isCustomProduct: Bool { customProduct != nil }
     @Published public var name: String = "" {
         didSet { editedFields.insert(.name) }
     }
@@ -596,6 +598,20 @@ public final class AddIntakeViewModel: ObservableObject {
         fillProductValues(product)
     }
 
+    /// A standalone/imported revision opens consumption details without creating history or publishing.
+    public func applyCustomProduct(_ revision: CustomProductRevision) throws {
+        applyStoredProduct(try CustomProductMapping.snapshot(for: revision))
+        customProduct = revision
+        kind = revision.content.kind
+        category = revision.content.kind.rawValue
+        amountText = ""
+        switch revision.content.basis {
+        case .per100g: unit = .g
+        case .per100mL: unit = .mL
+        case .perServing: unit = revision.content.serving?.unit ?? .serving
+        }
+    }
+
     private func fillProductValues(_ product: ProductDefinition) {
         // The panel already said what it is: a Supplement Facts panel is a supplement. The review
         // screen lets the user change it before the product reaches this form at all.
@@ -728,7 +744,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The upload for the captured label in the form, or nil. A Library entry, a repeat and a barcode lookup
     /// are never uploaded, and neither is a label whose barcode fails the shape check.
     private func communitySubmission() -> CommunityLabelSubmission? {
-        guard prefilledFromCapture, lookedUp == nil, storedProduct == nil, let captured = labelValues else {
+        guard customProduct == nil, prefilledFromCapture, lookedUp == nil, storedProduct == nil, let captured = labelValues else {
             return nil
         }
         let code = barcode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -767,6 +783,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// the name and brand the user settled on. The snapshot id is rebuilt from those, so two captures
     /// of the same panel under two names stay two different records.
     func productSnapshot() -> ProductDefinition? {
+        if let customProduct { return try? CustomProductMapping.snapshot(for: customProduct) }
         if let stored = storedProduct,
            name.trimmingCharacters(in: .whitespacesAndNewlines) == stored.name,
            brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty == stored.brand,

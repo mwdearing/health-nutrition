@@ -39,7 +39,17 @@ struct CommunityAPI: Sendable {
             request.setValue(prefer, forHTTPHeaderField: "Prefer")
         }
         do {
-            return try await transport.send(request)
+            try Task.checkCancellation()
+            let reply = try await transport.send(request)
+            try Task.checkCancellation()
+            guard reply.0.count <= BoundedResponseLimits.community else {
+                throw BoundedResponseError.responseTooLarge
+            }
+            return reply
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch {
             // The transport error is dropped on purpose: its text could contain the request URL.
             throw CommunityError.network

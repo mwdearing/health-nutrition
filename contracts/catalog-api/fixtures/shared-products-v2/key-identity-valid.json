@@ -1,0 +1,33 @@
+{
+  "operation_id": "00000000-0000-4000-8000-000000000001",
+  "client_revision_id": "00000000-0000-4000-8000-000000000002",
+  "product_id": null,
+  "expected_server_revision": null,
+  "consent_version": 2,
+  "consent_generation": "0",
+  "product": {
+    "name": "Synthetic oats",
+    "brand": null,
+    "barcode": null,
+    "kind": "food",
+    "basis": "per_100_g",
+    "serving": null,
+    "facts": [
+      {
+        "key": "ingredient:é",
+        "display_name": "Composed",
+        "state": "unknown"
+      },
+      {
+        "key": "ingredient:é",
+        "display_name": "Decomposed",
+        "state": "unknown"
+      },
+      {
+        "key": "ingredient:a\nb",
+        "display_name": "Multiline key",
+        "state": "unknown"
+      }
+    ]
+  }
+}

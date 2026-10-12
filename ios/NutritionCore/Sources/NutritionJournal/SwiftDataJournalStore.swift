@@ -952,7 +952,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self,
-            JournalSchemaV5.self, JournalSchemaV6.self,
+            JournalSchemaV5.self, JournalSchemaV6.self, JournalSchemaV7.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -974,6 +974,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
                     try context.save()
                 }),
             .lightweight(fromVersion: JournalSchemaV5.self, toVersion: JournalSchemaV6.self),
+            .lightweight(fromVersion: JournalSchemaV6.self, toVersion: JournalSchemaV7.self),
         ]
     }
 
@@ -1090,10 +1091,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV6.self)
+        let schema = Schema(versionedSchema: JournalSchemaV7.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+        try recoverProductOperations()
     }
 
     public func close() {
@@ -1241,7 +1243,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
         try context.save()
     }
 
-    private func openContainer() throws -> ModelContainer {
+    func openContainer() throws -> ModelContainer {
         try lock.withLock {
             guard let container else { throw JournalError.closed }
             return container
@@ -1257,7 +1259,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     }
 
     /// Runs `body` on a fresh context and saves once. Any failure rolls the context back.
-    private func commit<T>(_ body: (ModelContext) throws -> T) throws -> T {
+    func commit<T>(_ body: (ModelContext) throws -> T) throws -> T {
         writeLock.lock()
         defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
@@ -1281,21 +1283,25 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     public func create(
         _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
     ) throws -> IntakeRevision {
+        try commit { context in
+            try insertIntake(intake, components: components, product: product, now: now, context: context)
+        }
+    }
+
+    /// Shared insertion primitive for one journal transaction; never recursively acquires writeLock.
+    func insertIntake(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?,
+                      now: Date, context: ModelContext) throws -> IntakeRevision {
         guard JournalValidation.isValidIntakeID(intake.id) else { throw JournalError.invalidIntakeID(intake.id) }
         let json = try Self.encode(components)
-        return try commit { context in
-            if try Self.intakeRecord(intake.id, in: context) != nil {
-                throw JournalError.intakeAlreadyExists(intake.id)
-            }
-            context.insert(IntakeRecord(
-                intakeID: intake.id, category: intake.category, occurredAt: intake.occurredAt,
-                timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal, note: intake.note,
-                lifecycleRaw: IntakeLifecycle.active.rawValue, currentRevision: 1))
-            return try appendRevision(
-                intakeID: intake.id, number: 1, componentsJSON: json, components: components,
-                product: product, changeReason: "created", now: now,
-                occurredAt: intake.occurredAt, timeZoneIdentifier: intake.timeZoneIdentifier, context: context)
-        }
+        if try Self.intakeRecord(intake.id, in: context) != nil { throw JournalError.intakeAlreadyExists(intake.id) }
+        context.insert(IntakeRecord(
+            intakeID: intake.id, category: intake.category, occurredAt: intake.occurredAt,
+            timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal, note: intake.note,
+            lifecycleRaw: IntakeLifecycle.active.rawValue, currentRevision: 1))
+        return try appendRevision(
+            intakeID: intake.id, number: 1, componentsJSON: json, components: components,
+            product: product, changeReason: "created", now: now,
+            occurredAt: intake.occurredAt, timeZoneIdentifier: intake.timeZoneIdentifier, context: context)
     }
 
     @discardableResult
@@ -1573,6 +1579,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// The container is not closed: the store reads empty and accepts new entries afterwards.
     public func eraseAll() throws {
         _ = try commit { context in
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV7.CustomRevisionRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV7.CustomProductRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<RevisionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<OutboxRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<ProjectionRecord>()) { context.delete(row) }

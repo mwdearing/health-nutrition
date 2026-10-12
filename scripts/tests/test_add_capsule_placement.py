@@ -45,10 +45,19 @@ def test_the_tab_view_itself_carries_no_add_capsule_inset() -> None:
 
 def test_add_actions_include_supplements_in_visible_and_accessible_labels() -> None:
     ui = ROOT_VIEW.parents[2] / "NutritionCore/Sources/NutritionUI"
-    design = (ui / "DesignComponents.swift").read_text()
-    assert 'public static let addFoodDrinkOrSupplement = "Add food, drink, or supplement"' in design
+    components = (ui / "DesignComponents.swift").read_text()
+    assert 'public static let title = "Add food, drink, or supplement"' in components
     text = ROOT_VIEW.read_text()
-    assert 'PrimaryCapsule(ActionLabels.addFoodDrinkOrSupplement' in text
-    assert '.accessibilityLabel(ActionLabels.addFoodDrinkOrSupplement)' in text
+    assert 'PrimaryCapsule(AddIntakeAction.title' in text
+    assert '.accessibilityLabel(AddIntakeAction.title)' in text
     for name in ("TodayView.swift", "JournalView.swift"):
-        assert "ActionLabels.addFoodDrinkOrSupplement" in (ui / name).read_text()
+        source = (ui / name).read_text()
+        assert re.search(r'actionTitle:\s*(?:onAdd == nil \? nil : )?AddIntakeAction.title', source)
+    for source in [text, (ui / "TodayView.swift").read_text(), (ui / "JournalView.swift").read_text()]:
+        assert not re.search(r'(?:PrimaryCapsule|accessibilityLabel)\("Add food(?: or drink)?"', source)
+        assert '"Add food, drink, or supplement"' not in source
+        assert '"Add food or drink"' not in source
+        assert '"Add food"' not in source
+    checklist = (ui / "FirstDayChecklist.swift").read_text()
+    assert '"Log your first food, drink, or supplement"' in checklist
+    assert '"Log your first food or drink"' not in checklist

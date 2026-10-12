@@ -19,7 +19,6 @@ EXEMPT_FILES = {"DesignComponents.swift"}
 
 # A file whose bare field may stay bare. Each reason is one line; an empty reason fails the test below.
 ALLOWLIST = {
-    "AddHomeView.swift": "search field in a disabled Later row with no value; nothing is typed into it",
     "GoalsView.swift": "converted in a follow-up: the goals rows are being redesigned separately",
     "AccountSectionView.swift": "converted in a follow-up: the account section changes in its own piece of work",
     "SignInSheet.swift": "converted in a follow-up: the sign-in sheet changes in its own piece of work",
