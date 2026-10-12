@@ -114,13 +114,18 @@ begin
   exception when others then perform catalog_v2.fail('invalid_request'); end;
  end if;
  for row in
-  select e.product_id,e.publication,catalog_v2.search_name(e.publication#>>'{product,name}') normalized_name,
-   e.publication#>>'{product,name}' source_name from (
-    select p.id product_id,p.kind,catalog_v2.publication(p.id) publication from catalog_v2.entries stored join catalog_v2.products p on p.id=stored.product_id
-   ) e where e.publication is not null and strpos(catalog_v2.search_name(e.publication#>>'{product,name}'),q)>0
-   and (p_kind is null or e.kind=p_kind)
-   and (last_id is null or (catalog_v2.search_name(e.publication#>>'{product,name}') collate "C",e.product_id)>(last_name collate "C",last_id))
-   order by catalog_v2.search_name(e.publication#>>'{product,name}') collate "C",e.product_id limit p_limit+1 loop
+  with candidates as materialized (
+   select stored.product_id,stored.normalized_name,stored.source_name
+   from catalog_v2.entries stored
+   where strpos(stored.normalized_name,q)>0 and (p_kind is null or stored.kind=p_kind)
+    and (last_id is null or (stored.normalized_name,stored.product_id)>(last_name collate "C",last_id))
+   order by stored.normalized_name collate "C",stored.product_id limit p_limit+1
+  ), rebuilt as materialized (
+   select candidates.product_id,candidates.normalized_name,candidates.source_name,
+    catalog_v2.publication(candidates.product_id) publication from candidates
+  )
+  select rebuilt.product_id,rebuilt.publication,rebuilt.normalized_name,rebuilt.source_name from rebuilt
+  where rebuilt.publication is not null order by rebuilt.normalized_name collate "C",rebuilt.product_id loop
   n:=n+1;
   if n>p_limit then next_cursor:='2.'||fingerprint||'.'||last_id::text||'.'||replace(encode(convert_to(source_name,'UTF8'),'base64'),E'\n',''); exit; end if;
   candidate_cursor:='2.'||fingerprint||'.'||row.product_id::text||'.'||replace(encode(convert_to(row.source_name,'UTF8'),'base64'),E'\n','');
