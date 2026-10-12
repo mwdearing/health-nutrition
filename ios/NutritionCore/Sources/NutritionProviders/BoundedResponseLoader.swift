@@ -81,6 +81,14 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         newRequest request: URLRequest,
         completionHandler: @escaping BoundedRedirectHandler
     ) {
+        guard forwardingDelegate != nil else {
+            completionHandler(request)
+            return
+        }
+        // URLSession owns its delegate queue. Sharing the injected session's queue with this
+        // second session can stall completion when a response is canceled while streaming.
+        // Forward policy callbacks back to the injected session's queue instead.
+        delegateQueue.addOperation { [self] in
 #if canImport(ObjectiveC)
         let selector = #selector(URLSessionTaskDelegate.urlSession(_:task:willPerformHTTPRedirection:newRequest:completionHandler:))
         if let delegate = forwardingDelegate as? URLSessionTaskDelegate,
@@ -98,6 +106,7 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
             completionHandler(request)
         }
 #endif
+        }
     }
 
     func urlSession(
@@ -106,6 +115,11 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping BoundedAuthenticationChallengeHandler
     ) {
+        guard forwardingDelegate != nil else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        delegateQueue.addOperation { [self] in
 #if canImport(ObjectiveC)
         let taskSelector = #selector(URLSessionTaskDelegate.urlSession(_:task:didReceive:completionHandler:))
         let sessionSelector = #selector(URLSessionDelegate.urlSession(_:didReceive:completionHandler:))
@@ -126,6 +140,7 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
             completionHandler(.performDefaultHandling, nil)
         }
 #endif
+        }
     }
 
     func urlSession(
@@ -133,6 +148,11 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping BoundedAuthenticationChallengeHandler
     ) {
+        guard forwardingDelegate != nil else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        delegateQueue.addOperation { [self] in
 #if canImport(ObjectiveC)
         let selector = #selector(URLSessionDelegate.urlSession(_:didReceive:completionHandler:))
         if let delegate = forwardingDelegate, delegate.responds(to: selector) {
@@ -147,6 +167,7 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
             completionHandler(.performDefaultHandling, nil)
         }
 #endif
+        }
     }
 
     func load(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -173,7 +194,7 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
             return
         }
 
-        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         let task = session.dataTask(with: request)
         let shouldStart = lock.withLock { () -> Bool in
             guard !finished else { return false }
