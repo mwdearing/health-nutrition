@@ -901,7 +901,13 @@ extension CommunityProduct {
     }
 }
 extension ProductDeliveryReceipt {
-    func validate() throws { try ProductWire.counter(acknowledgedRevision, positive: true); try ProductWire.counter(currentRevision, positive: true); try ProductWire.require(currentState != .none); if let publication { try ProductWire.require(publication.productID == productID) } }
+    func validate() throws {
+        try ProductWire.counter(acknowledgedRevision, positive: true)
+        try ProductWire.counter(currentRevision, positive: true)
+        try ProductWire.require(ProductWire.counterIsAtLeast(currentRevision, acknowledgedRevision))
+        try ProductWire.require(currentState != .none)
+        if let publication { try ProductWire.require(publication.productID == productID) }
+    }
 }
 extension CommunityProductPage { func validate() throws { try ProductWire.require(products.count <= 20); if let nextCursor { try ProductWire.require(!nextCursor.unicodeScalars.contains { $0.value == 0 }) } } }
 extension ProductContributionState { func validate() throws { try ProductWire.require((currentState == .none) == (currentRevision == nil)); if let currentRevision { try ProductWire.counter(currentRevision, positive: true) } } }
@@ -923,6 +929,9 @@ enum ProductWire {
     }
     static func counter(_ value: String, positive: Bool = false) throws {
         try require(matches(value, positive ? "^[1-9][0-9]*$" : "^(0|[1-9][0-9]*)$"))
+    }
+    static func counterIsAtLeast(_ value: String, _ minimum: String) -> Bool {
+        value.utf8.count > minimum.utf8.count || (value.utf8.count == minimum.utf8.count && value >= minimum)
     }
     static func uuid(_ value: String) throws {
         try require(matches(value, "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$") && UUID(uuidString: value) != nil)

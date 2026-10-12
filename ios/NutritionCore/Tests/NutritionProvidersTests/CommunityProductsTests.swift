@@ -329,6 +329,16 @@ final class CommunityProductsTests: XCTestCase {
             await expect(.unavailable) { try await self.client(FakeCommunityTransport([.response(status: 200, body: body)])).publish(request, expectedOwnerID: self.owner) }
         }
     }
+    func testReceiptCannotPlaceCurrentRevisionBeforeAcknowledgedRevision() async throws {
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("receipt-valid")) as? [String: Any])
+        object["acknowledged_revision"] = "10"
+        object["current_revision"] = "9"
+        let body = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+        await expect(.unavailable) {
+            try await self.client(FakeCommunityTransport([.response(status: 200, body: body)])).publish(request, expectedOwnerID: self.owner)
+        }
+    }
     func testOptionalFactKeysAreStateSpecific() throws {
         for json in [
             #"{"key":"protein","display_name":"Protein","state":"unknown","amount":null}"#,
