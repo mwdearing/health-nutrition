@@ -44,9 +44,7 @@ final class AppServicesEraseTests: XCTestCase {
         coordinator.updateAccountContext(ProductShareAccountContext(ownerID: owner, profileReady: true, sharingAllowed: true,
             consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
         let delivery = Task { await coordinator.runDueOperations(now: when) }
-        print("erase-sharing checkpoint: delivery task started")
         let publicationStarted = await productService.waitForPublication(timeoutSeconds: 5)
-        print("erase-sharing checkpoint: publication started = \(publicationStarted)")
         guard publicationStarted else {
             XCTAssertTrue(services.connections.eraseAllData())
             await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
@@ -55,15 +53,11 @@ final class AppServicesEraseTests: XCTestCase {
             XCTFail("Product delivery did not reach publish within five seconds")
             return
         }
-        print("erase-sharing checkpoint: entering erase")
         XCTAssertTrue(services.connections.eraseAllData())
-        print("erase-sharing checkpoint: erase finished")
         XCTAssertEqual(coordinator.pauseReason, .erase)
         await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
             currentRevision: "1", currentState: .active, replayed: false))
-        print("erase-sharing checkpoint: receipt finished")
         await delivery.value
-        print("erase-sharing checkpoint: delivery finished")
         XCTAssertTrue(try services.journalStore.productOperations(ownerID: owner).isEmpty)
         XCTAssertTrue(try services.journalStore.customProducts().isEmpty)
     }
@@ -278,7 +272,8 @@ private actor EraseProductService: CommunityProductServicing {
     }
     func capabilities() async throws -> ProductCatalogCapabilities {
         ProductCatalogCapabilities(supportedVersion: 2, enabled: true, limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20),
-            currentConsentVersion: 2, callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true)
+            currentConsentVersion: 2, callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true,
+            boundedPublicationVersion: 1)
     }
     func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution { throw ProductAPIError.unavailable }
     func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
