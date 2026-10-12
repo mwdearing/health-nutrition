@@ -14,6 +14,15 @@ public struct CustomProductEditorView: View {
     }
     public var body: some View {
         Form {
+            Section {
+                Text("New products are queued to share when your current account has sharing on and this disclosure acknowledged. Imports and edits stay local until you review sharing.").font(.footnote)
+            }
+            if !model.historicalIntakeReference.isEmpty {
+                Section("Historical intake reference") {
+                    Text("These are consumed amounts, not product serving or label facts. Choose the product kind, facts basis and any stated facts below.")
+                    ForEach(Array(model.historicalIntakeReference.enumerated()), id: \.offset) { _, text in Text(text) }
+                }
+            }
             Section("Product") {
                 LabeledField("Name") { focus in
                     TextField("Name", text: $model.name).focused(focus)
@@ -50,7 +59,7 @@ public struct CustomProductEditorView: View {
                 Text("Use the serving printed on the product. The amount you consume is entered separately.").font(.footnote)
             }
             Section("Facts") {
-                if model.missingFacts { Text("Missing facts. You can save a name-only product.").foregroundStyle(TokenColors.textSecondary) }
+                if model.missingFacts { Text("No stated facts yet. You can save a name-only product.").foregroundStyle(TokenColors.textSecondary) }
                 ForEach($model.facts) { $fact in
                     VStack(alignment: .leading) {
                         LabeledField("Fact key") { focus in
@@ -88,7 +97,7 @@ public struct CustomProductEditorView: View {
                 Button("Save product on this phone") {
                     do { let saved = try model.save(now: Date()); onSaved(saved, openDetails) } catch { }
                 }
-                .accessibilityHint("Saves a product without logging an intake or sharing it")
+                .accessibilityHint("Saves without logging an intake. Eligible new products are queued for sharing.")
                 if let message = model.errorMessage { Text(message).foregroundStyle(TokenColors.error) }
             }
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }
@@ -132,7 +141,7 @@ public struct CustomProductSharingSection: View {
                             if let text = serving.text { Text(text) }
                         }
                         if let barcode = preview.revision.content.barcode { Text("Barcode: \(barcode)") }
-                        ForEach(preview.revision.content.facts, id: \.key) { fact in Text("\(fact.displayName): \(Self.describe(fact.value))") }
+                        ForEach(preview.revision.content.facts, id: \.rawKeyIdentity) { fact in Text("\(fact.displayName): \(Self.describe(fact.value))") }
                     }
                     Text("Shared products are visible immediately and remain unverified until owner review. Your consumed amount, time, meal, notes and history are excluded.")
                     if let state = preview.ownState { Text("Your current contribution: \(state.currentState.rawValue), revision \(state.currentRevision ?? "none").") }
@@ -164,7 +173,7 @@ public struct CustomProductSharingSection: View {
         case .custom(let content):
             Text(content.kind.displayName)
             Text(content.basis.rawValue)
-            ForEach(content.facts, id: \.key) { fact in
+            ForEach(content.facts, id: \.rawKeyIdentity) { fact in
                 Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.symbol ?? "")")
             }
         case .legacyLabel(let label):

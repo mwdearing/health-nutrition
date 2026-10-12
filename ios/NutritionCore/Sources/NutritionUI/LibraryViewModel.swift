@@ -350,7 +350,11 @@ public final class LibraryViewModel: ObservableObject {
               let localID = UUID(uuidString: snapshot.productID) else { return nil }
         return try productStore?.customProducts().first { $0.localProductID == localID }
     }
+    public func canCompleteProduct(_ item: LibraryItem) -> Bool {
+        item.template.productSnapshotID != nil || ["food", "supplement"].contains(item.template.category)
+    }
     public func legacyDraft(_ item: LibraryItem) throws -> LegacyCustomProductDraft {
+        if item.template.productSnapshotID == nil { return try CustomProductMapping.legacyDraft(from: item.template) }
         guard let id = item.template.productSnapshotID, let product = try store.product(snapshotID: id) else { throw IntakeRepeatError.productUnavailable }
         return try CustomProductMapping.legacyDraft(from: product)
     }

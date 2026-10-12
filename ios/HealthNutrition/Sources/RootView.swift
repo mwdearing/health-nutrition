@@ -383,7 +383,7 @@ struct RootView: View {
         if let home = addHome { openProductDetails(product, home: home) }
     }
     private func openProductEditor(home: AddHomeViewModel, revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
-        let editor = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy)
+        let editor = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy, sharing: services.productSharing)
         addNavigation.path.append(.productEditor(ProductEditorPrefill(model: editor)))
     }
     private func startProductEditor(revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {

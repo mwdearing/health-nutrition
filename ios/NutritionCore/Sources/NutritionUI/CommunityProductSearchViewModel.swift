@@ -12,6 +12,14 @@ public enum CommunityProductSearchState: Equatable { case idle, loading, loaded,
     @Published public private(set) var loadingNextPage = false
     @Published public private(set) var pageError = false
     @Published public private(set) var localError = false
+    @Published public private(set) var inspectedProduct: CommunityProduct?
+    @Published public private(set) var inspectedAlternatives: [ProductAlternative] = []
+    @Published public private(set) var inspectionError: String?
+    @Published public private(set) var inspectionNeedsRefresh = false
+    @Published public private(set) var loadingAlternatives = false
+    private var alternativesCursor: String?
+    private var inspectionGeneration = UUID()
+    public var canLoadAlternatives: Bool { alternativesCursor != nil && !loadingAlternatives && !inspectionNeedsRefresh }
     private let store: any CustomProductStore
     private let service: (any CommunityProductServicing)?
     private let isSignedIn: @MainActor () -> Bool
@@ -25,6 +33,7 @@ public enum CommunityProductSearchState: Equatable { case idle, loading, loaded,
         self.store = store; self.service = service; self.isSignedIn = isSignedIn
     }
     public func search(query: String, kind: ProductKind?) async {
+        closeInspection()
         generation = UUID(); let token = generation
         self.query = query.trimmingCharacters(in: .whitespacesAndNewlines); self.kind = kind
         cursor = nil; sharedResults = []; pageError = false; loadingNextPage = false
@@ -38,6 +47,8 @@ public enum CommunityProductSearchState: Equatable { case idle, loading, loaded,
         guard let service else { state = .unsupported; return }
         state = .loading
         do {
+            let capability = try await service.capabilities()
+            guard capability.supportsBoundedPublication else { throw ProductAPIError.unsupportedBackend }
             let page = try await service.searchProducts(query: self.query, kind: kind, cursor: nil)
             guard generation == token else { return }
             guard isSignedIn() else { sharedResults = []; state = .signInRequired; return }
@@ -68,13 +79,57 @@ public enum CommunityProductSearchState: Equatable { case idle, loading, loaded,
         }
         cursor = page.nextCursor
     }
-    public func select(_ product: CommunityProduct) throws -> CustomProductRevision {
+    public func inspect(_ product: CommunityProduct) throws {
         guard isSignedIn(), sharedResults.contains(product) else { throw ProductAPIError.notFound }
+        inspectionGeneration = UUID(); inspectedProduct = product
+        inspectedAlternatives = product.alternatives; alternativesCursor = product.alternativesCursor
+        inspectionError = nil; inspectionNeedsRefresh = false; loadingAlternatives = false
+    }
+    public func closeInspection() {
+        inspectionGeneration = UUID(); inspectedProduct = nil; inspectedAlternatives = []
+        alternativesCursor = nil; inspectionError = nil; loadingAlternatives = false; inspectionNeedsRefresh = false
+    }
+    public func loadAlternatives() async {
+        guard canLoadAlternatives, let cursor = alternativesCursor, let product = inspectedProduct, let service, isSignedIn() else { return }
+        let token = inspectionGeneration; loadingAlternatives = true; inspectionError = nil
+        defer { if token == inspectionGeneration { loadingAlternatives = false } }
+        do {
+            let page = try await service.alternatives(productID: product.productID, cursor: cursor)
+            guard token == inspectionGeneration, isSignedIn() else { return }
+            guard page.productID == product.productID, page.alternativesTotal == product.alternativesTotal,
+                  page.nextCursor != cursor else { throw ProductAPIError.unavailable }
+            let existing = Set(inspectedAlternatives.map(\.representativeRevision))
+            guard Set(page.alternatives.map(\.representativeRevision)).count == page.alternatives.count,
+                  UInt64(inspectedAlternatives.count + page.alternatives.count) <= (UInt64(page.alternativesTotal) ?? 0),
+                  page.alternatives.allSatisfy({ !existing.contains($0.representativeRevision) }) else { throw ProductAPIError.unavailable }
+            inspectedAlternatives += page.alternatives; alternativesCursor = page.nextCursor
+        } catch {
+            guard token == inspectionGeneration else { return }
+            if case ProductAPIError.revisionConflict = error {
+                inspectionNeedsRefresh = true
+                inspectionError = "These shared facts changed. Refresh to inspect the current product before saving."
+            } else { inspectionError = "Could not load more alternatives. Try again." }
+        }
+    }
+    public func refreshInspection() async {
+        guard let product = inspectedProduct, let service, isSignedIn() else { return }
+        let token = inspectionGeneration
+        do {
+            let current = try await service.product(id: product.productID)
+            guard token == inspectionGeneration, isSignedIn() else { return }
+            if let index = sharedResults.firstIndex(where: { $0.productID == current.productID }) { sharedResults[index] = current }
+            try inspect(current)
+        } catch { if token == inspectionGeneration { inspectionError = "Could not refresh this product. Try again." } }
+    }
+    public func select(_ product: CommunityProduct) throws -> CustomProductRevision {
+        guard isSignedIn(), sharedResults.contains(product),
+              !(inspectedProduct?.productID == product.productID && inspectionNeedsRefresh) else { throw ProductAPIError.notFound }
         let revision = try CustomProductMapping.importedRevision(from: product)
         return try store.saveCustomProduct(CustomProductSave(revision: revision), now: Date())
     }
     public func legacyDraft(_ product: CommunityProduct) throws -> LegacyCustomProductDraft {
-        guard isSignedIn(), sharedResults.contains(product) else { throw ProductAPIError.notFound }
+        guard isSignedIn(), sharedResults.contains(product),
+              !(inspectedProduct?.productID == product.productID && inspectionNeedsRefresh) else { throw ProductAPIError.notFound }
         return try CustomProductMapping.stagedDraft(from: product)
     }
     nonisolated public static func name(_ product: CommunityProduct) -> String {

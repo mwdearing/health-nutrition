@@ -16,6 +16,7 @@ public struct ProductServing: Sendable, Hashable, Codable {
 }
 
 public struct ProductFact: Sendable, Hashable, Codable {
+    public var rawKeyIdentity: Data { Data(key.utf8) }
     public let key: String
     public let displayName: String
     public let value: NutrientValue

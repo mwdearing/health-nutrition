@@ -40,6 +40,7 @@ public struct ProductServingDTO: Codable, Sendable, Equatable {
 }
 
 public struct ProductFactDTO: Codable, Sendable, Equatable {
+    public var rawKeyIdentity: Data { Data(key.utf8) }
     public let key: String
     public let displayName: String
     public let state: ProductFactState
@@ -309,6 +310,7 @@ public struct ProductVerification: Codable, Sendable, Equatable {
 }
 
 public struct LegacyProductLabel: Codable, Sendable, Equatable {
+    public let nameDisplayTrimmed: Bool
     public let contentType: String
     public let name: String
     public let brand: String?
@@ -319,7 +321,8 @@ public struct LegacyProductLabel: Codable, Sendable, Equatable {
     public let rawServingText: String?
     public let nutrients: [String: Decimal]
     public let legacySource: LegacyProductSource
-    public init(contentType: String, name: String, brand: String? = nil, barcode: String, kind: ProductKind? = nil, basis: CommunityBasis, serving: ProductServingDTO? = nil, rawServingText: String? = nil, nutrients: [String: Decimal], legacySource: LegacyProductSource) {
+    public init(contentType: String, name: String, brand: String? = nil, barcode: String, kind: ProductKind? = nil, basis: CommunityBasis, serving: ProductServingDTO? = nil, rawServingText: String? = nil, nutrients: [String: Decimal], legacySource: LegacyProductSource, nameDisplayTrimmed: Bool = false) {
+        self.nameDisplayTrimmed = nameDisplayTrimmed
         self.contentType = contentType
         self.name = name
         self.brand = brand
@@ -332,6 +335,7 @@ public struct LegacyProductLabel: Codable, Sendable, Equatable {
         self.legacySource = legacySource
     }
     enum CodingKeys: String, CodingKey {
+        case nameDisplayTrimmed = "name_display_trimmed"
         case contentType = "content_type"
         case name = "name"
         case brand = "brand"
@@ -344,8 +348,10 @@ public struct LegacyProductLabel: Codable, Sendable, Equatable {
         case legacySource = "legacy_source"
     }
     public init(from decoder: Decoder) throws {
-        try ProductWire.keys(decoder, required: ["content_type", "name", "brand", "barcode", "kind", "basis", "serving", "raw_serving_text", "nutrients", "legacy_source"], allowed: ["content_type", "name", "brand", "barcode", "kind", "basis", "serving", "raw_serving_text", "nutrients", "legacy_source"])
+        try ProductWire.keys(decoder, required: ["content_type", "name", "brand", "barcode", "kind", "basis", "serving", "raw_serving_text", "nutrients", "legacy_source"], allowed: ["name_display_trimmed", "content_type", "name", "brand", "barcode", "kind", "basis", "serving", "raw_serving_text", "nutrients", "legacy_source"])
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        nameDisplayTrimmed = c.contains(.nameDisplayTrimmed) ? try c.decode(Bool.self, forKey: .nameDisplayTrimmed) : false
+        if c.contains(.nameDisplayTrimmed) { try ProductWire.require(nameDisplayTrimmed) }
         contentType = try c.decode(String.self, forKey: .contentType)
         name = try c.decode(String.self, forKey: .name)
         brand = try c.decodeIfPresent(String.self, forKey: .brand)
@@ -361,6 +367,7 @@ public struct LegacyProductLabel: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        if nameDisplayTrimmed { try c.encode(true, forKey: .nameDisplayTrimmed) }
         try c.encode(contentType, forKey: .contentType)
         try c.encode(name, forKey: .name)
         try c.encode(brand, forKey: .brand)
@@ -383,7 +390,9 @@ public struct CommunityProduct: Codable, Sendable, Equatable {
     public let support: ProductSupport
     public let missingFacts: Bool
     public let alternatives: [ProductAlternative]
-    public init(productID: UUID, representativeRevision: String, product: CommunityProductContent, source: ProductSourceDTO, verification: ProductVerification, support: ProductSupport, missingFacts: Bool, alternatives: [ProductAlternative]) {
+    public let alternativesTotal: String?
+    public let alternativesCursor: String?
+    public init(productID: UUID, representativeRevision: String, product: CommunityProductContent, source: ProductSourceDTO, verification: ProductVerification, support: ProductSupport, missingFacts: Bool, alternatives: [ProductAlternative], alternativesTotal: String? = nil, alternativesCursor: String? = nil) {
         self.productID = productID
         self.representativeRevision = representativeRevision
         self.product = product
@@ -392,6 +401,7 @@ public struct CommunityProduct: Codable, Sendable, Equatable {
         self.support = support
         self.missingFacts = missingFacts
         self.alternatives = alternatives
+        self.alternativesTotal = alternativesTotal; self.alternativesCursor = alternativesCursor
     }
     enum CodingKeys: String, CodingKey {
         case productID = "product_id"
@@ -402,9 +412,10 @@ public struct CommunityProduct: Codable, Sendable, Equatable {
         case support = "support"
         case missingFacts = "missing_facts"
         case alternatives = "alternatives"
+        case alternativesTotal = "alternatives_total", alternativesCursor = "alternatives_cursor"
     }
     public init(from decoder: Decoder) throws {
-        try ProductWire.keys(decoder, required: ["product_id", "representative_revision", "product", "source", "verification", "support", "missing_facts", "alternatives"], allowed: ["product_id", "representative_revision", "product", "source", "verification", "support", "missing_facts", "alternatives"])
+        try ProductWire.keys(decoder, required: ["product_id", "representative_revision", "product", "source", "verification", "support", "missing_facts", "alternatives"], allowed: ["alternatives_total", "alternatives_cursor", "product_id", "representative_revision", "product", "source", "verification", "support", "missing_facts", "alternatives"])
         let c = try decoder.container(keyedBy: CodingKeys.self)
         productID = try c.decode(UUID.self, forKey: .productID)
         representativeRevision = try c.decode(String.self, forKey: .representativeRevision)
@@ -414,6 +425,10 @@ public struct CommunityProduct: Codable, Sendable, Equatable {
         support = try c.decode(ProductSupport.self, forKey: .support)
         missingFacts = try c.decode(Bool.self, forKey: .missingFacts)
         alternatives = try c.decode([ProductAlternative].self, forKey: .alternatives)
+        alternativesTotal = try c.decodeIfPresent(String.self, forKey: .alternativesTotal)
+        alternativesCursor = try c.decodeIfPresent(String.self, forKey: .alternativesCursor)
+        try ProductWire.require(c.contains(.alternativesTotal) == c.contains(.alternativesCursor))
+        if c.contains(.alternativesTotal) { try ProductWire.require(alternativesTotal != nil) }
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -427,6 +442,10 @@ public struct CommunityProduct: Codable, Sendable, Equatable {
         try c.encode(support, forKey: .support)
         try c.encode(missingFacts, forKey: .missingFacts)
         try c.encode(alternatives, forKey: .alternatives)
+        if let alternativesTotal {
+            try c.encode(alternativesTotal, forKey: .alternativesTotal)
+            try c.encode(alternativesCursor, forKey: .alternativesCursor)
+        }
     }
 }
 
@@ -638,6 +657,8 @@ public struct ProductConsentAcknowledgment: Codable, Sendable, Equatable {
 public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
     public let supportedVersion: Int
     public let publishResolutionVersion: Int?
+    public let boundedPublicationVersion: Int?
+    public var supportsBoundedPublication: Bool { boundedPublicationVersion == 1 }
     public var supportsPublishResolution: Bool { publishResolutionVersion == 1 }
     public let enabled: Bool
     public let limits: ProductCatalogLimits
@@ -645,7 +666,8 @@ public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
     public let callerAcknowledgment: ProductConsentAcknowledgment?
     public let consentGeneration: String
     public let sharingPermission: Bool
-    public init(supportedVersion: Int, enabled: Bool, limits: ProductCatalogLimits, currentConsentVersion: Int, callerAcknowledgment: ProductConsentAcknowledgment? = nil, consentGeneration: String, sharingPermission: Bool, publishResolutionVersion: Int? = nil) {
+    public init(supportedVersion: Int, enabled: Bool, limits: ProductCatalogLimits, currentConsentVersion: Int, callerAcknowledgment: ProductConsentAcknowledgment? = nil, consentGeneration: String, sharingPermission: Bool, publishResolutionVersion: Int? = nil, boundedPublicationVersion: Int? = nil) {
+        self.boundedPublicationVersion = boundedPublicationVersion
         self.publishResolutionVersion = publishResolutionVersion
         self.supportedVersion = supportedVersion
         self.enabled = enabled
@@ -658,6 +680,7 @@ public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case supportedVersion = "supported_version"
         case publishResolutionVersion = "publish_resolution_version"
+        case boundedPublicationVersion = "bounded_publication_version"
         case enabled = "enabled"
         case limits = "limits"
         case currentConsentVersion = "current_consent_version"
@@ -666,8 +689,9 @@ public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
         case sharingPermission = "sharing_permission"
     }
     public init(from decoder: Decoder) throws {
-        try ProductWire.keys(decoder, required: ["supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"], allowed: ["publish_resolution_version", "supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"])
+        try ProductWire.keys(decoder, required: ["supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"], allowed: ["bounded_publication_version", "publish_resolution_version", "supported_version", "enabled", "limits", "current_consent_version", "caller_acknowledgment", "consent_generation", "sharing_permission"])
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        boundedPublicationVersion = c.contains(.boundedPublicationVersion) ? try c.decode(Int.self, forKey: .boundedPublicationVersion) : nil
         publishResolutionVersion = c.contains(.publishResolutionVersion) ? try c.decode(Int.self, forKey: .publishResolutionVersion) : nil
         supportedVersion = try c.decode(Int.self, forKey: .supportedVersion)
         enabled = try c.decode(Bool.self, forKey: .enabled)
@@ -681,6 +705,7 @@ public struct ProductCatalogCapabilities: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(boundedPublicationVersion, forKey: .boundedPublicationVersion)
         try c.encodeIfPresent(publishResolutionVersion, forKey: .publishResolutionVersion)
         try c.encode(supportedVersion, forKey: .supportedVersion)
         try c.encode(enabled, forKey: .enabled)
@@ -826,7 +851,7 @@ extension ProductContentDTO {
 extension ProductPublishRequest {
     func validate() throws {
         try ProductWire.uuid(operationID); try ProductWire.uuid(clientRevisionID)
-        try ProductWire.require((productID == nil) == (expectedServerRevision == nil))
+        try ProductWire.require(productID != nil || expectedServerRevision == nil)
         if let productID { try ProductWire.uuid(productID) }
         if let expectedServerRevision { try ProductWire.counter(expectedServerRevision, positive: true) }
         try ProductWire.require(consentVersion == 2); try ProductWire.counter(consentGeneration); try product.validate()
@@ -866,6 +891,12 @@ extension CommunityProduct {
             try ProductWire.require(verification.status == (legacy.legacySource == .community ? .sharedUnverified : .verified))
         }
         try ProductWire.require(missingFacts == !hasKnownFacts && (verification.status != .verified || hasKnownFacts))
+        if let alternativesTotal {
+            try ProductWire.counter(alternativesTotal)
+            guard let total = UInt64(alternativesTotal) else { throw ProductAPIError.unavailable }
+            try ProductWire.require(total >= alternatives.count && (alternativesCursor != nil || total == alternatives.count))
+        } else { try ProductWire.require(alternativesCursor == nil) }
+        if let alternativesCursor { try ProductWire.require(!alternativesCursor.isEmpty && alternativesCursor.utf8.count <= 1024 && !alternativesCursor.contains("\0")) }
         for alternative in alternatives { if let source = alternative.source { try ProductWire.require(source.productID == productID) } }
     }
 }
@@ -936,5 +967,43 @@ enum ProductWire {
             throw ProductAPIError.invalidRequest(field: nil)
         }
         return Data(try render(value).utf8)
+    }
+}
+
+/// One bounded page of separately attributed public alternatives; cursor is opaque and state-bound.
+public struct ProductAlternativesPage: Codable, Sendable, Equatable {
+    public let productID: UUID
+    public let alternatives: [ProductAlternative]
+    public let alternativesTotal: String
+    public let nextCursor: String?
+    public init(productID: UUID, alternatives: [ProductAlternative], alternativesTotal: String, nextCursor: String?) {
+        self.productID = productID; self.alternatives = alternatives
+        self.alternativesTotal = alternativesTotal; self.nextCursor = nextCursor
+    }
+    enum CodingKeys: String, CodingKey {
+        case productID = "product_id", alternatives, alternativesTotal = "alternatives_total", nextCursor = "next_cursor"
+    }
+    public init(from decoder: Decoder) throws {
+        try ProductWire.keys(decoder, required: ["product_id", "alternatives", "alternatives_total", "next_cursor"])
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        productID = try c.decode(UUID.self, forKey: .productID)
+        alternatives = try c.decode([ProductAlternative].self, forKey: .alternatives)
+        alternativesTotal = try c.decode(String.self, forKey: .alternativesTotal)
+        nextCursor = try c.decodeIfPresent(String.self, forKey: .nextCursor)
+        try validate()
+    }
+    private func validate() throws {
+        try ProductWire.counter(alternativesTotal)
+        try ProductWire.require(alternatives.count <= 20 && UInt64(alternativesTotal).map { $0 >= alternatives.count } == true)
+        for alternative in alternatives { if let source = alternative.source { try ProductWire.require(source.productID == productID) } }
+        if let nextCursor { try ProductWire.require(!nextCursor.isEmpty && nextCursor.utf8.count <= 1024 && !nextCursor.contains("\0")) }
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(productID, forKey: .productID)
+        try c.encode(alternatives, forKey: .alternatives)
+        try c.encode(alternativesTotal, forKey: .alternativesTotal)
+        try c.encode(nextCursor, forKey: .nextCursor)
     }
 }

@@ -63,7 +63,7 @@ private final class DeliveryStorePort: CustomProductStore, @unchecked Sendable {
 private actor SuspendedProductService: CommunityProductServicing {
     var caps = ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
         limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
-        callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true, publishResolutionVersion: 1)
+        callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1)
     private(set) var bodies: [Data] = []
     private(set) var owners: [UUID] = []
     private var replies: [CheckedContinuation<ProductDeliveryReceipt, Error>] = []
@@ -329,7 +329,7 @@ extension ProductShareCoordinatorTests {
         let op = queued(owner: owner, epoch: epoch); store.operations = [op]
         await service.setCapabilities(ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
             limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
-            callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "2"), consentGeneration: "2", sharingPermission: true))
+            callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "2"), consentGeneration: "2", sharingPermission: true, boundedPublicationVersion: 1))
         let coordinator = ProductShareCoordinator(store: store, service: service)
         coordinator.updateAccountContext(context(owner, epoch, generation: "2"))
         await coordinator.runDueOperations(now: Date())
@@ -664,3 +664,28 @@ extension ProductShareCoordinatorTests {
     }
 }
 #endif
+
+extension ProductShareCoordinatorTests {
+    @MainActor func testMissingBoundedVersionOrDisabledPublicationStillAllowsExactAttemptReplayAndWithdrawal() async throws {
+        for enabled in [true, false] {
+            let owner = UUID(), epoch = UUID(), store = DeliveryStorePort(), service = SuspendedProductService()
+            var attempted = queued(owner: owner, epoch: epoch)
+            attempted.envelope = try ProductShareDeliveryWorker.publishRequest(attempted).canonicalBody()
+            attempted.attempts = 1
+            let fresh = queued(owner: owner, epoch: epoch), removal = queued(owner: owner, epoch: epoch, kind: .withdraw)
+            store.operations = [fresh, attempted, removal]
+            await service.setCapabilities(.init(supportedVersion: 2, enabled: enabled, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, callerAcknowledgment: .init(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: nil))
+            let coordinator = ProductShareCoordinator(store: store, service: service)
+            coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true, freshPublicationSupported: false))
+            let run = Task { await coordinator.runDueOperations(now: Date()) }
+            await service.waitForRequests(1); await service.finish(0, .success(receipt(attempted)))
+            await service.waitForRequests(2); await service.finish(1, .success(receipt(removal, state: .withdrawn)))
+            await run.value
+            let bodies = await service.bodies
+            XCTAssertEqual(bodies.first, attempted.envelope)
+            XCTAssertEqual(store.operations[0].attempts, 0)
+            XCTAssertEqual(store.operations[1].status, .acknowledged)
+            XCTAssertEqual(store.operations[2].status, .acknowledged)
+        }
+    }
+}

@@ -15,6 +15,64 @@ final class CommunityProductsTests: XCTestCase {
     private func client(_ transport: any CommunityTransport, expired: Bool = false) throws -> CommunityClient {
         CommunityClient(config: try makeConfig(), transport: transport, store: InMemoryCommunitySessionStore(testSession(expiresAt: expired ? testNow : testNow.addingTimeInterval(3600))), now: { testNow })
     }
+    func testSelectedIdentityAllowsFirstOwnContributionAndServerRejectsStaleCAS() async throws {
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("selected-identity-first-contribution-valid"))
+        let bytes = try request.canonicalBody()
+        XCTAssertNotNil(request.productID)
+        XCTAssertNil(request.expectedServerRevision)
+        let transport = FakeCommunityTransport([.response(status: 400, body: #"{"code":"P0001","details":"{\"code\":\"revision_conflict\",\"current_revision\":\"7\",\"current_state\":\"active\"}"}"#)])
+        await expect(.revisionConflict(currentRevision: "7", currentState: .active)) {
+            try await self.client(transport).publish(request, expectedOwnerID: self.owner)
+        }
+        XCTAssertEqual(transport.requests.first?.httpBody, CommunityProductsAPI.wrapped(bytes))
+    }
+    func testBoundedPublicationMetadataAndAlternativePageAreClosed() throws {
+        let product = try JSONDecoder().decode(CommunityProduct.self, from: fixture("bounded-public-product-valid"))
+        XCTAssertEqual(product.alternativesTotal, String(product.alternatives.count))
+        XCTAssertNil(product.alternativesCursor)
+        let page = try JSONDecoder().decode(ProductAlternativesPage.self, from: fixture("alternatives-response-valid"))
+        XCTAssertEqual(page.productID, product.productID)
+        let cap = try JSONDecoder().decode(ProductCatalogCapabilities.self, from: fixture("capabilities-bounded-valid"))
+        XCTAssertTrue(cap.supportsBoundedPublication)
+        XCTAssertFalse(try JSONDecoder().decode(ProductCatalogCapabilities.self, from: fixture("capabilities-valid")).supportsBoundedPublication)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("bounded-public-product-valid")) as? [String: Any])
+        object.removeValue(forKey: "alternatives_cursor")
+        XCTAssertThrowsError(try JSONDecoder().decode(CommunityProduct.self, from: JSONSerialization.data(withJSONObject: object)))
+        object["alternatives_cursor"] = String(repeating: "x", count: 1025)
+        XCTAssertThrowsError(try JSONDecoder().decode(CommunityProduct.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+    func testAlternativeTransportPreservesCursorAndRequiresClosedNullablePage() async throws {
+        let pageBytes = try fixture("alternatives-response-valid")
+        let page = try JSONDecoder().decode(ProductAlternativesPage.self, from: pageBytes)
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(page)) as? [String: Any])
+        XCTAssertTrue(encoded.keys.contains("next_cursor"))
+        let transport = FakeCommunityTransport([.response(status: 200, body: String(decoding: pageBytes, as: UTF8.self))])
+        let result = try await client(transport).alternatives(productID: page.productID, cursor: "public-state-cursor")
+        XCTAssertEqual(result, page)
+        let body = try XCTUnwrap(transport.requests.first?.httpBody)
+        let args = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(args["p_cursor"] as? String, "public-state-cursor")
+        XCTAssertEqual(args["p_product_id"] as? String, page.productID.uuidString.lowercased())
+        XCTAssertEqual(args["p_limit"] as? Int, 20)
+        await expect(.invalidRequest(field: "p_cursor")) {
+            try await self.client(transport).alternatives(productID: page.productID, cursor: String(repeating: "é", count: 513))
+        }
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+    func testRetryAfterHTTPDatesUseServerClockAndClampPastDates() throws {
+        let now = Date(timeIntervalSince1970: 0)
+        let cases: [([String: String], String?)] = [
+            (["Date": "Thu, 01 Jan 1970 00:01:00 GMT", "Retry-After": "Thu, 01 Jan 1970 00:01:09 GMT"], "9"),
+            (["Date": "Thu, 01 Jan 1970 00:01:00 GMT", "Retry-After": "Thu, 01 Jan 1970 00:00:59 GMT"], "0"),
+            (["Retry-After": "Thu, 01 Jan 1970 00:00:07 GMT"], "7"),
+            (["Date": "invalid", "Retry-After": "Thu, 01 Jan 1970 00:00:07 GMT"], "7"),
+            (["Retry-After": "not a date"], nil)
+        ]
+        for (headers, expected) in cases {
+            let response = try XCTUnwrap(HTTPURLResponse(url: URL(string: "https://example.invalid")!, statusCode: 429, httpVersion: nil, headerFields: headers))
+            XCTAssertEqual(CommunityProductsAPI.error(status: 429, data: Data(), response: response, capability: false, now: now), .rateLimited(retryAfterSeconds: expected))
+        }
+    }
     func testResolveCanceledPublishPreservesOriginalEnvelope() async throws {
         let request = try JSONDecoder().decode(ProductPublishRequest.self, from: fixture("name-only-valid"))
         var capabilities = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("capabilities-valid")) as? [String: Any])

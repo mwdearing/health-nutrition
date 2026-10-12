@@ -276,6 +276,7 @@ final class CustomProductStoreTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, 0)
         XCTAssertEqual(try store.dueProductOperations(ownerID: owner, now: now).count, 0)
         XCTAssertEqual(try store.pendingOutbox().count, 0)
+        XCTAssertNil(try store.productAccountEpoch(ownerID: owner), "failed save must roll back account mapping allocation too")
         try store.saveCustomProduct(command, now: now)
         store.close()
         let reopened = try SwiftDataJournalStore(url: path)

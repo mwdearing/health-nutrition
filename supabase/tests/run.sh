@@ -42,6 +42,15 @@ SQL
   fi
   psql_ -f - < "$f"
 done
+if [[ ${CATALOG_TEST_FOCUS:-} == boundedlegacy ]]; then
+  psql_ -f - < supabase/tests/shared_products_v2_bounded_legacy.sql
+  exit 0
+fi
+if [[ ${CATALOG_TEST_FOCUS:-} == bounded ]]; then
+  psql_ -f - < supabase/tests/shared_products_v2_bounded_legacy.sql
+  python3 supabase/tests/shared_products_v2_bounded.py "$engine" "$name"
+  exit 0
+fi
 if [[ ${CATALOG_TEST_FOCUS:-} != upgrade ]]; then
 psql_ -f - < supabase/tests/shared_products_v2_resolution.sql
 if [[ ${CATALOG_TEST_FOCUS:-} == resolution ]]; then
@@ -55,7 +64,10 @@ if [[ ${CATALOG_TEST_FOCUS:-} != bridge && ${CATALOG_TEST_FOCUS:-} != refresh ]]
 fi
 python3 supabase/tests/shared_products_v2_concurrency.py "$engine" "$name"
 python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"
-
+if [[ -z ${CATALOG_TEST_FOCUS:-} ]]; then
+  psql_ -f - < supabase/tests/shared_products_v2_bounded_legacy.sql
+  python3 supabase/tests/shared_products_v2_bounded.py "$engine" "$name"
+fi
 fi
 
 # Exercise the forward migration against the pre-migration schema in a second database within the same disposable

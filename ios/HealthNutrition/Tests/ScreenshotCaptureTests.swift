@@ -431,7 +431,7 @@ private struct ScreenshotProductService: CommunityProductServicing {
         let product = CommunityProduct(productID: productID, representativeRevision: "1", product: .custom(.init(name: "Synthetic mineral capsules", kind: .supplement, basis: .perServing, serving: .init(quantity: "2", unit: .capsule), facts: [.init(key: "iron", displayName: "Iron", state: .known, amount: "3", unit: .mg)])), source: .init(productID: productID, representativeRevision: "1", attribution: "Community"), verification: .init(status: .sharedUnverified), support: .init(distinctAccounts: "2", verificationThreshold: "3"), missingFacts: false, alternatives: [])
         return .init(products: [product], nextCursor: nil)
     }
-    func capabilities() async throws -> ProductCatalogCapabilities { .init(supportedVersion: 2, enabled: true, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, callerAcknowledgment: .init(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true) }
+    func capabilities() async throws -> ProductCatalogCapabilities { .init(supportedVersion: 2, enabled: true, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, callerAcknowledgment: .init(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true, boundedPublicationVersion: 1) }
     func product(id: UUID) async throws -> CommunityProduct { try await searchProducts(query: "", kind: nil, cursor: nil).products[0] }
     func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState { .init(productID: productID, currentState: .none) }
     func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
@@ -503,6 +503,32 @@ private struct ScreenshotProductService: CommunityProductServicing {
         try captureProductSizes("CommunityProductSearchView") {
             NavigationStack { CommunityProductSearchView(model: model, onSelect: { _ in }, onLegacy: { _ in }, onSignIn: {}) }
         }
+    }
+    func testRawKeyIdentitySharingPreviewAndReadOnlyInspection() async throws {
+        let services = try makeProductServices()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("contracts/catalog-api/fixtures/shared-products-v2/key-identity-valid.json"))
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: data)
+        let revision = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: try request.product.domainContent())
+        try services.journalStore.saveCustomProduct(.init(revision: revision), now: Date())
+        let sharing = try XCTUnwrap(services.library.productSharing)
+        await sharing.review(revision)
+        let preview = try XCTUnwrap(sharing.preview)
+        XCTAssertEqual(preview.revision.content.facts.count, 3)
+        XCTAssertEqual(Set(preview.revision.content.facts.map(\.rawKeyIdentity)).count, 3)
+        try captureProductSizes("RawKeyIdentitySharingPreview") {
+            NavigationStack { Form { CustomProductSharingSection(item: revision, model: sharing) } }
+        }
+        sharing.cancelReview()
+        let search = CommunityProductSearchViewModel(store: services.journalStore, service: ScreenshotProductService(), isSignedIn: { true })
+        await search.search(query: "Synthetic", kind: nil)
+        try search.inspect(XCTUnwrap(search.sharedResults.first))
+        let before = try services.journalStore.customProducts()
+        try captureProductSizes("SharedProductFactsInspection") {
+            NavigationStack { CommunityProductSearchView(model: search, onSelect: { _ in }, onLegacy: { _ in }, onSignIn: {}) }
+        }
+        search.closeInspection()
+        XCTAssertEqual(try services.journalStore.customProducts(), before)
     }
     func testProductDeliveryStatusAndAddCapsule() throws {
         let services = try makeProductServices()

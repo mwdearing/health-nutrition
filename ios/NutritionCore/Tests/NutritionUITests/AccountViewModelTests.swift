@@ -8,20 +8,31 @@ import XCTest
 /// Stands in for the community client. Every call is recorded, and each reply is set by the test.
 /// Holds one service call open until the test opens the gate, so a test can look at the model while it is busy.
 final class CallGate: @unchecked Sendable {
+    private let lock = NSLock()
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var isOpen = false
-    private(set) var entered = false
+    private var hasEntered = false
+    var entered: Bool { lock.withLock { hasEntered } }
 
     func pass() async {
-        entered = true
-        if isOpen { return }
-        await withCheckedContinuation { waiters.append($0) }
+        await withCheckedContinuation { continuation in
+            let alreadyOpen = lock.withLock {
+                hasEntered = true
+                if isOpen { return true }
+                waiters.append(continuation)
+                return false
+            }
+            if alreadyOpen { continuation.resume() }
+        }
     }
 
     func open() {
-        isOpen = true
-        let pending = waiters
-        waiters = []
+        let pending = lock.withLock {
+            isOpen = true
+            let pending = waiters
+            waiters = []
+            return pending
+        }
         for waiter in pending { waiter.resume() }
     }
 }

@@ -178,6 +178,13 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
         return try await productsAPI.call("search_catalog_products_v2", body: CommunityProductsAPI.body(["p_query": query, "p_kind": kind?.rawValue as Any? ?? NSNull(), "p_cursor": cursor as Any? ?? NSNull(), "p_limit": 20]))
     }
 
+    public func alternatives(productID: UUID, cursor: String?) async throws -> ProductAlternativesPage {
+        if let cursor, cursor.isEmpty || cursor.utf8.count > 1024 || cursor.contains("\0") { throw ProductAPIError.invalidRequest(field: "p_cursor") }
+        let page: ProductAlternativesPage = try await productsAPI.call("get_catalog_product_alternatives_v2", body: CommunityProductsAPI.body(["p_product_id": productID.uuidString, "p_cursor": cursor as Any? ?? NSNull(), "p_limit": 20]))
+        guard page.productID == productID else { throw ProductAPIError.unavailable }
+        return page
+    }
+
     public func product(id: UUID) async throws -> CommunityProduct {
         let response: ProductDetailResponse = try await productsAPI.call("get_catalog_product_v2", body: CommunityProductsAPI.body(["p_product_id": id.uuidString]))
         guard let product = response.product else { throw ProductAPIError.notFound }

@@ -21,10 +21,15 @@ public protocol CommunityProductServicing: Sendable {
     func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution
     func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt
     func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage
+    func alternatives(productID: UUID, cursor: String?) async throws -> ProductAlternativesPage
     func product(id: UUID) async throws -> CommunityProduct
     func capabilities() async throws -> ProductCatalogCapabilities
     func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState
     func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState
+}
+
+public extension CommunityProductServicing {
+    func alternatives(productID: UUID, cursor: String?) async throws -> ProductAlternativesPage { throw ProductAPIError.unsupportedBackend }
 }
 
 /// V2 transport uses a default decoder and explicit CodingKeys, independent of legacy snake-case decoding.
@@ -76,7 +81,7 @@ struct CommunityProductsAPI: Sendable {
             case consentGeneration = "consent_generation", retryAfterSeconds = "retry_after_seconds"
         }
     }
-    static func error(status: Int, data: Data, response: HTTPURLResponse, capability: Bool) -> ProductAPIError {
+    static func error(status: Int, data: Data, response: HTTPURLResponse, capability: Bool, now: Date = Date()) -> ProductAPIError {
         if status == 401 || status == 403 { return .unauthorized }
         let failure = try? JSONDecoder().decode(Failure.self, from: data)
         if capability && (failure?.code == "PGRST202" || failure?.code == "42883") { return .unsupportedBackend }
@@ -96,7 +101,7 @@ struct CommunityProductsAPI: Sendable {
             case "revision_conflict": return .revisionConflict(currentRevision: counter(detail.currentRevision), currentState: detail.currentState)
             case "operation_conflict": return .operationConflict
             case "rejected": return .rejected
-            case "rate_limited": return .rateLimited(retryAfterSeconds: counter(detail.retryAfterSeconds) ?? retryAfter(response))
+            case "rate_limited": return .rateLimited(retryAfterSeconds: counter(detail.retryAfterSeconds) ?? retryAfter(response, now: now))
             case "unavailable": return .unavailable
             default: break
             }
@@ -106,11 +111,11 @@ struct CommunityProductsAPI: Sendable {
         switch status {
         case 400, 422: return .invalidRequest(field: nil)
         case 409: return .revisionConflict(currentRevision: nil, currentState: nil)
-        case 429: return .rateLimited(retryAfterSeconds: retryAfter(response))
+        case 429: return .rateLimited(retryAfterSeconds: retryAfter(response, now: now))
         default: return .unavailable
         }
     }
-    private static func retryAfter(_ response: HTTPURLResponse) -> String? {
+    private static func retryAfter(_ response: HTTPURLResponse, now: Date) -> String? {
         guard let value = response.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespaces) else { return nil }
         if (try? ProductWire.counter(value)) != nil { return value }
         let formatter = DateFormatter()
@@ -118,7 +123,7 @@ struct CommunityProductsAPI: Sendable {
         formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
         guard let date = formatter.date(from: value) else { return nil }
         // Anchor relative delays to the server Date header when available.
-        let reference = response.value(forHTTPHeaderField: "Date").flatMap(formatter.date(from:)) ?? Date()
+        let reference = response.value(forHTTPHeaderField: "Date").flatMap(formatter.date(from:)) ?? now
         let seconds = max(0, date.timeIntervalSince(reference).rounded(.up))
         guard seconds.isFinite, seconds < Double(Int.max) else { return nil }
         return String(Int(seconds))

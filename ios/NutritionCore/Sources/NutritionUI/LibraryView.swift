@@ -184,8 +184,8 @@ public struct LibraryView: View {
             .accessibilityLabel(item.accessibilityLabel(forPick: opensDetails))
             .modifier(DetailsHint(isOn: opensDetails))
             Spacer()
-            if let onLegacyProduct, item.template.productSnapshotID != nil {
-                Button("Edit product") {
+            if let onLegacyProduct, model.canCompleteProduct(item) {
+                Button(item.template.productSnapshotID == nil ? "Complete product" : "Edit product") {
                     do {
                         if let product = try model.standaloneProduct(for: item), let onEditProduct {
                             onEditProduct(product)

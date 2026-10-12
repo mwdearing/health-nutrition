@@ -1,5 +1,6 @@
 import Foundation
 import NutritionJournal
+import NutritionDomain
 import NutritionProviders
 
 public struct ProductShareAccountContext: Equatable, Sendable {
@@ -10,8 +11,10 @@ public struct ProductShareAccountContext: Equatable, Sendable {
     public let serverGeneration: String
     public let localSessionEpoch: UUID
     public let backendSupported: Bool
+    public let freshPublicationSupported: Bool
     public init(ownerID: UUID, profileReady: Bool, sharingAllowed: Bool, consentVersion: Int,
-                serverGeneration: String, localSessionEpoch: UUID, backendSupported: Bool) {
+                serverGeneration: String, localSessionEpoch: UUID, backendSupported: Bool, freshPublicationSupported: Bool = true) {
+        self.freshPublicationSupported = freshPublicationSupported
         self.ownerID = ownerID; self.profileReady = profileReady; self.sharingAllowed = sharingAllowed
         self.consentVersion = consentVersion; self.serverGeneration = serverGeneration
         self.localSessionEpoch = localSessionEpoch; self.backendSupported = backendSupported
@@ -41,6 +44,34 @@ public enum ProductShareStatus: String, Sendable {
     public init(store: any CustomProductStore, service: any CommunityProductServicing,
                 clock: @escaping () -> Date = Date.init, jitter: @escaping () -> Double = { Double.random(in: 0...1) }) {
         self.store = store; self.service = service; self.clock = clock; self.jitter = jitter
+    }
+
+    /// Captured and consumed synchronously on MainActor at Save, never cached when an editor opens.
+    struct NewProductEligibility {
+        let context: ProductShareAccountContext
+        let admission: UUID
+        let storeIdentity: ObjectIdentifier
+        let accountEpoch: UUID?
+    }
+    func newProductEligibility(using target: any CustomProductStore) throws -> NewProductEligibility? {
+        guard ObjectIdentifier(store) == ObjectIdentifier(target), let context = accountContext,
+              valid(context, generation), context.profileReady, context.backendSupported,
+              context.freshPublicationSupported, context.sharingAllowed, context.consentVersion == 2 else { return nil }
+        let epoch = try store.productAccountEpoch(ownerID: context.ownerID)
+        guard epoch == nil || epoch == context.localSessionEpoch else { throw CustomProductStoreError.obsoleteOperation }
+        return NewProductEligibility(context: context, admission: generation, storeIdentity: ObjectIdentifier(store), accountEpoch: epoch)
+    }
+    func newProductPublication(_ revision: CustomProductRevision, eligibility: NewProductEligibility,
+                               using target: any CustomProductStore) throws -> ProductShareOperation {
+        guard ObjectIdentifier(target) == eligibility.storeIdentity,
+              valid(eligibility.context, eligibility.admission),
+              try store.productAccountEpoch(ownerID: eligibility.context.ownerID) == eligibility.accountEpoch else {
+            throw CustomProductStoreError.obsoleteOperation
+        }
+        let context = eligibility.context
+        return ProductShareOperation(ownerID: context.ownerID, localProductID: revision.localProductID,
+            operationID: UUID(), clientRevisionID: revision.revisionID, kind: .publish, content: revision.content,
+            consentVersion: context.consentVersion, consentGeneration: context.serverGeneration, epoch: context.localSessionEpoch)
     }
 
     public func closeGate(reason: ProductSharePauseReason) {
@@ -152,7 +183,7 @@ public enum ProductShareStatus: String, Sendable {
             let capabilities = try await service.capabilities()
             guard valid(context, token), capabilities.supportedVersion == 2 else { return }
             if !capabilities.sharingPermission { try store.cancelProductPublications(ownerID: context.ownerID) }
-            let publicationEligible = context.sharingAllowed && capabilities.enabled && capabilities.sharingPermission &&
+            let publicationEligible = context.freshPublicationSupported && capabilities.supportsBoundedPublication && context.sharingAllowed && capabilities.enabled && capabilities.sharingPermission &&
                 context.consentVersion == 2 && capabilities.currentConsentVersion == 2 &&
                 capabilities.consentGeneration == context.serverGeneration &&
                 capabilities.callerAcknowledgment?.generation == capabilities.consentGeneration && capabilities.callerAcknowledgment?.version == 2
@@ -162,7 +193,7 @@ public enum ProductShareStatus: String, Sendable {
                 guard let candidate = operations.first(where: {
                     $0.epoch == context.localSessionEpoch && $0.status == .pending && !processed.contains($0.operationID) &&
                     ($0.nextAttemptAt == nil || $0.nextAttemptAt! <= now) &&
-                    ($0.kind == .withdraw || (publicationEligible && $0.predecessorOperationID == nil))
+                    ($0.kind == .withdraw || (($0.attempts > 0 && $0.envelope != nil || publicationEligible) && $0.predecessorOperationID == nil))
                 }) else { break }
                 processed.insert(candidate.operationID)
                 var operation = candidate

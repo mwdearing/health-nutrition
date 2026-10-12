@@ -8,6 +8,7 @@ public enum CustomProductMappingError: Error { case requiresExplicitChoices, uns
 /// An editor staging value, never a saved strict revision. The original source remains available
 /// while the person resolves missing choices; a historical snapshot cannot reconstruct lost facts.
 public struct LegacyCustomProductDraft: Sendable {
+    public var historicalIntakeReference: [String] = []
     public let originalSnapshot: ProductDefinition?
     public let legacyLabel: LegacyProductLabel?
     public let source: CommunityProductSource?
@@ -33,6 +34,20 @@ public struct LegacyCustomProductDraft: Sendable {
 }
 
 public enum CustomProductMapping {
+    /// Deliberate repair of one selected manual template. Intake quantities are reference only.
+    public static func legacyDraft(from template: RepeatTemplate) throws -> LegacyCustomProductDraft {
+        guard template.productSnapshotID == nil, ["food", "supplement"].contains(template.category),
+              !template.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CustomProductMappingError.requiresExplicitChoices
+        }
+        var draft = LegacyCustomProductDraft(originalSnapshot: nil, legacyLabel: nil, source: nil,
+            name: template.displayName, brand: nil, barcode: nil, kind: nil, basis: nil,
+            serving: nil, rawServingText: nil, facts: [])
+        draft.historicalIntakeReference = template.components.map {
+            "\($0.name): \(NSDecimalNumber(decimal: $0.amount).stringValue) \($0.unit.symbol) consumed"
+        }
+        return draft
+    }
     public static func snapshot(for revision: CustomProductRevision) throws -> ProductDefinition {
         try CustomProductValidation.validate(revision.content)
         let content = revision.content

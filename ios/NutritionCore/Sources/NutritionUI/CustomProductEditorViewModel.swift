@@ -51,12 +51,14 @@ public struct ProductFactInput: Identifiable, Equatable {
     @Published public var errorMessage: String?
     @Published public private(set) var revision: CustomProductRevision?
     private let store: any CustomProductStore
+    private let sharing: ProductShareCoordinator?
     private let legacy: LegacyCustomProductDraft?
     private let localProductID: UUID
     public static let units: [MeasureUnit] = [.g, .mg, .mcg, .kg, .oz, .mL, .L, .flOz, .cup, .tablespoon, .teaspoon, .kcal, .serving, .scoop, .tablet, .capsule, .piece, .gummy, .iu]
     public static var servingUnits: [MeasureUnit] { units.filter { [.mass, .volume, .count].contains($0.dimension) } }
 
-    public init(store: any CustomProductStore, revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
+    public init(store: any CustomProductStore, revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil, sharing: ProductShareCoordinator? = nil) {
+        self.sharing = sharing
         self.store = store; self.revision = revision; self.legacy = legacy; localProductID = revision?.localProductID ?? UUID()
         if let content = revision?.content {
             name = content.name; brand = content.brand ?? ""; barcode = content.barcode ?? ""; kind = content.kind; basis = content.basis
@@ -71,6 +73,7 @@ public struct ProductFactInput: Identifiable, Equatable {
         servingQuantity = NSDecimalNumber(decimal: serving.quantity).stringValue; servingUnit = serving.unit; servingText = serving.text ?? ""
     }
     public var missingFacts: Bool { !facts.contains(where: \.hasReportedValue) }
+    public var historicalIntakeReference: [String] { legacy?.historicalIntakeReference ?? [] }
     public var legacyServingText: String? { legacy?.rawServingText }
     public func content() throws -> CustomProductContent {
         guard let kind, let basis else { throw CustomProductMappingError.requiresExplicitChoices }
@@ -88,7 +91,12 @@ public struct ProductFactInput: Identifiable, Equatable {
     @discardableResult public func save(now: Date) throws -> CustomProductRevision {
         do {
             let result = CustomProductRevision(localProductID: localProductID, revisionID: UUID(), content: try content(), source: revision?.source ?? legacy?.source)
-            let saved = try store.saveCustomProduct(CustomProductSave(revision: result, expectedLocalRevision: revision?.revisionID), now: now)
+            var publication: ProductShareOperation?
+            if revision == nil, legacy == nil, let sharing, let eligibility = try sharing.newProductEligibility(using: store) {
+                publication = try sharing.newProductPublication(result, eligibility: eligibility, using: store)
+            }
+            // No suspension separates current eligibility from the atomic revision/mapping/operation save.
+            let saved = try store.saveCustomProduct(CustomProductSave(revision: result, expectedLocalRevision: revision?.revisionID, publication: publication), now: now)
             revision = saved; errorMessage = nil
             return saved
         } catch {
@@ -143,11 +151,11 @@ public struct CustomProductSharePreview: Identifiable {
     }
     public var canShare: Bool {
         guard let coordinator, let context = coordinator.accountContext else { return false }
-        return context.profileReady && context.backendSupported && context.sharingAllowed && context.consentVersion == 2 && coordinator.pauseReason == nil && !coordinator.storageFailed
+        return context.profileReady && context.backendSupported && context.freshPublicationSupported && context.sharingAllowed && context.consentVersion == 2 && coordinator.pauseReason == nil && !coordinator.storageFailed
     }
     public var eligibilityText: String {
         guard let coordinator, let context = coordinator.accountContext else { return "Sign in in Settings to share. Products remain available on this phone." }
-        if !context.backendSupported { return "Sharing is unavailable on this server. You can still edit products on this phone." }
+        if !context.backendSupported || !context.freshPublicationSupported { return "Sharing is unavailable on this server. You can still edit products on this phone." }
         return "Enable product sharing and review the current sharing disclosure in Settings."
     }
     private func latest(_ item: CustomProductRevision) -> ProductShareOperation? {
@@ -241,7 +249,7 @@ public struct CustomProductSharePreview: Identifiable {
             if blocker != nil && reconciliation == nil { throw ProductAPIError.operationConflict }
             preview = CustomProductSharePreview(revision: item, context: context, ownState: state, reconciliation: reconciliation, currentSharedProduct: sharedProduct)
         } catch {
-            if reviewGeneration == token { errorMessage = "Could not prepare sharing review. The current contribution may have changed. Retry review when connected; remove a pending contribution to settle an unresolved request." }
+            if reviewGeneration == token { errorMessage = "Could not prepare sharing review. Retry when connected. If this account already contributed on another device, this phone cannot yet adopt that sharing history. Remove an unresolved pending contribution before reviewing again." }
         }
     }
     public func cancelReview() { reviewGeneration = UUID(); preview = nil }

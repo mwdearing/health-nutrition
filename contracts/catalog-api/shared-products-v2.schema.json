@@ -597,6 +597,28 @@
           "items": {
             "$ref": "#/$defs/alternative"
           }
+        },
+        "alternatives_total": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$(?![\\s\\S])",
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
+        "alternatives_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "not": {
+                "pattern": "\u0000"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -661,7 +683,15 @@
             }
           }
         }
-      ]
+      ],
+      "dependentRequired": {
+        "alternatives_total": [
+          "alternatives_cursor"
+        ],
+        "alternatives_cursor": [
+          "alternatives_total"
+        ]
+      }
     },
     "publication": {
       "anyOf": [
@@ -843,6 +873,10 @@
           "type": "integer",
           "const": 1,
           "description": "Optional for older v2 servers. Only version 1 supports publication resolution; independent of enabled."
+        },
+        "bounded_publication_version": {
+          "type": "integer",
+          "const": 1
         }
       },
       "required": [
@@ -1186,6 +1220,10 @@
             "community",
             "owner_reviewed"
           ]
+        },
+        "name_display_trimmed": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [
@@ -1354,6 +1392,92 @@
             }
           }
         }
+      ]
+    },
+    "alternatives_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "p_product_id": {
+          "type": "string",
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
+        "p_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "not": {
+                "pattern": "\u0000"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "p_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "p_product_id",
+        "p_cursor",
+        "p_limit"
+      ]
+    },
+    "alternatives_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "format": "uuid",
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
+        "alternatives": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/alternative"
+          }
+        },
+        "alternatives_total": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$(?![\\s\\S])",
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "not": {
+                "pattern": "\u0000"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "product_id",
+        "alternatives",
+        "alternatives_total",
+        "next_cursor"
       ]
     }
   }

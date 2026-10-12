@@ -375,7 +375,8 @@ public final class AccountViewModel: ObservableObject {
         let context = ProductShareAccountContext(ownerID: owner, profileReady: profileReady,
             sharingAllowed: shareLabels && currentAccountAcknowledged,
             consentVersion: capability.callerAcknowledgment?.version ?? 0, serverGeneration: capability.consentGeneration,
-            localSessionEpoch: UUID(), backendSupported: capability.supportedVersion == 2)
+            localSessionEpoch: UUID(), backendSupported: capability.supportedVersion == 2,
+            freshPublicationSupported: capability.supportsBoundedPublication && capability.enabled)
         if explicitRecovery { productSharing?.recoverAfterLifecyclePause(context) }
         else { productSharing?.updateAccountContext(context) }
         if let persistedPause { productSharing?.closeGate(reason: persistedPause) }

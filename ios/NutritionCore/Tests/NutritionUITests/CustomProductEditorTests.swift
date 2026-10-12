@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import XCTest
 import NutritionDomain
 import NutritionProviders
@@ -6,6 +9,92 @@ import NutritionProviders
 @testable import NutritionUI
 
 final class CustomProductEditorTests: XCTestCase {
+    @MainActor func testEligibleNewCreationAtomicallyIncludesPublicationForEveryKind() async throws {
+        for kind in ProductKind.allCases {
+            let store = ProductEditorStorePort()
+            let coordinator = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
+            let owner = UUID(), epoch = UUID()
+            coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+                consentVersion: 2, serverGeneration: "3", localSessionEpoch: epoch, backendSupported: true))
+            let model = CustomProductEditorViewModel(store: store, sharing: coordinator)
+            model.name = "Synthetic automatic"; model.kind = kind
+            let saved = try model.save(now: Date())
+            let command = try XCTUnwrap(store.commands.first)
+            let publication = try XCTUnwrap(command.publication)
+            XCTAssertEqual(publication.ownerID, owner)
+            XCTAssertEqual(publication.epoch, epoch)
+            XCTAssertEqual(publication.consentGeneration, "3")
+            XCTAssertEqual(publication.content, saved.content)
+            XCTAssertEqual(publication.clientRevisionID, saved.revisionID)
+            XCTAssertEqual(store.operations.count, 1)
+            _ = try model.save(now: Date())
+            XCTAssertNil(store.commands.last?.publication, "editing is explicit sharing, not new creation")
+        }
+    }
+    @MainActor func testNewSaveReadsCurrentAccountAndRejectsObsoleteAdmissionOrStore() async throws {
+        let store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        let first = UUID(), second = UUID()
+        coordinator.updateAccountContext(.init(ownerID: first, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "1", localSessionEpoch: UUID(), backendSupported: true))
+        let editor = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        editor.name = "Synthetic transition"
+        let captured = try XCTUnwrap(coordinator.newProductEligibility(using: store))
+        coordinator.closeGate(reason: .erase)
+        let revision = syntheticCommunityRevision(name: "Synthetic", kind: .food)
+        XCTAssertThrowsError(try coordinator.newProductPublication(revision, eligibility: captured, using: store))
+        XCTAssertNil(try coordinator.newProductEligibility(using: ProductEditorStorePort()))
+        coordinator.updateAccountContext(.init(ownerID: second, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "2", localSessionEpoch: UUID(), backendSupported: true))
+        store.failSaving = true
+        XCTAssertThrowsError(try editor.save(now: Date()))
+        XCTAssertNil(editor.revision); XCTAssertTrue(store.products.isEmpty); XCTAssertTrue(store.operations.isEmpty)
+        store.failSaving = false
+        _ = try editor.save(now: Date())
+        XCTAssertEqual(store.operations.first?.ownerID, second)
+        XCTAssertEqual(store.operations.first?.consentGeneration, "2")
+    }
+    @MainActor func testIneligibleCreationStaysLocalAndNeverBackfillsAfterConsent() async throws {
+        for missing in ["profile", "sharing", "consent", "bounded"] {
+            let store = ProductEditorStorePort()
+            let bound = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
+            let owner = UUID(), epoch = UUID()
+            bound.updateAccountContext(.init(ownerID: owner, profileReady: missing != "profile", sharingAllowed: missing != "sharing", consentVersion: missing == "consent" ? 0 : 2, serverGeneration: "0", localSessionEpoch: epoch, backendSupported: true, freshPublicationSupported: missing != "bounded"))
+            let editor = CustomProductEditorViewModel(store: store, sharing: bound)
+            editor.name = "Synthetic local"
+            _ = try editor.save(now: Date())
+            XCTAssertTrue(store.operations.isEmpty)
+            bound.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "0", localSessionEpoch: epoch, backendSupported: true))
+            _ = try editor.save(now: Date())
+            XCTAssertTrue(store.operations.isEmpty)
+        }
+    }
+    @MainActor func testSelectedManualTemplateRequiresChoicesAndNeverCopiesConsumedAmountsIntoFacts() async throws {
+        let template = RepeatTemplate(displayName: "Synthetic historical item", category: "food", components: [.init(componentID: "synthetic", name: "Historical amount", amount: 42, unit: .g)])
+        let library = LibraryViewModel(store: ProductIntakeCommandPort(), favorites: ProductFavoritePort())
+        let item = LibraryItem(id: "synthetic", title: template.displayName, detail: "Historical intake", isFavorite: false, template: template)
+        XCTAssertTrue(library.canCompleteProduct(item))
+        let draft = try library.legacyDraft(item)
+        XCTAssertNil(draft.kind); XCTAssertNil(draft.basis); XCTAssertNil(draft.serving); XCTAssertTrue(draft.facts.isEmpty)
+        XCTAssertEqual(draft.historicalIntakeReference, ["Historical amount: 42 g consumed"])
+        let store = ProductEditorStorePort()
+        let coordinator = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
+        coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
+        let editor = CustomProductEditorViewModel(store: store, legacy: draft, sharing: coordinator)
+        XCTAssertThrowsError(try editor.save(now: Date()))
+        editor.kind = .food; editor.basis = .per100g
+        let saved = try editor.save(now: Date())
+        XCTAssertTrue(saved.content.facts.isEmpty); XCTAssertNil(saved.content.serving)
+        XCTAssertNil(store.commands.first?.publication)
+        XCTAssertEqual(template.components.first?.amount, 42)
+    }
+    func testPreviewFactIDsPreserveRawComposedAndDecomposedKeys() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let request = try JSONDecoder().decode(ProductPublishRequest.self, from: Data(contentsOf: root.appendingPathComponent("contracts/catalog-api/fixtures/shared-products-v2/key-identity-valid.json")))
+        let keys = request.product.facts.map(\.key)
+        XCTAssertEqual(keys[0], keys[1])
+        let facts = keys.map { ProductFact(key: $0, displayName: "Synthetic", value: .unknown) }
+        XCTAssertEqual(Set(facts.map(\.rawKeyIdentity)).count, keys.count)
+        XCTAssertEqual(Set(facts.map { ProductFactDTO($0).rawKeyIdentity }).count, keys.count)
+    }
     @MainActor func testNameOnlyEveryKindSavesWithoutIntakeOrPublication() async throws {
         for kind in ProductKind.allCases {
             let store = ProductEditorStorePort()
@@ -82,6 +171,7 @@ final class CustomProductEditorTests: XCTestCase {
 final class ProductEditorStorePort: CustomProductStore, @unchecked Sendable {
     var products: [CustomProductRevision] = []
     var commands: [CustomProductSave] = []
+    var failSaving = false
     var operations: [ProductShareOperation] = []
     var reviews: [(ProductContributionReview, ProductShareOperation?)] = []
     func reconcileProductContribution(_ review: ProductContributionReview, publication: ProductShareOperation?) throws {
@@ -89,6 +179,7 @@ final class ProductEditorStorePort: CustomProductStore, @unchecked Sendable {
         if let publication { operations.append(publication) }
     }
     func saveCustomProduct(_ command: CustomProductSave, now: Date) throws -> CustomProductRevision {
+        if failSaving { throw CustomProductStoreError.invalidOperation }
         commands.append(command); products.removeAll { $0.localProductID == command.revision.localProductID }; products.append(command.revision)
         if let operation = command.publication { operations.append(operation) }
         return command.revision
@@ -230,5 +321,85 @@ extension CustomProductEditorTests {
         editor.facts = [.init(key: "protein", displayName: "Protein", state: .unknown)]
         XCTAssertTrue(editor.missingFacts)
         XCTAssertTrue(LibraryProductPresentation(try editor.save(now: Date())).missingFacts)
+    }
+}
+
+extension CustomProductEditorTests {
+    @MainActor func testSelectedIdentityReviewPersistsOwnNullCASAndWorkerSendsItToRealClient() async throws {
+        let owner = UUID(), epoch = UUID(), service = ProductSearchServicePort()
+        let store: any CustomProductStore
+        #if canImport(SwiftData)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appendingPathComponent("synthetic.store")
+        let realStore = try SwiftDataJournalStore(url: path)
+        store = realStore
+        #else
+        store = ProductEditorStorePort() // Portable command/worker evidence only; Apple branch proves reopen.
+        #endif
+        let shared = syntheticCommunityProduct(name: "Synthetic selected", kind: .food)
+        let imported = try CustomProductMapping.importedRevision(from: shared)
+        try store.saveCustomProduct(.init(revision: imported), now: Date())
+        await service.setContribution(.init(productID: shared.productID, currentState: .none), product: shared)
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "0", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+        await model.review(imported); XCTAssertNotNil(model.preview)
+        try model.confirmShare()
+        let operation: ProductShareOperation
+        #if canImport(SwiftData)
+        realStore.close()
+        let reopened = try SwiftDataJournalStore(url: path)
+        operation = try XCTUnwrap(try reopened.productOperations(ownerID: owner).first)
+        XCTAssertNotNil(operation.storeEpoch)
+        #else
+        operation = try XCTUnwrap(try store.productOperations(ownerID: owner).first)
+        #endif
+        XCTAssertEqual(operation.serverProductID, shared.productID.uuidString.lowercased())
+        XCTAssertNil(operation.expectedServerRevision)
+        let request = try ProductShareDeliveryWorker.publishRequest(operation)
+        let body = try request.canonicalBody()
+        let transport = SelectedIdentityTransport()
+        let config = try XCTUnwrap(CommunityConfig(infoDictionary: ["SUPABASE_URL": "https://synthetic.supabase.co", "SUPABASE_ANON_KEY": "synthetic-public-key"]))
+        let session = CommunitySession(accessToken: "synthetic-A", refreshToken: "synthetic-refresh", expiresAt: Date().addingTimeInterval(3600), userID: owner.uuidString, email: nil)
+        let client = CommunityClient(config: config, transport: transport, store: InMemoryCommunitySessionStore(session))
+        do { _ = try await client.publish(request, expectedOwnerID: owner); XCTFail("server stale CAS must remain authoritative") }
+        catch { XCTAssertEqual(error as? ProductAPIError, .revisionConflict(currentRevision: "7", currentState: .active)) }
+        let transported = await transport.body()
+        let sent = try XCTUnwrap(transported)
+        let wrapped = try XCTUnwrap(JSONSerialization.jsonObject(with: sent) as? [String: Any])
+        let decoded = try JSONDecoder().decode(ProductPublishRequest.self, from: JSONSerialization.data(withJSONObject: try XCTUnwrap(wrapped["p_request"])))
+        XCTAssertEqual(try decoded.canonicalBody(), body)
+        XCTAssertEqual(decoded.productID, shared.productID.uuidString.lowercased()); XCTAssertNil(decoded.expectedServerRevision)
+    }
+    #if canImport(SwiftData)
+    @MainActor func testAutomaticEditorSaveRollsBackMappingAndReopensCommittedPublication() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appendingPathComponent("synthetic.store"), owner = UUID(), epoch = UUID()
+        let store = try SwiftDataJournalStore(url: path)
+        let coordinator = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "0", localSessionEpoch: epoch, backendSupported: true))
+        let editor = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        editor.name = "Synthetic atomic creation"
+        store.failNextSaveForTesting = true
+        XCTAssertThrowsError(try editor.save(now: Date()))
+        XCTAssertTrue(try store.customProducts().isEmpty); XCTAssertTrue(try store.productOperations(ownerID: owner).isEmpty)
+        XCTAssertNil(try store.productAccountEpoch(ownerID: owner)); XCTAssertNil(editor.revision)
+        let saved = try editor.save(now: Date()); store.close()
+        let reopened = try SwiftDataJournalStore(url: path)
+        XCTAssertEqual(try reopened.customProducts(), [saved])
+        let operation = try XCTUnwrap(try reopened.productOperations(ownerID: owner).first)
+        XCTAssertEqual(operation.clientRevisionID, saved.revisionID); XCTAssertNotNil(operation.storeEpoch)
+        XCTAssertEqual(try reopened.productAccountEpoch(ownerID: owner), epoch)
+    }
+    #endif
+}
+private actor SelectedIdentityTransport: CommunityTransport {
+    var sent: Data?
+    func body() -> Data? { sent }
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        sent = request.httpBody
+        return (Data(#"{"code":"P0001","details":"{\"code\":\"revision_conflict\",\"current_revision\":\"7\",\"current_state\":\"active\"}"}"#.utf8), HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: [:])!)
     }
 }

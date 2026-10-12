@@ -57,6 +57,7 @@ class SharedProductsSchemaTests(unittest.TestCase):
     def test_all_valid_shared_fixtures(self):
         jsonschema.Draft202012Validator.check_schema(SCHEMA)
         mapping = {
+            "bounded-public-product": "public_product", "capabilities-bounded": "capabilities", "alternatives-response": "alternatives_response",
             "public-product": "public_product", "search-response": "search_response", "search-request": "search_request",
             "detail-response": "detail_response", "own-state-none": "own_state", "receipt": "receipt",
             "capabilities": "capabilities", "capabilities-resolution": "capabilities",
