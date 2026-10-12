@@ -59,6 +59,8 @@ public final class AccountViewModel: ObservableObject {
     private var accountIdentity = UUID()
     /// An explicit sign-out bars automatic restore until a later deliberate sign-in succeeds.
     private var automaticRestoreClosed = false
+    /// Logout clears stored credentials after its await; no new authentication may start until it finishes.
+    private var signOutInProgress = false
 
     private let service: CommunityAccountServicing
     private let preferences: CommunityDisclosurePreferences
@@ -119,6 +121,7 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signInWithApple(idToken: String, nonce: String) async {
+        guard !signOutInProgress else { return }
         let identity = accountIdentity
         guard let session = await run(Self.signInFailedMessage, {
             try await self.service.signInWithApple(idToken: idToken, nonce: nonce)
@@ -134,6 +137,7 @@ public final class AccountViewModel: ObservableObject {
 
     /// Emails a one-time code to the address. Nothing is sent when the address has no at sign.
     public func requestCode(email address: String) async {
+        guard !signOutInProgress else { return }
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.contains("@") else {
             message = Self.addressMessage
@@ -165,6 +169,7 @@ public final class AccountViewModel: ObservableObject {
 
     /// Checks the code that was emailed to the address given to `requestCode(email:)`.
     public func verify(code: String) async {
+        guard !signOutInProgress else { return }
         let digits = code.trimmingCharacters(in: .whitespacesAndNewlines)
         let sixDigits = digits.count == 6 && digits.allSatisfy({ $0.isASCII && $0.isNumber })
         guard sixDigits else {
@@ -239,6 +244,13 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signOut() async {
+        guard !signOutInProgress else { return }
+        signOutInProgress = true
+        busyCount += 1
+        defer {
+            signOutInProgress = false
+            busyCount -= 1
+        }
         automaticRestoreClosed = true
         // Remove every source of local eligibility before logout can suspend with a valid session.
         clearSignedInState()

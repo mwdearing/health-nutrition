@@ -447,6 +447,74 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertEqual(service.signOutCount, 1)
     }
 
+    func testSuspendedSignOutBarsAppleAndEmailAdmissionsUntilCompletion() async throws {
+        for useApple in [true, false] {
+            let (model, service, _) = makeModel(session: AccountTestSupport.session)
+            await model.load()
+            await model.requestCode(email: "person@example.com")
+            let gate = CallGate()
+            service.signOutGate = gate
+            let logout = Task { await model.signOut() }
+            while !gate.entered { await Task.yield() }
+
+            XCTAssertEqual(model.phase, .signedOut)
+            XCTAssertFalse(model.sharingAllowed)
+            XCTAssertTrue(model.isBusy)
+            await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+            await model.requestCode(email: "person@example.com")
+            await model.resendCode()
+            await model.verify(code: "123456")
+            XCTAssertTrue(service.appleCalls.isEmpty)
+            XCTAssertEqual(service.codeRequests.count, 1)
+            XCTAssertTrue(service.verifyCalls.isEmpty)
+            XCTAssertEqual(model.phase, .signedOut)
+            XCTAssertEqual(model.emailStep, .enterAddress)
+            XCTAssertTrue(model.isBusy)
+
+            gate.open()
+            await logout.value
+            XCTAssertFalse(model.isBusy)
+            if useApple {
+                await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+                XCTAssertEqual(service.appleCalls.count, 1)
+            } else {
+                await model.requestCode(email: "person@example.com")
+                await model.verify(code: "123456")
+                XCTAssertEqual(service.verifyCalls.count, 1)
+            }
+            XCTAssertEqual(model.phase, .signedIn)
+            XCTAssertTrue(model.profileReady)
+            XCTAssertFalse(model.isBusy)
+        }
+    }
+
+    func testConcurrentSignOutCallsShareOneLogoutBoundary() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        let gate = CallGate()
+        service.signOutGate = gate
+        let first = Task { await model.signOut() }
+        while !gate.entered { await Task.yield() }
+        var secondStarted = false
+        let second = Task {
+            secondStarted = true
+            await model.signOut()
+        }
+        while !secondStarted { await Task.yield() }
+        XCTAssertEqual(service.signOutCount, 1)
+        XCTAssertTrue(model.isBusy)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertTrue(service.appleCalls.isEmpty)
+        gate.open()
+        await first.value
+        await second.value
+        XCTAssertEqual(service.signOutCount, 1)
+        XCTAssertFalse(model.isBusy)
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
+        XCTAssertEqual(service.appleCalls.count, 1)
+        XCTAssertEqual(model.phase, .signedIn)
+    }
+
     func testDeleteAccountClearsTheSession() async throws {
         let (model, service, _) = makeModel(session: AccountTestSupport.session)
         await model.load()
