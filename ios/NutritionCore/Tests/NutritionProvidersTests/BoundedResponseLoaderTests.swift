@@ -20,7 +20,8 @@ final class BoundedResponseLoaderTests: XCTestCase {
     func testBodyOverLimitIsRejectedAndUnderlyingRequestIsCanceled() async throws {
         let stopped = expectation(description: "oversized request canceled")
         let session = makeSession(script: .init(
-            chunks: [Data("12345".utf8)], holdOpen: true, onStop: { stopped.fulfill() }))
+            chunks: [Data(repeating: 0x31, count: 64 * 1_024)], holdOpen: true,
+            onStop: { stopped.fulfill() }))
         defer { session.invalidateAndCancel() }
 
         do {
@@ -37,7 +38,7 @@ final class BoundedResponseLoaderTests: XCTestCase {
     func testLyingLowContentLengthDoesNotLetChunksExceedTheCap() async throws {
         let stopped = expectation(description: "chunked overflow canceled")
         let session = makeSession(script: .init(
-            chunks: [Data("123".utf8), Data("456".utf8)], contentLength: 1,
+            chunks: [Data("123".utf8), Data(repeating: 0x34, count: 64 * 1_024)], contentLength: 1,
             holdOpen: true, onStop: { stopped.fulfill() }))
         defer { session.invalidateAndCancel() }
 
@@ -52,7 +53,7 @@ final class BoundedResponseLoaderTests: XCTestCase {
 
     func testAdvertisedOversizeIsRejectedBeforeBodyArrives() async throws {
         let session = makeSession(script: .init(
-            chunks: [], contentLength: 100, holdOpen: true))
+            chunks: [], contentLength: 100))
         defer { session.invalidateAndCancel() }
 
         do {
@@ -211,7 +212,8 @@ final class BoundedResponseLoaderTests: XCTestCase {
     }
 
     func testOversizedErrorBodyIsRejectedBeforeStatusMapping() async throws {
-        let session = makeSession(script: .init(status: 503, chunks: [Data("12345".utf8)], holdOpen: true))
+        let session = makeSession(script: .init(
+            status: 503, chunks: [Data(repeating: 0x31, count: 64 * 1_024)], holdOpen: true))
         defer { session.invalidateAndCancel() }
 
         do {
@@ -351,6 +353,7 @@ private final class ControlledURLProtocol: URLProtocol {
                     url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
                     headerFields: ["Location": redirectTo.absoluteString])!
                 client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: redirectTo), redirectResponse: response)
+                client?.urlProtocolDidFinishLoading(self)
                 return
             }
             let response: URLResponse
