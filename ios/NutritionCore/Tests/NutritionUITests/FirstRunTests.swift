@@ -47,6 +47,19 @@ final class FirstRunTests: XCTestCase {
             product: nil, now: when)
     }
 
+    private func logSupplement(_ store: JournalStore) throws {
+        try store.create(
+            Intake(
+                id: UUID().uuidString.lowercased(), category: "food", occurredAt: when,
+                timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "multi", name: "Daily multi", amount: 1, unit: .tablet)],
+            product: ProductDefinition(
+                snapshotID: "snap-multi", productID: "test", name: "Daily multi",
+                labelBasis: "per serving (1 tablet)", catalogOrigin: "test", catalogVersion: "unknown",
+                kind: .supplement, nutrients: [:]),
+            now: when)
+    }
+
     // MARK: - The welcome is shown once
 
     /// A fresh install has not seen the welcome. Once it is marked seen, a later instance over the same
@@ -120,7 +133,7 @@ final class FirstRunTests: XCTestCase {
             model.items.map(\.kind), [.logFirst, .setGoal, .chooseUnits, .connectHealth])
         XCTAssertEqual(
             model.items.map(\.title),
-            ["Log your first food or drink", "Set a daily goal", "Choose units", "Connect Apple Health"])
+            ["Log your first food, drink, or supplement", "Set a daily goal", "Choose units", "Connect Apple Health"])
         XCTAssertEqual(model.items.map(\.isDone), [false, false, false, false])
         XCTAssertEqual(model.items.map(\.isPlaceholder), [false, false, false, true])
         XCTAssertEqual(model.items[2].detail, "Metric")
@@ -139,6 +152,19 @@ final class FirstRunTests: XCTestCase {
         model.markUnitsReviewed()
         XCTAssertEqual(model.items.map(\.isDone), [true, true, true, false])
         XCTAssertFalse(model.isVisible)
+    }
+
+    func testSupplementOnlyJournalCompletesFirstIntakeChecklistItem() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let preferences: DisplayPreferences & FirstRunPreferences = InMemoryDisplayPreferences()
+        let model = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+
+        try logSupplement(journal)
+        model.load()
+
+        XCTAssertEqual(model.items.first?.title, "Log your first food, drink, or supplement")
+        XCTAssertEqual(model.items.first?.isDone, true)
     }
 
     // MARK: - Hide stays hidden

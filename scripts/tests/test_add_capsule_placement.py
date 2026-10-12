@@ -44,9 +44,11 @@ def test_the_tab_view_itself_carries_no_add_capsule_inset() -> None:
 
 
 def test_add_actions_include_supplements_in_visible_and_accessible_labels() -> None:
-    text = ROOT_VIEW.read_text()
-    assert 'PrimaryCapsule("Add food, drink, or supplement"' in text
-    assert '.accessibilityLabel("Add food, drink, or supplement")' in text
     ui = ROOT_VIEW.parents[2] / "NutritionCore/Sources/NutritionUI"
+    design = (ui / "DesignComponents.swift").read_text()
+    assert 'public static let addFoodDrinkOrSupplement = "Add food, drink, or supplement"' in design
+    text = ROOT_VIEW.read_text()
+    assert 'PrimaryCapsule(ActionLabels.addFoodDrinkOrSupplement' in text
+    assert '.accessibilityLabel(ActionLabels.addFoodDrinkOrSupplement)' in text
     for name in ("TodayView.swift", "JournalView.swift"):
-        assert '"Add food, drink, or supplement"' in (ui / name).read_text()
+        assert "ActionLabels.addFoodDrinkOrSupplement" in (ui / name).read_text()

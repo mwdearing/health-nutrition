@@ -15,6 +15,11 @@ public enum DesignRadius {
     public static let control: CGFloat = 12
 }
 
+/// Shared wording for the primary action that adds any intake type.
+public enum ActionLabels {
+    public static let addFoodDrinkOrSupplement = "Add food, drink, or supplement"
+}
+
 /// A rounded container on the surface color, for content composed of more than standard rows.
 public struct Card<Content: View>: View {
     private let content: Content

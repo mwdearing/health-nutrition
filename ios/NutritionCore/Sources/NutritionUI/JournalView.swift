@@ -41,7 +41,7 @@ public struct JournalView: View {
                         title: "Your journal is empty",
                         message: "Everything you log is listed here by day.",
                         systemImage: "book",
-                        actionTitle: onAdd == nil ? nil : "Add food, drink, or supplement",
+                        actionTitle: onAdd == nil ? nil : ActionLabels.addFoodDrinkOrSupplement,
                         action: onAdd)
                 }
                 ForEach(model.sections) { section in
