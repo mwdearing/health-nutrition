@@ -498,3 +498,17 @@ public final class LibraryViewModel: ObservableObject {
         }
     }
 }
+
+/// Verification and completeness are independent of this account's delivery status.
+public struct LibraryProductPresentation {
+    public let verificationText: String
+    public let missingFacts: Bool
+    public init(_ product: CustomProductRevision) {
+        missingFacts = !product.content.facts.map(ProductFactInput.init).contains(where: \.hasReportedValue)
+        if let evidence = product.importVerification, evidence.content == product.content, evidence.source == product.source {
+            verificationText = evidence.ownerReviewed ? "Verified by owner review at import" : "Not verified at import"
+        } else {
+            verificationText = "Verification not checked"
+        }
+    }
+}

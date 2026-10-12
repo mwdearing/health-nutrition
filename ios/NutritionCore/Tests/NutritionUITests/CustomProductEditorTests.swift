@@ -171,3 +171,55 @@ private final class ProductIntakeCommandPort: JournalStore, @unchecked Sendable 
     func activeIntakesFromBackground() async throws -> [Intake] { intakes }
     func close() {}
 }
+
+extension CustomProductEditorTests {
+    func testImportRetainsIndependentVerificationEvidenceForLibrary() throws {
+        let remote = syntheticCommunityProduct(name: "Synthetic reviewed", kind: .food, verification: .init(status: .verified, source: "owner_reviewed"))
+        let imported = try CustomProductMapping.importedRevision(from: remote)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(imported)) as? [String: Any])
+        XCTAssertNotNil(object["importVerification"], "Persist the DTO evidence separately; source attribution and sharing receipts cannot prove verification")
+    }
+}
+
+extension CustomProductEditorTests {
+    @MainActor func testLibraryVerificationIsHistoricalIndependentAndInvalidatedByEditing() throws {
+        let verified = try CustomProductMapping.importedRevision(from: syntheticCommunityProduct(name: "Synthetic reviewed", kind: .food, verification: .init(status: .verified, source: "owner_reviewed")))
+        XCTAssertEqual(LibraryProductPresentation(verified).verificationText, "Verified by owner review at import")
+        let unverified = try CustomProductMapping.importedRevision(from: syntheticCommunityProduct(name: "Synthetic supported", kind: .food, verification: .init(status: .verified), support: "100"))
+        XCTAssertEqual(LibraryProductPresentation(unverified).verificationText, "Not verified at import")
+        let unknown = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: verified.content, source: verified.source)
+        XCTAssertEqual(LibraryProductPresentation(unknown).verificationText, "Verification not checked")
+        let store = ProductEditorStorePort(); store.products = [verified]
+        let editor = CustomProductEditorViewModel(store: store, revision: verified); editor.name = "Synthetic edited"
+        let edited = try editor.save(now: Date())
+        XCTAssertEqual(edited.source, verified.source)
+        XCTAssertNil(edited.importVerification)
+        XCTAssertEqual(LibraryProductPresentation(edited).verificationText, "Verification not checked")
+        let mismatched = CustomProductRevision(localProductID: verified.localProductID, revisionID: UUID(), content: edited.content, source: verified.source, importVerification: verified.importVerification)
+        XCTAssertEqual(LibraryProductPresentation(mismatched).verificationText, "Verification not checked")
+        let otherSource = CommunityProductSource(productID: UUID(), representativeRevision: "9", attribution: "Community")
+        let changedSource = CustomProductRevision(localProductID: verified.localProductID, revisionID: UUID(), content: verified.content, source: otherSource, importVerification: verified.importVerification)
+        XCTAssertEqual(LibraryProductPresentation(changedSource).verificationText, "Verification not checked")
+    }
+    func testImportedVerificationRoundTripAndOldRevisionDecode() throws {
+        let imported = try CustomProductMapping.importedRevision(from: syntheticCommunityProduct(name: "Synthetic reviewed", kind: .food, verification: .init(status: .verified, source: "owner_reviewed")))
+        let bytes = try JSONEncoder().encode(imported)
+        XCTAssertEqual(try JSONDecoder().decode(CustomProductRevision.self, from: bytes), imported)
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any]); old.removeValue(forKey: "importVerification")
+        let decoded = try JSONDecoder().decode(CustomProductRevision.self, from: JSONSerialization.data(withJSONObject: old))
+        XCTAssertNil(decoded.importVerification)
+        XCTAssertEqual(decoded.source, imported.source)
+        XCTAssertEqual(LibraryProductPresentation(decoded).verificationText, "Verification not checked")
+    }
+    @MainActor func testThresholdOnlyCompletenessAgreesAcrossEditorAndLibrary() throws {
+        let store = ProductEditorStorePort(), editor = CustomProductEditorViewModel(store: ProductEditorStorePort())
+        editor.name = "Synthetic threshold"; editor.basis = .per100g
+        editor.facts = [.init(key: "protein", displayName: "Protein", state: .belowReportingThreshold, unit: .g)]
+        XCTAssertFalse(editor.missingFacts)
+        let saved = try editor.save(now: Date()); store.products = [saved]
+        XCTAssertFalse(LibraryProductPresentation(saved).missingFacts)
+        editor.facts = [.init(key: "protein", displayName: "Protein", state: .unknown)]
+        XCTAssertTrue(editor.missingFacts)
+        XCTAssertTrue(LibraryProductPresentation(try editor.save(now: Date())).missingFacts)
+    }
+}

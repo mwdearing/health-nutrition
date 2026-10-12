@@ -22,6 +22,7 @@ public struct ProductFactInput: Identifiable, Equatable {
         case .belowReportingThreshold(let unit): state = .belowReportingThreshold; self.unit = unit
         }
     }
+    var hasReportedValue: Bool { state == .known || state == .belowReportingThreshold }
     func fact() throws -> ProductFact {
         let value: NutrientValue
         switch state {
@@ -69,7 +70,7 @@ public struct ProductFactInput: Identifiable, Equatable {
         guard let serving else { return }
         servingQuantity = NSDecimalNumber(decimal: serving.quantity).stringValue; servingUnit = serving.unit; servingText = serving.text ?? ""
     }
-    public var missingFacts: Bool { !facts.contains { $0.state == .known || $0.state == .belowReportingThreshold } }
+    public var missingFacts: Bool { !facts.contains(where: \.hasReportedValue) }
     public var legacyServingText: String? { legacy?.rawServingText }
     public func content() throws -> CustomProductContent {
         guard let kind, let basis else { throw CustomProductMappingError.requiresExplicitChoices }
@@ -153,7 +154,14 @@ public struct CustomProductSharePreview: Identifiable {
         guard let owner = coordinator?.accountContext?.ownerID else { return nil }
         return try? store.productOperations(ownerID: owner).last(where: { $0.localProductID == item.localProductID })
     }
+    private func reviewBlocker(_ item: CustomProductRevision) -> ProductShareOperation? {
+        guard let owner = coordinator?.accountContext?.ownerID else { return nil }
+        return try? store.productOperations(ownerID: owner).last {
+            $0.localProductID == item.localProductID && !isSettled($0) && [.failed, .needsReview].contains($0.status)
+        }
+    }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
+        if reviewBlocker(item) != nil { return .failed }
         if let last = latest(item), last.reviewSettlementID != nil {
             switch last.reviewedCurrentState {
             case .active: return .shared
@@ -165,31 +173,47 @@ public struct CustomProductSharePreview: Identifiable {
     }
     public func detail(_ item: CustomProductRevision) -> String {
         guard let operation = latest(item) else { return "No contribution from this account." }
-        if operation.reviewSettlementID == nil && (operation.status == .needsReview || operation.status == .failed) { return "Review the current contribution before sharing again. Your local product is saved." }
+        if reviewBlocker(item) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
         if let retry = operation.nextAttemptAt { return "Retry available after \(retry.formatted(date: .abbreviated, time: .shortened))." }
         if let state = operation.reviewedCurrentState ?? operation.currentState, let revision = operation.reviewedCurrentRevision ?? operation.currentRevision { return "Current contribution: \(state.rawValue), revision \(revision)." }
         return status(item).rawValue
     }
-    public func canRetry(_ item: CustomProductRevision) -> Bool { latest(item)?.status == .pending }
+    public func canRetry(_ item: CustomProductRevision) -> Bool { latest(item)?.status == .pending && reviewBlocker(item) == nil }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
         guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
               coordinator?.pauseReason == nil, let operation = latest(item), operation.storeEpoch != nil else { return false }
         return status(item) != .removed && status(item) != .removalPending
     }
+    public func canReview(_ item: CustomProductRevision) -> Bool {
+        if canShare { return true }
+        guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
+              coordinator?.pauseReason == nil, coordinator?.storageFailed == false,
+              let operation = latest(item), operation.storeEpoch != nil else { return false }
+        return operation.serverProductID != nil || operation.acknowledgedProductID != nil || canWithdraw(item)
+    }
+    private func isSettled(_ operation: ProductShareOperation) -> Bool {
+        operation.reviewSettlementID != nil || [.acknowledged, .satisfied].contains(operation.status) ||
+            (operation.status == .cancelled && operation.publicationResolution != nil)
+    }
     public func review(_ item: CustomProductRevision) async {
         guard !busy else { return }
         reviewGeneration = UUID(); let token = reviewGeneration
         preview = nil; errorMessage = nil
-        guard canShare || canWithdraw(item), let context = coordinator?.accountContext else { errorMessage = eligibilityText; return }
+        guard canReview(item), let context = coordinator?.accountContext else { errorMessage = eligibilityText; return }
         busy = true; defer { busy = false }
         do {
             guard try store.customProducts().contains(item) else { throw CustomProductStoreError.localRevisionConflict }
             let last = latest(item)
             let ownHistory = try store.productOperations(ownerID: context.ownerID).filter { $0.localProductID == item.localProductID }
             let remoteID = ownHistory.reversed().compactMap { ($0.serverProductID ?? $0.acknowledgedProductID).flatMap(UUID.init(uuidString:)) }.first ?? item.source?.productID
-            if let last, last.reviewSettlementID == nil,
-               [.pending, .sending, .paused].contains(last.status) || (last.status == .cancelled && last.attempts > 0 && last.publicationResolution == nil) {
-                throw ProductAPIError.operationConflict
+            let blocker = ownHistory.last { !isSettled($0) && [.failed, .needsReview].contains($0.status) }
+            for operation in ownHistory where !isSettled(operation) {
+                if [.failed, .needsReview].contains(operation.status) { continue }
+                guard blocker != nil, operation.kind == .publish, operation.attempts == 0,
+                      operation.envelope == nil, operation.serverProductID == nil, operation.expectedServerRevision == nil,
+                      operation.predecessorOperationID != nil, [.pending, .paused, .cancelled].contains(operation.status) else {
+                    throw ProductAPIError.operationConflict
+                }
             }
             var state: ProductContributionState?
             var sharedProduct: CommunityProduct?
@@ -202,16 +226,18 @@ public struct CustomProductSharePreview: Identifiable {
                 catch ProductAPIError.notFound { sharedProduct = nil }
                 if let sharedProduct, sharedProduct.productID != remoteID { throw ProductAPIError.ownerMismatch }
             }
-            guard !Task.isCancelled, reviewGeneration == token, coordinator?.accountContext == context, canShare || canWithdraw(item), try store.customProducts().contains(item) else { throw CustomProductStoreError.obsoleteOperation }
+            guard !Task.isCancelled, reviewGeneration == token, coordinator?.accountContext == context, canReview(item), try store.customProducts().contains(item) else { throw CustomProductStoreError.obsoleteOperation }
             var reconciliation: ProductContributionReview?
-            if let last, last.reviewSettlementID == nil, [.needsReview, .failed].contains(last.status), let state, let storeEpoch = last.storeEpoch {
-                reconciliation = ProductContributionReview(ownerID: context.ownerID, localProductID: item.localProductID, epoch: context.localSessionEpoch, storeEpoch: storeEpoch, blockingOperation: last, localRevisionID: item.revisionID, serverProductID: state.productID.uuidString.lowercased(), currentRevision: state.currentRevision, currentState: ProductAccountState(rawValue: state.currentState.rawValue)!, expectedOperationIDs: ownHistory.map(\.operationID))
+            let expectedRevision = last?.reviewedCurrentRevision ?? last?.currentRevision
+            let expectedState = last?.reviewedCurrentState ?? last?.currentState
+            let authorityChanged = state.map { $0.currentRevision != expectedRevision || $0.currentState.rawValue != expectedState?.rawValue } ?? false
+            if let anchor = blocker ?? (authorityChanged ? last : nil), let state, let storeEpoch = anchor.storeEpoch {
+                reconciliation = ProductContributionReview(ownerID: context.ownerID, localProductID: item.localProductID, epoch: context.localSessionEpoch, storeEpoch: storeEpoch, blockingOperation: anchor, localRevisionID: item.revisionID, serverProductID: state.productID.uuidString.lowercased(), currentRevision: state.currentRevision, currentState: ProductAccountState(rawValue: state.currentState.rawValue)!, expectedOperationIDs: ownHistory.map(\.operationID))
             } else if let state {
-                // Unseen own-state (including another device's contribution) is never silently adopted.
-                let expected = last?.reviewedCurrentRevision ?? last?.currentRevision
-                guard state.currentRevision == expected, state.currentState != .rejected else { throw ProductAPIError.revisionConflict(currentRevision: state.currentRevision, currentState: state.currentState) }
+                // Imported attribution alone cannot adopt another device's account authority.
+                guard state.currentRevision == expectedRevision, state.currentState != .rejected else { throw ProductAPIError.revisionConflict(currentRevision: state.currentRevision, currentState: state.currentState) }
             }
-            if let last, last.reviewSettlementID == nil, [.needsReview, .failed].contains(last.status), reconciliation == nil { throw ProductAPIError.operationConflict }
+            if blocker != nil && reconciliation == nil { throw ProductAPIError.operationConflict }
             preview = CustomProductSharePreview(revision: item, context: context, ownState: state, reconciliation: reconciliation, currentSharedProduct: sharedProduct)
         } catch {
             if reviewGeneration == token { errorMessage = "Could not prepare sharing review. The current contribution may have changed. Retry review when connected; remove a pending contribution to settle an unresolved request." }

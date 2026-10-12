@@ -61,12 +61,24 @@ public struct CommunityProductSource: Sendable, Hashable, Codable {
     }
 }
 
+/// Historical import evidence, never a claim about current server state or contribution ownership.
+public struct ImportedProductVerification: Sendable, Hashable, Codable {
+    public let source: CommunityProductSource
+    public let content: CustomProductContent
+    public let ownerReviewed: Bool
+    public init(source: CommunityProductSource, content: CustomProductContent, ownerReviewed: Bool) {
+        self.source = source; self.content = content; self.ownerReviewed = ownerReviewed
+    }
+}
+
 public struct CustomProductRevision: Sendable, Hashable, Codable {
     public let localProductID: UUID
     public let revisionID: UUID
     public let content: CustomProductContent
     public let source: CommunityProductSource?
-    public init(localProductID: UUID, revisionID: UUID, content: CustomProductContent, source: CommunityProductSource? = nil) {
+    public let importVerification: ImportedProductVerification?
+    public init(localProductID: UUID, revisionID: UUID, content: CustomProductContent, source: CommunityProductSource? = nil, importVerification: ImportedProductVerification? = nil) {
         self.localProductID = localProductID; self.revisionID = revisionID; self.content = content; self.source = source
+        self.importVerification = importVerification
     }
 }

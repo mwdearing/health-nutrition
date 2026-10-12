@@ -135,8 +135,10 @@ extension SwiftDataJournalStore: CustomProductStore {
                   try Self.operation(blocker) == review.blockingOperation,
                   review.blockingOperation.localProductID == review.localProductID,
                   review.blockingOperation.storeEpoch == review.storeEpoch,
-                  review.blockingOperation.reviewSettlementID == nil,
-                  [.failed, .needsReview].contains(review.blockingOperation.status) else { throw CustomProductStoreError.obsoleteOperation }
+                  (Self.settled(review.blockingOperation) || [.failed, .needsReview].contains(review.blockingOperation.status)) else { throw CustomProductStoreError.obsoleteOperation }
+            if Self.settled(review.blockingOperation) {
+                guard reviewedChain.allSatisfy(Self.settled) else { throw CustomProductStoreError.obsoleteOperation }
+            }
             if let publication {
                 guard review.currentState != .rejected, publication.kind == .publish,
                       publication.ownerID == review.ownerID, publication.localProductID == review.localProductID,
@@ -147,12 +149,20 @@ extension SwiftDataJournalStore: CustomProductStore {
                 guard operation.localProductID == review.localProductID, operation.storeEpoch == review.storeEpoch,
                       !Self.settled(operation) else { continue }
                 guard [.failed, .needsReview].contains(operation.status) ||
-                      (operation.kind == .publish && operation.attempts == 0 && [.pending, .paused, .cancelled].contains(operation.status)) else { throw CustomProductStoreError.obsoleteOperation }
+                      (operation.kind == .publish && operation.attempts == 0 && operation.envelope == nil &&
+                       operation.serverProductID == nil && operation.expectedServerRevision == nil &&
+                       operation.predecessorOperationID != nil && [.pending, .paused, .cancelled].contains(operation.status)) else { throw CustomProductStoreError.obsoleteOperation }
                 operation.reviewSettlementID = review.id
                 operation.reviewedCurrentState = review.currentState; operation.reviewedCurrentRevision = review.currentRevision
                 if [.pending, .paused].contains(operation.status) { operation.status = .cancelled }
                 row.payload = try JSONEncoder().encode(operation)
             }
+            // Even a settled receipt can anchor an explicit review of newer server authority.
+            // Only review metadata changes; the original receipt and request remain historical facts.
+            var anchor = try Self.operation(blocker)
+            anchor.reviewSettlementID = review.id
+            anchor.reviewedCurrentState = review.currentState; anchor.reviewedCurrentRevision = review.currentRevision
+            blocker.payload = try JSONEncoder().encode(anchor)
             mapping.currentRevision = review.currentRevision; mapping.currentState = review.currentState.rawValue
             if let publication { try Self.enqueue(publication, in: context) }
         }

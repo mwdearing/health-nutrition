@@ -109,7 +109,7 @@ public struct CustomProductSharingSection: View {
             Text(model.status(item).rawValue).accessibilityIdentifier("productDeliveryStatus")
             Text(model.detail(item)).font(.footnote)
             if model.canRetry(item) { Button("Retry") { Task { await model.retry(item) } } }
-            Button("Review product to share") { Task { await model.review(item) } }.disabled((!model.canShare && !model.canWithdraw(item)) || model.busy)
+            Button("Review product to share") { Task { await model.review(item) } }.disabled(!model.canReview(item) || model.busy)
             if !model.canShare { Text(model.eligibilityText).font(.footnote) }
             if model.canWithdraw(item) { Button("Remove my contribution", role: .destructive) { confirmRemoval = true } }
             if let message = model.errorMessage ?? actionError { Text(message).foregroundStyle(TokenColors.error) }
@@ -145,7 +145,7 @@ public struct CustomProductSharingSection: View {
                         Text("Current shared facts are unavailable. Keep the current contribution or cancel and retry review.")
                     }
                     if preview.reconciliation != nil {
-                        Text("Review conflict: this action uses the displayed current revision. Your earlier failed request is retained.")
+                        Text("This action uses the displayed current revision. Earlier requests and receipts are retained.")
                         Button("Keep current contribution") { perform { try model.keepCurrentContribution() } }
                     }
                     Button("Share these product facts") { perform { try model.confirmShare() } }.disabled(!preview.canPublish)

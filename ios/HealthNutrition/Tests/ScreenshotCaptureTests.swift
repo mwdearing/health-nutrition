@@ -463,6 +463,28 @@ private struct ScreenshotProductService: CommunityProductServicing {
         services.library.load()
         return services
     }
+    func testLibraryVerificationPresentation() throws {
+        for state in ["reviewed", "unreviewed", "unknown", "edited"] {
+            let services = try makeSeededServices()
+            let id = UUID()
+            let verification = ProductVerification(status: state == "unreviewed" ? .sharedUnverified : .verified, source: state == "unreviewed" ? nil : "owner_reviewed")
+            let product = CommunityProduct(productID: id, representativeRevision: "1", product: .custom(.init(name: "Synthetic imported product", kind: .food, basis: .per100g, facts: [])), source: .init(productID: id, representativeRevision: "1", attribution: "Community"), verification: verification, support: .init(distinctAccounts: "1", verificationThreshold: "3"), missingFacts: true, alternatives: [])
+            let imported = try CustomProductMapping.importedRevision(from: product)
+            let local: CustomProductRevision
+            if state == "unknown" || state == "edited" {
+                local = CustomProductRevision(localProductID: imported.localProductID, revisionID: UUID(), content: .init(name: state == "edited" ? "Synthetic edited product" : imported.content.name, kind: .food, basis: .per100g), source: imported.source)
+            } else { local = imported }
+            try services.journalStore.saveCustomProduct(.init(revision: local), now: Date())
+            services.library.load(); services.library.segment = .products
+            let expected = state == "reviewed" ? "Verified by owner review at import" : state == "unreviewed" ? "Not verified at import" : "Verification not checked"
+            XCTAssertEqual(LibraryProductPresentation(local).verificationText, expected)
+            try captureProductSizes("LibraryVerification-" + state) {
+                NavigationStack {
+                    LibraryView(model: services.library, onAdded: {}, onProduct: { _ in }, onEditProduct: { _ in })
+                }
+            }
+        }
+    }
     func testCustomProductEditorView() throws {
         let services = try makeProductServices()
         let model = CustomProductEditorViewModel(store: services.journalStore)

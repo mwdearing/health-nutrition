@@ -547,3 +547,79 @@ extension CustomProductStoreTests {
         XCTAssertEqual(try store.productOperations(ownerID: owner), before)
     }
 }
+
+extension CustomProductStoreTests {
+    private func acknowledgedWithdrawalFixture() throws -> (SwiftDataJournalStore, URL, CustomProductRevision, [ProductShareOperation], ProductContributionReview) {
+        let path = try url(), store = try SwiftDataJournalStore(url: path), item = revision(), remote = UUID().uuidString.lowercased()
+        let first = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(), clientRevisionID: item.revisionID, kind: .publish, content: item.content, serverProductID: remote, consentGeneration: "1", epoch: epoch)
+        try store.saveCustomProduct(.init(revision: item, publication: first), now: now)
+        let generation = try XCTUnwrap(try store.productOperations(ownerID: owner).first?.storeEpoch)
+        try store.recordProductDelivery(.init(operationID: first.operationID, ownerID: owner, epoch: epoch, storeEpoch: generation, status: .sending, envelope: Data("synthetic publication".utf8)))
+        try store.recordProductDelivery(.init(operationID: first.operationID, ownerID: owner, epoch: epoch, storeEpoch: generation, status: .acknowledged, serverProductID: remote, acknowledgedRevision: "1", currentRevision: "1", currentState: .active))
+        let removal = try store.enqueueProductWithdrawal(removal(item), expectedStoreEpoch: generation)
+        try store.recordProductDelivery(.init(operationID: removal.operationID, ownerID: owner, epoch: epoch, storeEpoch: generation, status: .sending, envelope: Data("synthetic withdrawal".utf8)))
+        try store.recordProductDelivery(.init(operationID: removal.operationID, ownerID: owner, epoch: epoch, storeEpoch: generation, status: .acknowledged, serverProductID: remote, acknowledgedRevision: "2", currentRevision: "2", currentState: .withdrawn))
+        let before = try store.productOperations(ownerID: owner), anchor = try XCTUnwrap(before.last)
+        let review = ProductContributionReview(ownerID: owner, localProductID: item.localProductID, epoch: epoch, storeEpoch: generation, blockingOperation: anchor, localRevisionID: item.revisionID, serverProductID: remote, currentRevision: "3", currentState: .active, expectedOperationIDs: before.map(\.operationID))
+        return (store, path, item, before, review)
+    }
+    func testAcknowledgedWithdrawalReviewRollsBackReopensAndPreservesOriginalReceipt() throws {
+        var (store, path, item, before, review) = try acknowledgedWithdrawalFixture()
+        store.failNextSaveForTesting = true
+        XCTAssertThrowsError(try store.reconcileProductContribution(review, publication: nil))
+        XCTAssertEqual(try store.productOperations(ownerID: owner), before)
+        try store.reconcileProductContribution(review, publication: nil)
+        store.close(); store = try SwiftDataJournalStore(url: path)
+        var expected = before
+        expected[1].reviewSettlementID = review.id; expected[1].reviewedCurrentState = .active; expected[1].reviewedCurrentRevision = "3"
+        XCTAssertEqual(try store.productOperations(ownerID: owner), expected, "All request and receipt fields remain unchanged")
+        XCTAssertThrowsError(try store.reconcileProductContribution(review, publication: operation(item)))
+        let newer = ProductContributionReview(ownerID: owner, localProductID: item.localProductID, epoch: epoch, storeEpoch: review.storeEpoch, blockingOperation: expected[1], localRevisionID: item.revisionID, serverProductID: review.serverProductID, currentRevision: "4", currentState: .active, expectedOperationIDs: expected.map(\.operationID))
+        try store.reconcileProductContribution(newer, publication: operation(item))
+        let queued = try XCTUnwrap(try store.productOperations(ownerID: owner).last)
+        XCTAssertEqual(queued.expectedServerRevision, "4"); XCTAssertNil(queued.predecessorOperationID)
+        XCTAssertNil(queued.envelope); XCTAssertEqual(queued.attempts, 0)
+        XCTAssertEqual(try store.productOperations(ownerID: owner)[1].acknowledgedRevision, "2")
+    }
+    func testAcknowledgedAuthorityReviewRejectsStaleIdentityLocalEditAndAccountRemoval() throws {
+        let (store, _, item, before, review) = try acknowledgedWithdrawalFixture()
+        for variant in 0..<6 {
+            let invalid = ProductContributionReview(ownerID: variant == 0 ? UUID() : owner, localProductID: variant == 1 ? UUID() : item.localProductID, epoch: variant == 2 ? UUID() : epoch, storeEpoch: variant == 3 ? UUID() : review.storeEpoch, blockingOperation: review.blockingOperation, localRevisionID: variant == 4 ? UUID() : item.revisionID, serverProductID: variant == 5 ? UUID().uuidString : review.serverProductID, currentRevision: "3", currentState: .active, expectedOperationIDs: review.expectedOperationIDs)
+            XCTAssertThrowsError(try store.reconcileProductContribution(invalid, publication: operation(item)))
+            XCTAssertEqual(try store.productOperations(ownerID: owner), before)
+        }
+        try store.saveCustomProduct(.init(revision: revision(product: item.localProductID, name: "Synthetic newer"), expectedLocalRevision: item.revisionID), now: now)
+        XCTAssertThrowsError(try store.reconcileProductContribution(review, publication: nil))
+        try store.removeProductAccountState(ownerID: owner)
+        XCTAssertThrowsError(try store.reconcileProductContribution(review, publication: nil))
+    }
+    func testPersistedConflictAncestorAndUnboundPendingDescendantReconcileAtomically() throws {
+        let path = try url(), item = revision(), remote = UUID().uuidString.lowercased()
+        var store = try SwiftDataJournalStore(url: path)
+        let first = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(), clientRevisionID: item.revisionID, kind: .publish, content: item.content, serverProductID: remote, consentGeneration: "1", epoch: epoch)
+        try store.saveCustomProduct(.init(revision: item, publication: first), now: now)
+        let generation = try XCTUnwrap(try store.productOperations(ownerID: owner).first?.storeEpoch)
+        try store.recordProductDelivery(.init(operationID: first.operationID, ownerID: owner, epoch: epoch, storeEpoch: generation, status: .sending, envelope: Data("synthetic immutable conflict".utf8)))
+        try store.recordProductDelivery(.init(operationID: first.operationID, ownerID: owner, epoch: epoch, storeEpoch: generation, status: .needsReview, reason: .conflict))
+        try store.enqueueProductOperation(operation(item))
+        let before = try store.productOperations(ownerID: owner)
+        XCTAssertEqual(before[1].predecessorOperationID, first.operationID)
+        XCTAssertNil(before[1].serverProductID); XCTAssertNil(before[1].expectedServerRevision); XCTAssertNil(before[1].envelope)
+        let review = ProductContributionReview(ownerID: owner, localProductID: item.localProductID, epoch: epoch, storeEpoch: generation, blockingOperation: before[0], localRevisionID: item.revisionID, serverProductID: remote, currentRevision: "3", currentState: .active, expectedOperationIDs: before.map(\.operationID))
+        let next = operation(item)
+        store.failNextSaveForTesting = true
+        XCTAssertThrowsError(try store.reconcileProductContribution(review, publication: next))
+        XCTAssertEqual(try store.productOperations(ownerID: owner), before)
+        try store.reconcileProductContribution(review, publication: next)
+        store.close(); store = try SwiftDataJournalStore(url: path)
+        let after = try store.productOperations(ownerID: owner)
+        var expected = before
+        for index in expected.indices {
+            expected[index].reviewSettlementID = review.id; expected[index].reviewedCurrentRevision = "3"; expected[index].reviewedCurrentState = .active
+        }
+        expected[1].status = .cancelled
+        XCTAssertEqual(Array(after.prefix(2)), expected)
+        XCTAssertEqual(after.last?.expectedServerRevision, "3"); XCTAssertNil(after.last?.predecessorOperationID)
+        XCTAssertThrowsError(try store.reconcileProductContribution(review, publication: operation(item)))
+    }
+}

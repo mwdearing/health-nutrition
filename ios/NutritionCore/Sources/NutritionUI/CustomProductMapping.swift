@@ -58,7 +58,12 @@ public enum CustomProductMapping {
 
     public static func importedRevision(from product: CommunityProduct) throws -> CustomProductRevision {
         guard case .custom(let content) = product.product else { throw CustomProductMappingError.requiresExplicitChoices }
-        return CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: try content.domainContent(), source: product.source.domainSource)
+        guard product.source.productID == product.productID,
+              product.source.representativeRevision == product.representativeRevision else { throw CustomProductMappingError.requiresExplicitChoices }
+        let imported = try content.domainContent(), source = product.source.domainSource
+        let evidence = ImportedProductVerification(source: source, content: imported,
+            ownerReviewed: product.verification.status == .verified && product.verification.source == "owner_reviewed")
+        return CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: imported, source: source, importVerification: evidence)
     }
 
     public static func stagedDraft(from product: CommunityProduct) throws -> LegacyCustomProductDraft {

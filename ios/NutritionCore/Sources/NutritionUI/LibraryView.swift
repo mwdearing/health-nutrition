@@ -133,12 +133,14 @@ public struct LibraryView: View {
                     VStack(alignment: .leading) {
                         Text(product.content.name).font(.headline)
                         Text(product.content.kind.displayName).font(.footnote)
-                        if !product.content.facts.contains(where: { $0.value.isKnown }) { Text("Missing facts").font(.footnote) }
+                        if LibraryProductPresentation(product).missingFacts { Text("Missing facts").font(.footnote) }
                         if let source = product.source { Text("Imported from \(source.attribution)").font(.footnote) }
                     }
                 }
                 .buttonStyle(.borderless)
                 .accessibilityHint("Opens intake details without adding an entry")
+                Text(LibraryProductPresentation(product).verificationText)
+                    .font(.footnote).accessibilityIdentifier("productVerificationStatus")
                 if let sharing = model.productSharing {
                     Text(sharing.status(product).rawValue).accessibilityIdentifier("productDeliveryStatus")
                     Text(sharing.detail(product)).font(.footnote)

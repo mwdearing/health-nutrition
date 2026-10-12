@@ -137,6 +137,7 @@ public struct ProductContributionReview: Sendable, Equatable {
     public let localProductID: UUID
     public let epoch: UUID
     public let storeEpoch: UUID
+    /// Exact conflict blocker or settled receipt whose account authority the user is reviewing.
     public let blockingOperation: ProductShareOperation
     public let expectedOperationIDs: [UUID]
     public let localRevisionID: UUID

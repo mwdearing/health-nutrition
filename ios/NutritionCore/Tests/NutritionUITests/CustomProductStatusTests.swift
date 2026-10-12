@@ -132,3 +132,56 @@ extension CustomProductStatusTests {
         XCTAssertEqual(store.reviews.count, 1)
     }
 }
+
+extension CustomProductStatusTests {
+    @MainActor func testAcknowledgedWithdrawalCanExplicitlyReviewOtherDeviceActiveRevision() async throws {
+        for sharingAllowed in [true, false] {
+            let store = ProductEditorStorePort(), service = ProductSearchServicePort()
+            let item = syntheticCommunityRevision(name: "Synthetic saved", kind: .food), remote = syntheticCommunityProduct(name: "Synthetic current", kind: .food)
+            store.products = [item]
+            let owner = UUID(), epoch = UUID()
+            var withdrawal = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(), clientRevisionID: item.revisionID, kind: .withdraw, serverProductID: remote.productID.uuidString.lowercased(), expectedServerRevision: "1", epoch: epoch)
+            withdrawal.status = .acknowledged; withdrawal.attempts = 1; withdrawal.envelope = Data("synthetic withdrawal".utf8)
+            withdrawal.currentRevision = "2"; withdrawal.currentState = .withdrawn; withdrawal.acknowledgedRevision = "2"; withdrawal.storeEpoch = UUID()
+            store.operations = [withdrawal]
+            await service.setContribution(.init(productID: remote.productID, currentRevision: "3", currentState: .active), product: remote)
+            let coordinator = ProductShareCoordinator(store: store, service: service)
+            coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: sharingAllowed, consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+            let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+            await model.review(item)
+            XCTAssertEqual(model.preview?.ownState?.currentRevision, "3")
+            XCTAssertEqual(model.preview?.reconciliation?.blockingOperation, withdrawal)
+            XCTAssertEqual(store.operations, [withdrawal]); XCTAssertTrue(store.reviews.isEmpty)
+            if sharingAllowed { try model.confirmShare(); XCTAssertEqual(store.reviews.first?.1?.expectedServerRevision, "3") }
+            else { try model.keepCurrentContribution(); XCTAssertNil(store.reviews.first?.1) }
+            XCTAssertEqual(store.reviews.count, 1)
+            XCTAssertThrowsError(try model.confirmShare())
+        }
+    }
+    @MainActor func testPendingDescendantDoesNotHidePersistedConflictAncestor() async throws {
+        let store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        let item = syntheticCommunityRevision(name: "Synthetic saved", kind: .food), remote = syntheticCommunityProduct(name: "Synthetic current", kind: .food)
+        store.products = [item]
+        let owner = UUID(), epoch = UUID()
+        var blocked = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(), clientRevisionID: item.revisionID, kind: .publish, content: item.content, serverProductID: remote.productID.uuidString.lowercased(), expectedServerRevision: "1", epoch: epoch)
+        blocked.status = .needsReview; blocked.reason = .conflict; blocked.storeEpoch = UUID(); blocked.attempts = 1; blocked.envelope = Data("synthetic conflict".utf8)
+        var pending = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(), clientRevisionID: item.revisionID, kind: .publish, content: item.content, epoch: epoch)
+        pending.predecessorOperationID = blocked.operationID; pending.storeEpoch = blocked.storeEpoch
+        store.operations = [blocked, pending]
+        await service.setContribution(.init(productID: remote.productID, currentRevision: "3", currentState: .active), product: remote)
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+        await model.review(item)
+        XCTAssertEqual(model.status(item), .failed)
+        XCTAssertFalse(model.canRetry(item))
+        XCTAssertTrue(model.detail(item).contains("Review"))
+        XCTAssertEqual(model.preview?.reconciliation?.blockingOperation, blocked)
+        XCTAssertEqual(model.preview?.reconciliation?.expectedOperationIDs, [blocked.operationID, pending.operationID])
+        XCTAssertEqual(store.operations, [blocked, pending]); XCTAssertTrue(store.reviews.isEmpty)
+        try model.confirmShare()
+        XCTAssertEqual(store.reviews.first?.1?.expectedServerRevision, "3")
+        pending.status = .sending; pending.attempts = 1; pending.envelope = Data("synthetic live work".utf8); store.operations = [blocked, pending]
+        await model.review(item); XCTAssertNil(model.preview)
+    }
+}
