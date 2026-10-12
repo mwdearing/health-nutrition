@@ -3,7 +3,7 @@ import NutritionDomain
 import NutritionJournal
 import NutritionProviders
 
-public enum CommunityProductSearchState: Equatable { case idle, loading, loaded, empty, signInRequired, unsupported, unavailable }
+public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, loading, loaded, empty, signInRequired, unsupported, unavailable }
 
 @MainActor public final class CommunityProductSearchViewModel: ObservableObject {
     @Published public private(set) var localResults: [CustomProductRevision] = []
@@ -44,6 +44,7 @@ public enum CommunityProductSearchState: Equatable { case idle, loading, loaded,
             localError = false
         } catch { localResults = []; localError = true }
         guard isSignedIn() else { state = .signInRequired; return }
+        guard self.query.unicodeScalars.count >= 2 else { state = .queryTooShort; return }
         guard let service else { state = .unsupported; return }
         state = .loading
         do {

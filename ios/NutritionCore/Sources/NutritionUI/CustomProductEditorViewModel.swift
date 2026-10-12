@@ -221,6 +221,10 @@ public struct CustomProductSharePreview: Identifiable {
             let blocker = ownHistory.last { !isSettled($0) && [.failed, .needsReview].contains($0.status) }
             for operation in ownHistory where !isSettled(operation) {
                 if [.failed, .needsReview].contains(operation.status) { continue }
+                let replaceableInitialPublication = blocker == nil && operation.kind == .publish && operation.attempts == 0 &&
+                    operation.envelope == nil && operation.serverProductID == nil && operation.expectedServerRevision == nil &&
+                    operation.predecessorOperationID == nil && [.pending, .paused].contains(operation.status)
+                if replaceableInitialPublication { continue }
                 guard blocker != nil, operation.kind == .publish, operation.attempts == 0,
                       operation.envelope == nil, operation.serverProductID == nil, operation.expectedServerRevision == nil,
                       operation.predecessorOperationID != nil, [.pending, .paused, .cancelled].contains(operation.status) else {

@@ -33,6 +33,22 @@ final class CommunityProductSearchTests: XCTestCase {
         XCTAssertEqual(calls, 0)
         XCTAssertTrue(store.operations.isEmpty)
     }
+    @MainActor func testEmptyAndOneScalarQueriesKeepLocalResultsWithoutRemoteSearch() async throws {
+        let store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        store.products = [syntheticCommunityRevision(name: "Synthetic tea", kind: .drink),
+                          syntheticCommunityRevision(name: "Éclair drink", kind: .drink)]
+        let model = CommunityProductSearchViewModel(store: store, service: service, isSignedIn: { true })
+
+        for (query, expected) in [("", store.products), ("é", [store.products[1]])] {
+            await model.search(query: query, kind: nil)
+            XCTAssertEqual(model.state, .queryTooShort)
+            XCTAssertEqual(model.localResults, expected)
+        }
+        let calls = await service.calls
+        XCTAssertEqual(calls, 0)
+        let capabilityCalls = await service.capabilityCalls
+        XCTAssertEqual(capabilityCalls, 0)
+    }
     @MainActor func testPaginationKeepsLocalSeparateDeduplicatesAndImportsWithoutIntakeOrUpload() async throws {
         let store = ProductEditorStorePort(), service = ProductSearchServicePort()
         let first = syntheticCommunityProduct(name: "Synthetic tea", kind: .drink)
@@ -114,6 +130,7 @@ actor ProductSearchServicePort: CommunityProductServicing {
     }
     func finishSearch() { searchGate?.resume(); searchGate = nil }
     var calls = 0
+    private(set) var capabilityCalls = 0
     private(set) var publishCalls = 0
     private var publishExpectation: XCTestExpectation?
     func expectPublish(_ expectation: XCTestExpectation) { publishExpectation = expectation }
@@ -150,7 +167,10 @@ actor ProductSearchServicePort: CommunityProductServicing {
         return page
     }
     func product(id: UUID) async throws -> CommunityProduct { guard let currentProduct else { throw ProductAPIError.notFound }; return currentProduct }
-    func capabilities() async throws -> ProductCatalogCapabilities { .init(supportedVersion: 2, enabled: true, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, callerAcknowledgment: deliveryConsent, consentGeneration: "0", sharingPermission: true, boundedPublicationVersion: boundedVersion) }
+    func capabilities() async throws -> ProductCatalogCapabilities {
+        capabilityCalls += 1
+        return .init(supportedVersion: 2, enabled: true, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, callerAcknowledgment: deliveryConsent, consentGeneration: "0", sharingPermission: true, boundedPublicationVersion: boundedVersion)
+    }
     func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
         recordPublish()
         throw ProductAPIError.unavailable

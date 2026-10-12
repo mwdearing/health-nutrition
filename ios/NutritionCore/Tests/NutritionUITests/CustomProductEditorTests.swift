@@ -242,6 +242,33 @@ final class ProductEditorStorePort: CustomProductStore, @unchecked Sendable {
 }
 
 extension CustomProductEditorTests {
+    @MainActor func testReviewCanReplaceAnUnattemptedPendingPublicationAfterEdit() async throws {
+        let owner = UUID(), epoch = UUID(), store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        let original = syntheticCommunityRevision(name: "Synthetic before review", kind: .food)
+        let pending = ProductShareOperation(ownerID: owner, localProductID: original.localProductID, operationID: UUID(),
+            clientRevisionID: original.revisionID, kind: .publish, content: original.content, consentVersion: 2,
+            consentGeneration: "1", epoch: epoch)
+        try store.saveCustomProduct(.init(revision: original, publication: pending), now: Date())
+        let edited = CustomProductRevision(localProductID: original.localProductID, revisionID: UUID(),
+            content: .init(name: "Synthetic after review", kind: .food, basis: .perServing))
+        try store.saveCustomProduct(.init(revision: edited, expectedLocalRevision: original.revisionID), now: Date())
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+
+        await model.review(edited)
+        XCTAssertEqual(model.preview?.revision, edited)
+        XCTAssertNil(model.preview?.ownState)
+        XCTAssertNil(model.preview?.reconciliation)
+        try model.confirmShare()
+
+        let replacement = try XCTUnwrap(store.operations.last)
+        XCTAssertEqual(replacement.clientRevisionID, edited.revisionID)
+        XCTAssertEqual(replacement.content, edited.content)
+        XCTAssertEqual(store.operations.count, 2, "Confirming an explicit review queues the edited publication")
+    }
+
     @MainActor func testImportOpenLogAndFavoriteNeverUploadAndProductListDoesNotDuplicate() async throws {
         let products = ProductEditorStorePort(), journal = ProductIntakeCommandPort(), favorites = ProductFavoritePort(), uploader = ProductLabelPort()
         let original = syntheticCommunityProduct(name: "Synthetic drink", kind: .drink)

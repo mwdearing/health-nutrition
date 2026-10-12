@@ -99,6 +99,7 @@ public struct CommunityProductSearchView: View {
     @ViewBuilder private var sharedState: some View {
         switch model.state {
         case .idle: Text("Search shared foods, drinks and supplements.")
+        case .queryTooShort: Text("Enter at least two characters to search shared products.")
         case .loading: ProgressView("Searching shared products")
         case .loaded: EmptyView()
         case .empty: Text("No shared products match this search.")
