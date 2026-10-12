@@ -97,6 +97,9 @@ public struct ProductFactInput: Identifiable, Equatable {
             }
             // No suspension separates current eligibility from the atomic revision/mapping/operation save.
             let saved = try store.saveCustomProduct(CustomProductSave(revision: result, expectedLocalRevision: revision?.revisionID, publication: publication), now: now)
+            if publication != nil {
+                Task { await sharing?.runDueOperations(now: now) }
+            }
             revision = saved; errorMessage = nil
             return saved
         } catch {

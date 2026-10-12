@@ -31,6 +31,36 @@ final class CustomProductEditorTests: XCTestCase {
             XCTAssertNil(store.commands.last?.publication, "editing is explicit sharing, not new creation")
         }
     }
+    @MainActor func testSaveKicksDeliveryOnlyAfterSuccessfulEligibleCreation() async throws {
+        let store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        let owner = UUID(), epoch = UUID()
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "0", localSessionEpoch: epoch, backendSupported: true))
+        await service.setDeliveryConsent(generation: "0")
+        let editor = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        editor.name = "Synthetic automatic"
+
+        store.failSaving = true
+        XCTAssertThrowsError(try editor.save(now: Date()))
+        let failedSaveCalls = await service.publishCallCount()
+        XCTAssertEqual(failedSaveCalls, 0, "failed save must not start delivery")
+        XCTAssertTrue(store.operations.isEmpty)
+
+        let publishExpectation = expectation(description: "Eligible Save starts delivery")
+        await service.expectPublish(publishExpectation)
+        store.failSaving = false
+        _ = try editor.save(now: Date())
+        await fulfillment(of: [publishExpectation], timeout: 2)
+        let successfulSaveCalls = await service.publishCallCount()
+        XCTAssertEqual(successfulSaveCalls, 1, "successful eligible Save starts delivery without waiting for lifecycle or connectivity")
+
+        let localStore = ProductEditorStorePort()
+        let localEditor = CustomProductEditorViewModel(store: localStore)
+        localEditor.name = "Synthetic local"
+        _ = try localEditor.save(now: Date())
+        XCTAssertTrue(localStore.operations.isEmpty)
+    }
     @MainActor func testNewSaveReadsCurrentAccountAndRejectsObsoleteAdmissionOrStore() async throws {
         let store = ProductEditorStorePort(), service = ProductSearchServicePort()
         let coordinator = ProductShareCoordinator(store: store, service: service)
@@ -172,6 +202,7 @@ final class ProductEditorStorePort: CustomProductStore, @unchecked Sendable {
     var products: [CustomProductRevision] = []
     var commands: [CustomProductSave] = []
     var failSaving = false
+    private let storeEpoch = UUID()
     var operations: [ProductShareOperation] = []
     var reviews: [(ProductContributionReview, ProductShareOperation?)] = []
     func reconcileProductContribution(_ review: ProductContributionReview, publication: ProductShareOperation?) throws {
@@ -181,7 +212,10 @@ final class ProductEditorStorePort: CustomProductStore, @unchecked Sendable {
     func saveCustomProduct(_ command: CustomProductSave, now: Date) throws -> CustomProductRevision {
         if failSaving { throw CustomProductStoreError.invalidOperation }
         commands.append(command); products.removeAll { $0.localProductID == command.revision.localProductID }; products.append(command.revision)
-        if let operation = command.publication { operations.append(operation) }
+        if var operation = command.publication {
+            operation.storeEpoch = storeEpoch
+            operations.append(operation)
+        }
         return command.revision
     }
     func customProducts() throws -> [CustomProductRevision] { products }

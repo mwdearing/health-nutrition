@@ -91,6 +91,10 @@ actor ProductSearchServicePort: CommunityProductServicing {
     var failure: ProductAPIError?
     var boundedVersion: Int? = 1
     var alternativePages: [ProductAlternativesPage] = []
+    private var deliveryConsent: ProductConsentAcknowledgment?
+    func setDeliveryConsent(generation: String) {
+        deliveryConsent = ProductConsentAcknowledgment(version: 2, generation: generation)
+    }
     func setBoundedVersion(_ version: Int?) { boundedVersion = version }
     func setAlternativePages(_ pages: [ProductAlternativesPage]) { alternativePages = pages }
     func alternatives(productID: UUID, cursor: String?) async throws -> ProductAlternativesPage {
@@ -110,6 +114,15 @@ actor ProductSearchServicePort: CommunityProductServicing {
     }
     func finishSearch() { searchGate?.resume(); searchGate = nil }
     var calls = 0
+    private(set) var publishCalls = 0
+    private var publishExpectation: XCTestExpectation?
+    func expectPublish(_ expectation: XCTestExpectation) { publishExpectation = expectation }
+    func publishCallCount() -> Int { publishCalls }
+    private func recordPublish() {
+        publishCalls += 1
+        publishExpectation?.fulfill()
+        publishExpectation = nil
+    }
     var contributionHeld = false
     var contributionGate: CheckedContinuation<Void, Never>?
     var contributionArrival: CheckedContinuation<Void, Never>?
@@ -137,8 +150,11 @@ actor ProductSearchServicePort: CommunityProductServicing {
         return page
     }
     func product(id: UUID) async throws -> CommunityProduct { guard let currentProduct else { throw ProductAPIError.notFound }; return currentProduct }
-    func capabilities() async throws -> ProductCatalogCapabilities { .init(supportedVersion: 2, enabled: true, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, consentGeneration: "0", sharingPermission: true, boundedPublicationVersion: boundedVersion) }
-    func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
+    func capabilities() async throws -> ProductCatalogCapabilities { .init(supportedVersion: 2, enabled: true, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, callerAcknowledgment: deliveryConsent, consentGeneration: "0", sharingPermission: true, boundedPublicationVersion: boundedVersion) }
+    func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        recordPublish()
+        throw ProductAPIError.unavailable
+    }
     func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
     func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution { throw ProductAPIError.unavailable }
     func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState { throw ProductAPIError.unavailable }
