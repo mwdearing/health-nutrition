@@ -32,7 +32,7 @@ launch (not at once).
 
 **The checklist card** is titled "Getting started". It sits on Today above **Daily goals** while it is shown, and has
 four rows in this order:
-1. **Log your first food or drink**: done when the journal holds at least one entry, on any day. Tapping it opens
+1. **Log your first food, drink, or supplement**: done when the journal holds at least one entry, on any day. Tapping it opens
    Add.
 2. **Set a daily goal**: done when at least one daily goal is stored. Tapping it opens the daily goals.
 3. **Choose units**: shows the current system under the title, "Metric" or "US". Tapping it marks the step done at
