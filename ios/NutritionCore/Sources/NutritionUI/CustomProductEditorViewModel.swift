@@ -172,6 +172,7 @@ public struct CustomProductSharePreview: Identifiable {
         }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
+        if let last = latest(item), last.clientRevisionID != item.revisionID { return .localChanges }
         if reviewBlocker(item) != nil { return .failed }
         if let last = latest(item), last.reviewSettlementID != nil {
             switch last.reviewedCurrentState {
@@ -184,12 +185,13 @@ public struct CustomProductSharePreview: Identifiable {
     }
     public func detail(_ item: CustomProductRevision) -> String {
         guard let operation = latest(item) else { return "No contribution from this account." }
+        if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this phone; this revision has not been shared." }
         if reviewBlocker(item) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
         if let retry = operation.nextAttemptAt { return "Retry available after \(retry.formatted(date: .abbreviated, time: .shortened))." }
         if let state = operation.reviewedCurrentState ?? operation.currentState, let revision = operation.reviewedCurrentRevision ?? operation.currentRevision { return "Current contribution: \(state.rawValue), revision \(revision)." }
         return status(item).rawValue
     }
-    public func canRetry(_ item: CustomProductRevision) -> Bool { latest(item)?.status == .pending && reviewBlocker(item) == nil }
+    public func canRetry(_ item: CustomProductRevision) -> Bool { latest(item)?.clientRevisionID == item.revisionID && latest(item)?.status == .pending && reviewBlocker(item) == nil }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
         guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
               coordinator?.pauseReason == nil, let operation = latest(item), operation.storeEpoch != nil else { return false }
@@ -283,7 +285,9 @@ public struct CustomProductSharePreview: Identifiable {
         try coordinator.requestWithdrawal(operation, expectedStoreEpoch: epoch); refreshID = UUID()
     }
     public func retry(_ item: CustomProductRevision) async {
-        if let operation = latest(item) { await coordinator?.retry(operationID: operation.operationID) }
+        if let operation = latest(item), operation.clientRevisionID == item.revisionID, canRetry(item) {
+            await coordinator?.retry(operationID: operation.operationID)
+        }
         refreshID = UUID()
     }
     /// Views observe durable changes even when delivery came from a foreground/connectivity trigger.

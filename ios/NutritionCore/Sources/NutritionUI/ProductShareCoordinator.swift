@@ -23,6 +23,7 @@ public struct ProductShareAccountContext: Equatable, Sendable {
 public enum ProductSharePauseReason: String, Sendable { case signOut, accountDeletion, erase, accountChanged, sharingDisabled, authentication, consent, unavailable }
 public enum ProductShareStatus: String, Sendable {
     case onThisPhone = "On this phone", waiting = "Waiting to share", paused = "Sharing paused"
+    case localChanges = "Edited on this phone"
     case shared = "Shared", failed = "Couldn't share", removalPending = "Removal pending", removed = "My contribution removed"
 }
 
