@@ -52,6 +52,12 @@ public final class AccountViewModel: ObservableObject {
     /// locked, so a failed read can never lead to a write that replaces the stored values with defaults.
     @Published public private(set) var profileReady = false
 
+    @Published public private(set) var productDeliveryPausedAfterDeletion = false
+    private let productService: (any CommunityProductServicing)?
+    private let productSharing: ProductShareCoordinator?
+    private var productCapabilities: ProductCatalogCapabilities?
+    private var accountIdentity = UUID()
+
     private let service: CommunityAccountServicing
     private let preferences: CommunityDisclosurePreferences
     /// The name the server holds, so a change of the sharing switch sends the saved name, not the typed one.
@@ -70,7 +76,10 @@ public final class AccountViewModel: ObservableObject {
     /// the restore was running is never cleared by the restore's answer.
     private var signInCount = 0
 
-    public init(service: CommunityAccountServicing, preferences: CommunityDisclosurePreferences) {
+    public init(service: CommunityAccountServicing, preferences: CommunityDisclosurePreferences,
+                productService: (any CommunityProductServicing)? = nil, productSharing: ProductShareCoordinator? = nil) {
+        self.productService = productService
+        self.productSharing = productSharing
         self.service = service
         self.preferences = preferences
     }
@@ -81,7 +90,10 @@ public final class AccountViewModel: ObservableObject {
         busyCount += 1
         defer { busyCount -= 1 }
         let signInsBefore = signInCount
-        guard let session = await service.restore() else {
+        let identity = accountIdentity
+        let restored = await service.restore()
+        guard identity == accountIdentity else { return }
+        guard let session = restored else {
             // A sign-in that completed during the restore is newer than its empty answer; keep it.
             if phase == .signedOut || signInCount == signInsBefore {
                 clearSignedInState()
@@ -100,7 +112,7 @@ public final class AccountViewModel: ObservableObject {
     /// read. Anything that sends a label must check this first: the server default for sharing is on, so the
     /// switch alone is not consent.
     public var sharingAllowed: Bool {
-        phase == .signedIn && profileReady && shareLabels && currentAccountAcknowledged
+        phase == .signedIn && profileReady && shareLabels && currentAccountAcknowledged && !productDeliveryPausedAfterDeletion
     }
 
     public func signInWithApple(idToken: String, nonce: String) async {
@@ -167,6 +179,7 @@ public final class AccountViewModel: ObservableObject {
     /// Turns sharing on or off. The switch shows the new value at once and goes back when the save fails.
     /// Nothing is sent until the profile has been read.
     public func setSharing(_ on: Bool) async {
+        if !on { productSharing?.closeGate(reason: .sharingDisabled) }
         await serialized { await self.applySharing(on) }
     }
 
@@ -175,15 +188,20 @@ public final class AccountViewModel: ObservableObject {
             message = Self.profileNotReadyMessage
             return
         }
+        let identity = accountIdentity
         let previous = shareLabels
         let name = savedName
         shareLabels = on
         guard await run(Self.genericMessage, {
             try await self.service.updateProfile(displayName: name, shareLabels: on)
         }) != nil else {
+            guard accountIdentity == identity else { return }
             shareLabels = previous
+            await refreshProductSharing()
             return
         }
+        guard accountIdentity == identity else { return }
+        await refreshProductSharing()
     }
 
     /// Saves the name: trimmed, capped at `nameLimit`, and empty means no name. Nothing is sent until the
@@ -200,10 +218,11 @@ public final class AccountViewModel: ObservableObject {
         let capped = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.nameLimit))
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let name: String? = capped.isEmpty ? nil : capped
+        let identity = accountIdentity
         let sharing = shareLabels
         guard let profile = await run(Self.genericMessage, {
             try await self.service.updateProfile(displayName: name, shareLabels: sharing)
-        }) else { return }
+        }), accountIdentity == identity else { return }
         savedName = profile.displayName
         displayName = profile.displayName ?? ""
     }
@@ -215,23 +234,47 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signOut() async {
+        productSharing?.closeGate(reason: .signOut)
+        accountIdentity = UUID()
+        let identity = accountIdentity
         await service.signOut()
+        guard accountIdentity == identity else { return }
         clearSignedInState()
     }
 
     /// Deletes the account on the server. The session is forgotten here only after the server agrees.
     public func deleteAccount() async {
+        if let userID = currentUserID { preferences.setProductSharingPause(.accountDeletion, for: userID) }
+        productSharing?.closeGate(reason: .accountDeletion)
+        productDeliveryPausedAfterDeletion = true
+        accountIdentity = UUID()
+        let deletingUserID = currentUserID
+        let deletingOwner = deletingUserID.flatMap(UUID.init(uuidString:))
+        let identity = accountIdentity
         guard await run(Self.genericMessage, { try await self.service.deleteAccount() }) != nil else { return }
+        if let deletingOwner { productSharing?.accountWasDeleted(ownerID: deletingOwner) }
         // The deleted account's own acknowledgment goes with it; the other accounts' entries stay.
-        if let userID = currentUserID {
+        if let userID = deletingUserID {
             preferences.setHasSeenCommunityDisclosure(false, for: userID)
+            preferences.setProductSharingPause(nil, for: userID)
         }
+        guard accountIdentity == identity else { return }
+        productDeliveryPausedAfterDeletion = false
         clearSignedInState()
     }
 
     /// Called after Erase all data cleared the stored preferences: a signed-in person who has not read the
     /// disclosure on this device is asked again, and nothing is shared until they do.
+    public func pauseSharingForErase() {
+        accountIdentity = UUID()
+        productCapabilities = nil
+        if let userID = currentUserID { preferences.setProductSharingPause(.erase, for: userID) }
+        productDeliveryPausedAfterDeletion = true
+        productSharing?.closeGate(reason: .erase)
+    }
+
     public func refreshAfterErase() {
+        productDeliveryPausedAfterDeletion = currentUserID.flatMap { preferences.productSharingPause(for: $0) } != nil
         if phase == .signedIn {
             needsDisclosure = !currentAccountAcknowledged
         }
@@ -241,7 +284,7 @@ public final class AccountViewModel: ObservableObject {
     /// for that account on this device. Ignored while a call is running, so a tap during a busy call is never
     /// taken for agreement, and ignored when nobody is signed in.
     public func acknowledgeDisclosure() {
-        guard !isBusy, let userID = currentUserID else { return }
+        guard productService == nil, !isBusy, let userID = currentUserID else { return }
         preferences.setHasSeenCommunityDisclosure(true, for: userID)
         needsDisclosure = false
     }
@@ -249,7 +292,78 @@ public final class AccountViewModel: ObservableObject {
     /// True when the signed-in account has read the disclosure. No signed-in account means no acknowledgment.
     private var currentAccountAcknowledged: Bool {
         guard let userID = currentUserID else { return false }
-        return preferences.hasSeenCommunityDisclosure(for: userID)
+        guard preferences.hasSeenCommunityDisclosure(for: userID) else { return false }
+        guard productService != nil else { return true }
+        guard let capability = productCapabilities else { return false }
+        return capability.currentConsentVersion == 2 && capability.callerAcknowledgment?.version == 2 &&
+            capability.callerAcknowledgment?.generation == capability.consentGeneration
+    }
+
+    /// Version-two consent is an owner-bound server acknowledgment, independent of sharing permission.
+    public func acknowledgeProductDisclosure() async {
+        guard let productService else { acknowledgeDisclosure(); return }
+        guard !isBusy, profileReady, let userID = currentUserID, let owner = UUID(uuidString: userID) else { return }
+        let identity = accountIdentity
+        busyCount += 1
+        defer { busyCount -= 1 }
+        do {
+            let capability = try await productService.capabilities()
+            guard currentUserID == userID, accountIdentity == identity, capability.supportedVersion == 2 else { return }
+            let consent = try await productService.acknowledgeConsent(version: 2, expectedOwnerID: owner)
+            guard currentUserID == userID, accountIdentity == identity, consent.version == 2,
+                  consent.acknowledged, consent.generation == capability.consentGeneration else { return }
+            let refreshed = try await productService.capabilities()
+            guard currentUserID == userID, accountIdentity == identity,
+                  refreshed.consentGeneration == consent.generation,
+                  refreshed.callerAcknowledgment?.version == 2,
+                  refreshed.callerAcknowledgment?.generation == consent.generation else { return }
+            productCapabilities = refreshed
+            preferences.setHasSeenCommunityDisclosure(true, for: userID)
+            needsDisclosure = false
+            updateProductContext(explicitRecovery: productSharing?.pauseReason == .erase && !productDeliveryPausedAfterDeletion)
+        } catch { message = Self.genericMessage }
+    }
+
+    /// Launch/foreground refresh. A failed deletion remains paused until the explicit recovery action.
+    public func refreshProductSharing() async {
+        guard let productService, phase == .signedIn, profileReady, let userID = currentUserID else { return }
+        let identity = accountIdentity
+        do {
+            let capability = try await productService.capabilities()
+            guard currentUserID == userID, accountIdentity == identity else { return }
+            productCapabilities = capability
+            needsDisclosure = !currentAccountAcknowledged
+            updateProductContext()
+        } catch {
+            guard currentUserID == userID, accountIdentity == identity else { return }
+            productCapabilities = nil
+            productSharing?.closeGate(reason: .unavailable)
+        }
+    }
+
+    public func recoverSharingAfterFailedDeletion() async {
+        guard productDeliveryPausedAfterDeletion, let userID = currentUserID else { return }
+        let identity = accountIdentity
+        guard let live = await service.restore(), live.userID == userID, accountIdentity == identity else { return }
+        await refreshProfile()
+        guard currentUserID == userID, accountIdentity == identity, profileReady,
+              productService == nil || productCapabilities != nil else { return }
+        preferences.setProductSharingPause(nil, for: userID)
+        productDeliveryPausedAfterDeletion = false
+        updateProductContext(explicitRecovery: true)
+    }
+
+    private func updateProductContext(explicitRecovery: Bool = false) {
+        let persistedPause = currentUserID.flatMap { preferences.productSharingPause(for: $0) }
+        productDeliveryPausedAfterDeletion = persistedPause != nil
+        guard let owner = currentUserID.flatMap(UUID.init(uuidString:)), let capability = productCapabilities else { return }
+        let context = ProductShareAccountContext(ownerID: owner, profileReady: profileReady,
+            sharingAllowed: shareLabels && currentAccountAcknowledged,
+            consentVersion: capability.callerAcknowledgment?.version ?? 0, serverGeneration: capability.consentGeneration,
+            localSessionEpoch: UUID(), backendSupported: capability.supportedVersion == 2)
+        if explicitRecovery { productSharing?.recoverAfterLifecyclePause(context) }
+        else { productSharing?.updateAccountContext(context) }
+        if let persistedPause { productSharing?.closeGate(reason: persistedPause) }
     }
 
     // MARK: Helpers
@@ -273,9 +387,11 @@ public final class AccountViewModel: ObservableObject {
         busyCount += 1
         defer { busyCount -= 1 }
         message = nil
+        let identity = accountIdentity
         do {
             return try await call()
         } catch {
+            guard identity == accountIdentity else { return nil }
             let text = Self.message(for: error, fallback: fallback)
             // The sign-in ended (the session could not be renewed): stop showing the account.
             if phase == .signedIn, case .signedOut? = error as? CommunityError {
@@ -308,8 +424,12 @@ public final class AccountViewModel: ObservableObject {
     }
 
     private func signIn(with session: CommunitySession) {
+        productSharing?.closeGate(reason: .accountChanged)
+        accountIdentity = UUID()
+        productCapabilities = nil
         phase = .signedIn
         currentUserID = session.userID
+        productDeliveryPausedAfterDeletion = preferences.productSharingPause(for: session.userID) != nil
         email = session.email ?? ""
         profileReady = false
     }
@@ -317,15 +437,21 @@ public final class AccountViewModel: ObservableObject {
     /// Reads the name and the sharing switch the server holds. Until this succeeds the profile is not ready, and
     /// a failure shows a message and keeps the defaults.
     private func refreshProfile() async {
+        let identity = accountIdentity
         profileReady = false
-        guard let profile = await run(Self.genericMessage, { try await self.service.profile() }) else { return }
+        productSharing?.closeGate(reason: .accountChanged)
+        guard let profile = await run(Self.genericMessage, { try await self.service.profile() }), identity == accountIdentity else { return }
         savedName = profile.displayName
         displayName = profile.displayName ?? ""
         shareLabels = profile.shareLabels
         profileReady = true
+        await refreshProductSharing()
     }
 
     private func clearSignedInState() {
+        productSharing?.updateAccountContext(nil)
+        accountIdentity = UUID()
+        productCapabilities = nil
         phase = .signedOut
         currentUserID = nil
         email = ""

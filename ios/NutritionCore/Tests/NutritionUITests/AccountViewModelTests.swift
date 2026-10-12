@@ -37,6 +37,8 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
     var deleteError: Error?
     /// When set, `restore()` waits at this gate before it answers.
     var restoreGate: CallGate?
+    var signOutGate: CallGate?
+    var deleteGate: CallGate?
     /// When set, `profile()` waits at this gate before it answers.
     var profileGate: CallGate?
     private(set) var appleCalls: [(idToken: String, nonce: String)] = []
@@ -74,6 +76,7 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
 
     func signOut() async {
         signOutCount += 1
+        await signOutGate?.pass()
     }
 
     func profile() async throws -> CommunityProfile {
@@ -92,6 +95,7 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
 
     func deleteAccount() async throws {
         deleteCount += 1
+        await deleteGate?.pass()
         if let deleteError { throw deleteError }
     }
 }
@@ -449,6 +453,45 @@ final class AccountViewModelTests: XCTestCase {
         await model.deleteAccount()
         XCTAssertEqual(model.phase, .signedOut)
         XCTAssertEqual(service.deleteCount, 1)
+    }
+
+    func testLifecyclePauseSurvivesPreferencesReopenWithNoOperationsAndRecoveryFailure() async throws {
+        let suite = "synthetic.lifecycle.\(UUID().uuidString)", owner = AccountTestSupport.session.userID
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        let service = FakeAccountService(session: AccountTestSupport.session)
+        let first = AccountViewModel(service: service, preferences: preferences)
+        await first.load(); service.deleteError = CommunityError.network; await first.deleteAccount()
+        XCTAssertEqual(preferences.productSharingPause(for: owner), .accountDeletion)
+        preferences.resetToDefaults()
+        let reopened = UserDefaultsDisplayPreferences(defaults: try XCTUnwrap(UserDefaults(suiteName: suite)))
+        let second = AccountViewModel(service: service, preferences: reopened)
+        await second.load()
+        XCTAssertTrue(second.productDeliveryPausedAfterDeletion)
+        service.profileError = CommunityError.network
+        await second.recoverSharingAfterFailedDeletion()
+        XCTAssertEqual(reopened.productSharingPause(for: owner), .accountDeletion)
+        service.profileError = nil
+        await second.recoverSharingAfterFailedDeletion()
+        XCTAssertNil(reopened.productSharingPause(for: owner))
+        reopened.setProductSharingPause(.erase, for: AccountTestSupport.otherSession.userID)
+        service.deleteError = nil; await second.deleteAccount()
+        XCTAssertEqual(reopened.productSharingPause(for: AccountTestSupport.otherSession.userID), .erase)
+        reopened.clearProductSharingPausesAfterErase()
+        XCTAssertNil(reopened.productSharingPause(for: AccountTestSupport.otherSession.userID))
+    }
+
+    func testFailedDeletionRequiresExplicitRecoveryEvenAfterAutomaticProfileRefresh() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        service.deleteError = CommunityError.network
+        await model.deleteAccount()
+        XCTAssertTrue(model.productDeliveryPausedAfterDeletion)
+        await model.retryProfile()
+        XCTAssertTrue(model.productDeliveryPausedAfterDeletion)
+        await model.recoverSharingAfterFailedDeletion()
+        XCTAssertFalse(model.productDeliveryPausedAfterDeletion)
     }
 
     func testFailedDeleteKeepsTheAccountSignedIn() async throws {

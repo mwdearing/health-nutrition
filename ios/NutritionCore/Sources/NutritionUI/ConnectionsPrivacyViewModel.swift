@@ -234,6 +234,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// One entry per store file this app keeps. `eraseAllData()` runs them all; the app injects the real
     /// stores, and a test injects recorders or a store that refuses.
     private let erasers: [JournalErasing]
+    private let beforeErase: @MainActor () -> Void
+    private let afterSuccessfulErase: @MainActor () -> Void
 
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
     private var importTask: Task<Void, Never>?
@@ -274,13 +276,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
         erasers: [JournalErasing] = [],
         remover: @escaping ConnectionsPrivacyExportRemover = ConnectionsPrivacyViewModel.removeExport,
-        preferences: DisplayPreferencesWriting = InMemoryDisplayPreferences()
+        preferences: DisplayPreferencesWriting = InMemoryDisplayPreferences(),
+        beforeErase: @escaping @MainActor () -> Void = {},
+        afterSuccessfulErase: @escaping @MainActor () -> Void = {}
     ) {
         self.store = store
         self.favorites = favorites
         self.appVersion = appVersion
         self.writer = writer
         self.erasers = erasers
+        self.beforeErase = beforeErase
+        self.afterSuccessfulErase = afterSuccessfulErase
         self.remover = remover
         self.preferences = preferences
         self.unitSystem = preferences.unitSystem
@@ -511,6 +517,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // than queueing matters here, because the person asked for everything gone, not for the erase to
         // happen first and then be undone.
         guard !isErasing else { return false }
+        beforeErase()
         isErasing = true
         // The import state from *before* the erase goes now, as the screen enters its erasing state: "Imported
         // 3 entries" describes a journal that is about to stop existing. It is cleared here rather than at
@@ -550,6 +557,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportState = .idle
         errorMessage = failed ? Self.eraseFailedMessage : nil
         eraseGeneration += 1
+        if !failed { afterSuccessfulErase() }
         return !failed
     }
 

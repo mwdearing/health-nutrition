@@ -26,7 +26,7 @@ public struct CustomProductSave: Sendable {
 }
 
 public enum ProductOperationKind: String, Codable, Sendable { case publish, withdraw }
-public enum ProductOperationStatus: String, Codable, Sendable { case pending, sending, paused, acknowledged, failed, cancelled, needsReview }
+public enum ProductOperationStatus: String, Codable, Sendable { case pending, sending, paused, acknowledged, failed, cancelled, needsReview, satisfied }
 public enum ProductAccountState: String, Codable, Sendable { case none, active, withdrawn, rejected }
 /// Closed codes only: server error text and personal information never enter the queue.
 public enum ProductDeliveryReason: String, Codable, Sendable { case network, authentication, consent, rateLimited, invalidInput, conflict, rejected, unavailable }
@@ -58,6 +58,8 @@ public struct ProductShareOperation: Codable, Sendable, Equatable {
     public internal(set) var acknowledgedRevision: String?
     public internal(set) var currentRevision: String?
     public internal(set) var currentState: ProductAccountState?
+    public internal(set) var publicationResolution: ProductPublicationResolutionDisposition?
+    public internal(set) var preparationAttempts: Int?
 
     public init(ownerID: UUID, localProductID: UUID, operationID: UUID, clientRevisionID: UUID,
                 kind: ProductOperationKind, content: CustomProductContent? = nil,
@@ -93,5 +95,33 @@ public struct ProductDeliveryUpdate: Sendable {
         self.envelope = envelope; self.serverProductID = serverProductID; self.expectedServerRevision = expectedServerRevision
         self.acknowledgedRevision = acknowledgedRevision; self.currentRevision = currentRevision
         self.currentState = currentState; self.reason = reason; self.nextAttemptAt = nextAttemptAt
+    }
+}
+
+/// Resolution facts are separate from the immutable, canceled publication request.
+public enum ProductPublicationResolutionDisposition: String, Codable, Sendable { case committed, canceledBeforeCommit }
+public enum ProductPublicationResolutionFacts: Sendable {
+    case committed(productID: String, acknowledgedRevision: String, currentRevision: String, currentState: ProductAccountState)
+    case canceledBeforeCommit
+}
+public enum ProductWithdrawalPreparationEvent: Sendable {
+    case beginAttempt
+    case retry(reason: ProductDeliveryReason, nextAttemptAt: Date)
+    case stop(reason: ProductDeliveryReason)
+    case resolvedPublication(ProductPublicationResolutionFacts)
+    case observedOwnContribution(productID: String, currentRevision: String?, currentState: ProductAccountState)
+}
+public struct ProductWithdrawalPreparationUpdate: Sendable {
+    public let operationID: UUID
+    public let ownerID: UUID
+    public let epoch: UUID
+    public let storeEpoch: UUID
+    public let sourceOperationID: UUID
+    public let sourceEpoch: UUID
+    public let event: ProductWithdrawalPreparationEvent
+    public init(operationID: UUID, ownerID: UUID, epoch: UUID, storeEpoch: UUID,
+                sourceOperationID: UUID, sourceEpoch: UUID, event: ProductWithdrawalPreparationEvent) {
+        self.operationID = operationID; self.ownerID = ownerID; self.epoch = epoch; self.storeEpoch = storeEpoch
+        self.sourceOperationID = sourceOperationID; self.sourceEpoch = sourceEpoch; self.event = event
     }
 }

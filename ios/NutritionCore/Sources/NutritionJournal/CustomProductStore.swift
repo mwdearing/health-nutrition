@@ -5,10 +5,13 @@ import SwiftData
 public protocol CustomProductStore: AnyObject, Sendable {
     @discardableResult func saveCustomProduct(_ command: CustomProductSave, now: Date) throws -> CustomProductRevision
     func enqueueProductOperation(_ operation: ProductShareOperation) throws
+    @discardableResult func enqueueProductWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation
+    @discardableResult func recordProductWithdrawalPreparation(_ update: ProductWithdrawalPreparationUpdate) throws -> ProductShareOperation
     func customProducts() throws -> [CustomProductRevision]
     func dueProductOperations(ownerID: UUID, now: Date) throws -> [ProductShareOperation]
     /// Includes canceled attempted envelopes for deliberate reconciliation; never an automatic retry list.
     func productOperations(ownerID: UUID) throws -> [ProductShareOperation]
+    func productAccountEpoch(ownerID: UUID) throws -> UUID?
     func recordProductDelivery(_ update: ProductDeliveryUpdate) throws
     func pauseProductOperations(ownerID: UUID) throws
     func resumeProductOperations(ownerID: UUID, fromEpoch: UUID, toEpoch: UUID) throws
@@ -142,7 +145,7 @@ extension SwiftDataJournalStore: CustomProductStore {
             if previous.attempts == 0 && previous.kind == .publish && [.pending, .paused].contains(previous.status) && input.kind == .publish {
                 previous.status = .cancelled
                 row.payload = try JSONEncoder().encode(previous)
-            } else if previous.status != .acknowledged && (previous.attempts > 0 || previous.status != .cancelled) {
+            } else if !Self.settled(previous) && (previous.attempts > 0 || previous.status != .cancelled) {
                 predecessor = previous
             }
         }
@@ -154,6 +157,191 @@ extension SwiftDataJournalStore: CustomProductStore {
             operation.serverProductID = nil; operation.expectedServerRevision = nil
         }
         context.insert(JournalSchemaV7.ProductOperationRecord(operation, sequence: (rows.last?.sequence ?? 0) + 1, payload: try JSONEncoder().encode(operation)))
+    }
+
+    private static func settled(_ operation: ProductShareOperation) -> Bool {
+        operation.status == .acknowledged || operation.status == .satisfied ||
+            (operation.status == .cancelled && operation.publicationResolution != nil)
+    }
+
+    /// Records explicit removal and cancels this product's publications in the same transaction.
+    @discardableResult public func enqueueProductWithdrawal(_ input: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation {
+        try commit { context in
+            guard input.kind == .withdraw, input.content == nil, input.attempts == 0, input.envelope == nil,
+                  input.status == .pending else { throw CustomProductStoreError.invalidOperation }
+            let products = try context.fetch(FetchDescriptor<JournalSchemaV7.CustomProductRecord>())
+            guard products.contains(where: { $0.localProductID == input.localProductID }) else { throw CustomProductStoreError.obsoleteOperation }
+            let revisions = try context.fetch(FetchDescriptor<JournalSchemaV7.CustomRevisionRecord>())
+            guard let revision = revisions.first(where: { $0.revisionID == input.clientRevisionID }),
+                  try JSONDecoder().decode(CustomProductRevision.self, from: revision.payload).localProductID == input.localProductID else { throw CustomProductStoreError.invalidOperation }
+            let mappings = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>())
+            guard let mapping = mappings.first(where: { $0.ownerID == input.ownerID && $0.localProductID == input.localProductID && $0.epoch == input.epoch && $0.storeEpoch == expectedStoreEpoch }) else { throw CustomProductStoreError.obsoleteOperation }
+            let rows = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()).sorted { $0.sequence < $1.sequence }
+            if let existing = rows.first(where: { $0.operationID == input.operationID }) {
+                let saved = try Self.operation(existing)
+                guard saved.ownerID == input.ownerID, saved.localProductID == input.localProductID,
+                      saved.clientRevisionID == input.clientRevisionID, saved.kind == .withdraw,
+                      saved.epoch == input.epoch, saved.storeEpoch == expectedStoreEpoch,
+                      saved.consentVersion == input.consentVersion, saved.consentGeneration == input.consentGeneration,
+                      input.serverProductID == nil || input.serverProductID == saved.serverProductID,
+                      input.expectedServerRevision == nil || input.expectedServerRevision == saved.expectedServerRevision else { throw CustomProductStoreError.invalidOperation }
+                return saved
+            }
+            var source: ProductShareOperation?
+            for row in rows where row.ownerID == input.ownerID {
+                var previous = try Self.operation(row)
+                guard previous.localProductID == input.localProductID, previous.storeEpoch == expectedStoreEpoch else { continue }
+                if previous.kind == .withdraw && !Self.settled(previous) { throw CustomProductStoreError.invalidOperation }
+                if previous.kind == .publish && previous.status != .acknowledged {
+                    previous.status = .cancelled
+                    row.payload = try JSONEncoder().encode(previous)
+                    if previous.attempts > 0 && previous.publicationResolution == nil { source = previous }
+                }
+            }
+            if let product = input.serverProductID {
+                guard let id = UUID(uuidString: product), id == mapping.serverProductID.flatMap(UUID.init(uuidString:)) else { throw CustomProductStoreError.invalidOperation }
+            }
+            if let revision = input.expectedServerRevision, !Self.revisionNumber(revision) { throw CustomProductStoreError.invalidOperation }
+            var withdrawal = input
+            withdrawal.storeEpoch = expectedStoreEpoch
+            withdrawal.predecessorOperationID = source?.operationID
+            if source == nil {
+                withdrawal.serverProductID = mapping.serverProductID
+                withdrawal.expectedServerRevision = mapping.currentRevision
+                withdrawal.currentRevision = mapping.currentRevision
+                withdrawal.currentState = ProductAccountState(rawValue: mapping.currentState)
+                if mapping.currentState == ProductAccountState.none.rawValue || mapping.currentState == ProductAccountState.withdrawn.rawValue {
+                    withdrawal.status = .satisfied
+                } else if let intended = input.expectedServerRevision, intended != mapping.currentRevision {
+                    withdrawal.status = .needsReview; withdrawal.reason = .conflict
+                }
+            } else { withdrawal.serverProductID = nil; withdrawal.expectedServerRevision = nil }
+            context.insert(JournalSchemaV7.ProductOperationRecord(withdrawal, sequence: (rows.last?.sequence ?? 0) + 1, payload: try JSONEncoder().encode(withdrawal)))
+            return withdrawal
+        }
+    }
+
+    /// Current intent/mapping grants mutation authority; its canceled source keeps its historical epoch.
+    @discardableResult public func recordProductWithdrawalPreparation(_ update: ProductWithdrawalPreparationUpdate) throws -> ProductShareOperation {
+        try commit { context in
+            let rows = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>())
+            guard let row = rows.first(where: { $0.operationID == update.operationID && $0.ownerID == update.ownerID }),
+                  let sourceRow = rows.first(where: { $0.operationID == update.sourceOperationID && $0.ownerID == update.ownerID }) else { throw CustomProductStoreError.obsoleteOperation }
+            var withdrawal = try Self.operation(row), source = try Self.operation(sourceRow)
+            let mappings = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>())
+            guard withdrawal.kind == .withdraw, withdrawal.epoch == update.epoch, withdrawal.storeEpoch == update.storeEpoch,
+                  let mapping = mappings.first(where: { $0.ownerID == update.ownerID && $0.localProductID == withdrawal.localProductID && $0.epoch == update.epoch && $0.storeEpoch == update.storeEpoch }),
+                  source.kind == .publish, source.status == .cancelled, source.attempts > 0,
+                  source.envelope?.isEmpty == false, source.localProductID == withdrawal.localProductID,
+                  source.storeEpoch == update.storeEpoch, source.epoch == update.sourceEpoch else { throw CustomProductStoreError.obsoleteOperation }
+            // An exact duplicate resolution is harmless even after preparation has advanced. It never writes.
+            if withdrawal.predecessorOperationID != source.operationID {
+                switch update.event {
+                case .resolvedPublication(.canceledBeforeCommit) where source.publicationResolution == .canceledBeforeCommit:
+                    return withdrawal
+                case .resolvedPublication(.committed(let product, let acknowledged, let current, let state))
+                    where source.publicationResolution == .committed && source.acknowledgedProductID == product && source.acknowledgedRevision == acknowledged && source.currentRevision == current && source.currentState == state:
+                    return withdrawal
+                default: throw CustomProductStoreError.obsoleteOperation
+                }
+            }
+            guard withdrawal.status == .pending, withdrawal.attempts == 0, withdrawal.envelope == nil else { throw CustomProductStoreError.obsoleteOperation }
+            switch update.event {
+            case .beginAttempt:
+                withdrawal.preparationAttempts = (withdrawal.preparationAttempts ?? 0) + 1
+                withdrawal.nextAttemptAt = nil
+            case .retry(let reason, let date):
+                guard [.network, .rateLimited, .unavailable].contains(reason) else { throw CustomProductStoreError.invalidOperation }
+                withdrawal.reason = reason; withdrawal.nextAttemptAt = date
+            case .stop(let reason):
+                withdrawal.status = [.conflict, .rejected, .consent].contains(reason) ? .needsReview : .failed
+                withdrawal.reason = reason; withdrawal.nextAttemptAt = nil
+            case .resolvedPublication(.committed(let product, let acknowledged, let current, let state)):
+                guard source.publicationResolution == nil || source.publicationResolution == .committed,
+                      Self.revisionNumber(acknowledged), Self.revisionNumber(current), !Self.revisionAhead(acknowledged, current), state != .none,
+                      source.serverProductID == nil || UUID(uuidString: source.serverProductID!) == UUID(uuidString: product),
+                      source.acknowledgedRevision == nil || source.acknowledgedRevision == acknowledged,
+                      source.acknowledgedProductID == nil || source.acknowledgedProductID == product else { throw CustomProductStoreError.invalidOperation }
+                try Self.applyWithdrawalFacts(product: product, current: current, state: state, intended: acknowledged, withdrawal: &withdrawal, mapping: mapping)
+                source.publicationResolution = .committed; source.acknowledgedProductID = product
+                source.acknowledgedRevision = acknowledged; source.currentRevision = current; source.currentState = state
+            case .resolvedPublication(.canceledBeforeCommit):
+                guard source.publicationResolution == nil || source.publicationResolution == .canceledBeforeCommit else { throw CustomProductStoreError.invalidOperation }
+                source.publicationResolution = .canceledBeforeCommit
+                if source.serverProductID == nil {
+                    // Walk the retained lineage: an unattempted edit is not proof that no older send happened.
+                    var predecessor = source.predecessorOperationID
+                    var visited = Set<UUID>()
+                    var unresolved: ProductShareOperation?
+                    while let id = predecessor {
+                        guard visited.insert(id).inserted, let ancestorRow = rows.first(where: { $0.operationID == id }) else { throw CustomProductStoreError.invalidOperation }
+                        let ancestor = try Self.operation(ancestorRow)
+                        guard ancestor.ownerID == source.ownerID, ancestor.localProductID == source.localProductID, ancestor.storeEpoch == source.storeEpoch else { throw CustomProductStoreError.invalidOperation }
+                        if ancestor.kind == .publish && ancestor.attempts > 0 && ancestor.publicationResolution == nil && ancestor.status != .acknowledged { unresolved = ancestor; break }
+                        predecessor = ancestor.predecessorOperationID
+                    }
+                    if let unresolved { withdrawal.predecessorOperationID = unresolved.operationID }
+                    else if mapping.currentState == ProductAccountState.none.rawValue {
+                        withdrawal.status = .satisfied; withdrawal.currentState = ProductAccountState.none
+                        withdrawal.predecessorOperationID = nil; withdrawal.nextAttemptAt = nil; withdrawal.reason = nil
+                    } else { withdrawal.status = .needsReview; withdrawal.reason = .conflict }
+                }
+            case .observedOwnContribution(let product, let current, let state):
+                guard source.publicationResolution == .canceledBeforeCommit, source.serverProductID != nil,
+                      UUID(uuidString: source.serverProductID!) == UUID(uuidString: product) else { throw CustomProductStoreError.invalidOperation }
+                try Self.applyWithdrawalFacts(product: product, current: current, state: state, intended: source.expectedServerRevision, withdrawal: &withdrawal, mapping: mapping)
+            }
+            sourceRow.payload = try JSONEncoder().encode(source)
+            row.payload = try JSONEncoder().encode(withdrawal)
+            if withdrawal.status == .satisfied {
+                for successorRow in rows {
+                    var successor = try Self.operation(successorRow)
+                    guard successor.ownerID == withdrawal.ownerID, successor.localProductID == withdrawal.localProductID,
+                          successor.predecessorOperationID == withdrawal.operationID, successor.attempts == 0,
+                          successor.envelope == nil, [.pending, .paused].contains(successor.status) else { continue }
+                    successor.predecessorOperationID = nil; successor.serverProductID = mapping.serverProductID
+                    successor.expectedServerRevision = mapping.currentRevision
+                    successorRow.payload = try JSONEncoder().encode(successor)
+                }
+            }
+            return withdrawal
+        }
+    }
+
+    private static func revisionNumber(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.allSatisfy { (48...57).contains($0) } && value.first != "0"
+    }
+    private static func revisionAhead(_ first: String, _ second: String) -> Bool {
+        first.utf8.count != second.utf8.count ? first.utf8.count > second.utf8.count : first > second
+    }
+    private static func applyWithdrawalFacts(product: String, current: String?, state: ProductAccountState,
+                                            intended: String?, withdrawal: inout ProductShareOperation,
+                                            mapping: JournalSchemaV7.ProductAccountRecord) throws {
+        guard UUID(uuidString: product) != nil, (state == .none) == (current == nil),
+              current == nil || revisionNumber(current!),
+              mapping.serverProductID == nil || UUID(uuidString: mapping.serverProductID!) == UUID(uuidString: product) else { throw CustomProductStoreError.invalidOperation }
+        if let known = mapping.currentRevision, let current, revisionAhead(known, current) {
+            withdrawal.currentRevision = known; withdrawal.currentState = ProductAccountState(rawValue: mapping.currentState)
+            withdrawal.status = .needsReview; withdrawal.reason = .conflict
+            return
+        }
+        mapping.serverProductID = product; mapping.currentRevision = current; mapping.currentState = state.rawValue
+        withdrawal.serverProductID = product; withdrawal.currentRevision = current; withdrawal.currentState = state
+        withdrawal.nextAttemptAt = nil; withdrawal.reason = nil
+        if state == .none || state == .withdrawn {
+            withdrawal.status = .satisfied; withdrawal.predecessorOperationID = nil
+        } else if current == intended {
+            // Rejected is still an own contribution: explicit removal at the intended revision is allowed.
+            withdrawal.expectedServerRevision = current; withdrawal.predecessorOperationID = nil
+        } else { withdrawal.status = .needsReview; withdrawal.reason = .conflict }
+    }
+
+    public func productAccountEpoch(ownerID: UUID) throws -> UUID? {
+        let context = ModelContext(try openContainer())
+        let mappings = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>()).filter { $0.ownerID == ownerID }
+        guard let epoch = mappings.first?.epoch else { return nil }
+        guard mappings.allSatisfy({ $0.epoch == epoch }) else { throw CustomProductStoreError.obsoleteOperation }
+        return epoch
     }
 
     public func productOperations(ownerID: UUID) throws -> [ProductShareOperation] {
@@ -173,7 +361,7 @@ extension SwiftDataJournalStore: CustomProductStore {
             let rows = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>())
             guard let row = rows.first(where: { $0.operationID == update.operationID && $0.ownerID == update.ownerID }) else { throw CustomProductStoreError.obsoleteOperation }
             var operation = try Self.operation(row)
-            guard operation.epoch == update.epoch, operation.storeEpoch == update.storeEpoch, ![.cancelled, .acknowledged].contains(operation.status) else { throw CustomProductStoreError.obsoleteOperation }
+            guard operation.epoch == update.epoch, operation.storeEpoch == update.storeEpoch, ![.cancelled, .acknowledged, .satisfied, .failed, .needsReview].contains(operation.status) else { throw CustomProductStoreError.obsoleteOperation }
             let mappings = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>())
             guard let mapping = mappings.first(where: { $0.ownerID == update.ownerID && $0.localProductID == operation.localProductID && $0.epoch == update.epoch && $0.storeEpoch == update.storeEpoch }) else { throw CustomProductStoreError.obsoleteOperation }
             if update.status == .sending {
@@ -185,8 +373,15 @@ extension SwiftDataJournalStore: CustomProductStore {
                 if operation.kind == .withdraw && (operation.serverProductID == nil || operation.expectedServerRevision == nil) { throw CustomProductStoreError.invalidOperation }
                 operation.envelope = envelope; operation.attempts += 1
                 if let content = operation.content { mapping.hasBarcodeBinding = true; mapping.barcode = content.barcode }
+            } else if operation.attempts == 0 {
+                guard operation.status == .pending, operation.envelope == nil,
+                      [.failed, .needsReview].contains(update.status),
+                      let reason = update.reason, [.invalidInput, .consent, .conflict, .rejected].contains(reason),
+                      update.envelope == nil, update.serverProductID == nil, update.expectedServerRevision == nil,
+                      update.acknowledgedRevision == nil, update.currentRevision == nil, update.currentState == nil,
+                      update.nextAttemptAt == nil else { throw CustomProductStoreError.invalidOperation }
             } else {
-                guard update.envelope == nil, operation.attempts > 0,
+                guard update.envelope == nil,
                       operation.status == .sending || operation.status == .pending else { throw CustomProductStoreError.obsoleteOperation }
             }
             if update.status == .acknowledged {
@@ -200,7 +395,8 @@ extension SwiftDataJournalStore: CustomProductStore {
                 // Current state may be ahead after a replay. Never automatically rebase an offline edit.
                 for successorRow in rows {
                     var successor = try Self.operation(successorRow)
-                    guard successor.ownerID == operation.ownerID, successor.predecessorOperationID == operation.operationID else { continue }
+                    guard successor.ownerID == operation.ownerID, successor.predecessorOperationID == operation.operationID,
+                          successor.attempts == 0, successor.envelope == nil, [.pending, .paused].contains(successor.status) else { continue }
                     if current != acknowledged || state == .rejected { successor.status = .needsReview; successor.reason = .conflict }
                     else {
                         successor.predecessorOperationID = nil; successor.serverProductID = productID; successor.expectedServerRevision = current

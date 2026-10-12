@@ -10,10 +10,11 @@ public struct SharingDisclosureSheet: View {
         self.model = model
     }
 
-    static let disclosure = "Scanned labels help everyone. When you scan a nutrition label, the label's values "
-        + "(product name, brand, barcode and nutrient amounts) are shared with the community catalog. "
-        + "Photos, what you eat and when are never shared. A label is shown to others once at least two people "
-        + "agree on it, and gets a verified badge once more people agree. You can turn this off at any time in Settings."
+    static let disclosure = "Product facts you choose to share include the name, brand, barcode, serving definition and nutrient or ingredient amounts. "
+        + "A contribution can be visible immediately as Shared, not yet verified. Agreement from distinct accounts and review determine verification. "
+        + "Photos, consumed amounts, intake times, meals, journal entries, notes and goals are never shared. "
+        + "Turning sharing off stops future publications; it does not remove earlier contributions. Use Remove my contribution for each product you want to withdraw. "
+        + "Continuing acknowledges version 2 of this disclosure and does not change your sharing switch."
 
     public var body: some View {
         NavigationStack {
@@ -32,9 +33,10 @@ public struct SharingDisclosureSheet: View {
                 }
                 Section {
                     Button("Continue") {
-                        model.acknowledgeDisclosure()
-                        // A tap that the model ignored (a call was running) must not close the sheet as consent.
-                        if !model.needsDisclosure { self.dismiss() }
+                        Task {
+                            await model.acknowledgeProductDisclosure()
+                            if !model.needsDisclosure { self.dismiss() }
+                        }
                     }
                     .disabled(model.isBusy)
                 }

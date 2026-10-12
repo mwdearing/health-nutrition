@@ -228,13 +228,20 @@ struct RootView: View {
         .task { await self.services.reminders.syncOnLaunch() }
         // Restore a stored sign-in at launch, not when Settings first opens, so the catalog lookup and the
         // upload gate work from the first screen.
-        .task { await self.services.account?.load() }
+        .task {
+            await self.services.account?.load()
+            await self.services.productSharing?.runDueOperations(now: Date())
+        }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 reload()
                 Task { await self.services.reminders.syncOnLaunch() }
+                Task {
+                    await self.services.account?.refreshProductSharing()
+                    await self.services.productSharing?.runDueOperations(now: Date())
+                }
             }
         }
         // An erase in Settings empties the stores these tabs read, so their
