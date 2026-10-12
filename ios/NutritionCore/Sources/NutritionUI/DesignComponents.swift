@@ -104,6 +104,11 @@ public struct LabeledField<Content: View>: View {
     }
 }
 
+/// Shared visible and accessible wording for starting an intake.
+public enum AddIntakeAction {
+    public static let title = "Add food, drink, or supplement"
+}
+
 /// The one filled action on a screen: mint with the dark ink on it.
 public struct PrimaryCapsule: View {
     private let title: String

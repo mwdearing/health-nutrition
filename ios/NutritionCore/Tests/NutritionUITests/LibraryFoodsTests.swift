@@ -58,7 +58,7 @@ final class LibraryFoodsTests: XCTestCase {
     }
 
     private func foodTitles(_ library: LibraryViewModel) -> [String] {
-        library.sections.first { $0.title == "Foods" }?.items.map(\.title) ?? []
+        library.sections.first { $0.title == "Products" }?.items.map(\.title) ?? []
     }
 
     // MARK: Which entries are foods
@@ -72,7 +72,7 @@ final class LibraryFoodsTests: XCTestCase {
 
         let library = makeLibrary(store: store, favorites: try makeFavorites())
         library.load()
-        library.segment = .foods
+        library.segment = .products
         XCTAssertEqual(library.visibleItems.map(\.title), ["Example bar"])
     }
 
@@ -153,7 +153,7 @@ final class LibraryFoodsTests: XCTestCase {
 
         let library = makeLibrary(store: store, favorites: try makeFavorites())
         library.load()
-        let items = try XCTUnwrap(library.sections.first { $0.title == "Foods" }?.items)
+        let items = try XCTUnwrap(library.sections.first { $0.title == "Products" }?.items)
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items.first?.template.productSnapshotID, "s-new")
     }
@@ -168,7 +168,7 @@ final class LibraryFoodsTests: XCTestCase {
 
         let library = makeLibrary(store: store, favorites: try makeFavorites())
         library.load()
-        library.segment = .foods
+        library.segment = .products
         let row = try XCTUnwrap(library.visibleItems.first)
         let before = try store.activeIntakes().count
 
@@ -185,16 +185,16 @@ final class LibraryFoodsTests: XCTestCase {
             product: product("s-bar", name: "Example bar", origin: barcodeOrigin))
         let library = makeLibrary(store: store, favorites: try makeFavorites())
         library.load()
-        library.segment = .foods
+        library.segment = .products
         let row = try XCTUnwrap(library.visibleItems.first)
         XCTAssertFalse(row.isFavorite)
 
         library.addFavorite(row)
-        library.segment = .foods
+        library.segment = .products
         XCTAssertTrue(try XCTUnwrap(library.visibleItems.first).isFavorite)
 
         library.removeFavorite(try XCTUnwrap(library.visibleItems.first))
-        library.segment = .foods
+        library.segment = .products
         XCTAssertFalse(try XCTUnwrap(library.visibleItems.first).isFavorite)
     }
 
@@ -203,12 +203,12 @@ final class LibraryFoodsTests: XCTestCase {
     func testFoodsEmptyStateWordingAndNoRows() throws {
         let library = makeLibrary(store: try makeStore(), favorites: try makeFavorites())
         library.load()
-        library.segment = .foods
+        library.segment = .products
         XCTAssertTrue(library.visibleItems.isEmpty)
 
-        let foods = library.emptyText(for: .foods)
-        XCTAssertEqual(foods.title, "No foods yet")
-        XCTAssertEqual(foods.message, "Foods you scan or look up are kept here so you can log them again.")
+        let foods = library.emptyText(for: .products)
+        XCTAssertEqual(foods.title, "No products yet")
+        XCTAssertEqual(foods.message, "Foods, drinks and supplements you save, scan or look up appear here.")
         XCTAssertEqual(foods.systemImage, "barcode.viewfinder")
     }
 
@@ -226,7 +226,7 @@ final class LibraryFoodsTests: XCTestCase {
 
         let library = makeLibrary(store: store, favorites: favorites)
         library.load()
-        XCTAssertEqual(library.sections.map(\.title), ["Favorites", "Foods", "Recents"])
+        XCTAssertEqual(library.sections.map(\.title), ["Favorites", "Products", "Recents"])
         library.segment = .favorites
         XCTAssertEqual(library.visibleItems.map(\.title), ["Example tea"])
         library.segment = .recent

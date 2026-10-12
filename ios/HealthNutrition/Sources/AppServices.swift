@@ -53,6 +53,7 @@ final class AppServices {
     /// The community catalog client, shared by the account, the barcode lookup and label uploads. Nil in the
     /// same builds as `account`, and then no catalog call is made.
     let community: CommunityClient?
+    let productService: (any CommunityProductServicing)?
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
 
@@ -68,6 +69,7 @@ final class AppServices {
         self.displayPreferences = displayPreferences
         let community = Self.makeCommunity()
         let products: (any CommunityProductServicing)? = productService ?? community
+        self.productService = products
         let productSharing = products.map { ProductShareCoordinator(store: journalStore, service: $0) }
         self.productSharing = productSharing
         let account = community.map { AccountViewModel(service: $0, preferences: displayPreferences,
@@ -88,7 +90,8 @@ final class AppServices {
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         journal = JournalViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
-        library = LibraryViewModel(store: journalStore, favorites: favoritesStore)
+        library = LibraryViewModel(store: journalStore, favorites: favoritesStore, productStore: journalStore,
+            productSharing: CustomProductSharingModel(store: journalStore, coordinator: productSharing, service: products))
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)

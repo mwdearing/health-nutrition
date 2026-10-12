@@ -36,6 +36,7 @@ public struct AddIntakeView: View {
                         .font(.body)
                         .focused(focus)
                     }
+                    .disabled(model.isCustomProduct)
                     // A typed food has nowhere to keep a brand, so the field shows only for a looked-up or captured
                     // product, whose brand is kept with it.
                     if !model.brand.isEmpty {
@@ -46,6 +47,7 @@ public struct AddIntakeView: View {
                             .labelsHidden()
                             .font(.body)
                             .focused(focus)
+                            .disabled(model.isCustomProduct)
                         }
                     }
                     Picker("Kind", selection: $model.kind) {
@@ -53,10 +55,11 @@ public struct AddIntakeView: View {
                             Text(kind.displayName).tag(kind)
                         }
                     }
+                    .disabled(model.isCustomProduct)
                     .pickerStyle(.segmented)
                     .accessibilityLabel("Kind of product")
                     .accessibilityHint("Food, drink or supplement. A supplement is left out of the day's food coverage")
-                    if model.canLookUpBarcode {
+                    if model.canLookUpBarcode && !model.isCustomProduct {
                         LabeledField("Barcode (optional)") { focus in
                             HStack {
                                 TextField(text: $model.barcode, prompt: Text("8, 12 or 13 digits")) {
@@ -84,7 +87,7 @@ public struct AddIntakeView: View {
                             InlineNotice(message, tone: .waiting)
                         }
                     }
-                    if let onScanLabel {
+                    if let onScanLabel, !model.isCustomProduct {
                         Button {
                             onScanLabel()
                         } label: {

@@ -1,4 +1,5 @@
 import SwiftUI
+import NutritionDomain
 
 /// Browsing in Add never writes an entry. A pick opens the existing details form.
 public struct AddLibraryPicker: View {
@@ -6,10 +7,14 @@ public struct AddLibraryPicker: View {
     @ObservedObject private var recipes: RecipeListViewModel
     private let onPick: (RepeatTemplate) -> Void
     private let onRecipe: (RecipeListItem) -> Void
+    private let onProduct: ((CustomProductRevision) -> Void)?
+    private let onSearchProducts: (() -> Void)?
     @State private var segment = "Recent"
 
     public init(library: LibraryViewModel, recipes: RecipeListViewModel,
-        onPick: @escaping (RepeatTemplate) -> Void, onRecipe: @escaping (RecipeListItem) -> Void) {
+        onPick: @escaping (RepeatTemplate) -> Void, onRecipe: @escaping (RecipeListItem) -> Void,
+        onProduct: ((CustomProductRevision) -> Void)? = nil, onSearchProducts: (() -> Void)? = nil) {
+        self.onProduct = onProduct; self.onSearchProducts = onSearchProducts
         self.library = library
         self.recipes = recipes
         self.onPick = onPick
@@ -21,10 +26,12 @@ public struct AddLibraryPicker: View {
             Picker("Library", selection: $segment) {
                 Text("Favorites").tag("Favorites")
                 Text("Recent").tag("Recent")
+                Text("Products").tag("Products")
                 Text("Recipes").tag("Recipes")
             }
             .pickerStyle(.segmented)
             .padding(DesignSpacing.m)
+            if let onSearchProducts { Button("Find shared products", action: onSearchProducts) }
             if segment == "Recipes" {
                 List {
                     if recipes.items.isEmpty {
@@ -46,7 +53,7 @@ public struct AddLibraryPicker: View {
                 .scrollContentBackground(.hidden)
             } else {
                 LibraryView(model: library, onAdded: {}, onPick: onPick,
-                    sectionTitle: segment == "Favorites" ? "Favorites" : "Recents")
+                    sectionTitle: segment == "Favorites" ? "Favorites" : segment == "Products" ? "Products" : "Recents", onProduct: onProduct)
             }
         }
         .background(TokenColors.background)

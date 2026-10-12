@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import NutritionProviders
 import NutritionJournal
 
 /// A recent item, derived from the journal and not stored.
@@ -43,7 +44,7 @@ public struct RecentItemsProvider {
     /// Distinct products the person has logged from a lookup, a label scan or another source that stored a
     /// product snapshot. Typed-in entries (origin `manual`), recipes and water are left out.
     ///
-    /// Read from every active entry rather than from `recents(limit:)`, so the Foods segment is not capped at
+    /// Read from every active entry rather than from `recents(limit:)`, so the Products segment is not capped at
     /// the Recents rows. One row per product (its lineage `productID`), built from the newest entry of that
     /// product, so the row repeats the snapshot that entry used. Sorted by the name the row shows, ignoring case.
     public func foods() throws -> [RecentItem] {
@@ -178,7 +179,7 @@ public struct LibrarySection: Equatable, Identifiable {
 
 /// The segments of the Library screen. Recipes is a placeholder for now.
 public enum LibrarySegment: String, CaseIterable, Identifiable {
-    case favorites, recent, foods, recipes
+    case favorites, recent, products, recipes
 
     public var id: String { rawValue }
 
@@ -186,7 +187,7 @@ public enum LibrarySegment: String, CaseIterable, Identifiable {
         switch self {
         case .favorites: return "Favorites"
         case .recent: return "Recent"
-        case .foods: return "Foods"
+        case .products: return "Products"
         case .recipes: return "Recipes"
         }
     }
@@ -207,9 +208,14 @@ public struct LibraryUndoToken: Equatable {
 
 @MainActor
 public final class LibraryViewModel: ObservableObject {
-    /// Favorites first, then Foods, then Recents.
+    /// Favorites first, then Products, then Recents.
     @Published public private(set) var sections: [LibrarySection] = []
     @Published public private(set) var errorMessage: String?
+    @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
+    @Published public var searchText = ""
+    @Published public private(set) var deliveryRefresh = UUID()
+    public let productSharing: CustomProductSharingModel?
+    private let productStore: (any CustomProductStore)?
     @Published public var segment: LibrarySegment = .favorites
     @Published public private(set) var undoToken: LibraryUndoToken?
 
@@ -220,12 +226,16 @@ public final class LibraryViewModel: ObservableObject {
     public init(
         store: JournalStore,
         favorites: FavoritesStore,
+        productStore: (any CustomProductStore)? = nil,
+        productSharing: CustomProductSharingModel? = nil,
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
     ) {
         self.store = store
         self.favorites = favorites
+        self.productStore = productStore
+        self.productSharing = productSharing
         self.repeater = IntakeRepeater(
             store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
             makeID: makeID)
@@ -241,6 +251,7 @@ public final class LibraryViewModel: ObservableObject {
 
     public func load() {
         do {
+            standaloneProducts = try productStore?.customProducts() ?? []
             let stored = try favorites.list()
             let favoriteKeys = Set(stored.map(Self.key(of:)))
             let recents = try RecentItemsProvider(store: store).recents()
@@ -278,7 +289,14 @@ public final class LibraryViewModel: ObservableObject {
                     isFavorite: favoriteKeys.contains(recent.id), template: recent.template,
                     kind: kind(of: recent.template))
             }
-            let foodItems = foods.map { food -> LibraryItem in
+            let standaloneIDs = Set(standaloneProducts.map(\.localProductID))
+            let legacyFoods = foods.filter { food in
+                guard let snapshotID = food.template.productSnapshotID,
+                      let product = try? store.product(snapshotID: snapshotID),
+                      let id = UUID(uuidString: product.productID) else { return true }
+                return !standaloneIDs.contains(id)
+            }
+            let foodItems = legacyFoods.map { food -> LibraryItem in
                 LibraryItem(
                     id: "food:\(food.id)", title: food.template.displayName,
                     detail: Self.detail(food.template),
@@ -287,7 +305,7 @@ public final class LibraryViewModel: ObservableObject {
             }
             sections = [
                 LibrarySection(title: "Favorites", items: favoriteItems),
-                LibrarySection(title: "Foods", items: foodItems),
+                LibrarySection(title: "Products", items: foodItems),
                 LibrarySection(title: "Recents", items: recentItems),
             ]
             errorMessage = nil
@@ -317,11 +335,33 @@ public final class LibraryViewModel: ObservableObject {
     }
 
     /// The items the current segment lists. Recipes lists nothing yet.
+    public var filteredProducts: [CustomProductRevision] {
+        standaloneProducts.filter { searchText.isEmpty || $0.content.name.localizedCaseInsensitiveContains(searchText) }
+    }
+    public func observeProductStatus() async {
+        while !Task.isCancelled {
+            if productSharing?.refreshFromStore() == true { deliveryRefresh = UUID() }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+        }
+    }
+    public func standaloneProduct(for item: LibraryItem) throws -> CustomProductRevision? {
+        guard let snapshotID = item.template.productSnapshotID,
+              let snapshot = try store.product(snapshotID: snapshotID),
+              let localID = UUID(uuidString: snapshot.productID) else { return nil }
+        return try productStore?.customProducts().first { $0.localProductID == localID }
+    }
+    public func legacyDraft(_ item: LibraryItem) throws -> LegacyCustomProductDraft {
+        guard let id = item.template.productSnapshotID, let product = try store.product(snapshotID: id) else { throw IntakeRepeatError.productUnavailable }
+        return try CustomProductMapping.legacyDraft(from: product)
+    }
     public var visibleItems: [LibraryItem] {
+        segmentItems.filter { searchText.isEmpty || $0.title.localizedCaseInsensitiveContains(searchText) }
+    }
+    private var segmentItems: [LibraryItem] {
         switch segment {
         case .favorites: return sections.first { $0.title == "Favorites" }?.items ?? []
         case .recent: return sections.first { $0.title == "Recents" }?.items ?? []
-        case .foods: return sections.first { $0.title == "Foods" }?.items ?? []
+        case .products: return sections.first { $0.title == "Products" }?.items ?? []
         case .recipes: return []
         }
     }
@@ -334,9 +374,9 @@ public final class LibraryViewModel: ObservableObject {
         case .recent:
             return LibraryEmptyText(
                 title: "Nothing logged yet", message: "Things you log will show up here.", systemImage: "clock")
-        case .foods:
+        case .products:
             return LibraryEmptyText(
-                title: "No foods yet", message: "Foods you scan or look up are kept here so you can log them again.",
+                title: "No products yet", message: "Foods, drinks and supplements you save, scan or look up appear here.",
                 systemImage: "barcode.viewfinder")
         case .recipes:
             return LibraryEmptyText(

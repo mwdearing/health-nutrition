@@ -60,6 +60,10 @@ public struct ProductShareOperation: Codable, Sendable, Equatable {
     public internal(set) var currentState: ProductAccountState?
     public internal(set) var publicationResolution: ProductPublicationResolutionDisposition?
     public internal(set) var preparationAttempts: Int?
+    /// Explicit review settlement is independent of historical delivery and resolver outcomes.
+    public internal(set) var reviewSettlementID: UUID?
+    public internal(set) var reviewedCurrentState: ProductAccountState?
+    public internal(set) var reviewedCurrentRevision: String?
 
     public init(ownerID: UUID, localProductID: UUID, operationID: UUID, clientRevisionID: UUID,
                 kind: ProductOperationKind, content: CustomProductContent? = nil,
@@ -123,5 +127,26 @@ public struct ProductWithdrawalPreparationUpdate: Sendable {
                 sourceOperationID: UUID, sourceEpoch: UUID, event: ProductWithdrawalPreparationEvent) {
         self.operationID = operationID; self.ownerID = ownerID; self.epoch = epoch; self.storeEpoch = storeEpoch
         self.sourceOperationID = sourceOperationID; self.sourceEpoch = sourceEpoch; self.event = event
+    }
+}
+
+/// A single explicit review of authenticated own-state. This is not a transport receipt.
+public struct ProductContributionReview: Sendable, Equatable {
+    public let id: UUID
+    public let ownerID: UUID
+    public let localProductID: UUID
+    public let epoch: UUID
+    public let storeEpoch: UUID
+    public let blockingOperation: ProductShareOperation
+    public let expectedOperationIDs: [UUID]
+    public let localRevisionID: UUID
+    public let serverProductID: String
+    public let currentRevision: String?
+    public let currentState: ProductAccountState
+    public init(id: UUID = UUID(), ownerID: UUID, localProductID: UUID, epoch: UUID, storeEpoch: UUID, blockingOperation: ProductShareOperation, localRevisionID: UUID, serverProductID: String, currentRevision: String?, currentState: ProductAccountState, expectedOperationIDs: [UUID]? = nil) {
+        self.id = id; self.ownerID = ownerID; self.localProductID = localProductID; self.epoch = epoch
+        self.storeEpoch = storeEpoch; self.blockingOperation = blockingOperation; self.localRevisionID = localRevisionID
+        self.expectedOperationIDs = expectedOperationIDs ?? [blockingOperation.operationID]
+        self.serverProductID = serverProductID; self.currentRevision = currentRevision; self.currentState = currentState
     }
 }

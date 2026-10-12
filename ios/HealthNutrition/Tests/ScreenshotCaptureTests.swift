@@ -76,12 +76,12 @@ final class ScreenshotCaptureTests: XCTestCase {
     }
 
     /// An app on throwaway files with a day of invented entries and two goals.
-    private func makeSeededServices() throws -> AppServices {
+    private func makeSeededServices(productService: (any CommunityProductServicing)? = nil) throws -> AppServices {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HealthNutritionScreenshots", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let services = try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler())
+        let services = try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler(), productService: productService)
         let start = Calendar.current.startOfDay(for: Date())
         let zone = TimeZone.current.identifier
         let entries: [(String, String, String?, [IntakeComponent])] = [
@@ -127,14 +127,14 @@ final class ScreenshotCaptureTests: XCTestCase {
     }
 
     /// Hosts `content` in a visible window at iPhone size and writes one PNG per appearance.
-    private func capture<Content: View>(_ name: String, @ViewBuilder _ content: () -> Content) throws {
+    private func capture<Content: View>(_ name: String, width: CGFloat = 393, dynamicType: DynamicTypeSize = .large, @ViewBuilder _ content: () -> Content) throws {
         let directory = try outputDirectory()
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         for (suffix, style) in [("light", UIUserInterfaceStyle.light), ("dark", UIUserInterfaceStyle.dark)] {
             let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
-            window.frame = CGRect(origin: .zero, size: size)
+            window.frame = CGRect(origin: .zero, size: CGSize(width: width, height: size.height))
             window.overrideUserInterfaceStyle = style
-            window.rootViewController = UIHostingController(rootView: content())
+            window.rootViewController = UIHostingController(rootView: content().environment(\.dynamicTypeSize, dynamicType))
             window.makeKeyAndVisible()
             // Lets onAppear loads run and the List lay out before the picture is taken.
             RunLoop.main.run(until: Date().addingTimeInterval(1.5))
@@ -151,7 +151,7 @@ final class ScreenshotCaptureTests: XCTestCase {
     func testRootView() throws {
         _ = try outputDirectory()
         let services = try makeSeededServices()
-        try capture("RootView") { RootView(services: services) }
+        try captureProductSizes("RootView") { RootView(services: services) }
     }
 
     func testTodayView() throws {
@@ -172,10 +172,11 @@ final class ScreenshotCaptureTests: XCTestCase {
     }
 
     func testLibraryView() throws {
-        let services = try makeSeededServices()
-        try capture("LibraryView") {
+        let services = try makeProductServices()
+        services.library.segment = .products
+        try captureProductSizes("LibraryView") {
             NavigationStack {
-                LibraryView(model: services.library, onAdded: {}, onOpenRecipes: {})
+                LibraryView(model: services.library, onAdded: {}, onOpenRecipes: {}, onProduct: { _ in }, onEditProduct: { _ in }, onLegacyProduct: { _ in }, onSearchProducts: {}, onNewProduct: {})
                     .navigationTitle("Library")
             }
         }
@@ -421,5 +422,86 @@ final class ScreenshotCaptureTests: XCTestCase {
             service: ScreenshotAccountService(session: sampleSession), preferences: InMemoryDisplayPreferences())
         await model.load()
         try capture("SharingDisclosureSheet") { SharingDisclosureSheet(model: model) }
+    }
+}
+
+private struct ScreenshotProductService: CommunityProductServicing {
+    let productID = UUID(uuidString: "00000000-0000-4000-8000-000000000070")!
+    func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage {
+        let product = CommunityProduct(productID: productID, representativeRevision: "1", product: .custom(.init(name: "Synthetic mineral capsules", kind: .supplement, basis: .perServing, serving: .init(quantity: "2", unit: .capsule), facts: [.init(key: "iron", displayName: "Iron", state: .known, amount: "3", unit: .mg)])), source: .init(productID: productID, representativeRevision: "1", attribution: "Community"), verification: .init(status: .sharedUnverified), support: .init(distinctAccounts: "2", verificationThreshold: "3"), missingFacts: false, alternatives: [])
+        return .init(products: [product], nextCursor: nil)
+    }
+    func capabilities() async throws -> ProductCatalogCapabilities { .init(supportedVersion: 2, enabled: true, limits: .init(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2, callerAcknowledgment: .init(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true) }
+    func product(id: UUID) async throws -> CommunityProduct { try await searchProducts(query: "", kind: nil, cursor: nil).products[0] }
+    func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState { .init(productID: productID, currentState: .none) }
+    func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
+    func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
+    func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution { throw ProductAPIError.unavailable }
+    func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState { throw ProductAPIError.unavailable }
+}
+
+@MainActor extension ScreenshotCaptureTests {
+    private func captureProductSizes<Content: View>(_ name: String, @ViewBuilder _ content: () -> Content) throws {
+        try capture(name, content)
+        try capture(name + "-accessibility", dynamicType: .accessibility3, content)
+        try capture(name + "-320", width: 320, content)
+        try capture(name + "-320-accessibility", width: 320, dynamicType: .accessibility3, content)
+    }
+    private func makeProductServices() throws -> AppServices {
+        let services = try makeSeededServices(productService: ScreenshotProductService())
+        let owner = UUID(), epoch = UUID()
+        services.productSharing?.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        for (index, name) in ["Synthetic oat drink", "Synthetic mineral capsules", "Synthetic cereal"].enumerated() {
+            let revision = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: .init(name: name, kind: index == 1 ? .supplement : index == 0 ? .drink : .food, basis: .perServing))
+            let operation = ProductShareOperation(ownerID: owner, localProductID: revision.localProductID, operationID: UUID(), clientRevisionID: revision.revisionID, kind: .publish, content: revision.content, consentGeneration: "1", epoch: epoch)
+            try services.journalStore.saveCustomProduct(.init(revision: revision, publication: index == 0 ? nil : operation), now: Date())
+            if index == 2 {
+                let stored = try XCTUnwrap(try services.journalStore.productOperations(ownerID: owner).last)
+                try services.journalStore.recordProductDelivery(.init(operationID: stored.operationID, ownerID: owner, epoch: epoch, storeEpoch: try XCTUnwrap(stored.storeEpoch), status: .needsReview, reason: .conflict))
+            }
+        }
+        services.library.load()
+        return services
+    }
+    func testCustomProductEditorView() throws {
+        let services = try makeProductServices()
+        let model = CustomProductEditorViewModel(store: services.journalStore)
+        model.name = "Synthetic mineral capsules"; model.kind = .supplement
+        model.servingQuantity = "2"; model.servingUnit = .capsule
+        model.facts = [.init(key: "iron", displayName: "Iron", state: .known, amount: "3", unit: .mg), .init(key: "ingredient:activity", displayName: "Activity", state: .known, amount: "5", unit: .iu)]
+        try captureProductSizes("CustomProductEditorView") {
+            NavigationStack { CustomProductEditorView(model: model, sharing: services.library.productSharing, onSaved: { _, _ in }) }
+        }
+    }
+    func testCommunityProductSearchView() async throws {
+        let services = try makeProductServices()
+        let model = CommunityProductSearchViewModel(store: services.journalStore, service: ScreenshotProductService(), isSignedIn: { true })
+        await model.search(query: "Synthetic", kind: nil)
+        XCTAssertEqual(model.state, .loaded)
+        try captureProductSizes("CommunityProductSearchView") {
+            NavigationStack { CommunityProductSearchView(model: model, onSelect: { _ in }, onLegacy: { _ in }, onSignIn: {}) }
+        }
+    }
+    func testProductDeliveryStatusAndAddCapsule() throws {
+        let services = try makeProductServices()
+        let products = try services.journalStore.customProducts()
+        let item = try XCTUnwrap(products.first { $0.content.name == "Synthetic cereal" })
+        let sharing = try XCTUnwrap(services.library.productSharing)
+        XCTAssertEqual(sharing.status(item), .failed)
+        try captureProductSizes("CustomProductStatus") {
+            NavigationStack {
+                Form {
+                    Section { Text(item.content.name); Button("Edit product") {} }
+                    CustomProductSharingSection(item: item, model: sharing)
+                }.navigationTitle("Product status")
+            }
+        }
+        try captureProductSizes("PrimaryCapsule") {
+            NavigationStack {
+                Text("Synthetic Add action layout")
+            }.safeAreaInset(edge: .bottom) {
+                PrimaryCapsule(AddIntakeAction.title, systemImage: "plus") {}.padding(.horizontal, DesignSpacing.m)
+            }
+        }
     }
 }

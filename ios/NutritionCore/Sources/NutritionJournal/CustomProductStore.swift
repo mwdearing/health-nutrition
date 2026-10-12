@@ -4,6 +4,7 @@ import SwiftData
 
 public protocol CustomProductStore: AnyObject, Sendable {
     @discardableResult func saveCustomProduct(_ command: CustomProductSave, now: Date) throws -> CustomProductRevision
+    func reconcileProductContribution(_ review: ProductContributionReview, publication: ProductShareOperation?) throws
     func enqueueProductOperation(_ operation: ProductShareOperation) throws
     @discardableResult func enqueueProductWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation
     @discardableResult func recordProductWithdrawalPreparation(_ update: ProductWithdrawalPreparationUpdate) throws -> ProductShareOperation
@@ -17,6 +18,13 @@ public protocol CustomProductStore: AnyObject, Sendable {
     func resumeProductOperations(ownerID: UUID, fromEpoch: UUID, toEpoch: UUID) throws
     func cancelProductPublications(ownerID: UUID) throws
     func removeProductAccountState(ownerID: UUID) throws
+}
+
+public extension CustomProductStore {
+    // Compatibility for hosts that do not provide durable contribution review.
+    func reconcileProductContribution(_ review: ProductContributionReview, publication: ProductShareOperation?) throws {
+        throw CustomProductStoreError.invalidOperation
+    }
 }
 
 /// Existing journal entities retain their V6 model identities. V7 adds only standalone entities.
@@ -107,6 +115,49 @@ extension SwiftDataJournalStore: CustomProductStore {
         }.sorted { $0.localProductID.uuidString < $1.localProductID.uuidString }
     }
 
+    public func reconcileProductContribution(_ review: ProductContributionReview, publication: ProductShareOperation?) throws {
+        try commit { context in
+            guard let productID = UUID(uuidString: review.serverProductID),
+                  review.currentRevision == nil || Self.revisionNumber(review.currentRevision!),
+                  (review.currentState == .none) == (review.currentRevision == nil) else { throw CustomProductStoreError.invalidOperation }
+            let products = try context.fetch(FetchDescriptor<JournalSchemaV7.CustomProductRecord>())
+            guard products.contains(where: { $0.localProductID == review.localProductID && $0.currentRevisionID == review.localRevisionID }) else { throw CustomProductStoreError.localRevisionConflict }
+            let mappings = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>())
+            guard let mapping = mappings.first(where: { $0.ownerID == review.ownerID && $0.localProductID == review.localProductID && $0.epoch == review.epoch && $0.storeEpoch == review.storeEpoch }),
+                  mapping.serverProductID.flatMap(UUID.init(uuidString:)) == productID else { throw CustomProductStoreError.obsoleteOperation }
+            if let known = mapping.currentRevision {
+                guard let current = review.currentRevision, !Self.revisionAhead(known, current) else { throw CustomProductStoreError.obsoleteOperation }
+            }
+            let rows = try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()).filter { $0.ownerID == review.ownerID }.sorted { $0.sequence < $1.sequence }
+            let reviewedChain = try rows.map(Self.operation).filter { $0.localProductID == review.localProductID && $0.storeEpoch == review.storeEpoch }
+            guard reviewedChain.map(\.operationID) == review.expectedOperationIDs else { throw CustomProductStoreError.obsoleteOperation }
+            guard let blocker = rows.first(where: { $0.operationID == review.blockingOperation.operationID }),
+                  try Self.operation(blocker) == review.blockingOperation,
+                  review.blockingOperation.localProductID == review.localProductID,
+                  review.blockingOperation.storeEpoch == review.storeEpoch,
+                  review.blockingOperation.reviewSettlementID == nil,
+                  [.failed, .needsReview].contains(review.blockingOperation.status) else { throw CustomProductStoreError.obsoleteOperation }
+            if let publication {
+                guard review.currentState != .rejected, publication.kind == .publish,
+                      publication.ownerID == review.ownerID, publication.localProductID == review.localProductID,
+                      publication.epoch == review.epoch, publication.clientRevisionID == review.localRevisionID else { throw CustomProductStoreError.invalidOperation }
+            }
+            for row in rows {
+                var operation = try Self.operation(row)
+                guard operation.localProductID == review.localProductID, operation.storeEpoch == review.storeEpoch,
+                      !Self.settled(operation) else { continue }
+                guard [.failed, .needsReview].contains(operation.status) ||
+                      (operation.kind == .publish && operation.attempts == 0 && [.pending, .paused, .cancelled].contains(operation.status)) else { throw CustomProductStoreError.obsoleteOperation }
+                operation.reviewSettlementID = review.id
+                operation.reviewedCurrentState = review.currentState; operation.reviewedCurrentRevision = review.currentRevision
+                if [.pending, .paused].contains(operation.status) { operation.status = .cancelled }
+                row.payload = try JSONEncoder().encode(operation)
+            }
+            mapping.currentRevision = review.currentRevision; mapping.currentState = review.currentState.rawValue
+            if let publication { try Self.enqueue(publication, in: context) }
+        }
+    }
+
     public func enqueueProductOperation(_ operation: ProductShareOperation) throws {
         try commit { try Self.enqueue(operation, in: $0) }
     }
@@ -160,7 +211,7 @@ extension SwiftDataJournalStore: CustomProductStore {
     }
 
     private static func settled(_ operation: ProductShareOperation) -> Bool {
-        operation.status == .acknowledged || operation.status == .satisfied ||
+        operation.reviewSettlementID != nil || operation.status == .acknowledged || operation.status == .satisfied ||
             (operation.status == .cancelled && operation.publicationResolution != nil)
     }
 
@@ -192,7 +243,7 @@ extension SwiftDataJournalStore: CustomProductStore {
                 var previous = try Self.operation(row)
                 guard previous.localProductID == input.localProductID, previous.storeEpoch == expectedStoreEpoch else { continue }
                 if previous.kind == .withdraw && !Self.settled(previous) { throw CustomProductStoreError.invalidOperation }
-                if previous.kind == .publish && previous.status != .acknowledged {
+                if previous.kind == .publish && !Self.settled(previous) {
                     previous.status = .cancelled
                     row.payload = try JSONEncoder().encode(previous)
                     if previous.attempts > 0 && previous.publicationResolution == nil { source = previous }
@@ -277,7 +328,7 @@ extension SwiftDataJournalStore: CustomProductStore {
                         guard visited.insert(id).inserted, let ancestorRow = rows.first(where: { $0.operationID == id }) else { throw CustomProductStoreError.invalidOperation }
                         let ancestor = try Self.operation(ancestorRow)
                         guard ancestor.ownerID == source.ownerID, ancestor.localProductID == source.localProductID, ancestor.storeEpoch == source.storeEpoch else { throw CustomProductStoreError.invalidOperation }
-                        if ancestor.kind == .publish && ancestor.attempts > 0 && ancestor.publicationResolution == nil && ancestor.status != .acknowledged { unresolved = ancestor; break }
+                        if ancestor.kind == .publish && ancestor.attempts > 0 && ancestor.publicationResolution == nil && !Self.settled(ancestor) { unresolved = ancestor; break }
                         predecessor = ancestor.predecessorOperationID
                     }
                     if let unresolved { withdrawal.predecessorOperationID = unresolved.operationID }
@@ -435,7 +486,7 @@ extension SwiftDataJournalStore: CustomProductStore {
     }
     public func cancelProductPublications(ownerID: UUID) throws {
         try mutateProductOperations(ownerID: ownerID) { operation in
-            if operation.kind == .publish && operation.status != .acknowledged { operation.status = .cancelled }
+            if operation.kind == .publish && !Self.settled(operation) { operation.status = .cancelled }
         }
     }
     private func mutateProductOperations(ownerID: UUID, _ body: (inout ProductShareOperation) -> Void) throws {

@@ -65,8 +65,8 @@ final class LibraryDesignTests: XCTestCase {
     // MARK: Segments
 
     func testLibrarySegmentsFollowTheSegmentedControl() throws {
-        XCTAssertEqual(LibrarySegment.allCases, [.favorites, .recent, .foods, .recipes])
-        XCTAssertEqual(LibrarySegment.allCases.map(\.title), ["Favorites", "Recent", "Foods", "Recipes"])
+        XCTAssertEqual(LibrarySegment.allCases, [.favorites, .recent, .products, .recipes])
+        XCTAssertEqual(LibrarySegment.allCases.map(\.title), ["Favorites", "Recent", "Products", "Recipes"])
 
         let store = try makeStore()
         let favorites = try makeFavorites()
@@ -84,7 +84,7 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertEqual(library.visibleItems.count, 2)
         XCTAssertEqual(Set(library.visibleItems.map(\.title)), ["Example oats", "Example rice"])
 
-        library.segment = .foods
+        library.segment = .products
         XCTAssertEqual(library.visibleItems.count, 0)
 
         library.segment = .recipes
@@ -106,9 +106,9 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertEqual(recent.message, "Things you log will show up here.")
         XCTAssertEqual(recent.systemImage, "clock")
 
-        let foods = library.emptyText(for: .foods)
-        XCTAssertEqual(foods.title, "No foods yet")
-        XCTAssertEqual(foods.message, "Foods you scan or look up are kept here so you can log them again.")
+        let foods = library.emptyText(for: .products)
+        XCTAssertEqual(foods.title, "No products yet")
+        XCTAssertEqual(foods.message, "Foods, drinks and supplements you save, scan or look up appear here.")
         XCTAssertEqual(foods.systemImage, "barcode.viewfinder")
 
         let recipes = library.emptyText(for: .recipes)
@@ -325,5 +325,19 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, before)
         XCTAssertNil(library.undoToken)
         XCTAssertEqual(library.sections.last?.items.first?.template.meal, "breakfast")
+    }
+}
+
+extension LibraryDesignTests {
+    func testProductsListsStandaloneWithoutAnIntakeAndSearchKeepsJournalRows() throws {
+        let store = try makeStore()
+        let product = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: .init(name: "Synthetic tea", kind: .drink, basis: .perServing))
+        try store.saveCustomProduct(.init(revision: product), now: now)
+        let model = LibraryViewModel(store: store, favorites: try makeFavorites(), productStore: store)
+        model.load(); model.segment = .products
+        XCTAssertEqual(model.standaloneProducts, [product])
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+        model.searchText = "tea"; XCTAssertEqual(model.filteredProducts, [product])
+        model.searchText = "capsule"; XCTAssertTrue(model.filteredProducts.isEmpty)
     }
 }

@@ -120,7 +120,7 @@ final class FirstRunTests: XCTestCase {
             model.items.map(\.kind), [.logFirst, .setGoal, .chooseUnits, .connectHealth])
         XCTAssertEqual(
             model.items.map(\.title),
-            ["Log your first food or drink", "Set a daily goal", "Choose units", "Connect Apple Health"])
+            ["Log your first food, drink, or supplement", "Set a daily goal", "Choose units", "Connect Apple Health"])
         XCTAssertEqual(model.items.map(\.isDone), [false, false, false, false])
         XCTAssertEqual(model.items.map(\.isPlaceholder), [false, false, false, true])
         XCTAssertEqual(model.items[2].detail, "Metric")

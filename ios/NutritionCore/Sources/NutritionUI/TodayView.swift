@@ -197,7 +197,7 @@ public struct TodayView: View {
                 title: "Nothing logged today",
                 message: "Scan a label, scan a barcode or type it in.",
                 systemImage: "fork.knife",
-                actionTitle: "Add food, drink, or supplement",
+                actionTitle: AddIntakeAction.title,
                 action: onAddIntake)
         } else {
             ForEach(model.mealSections) { section in

@@ -7,11 +7,15 @@ public struct AddHomeView: View {
     private let onLabel: () -> Void
     private let onLibrary: () -> Void
     private let onType: () -> Void
+    private let onNewProduct: (() -> Void)?
+    private let onSearchProducts: (() -> Void)?
     private let onChanged: () -> Void
 
     public init(model: AddHomeViewModel, onBarcode: @escaping () -> Void,
         onLabel: @escaping () -> Void, onLibrary: @escaping () -> Void,
-        onType: @escaping () -> Void, onChanged: @escaping () -> Void) {
+        onType: @escaping () -> Void, onChanged: @escaping () -> Void,
+        onNewProduct: (() -> Void)? = nil, onSearchProducts: (() -> Void)? = nil) {
+        self.onNewProduct = onNewProduct; self.onSearchProducts = onSearchProducts
         self.model = model
         self.onBarcode = onBarcode
         self.onLabel = onLabel
@@ -23,15 +27,7 @@ public struct AddHomeView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                Card {
-                    HStack {
-                        TextField("Search foods", text: .constant(""))
-                            .accessibilityLabel("Search foods")
-                        LaterBadge()
-                    }
-                    .disabled(true)
-                    .accessibilityValue("Not available yet")
-                }
+                if let onSearchProducts { tile("Find products", help: "Search products on this phone and shared foods, drinks and supplements.", action: onSearchProducts) }
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
                     ForEach(MealLabel.allCases, id: \.self) { meal in
@@ -46,6 +42,7 @@ public struct AddHomeView: View {
                     ? "Read and check the nutrition values." : model.scannerAvailability.labelExplanation,
                     available: model.scannerAvailability.label, action: onLabel)
                 tile("From Library", help: "Choose a favorite, recent item or recipe.", action: onLibrary)
+                if let onNewProduct { tile("Create product", help: "Save product facts without logging an intake. A name is enough to start.", action: onNewProduct) }
                 tile("Type it in", help: "Enter a name and amount yourself.", action: onType)
                 HStack {
                     Text("Recent").font(.headline).accessibilityAddTraits(.isHeader)
