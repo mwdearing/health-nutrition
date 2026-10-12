@@ -10,6 +10,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
     private let refreshStatus: Int
     private let profileStatus: Int
     private let authUserID: String
+    private let refreshUserID: String
     private var gates: [String: AsyncStream<Void>] = [:]
     private var gateContinuations: [String: AsyncStream<Void>.Continuation] = [:]
     private var recorded: [String] = []
@@ -19,11 +20,13 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         gated: Set<String>,
         refreshStatus: Int = 200,
         profileStatus: Int = 401,
-        authUserID: String = "22222222-3333-4444-5555-666666666666"
+        authUserID: String = "22222222-3333-4444-5555-666666666666",
+        refreshUserID: String = testUserID
     ) {
         self.profileStatus = profileStatus
         self.refreshStatus = refreshStatus
         self.authUserID = authUserID
+        self.refreshUserID = refreshUserID
         (entered, enteredContinuation) = AsyncStream<String>.makeStream()
         for kind in gated {
             let (stream, continuation) = AsyncStream<Void>.makeStream()
@@ -69,7 +72,9 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         case "signin", "verify":
             status = 200
             body = #"{"access_token":"new-access-token","refresh_token":"new-refresh-token","expires_in":3600,"user":{"id":"\#(authUserID)","email":"new@example.com"}}"#
-        case "refresh": status = refreshStatus; body = refreshStatus == 200 ? refreshedBody : "{}"
+        case "refresh":
+            status = refreshStatus
+            body = refreshStatus == 200 ? refreshedBody.replacingOccurrences(of: testUserID, with: refreshUserID) : "{}"
         case "delete": status = 204; body = ""
         case "profile": status = profileStatus; body = profileStatus == 403 ? #"{"code":"28000"}"# : "{}"
         default: status = 204; body = ""
@@ -337,9 +342,12 @@ final class CommunityAuthRaceTests: XCTestCase {
 
     func testSuccessfulDeleteClearsRotatedSessionForSameAccount() async throws {
         let clock = MutableCommunityClock(testNow)
-        let initial = testSession(expiresAt: testNow.addingTimeInterval(3600))
+        let initial = CommunitySession(
+            accessToken: "old-access", refreshToken: "old-refresh", expiresAt: testNow.addingTimeInterval(3600),
+            userID: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", email: "person@example.com"
+        )
         let store = InMemoryCommunitySessionStore(initial)
-        let transport = LifecycleTransport(gated: ["delete"])
+        let transport = LifecycleTransport(gated: ["delete"], refreshUserID: initial.userID.lowercased())
         let client = CommunityClient(
             config: try makeConfig(), transport: transport, store: store, now: { clock.read() }
         )
@@ -349,7 +357,8 @@ final class CommunityAuthRaceTests: XCTestCase {
 
         clock.advance(by: 3601)
         let refreshed = try await client.auth.validSession()
-        XCTAssertEqual(refreshed.userID, initial.userID)
+        XCTAssertEqual(refreshed.userID, initial.userID.lowercased())
+        XCTAssertNotEqual(refreshed.userID, initial.userID)
         XCTAssertNotEqual(refreshed.accessToken, initial.accessToken)
 
         transport.release("delete")
@@ -400,6 +409,134 @@ final class CommunityAuthRaceTests: XCTestCase {
         transport.release("signin")
         await assertCommunityError(.signedOut) { try await signIn.value }
         XCTAssertNil(try store.load(), "a pending response for the deleted account must not restore credentials")
+    }
+
+    func testSuccessfulDeleteFencesLateAppleAuthenticationAfterTokenRejectionEmptiesStore() async throws {
+        for status in [401, 403] {
+            try await assertDeleteWithPendingAuthentication(email: false, sameAccount: true, rejectionStatus: status)
+        }
+    }
+
+    func testSuccessfulDeleteFencesLateEmailVerificationAfterTokenRejectionEmptiesStore() async throws {
+        for status in [401, 403] {
+            try await assertDeleteWithPendingAuthentication(email: true, sameAccount: true, rejectionStatus: status)
+        }
+    }
+
+    func testSuccessfulDeletePreservesPendingReplacementAppleAuthentication() async throws {
+        for status in [nil, 401, 403] as [Int?] {
+            try await assertDeleteWithPendingAuthentication(email: false, sameAccount: false, rejectionStatus: status)
+        }
+    }
+
+    func testSuccessfulDeletePreservesPendingReplacementEmailVerification() async throws {
+        for status in [nil, 401, 403] as [Int?] {
+            try await assertDeleteWithPendingAuthentication(email: true, sameAccount: false, rejectionStatus: status)
+        }
+    }
+
+    private func assertDeleteWithPendingAuthentication(
+        email: Bool, sameAccount: Bool, rejectionStatus: Int?
+    ) async throws {
+        let initial = CommunitySession(
+            accessToken: "old-access", refreshToken: "old-refresh", expiresAt: testNow.addingTimeInterval(3600),
+            userID: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", email: "person@example.com"
+        )
+        let authKind = email ? "verify" : "signin"
+        let replyOwner = sameAccount ? initial.userID.lowercased() : "22222222-3333-4444-5555-666666666666"
+        let store = InMemoryCommunitySessionStore(initial)
+        let transport = LifecycleTransport(
+            gated: ["delete", "profile", authKind], profileStatus: rejectionStatus ?? 401, authUserID: replyOwner
+        )
+        let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        let deletion = Task { try await client.deleteAccount() }
+        await transport.waitFor("delete")
+        // Capture A's exact token before authentication starts, then deliver its rejection first.
+        let rejected: Task<CommunityProfile, Error>?
+        if rejectionStatus != nil {
+            rejected = Task { try await client.profile() }
+            await transport.waitFor("profile")
+        } else {
+            rejected = nil
+        }
+        let authentication = Task {
+            if email {
+                return try await client.auth.verifyEmailCode(email: "person@example.com", code: "123456")
+            }
+            return try await client.auth.signInWithApple(idToken: "test-id", nonce: "test-nonce")
+        }
+        await transport.waitFor(authKind)
+        if let rejected {
+            transport.release("profile")
+            await assertCommunityError(.signedOut) { try await rejected.value }
+            XCTAssertNil(try store.load(), "the exact old token rejection must empty A's slot")
+        }
+
+        transport.release("delete")
+        try await deletion.value
+        XCTAssertNil(try store.load())
+        transport.release(authKind)
+        if sameAccount {
+            await assertCommunityError(.signedOut) { try await authentication.value }
+            XCTAssertNil(try store.load(), "deletion must fence A even after token rejection emptied storage")
+        } else {
+            let replacement = try await authentication.value
+            XCTAssertEqual(replacement.userID, replyOwner)
+            XCTAssertEqual(try store.load(), replacement, "deletion of A must preserve pending B authentication")
+        }
+    }
+
+    func testAuthenticationDeliberatelyStartedAfterDeletionCanSaveSameAccount() async throws {
+        for email in [false, true] {
+            let initial = testSession()
+            let store = InMemoryCommunitySessionStore(initial)
+            let oldKind = email ? "signin" : "verify"
+            let transport = LifecycleTransport(gated: ["delete", oldKind], authUserID: initial.userID)
+            let client = CommunityClient(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+            let deletion = Task { try await client.deleteAccount() }
+            await transport.waitFor("delete")
+            let oldAuthentication = Task {
+                if email {
+                    return try await client.auth.signInWithApple(idToken: "old-id", nonce: "old-nonce")
+                }
+                return try await client.auth.verifyEmailCode(email: "person@example.com", code: "123456")
+            }
+            await transport.waitFor(oldKind)
+            transport.release("delete")
+            try await deletion.value
+            XCTAssertNil(try store.load())
+
+            let authenticated: CommunitySession
+            if email {
+                authenticated = try await client.auth.verifyEmailCode(email: "person@example.com", code: "654321")
+            } else {
+                authenticated = try await client.auth.signInWithApple(idToken: "new-id", nonce: "new-nonce")
+            }
+            XCTAssertEqual(authenticated.userID, initial.userID)
+            XCTAssertEqual(try store.load(), authenticated, "a deliberate later authentication is a new intent")
+            transport.release(oldKind)
+            await assertCommunityError(.signedOut) { try await oldAuthentication.value }
+            XCTAssertEqual(try store.load(), authenticated, "retiring the owner fence must not re-enable an older intent")
+        }
+    }
+
+    func testDeletedOpaqueOwnerMatchingUsesExactUTF8() async throws {
+        let owner = "legacy-caf\u{00e9}"
+        for other in ["LEGACY-CAF\u{00c9}", "legacy-cafe\u{0301}", owner] {
+            let initial = CommunitySession(
+                accessToken: "old-access", refreshToken: "old-refresh", expiresAt: testNow.addingTimeInterval(3600),
+                userID: owner, email: "person@example.com"
+            )
+            let store = InMemoryCommunitySessionStore(initial)
+            let auth = CommunityAuth(config: try makeConfig(), transport: LifecycleTransport(gated: []), store: store)
+
+            let cleared = try await auth.invalidateSession(matchingUserID: other)
+            let exact = owner.utf8.elementsEqual(other.utf8)
+            XCTAssertEqual(cleared, exact)
+            XCTAssertEqual(try store.load(), exact ? nil : initial)
+        }
     }
 
     func testDeleteClearFailurePropagatesAfterServerSuccess() async throws {

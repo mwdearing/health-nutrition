@@ -18,6 +18,22 @@ public actor CommunityAuth {
     /// Explicit authentication attempts supersede refreshes, but an old session's rejected request
     /// must not cancel a sign-in or verification already in progress.
     private var authenticationIntent = 0
+    /// Successful deletion fences this owner's late replies even if token rejection emptied storage.
+    /// A deliberate new authentication intent retires these fences; other owners remain eligible.
+    private var deletedOwners: Set<AccountIdentity> = []
+
+    private enum AccountIdentity: Hashable {
+        case uuid(UUID)
+        case opaque(Data)
+
+        init(_ userID: String) {
+            if let uuid = UUID(uuidString: userID) {
+                self = .uuid(uuid)
+            } else {
+                self = .opaque(Data(userID.utf8))
+            }
+        }
+    }
 
     public init(
         config: CommunityConfig,
@@ -51,6 +67,7 @@ public actor CommunityAuth {
         // The sign-in service does not ask for a challenge on an identity token, so none is requested.
         let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
         authenticationIntent += 1
+        deletedOwners.removeAll()
         let startedAtIntent = authenticationIntent
         let (data, response) = try await api.send(
             "/auth/v1/token",
@@ -71,6 +88,7 @@ public actor CommunityAuth {
         // Checking the emailed code is not challenged either; only asking for it is.
         let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: nil))
         authenticationIntent += 1
+        deletedOwners.removeAll()
         let startedAtIntent = authenticationIntent
         let (data, response) = try await api.send("/auth/v1/verify", body: body)
         return try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
@@ -161,9 +179,12 @@ public actor CommunityAuth {
         return true
     }
 
-    /// Clears a deleted account's current session, including tokens rotated while deletion was in flight.
+    /// Fences a deleted account's pending replies and clears its current session, including rotated tokens.
+    /// Returns whether stored credentials were cleared; the owner fence applies even when storage is empty.
     @discardableResult
     public func invalidateSession(matchingUserID userID: String) throws -> Bool {
+        let deletedOwner = AccountIdentity(userID)
+        deletedOwners.insert(deletedOwner)
         let session: CommunitySession?
         do {
             session = try store.load()
@@ -174,9 +195,8 @@ public actor CommunityAuth {
             authenticationIntent += 1
             throw CommunityError.storage
         }
-        guard session?.userID == userID else { return false }
+        guard let session, AccountIdentity(session.userID) == deletedOwner else { return false }
         generation += 1
-        authenticationIntent += 1
         do { try store.clear() } catch { throw CommunityError.storage }
         return true
     }
@@ -253,14 +273,10 @@ public actor CommunityAuth {
     private func save(_ data: Data, _ response: HTTPURLResponse, expectedUserID: String? = nil) throws -> CommunitySession {
         try Task.checkCancellation()
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
+        let owner = AccountIdentity(reply.user.id)
+        guard !deletedOwners.contains(owner) else { throw CommunityError.signedOut }
         if let expectedUserID {
-            let sameOwner: Bool
-            if let expected = UUID(uuidString: expectedUserID), let actual = UUID(uuidString: reply.user.id) {
-                sameOwner = expected == actual
-            } else {
-                sameOwner = expectedUserID.utf8.elementsEqual(reply.user.id.utf8)
-            }
-            guard sameOwner else { throw CommunityError.signedOut }
+            guard AccountIdentity(expectedUserID) == owner else { throw CommunityError.signedOut }
         }
         let session = CommunitySession(
             accessToken: reply.accessToken,
