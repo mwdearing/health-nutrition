@@ -44,12 +44,26 @@ final class AppServicesEraseTests: XCTestCase {
         coordinator.updateAccountContext(ProductShareAccountContext(ownerID: owner, profileReady: true, sharingAllowed: true,
             consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
         let delivery = Task { await coordinator.runDueOperations(now: when) }
-        await productService.waitForPublication()
+        print("erase-sharing checkpoint: delivery task started")
+        let publicationStarted = await productService.waitForPublication(timeoutSeconds: 5)
+        print("erase-sharing checkpoint: publication started = \(publicationStarted)")
+        guard publicationStarted else {
+            XCTAssertTrue(services.connections.eraseAllData())
+            await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
+                currentRevision: "1", currentState: .active, replayed: false))
+            await delivery.value
+            XCTFail("Product delivery did not reach publish within five seconds")
+            return
+        }
+        print("erase-sharing checkpoint: entering erase")
         XCTAssertTrue(services.connections.eraseAllData())
+        print("erase-sharing checkpoint: erase finished")
         XCTAssertEqual(coordinator.pauseReason, .erase)
         await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
             currentRevision: "1", currentState: .active, replayed: false))
+        print("erase-sharing checkpoint: receipt finished")
         await delivery.value
+        print("erase-sharing checkpoint: delivery finished")
         XCTAssertTrue(try services.journalStore.productOperations(ownerID: owner).isEmpty)
         XCTAssertTrue(try services.journalStore.customProducts().isEmpty)
     }
@@ -243,11 +257,24 @@ final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable 
 
 private actor EraseProductService: CommunityProductServicing {
     private var reply: CheckedContinuation<ProductDeliveryReceipt, Never>?
-    private var arrival: CheckedContinuation<Void, Never>?
-    func waitForPublication() async { if reply == nil { await withCheckedContinuation { arrival = $0 } } }
+    private var arrival: CheckedContinuation<Bool, Never>?
+    func waitForPublication(timeoutSeconds: Double) async -> Bool {
+        if reply != nil { return true }
+        return await withCheckedContinuation { continuation in
+            arrival = continuation
+            Task {
+                try? await Task.sleep(for: .seconds(timeoutSeconds))
+                await self.expirePublicationWait()
+            }
+        }
+    }
+    private func expirePublicationWait() {
+        arrival?.resume(returning: false)
+        arrival = nil
+    }
     func finish(_ receipt: ProductDeliveryReceipt) { reply?.resume(returning: receipt) }
     func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
-        await withCheckedContinuation { reply = $0; arrival?.resume(); arrival = nil }
+        await withCheckedContinuation { reply = $0; arrival?.resume(returning: true); arrival = nil }
     }
     func capabilities() async throws -> ProductCatalogCapabilities {
         ProductCatalogCapabilities(supportedVersion: 2, enabled: true, limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20),
