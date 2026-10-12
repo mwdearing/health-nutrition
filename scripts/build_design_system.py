@@ -87,7 +87,7 @@ IOS_TEXT_STYLES = {
 STYLE_ORDER = list(IOS_TEXT_STYLES)
 
 STRUCT_RE = re.compile(
-    r"^(?P<vis>public |internal |private |fileprivate )?struct (?P<name>\w+)(?:<[^\n{]*>)?\s*:\s*(?P<conf>[^{]*)\{", re.M)
+    r"^(?P<vis>public |internal |private |fileprivate )?struct (?P<name>\w+)(?:<[^\n{]*>)?\s*:\s*(?P<conf>[^{]*)\{", re.MULTILINE)
 STRING = r'"(?:[^"\\]|\\.)*"'
 ELEMENT_RE = re.compile(
     "|".join(
@@ -136,7 +136,7 @@ def swift_files(root=ROOT):
             yield path
 
 
-DESIGN_ENUM_RE = re.compile(r"enum Design(Spacing|Radius)\s*\{(.*?)\n\}", re.S)
+DESIGN_ENUM_RE = re.compile(r"enum Design(Spacing|Radius)\s*\{(.*?)\n\}", re.DOTALL)
 DESIGN_VALUE_RE = re.compile(r"static let (\w+):\s*CGFloat\s*=\s*(\d+(?:\.\d+)?)")
 
 
@@ -199,9 +199,8 @@ def strip_debug_blocks(text):
         elif s.startswith("#else") and stack and stack[-1][0]:
             stack[-1][1] = True
             continue
-        elif s.startswith("#endif") and stack:
-            if stack.pop()[0]:
-                continue
+        elif s.startswith("#endif") and stack and stack.pop()[0]:
+            continue
         if any(is_debug and not in_else for is_debug, in_else in stack):
             continue
         out.append(line)

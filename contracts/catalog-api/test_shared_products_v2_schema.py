@@ -1,7 +1,7 @@
 """Synthetic JSON Schema conformance; run with Python and jsonschema installed."""
 import json
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 import jsonschema
 

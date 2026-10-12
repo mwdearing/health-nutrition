@@ -19,7 +19,7 @@ def jsql(value):
     return literal(json.dumps(value, ensure_ascii=False)) + '::jsonb'
 
 def sql(query):
-    result = subprocess.run(BASE, input=query, text=True, capture_output=True, timeout=30)
+    result = subprocess.run(BASE, input=query, text=True, capture_output=True, timeout=30, check=False)
     if result.returncode:
         raise AssertionError(result.stderr)
     return result.stdout.strip()
@@ -40,13 +40,13 @@ def expect_error(account, name, arg, code):
     sql(identity(account) + query)
 
 def product(name='Synthetic race product', barcode=None):
-    return dict(name=name, brand=None, barcode=barcode, kind='food', basis='per_100_g', serving=None,
-                facts=[dict(key='protein', display_name='Protein', state='known', amount='1', unit='g')])
+    return {'name': name, 'brand': None, 'barcode': barcode, 'kind': 'food', 'basis': 'per_100_g', 'serving': None,
+                'facts': [{'key': 'protein', 'display_name': 'Protein', 'state': 'known', 'amount': '1', 'unit': 'g'}]}
 
 def request(content=None, pid=None, expected=None, generation='0'):
-    return dict(operation_id=str(uuid.uuid4()), client_revision_id=str(uuid.uuid4()), product_id=pid,
-                expected_server_revision=expected, consent_version=2, consent_generation=generation,
-                product=content or product())
+    return {'operation_id': str(uuid.uuid4()), 'client_revision_id': str(uuid.uuid4()), 'product_id': pid,
+                'expected_server_revision': expected, 'consent_version': 2, 'consent_generation': generation,
+                'product': content or product()}
 
 def submit(a, body):
     return rpc(a, 'submit_catalog_product_v2', jsql(body))
@@ -131,14 +131,14 @@ def two_account_product_journey(a, b):
         content['kind'] = kind
         if kind == 'drink': content['basis'] = 'per_100_ml'
         if kind == 'supplement':
-            content.update(basis='per_serving', serving=dict(quantity='1', unit='capsule', text='One capsule'))
-            content['facts'] = [dict(key='ingredient:synthetic', display_name='Synthetic ingredient', state='known', amount='5', unit='mg')]
+            content.update(basis='per_serving', serving={'quantity': '1', 'unit': 'capsule', 'text': 'One capsule'})
+            content['facts'] = [{'key': 'ingredient:synthetic', 'display_name': 'Synthetic ingredient', 'state': 'known', 'amount': '5', 'unit': 'mg'}]
         envelope = request(content)
         first = submit(a, envelope)
         found = rpc(b, 'search_catalog_products_v2', literal(content['name']))['products']
         published = next(x for x in found if x['product_id'] == first['product_id'])
         assert published['product']['kind'] == kind
-        assert published['verification'] == dict(status='shared_unverified', source=None)
+        assert published['verification'] == {'status': 'shared_unverified', 'source': None}
         assert set(published['product']) == {'name','brand','barcode','kind','basis','serving','facts'}
         assert set(published['product']['facts'][0]) == {'key','display_name','state','amount','unit'}
         assert not any(key in json.dumps(published) for key in ['account_id','device_id','meal','intake_time','notes','consent_generation'])
@@ -227,7 +227,7 @@ def main():
     assert ack['operation_id']==str(uuid.UUID(uppercase['operation_id']))
     expect_error(a,'submit_catalog_product_v2',jsql(dict(uppercase,operation_id=uppercase['operation_id'].lower())),'operation_conflict')
     # Numeric serving defines agreement; human serving text stays on the actual representative.
-    x=product('Synthetic serving agreement');x.update(basis='per_serving',serving=dict(quantity='1',unit='capsule',text='First display'))
+    x=product('Synthetic serving agreement');x.update(basis='per_serving',serving={'quantity': '1','unit': 'capsule','text': 'First display'})
     first=submit(a,request(x));y=json.loads(json.dumps(x));y['serving']['text']='Other display'
     second=submit(b,request(y,first['product_id']))
     assert second['publication']['support']['distinct_accounts']=='2'
@@ -248,7 +248,7 @@ def main():
     pid = one[0]['product_id']
     publication = rpc(a,'get_catalog_product_v2',literal(pid))['product']
     assert publication['support']['distinct_accounts'] == '2'
-    assert publication['verification'] == dict(status='shared_unverified',source=None)
+    assert publication['verification'] == {'status': 'shared_unverified','source': None}
     # Exact supported unit equivalence, spelling preserved, one account cannot add votes.
     current = rpc(b,'get_my_catalog_contribution_v2',literal(pid))
     content = product(barcode='0012345678905'); content['facts'][0].update(amount='1000.000000',unit='mg')
@@ -272,7 +272,7 @@ def main():
     assert own['current_state']=='rejected' and own['current_revision']==one[0]['current_revision']
     replay = submit(a,upc)
     assert replay['current_state']=='rejected' and replay['acknowledged_revision']==one[0]['acknowledged_revision']
-    withdrawal=dict(operation_id=str(uuid.uuid4()),client_revision_id=str(uuid.uuid4()),product_id=pid,expected_server_revision=own['current_revision'])
+    withdrawal={'operation_id': str(uuid.uuid4()),'client_revision_id': str(uuid.uuid4()),'product_id': pid,'expected_server_revision': own['current_revision']}
     removed=rpc(a,'withdraw_catalog_product_v2',jsql(withdrawal))
     assert removed['current_state']=='withdrawn'
     assert submit(a,upc)['current_state']=='withdrawn'
@@ -299,7 +299,7 @@ def main():
 
     # Withdrawal racing an old publish replay never resurrects the retired contribution.
     racer=account(); old=request(); accepted=submit(racer,old)
-    withdrawal=dict(operation_id=str(uuid.uuid4()),client_revision_id=str(uuid.uuid4()),product_id=accepted['product_id'],expected_server_revision=accepted['current_revision'])
+    withdrawal={'operation_id': str(uuid.uuid4()),'client_revision_id': str(uuid.uuid4()),'product_id': accepted['product_id'],'expected_server_revision': accepted['current_revision']}
     _, replayed=serialize(f'select public.withdraw_catalog_product_v2({jsql(withdrawal)})',
                           f'select public.submit_catalog_product_v2({jsql(old)})',racer,racer)
     assert replayed[0]['current_state']=='withdrawn' and replayed[0]['publication'] is None
@@ -318,7 +318,7 @@ def main():
     body=request(); ack=submit(limited,body)
     assert submit(limited,body)['replayed']
     expect_error(limited,'submit_catalog_product_v2',jsql(request()),'rate_limited')
-    withdrawal=dict(operation_id=str(uuid.uuid4()),client_revision_id=str(uuid.uuid4()),product_id=ack['product_id'],expected_server_revision=ack['current_revision'])
+    withdrawal={'operation_id': str(uuid.uuid4()),'client_revision_id': str(uuid.uuid4()),'product_id': ack['product_id'],'expected_server_revision': ack['current_revision']}
     assert rpc(limited,'withdraw_catalog_product_v2',jsql(withdrawal))['current_state']=='withdrawn'
     expect_error(limited,'submit_catalog_product_v2',jsql(request()),'rate_limited')
     sql('update catalog.settings set daily_limit=1000;')
@@ -331,7 +331,7 @@ def main():
     assert three['publication']['representative_revision']==two['current_revision']
     assert three['publication']['support']['distinct_accounts']=='2'
     assert three['publication']['product']['facts'][0]['amount']=='7'
-    blank=product('Synthetic incomplete');blank['facts']=[dict(key='protein',display_name='Protein',state='unknown')]
+    blank=product('Synthetic incomplete');blank['facts']=[{'key': 'protein','display_name': 'Protein','state': 'unknown'}]
     incomplete=submit(voters[0],request(blank))
     assert incomplete['publication']['missing_facts'] is True
     sql(f"""do $test$ declare d text; begin begin
@@ -391,7 +391,7 @@ def main():
 
 def legacy_args(code='012345678905', basis='per_serving', name='Synthetic bridge label', protein=4):
     return ','.join([literal(code),literal(basis),literal('one original scoop'),literal(name),'null',
-                     jsql(dict(protein=protein,fat=2,salt=1))])
+                     jsql({'protein': protein,'fat': 2,'salt': 1})])
 
 def legacy_submit(a, **kw):
     return sql(identity(a)+f'select public.submit_label({legacy_args(**kw)});')
@@ -491,7 +491,7 @@ def bridge_tests():
     if owner_installed:
         sql("select catalog.owner_approve_label("+legacy_args(name='Synthetic owner exact',protein=17)+",'reviewed');")
         pub=rpc(a,'get_catalog_product_v2',literal(pid))['product']
-        legacy=[g for g in [pub]+pub['alternatives'] if g['product'].get('content_type')=='legacy_label'][0]
+        legacy=next(g for g in [pub]+pub['alternatives'] if g['product'].get('content_type')=='legacy_label')
         assert legacy['verification']=={'status':'verified','source':'owner_reviewed'}
         assert legacy['product']['nutrients']['protein']==17
         assert pub['verification']['status']=='shared_unverified', 'owner badge cannot transfer to custom representative'

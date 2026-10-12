@@ -785,9 +785,12 @@ def _content_argument(masked: str, start: int, end: int) -> bool:
             depth += 1
         elif char in CLOSERS:
             depth -= 1
-        elif depth == 1 and char == "c":
-            if CONTENT_ARGUMENT.match(masked, index) is not None:
-                return True
+        elif (
+            depth == 1
+            and char == "c"
+            and CONTENT_ARGUMENT.match(masked, index) is not None
+        ):
+            return True
     return False
 
 

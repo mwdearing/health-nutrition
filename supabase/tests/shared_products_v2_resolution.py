@@ -6,8 +6,19 @@ import uuid
 
 # Reuse only the existing disposable-Postgres transport and session barriers.
 from shared_products_v2_concurrency import (
-    BASE, FIXTURES, Session, account, blocked, expect_error, identity, jsql, literal,
-    product, request, rpc, sql, submit,
+    FIXTURES,
+    Session,
+    account,
+    blocked,
+    expect_error,
+    identity,
+    jsql,
+    literal,
+    product,
+    request,
+    rpc,
+    sql,
+    submit,
 )
 
 RESOLVE = 'resolve_catalog_publish_for_withdrawal_v2'
@@ -67,12 +78,12 @@ def counts(a):
 
 
 def canceled(result, body, replayed=False):
-    assert result == dict(outcome='canceled_before_commit', operation_id=str(uuid.UUID(body['operation_id'])), replayed=replayed), result
+    assert result == {'outcome': 'canceled_before_commit', 'operation_id': str(uuid.UUID(body['operation_id'])), 'replayed': replayed}, result
 
 
 def withdraw_body(receipt):
-    return dict(operation_id=str(uuid.uuid4()), client_revision_id=str(uuid.uuid4()),
-                product_id=receipt['product_id'], expected_server_revision=receipt['current_revision'])
+    return {'operation_id': str(uuid.uuid4()), 'client_revision_id': str(uuid.uuid4()),
+                'product_id': receipt['product_id'], 'expected_server_revision': receipt['current_revision']}
 
 
 def shared_validation_authority():
@@ -88,7 +99,7 @@ def shared_validation_authority():
       perform catalog_v2.fail('invalid_request'); end $$;""")
     try:
         assert submit(a, committed) == dict(receipt, replayed=True)
-        assert resolve(a, committed) == dict(outcome='committed', receipt=dict(receipt, replayed=True))
+        assert resolve(a, committed) == {'outcome': 'committed', 'receipt': dict(receipt, replayed=True)}
         canceled(resolve(a, marker), marker, True)
         expect_error(a, SUBMIT, jsql(request()), 'invalid_request')
         expect_error(a, RESOLVE, jsql(request()), 'invalid_request')
@@ -133,7 +144,7 @@ def fresh_validation():
         expect_error(a, RESOLVE, jsql(body), 'invalid_request')
         expect_error(a, SUBMIT, jsql(body), 'invalid_request')
     assert counts(a) == before
-    assert before == dict(markers=len(valid), receipts=0, revisions=0, contributions=0, usage=0, old_usage=0)
+    assert before == {'markers': len(valid), 'receipts': 0, 'revisions': 0, 'contributions': 0, 'usage': 0, 'old_usage': 0}
     assert sql('select count(*) from catalog_v2.products;') == initial_products
     # Nonexistent product, stale CAS, and stale consent are well-formed cancellation requests.
     body = request(pid=str(uuid.uuid4()), expected='999999999999999999999999', generation='999')
@@ -148,8 +159,8 @@ def fresh_validation():
         changed = copy.deepcopy(body); change(changed)
         expect_error(a, RESOLVE, jsql(changed), 'operation_conflict')
         expect_error(a, SUBMIT, jsql(changed), 'operation_conflict')
-        cancellation_withdraw = dict(operation_id=body['operation_id'], client_revision_id=str(uuid.uuid4()),
-                                     product_id=str(uuid.uuid4()), expected_server_revision='1')
+        cancellation_withdraw = {'operation_id': body['operation_id'], 'client_revision_id': str(uuid.uuid4()),
+                                     'product_id': str(uuid.uuid4()), 'expected_server_revision': '1'}
         expect_error(a, WITHDRAW, jsql(cancellation_withdraw), 'operation_conflict')
     # Unknown/dead/anonymous owners cannot insert; another live owner has its own UUID namespace.
     body = request(); canceled(resolve(a, body), body)
@@ -232,11 +243,11 @@ def concurrency():
         one, two = race(a, call(SUBMIT, body), call(RESOLVE, body), rollback)
         if rollback:
             canceled(two[0], body)
-            assert counts(a) == dict(markers=1, receipts=0, revisions=0, contributions=0, usage=0, old_usage=0)
+            assert counts(a) == {'markers': 1, 'receipts': 0, 'revisions': 0, 'contributions': 0, 'usage': 0, 'old_usage': 0}
         else:
             assert two[0]['outcome'] == 'committed'
             assert two[0]['receipt'] == dict(one[0], replayed=True)
-            assert counts(a) == dict(markers=0, receipts=1, revisions=1, contributions=1, usage=1, old_usage=0)
+            assert counts(a) == {'markers': 0, 'receipts': 1, 'revisions': 1, 'contributions': 1, 'usage': 1, 'old_usage': 0}
         assert int(sql('select count(*) from catalog_v2.products;')) == products_before + (not rollback)
     print('PASS race publication wins and rollback')
     # 2. Cancellation holds first. Commit fences both writers forever; rollback permits publication.
@@ -245,9 +256,9 @@ def concurrency():
         one, two = race(a, call(RESOLVE, body), call(SUBMIT, body) if rollback else error_call(SUBMIT, body, 'operation_conflict'), rollback)
         if rollback:
             assert not two[0]['replayed']
-            assert counts(a) == dict(markers=0, receipts=1, revisions=1, contributions=1, usage=1, old_usage=0)
+            assert counts(a) == {'markers': 0, 'receipts': 1, 'revisions': 1, 'contributions': 1, 'usage': 1, 'old_usage': 0}
         else:
-            assert counts(a) == dict(markers=1, receipts=0, revisions=0, contributions=0, usage=0, old_usage=0)
+            assert counts(a) == {'markers': 1, 'receipts': 0, 'revisions': 0, 'contributions': 0, 'usage': 0, 'old_usage': 0}
             sql(f'update public.profiles set share_labels=false where id={literal(a)}; update public.profiles set share_labels=true where id={literal(a)};')
             rpc(a, 'acknowledge_catalog_consent_v2', '2')
             expect_error(a, SUBMIT, jsql(body), 'operation_conflict')  # A new psql connection.
@@ -302,7 +313,7 @@ def concurrency():
     # 6. Deletion in either order, plus rollback. No orphan markers or stale-token resurrection.
     a = account(); body = request()
     race(a, call(RESOLVE, body), 'select public.delete_my_account()')
-    assert counts(a) == dict(markers=0, receipts=0, revisions=0, contributions=0, usage=0, old_usage=0)
+    assert counts(a) == {'markers': 0, 'receipts': 0, 'revisions': 0, 'contributions': 0, 'usage': 0, 'old_usage': 0}
     expect_error(a, RESOLVE, jsql(body), 'unauthorized')
     a = account(); body = request()
     race(a, 'select public.delete_my_account()', error_call(RESOLVE, body, 'unauthorized'))

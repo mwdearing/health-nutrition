@@ -283,22 +283,22 @@ PINNED_IMPLEMENTED_WORDING = (
 ACCEPTED_IMPLEMENTED_WORDINGS = (
     PINNED_IMPLEMENTED_WORDING,
     # A qualifying clause behind a comma instead of a bare conjunction.
-    "Implemented end to end with a failing-on-break test: none of the ten. Areas "
+    ("Implemented end to end with a failing-on-break test: none of the ten. Areas "
     "5, 8 and 10, while not implemented end to end, contain machinery with the "
-    "surrounding requirement missing.",
+    "surrounding requirement missing."),
     # A trailing quantity that is not an area number.
-    "Implemented end to end with a failing-on-break test: none of the ten. Areas "
+    ("Implemented end to end with a failing-on-break test: none of the ten. Areas "
     "5, 8 and 10 contain machinery with the surrounding requirement missing "
-    "(3 mechanisms total).",
+    "(3 mechanisms total)."),
     # Prose that calls the machinery implemented. The area is still not.
-    "Implemented end to end with a failing-on-break test: none of the ten. Areas "
+    ("Implemented end to end with a failing-on-break test: none of the ten. Areas "
     "5, 8 and 10 contain machinery that is fully implemented with the "
-    "surrounding requirement missing.",
+    "surrounding requirement missing."),
     # The document's own sentence with a connective instead of a comma.
-    "Implemented end to end with a failing-on-break test: none of the ten. Areas "
+    ("Implemented end to end with a failing-on-break test: none of the ten. Areas "
     "5, 8 and 10 contain genuinely implemented machinery (entry amendment, "
     "revisions, export/import/erase), but 10 is a special case, with the "
-    "surrounding requirement missing.",
+    "surrounding requirement missing."),
 )
 
 # Every accepted wording other than the document's own, named so the test that
@@ -313,29 +313,29 @@ TRUTHFUL_REWORDINGS = ACCEPTED_IMPLEMENTED_WORDINGS[1:]
 # in the list, so the test below asserts exactly that: none of them is accepted.
 CONTRADICTORY_WORDINGS = (
     (
-        "Implemented end to end with a failing-on-break test: none of the ten. "
+        ("Implemented end to end with a failing-on-break test: none of the ten. "
         "Area 2 is implemented end to end, while Areas 5, 8 and 10 contain "
-        "machinery with the surrounding requirement missing.",
+        "machinery with the surrounding requirement missing."),
         "area 2 is asserted implemented; the table marks it partial",
     ),
     (
-        "Implemented end to end with a failing-on-break test: none of the ten. "
+        ("Implemented end to end with a failing-on-break test: none of the ten. "
         "Area 5 is implemented end to end, while Areas 5, 8 and 10 contain "
-        "machinery with the surrounding requirement missing.",
-        "area 5 is asserted implemented in the first half and qualified in the "
-        "second, which cancels itself out",
+        "machinery with the surrounding requirement missing."),
+        ("area 5 is asserted implemented in the first half and qualified in the "
+        "second, which cancels itself out"),
     ),
     (
-        "Implemented end to end with a failing-on-break test: none of the ten. "
-        "Fully implemented is Area 2 with the surrounding requirement missing.",
+        ("Implemented end to end with a failing-on-break test: none of the ten. "
+        "Fully implemented is Area 2 with the surrounding requirement missing."),
         "area 2 is asserted implemented",
     ),
     (
-        "Implemented end to end with a failing-on-break test: none of the ten. "
+        ("Implemented end to end with a failing-on-break test: none of the ten. "
         "Areas 2, 5, 8 and 10 contain implemented end-to-end machinery with the "
-        "surrounding requirement missing.",
-        "area 2 is inside the enumeration the clause governs, and the hyphen in "
-        "`end-to-end` hid the assertion from the parser",
+        "surrounding requirement missing."),
+        ("area 2 is inside the enumeration the clause governs, and the hyphen in "
+        "`end-to-end` hid the assertion from the parser"),
     ),
 )
 
@@ -565,7 +565,7 @@ def test_a_utf8_file_with_embedded_nul_bytes_is_not_read_as_utf16(
         "utf8-padded-json": b'{"goal":"x"}' + b"\x00" * 8,
         "utf8-nul-heavy-tail": b'{"goal":1}\n' + b"\x00" * 48,
         "utf8-tab-separated": b"name\tvalue\tgoal\n",
-        "utf8-non-ascii-token": "café naïve goal\n".encode("utf-8"),
+        "utf8-non-ascii-token": "café naïve goal\n".encode(),
     }
     for name, raw in utf8_cases.items():
         detected = _unmarked_utf16_encoding(raw)

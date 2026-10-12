@@ -48,8 +48,8 @@ BRANCH_ALLOWED = re.compile(
 
 
 def git(*args: str) -> str:
-    result = subprocess.run(  # noqa: S603
-        ["git", *args],  # noqa: S607
+    result = subprocess.run(
+        ["git", *args],
         capture_output=True,
         text=True,
         check=True,
@@ -108,11 +108,11 @@ def main() -> int:
             if is_agent_identity(ident):
                 problems.append(f"commit {short} {role} identity: {ident}")
     if problems:
-        print("Attribution check failed:")  # noqa: T201
+        print("Attribution check failed:")
         for p in problems:
-            print(f"  - {p}")  # noqa: T201
+            print(f"  - {p}")
         return 1
-    print("Attribution check passed.")  # noqa: T201
+    print("Attribution check passed.")
     return 0
 
 

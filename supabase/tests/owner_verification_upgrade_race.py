@@ -16,7 +16,7 @@ base = [engine, 'exec', '-i', container, 'psql', '-X', '-U', 'postgres', '-d', d
         '-v', 'ON_ERROR_STOP=1', '-Atq']
 
 def sql(q):
-    r = subprocess.run(base, input=q, text=True, capture_output=True, timeout=30)
+    r = subprocess.run(base, input=q, text=True, capture_output=True, timeout=30, check=False)
     assert r.returncode == 0, r.stderr
     return r.stdout.strip()
 

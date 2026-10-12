@@ -2,15 +2,15 @@
 """Real RPC boundary checks: many individually valid alternatives, bounded reads and recovery."""
 import copy
 import json
-from pathlib import Path
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 
 engine, container = sys.argv[1:]
 base = [engine, 'exec', '-i', container, 'psql', '-X', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-Atq']
 def sql(q):
-    r = subprocess.run(base, input=q, text=True, capture_output=True, timeout=180)
+    r = subprocess.run(base, input=q, text=True, capture_output=True, timeout=180, check=False)
     assert r.returncode == 0, r.stderr
     return r.stdout.strip()
 def lit(x): return "'" + x.replace("'", "''") + "'"
@@ -76,8 +76,8 @@ replay, size = rpc(accounts[0], 'submit_catalog_product_v2', js(original))
 assert size <= 262144 and replay['replayed'] and replay['acknowledged_revision'] == accepted['acknowledged_revision']
 resolved, size = rpc(accounts[0], 'resolve_catalog_publish_for_withdrawal_v2', js(original))
 assert size <= 262144 and resolved['receipt'] == replay
-withdraw = dict(operation_id=str(uuid.uuid4()), client_revision_id=str(uuid.uuid4()), product_id=pid,
-                expected_server_revision=replay['current_revision'])
+withdraw = {'operation_id': str(uuid.uuid4()), 'client_revision_id': str(uuid.uuid4()), 'product_id': pid,
+                'expected_server_revision': replay['current_revision']}
 removed, size = rpc(accounts[0], 'withdraw_catalog_product_v2', js(withdraw))
 assert size <= 262144 and removed['current_state'] == 'withdrawn'
 error(accounts[0], 'get_catalog_product_alternatives_v2', f'{lit(pid)},{lit(first_cursor)},20', 'revision_conflict')
