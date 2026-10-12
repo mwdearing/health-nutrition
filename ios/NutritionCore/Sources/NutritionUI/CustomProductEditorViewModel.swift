@@ -193,7 +193,8 @@ public struct CustomProductSharePreview: Identifiable {
     }
     private func isSettled(_ operation: ProductShareOperation) -> Bool {
         operation.reviewSettlementID != nil || [.acknowledged, .satisfied].contains(operation.status) ||
-            (operation.status == .cancelled && operation.publicationResolution != nil)
+            (operation.status == .cancelled && (operation.publicationResolution != nil ||
+                (operation.kind == .publish && operation.attempts == 0 && operation.envelope == nil)))
     }
     public func review(_ item: CustomProductRevision) async {
         guard !busy else { return }

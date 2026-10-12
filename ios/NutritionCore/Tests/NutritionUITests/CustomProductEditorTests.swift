@@ -103,7 +103,16 @@ final class ProductEditorStorePort: CustomProductStore, @unchecked Sendable {
     func recordProductDelivery(_ update: ProductDeliveryUpdate) throws {}
     func pauseProductOperations(ownerID: UUID) throws {}
     func resumeProductOperations(ownerID: UUID, fromEpoch: UUID, toEpoch: UUID) throws {}
-    func cancelProductPublications(ownerID: UUID) throws {}
+    var cancellationOwners: [UUID] = []
+    func cancelProductPublications(ownerID: UUID) throws {
+        cancellationOwners.append(ownerID)
+        for index in operations.indices where operations[index].ownerID == ownerID && operations[index].kind == .publish {
+            let operation = operations[index]
+            if operation.reviewSettlementID == nil && ![.acknowledged, .satisfied].contains(operation.status) && operation.publicationResolution == nil {
+                operations[index].status = .cancelled
+            }
+        }
+    }
     func removeProductAccountState(ownerID: UUID) throws {}
 }
 

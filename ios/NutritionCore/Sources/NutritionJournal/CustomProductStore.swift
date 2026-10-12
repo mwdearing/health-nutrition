@@ -222,7 +222,8 @@ extension SwiftDataJournalStore: CustomProductStore {
 
     private static func settled(_ operation: ProductShareOperation) -> Bool {
         operation.reviewSettlementID != nil || operation.status == .acknowledged || operation.status == .satisfied ||
-            (operation.status == .cancelled && operation.publicationResolution != nil)
+            (operation.status == .cancelled && (operation.publicationResolution != nil ||
+                (operation.kind == .publish && operation.attempts == 0 && operation.envelope == nil)))
     }
 
     /// Records explicit removal and cancels this product's publications in the same transaction.

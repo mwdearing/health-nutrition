@@ -185,3 +185,61 @@ extension CustomProductStatusTests {
         await model.review(item); XCTAssertNil(model.preview)
     }
 }
+
+extension CustomProductStatusTests {
+    @MainActor func testNeverAttemptedShareOffOnAllowsNewExplicitReviewWithoutRevivingCanceledWork() async throws {
+        let store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        let item = syntheticCommunityRevision(name: "Synthetic offline product", kind: .food); store.products = [item]
+        let owner = UUID(), epoch = UUID()
+        let enabled = ProductShareAccountContext(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true)
+        let disabled = ProductShareAccountContext(ownerID: owner, profileReady: true, sharingAllowed: false, consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true)
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(enabled)
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+        await model.review(item); try model.confirmShare()
+        let original = try XCTUnwrap(store.operations.first)
+        XCTAssertEqual(original.attempts, 0); XCTAssertNil(original.envelope)
+        coordinator.closeGate(reason: .sharingDisabled); coordinator.updateAccountContext(disabled)
+        let canceled = try XCTUnwrap(store.operations.first)
+        XCTAssertEqual(canceled.status, .cancelled); XCTAssertEqual(store.cancellationOwners.first, owner)
+        coordinator.updateAccountContext(enabled)
+        XCTAssertEqual(store.operations, [canceled])
+        await model.review(item)
+        XCTAssertNotNil(model.preview)
+        XCTAssertEqual(store.operations, [canceled], "Review must not enqueue or revive the canceled intent")
+        try model.confirmShare()
+        XCTAssertEqual(store.operations.count, 2)
+        XCTAssertEqual(store.operations.first, canceled)
+        XCTAssertNotEqual(store.operations.last?.operationID, original.operationID)
+        XCTAssertEqual(store.operations.last?.status, .pending)
+    }
+    @MainActor func testInertCanceledHistoryDoesNotBlockAcknowledgedAuthorityReviewButAttemptedCancellationDoes() async throws {
+        let store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        let item = syntheticCommunityRevision(name: "Synthetic saved", kind: .food), remote = syntheticCommunityProduct(name: "Synthetic current", kind: .food)
+        store.products = [item]
+        let owner = UUID(), epoch = UUID(), storeEpoch = UUID()
+        var canceled = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(), clientRevisionID: item.revisionID, kind: .publish, content: item.content, epoch: epoch)
+        canceled.status = .cancelled; canceled.storeEpoch = storeEpoch
+        var acknowledged = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(), clientRevisionID: item.revisionID, kind: .withdraw, serverProductID: remote.productID.uuidString.lowercased(), expectedServerRevision: "1", epoch: epoch)
+        acknowledged.status = .acknowledged; acknowledged.attempts = 1; acknowledged.envelope = Data("synthetic withdrawn request".utf8)
+        acknowledged.currentRevision = "2"; acknowledged.acknowledgedRevision = "2"; acknowledged.currentState = .withdrawn; acknowledged.storeEpoch = storeEpoch
+        store.operations = [canceled, acknowledged]
+        await service.setContribution(.init(productID: remote.productID, currentRevision: "3", currentState: .active), product: remote)
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+        await model.review(item)
+        XCTAssertEqual(model.preview?.reconciliation?.blockingOperation, acknowledged)
+        XCTAssertEqual(model.preview?.reconciliation?.expectedOperationIDs, [canceled.operationID, acknowledged.operationID])
+        XCTAssertTrue(store.reviews.isEmpty)
+        try model.confirmShare()
+        XCTAssertEqual(store.reviews.first?.1?.expectedServerRevision, "3")
+        for attempts in [0, 1] {
+            var unresolved = canceled; unresolved.attempts = attempts; unresolved.envelope = Data("synthetic unresolved request".utf8)
+            store.operations = [unresolved, acknowledged]
+            await model.review(item)
+            XCTAssertNil(model.preview, "Never settle an attempted or envelope-bearing cancellation")
+            XCTAssertThrowsError(try model.confirmShare())
+        }
+    }
+}
