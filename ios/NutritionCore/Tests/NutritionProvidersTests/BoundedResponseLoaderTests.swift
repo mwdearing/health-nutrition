@@ -326,6 +326,7 @@ private final class ControlledURLProtocol: URLProtocol {
 
     private static let state = LockedState()
     private let lifecycleLock = NSLock()
+    private let deliveryQueue = DispatchQueue(label: "bounded-response-test.protocol")
     private var stopped = false
 
     static func requestCount() -> Int { state.currentRequestCount() }
@@ -343,7 +344,7 @@ private final class ControlledURLProtocol: URLProtocol {
         let current = Self.state.beginRequest()
         // URLSession may buffer protocol callbacks that all arrive synchronously from
         // startLoading. Deliver asynchronously so these fixtures exercise real streaming behavior.
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
+        deliveryQueue.asyncAfter(deadline: .now() + .milliseconds(10)) { [self] in
             guard isActive else { return }
             if let redirectTo = current.redirectTo, request.url != redirectTo {
                 let response = HTTPURLResponse(
@@ -363,12 +364,7 @@ private final class ControlledURLProtocol: URLProtocol {
                     url: request.url!, statusCode: current.status, httpVersion: "HTTP/1.1", headerFields: headers)!
             }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            for chunk in current.chunks {
-                guard isActive else { return }
-                client?.urlProtocol(self, didLoad: chunk)
-                current.onChunk?()
-            }
-            if !current.holdOpen, isActive { client?.urlProtocolDidFinishLoading(self) }
+            deliverChunk(at: 0, from: current)
         }
     }
 
@@ -379,6 +375,19 @@ private final class ControlledURLProtocol: URLProtocol {
     }
 
     private var isActive: Bool { lifecycleLock.withLock { !stopped } }
+
+    private func deliverChunk(at index: Int, from script: Script) {
+        guard isActive else { return }
+        guard index < script.chunks.count else {
+            if !script.holdOpen { client?.urlProtocolDidFinishLoading(self) }
+            return
+        }
+        client?.urlProtocol(self, didLoad: script.chunks[index])
+        script.onChunk?()
+        deliveryQueue.asyncAfter(deadline: .now() + .milliseconds(10)) { [self] in
+            deliverChunk(at: index + 1, from: script)
+        }
+    }
 }
 
 private final class RedirectRefusingDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
