@@ -353,7 +353,7 @@ extension ProductShareCoordinatorTests {
         let first = ProductShareOperation(ownerID: owner, localProductID: v1.localProductID, operationID: UUID(), clientRevisionID: v1.revisionID,
             kind: .publish, content: v1.content, consentGeneration: "1", epoch: epoch)
         let snapshot = ProductDefinition(snapshotID: v1.revisionID.uuidString, productID: v1.localProductID.uuidString, name: v1.content.name, labelBasis: "per 100 g", catalogOrigin: "custom", catalogVersion: v1.revisionID.uuidString)
-        let intake = ProductIntakeDraft(intake: Intake(id: UUID().uuidString, category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+        let intake = ProductIntakeDraft(intake: Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
             components: [IntakeComponent(componentID: "portion", name: "Synthetic", amount: 1, unit: .g)], snapshot: snapshot)
         try store.saveCustomProduct(CustomProductSave(revision: v1, intake: intake, publication: first), now: now)
         let coordinator = ProductShareCoordinator(store: store, service: service, clock: { now }, jitter: { 1 })

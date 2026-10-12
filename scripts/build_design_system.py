@@ -389,7 +389,14 @@ def esc(text):
 
 # The camera cannot run on the simulator, so these sheets keep their outline. AddBarcodeDestination
 # opens straight onto the camera scanner, so its picture would be a blank camera.
-SCREENSHOT_EXEMPT = {"BarcodeScannerSheet", "LabelCaptureSheet", "AddBarcodeDestination"}
+# Embedded product sections are captured inside their host screens; they have no standalone route.
+SCREENSHOT_EXEMPT = {
+    "BarcodeScannerSheet",
+    "LabelCaptureSheet",
+    "AddBarcodeDestination",
+    "CustomProductSharingSection",
+    "SharedProductFactsView",
+}
 
 
 def find_screenshots(directory):

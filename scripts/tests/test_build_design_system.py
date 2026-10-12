@@ -104,6 +104,14 @@ def test_missing_screenshots_ignores_components_and_camera_sheets():
     assert bds.missing_screenshots(screens, {"TodayView"}) == ["JournalView"]
 
 
+def test_missing_screenshots_ignores_embedded_product_views():
+    screens = {
+        "CustomProductSharingSection": {"group": "Screens"},
+        "SharedProductFactsView": {"group": "Screens"},
+    }
+    assert bds.missing_screenshots(screens, set()) == []
+
+
 def test_preview_uses_the_picture_only_when_both_urls_are_known():
     screen = {"name": "TodayView", "source": "a.swift", "group": "Screens", "elements": [("title", "Today")]}
     blobs = {"TodayView-light.png": "/_blob/aa", "TodayView-dark.png": "/_blob/bb"}

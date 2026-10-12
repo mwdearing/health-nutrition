@@ -1255,8 +1255,11 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertEqual(per100g[1].string("amount"), "5.2")
         // The same basis without a space, as a stored lookup states it.
         XCTAssertEqual(try encode(basis: "per100g")[1].string("amount"), "5.2")
-        // A source that did not resolve per 100 g or per 100 mL cannot be scaled to a mass or a volume.
-        for unresolved in ["per 100 g or mL", "per serving (30 g)", "per 100 kcal", "unknown"] {
+        // An explicit serving weight scales against the logged amount; unclear and energy-based bases do not.
+        let perServing = try encode(basis: "per serving (20 g)")
+        XCTAssertEqual(perServing.map { $0.string("component_id") }, ["protein-bar", "protein"])
+        XCTAssertEqual(perServing[1].string("amount"), "26")
+        for unresolved in ["per 100 g or mL", "per 100 kcal", "unknown"] {
             let facts = try encode(basis: unresolved)
             XCTAssertEqual(
                 facts.map { $0.string("component_id") }, ["protein-bar"], unresolved)
