@@ -6,6 +6,27 @@ import NutritionProviders
 @testable import NutritionUI
 
 final class CustomProductStatusTests: XCTestCase {
+    @MainActor func testEditedRevisionIsNotPresentedAsAlreadyShared() throws {
+        let owner = UUID(), epoch = UUID(), store = ProductEditorStorePort(), service = ProductSearchServicePort()
+        let original = syntheticCommunityRevision(name: "Synthetic original", kind: .food)
+        let edited = CustomProductRevision(localProductID: original.localProductID, revisionID: UUID(),
+            content: .init(name: "Synthetic edited", kind: .food, basis: .perServing))
+        store.products = [edited]
+        var acknowledged = ProductShareOperation(ownerID: owner, localProductID: original.localProductID, operationID: UUID(),
+            clientRevisionID: original.revisionID, kind: .publish, content: original.content, epoch: epoch)
+        acknowledged.status = .acknowledged; acknowledged.currentState = .active
+        acknowledged.currentRevision = "1"; acknowledged.acknowledgedRevision = "1"; acknowledged.storeEpoch = UUID()
+        store.operations = [acknowledged]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+
+        XCTAssertEqual(model.status(original), .shared)
+        XCTAssertEqual(model.status(edited).rawValue, "Edited on this phone")
+        XCTAssertTrue(model.detail(edited).localizedCaseInsensitiveContains("not been shared"))
+    }
+
     @MainActor func testExplicitPreviewThenShareQueuesOnlySelectedProduct() async throws {
         let store = ProductEditorStorePort(), service = ProductSearchServicePort()
         let first = syntheticCommunityRevision(name: "Synthetic first", kind: .food)
