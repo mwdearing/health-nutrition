@@ -30,8 +30,17 @@ TEXT_PATTERNS = [
 AGENT_NAME = re.compile(
     r"^(claude( code| opus| sonnet| haiku)?( [0-9][0-9.]*)?|codex"
     r"|hermes( agent| backup bot)?|chatgpt.*|(github )?copilot|copilot-swe-agent.*"
-    r"|.*(claude|codex|chatgpt|copilot|hermes|openai|anthropic).*\[bot\])$",
+    r")$",
     re.IGNORECASE,
+)
+AGENT_BOT_WORDS = (
+    "claude",
+    "codex",
+    "chatgpt",
+    "copilot",
+    "hermes",
+    "openai",
+    "anthropic",
 )
 # Known bot mailboxes only: an employee at one of these companies is a person.
 AGENT_EMAIL = re.compile(
@@ -41,7 +50,6 @@ AGENT_EMAIL = re.compile(
     re.IGNORECASE,
 )
 DEPENDABOT_BRANCH = re.compile(r"^dependabot/[a-z0-9][a-z0-9._/-]*$")
-IDENTITY_PARTS = re.compile(r"^\s*(?P<name>.*?)\s*(<(?P<email>[^>]*)>)?\s*$")
 BRANCH_ALLOWED = re.compile(
     r"^(feature|bugfix|hotfix|docs|chore|refactor|ci|test)/[a-z0-9][a-z0-9._-]*$"
 )
@@ -58,12 +66,38 @@ def git(*args: str) -> str:
 
 
 def is_agent_identity(text: str) -> bool:
-    match = IDENTITY_PARTS.match(text)
-    if not match:
-        return False
-    name = match.group("name") or ""
-    email = match.group("email") or ""
-    return bool(AGENT_NAME.match(name.strip()) or AGENT_EMAIL.search(email.strip()))
+    # Split on the bracket characters only (a single linear pass, no regex
+    # backtracking) and judge every segment on its own, so a stray or doubled
+    # bracket anywhere cannot hide a bot name or a bot mailbox.
+    identity = text.strip()
+    if _is_agent_name(_identity_name_candidate(identity)):
+        return True
+    return any(_is_agent_segment(segment) for segment in re.split(r"[<>]", identity))
+
+
+def _is_agent_segment(segment: str) -> bool:
+    segment = segment.strip()
+    return _is_agent_name(segment) or bool(AGENT_EMAIL.search(segment))
+
+
+def _identity_name_candidate(identity: str) -> str:
+    opening = identity.find("<")
+    if opening >= 0:
+        candidate = identity[:opening]
+    else:
+        at = identity.find("@")
+        mailbox_start = identity.rfind(" ", 0, at) if at >= 0 else -1
+        candidate = identity[:mailbox_start] if mailbox_start >= 0 else identity
+    return candidate.strip().rstrip(" >").strip()
+
+
+def _is_agent_name(name: str) -> bool:
+    if AGENT_NAME.match(name):
+        return True
+    normalized = name.casefold()
+    return normalized.endswith("[bot]") and any(
+        word in normalized[:-5] for word in AGENT_BOT_WORDS
+    )
 
 
 def branch_problem(head_ref: str, author: str = "") -> str | None:

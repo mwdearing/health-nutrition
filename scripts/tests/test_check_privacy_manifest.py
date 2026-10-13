@@ -178,6 +178,32 @@ def test_declared_api_passes(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_long_nonstring_hash_run_is_scanned_once_under_an_outer_deadline(tmp_path: Path) -> None:
+    root = write_tree(
+        tmp_path,
+        {
+            "NutritionCore/Sources/NutritionProviders/HashRun.swift": (
+                ("#" * 500_000) + "\nfunc value() -> Int { 1 }\n"
+            )
+        },
+        manifest=manifest_xml(declared=[BOOT_TIME]),
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--root",
+            str(root),
+            "--manifest",
+            str(root / "HealthNutrition/Resources/PrivacyInfo.xcprivacy"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_undeclared_user_defaults_fails(tmp_path: Path) -> None:
     root = write_tree(
         tmp_path,

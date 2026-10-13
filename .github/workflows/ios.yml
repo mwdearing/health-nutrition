@@ -55,6 +55,7 @@ permissions:
 jobs:
   privacy-manifest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -82,6 +83,7 @@ jobs:
 
   swift-test:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
@@ -92,6 +94,7 @@ jobs:
 
   app-build:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
@@ -111,6 +114,7 @@ jobs:
   release-build:
     # The same image as signed-beta.yml, so this job sees the compiler the upload uses.
     runs-on: macos-26
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install XcodeGen
@@ -136,6 +140,7 @@ jobs:
   # HealthNutritionTests bundle, which is hosted by the app so @testable import HealthNutrition works.
   app-test:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
@@ -182,6 +187,7 @@ jobs:
   unsigned-ipa:
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
