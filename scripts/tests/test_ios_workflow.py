@@ -101,5 +101,8 @@ def test_macos_workflows_cancel_superseded_pull_request_runs() -> None:
         assert concurrency, workflow_name
         assert "github.workflow" in concurrency["group"], workflow_name
         assert "pull_request.number" in concurrency["group"], workflow_name
+        # Pushes and manual runs get a unique key, because a pending run is dropped when another enters its group.
+        assert "github.run_id" in concurrency["group"], workflow_name
+        assert "github.ref" not in concurrency["group"], workflow_name
         # Only pull request runs may be cancelled; pushes to main must all finish.
         assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}", workflow_name
