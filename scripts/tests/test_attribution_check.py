@@ -136,6 +136,35 @@ def test_human_identity_with_complete_mailbox_is_allowed() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "Jane <project-claude[bot]",
+        "Jane <alias> <noreply@openai.com>",
+        "Jane > <noreply@anthropic.com>",
+        "Claude Code <<bot@example.com>",
+        "Jane <<noreply@openai.com>>",
+    ],
+)
+def test_bot_identity_is_rejected_in_any_bracket_segment(identity: str) -> None:
+    result = run_check(f"{COAUTHOR_TRAILER} {identity}")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"PR body: {COAUTHOR_TRAILER[:-1]} trailer naming an agent" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "Jane Doe <jane@example.com>",
+        "Jane Doe <jane.doe+work@example.org>",
+        "Jane (JD) Doe <jane@example.com>",
+    ],
+)
+def test_human_identity_with_bracketed_nickname_or_mailbox_is_allowed(identity: str) -> None:
+    result = run_check(f"{COAUTHOR_TRAILER} {identity}")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_swift_lint_triggers_on_attribution_workflow() -> None:
     workflow = REPO / ".github" / "workflows" / "swift-lint.yml"
     raw = yaml.safe_load(workflow.read_text())

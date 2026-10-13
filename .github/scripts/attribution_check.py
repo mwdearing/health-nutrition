@@ -66,25 +66,18 @@ def git(*args: str) -> str:
 
 
 def is_agent_identity(text: str) -> bool:
-    # Parse the optional angle-bracket mailbox with bounded string operations.
-    # Extract the display-name candidate before validating mailbox brackets so
-    # malformed brackets cannot hide a recognizable name.
+    # Split on the bracket characters only (a single linear pass, no regex
+    # backtracking) and judge every segment on its own, so a stray or doubled
+    # bracket anywhere cannot hide a bot name or a bot mailbox.
     identity = text.strip()
     if _is_agent_name(_identity_name_candidate(identity)):
         return True
-    # The final mailbox decides on its own, so a stray bracket before it
-    # cannot hide a bot address.
-    if identity.endswith(">"):
-        final_opening = identity.rfind("<")
-        if final_opening >= 0 and AGENT_EMAIL.search(identity[final_opening + 1:-1].strip()):
-            return True
-    opening = identity.find("<")
-    if opening < 0 or not identity.endswith(">"):
-        return False
-    email = identity[opening + 1:-1].strip()
-    if "<" in email or ">" in email:
-        return False
-    return bool(AGENT_EMAIL.search(email))
+    return any(_is_agent_segment(segment) for segment in re.split(r"[<>]", identity))
+
+
+def _is_agent_segment(segment: str) -> bool:
+    segment = segment.strip()
+    return _is_agent_name(segment) or bool(AGENT_EMAIL.search(segment))
 
 
 def _identity_name_candidate(identity: str) -> str:
