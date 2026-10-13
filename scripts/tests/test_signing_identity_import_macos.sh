@@ -21,10 +21,10 @@ TRUST_ADDED=0
 cleanup() {
   local failed=0
   if [[ "$TRUST_ADDED" -eq 1 ]]; then
-    if security remove-trusted-cert "$WORK/root.crt" >"$WORK/keychain.log" 2>&1; then
+    if sudo -n security remove-trusted-cert -d "$WORK/root.crt" >"$WORK/keychain.log" 2>&1; then
       TRUST_ADDED=0
     else
-      echo "Could not remove the synthetic certificate from user Trust Settings." >&2
+      echo "Could not remove the synthetic certificate from admin Trust Settings." >&2
       failed=1
     fi
   fi
@@ -123,8 +123,8 @@ security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >"$WORK/keychain.lo
 KEYCHAIN_CREATED=1
 security set-keychain-settings -lut 21600 "$KEYCHAIN" >"$WORK/keychain.log" 2>&1
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >"$WORK/keychain.log" 2>&1
-stage "add trusted root"
-security add-trusted-cert -r trustRoot -k "$KEYCHAIN" "$WORK/root.crt" \
+stage "add trusted root (admin domain, ephemeral runner)"
+sudo -n security add-trusted-cert -d -r trustRoot -k "$KEYCHAIN" "$WORK/root.crt" \
   >"$WORK/keychain.log" 2>&1 || {
   echo "Could not trust the synthetic certificate in its temporary keychain." >&2
   exit 1

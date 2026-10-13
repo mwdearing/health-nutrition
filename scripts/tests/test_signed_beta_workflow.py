@@ -414,16 +414,17 @@ def test_import_keeps_cf_bridge_and_access_alive_across_c_call() -> None:
     assert "withExtendedLifetime((cfPassphrase, access))" in source
 
 
-def test_synthetic_import_removes_user_trust_before_deleting_certificate_files() -> None:
+def test_synthetic_import_removes_admin_trust_before_deleting_certificate_files() -> None:
     harness = (WORKFLOW.parents[2] / "scripts/tests/test_signing_identity_import_macos.sh").read_text()
     assert "umask 077" in harness
+    assert 'sudo -n security add-trusted-cert -d -r trustRoot -k "$KEYCHAIN" "$WORK/root.crt"' in harness
     assert harness.index("umask 077") < harness.index('WORK="$(mktemp')
 
     cleanup = harness.split("cleanup() {", maxsplit=1)[1].split("\n}", maxsplit=1)[0]
-    remove_trust = 'security remove-trusted-cert "$WORK/root.crt"'
+    remove_trust = 'sudo -n security remove-trusted-cert -d "$WORK/root.crt"'
     assert 'if [[ "$TRUST_ADDED" -eq 1 ]]' in cleanup
     assert remove_trust in cleanup
-    assert 'echo "Could not remove the synthetic certificate from user Trust Settings."' in cleanup
+    assert 'echo "Could not remove the synthetic certificate from admin Trust Settings."' in cleanup
     assert cleanup.index(remove_trust) < cleanup.index("security delete-keychain")
     assert cleanup.index(remove_trust) < cleanup.index("rm -rf -- \"$WORK\"")
     assert "|| true" not in cleanup
