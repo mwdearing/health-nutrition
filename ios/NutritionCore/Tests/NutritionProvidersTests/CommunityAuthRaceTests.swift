@@ -562,6 +562,37 @@ final class CommunityAuthRaceTests: XCTestCase {
         XCTAssertTrue(transport.operations.isEmpty, "server logout must wait until local clear succeeds")
     }
 
+    func testFailedDiscardDoesNotLetStoredSessionAuthenticateLater() async throws {
+        let store = FailingClearStore(testSession())
+        let transport = LifecycleTransport(gated: [])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        await assertCommunityError(.storage) { try await auth.discardSession() }
+        await assertCommunityError(.signedOut) { try await auth.validSession() }
+        XCTAssertEqual(store.load(), testSession(), "the failed clear leaves storage untouched, but it must not authenticate")
+    }
+
+    func testFailedSignOutDoesNotLetStoredSessionAuthenticateLater() async throws {
+        let store = FailingClearStore(testSession())
+        let transport = LifecycleTransport(gated: [])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        await assertCommunityError(.storage) { try await auth.signOut() }
+        await assertCommunityError(.signedOut) { try await auth.validSession() }
+        XCTAssertTrue(transport.operations.isEmpty, "a failed sign-out must not reach the server logout")
+    }
+
+    func testSignInAfterFailedDiscardAcceptsNewSession() async throws {
+        let store = FailingClearStore(nil)
+        let transport = LifecycleTransport(gated: [])
+        let auth = CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+
+        await assertCommunityError(.storage) { try await auth.discardSession() }
+        let session = try await auth.signInWithApple(idToken: "new-id", nonce: "new-nonce")
+        let valid = try await auth.validSession()
+        XCTAssertEqual(valid, session, "a fresh sign-in after a failed discard must authenticate again")
+    }
+
     func testMatchingUserInvalidationPropagatesReadFailureWithoutPretendingAccountDiffers() async throws {
         let store = FailingLoadStore(testSession())
         let auth = CommunityAuth(config: try makeConfig(), transport: LifecycleTransport(gated: []), store: store, now: { testNow })
