@@ -7,11 +7,11 @@ public struct CommunityProductSearchView: View {
     private let onSelect: (CustomProductRevision) -> Void
     private let onLegacy: (LegacyCustomProductDraft) -> Void
     private let onSignIn: () -> Void
-    private let onOpenFoodFacts: (LookedUpProduct) -> Void
+    private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
-    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct) -> Void = { _ in }) {
+    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in }) {
         self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
     }
     public var body: some View {
@@ -38,10 +38,10 @@ public struct CommunityProductSearchView: View {
                     }.accessibilityHint("Opens intake details without logging or sharing")
                 }
             }
-            Section(header: Text("Open Food Facts"), footer: Text("The words you search for are sent to Open Food Facts, a public database. Nothing else from this phone is sent.")) {
+            if kind != .supplement { Section(header: Text("Open Food Facts"), footer: Text("The words you search for are sent to Open Food Facts, a public database. Nothing else from this phone is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
-                    Button { onOpenFoodFacts(product) } label: {
+                    Button { onOpenFoodFacts(product, kind) } label: {
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text(product.name ?? "Unnamed product").font(.headline)
                             if let brand = product.brand { Text(brand) }
@@ -50,7 +50,11 @@ public struct CommunityProductSearchView: View {
                         }
                     }.accessibilityHint("Opens intake details filled from this product. Nothing is logged until you save.")
                 }
-            }
+                if let attribution = model.openFoodFactsResults.compactMap(\.attribution).first,
+                   let url = URL(string: attribution.url) {
+                    Link("Open Food Facts license and source", destination: url).font(.footnote)
+                }
+            } }
             Section("Shared products") {
                 sharedState
                 ForEach(model.sharedResults, id: \.productID) { product in

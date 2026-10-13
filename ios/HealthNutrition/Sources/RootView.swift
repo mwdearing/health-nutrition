@@ -507,7 +507,7 @@ struct RootView: View {
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
                     onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
-                    onOpenFoodFacts: { self.addNavigation.openLookedUp($0, home: home) })
+                    onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) })
             }
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {
