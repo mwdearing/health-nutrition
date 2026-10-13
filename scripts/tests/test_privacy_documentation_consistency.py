@@ -247,8 +247,24 @@ def test_label_submission_copy_discloses_signed_in_account_linkage() -> None:
 
     submit = client.split("public func submitLabel", 1)[1].split("public func", 1)[0]
     assert "authenticatedSend" in submit
-    assert "device uuid := auth.uid()" in sql
-    assert "insert into catalog.submissions as s (device_id" in sql
+    # Either the function itself records the submission under the caller's account id, or (after the
+    # legacy bridge) it requires a signed-in, non-anonymous account and delegates to the renamed earlier
+    # submit, which still records the submission under that account's id.
+    direct = (
+        "device uuid := auth.uid()" in sql
+        and "insert into catalog.submissions as s (device_id" in sql
+    )
+    migrations = "\n".join(
+        path.read_text(encoding="utf-8").lower()
+        for path in sorted((ROOT / "supabase/migrations").glob("*.sql"))
+    )
+    bridged = (
+        "catalog_v2.live_legacy_account()" in sql
+        and "catalog_v2.legacy_submit(" in sql
+        and "device uuid := auth.uid()" in migrations
+        and "insert into catalog.submissions as s (device_id" in migrations
+    )
+    assert direct or bridged
 
     for document in (accounts, privacy):
         assert "linked to your signed-in account" in document
