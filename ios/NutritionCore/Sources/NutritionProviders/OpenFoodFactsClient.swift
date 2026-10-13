@@ -5,8 +5,8 @@ public actor OpenFoodFactsClient {
         "code", "product_name", "brands", "serving_size", "serving_quantity",
         "nutrition_data_per", "nutriments", "last_modified_t", "product_quantity_unit",
     ]
-    /// Open Food Facts allows 100 product reads per minute; we stay far below at 15.
-    public static let maxLookups = 15
+    /// Open Food Facts publishes 15 product reads per minute for apps; we stay below that at 10.
+    public static let maxLookups = 10
     public static let windowSeconds: TimeInterval = 60
     /// Open Food Facts allows 10 search requests per minute; we stay below at 6.
     public static let maxSearches = 6
