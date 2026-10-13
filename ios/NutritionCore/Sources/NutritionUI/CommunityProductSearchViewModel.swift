@@ -73,7 +73,8 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
         openFoodFactsTask?.cancel()
         openFoodFactsResults = []
         let text = query
-        guard let openFoodFacts else { openFoodFactsState = .idle; return }
+        // Supplements are not in Open Food Facts, so nothing is sent for that kind.
+        guard let openFoodFacts, kind != .supplement else { openFoodFactsState = .idle; return }
         guard text.unicodeScalars.count >= 2 else { openFoodFactsState = .queryTooShort; return }
         openFoodFactsState = .loading
         openFoodFactsTask = Task { [openFoodFacts] in
