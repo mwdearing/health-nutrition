@@ -78,7 +78,7 @@ public actor OpenFoodFactsClient {
     public func search(query: String) async -> OpenFoodFactsSearchOutcome {
         let trimmed = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.searchMaximumCharacters))
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.unicodeScalars.count >= Self.searchMinimumScalars else {
+        guard trimmed.count >= Self.searchMinimumScalars else {
             return .empty
         }
         let current = monotonic()
