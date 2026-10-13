@@ -67,6 +67,9 @@ trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+stage() { printf 'stage: %s\n' "$1"; }
+
+stage "generate synthetic certificates"
 openssl genrsa -out "$WORK/root.key" 2048 >"$WORK/openssl.log" 2>&1 || {
   echo "Could not create the synthetic root key." >&2
   exit 1
@@ -112,6 +115,7 @@ SYNTHETIC_PASSWORD="$SYNTHETIC_PASSWORD" openssl pkcs12 -export \
   exit 1
 }
 
+stage "create and unlock keychain"
 security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >"$WORK/keychain.log" 2>&1 || {
   echo "Could not create the synthetic keychain." >&2
   exit 1
@@ -119,6 +123,7 @@ security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >"$WORK/keychain.lo
 KEYCHAIN_CREATED=1
 security set-keychain-settings -lut 21600 "$KEYCHAIN" >"$WORK/keychain.log" 2>&1
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >"$WORK/keychain.log" 2>&1
+stage "add trusted root"
 security add-trusted-cert -r trustRoot -k "$KEYCHAIN" "$WORK/root.crt" \
   >"$WORK/keychain.log" 2>&1 || {
   echo "Could not trust the synthetic certificate in its temporary keychain." >&2
@@ -135,6 +140,7 @@ SH
 chmod 700 "$WORK/helper-wrapper.sh"
 printf '%s\n' "$WORK/synthetic.p12" "$KEYCHAIN" >"$WORK/expected-argv.txt"
 
+stage "run import helper"
 if ! SIGNING_CERT_PASSWORD="$SYNTHETIC_PASSWORD" \
   SYNTHETIC_REAL_HELPER="$HELPER" SYNTHETIC_ARGV_CAPTURE="$WORK/helper-argv.txt" \
   "$WORK/helper-wrapper.sh" "$WORK/synthetic.p12" "$KEYCHAIN" \
@@ -151,6 +157,7 @@ if grep -F -- "$SYNTHETIC_PASSWORD" "$WORK/helper-argv.txt" "$WORK/import.log" >
   exit 1
 fi
 
+stage "set key partition list"
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" \
   >"$WORK/keychain.log" 2>&1 || {
   echo "Could not allow codesign to use the synthetic identity." >&2
