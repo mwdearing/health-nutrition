@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The only network seam of the NIH DSLD client. Tests inject a fake.
 public protocol DSLDTransport: Sendable {
@@ -13,10 +16,7 @@ public struct URLSessionDSLDTransport: DSLDTransport {
     }
 
     public func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
-        return (data, http)
+        try await BoundedResponseLoader.data(
+            for: request, session: session, maxBytes: BoundedResponseLimits.dsld)
     }
 }

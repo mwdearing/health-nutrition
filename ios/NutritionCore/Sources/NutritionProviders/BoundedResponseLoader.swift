@@ -9,6 +9,8 @@ import FoundationNetworking
 /// Per-response payload limits applied before a provider decodes JSON.
 enum BoundedResponseLimits {
     static let community = 1 * 1_024 * 1_024
+    static let openFoodFacts = 4 * 1_024 * 1_024
+    static let dsld = 8 * 1_024 * 1_024
 }
 
 enum BoundedResponseError: Error, Equatable, Sendable {
