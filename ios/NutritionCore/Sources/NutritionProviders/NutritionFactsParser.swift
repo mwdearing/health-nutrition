@@ -947,8 +947,10 @@ public enum NutritionFactsParser {
         }
 
         guard let best else { return nil }
-        let nameStart = line.index(line.startIndex, offsetBy: best.start)
-        let end = line.index(nameStart, offsetBy: best.length)
+        // The offset was measured in the lowercased copy, which a few characters make longer than the line, so
+        // both steps stop at the end of the line rather than trapping past it.
+        let nameStart = line.index(line.startIndex, offsetBy: best.start, limitedBy: line.endIndex) ?? line.endIndex
+        let end = line.index(nameStart, offsetBy: best.length, limitedBy: line.endIndex) ?? line.endIndex
         return RowMatch(row: best.row, nameStart: nameStart, end: end)
     }
 
