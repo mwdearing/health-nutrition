@@ -7,17 +7,24 @@ final class PrivacyShieldUITests: XCTestCase {
         app.buttons["Show synthetic sheet"].tap()
         XCTAssertTrue(app.staticTexts["synthetic-sheet-marker"].waitForExistence(timeout: 5))
 
+        // Notification Center pulled down from the top edge makes the scene inactive while the app stays in
+        // the foreground. The simulator does not draw the app switcher for a synthesized swipe, but it does
+        // send the inactive transition, which is the moment the shield has to be showing.
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        // The switcher opens from a bottom-edge swipe while the app is in the foreground. Pressing Home first
-        // lands on the home screen, where the same swipe does nothing.
-        openAppSwitcher(in: springboard)
+        let start = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.0))
+        let end = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        start.press(forDuration: 0.1, thenDragTo: end)
+        Thread.sleep(forTimeInterval: 1.5)
         let screenshot = XCUIScreen.main.screenshot()
-        attach(screenshot, named: "privacy-shield-app-switcher-synthetic-sheet")
+        attach(screenshot, named: "privacy-shield-inactive-synthetic-sheet")
         let capturedText = try recognizedText(in: screenshot)
         XCTAssertTrue(capturedText.localizedCaseInsensitiveContains("Screen hidden"), capturedText)
         XCTAssertFalse(capturedText.localizedCaseInsensitiveContains("Synthetic sheet marker"))
         XCTAssertFalse(capturedText.localizedCaseInsensitiveContains("protein 42g"))
 
+        // Swipe Notification Center away again; the sheet must be restored, not left behind the shield.
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            .press(forDuration: 0.1, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.0)))
         app.activate()
         XCTAssertTrue(app.staticTexts["synthetic-sheet-marker"].waitForExistence(timeout: 5))
         app.buttons["close-synthetic-sheet"].tap()
@@ -43,15 +50,6 @@ final class PrivacyShieldUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["synthetic-entry-marker"].waitForExistence(timeout: 10))
         return app
-    }
-
-    private func openAppSwitcher(in springboard: XCUIApplication) {
-        let start = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98))
-        let end = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        start.press(forDuration: 0.15, thenDragTo: end)
-        // Let the switcher animation settle before the frame is captured. The recognized text asserted by the
-        // caller is the guard that this frame is the switcher showing the shield, not the home screen.
-        Thread.sleep(forTimeInterval: 1.5)
     }
 
     private func recognizedText(in screenshot: XCUIScreenshot) throws -> String {
