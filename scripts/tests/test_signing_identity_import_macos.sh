@@ -68,6 +68,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 stage() { printf 'stage: %s\n' "$1"; }
+# Bound commands that could wait for an authorization prompt on a headless runner.
+bounded() { local seconds="$1"; shift; perl -e 'alarm shift; exec @ARGV or exit 127' "$seconds" "$@"; }
 
 stage "generate synthetic certificates"
 openssl genrsa -out "$WORK/root.key" 2048 >"$WORK/openssl.log" 2>&1 || {
@@ -158,12 +160,13 @@ if grep -F -- "$SYNTHETIC_PASSWORD" "$WORK/helper-argv.txt" "$WORK/import.log" >
 fi
 
 stage "set key partition list"
-security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" \
+bounded 90 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" \
   >"$WORK/keychain.log" 2>&1 || {
   echo "Could not allow codesign to use the synthetic identity." >&2
   exit 1
 }
-security find-identity -v -p codesigning "$KEYCHAIN" >"$WORK/identities.log" 2>&1 || {
+stage "find identity"
+bounded 60 security find-identity -v -p codesigning "$KEYCHAIN" >"$WORK/identities.log" 2>&1 || {
   echo "Could not inspect the synthetic signing identity." >&2
   exit 1
 }
@@ -181,16 +184,18 @@ clang "$WORK/probe.c" -o "$WORK/probe" >"$WORK/clang.log" 2>&1 || {
   echo "Could not build the synthetic code-signing probe." >&2
   exit 1
 }
-codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp=none \
+stage "codesign probe"
+bounded 90 codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp=none \
   --identifier com.example.pr12synthetic "$WORK/probe" >"$WORK/codesign.log" 2>&1 || {
   echo "codesign could not use the imported synthetic identity." >&2
   exit 1
 }
-codesign --verify --strict "$WORK/probe" >"$WORK/codesign.log" 2>&1 || {
+bounded 60 codesign --verify --strict "$WORK/probe" >"$WORK/codesign.log" 2>&1 || {
   echo "The synthetic probe did not verify after signing." >&2
   exit 1
 }
 
+stage "wrong password rejection"
 if SIGNING_CERT_PASSWORD="$WRONG_PASSWORD" \
   SYNTHETIC_REAL_HELPER="$HELPER" SYNTHETIC_ARGV_CAPTURE="$WORK/helper-argv.txt" \
   "$WORK/helper-wrapper.sh" "$WORK/synthetic.p12" "$KEYCHAIN" \
@@ -206,7 +211,8 @@ if grep -F -- "$WRONG_PASSWORD" "$WORK/helper-argv.txt" "$WORK/wrong-password.lo
   echo "The wrong synthetic password appeared in helper arguments or output." >&2
   exit 1
 fi
-security find-identity -v -p codesigning "$KEYCHAIN" >"$WORK/identities.log" 2>&1 || {
+stage "find identity"
+bounded 60 security find-identity -v -p codesigning "$KEYCHAIN" >"$WORK/identities.log" 2>&1 || {
   echo "Could not recheck the synthetic identity after wrong-password rejection." >&2
   exit 1
 }
