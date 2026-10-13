@@ -252,7 +252,7 @@ final class JournalImportTests: JournalImportTestCase {
 
         let target = try directory()
         let journal = try store(target)
-        try JournalImporter.importExport(try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+        try JournalImporter.importExport(try JSONSerialization.data(withJSONObject: root), into: journal, favorites: try favorites(target))
 
         let restoredIntake = try XCTUnwrap(journal.activeIntakes().first { $0.id == oatsID })
         let restoredRevision = try XCTUnwrap(journal.revisions(of: oatsID).first)
