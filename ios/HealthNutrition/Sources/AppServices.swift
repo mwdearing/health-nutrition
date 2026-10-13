@@ -64,7 +64,8 @@ final class AppServices {
         recipeStore: SwiftDataRecipeStore, goalStore: SwiftDataGoalStore,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
         reminderScheduler: ReminderScheduling,
-        productService: (any CommunityProductServicing)? = nil
+        productService: (any CommunityProductServicing)? = nil,
+        accountServiceOverride: CommunityAccountServicing? = nil
     ) {
         self.displayPreferences = displayPreferences
         let community = Self.makeCommunity()
@@ -72,7 +73,13 @@ final class AppServices {
         self.productService = products
         let productSharing = products.map { ProductShareCoordinator(store: journalStore, service: $0) }
         self.productSharing = productSharing
-        let account = community.map { AccountViewModel(service: $0, preferences: displayPreferences,
+        let accountService: CommunityAccountServicing?
+        if let accountServiceOverride = accountServiceOverride {
+            accountService = accountServiceOverride
+        } else {
+            accountService = community
+        }
+        let account = accountService.map { AccountViewModel(service: $0, preferences: displayPreferences,
             productService: products, productSharing: productSharing) }
         self.community = community
         self.account = account
@@ -110,6 +117,10 @@ final class AppServices {
             afterSuccessfulErase: {
                 displayPreferences.clearProductSharingPausesAfterErase()
                 account?.refreshAfterErase()
+            },
+            eraseLocalAccount: {
+                guard let account else { return }
+                try await account.discardLocalSession()
             })
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
@@ -178,11 +189,14 @@ final class AppServices {
     ///   its own store rather than writing into the standard defaults domain.
     /// - Parameter reminderScheduler: the system's local notifications by default. A test passes a fake so
     ///   no notification is scheduled on the test device.
+    /// - Parameter accountServiceOverride: a synthetic account service for checking the local-session erase
+    ///   wiring. Nil in the app, where the account uses the community client.
     static func make(
         directory: URL = defaultDirectory,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
         reminderScheduler: ReminderScheduling,
-        productService: (any CommunityProductServicing)? = nil
+        productService: (any CommunityProductServicing)? = nil,
+        accountServiceOverride: CommunityAccountServicing? = nil
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.
@@ -234,7 +248,8 @@ final class AppServices {
             return AppServices(
                 journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
                 goalStore: goalStore, displayPreferences: displayPreferences,
-                reminderScheduler: reminderScheduler, productService: productService)
+                reminderScheduler: reminderScheduler, productService: productService,
+                accountServiceOverride: accountServiceOverride)
         } catch {
             recipeStore.close()
             favoritesStore.close()

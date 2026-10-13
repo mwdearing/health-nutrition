@@ -278,6 +278,14 @@ public final class AccountViewModel: ObservableObject {
         clearSignedInState()
     }
 
+    /// Clears this device's account presentation and stored session as part of Erase all data. It never
+    /// signs out from or deletes anything on the server. The presentation is cleared before the Keychain call
+    /// can fail, and the identity change makes every older service completion stale.
+    public func discardLocalSession() async throws {
+        clearSignedInState()
+        try await service.discardLocalSession()
+    }
+
     /// Called after Erase all data cleared the stored preferences: a signed-in person who has not read the
     /// disclosure on this device is asked again, and nothing is shared until they do.
     public func pauseSharingForErase() {
