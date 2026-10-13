@@ -45,10 +45,23 @@ def test_no_bundle_identifier_or_key_is_committed() -> None:
     assert not re.search(r"eyJ[A-Za-z0-9_-]{10,}|hash:[0-9a-f]{20,}", text)
 
 
-def test_readme_distinguishes_repository_intent_from_hosted_evidence() -> None:
-    text = README.read_text(encoding="utf-8").lower()
-    assert "does not prove" in text or "does not establish" in text
-    assert "hosted" in text and "unknown" in text
+def _paragraph(marker: str) -> str:
+    paragraphs = [block.lower() for block in README.read_text(encoding="utf-8").split("\n\n")]
+    matches = [block for block in paragraphs if marker in block]
+    assert len(matches) == 1, f"expected exactly one README paragraph containing {marker!r}"
+    return matches[0]
+
+
+def test_readme_auth_paragraph_distinguishes_repository_intent_from_hosted_evidence() -> None:
+    paragraph = _paragraph("intended auth values")
+    assert "do not prove" in paragraph and "hosted" in paragraph
+    assert "mirrors the hosted" not in paragraph
+
+
+def test_readme_network_paragraph_marks_hosted_posture_unknown() -> None:
+    paragraph = _paragraph("network-restriction")
+    assert "not evidence of hosted posture" in paragraph
+    assert "unknown" in paragraph
 
 
 def test_readme_warns_config_push_is_live_and_not_a_preview() -> None:
