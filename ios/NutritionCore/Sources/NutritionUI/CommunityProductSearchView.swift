@@ -38,7 +38,7 @@ public struct CommunityProductSearchView: View {
                     }.accessibilityHint("Opens intake details without logging or sharing")
                 }
             }
-            Section("Open Food Facts") {
+            Section(header: Text("Open Food Facts"), footer: Text("The words you search for are sent to Open Food Facts, a public database. Nothing else from this phone is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
                     Button { onOpenFoodFacts(product) } label: {

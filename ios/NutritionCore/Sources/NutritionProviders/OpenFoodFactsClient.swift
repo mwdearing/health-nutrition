@@ -149,7 +149,9 @@ public actor OpenFoodFactsClient {
             return .transport("unreadable response")
         }
         let products: [OpenFoodFactsProduct] = (decoded.products ?? []).compactMap { body in
-            guard let code = body.code?.text?.trimmingCharacters(in: .whitespaces), !code.isEmpty else {
+            // A reply is untrusted: only a well-formed barcode becomes a result.
+            guard let code = body.code?.text?.trimmingCharacters(in: .whitespaces),
+                  BarcodeValidator.isValid(code) else {
                 return nil
             }
             return OpenFoodFactsProduct(body: body, requestedBarcode: code)

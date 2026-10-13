@@ -41,6 +41,21 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertEqual(products.first?.basis, .per100g)
     }
 
+    func testSearchDropsProductsWithMalformedBarcodes() async throws {
+        let body = Data("""
+        {"count": 3, "products": [
+          {"code": "not-a-code", "product_name": "Bad Code", "nutriments": {}},
+          {"code": "2000000000015", "product_name": "Oat Biscuit", "nutriments": {}},
+          {"code": "2000000000016", "product_name": "Wrong Check Digit", "nutriments": {}}
+        ]}
+        """.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "oat")
+        guard case .results(let products) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(products.map(\.barcode), ["2000000000015"])
+    }
+
     func testSearchWithNoProductsIsEmpty() async {
         let transport = StubTransport(body: Data(#"{"count": 0, "products": []}"#.utf8))
         let outcome = await client(transport).search(query: "zzqqxx")

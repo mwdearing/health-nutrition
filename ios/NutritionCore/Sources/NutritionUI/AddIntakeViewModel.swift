@@ -570,6 +570,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Fills the form from a product the person picked in a name search, the way a barcode lookup fills
     /// it: the code, the values, the attribution and the snapshot all come from that one product.
     public func applyLookedUp(_ product: LookedUpProduct) {
+        guard BarcodeValidator.isValid(product.barcode) else { return }
         lookupGeneration += 1
         invalidateLookup()
         barcode = product.barcode
