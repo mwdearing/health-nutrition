@@ -41,7 +41,7 @@ def _manifest() -> dict:
     return plistlib.loads(MANIFEST.read_bytes())
 
 
-def _latest_submit_label_body() -> str:
+def _submit_label_bodies() -> list[str]:
     definition = re.compile(
         r"\bcreate\s+(?:or\s+replace\s+)?function\s+public\.submit_label\b"
         r"\s*\(([^)]*)\)\s*returns\s+text\b.*?\bas\s+\$\$(.*?)\$\$\s*;",
@@ -64,7 +64,11 @@ def _latest_submit_label_body() -> str:
             ):
                 bodies.append(match.group(2))
     assert bodies, "migrations must define the six-argument public.submit_label used by the app"
-    return bodies[-1].lower()
+    return [body.lower() for body in bodies]
+
+
+def _latest_submit_label_body() -> str:
+    return _submit_label_bodies()[-1]
 
 
 def _reset_preference_keys() -> set[str]:
@@ -254,15 +258,15 @@ def test_label_submission_copy_discloses_signed_in_account_linkage() -> None:
         "device uuid := auth.uid()" in sql
         and "insert into catalog.submissions as s (device_id" in sql
     )
-    migrations = "\n".join(
-        path.read_text(encoding="utf-8").lower()
-        for path in sorted((ROOT / "supabase/migrations").glob("*.sql"))
-    )
+    # The delegated implementation is the six-argument definition the bridge replaced, not any text that
+    # happens to appear somewhere in the migrations.
+    previous = _submit_label_bodies()[:-1]
+    delegated = previous[-1] if previous else ""
     bridged = (
         "catalog_v2.live_legacy_account()" in sql
         and "catalog_v2.legacy_submit(" in sql
-        and "device uuid := auth.uid()" in migrations
-        and "insert into catalog.submissions as s (device_id" in migrations
+        and "device uuid := auth.uid()" in delegated
+        and "insert into catalog.submissions as s (device_id" in delegated
     )
     assert direct or bridged
 
