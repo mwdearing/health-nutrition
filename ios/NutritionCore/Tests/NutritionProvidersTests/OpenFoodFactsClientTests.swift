@@ -27,6 +27,12 @@ final class StubTransport: OpenFoodFactsTransport, @unchecked Sendable {
     }
 }
 
+private struct OversizedOpenFoodFactsTransport: OpenFoodFactsTransport {
+    func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        throw BoundedResponseError.responseTooLarge
+    }
+}
+
 final class TestClock: @unchecked Sendable {
     private let lock = NSLock()
     private var current = Date(timeIntervalSince1970: 1_800_000_000)
@@ -200,6 +206,13 @@ final class OpenFoodFactsClientTests: XCTestCase {
         let transport = StubTransport(body: try fixture("not_found"))
         let outcome = await client(transport).lookup(barcode: "2000000000022")
         XCTAssertEqual(outcome, .notFound)
+    }
+
+    func testOversizedBodyIsRefusedWithoutTheRawErrorText() async throws {
+        let outcome = await OpenFoodFactsClient(
+            environment: .production, transport: OversizedOpenFoodFactsTransport(), appVersion: "1.0.0"
+        ).lookup(barcode: foundCode)
+        XCTAssertEqual(outcome, .transport("response exceeded the local size limit"))
     }
 
     func testNotFoundByHttp404() async throws {
