@@ -143,9 +143,10 @@ public final class AccountViewModel: ObservableObject {
             message = Self.addressMessage
             return
         }
+        let identity = accountIdentity
         guard await run(Self.codeRequestFailedMessage, {
             try await self.service.requestEmailCode(email: trimmed)
-        }) != nil else { return }
+        }) != nil, accountIdentity == identity else { return }
         pendingEmail = trimmed
         emailStep = .enterCode
         message = Self.codeSentMessage
