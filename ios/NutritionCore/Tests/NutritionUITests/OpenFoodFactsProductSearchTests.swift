@@ -61,6 +61,19 @@ final class OpenFoodFactsProductSearchTests: XCTestCase {
         XCTAssertTrue(second.openFoodFactsResults.isEmpty)
     }
 
+    /// The wait usually comes from this app's own per-minute cap, so the text must not blame the source.
+    @MainActor func testLimitTextSaysTooManySearchesAndTheWait() {
+        XCTAssertEqual(
+            CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: 39),
+            "Too many Open Food Facts searches just now. Try again in about 39 seconds.")
+        XCTAssertEqual(
+            CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: 1),
+            "Too many Open Food Facts searches just now. Try again in about 1 second.")
+        XCTAssertEqual(
+            CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: nil),
+            "Too many Open Food Facts searches just now. Try again in a minute.")
+    }
+
     @MainActor func testFailureIsUnavailableWithoutAffectingLocalResults() async throws {
         let store = ProductEditorStorePort()
         store.products = [syntheticCommunityRevision(name: "Synthetic oat", kind: .food)]

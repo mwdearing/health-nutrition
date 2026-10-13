@@ -104,6 +104,14 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
         } catch { if generation == token { pageError = true } }
     }
     public func retry() async { await search(query: query, kind: kind) }
+    /// Shown when a name search is refused for now. The wait most often comes from this app's own
+    /// per-minute cap on searches, so the text names the person's searches and not the source.
+    public static func openFoodFactsLimitText(retryAfterSeconds: Int?) -> String {
+        guard let seconds = retryAfterSeconds else {
+            return "Too many Open Food Facts searches just now. Try again in a minute."
+        }
+        return "Too many Open Food Facts searches just now. Try again in about \(seconds) second\(seconds == 1 ? "" : "s")."
+    }
     private func merge(_ page: CommunityProductPage) {
         for product in page.products {
             if let index = sharedResults.firstIndex(where: { $0.productID == product.productID }) { sharedResults[index] = product }

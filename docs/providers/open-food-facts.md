@@ -120,6 +120,12 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   characters) are sent. The results screen shows the attribution text on every
   result with a link to the license and source, and states that the search words
   are sent to Open Food Facts. Supplements are not searched here.
+- Submitting the same words again within those 60 seconds sends nothing and does
+  not count toward the 6: the reply already received is shown again, and a submit
+  made while that request is still running waits for its reply. The reply is held
+  in memory only, for at most 60 seconds, and only when it held results or none; a
+  failed or refused search is sent again when the person retries. When the cap is
+  reached the screen says there were too many searches and how long to wait.
 
 ## Etiquette and limits
 
@@ -129,7 +135,9 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   for apps. The client limits itself to 10 lookups in any rolling 60 seconds and answers further calls
   with a rate-limited outcome without sending a request. The window uses a monotonic
   clock. HTTP 429 and 503 are also reported as rate limited, using the Retry-After
-  header (seconds or HTTP-date) when present.
+  header (seconds or HTTP-date) when present. For name search, a 503 without a
+  Retry-After header is reported as the source being unavailable: the search
+  endpoint answers that way when it is down or shedding load, and no wait is known.
 - A barcode is checked locally first (digits only, EAN-8, UPC-A or EAN-13, correct
   check digit); an invalid barcode never causes a request.
 - Tests use a stub transport and fixtures with invented values. The staging server
