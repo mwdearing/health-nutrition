@@ -62,8 +62,11 @@ snapshots it wrote, and it throws `JournalImportError` instead of writing part o
 |---|---|
 | `unsupportedVersion` | The document declares a `schema_version` this build does not read. The version is read from the raw JSON before anything else, so a file from a newer build is refused as such even when its other fields would not decode. A file that spells a read version as `"1"` or `"2"` rather than `1` or `2` is accepted. |
 | `notEmpty` | The store already holds intakes, active or deleted. There is no merge in this version: one journal is restored into an empty one. A tombstone is an intake row too, so a journal that already has one is not empty either. |
+| `tooLarge` | The file is over the import ceiling of 20 MiB or its collections contain over 100,000 aggregate elements. The app refuses the whole file; it never truncates it. |
 | `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
 | `corrupt` | The file is an export that cannot be restored as it stands. |
+
+The file picker checks available file-size metadata first, then reads in bounded chunks and stops at the first byte over 20 MiB. The importer separately checks the byte and aggregate-element ceilings before constructing restore objects. A missing or inaccurate file-size value cannot bypass the read ceiling, and canceling a read closes the file and releases any security-scoped access. These are import limits only: exports are still complete and are not capped or shortened. A journal whose backup exceeds either restore limit remains exportable, but this app cannot restore that file; keep a copy and use a reader that supports the full file rather than editing or truncating the backup.
 
 **Strict shape.** Before anything is decoded, the document is checked against the contract key by key at
 every level it defines: no unknown key (`additionalProperties: false`) and no missing key, including the

@@ -1,4 +1,5 @@
 import SwiftUI
+import NutritionJournal
 import UniformTypeIdentifiers
 
 public struct AppSettingsView: View {
@@ -40,6 +41,10 @@ private struct SettingsContent: View {
     @FocusState private var waterFocused: Bool
     @State private var showingGoals: Bool
     @State private var isImporting = false
+    @State private var isReadingImport = false
+    @State private var importReadToken: JournalImportReadToken?
+    @State private var importReadGate = JournalImportReadGate()
+    @State private var importReadTask: Task<Data, Error>?
     @State private var confirmingErase = false
     private let now: () -> Date
     private let onShowWelcome: (() -> Void)?
@@ -135,6 +140,13 @@ private struct SettingsContent: View {
                 }
                 Button("Restore from an export") { self.isImporting = true }
                     .accessibilityHint("Restores an export only while this phone's journal is empty.")
+                    .disabled(isReadingImport || connections.isImporting || connections.isErasing)
+                if isReadingImport || connections.isImporting {
+                    ProgressView(isReadingImport ? "Reading export…" : "Restoring export…")
+                }
+                if isReadingImport {
+                    Button("Cancel import", role: .cancel) { self.cancelFileImport() }
+                }
                 if let message = connections.importMessage {
                     Text(message).font(.footnote)
                         .foregroundStyle(connections.importState == .failed ? TokenColors.error : TokenColors.textSecondary)
@@ -198,6 +210,9 @@ private struct SettingsContent: View {
             self.model.reminders?.refreshFromPreferences()
             self.model.account?.refreshAfterErase()
         }
+        .onChange(of: connections.isErasing) { _, isErasing in
+            if isErasing { self.cancelFileImport() }
+        }
         .confirmationDialog(
             ConnectionsPrivacyViewModel.eraseConfirmationTitle, isPresented: $confirmingErase,
             titleVisibility: .visible
@@ -213,6 +228,7 @@ private struct SettingsContent: View {
             self.importPickedFile($0)
         }
         .onDisappear {
+            self.cancelFileImport()
             self.connections.clearExport()
             self.connections.clearImport()
         }
@@ -267,16 +283,53 @@ private struct SettingsContent: View {
     }
 
     private func importPickedFile(_ result: Result<[URL], Error>) {
+        cancelFileImport()
         guard case .success(let urls) = result, let url = urls.first else {
             connections.clearImport()
             return
         }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else {
-            connections.importCouldNotReadFile()
-            return
+        let token = importReadGate.begin(eraseGeneration: connections.eraseGeneration)
+        importReadToken = token
+        isReadingImport = true
+        let task = Task.detached(priority: .userInitiated) { () throws -> Data in
+            try JournalImportFileReader.readScoped(url, limits: .default)
         }
-        connections.importJournal(data: data)
+        importReadTask = task
+        Task { @MainActor in
+            do {
+                let data = try await task.value
+                guard self.finishFileImport(token) else { return }
+                self.connections.importJournal(data: data)
+            } catch is CancellationError {
+                guard self.finishFileImport(token) else { return }
+                self.connections.clearImport()
+            } catch JournalImportError.tooLarge {
+                guard self.finishFileImport(token) else { return }
+                self.connections.importFileTooLarge()
+            } catch {
+                guard self.finishFileImport(token) else { return }
+                self.connections.importCouldNotReadFile()
+            }
+        }
+    }
+
+    private func finishFileImport(_ token: JournalImportReadToken) -> Bool {
+        guard importReadToken == token else { return false }
+        let accepted = importReadGate.finish(
+            token, currentEraseGeneration: connections.eraseGeneration, isErasing: connections.isErasing)
+        importReadToken = nil
+        importReadTask = nil
+        isReadingImport = false
+        if !accepted { connections.clearImport() }
+        return accepted
+    }
+
+    private func cancelFileImport() {
+        importReadTask?.cancel()
+        importReadTask = nil
+        if let importReadToken { importReadGate.cancel(importReadToken) }
+        importReadToken = nil
+        isReadingImport = false
+        connections.clearImport()
     }
 }

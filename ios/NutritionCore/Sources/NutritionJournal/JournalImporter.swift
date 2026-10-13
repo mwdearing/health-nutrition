@@ -4,6 +4,8 @@ import NutritionDomain
 /// Why an import did not happen. Every case is a refusal: the importer never leaves a journal half
 /// restored, so anything it cannot do as a whole it does not do at all.
 public enum JournalImportError: Error, Sendable, Equatable {
+    /// The encoded file or its combined collections exceed the import limits for this build.
+    case tooLarge
     /// The document declares a schema version this build does not read. Its fields are not guessed at.
     case unsupportedVersion
     /// The store already holds intakes, active or deleted. This version restores into an empty journal
@@ -118,8 +120,10 @@ public enum JournalImporter {
     /// can be put back, so when the favorites write fails afterwards the journal is emptied again and the
     /// import reports a failure with both stores as it found them.
     public static func importExport(
-        _ data: Data, into store: JournalStore, favorites: FavoritesStore?
+        _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
+        limits: JournalImportLimits = .default
     ) throws -> JournalImportSummary {
+        try limits.validate(data)
         let document = try readDocument(data)
         let plan = try makePlan(document)
         guard let journal = store as? JournalRestoreTarget else {
