@@ -72,6 +72,12 @@ def is_agent_identity(text: str) -> bool:
     identity = text.strip()
     if _is_agent_name(_identity_name_candidate(identity)):
         return True
+    # The final mailbox decides on its own, so a stray bracket before it
+    # cannot hide a bot address.
+    if identity.endswith(">"):
+        final_opening = identity.rfind("<")
+        if final_opening >= 0 and AGENT_EMAIL.search(identity[final_opening + 1:-1].strip()):
+            return True
     opening = identity.find("<")
     if opening < 0 or not identity.endswith(">"):
         return False

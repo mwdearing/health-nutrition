@@ -123,3 +123,23 @@ def test_pr_body_attribution_enforcement_keeps_its_five_minute_deadline() -> Non
 def test_agent_mailbox_is_rejected_despite_stray_display_name_bracket() -> None:
     result = run_check(f"{COAUTHOR_TRAILER} Jane > <codex@openai.com>")
     assert result.returncode == 1
+
+
+def test_agent_mailbox_after_stray_display_name_bracket_is_rejected() -> None:
+    result = run_check(f"{COAUTHOR_TRAILER} Jane <alias> <noreply@openai.com>")
+    assert result.returncode == 1
+    assert f"PR body: {COAUTHOR_TRAILER[:-1]} trailer naming an agent" in result.stdout
+
+
+def test_human_identity_with_complete_mailbox_is_allowed() -> None:
+    result = run_check(f"{COAUTHOR_TRAILER} Jane Doe <jane@example.com>")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_swift_lint_triggers_on_attribution_workflow() -> None:
+    workflow = REPO / ".github" / "workflows" / "swift-lint.yml"
+    raw = yaml.safe_load(workflow.read_text())
+    triggers = raw.get(True, raw.get("on"))
+    attribution = ".github/workflows/attribution-check.yml"
+    assert attribution in triggers["pull_request"]["paths"]
+    assert attribution in triggers["push"]["paths"]
