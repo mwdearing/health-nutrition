@@ -6,4 +6,4 @@ Oversized replies become a sanitized network/unavailable error. URLs, response b
 
 The loader retains an injected URLSession configuration, delegate queue and redirect/authentication policy. Portable tests exercise byte boundaries, cancellation and policy forwarding supported by FoundationNetworking. Apple optional-selector compilation and real delegate redirect, authentication and timeout behavior require Apple execution; Linux skips do not satisfy those gates.
 
-This integration applies the loader to Community only.
+The loader is applied to the Community, Open Food Facts and NIH DSLD transports. Their per-response caps are 1 MiB for Community, 4 MiB for Open Food Facts and 8 MiB for DSLD (`BoundedResponseLimits`). An oversized reply from either of the two newer providers becomes a sanitized transport failure with the reason "response exceeded the local size limit".
