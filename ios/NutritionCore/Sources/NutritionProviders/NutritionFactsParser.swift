@@ -947,10 +947,24 @@ public enum NutritionFactsParser {
         }
 
         guard let best else { return nil }
-        // The offset was measured in the lowercased copy, which a few characters make longer than the line, so
-        // both steps stop at the end of the line rather than trapping past it.
-        let nameStart = line.index(line.startIndex, offsetBy: best.start, limitedBy: line.endIndex) ?? line.endIndex
-        let end = line.index(nameStart, offsetBy: best.length, limitedBy: line.endIndex) ?? line.endIndex
+        // The offsets were measured in the lowercased copy, which a few characters make longer or shorter than
+        // the line. Each character of that copy is mapped back to the character of the line it came from, so
+        // the span lands on the name the person sees rather than on a shifted position.
+        var origins: [String.Index] = []
+        for index in line.indices {
+            for _ in line[index].lowercased() { origins.append(index) }
+        }
+        let nameStart: String.Index
+        let end: String.Index
+        if origins.count == lower.count, best.start < origins.count {
+            nameStart = origins[best.start]
+            let last = min(best.start + best.length - 1, origins.count - 1)
+            end = line.index(after: origins[last])
+        } else {
+            // The mapping could not be built (characters merged across the boundary): stop at the line's end.
+            nameStart = line.index(line.startIndex, offsetBy: best.start, limitedBy: line.endIndex) ?? line.endIndex
+            end = line.index(nameStart, offsetBy: best.length, limitedBy: line.endIndex) ?? line.endIndex
+        }
         return RowMatch(row: best.row, nameStart: nameStart, end: end)
     }
 
