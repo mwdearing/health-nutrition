@@ -528,6 +528,188 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.sodium, panel), dec("300"))
     }
 
+    func testFlattenedNutritionHeadingDropsPreheadingCalloutAndKeepsPanelRow() throws {
+        let panel = parse(["Protein 20g Nutrition Facts Protein 6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
+    func testFlattenedHeadingAfterModifiedCalloutKeepsPanelRow() throws {
+        let panel = parse(["High Protein 20g Nutrition Facts Protein 6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein), "the modified callout is outside the panel")
+    }
+
+    func testInlineNutritionHeadingRecognizesSplitFirstRow() throws {
+        let panel = parse(["Protein 20g Nutrition Facts Protein", "6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein), "the preheading callout is not a panel duplicate")
+    }
+
+    func testInlineNutritionHeadingRecognizesFlattenedServingCount() throws {
+        for heading in ["Nutrition Facts About 8 servings per container", "Nutrition Facts 8 servings per container"] {
+            let panel = parse(["Protein 20g", heading, "Protein 6g"])
+
+            XCTAssertEqual(panel.servingsPerContainer, dec("8"), heading)
+            XCTAssertEqual(try amount(.protein, panel), dec("6"), heading)
+            XCTAssertFalse(panel.needsReview(.protein), heading)
+        }
+    }
+
+    func testHeadingWithColonKeepsPanelPrecedence() throws {
+        let panel = parse(["Protein 20g", "Nutrition Facts:", "Protein 6g"])
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
+    func testNutritionFactsMentionInProseDoesNotStartAPanel() throws {
+        let panel = parse(["Protein 6g", "See nutrition facts for sodium content"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
+    func testRepeatedNutritionFactsMentionCanPrecedeTheRealFlattenedHeading() throws {
+        let panel = parse(["Protein 20g", "See Nutrition Facts Nutrition Facts Protein 6g"])
+
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein), "the earlier callout is outside the panel")
+    }
+
+    func testConflictingNamedDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
+        let panel = parse(["Nutrition Facts", "Sodium 100mg", "Sodium 2g", "Sodium 2O0mg"])
+
+        XCTAssertEqual(try amount(.sodium, panel), dec("100"))
+        XCTAssertEqual(try unit(.sodium, panel), .mg)
+        XCTAssertEqual(reviewReasons(.sodium, panel), [.conflictingDuplicate])
+    }
+
+    func testConflictingBoundDuplicateUsesItsPrintedThreshold() {
+        let panel = parse(["Nutrition Facts", "Protein less than 1g", "Protein less than 2g"])
+
+        XCTAssertEqual(value(.protein, panel), .belowReportingThreshold(.g))
+        XCTAssertEqual(reviewReasons(.protein, panel), [.conflictingDuplicate])
+    }
+
+    func testIdenticalBoundDuplicateDoesNotNeedReview() {
+        let panel = parse(["Nutrition Facts", "Protein less than 1g", "Protein less than 1g"])
+
+        XCTAssertEqual(value(.protein, panel), .belowReportingThreshold(.g))
+        XCTAssertFalse(panel.needsReview(.protein))
+    }
+
+    func testBoundDuplicateWithDifferentUnitNeedsReview() {
+        let panel = parse(["Nutrition Facts", "Protein less than 1g", "Protein less than 1mg"])
+
+        XCTAssertEqual(value(.protein, panel), .belowReportingThreshold(.g))
+        XCTAssertEqual(reviewReasons(.protein, panel), [.conflictingDuplicate])
+    }
+
+    func testImplicitAndExplicitUsualCaloriesUnitsRemainEquivalent() throws {
+        let panel = parse(["Nutrition Facts", "Calories 100", "Calories 100 kcal"])
+
+        XCTAssertEqual(try amount(.calories, panel), dec("100"))
+        XCTAssertFalse(panel.needsReview(.calories))
+    }
+
+    func testConflictingCompoundDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
+        let panel = parse(["Supplement Facts", "Zinc 100mg", "Zinc 2O0mg"])
+        let zinc = try XCTUnwrap(panel.additionalNutrient(for: "zinc"))
+
+        XCTAssertEqual(zinc.value, .known(dec("100"), .mg))
+        XCTAssertEqual(zinc.review?.reasons, [.conflictingDuplicate])
+    }
+
+    func testConflictingChemicalFormDuplicateDoesNotMergeDiscardedRowReviewReasons() throws {
+        let panel = parse(["Calcium Citrate 100mg", "Calcium Citrate 2g"])
+
+        XCTAssertEqual(try amount(.calcium, panel), dec("100"))
+        XCTAssertEqual(try unit(.calcium, panel), .mg)
+        XCTAssertEqual(reviewReasons(.calcium, panel), [.conflictingDuplicate])
+    }
+
+    func testHeadingMakesPanelRowsTakePrecedenceOverCallouts() throws {
+        let panel = parse(["Protein 20g", "Nutrition Facts", "Serving size 1 bar", "Protein 6g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertEqual(try amount(.protein, parse(["Protein 6g"])), dec("6"), "captures without a heading remain supported")
+    }
+
+    func testFlattenedSupplementHeadingRecognizesAnAdditionalNutrientRow() throws {
+        let flattened = parse(["Supplement Facts Creatine Monohydrate 3g"])
+        XCTAssertEqual(flattened.panelKind, .supplementFacts)
+        XCTAssertEqual(flattened.additionalNutrients.map(\.name), ["Creatine Monohydrate"])
+        XCTAssertEqual(flattened.additionalNutrient(for: "creatine-monohydrate")?.value, .known(dec("3"), .g))
+
+        let withCallout = parse(["Creatine 5g Supplement Facts Creatine 3g"])
+        XCTAssertEqual(withCallout.panelKind, .supplementFacts)
+        XCTAssertEqual(withCallout.additionalNutrients.map(\.name), ["Creatine"])
+        XCTAssertEqual(withCallout.additionalNutrient(for: "creatine")?.value, .known(dec("3"), .g))
+    }
+
+    func testPreheadingServingMarkerDoesNotConsumeFlattenedPanelHeading() throws {
+        let panel = parse(["Serving size", "Nutrition Facts Protein 6g"])
+
+        XCTAssertNil(panel.servingSize, "a panel heading cannot be the split serving measure")
+        XCTAssertEqual(panel.panelKind, .nutritionFacts)
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+    }
+
+    func testServingSizeFromTheHeadedPanelTakesPrecedenceOverPreheadingPrint() {
+        let panel = parse(["Serving size 2 bars", "Nutrition Facts", "Serving size 1 bar", "Protein 6g"])
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+
+        let panelWithoutServingMetadata = parse(["Serving size 2 bars", "Nutrition Facts", "Protein 6g"])
+        XCTAssertEqual(
+            panelWithoutServingMetadata.servingSize?.text, "2 bars",
+            "preheading metadata remains a fallback when the panel does not state it")
+    }
+
+    func testRepeatedPanelHeadingsRetainRowsAndFlagConflictingAmounts() throws {
+        let panel = parse([
+            "Nutrition Facts", "Serving size 1 bar", "Protein 6g",
+            "Nutrition Facts", "Serving size 1 bar", "Protein 7g",
+        ])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"), "the first panel row is retained deterministically")
+        XCTAssertTrue(panel.needsReview(.protein), "a later disagreeing panel row needs confirmation")
+        XCTAssertEqual(reviewReasons(.protein, panel), [.conflictingDuplicate])
+    }
+
+    func testSameAmountOnRepeatedPanelPageDoesNotNeedReview() throws {
+        let panel = parse([
+            "Nutrition Facts", "Serving size 1 bar", "Protein 6g",
+            "Nutrition Facts", "Serving size 1 bar", "Protein 6g",
+        ])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 bar")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
+        XCTAssertFalse(panel.needsReview(.protein))
+    }
+
+    func testFlattenedCaloriesBreakdownDoesNotDiscardFollowingRows() throws {
+        let panel = parse(["Calories 110 Calories from Fat 30 Total Fat 3g Protein 5g"])
+
+        XCTAssertEqual(try amount(.calories, panel), dec("110"))
+        XCTAssertEqual(try amount(.fat, panel), dec("3"))
+        XCTAssertEqual(try amount(.protein, panel), dec("5"))
+    }
+
+    func testDailyValueWordsBeforeNextRowDoNotDiscardIt() throws {
+        let panel = parse(["Zinc", "15mg Daily Value Protein 5g"])
+
+        XCTAssertEqual(panel.additionalNutrients.first(where: { $0.name == "Zinc" })?.value, .known(dec("15"), .mg))
+        XCTAssertEqual(try amount(.protein, panel), dec("5"))
+    }
+
+    func testUnicodeCrashExamplesRemainSafeToParse() {
+        for lines in [["İ Sodium"], ["İ Protein"], ["İİİ Total Fat"]] {
+            _ = parse(lines)
+        }
+    }
+
     func testAddedSugarsIsNotReadAsSugars() throws {
         let panel = parse([
             "Total Sugars 12g",
@@ -892,6 +1074,23 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertNil(panel.additionalNutrient(for: "carbohydrates"))
         XCTAssertNil(panel.additionalNutrient(for: "calories"))
         XCTAssertEqual(try amount(.calories, panel), dec("30"))
+    }
+
+    func testConflictingDuplicateCompoundRetainsFirstAmountAndNeedsReview() throws {
+        let panel = parse(["Supplement Facts", "Creatine Monohydrate 3g", "Creatine Monohydrate 4g"])
+
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine-monohydrate"))
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+        XCTAssertEqual(creatine.review?.reasons, [.conflictingDuplicate])
+    }
+
+    func testConflictingDuplicateChemicalFormRetainsFirstAmountAndNeedsReview() throws {
+        let panel = parse(["Calcium Citrate 200g", "Calcium Citrate 300mg"])
+
+        XCTAssertEqual(try amount(.calcium, panel), dec("200"))
+        XCTAssertEqual(try unit(.calcium, panel), .g)
+        XCTAssertEqual(reviewReasons(.calcium, panel), [.unexpectedUnit, .conflictingDuplicate])
+        XCTAssertEqual(panel.displayName(for: .calcium), "Calcium Citrate")
     }
 
     /// The rows a panel collects are the ones that state a name and an amount. A line that states

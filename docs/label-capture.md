@@ -83,6 +83,12 @@ camera rather than the last frame that had anything on it. `NutritionUI` sees on
 - **The fifteen nutrient rows** the journal names, in the order a panel states them, including the
   indented breakdown rows: saturated fat and trans fat under total fat, dietary fiber and total sugars
   under total carbohydrate, added sugars under total sugars.
+- **The panel's rows take precedence over callouts.** When a capture includes a Nutrition Facts or
+  Supplement Facts heading, nutrient rows before the first heading are ignored; captures without a
+  readable heading still use their recognized rows. If one parsed panel states the same nutrient with
+  different amounts, the first amount is kept deterministically and marked for confirmation. Reading
+  the row consistently on another photo can resolve that warning; conflicting photo readings retain
+  their separate choices as described below.
 - **The compound rows a supplement panel adds.** A supplement states its own compounds — `Creatine
   Monohydrate 3g`, `Zinc 15mg`, `Coenzyme Q10 100mg` — and they are why anyone scans one, so every
   `Name amount unit` row the fifteen journal nutrients do not name is kept as an **additional
@@ -105,8 +111,8 @@ camera rather than the last frame that had anything on it. `NutritionUI` sees on
   Value column rather than to the row.
 - **Amounts split across lines**, as a column-by-column capture produces them, and several rows flattened
   onto one line. On a flattened line a row the parser cannot read stays unknown and the rows after it are
-  still read, a Daily Value is only removed from the row that printed it, and an `Includes` belongs to the
-  row it qualifies.
+  still read, a Daily Value is only removed from the row that printed it, `Calories from Fat` is skipped
+  as a breakdown at its own occurrence, and an `Includes` belongs to the row it qualifies.
 - **Grouped thousands**: `1,000` is one thousand and `12,500` is twelve thousand five hundred.
 - **Unit spelling noise**: `140mg` and `140 mg` read the same, and `µg`, `μg` and `mcg` are one mass and
   become `mcg`.

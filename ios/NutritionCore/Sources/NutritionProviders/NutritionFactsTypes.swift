@@ -56,6 +56,8 @@ public struct ParsedValueReview: Sendable, Hashable {
         case normalizedMicrogramSymbol
         /// The serving text states a bound or an ambiguous measure, so it cannot safely scale nutrients.
         case uncertainServingSize
+        /// The panel states this nutrient more than once with different values, so the retained value needs confirmation.
+        case conflictingDuplicate
     }
 
     public let reasons: Set<Reason>
