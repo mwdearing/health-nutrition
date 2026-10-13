@@ -105,8 +105,8 @@ public struct GoalEstimate: Sendable, Equatable {
 /// +5 for a man, -161 for a woman and -78 (the midpoint) when the sex is not given. Daily energy is
 /// resting energy times the activity multiplier. Losing or gaining adds or takes away the weekly pace
 /// spread over the week: a kilogram of body change is about 7700 kcal, so a pace of `w` kilograms a
-/// week is `w * 7700 / 7` kcal a day. That daily change is capped at 1000 kcal, and a loss never takes
-/// the energy below 1500 kcal for a man or 1200 kcal for anyone else.
+/// week is `w * 7700 / 7` kcal a day. That daily change is capped at 1000 kcal, and neither maintenance
+/// estimates nor losses fall below 1500 kcal for a man or 1200 kcal for anyone else.
 public enum GoalEstimator {
     /// The estimate is for adults, between these ages.
     public static let minimumAge = 18
@@ -133,7 +133,7 @@ public enum GoalEstimator {
     /// Fiber is 14 g per 1000 kcal, so 14 / 1000 of each kcal.
     static let fiberGramsPerKcal = Decimal(string: "0.014")!
 
-    /// The lowest energy a loss is allowed to reach.
+    /// The lowest energy a maintenance estimate or loss is allowed to reach.
     public static let lossFloorMaleKcal: Decimal = 1500
     public static let lossFloorOtherKcal: Decimal = 1200
 
@@ -177,12 +177,12 @@ public enum GoalEstimator {
                 notes.append(capNote)
             }
             energy = profile.aim == .lose ? energy - change : energy + change
-            if profile.aim == .lose {
-                let floor = profile.sex == .male ? lossFloorMaleKcal : lossFloorOtherKcal
-                if energy < floor {
-                    energy = floor
-                    notes.append(floorNote)
-                }
+        }
+        if profile.aim == .lose || profile.aim == .maintain {
+            let floor = profile.sex == .male ? lossFloorMaleKcal : lossFloorOtherKcal
+            if energy < floor {
+                energy = floor
+                notes.append(floorNote)
             }
         }
 

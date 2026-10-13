@@ -28,8 +28,9 @@ The calculator is `NutritionDomain/GoalEstimator.swift`. It is pure arithmetic i
   (light, 1 to 3 days a week), 1.55 (moderate, 3 to 5 days a week) or 1.725 (hard, 6 to 7 days a week).
 - Losing or gaining adds or takes away the pace times 7700 kcal per kilogram, spread over 7 days. The
   daily change is capped at 1000 kcal.
-- A loss never goes below 1500 kcal for a male or 1200 kcal for anyone else. When the cap or a floor
-  changes the number, the results say so.
+- A maintenance estimate or loss never goes below 1500 kcal for a male or 1200 kcal for anyone else.
+  When the cap or a floor changes the number, the results say so. These are product guardrails for
+  estimated targets, not individualized medical advice.
 - Energy is rounded to the nearest 10 kcal. Carbohydrate is 50% of energy at 4 kcal a gram, protein 20%
   at 4 kcal a gram, and fat 30% at 9 kcal a gram, each rounded to the nearest 5 g. Fiber is 14 g per 1000
   kcal, rounded to the nearest 1 g.
