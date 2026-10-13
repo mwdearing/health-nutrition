@@ -40,8 +40,8 @@ Plus, on the screen that offers the action:
   screen is put back to what a fresh install shows. See [today-screen.md](today-screen.md).
 - The first-run flags: the welcome flag, the hidden state of the first-day checklist and the "units
   reviewed" step. They are stored under the same `display.` prefix (`display.hasSeenWelcome`,
-  `display.checklistHidden`, `display.hasReviewedUnits`), so the erase removes five `display.` keys in
-  all. Afterwards the first-day checklist returns on Today at once, with its steps undone. The welcome
+  `display.checklistHidden`, `display.hasReviewedUnits`), so, together with the unit system, quick-water amount, reminder switch and time, hidden daily goals and
+  the community sharing disclosure, the erase removes nine stored preference keys in all. Afterwards the first-day checklist returns on Today at once, with its steps undone. The welcome
   is not shown straight away: it shows again the next time the app starts, because its flag is gone.
 - The daily reminder: its pending notification is removed, and its stored switch and time are cleared with the display settings. See [daily reminder](reminders.md).
 - The screen's own state: the entry count goes back to zero and the export is no longer offered.
