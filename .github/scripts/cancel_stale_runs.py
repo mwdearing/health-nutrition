@@ -29,14 +29,15 @@ def _parse(value: str) -> datetime:
 
 def select_stale(
     runs: Iterable[dict],
-    open_pr_heads: dict[str, str],
+    open_pr_heads: dict[tuple[str, str], str],
     default_branch: str,
     now: datetime,
 ) -> list[dict]:
     """Return the runs to cancel.
 
-    `runs` are workflow-run objects with status queued or in_progress. `open_pr_heads` maps a head
-    branch name to the head SHA of its open pull request.
+    `runs` are workflow-run objects with status queued or in_progress. `open_pr_heads` maps
+    (head repository full name, head branch) to the head SHA of its open pull request, so a fork's
+    branch and a same-named branch of this repository are never confused.
     """
     runs = [r for r in runs if r.get("status") in ("queued", "in_progress", "waiting", "pending")]
     stale: dict[int, dict] = {}
@@ -46,8 +47,8 @@ def select_stale(
             continue
         event = run.get("event")
         if event in PULL_REQUEST_EVENTS:
-            branch = run.get("head_branch")
-            if branch not in open_pr_heads or open_pr_heads[branch] != run.get("head_sha"):
+            key = ((run.get("head_repository") or {}).get("full_name"), run.get("head_branch"))
+            if open_pr_heads.get(key) != run.get("head_sha"):
                 stale[run["id"]] = run
         elif event == "push" and run.get("head_branch") == default_branch:
             key = run["name"]
@@ -99,10 +100,11 @@ def main() -> int:
     api = Api(repo, os.environ["GITHUB_TOKEN"])
     dry_run = os.environ.get("DRY_RUN") == "1"
     default_branch = os.environ.get("DEFAULT_BRANCH", "main")
+    # Forks are included: their runs are judged against their own head repository, never cancelled
+    # for lacking a same-repository branch.
     open_heads = {
-        pr["head"]["ref"]: pr["head"]["sha"]
+        ((pr["head"].get("repo") or {}).get("full_name"), pr["head"]["ref"]): pr["head"]["sha"]
         for pr in api.pages("/pulls?state=open", "pulls")
-        if pr["head"]["repo"]["full_name"] == repo
     }
     runs: list[dict] = []
     for status in ("queued", "in_progress"):

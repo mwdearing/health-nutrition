@@ -12,7 +12,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / ".github" / "scripts" / "cancel_stale_runs.py"
 select_stale = cast(
-    "Callable[[list[dict[str, Any]], dict[str, str], str, datetime], list[dict[str, Any]]]",
+    "Callable[[list[dict[str, Any]], dict[tuple[str, str], str], str, datetime], list[dict[str, Any]]]",
     runpy.run_path(str(SCRIPT))["select_stale"],
 )
 NOW = datetime(2026, 10, 13, 18, 0, tzinfo=timezone.utc)
@@ -22,6 +22,7 @@ def run(run_id: int, **kw: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "id": run_id, "name": "ios", "event": "pull_request", "status": "queued",
         "head_branch": "feature/a", "head_sha": "a" * 40,
+        "head_repository": {"full_name": "o/r"},
         "created_at": (NOW - timedelta(minutes=10)).isoformat(),
     }
     base.update(kw)
@@ -33,13 +34,20 @@ def ids(runs: list[dict[str, Any]]) -> list[int]:
 
 
 def test_current_head_of_open_pr_is_kept() -> None:
-    heads = {"feature/a": "a" * 40}
+    heads = {("o/r", "feature/a"): "a" * 40}
     assert select_stale([run(1)], heads, "main", NOW) == []
 
 
 def test_run_for_a_superseded_head_is_cancelled() -> None:
-    heads = {"feature/a": "b" * 40}
+    heads = {("o/r", "feature/a"): "b" * 40}
     assert ids(select_stale([run(1)], heads, "main", NOW)) == [1]
+
+
+def test_a_fork_branch_with_the_same_name_is_judged_by_its_own_repository() -> None:
+    heads = {("o/r", "feature/a"): "a" * 40, ("fork/r", "feature/a"): "c" * 40}
+    fork_current = run(1, head_repository={"full_name": "fork/r"}, head_sha="c" * 40)
+    fork_stale = run(2, head_repository={"full_name": "fork/r"}, head_sha="d" * 40)
+    assert ids(select_stale([fork_current, fork_stale], heads, "main", NOW)) == [2]
 
 
 def test_run_for_a_closed_pull_request_is_cancelled() -> None:
@@ -65,7 +73,7 @@ def test_manual_and_scheduled_runs_are_never_cancelled_for_head_reasons() -> Non
 
 
 def test_a_run_queued_past_the_ceiling_is_cancelled_even_on_a_current_head() -> None:
-    heads = {"feature/a": "a" * 40}
+    heads = {("o/r", "feature/a"): "a" * 40}
     aged = run(1, created_at=(NOW - timedelta(hours=7)).isoformat())
     assert ids(select_stale([aged], heads, "main", NOW)) == [1]
 
