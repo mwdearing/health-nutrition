@@ -704,6 +704,13 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.protein, panel), dec("5"))
     }
 
+    func testRowAfterExpandingCharactersKeepsItsAmount() throws {
+        let panel = parse(["İİİ Total Fat 3g", "İ Protein 5g"])
+
+        XCTAssertEqual(try amount(.fat, panel), dec("3"))
+        XCTAssertEqual(try amount(.protein, panel), dec("5"))
+    }
+
     func testUnicodeCrashExamplesRemainSafeToParse() {
         for lines in [["İ Sodium"], ["İ Protein"], ["İİİ Total Fat"]] {
             _ = parse(lines)
