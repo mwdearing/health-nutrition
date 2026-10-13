@@ -8,6 +8,11 @@ public actor OpenFoodFactsClient {
     /// Open Food Facts allows 100 product reads per minute; we stay far below at 15.
     public static let maxLookups = 15
     public static let windowSeconds: TimeInterval = 60
+    /// Open Food Facts allows 10 search requests per minute; we stay below at 6.
+    public static let maxSearches = 6
+    public static let searchMinimumScalars = 2
+    public static let searchMaximumCharacters = 80
+    public static let searchPageSize = 20
 
     private let environment: OpenFoodFactsEnvironment
     private let transport: OpenFoodFactsTransport
@@ -15,6 +20,7 @@ public actor OpenFoodFactsClient {
     private let now: @Sendable () -> Date
     private let monotonic: @Sendable () -> TimeInterval
     private var recent: [TimeInterval] = []
+    private var recentSearches: [TimeInterval] = []
 
     public init(
         environment: OpenFoodFactsEnvironment = .production,
@@ -65,6 +71,95 @@ public actor OpenFoodFactsClient {
             return .transport("HTTP status \(response.statusCode)")
         }
         return Self.interpret(data, barcode: barcode)
+    }
+
+    /// Name search. The query is trimmed and capped; a query shorter than two characters is answered
+    /// `.empty` without spending a rate-limit slot or sending a request.
+    public func search(query: String) async -> OpenFoodFactsSearchOutcome {
+        let trimmed = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.searchMaximumCharacters))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= Self.searchMinimumScalars else {
+            return .empty
+        }
+        let current = monotonic()
+        recentSearches.removeAll { current - $0 >= Self.windowSeconds }
+        if recentSearches.count >= Self.maxSearches, let oldest = recentSearches.first {
+            return .rateLimited(retryAfter: max(0, oldest + Self.windowSeconds - current))
+        }
+        recentSearches.append(current)
+
+        guard let request = makeSearchRequest(query: trimmed) else {
+            return .transport("could not build the request")
+        }
+        let data: Data
+        let response: HTTPURLResponse
+        do {
+            (data, response) = try await transport.get(
+                request, maxBytes: BoundedResponseLimits.openFoodFactsSearch)
+        } catch {
+            return .transport(String(describing: error))
+        }
+        switch response.statusCode {
+        case 200..<300:
+            break
+        case 429, 503:
+            let header = response.value(forHTTPHeaderField: "Retry-After")
+            return .rateLimited(retryAfter: header.flatMap { parseRetryAfter($0, now: now()) })
+        default:
+            return .transport("HTTP status \(response.statusCode)")
+        }
+        guard data.count <= BoundedResponseLimits.openFoodFactsSearch else {
+            return .transport("response too large")
+        }
+        return Self.interpretSearch(data)
+    }
+
+    private func makeSearchRequest(query: String) -> URLRequest? {
+        // Only the typed text is encoded as the search term. `+`, `&` and `=` are escaped, so the server
+        // reads them as typed rather than as separators or spaces.
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        guard let encodedTerms = query.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            return nil
+        }
+        var components = URLComponents(url: environment.baseURL, resolvingAgainstBaseURL: false)
+        components?.path = "/cgi/search.pl"
+        components?.percentEncodedQueryItems = [
+            URLQueryItem(name: "search_terms", value: encodedTerms),
+            URLQueryItem(name: "search_simple", value: "1"),
+            URLQueryItem(name: "action", value: "process"),
+            URLQueryItem(name: "json", value: "1"),
+            URLQueryItem(name: "page_size", value: String(Self.searchPageSize)),
+            URLQueryItem(name: "fields", value: Self.requestedFields.joined(separator: ",")),
+        ]
+        guard let url = components?.url else {
+            return nil
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let auth = environment.authorizationHeader {
+            request.setValue(auth, forHTTPHeaderField: "Authorization")
+        }
+        return request
+    }
+
+    private static func interpretSearch(_ data: Data) -> OpenFoodFactsSearchOutcome {
+        guard let decoded = try? JSONDecoder().decode(OpenFoodFactsSearchResponse.self, from: data) else {
+            return .transport("unreadable response")
+        }
+        let products: [OpenFoodFactsProduct] = (decoded.products ?? []).compactMap { body in
+            // A reply is untrusted: only a well-formed barcode becomes a result.
+            // The stored code is the one that was validated: a padded value is refused, not trimmed for the
+            // check and kept as received.
+            guard let code = body.code?.text, BarcodeValidator.isValid(code) else {
+                return nil
+            }
+            return OpenFoodFactsProduct(body: body, requestedBarcode: code)
+        }
+        let limited = Array(products.prefix(Self.searchPageSize))
+        return limited.isEmpty ? .empty : .results(limited)
     }
 
     private func makeRequest(barcode: String) -> URLRequest? {

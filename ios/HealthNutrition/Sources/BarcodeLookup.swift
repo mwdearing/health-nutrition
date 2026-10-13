@@ -35,6 +35,7 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
         }
     }
 
+    /// Name search reuses the same mapping as a barcode hit, so a picked result is filled exactly like a scan.
     private static func product(from product: OpenFoodFactsProduct) -> LookedUpProduct {
         LookedUpProduct(
             barcode: product.barcode,
@@ -79,6 +80,21 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
         case .per100ml: return .per100ml
         case .per100Unspecified: return .per100Unspecified
         case .perServing: return .perServing
+        }
+    }
+}
+
+extension OpenFoodFactsProductLookup: ProductNameSearching {
+    func search(query: String) async -> ProductNameSearchOutcome {
+        switch await client.search(query: query) {
+        case .results(let products):
+            return .results(products.map { Self.product(from: $0) })
+        case .empty:
+            return .empty
+        case .rateLimited(let retryAfter):
+            return .rateLimited(retryAfterSeconds: retryAfter.map { max(1, Int(min($0, 86_400).rounded(.up))) })
+        case .transport(let reason):
+            return .failed(reason)
         }
     }
 }

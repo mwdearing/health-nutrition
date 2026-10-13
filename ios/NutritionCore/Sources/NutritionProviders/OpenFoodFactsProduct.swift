@@ -145,6 +145,10 @@ struct OpenFoodFactsResponse: Decodable {
     let product: Body?
 }
 
+struct OpenFoodFactsSearchResponse: Decodable {
+    let products: [OpenFoodFactsResponse.Body]?
+}
+
 extension OpenFoodFactsProduct {
     private static let mapping: [(key: String, source: String, energy: Bool)] = [
         (energyKcal, "energy-kcal", true),

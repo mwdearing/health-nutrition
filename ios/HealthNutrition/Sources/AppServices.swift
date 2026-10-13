@@ -54,6 +54,8 @@ final class AppServices {
     /// same builds as `account`, and then no catalog call is made.
     let community: CommunityClient?
     let productService: (any CommunityProductServicing)?
+    /// Open Food Facts name search for Find products. Nil in builds that make no network calls at all.
+    var productNameSearch: (any ProductNameSearching)? = nil
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
 
@@ -125,6 +127,7 @@ final class AppServices {
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
+        productNameSearch = openFoodFacts
         let totals = JournalSnapshotTotals(store: journalStore)
         healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,

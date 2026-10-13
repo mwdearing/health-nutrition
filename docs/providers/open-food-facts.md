@@ -1,6 +1,6 @@
 # Open Food Facts: data source determination
 
-Status: Accepted for live barcode lookup only. Terms review date: 2027-04-02.
+Status: Accepted for live barcode lookup and for user-submitted name search (amended 2026-10-13). Terms review date: 2027-04-02.
 
 ## What is used
 
@@ -112,8 +112,14 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   sync account.
 - No bulk download, no mirror and no export of Open Food Facts data as a database.
 - No images.
-- No search and no search-as-you-type: lookups are by barcode only, started by an
-  explicit user action.
+- Name search is limited to what Open Food Facts documents for its search
+  endpoint: one request per explicit submit by the person (no search-as-you-type,
+  no autocomplete, no background or bulk queries), at most 6 searches in any
+  rolling 60 seconds against a documented limit of 10 per minute, a page of 20
+  results, and the same User-Agent as lookups. Only the typed words (2 to 80
+  characters) are sent. The results screen shows the attribution text on every
+  result with a link to the license and source, and states that the search words
+  are sent to Open Food Facts. Supplements are not searched here.
 
 ## Etiquette and limits
 

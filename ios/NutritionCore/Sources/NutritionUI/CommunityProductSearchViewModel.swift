@@ -17,6 +17,10 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
     @Published public private(set) var inspectionError: String?
     @Published public private(set) var inspectionNeedsRefresh = false
     @Published public private(set) var loadingAlternatives = false
+    @Published public private(set) var openFoodFactsResults: [LookedUpProduct] = []
+    @Published public private(set) var openFoodFactsState: ProductNameSearchState = .idle
+    private var openFoodFactsTask: Task<Void, Never>?
+    private let openFoodFacts: (any ProductNameSearching)?
     private var alternativesCursor: String?
     private var inspectionGeneration = UUID()
     public var canLoadAlternatives: Bool { alternativesCursor != nil && !loadingAlternatives && !inspectionNeedsRefresh }
@@ -29,8 +33,8 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
     private var generation = UUID()
     public var canLoadMore: Bool { cursor != nil && !loadingNextPage }
 
-    public init(store: any CustomProductStore, service: (any CommunityProductServicing)?, isSignedIn: @escaping @MainActor () -> Bool) {
-        self.store = store; self.service = service; self.isSignedIn = isSignedIn
+    public init(store: any CustomProductStore, service: (any CommunityProductServicing)?, openFoodFacts: (any ProductNameSearching)? = nil, isSignedIn: @escaping @MainActor () -> Bool) {
+        self.store = store; self.service = service; self.openFoodFacts = openFoodFacts; self.isSignedIn = isSignedIn
     }
     public func search(query: String, kind: ProductKind?) async {
         closeInspection()
@@ -43,6 +47,8 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
             }.sorted { $0.content.name.localizedStandardCompare($1.content.name) == .orderedAscending }
             localError = false
         } catch { localResults = []; localError = true }
+        // Open Food Facts needs no account, so it runs whether or not the person is signed in.
+        startOpenFoodFacts(token: token)
         guard isSignedIn() else { state = .signInRequired; return }
         guard self.query.unicodeScalars.count >= 2 else { state = .queryTooShort; return }
         guard let service else { state = .unsupported; return }
@@ -57,6 +63,31 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
         } catch {
             guard generation == token else { return }
             state = !isSignedIn() ? .signInRequired : error as? ProductAPIError == .unsupportedBackend ? .unsupported : .unavailable
+        }
+    }
+    /// Waits for the open product source search started by the latest `search` call.
+    public func openFoodFactsSearchFinished() async {
+        await openFoodFactsTask?.value
+    }
+    private func startOpenFoodFacts(token: UUID) {
+        openFoodFactsTask?.cancel()
+        openFoodFactsResults = []
+        let text = query
+        // Supplements are not in Open Food Facts, so nothing is sent for that kind.
+        guard let openFoodFacts, kind != .supplement else { openFoodFactsState = .idle; return }
+        guard text.count >= 2 else { openFoodFactsState = .queryTooShort; return }
+        openFoodFactsState = .loading
+        openFoodFactsTask = Task { [openFoodFacts] in
+            let outcome = await openFoodFacts.search(query: text)
+            guard self.generation == token else { return }
+            switch outcome {
+            case .results(let products):
+                self.openFoodFactsResults = products
+                self.openFoodFactsState = .results
+            case .empty: self.openFoodFactsState = .empty
+            case .rateLimited(let seconds): self.openFoodFactsState = .rateLimited(retryAfterSeconds: seconds)
+            case .failed: self.openFoodFactsState = .unavailable
+            }
         }
     }
     public func loadNextPage() async {

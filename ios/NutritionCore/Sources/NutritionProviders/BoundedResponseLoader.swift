@@ -11,6 +11,8 @@ enum BoundedResponseLimits {
     static let community = 1 * 1_024 * 1_024
     static let openFoodFacts = 4 * 1_024 * 1_024
     static let dsld = 8 * 1_024 * 1_024
+    /// Twenty search results with the requested fields are well under this.
+    static let openFoodFactsSearch = 1 * 1_024 * 1_024
 }
 
 enum BoundedResponseError: Error, Equatable, Sendable {
