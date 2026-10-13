@@ -9,6 +9,9 @@ final class PrivacyShieldController: ObservableObject {
     private var appliedInitialPhase = false
     private var priorAccessibilityHidden: Bool?
     private(set) var shieldWindow: UIWindow?
+    /// How many times a shield window has been raised. The simulator test reads it, because the shield
+    /// itself cannot be photographed behind system chrome there.
+    @Published private(set) var activations = 0
 
     func attach(to appWindow: UIWindow, phase: ScenePhase) {
         guard let scene = appWindow.windowScene else { return }
@@ -56,6 +59,7 @@ final class PrivacyShieldController: ObservableObject {
         // This scene-local window sits above the app's tab, navigation and presented sheet windows.
         window.isHidden = false
         shieldWindow = window
+        activations += 1
         hideAppAccessibility()
     }
 
@@ -131,6 +135,8 @@ struct PrivacyShieldCaptureHost: View {
         VStack(spacing: 24) {
             Text("Synthetic entry: protein 42g")
                 .accessibilityIdentifier("synthetic-entry-marker")
+            Text("shield-activations: \(controller.activations)")
+                .accessibilityIdentifier("shield-activation-count")
             Button("Show synthetic sheet") {
                 sheetTitle = "Synthetic sheet marker"
                 showingSheet = true
