@@ -231,6 +231,18 @@ final class BoundedResponseLoaderTests: XCTestCase {
     }
 
 
+    func testOpenFoodFactsTransportEnforcesItsOwnCap() async throws {
+        try await assertOversizedResponseIsCanceled(limit: BoundedResponseLimits.openFoodFacts) { session, request in
+            try await URLSessionOpenFoodFactsTransport(session: session).get(request)
+        }
+    }
+
+    func testDSLDTransportEnforcesItsOwnCap() async throws {
+        try await assertOversizedResponseIsCanceled(limit: BoundedResponseLimits.dsld) { session, request in
+            try await URLSessionDSLDTransport(session: session).get(request)
+        }
+    }
+
     func testCommunityAPIMapsOversizedResponseToGenericNetworkError() async throws {
         let config = try XCTUnwrap(CommunityConfig(infoDictionary: [
             "SUPABASE_URL": "https://example.supabase.co", "SUPABASE_ANON_KEY": "synthetic-key",

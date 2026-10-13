@@ -86,6 +86,12 @@ private enum RecordedDSLD {
     }
 }
 
+private struct OversizedDSLDTransport: DSLDTransport {
+    func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        throw BoundedResponseError.responseTooLarge
+    }
+}
+
 final class DSLDClientTests: XCTestCase {
     private func dec(_ text: String) -> Decimal {
         Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))!
@@ -227,6 +233,13 @@ final class DSLDClientTests: XCTestCase {
             }
             XCTAssertFalse(reason.isEmpty, body.debugDescription)
         }
+    }
+
+    func testOversizedBodyIsFailedWithoutTheRawErrorText() async throws {
+        let outcome = await DSLDClient(
+            environment: .production, transport: OversizedDSLDTransport(), appVersion: "1.0.0"
+        ).label(id: 204235)
+        XCTAssertEqual(outcome, .failed(reason: "the response exceeded the local size limit"))
     }
 
     func testTransportErrorIsFailedWithAReason() async throws {

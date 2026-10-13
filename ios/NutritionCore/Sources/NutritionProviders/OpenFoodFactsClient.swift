@@ -48,6 +48,8 @@ public actor OpenFoodFactsClient {
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport.get(request)
+        } catch BoundedResponseError.responseTooLarge {
+            return .transport("response exceeded the local size limit")
         } catch {
             return .transport(String(describing: error))
         }

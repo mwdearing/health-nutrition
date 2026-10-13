@@ -131,6 +131,8 @@ public actor DSLDClient {
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport.get(request)
+        } catch BoundedResponseError.responseTooLarge {
+            return .failure(.failed(reason: "the response exceeded the local size limit"))
         } catch {
             return .failure(.failed(reason: String(describing: error)))
         }
