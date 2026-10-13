@@ -70,6 +70,54 @@ final class JournalImportStrictShapeTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: fields)
     }
 
+    private func minimumLengthOneFields(in properties: [String: Any]) -> Set<String> {
+        Set(properties.compactMap { entry in
+            let (key, value) = entry
+            guard let property = value as? [String: Any], property["minLength"] as? Int == 1 else {
+                return nil
+            }
+            return key
+        })
+    }
+
+    private func fieldsForSchemaVersion(_ original: [String: Any], version: Int) throws -> [String: Any] {
+        var root = original
+        root["schema_version"] = version
+        guard version == 1 else { return root }
+        var products = try XCTUnwrap(root["products"] as? [[String: Any]])
+        for index in products.indices { products[index].removeValue(forKey: "kind") }
+        root["products"] = products
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        for index in intakes.indices {
+            var revisions = try XCTUnwrap(intakes[index]["revisions"] as? [[String: Any]])
+            for revisionIndex in revisions.indices {
+                if var provenance = revisions[revisionIndex]["provenance"] as? [String: Any] {
+                    provenance.removeValue(forKey: "kind")
+                    revisions[revisionIndex]["provenance"] = provenance
+                }
+            }
+            intakes[index]["revisions"] = revisions
+        }
+        root["intakes"] = intakes
+        return root
+    }
+
+    private func replacingValue(in value: Any, path: [String], with replacement: Any) throws -> Any {
+        guard let key = path.first else { return replacement }
+        if var object = value as? [String: Any] {
+            guard let child = object[key] else { throw NSError(domain: "test path", code: 1) }
+            object[key] = try replacingValue(
+                in: child, path: Array(path.dropFirst()), with: replacement)
+            return object
+        }
+        if var array = value as? [Any], let index = Int(key), array.indices.contains(index) {
+            array[index] = try replacingValue(
+                in: array[index], path: Array(path.dropFirst()), with: replacement)
+            return array
+        }
+        throw NSError(domain: "test path", code: 2)
+    }
+
     private func importInto(_ fields: [String: Any]) throws -> JournalImportSummary {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -98,6 +146,17 @@ final class JournalImportStrictShapeTests: XCTestCase {
         }
     }
 
+    private func assertReadRefusedAsMalformed(_ fields: [String: Any], line: UInt = #line) throws {
+        do {
+            _ = try JournalImporter.readDocument(encoded(fields))
+            XCTFail("the document should have been refused", line: line)
+        } catch let error as JournalImportError {
+            guard case .malformed = error else {
+                return XCTFail("expected a malformed file, got \(error)", line: line)
+            }
+        }
+    }
+
     // MARK: The key sets themselves
 
     func testTheStrictKeySetsAreExactlyWhatTheCommittedSchemaStates() throws {
@@ -117,6 +176,12 @@ final class JournalImportStrictShapeTests: XCTestCase {
             ("tombstone", JournalImportV1Keys.tombstone),
             ("favorite", JournalImportV1Keys.favorite),
         ]
+        let minimumLengthFields: [String: Set<String>] = [
+            "root": ["app_version"], "intake": ["category", "time_zone"], "revision": [],
+            "provenance": ["snapshot_id", "product_id", "name", "label_basis", "catalog_origin", "catalog_version"],
+            "component": ["unit"], "tombstone": ["time_zone"],
+            "favorite": ["id", "display_name", "category"],
+        ]
         for entry in expected {
             let shape: [String: Any]
             if let definition = entry.definition {
@@ -128,6 +193,9 @@ final class JournalImportStrictShapeTests: XCTestCase {
             let required = try XCTUnwrap(shape["required"] as? [String], "\(entry.keys)")
             XCTAssertEqual(Set(properties.keys), entry.keys, "the schema and the importer disagree on the keys")
             XCTAssertEqual(Set(required), entry.keys, "every property the schema lists has to be required")
+            XCTAssertEqual(
+                minimumLengthOneFields(in: properties), minimumLengthFields[entry.definition ?? "root"] ?? [],
+                "the schema's minLength: 1 fields and the regressions must stay aligned")
         }
     }
 
@@ -146,6 +214,12 @@ final class JournalImportStrictShapeTests: XCTestCase {
             ("tombstone", JournalImportV2Keys.tombstone),
             ("favorite", JournalImportV2Keys.favorite),
         ]
+        let minimumLengthFields: [String: Set<String>] = [
+            "root": ["app_version"], "intake": ["category", "time_zone"], "revision": [],
+            "provenance": ["snapshot_id", "product_id", "name", "label_basis", "catalog_origin", "catalog_version"],
+            "component": ["unit"], "tombstone": ["time_zone"],
+            "favorite": ["id", "display_name", "category"],
+        ]
         for entry in expected {
             var shape = schema
             if let definition = entry.definition {
@@ -155,6 +229,8 @@ final class JournalImportStrictShapeTests: XCTestCase {
             let required = try XCTUnwrap(shape["required"] as? [String], "\(entry.keys)")
             XCTAssertEqual(Set(properties.keys), entry.keys)
             XCTAssertEqual(Set(required), entry.keys)
+            XCTAssertEqual(
+                minimumLengthOneFields(in: properties), minimumLengthFields[entry.definition ?? "root"] ?? [])
         }
         XCTAssertEqual(
             JournalImportV2Keys.provenance.subtracting(JournalImportV1Keys.provenance), ["kind"],
@@ -195,6 +271,72 @@ final class JournalImportStrictShapeTests: XCTestCase {
                 favorites: [favorite([component()])],
                 products: [provenance()])))
         XCTAssertEqual(summary.intakes, 1)
+        XCTAssertEqual(summary.favorites, 1)
+    }
+
+    func testSchemaMinimumLengthsRejectEmptyRequiredStringsAndRevisionLists() throws {
+        var fields = try self.fields(document(intakes: [intake(revisions: [revision()])]))
+        var intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
+        intakes[0]["category"] = ""
+        fields["intakes"] = intakes
+        try assertRefusedAsMalformed(fields)
+
+        fields = try self.fields(document(favorites: [favorite([component()])]))
+        var favorites = try XCTUnwrap(fields["favorites"] as? [[String: Any]])
+        favorites[0]["display_name"] = ""
+        fields["favorites"] = favorites
+        try assertRefusedAsMalformed(fields)
+
+        fields = try self.fields(document(intakes: [intake(revisions: [revision()])]))
+        intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
+        intakes[0]["revisions"] = []
+        fields["intakes"] = intakes
+        try assertRefusedAsMalformed(fields)
+
+        fields = try self.fields(document(intakes: [intake(revisions: [revision()])]))
+        intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
+        var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+        revisions[0]["components"] = []
+        intakes[0]["revisions"] = revisions
+        fields["intakes"] = intakes
+        try assertRefusedAsMalformed(fields)
+    }
+
+    func testEveryMinimumLengthOneStringIsRejectedInBothSchemaVersions() throws {
+        let valid = try fields(document(
+            intakes: [intake(revisions: [revision(snapshotID: "snap-oats-1", product: provenance())])],
+            tombstones: [JournalExportTombstone(
+                intakeID: "7d4a1c55-9e2b-4f60-8a3d-5c1b0f7e2a94", revision: 1,
+                occurredAt: exportedAt, timeZoneIdentifier: "UTC")],
+            favorites: [favorite([component()])], products: [provenance()]))
+        // These are the minLength: 1 fields in the committed schemas. Provenance occurs in both the
+        // product index and on revisions that carry it.
+        let paths = [
+            "app_version", "intakes.0.category", "intakes.0.time_zone",
+            "intakes.0.revisions.0.provenance.snapshot_id",
+            "intakes.0.revisions.0.provenance.product_id",
+            "intakes.0.revisions.0.provenance.name",
+            "intakes.0.revisions.0.provenance.label_basis",
+            "intakes.0.revisions.0.provenance.catalog_origin",
+            "intakes.0.revisions.0.provenance.catalog_version",
+            "products.0.snapshot_id", "products.0.product_id", "products.0.name",
+            "products.0.label_basis", "products.0.catalog_origin", "products.0.catalog_version",
+            "intakes.0.revisions.0.components.0.unit", "tombstones.0.time_zone",
+            "favorites.0.id", "favorites.0.display_name", "favorites.0.category",
+            "favorites.0.components.0.unit",
+        ]
+        for version in [1, 2] {
+            for path in paths {
+                let versioned = try fieldsForSchemaVersion(valid, version: version)
+                let candidate = try replacingValue(
+                    in: versioned, path: path.split(separator: ".").map(String.init), with: "")
+                try assertReadRefusedAsMalformed(try XCTUnwrap(candidate as? [String: Any]))
+            }
+        }
+    }
+
+    func testEmptyFavoriteComponentsRemainSchemaValid() throws {
+        let summary = try importInto(try fields(document(favorites: [favorite([])])))
         XCTAssertEqual(summary.favorites, 1)
     }
 

@@ -445,6 +445,240 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(wholeSeconds.exportedAt.timeIntervalSince1970, 1_705_310_100)
     }
 
+    func testNonFiniteExportDatesFailWithJournalExportError() {
+        for interval in [Double.nan, Double.infinity, -Double.infinity] {
+            let document = JournalExport(
+                exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
+                intakes: [], tombstones: [], favorites: [])
+            XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+                XCTAssertEqual(error as? JournalExportError, .nonFiniteDate)
+            }
+        }
+    }
+
+    func testFiniteDatesOutsideTheFourDigitUTCContractFailClearly() {
+        let unrepresentableIntervals: [TimeInterval] = [
+            1e100,
+            -1e100,
+            253_402_300_800, // 10000-01-01T00:00:00Z
+            -62_167_219_200, // Year zero / 1 BCE; `yyyy` alone would mislabel its era.
+        ]
+        for interval in unrepresentableIntervals {
+            let document = JournalExport(
+                exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
+                intakes: [], tombstones: [], favorites: [])
+            XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+                XCTAssertEqual(error as? JournalExportError, .unrepresentableDate, "interval \(interval)")
+            }
+        }
+    }
+
+    func testExportSupportsTheFourDigitUTCYearBoundaries() throws {
+        let cases: [(TimeInterval, String)] = [
+            (-62_135_769_600, "0001-01-01T00:00:00.000000Z"), // earliest Julian-calendar date
+            (-62_135_596_800, "0001-01-03T00:00:00.000000Z"),
+            (253_402_300_799, "9999-12-31T23:59:59.000000Z"),
+        ]
+        for (interval, expected) in cases {
+            let document = JournalExport(
+                exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
+                intakes: [], tombstones: [], favorites: [])
+            let data = try JournalExporter.encode(document)
+            let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+            XCTAssertTrue(text.contains(expected), text)
+            XCTAssertEqual(try JournalExporter.decode(data).exportedAt.timeIntervalSince1970, interval)
+        }
+    }
+
+    func testV1AndV2LegacyCalendarTimestampsKeepTheirOriginalInstants() throws {
+        // Before this build's strict date parser, DateFormatter's Gregorian calendar used the historical
+        // Julian/Gregorian cutover. Build the same text the old exporter wrote, then restore it through each
+        // supported schema version.
+        let formatter = JournalExporter.dateFormatter()
+        let cases: [(TimeInterval, String)] = [
+            (-62_135_769_600, "0001-01-01T00:00:00"), // earliest valid legacy date
+            (-14_831_769_600, "1499-12-23T00:00:00"), // proleptic 1500-01-01
+            (-14_825_894_400, "1500-02-29T00:00:00"), // proleptic 1500-03-10, Julian leap day
+            (-12_219_379_200, "1582-10-04T00:00:00"), // last Julian calendar day
+            (-12_219_292_800, "1582-10-15T00:00:00"), // first Gregorian calendar day
+            (-11_670_998_400, "1600-02-29T00:00:00"), // Gregorian leap day
+        ]
+
+        for schemaVersion in JournalExport.readableSchemaVersions {
+            for (instant, expectedLegacyText) in cases {
+                let instantDate = Date(timeIntervalSince1970: instant)
+                XCTAssertEqual(formatter.string(from: instantDate), expectedLegacyText)
+                let timestamp = expectedLegacyText + ".123456Z"
+                let json = #"{"schema_version":\#(schemaVersion),"exported_at":"\#(timestamp)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+                let restored = try JournalExporter.decode(Data(json.utf8))
+                XCTAssertEqual(restored.schemaVersion, schemaVersion)
+                XCTAssertEqual(
+                    restored.exportedAt.timeIntervalSince1970,
+                    instantDate.addingTimeInterval(0.123456).timeIntervalSince1970,
+                    accuracy: 0.000_001,
+                    "schema \(schemaVersion), legacy date \(expectedLegacyText)")
+                let reencoded = try JournalExporter.encode(restored)
+                let reencodedRoot = try XCTUnwrap(
+                    try JSONSerialization.jsonObject(with: reencoded) as? [String: Any])
+                let reencodedTimestamp = try XCTUnwrap(reencodedRoot["exported_at"] as? String)
+                XCTAssertTrue(reencodedTimestamp.hasPrefix(expectedLegacyText + "."))
+            }
+        }
+    }
+
+    func testCurrentExportUsesLegacyCutoverTextWithoutLosingFractions() throws {
+        let instant = Date(timeIntervalSince1970: -14_831_769_600 + 0.123_456)
+        let document = JournalExport(exportedAt: instant, appVersion: "0.1.0", intakes: [], tombstones: [], favorites: [])
+        let encoded = try JournalExporter.encode(document)
+        let text = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        let legacySecond = JournalExporter.dateFormatter().string(from: instant)
+        XCTAssertTrue(text.contains("\(legacySecond)."), text)
+        XCTAssertFalse(text.contains("1500-01-01T00:00:00."), text)
+        XCTAssertEqual(
+            try JournalExporter.decode(encoded).exportedAt.timeIntervalSince1970,
+            instant.timeIntervalSince1970,
+            accuracy: 0.000_001)
+    }
+
+    func testNegativeFractionAndHalfMicrosecondKeepExistingRoundingContract() throws {
+        let halfMicrosecond = JournalExport(
+            exportedAt: Date(timeIntervalSince1970: -0.000_000_5), appVersion: "0.1.0",
+            intakes: [], tombstones: [], favorites: [])
+        let beforeEpoch = JournalExport(
+            exportedAt: Date(timeIntervalSince1970: -1.25), appVersion: "0.1.0",
+            intakes: [], tombstones: [], favorites: [])
+        let halfText = try XCTUnwrap(String(data: JournalExporter.encode(halfMicrosecond), encoding: .utf8))
+        let negativeText = try XCTUnwrap(String(data: JournalExporter.encode(beforeEpoch), encoding: .utf8))
+        // Floor plus rounding the positive fractional remainder makes negative ties round toward +infinity.
+        XCTAssertTrue(halfText.contains("1970-01-01T00:00:00.000000Z"), halfText)
+        XCTAssertTrue(negativeText.contains("1969-12-31T23:59:58.750000Z"), negativeText)
+    }
+
+    func testDateDecoderAcceptsLongValidFractionsButRejectsMalformedDigits() throws {
+        for fractionLength in [309, 310, 10_000] {
+            let date = "2024-01-15T09:15:00." + String(repeating: "9", count: fractionLength) + "Z"
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            let decoded = try JournalExporter.decode(Data(json.utf8))
+            XCTAssertTrue(decoded.exportedAt.timeIntervalSince1970.isFinite, "fraction length \(fractionLength)")
+            XCTAssertEqual(decoded.exportedAt.timeIntervalSince1970, 1_705_310_101, accuracy: 0.000_001)
+        }
+
+        let malformedDate = "2024-01-15T09:15:00." + String(repeating: "1", count: 309) + "xZ"
+        let malformedJSON = #"{"schema_version":1,"exported_at":"\#(malformedDate)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+        XCTAssertThrowsError(try JournalExporter.decode(Data(malformedJSON.utf8)))
+    }
+
+    func testDateDecoderAllowsLongFractionsWhoseExcessDigitsAreOnlyTrailingZeros() throws {
+        let date = "2024-01-15T09:15:00.1" + String(repeating: "0", count: 308) + "Z"
+        let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+        let decoded = try JournalExporter.decode(Data(json.utf8))
+        XCTAssertEqual(decoded.exportedAt.timeIntervalSince1970, 1_705_310_100.1, accuracy: 0.000_001)
+    }
+
+    func testDateDecoderRejectsJunkAfterFractionalZone() {
+        let dates = [
+            "2024-01-15T09:15:00.5Zjunk",
+            "2024-01-15T09:15:00.5+01:30junk",
+            "2024-01-15T09:15:00Zjunk",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), date)
+        }
+    }
+
+    func testDateDecoderStillAcceptsAValidFractionalOffset() throws {
+        let json = #"{"schema_version":1,"exported_at":"2024-01-15T09:15:00.5+01:30","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+        let decoded = try JournalExporter.decode(Data(json.utf8))
+        XCTAssertEqual(decoded.exportedAt.timeIntervalSince1970, 1_705_304_700.5, accuracy: 0.000_001)
+    }
+
+    func testFoundationDecimalExponentBoundariesSurviveExportAndExactReadback() throws {
+        let maxCoefficient = "12345678901234567890123456789012345678"
+        let values = [
+            try XCTUnwrap(Decimal(string: "1e-128", locale: DecimalText.locale)),
+            try XCTUnwrap(Decimal(string: maxCoefficient + "e127", locale: DecimalText.locale)),
+        ]
+        for (index, value) in values.enumerated() {
+            let store = StubJournalStore()
+            store.intakes = [intake(firstID)]
+            store.revisionsByIntake[firstID] = [revision(
+                firstID, number: 1, components: [component("oats", value)])]
+            let document = try makeExport(store: store)
+            let restoredDocument = try JournalExporter.decode(try JournalExporter.encode(document))
+            let amountText = try XCTUnwrap(restoredDocument.intakes.first?.revisions.first?.components.first?.amount)
+            XCTAssertEqual(DecimalText.decode(amountText), value, "boundary \(index)")
+        }
+    }
+
+    func testDateDecoderRejectsYearsOutsideTheFourDigitUTCContract() {
+        let dates = [
+            "10000-01-01T00:00:00Z",
+            "-0001-01-01T00:00:00Z",
+            "0000-01-01T00:00:00Z",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), date)
+        }
+    }
+
+    func testDateDecoderRejectsInvalidDatesAndTimes() {
+        let dates = [
+            "1900-02-29T00:00:00Z",
+            "2024-04-31T00:00:00Z",
+            "2024-13-01T00:00:00Z",
+            "2024-01-01T24:00:00Z",
+            "2024-01-01T23:60:00Z",
+            "2024-01-01T23:59:60Z",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), date)
+        }
+    }
+
+    func testDateDecoderRejectsOffsetsThatMoveUTCOutsideFourDigitYearRange() {
+        let dates = [
+            "0001-01-01T00:00:00+01:00",
+            "9999-12-31T23:59:59-01:00",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), date)
+        }
+    }
+
+    func testDateDecoderKeepsValidGregorianCutoverAndLeapDates() throws {
+        let dates = [
+            "1582-10-15T00:00:00Z",
+            "1600-02-29T00:00:00Z",
+            "2000-02-29T00:00:00Z",
+        ]
+        for date in dates {
+            let json = #"{"schema_version":1,"exported_at":"\#(date)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            let decoded = try JournalExporter.decode(Data(json.utf8))
+            XCTAssertTrue(decoded.exportedAt.timeIntervalSince1970.isFinite, date)
+            let encoded = try XCTUnwrap(String(data: JournalExporter.encode(decoded), encoding: .utf8))
+            XCTAssertTrue(encoded.contains(date.replacingOccurrences(of: "Z", with: ".000000Z")), encoded)
+        }
+    }
+
+    func testDateDecoderKeepsSupportedFractionsOffsetsAndLongLeadingZeroesFinite() throws {
+        let cases: [(String, TimeInterval)] = [
+            ("2024-01-15T09:15:00.250Z", 1_705_310_100.25),
+            ("2024-01-15T09:15:00.123456Z", 1_705_310_100.123456),
+            ("2024-01-15T10:15:00.250+01:00", 1_705_310_100.25),
+            ("2024-01-15T09:15:00." + String(repeating: "0", count: 400) + "1Z", 1_705_310_100),
+        ]
+        for (text, expected) in cases {
+            let json = #"{"schema_version":1,"exported_at":"\#(text)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            let decoded = try JournalExporter.decode(Data(json.utf8))
+            XCTAssertTrue(decoded.exportedAt.timeIntervalSince1970.isFinite, text)
+            XCTAssertEqual(decoded.exportedAt.timeIntervalSince1970, expected, accuracy: 0.000_001, text)
+        }
+    }
+
     func testAMalformedFavoriteAmountFailsTheExportRatherThanWritingAnUnusableBackup() throws {
         // The favorites store accepts decimal-looking text such as "1.2.3", which the schema's decimal
         // pattern does not allow, so the export must refuse it rather than call it a known amount.
@@ -460,7 +694,236 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
+    func testFavoriteAmountOutsideDecimalPrecisionFailsExport() throws {
+        let amount = "1234567890123456789012345678901234567890123"
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-too-precise", displayName: "Sample precise", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: amount, unitSymbol: "g")])]
+
+        XCTAssertThrowsError(
+            try JournalExporter.makeExport(
+                store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+        ) { error in
+            XCTAssertEqual(error as? JournalExportError, .malformedFavoriteAmount("fav-too-precise", amount))
+        }
+    }
+
+    func testDirectExportRefusesKnownRevisionAmountsOutsideDecimalPrecision() {
+        let amount = "1234567890123456789012345678901234567890123"
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0",
+            intakes: [JournalExportIntake(
+                id: firstID, category: "food", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                meal: nil, note: nil, currentRevision: 1,
+                revisions: [JournalExportRevision(
+                    number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
+                    provenance: nil, components: [JournalExportComponent(
+                        componentID: "oats", name: "Oats", amount: amount, unit: "g", valueState: .known)])])],
+            tombstones: [], favorites: [])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unrepresentableKnownAmount("intakes[0].revisions[0].components[0].amount"))
+            XCTAssertFalse(String(describing: error).contains(amount))
+        }
+    }
+
+    func testDirectExportRefusesKnownFavoriteAmountsOutsideDecimalPrecision() {
+        let amount = "1234567890123456789012345678901234567890123"
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0", intakes: [], tombstones: [],
+            favorites: [JournalExportFavorite(
+                id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
+                productSnapshotID: nil, components: [JournalExportComponent(
+                    componentID: "oats", name: "Oats", amount: amount, unit: "g", valueState: .known)])])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unrepresentableKnownAmount("favorites[0].components[0].amount"))
+            XCTAssertFalse(String(describing: error).contains(amount))
+        }
+    }
+
+    func testDirectExportKeepsUnknownComponentAmountsNullable() throws {
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0",
+            intakes: [JournalExportIntake(
+                id: firstID, category: "food", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                meal: nil, note: nil, currentRevision: 1,
+                revisions: [JournalExportRevision(
+                    number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
+                    provenance: nil, components: [JournalExportComponent(
+                        componentID: "water", name: "Water", amount: nil, unit: "mL", valueState: .unknown)])])],
+            tombstones: [], favorites: [])
+
+        let text = try XCTUnwrap(String(data: JournalExporter.encode(document), encoding: .utf8))
+        XCTAssertTrue(text.contains("\"amount\":null"), text)
+        XCTAssertTrue(text.contains("\"value_state\":\"unknown\""), text)
+    }
+
+    func testDirectExportRefusesUnknownFavoriteAmounts() {
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0", intakes: [], tombstones: [],
+            favorites: [JournalExportFavorite(
+                id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
+                productSnapshotID: nil, components: [JournalExportComponent(
+                    componentID: "oats", name: "Oats", amount: nil, unit: "g", valueState: .unknown)])])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unknownFavoriteAmount("favorites[0].components[0].value_state"))
+        }
+    }
+
+    func testDirectExportRefusesRevisionUnitsTheImporterCannotRestore() {
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0",
+            intakes: [JournalExportIntake(
+                id: firstID, category: "food", occurredAt: now, timeZoneIdentifier: "Europe/Berlin",
+                meal: nil, note: nil, currentRevision: 1,
+                revisions: [JournalExportRevision(
+                    number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
+                    provenance: nil, components: [JournalExportComponent(
+                        componentID: "oats", name: "Oats", amount: "40", unit: "cupful", valueState: .known)])])],
+            tombstones: [], favorites: [])
+
+        XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unknownRevisionUnit("intakes[0].revisions[0].components[0].unit"))
+            XCTAssertFalse(String(describing: error).contains("cupful"))
+        }
+    }
+
+    func testActiveIntakeWithEmptyRevisionCannotBeExported() throws {
+        let store = StubJournalStore()
+        store.intakes = [intake(firstID)]
+        store.revisionsByIntake[firstID] = [revision(firstID, number: 1, components: [])]
+
+        XCTAssertThrowsError(
+            try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now)
+        ) { error in
+            XCTAssertEqual(error as? JournalExportError, .emptyRevisionComponents(firstID, 1))
+        }
+    }
+
+    func testSwiftDataActiveIntakeWithEmptyRevisionCannotBeExported() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let entry = intake(firstID)
+        _ = try store.create(entry, components: [], product: nil, now: now)
+
+        XCTAssertThrowsError(
+            try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now)
+        ) { error in
+            XCTAssertEqual(error as? JournalExportError, .emptyRevisionComponents(firstID, 1))
+        }
+    }
+
+    func testExporterRefusesAnActiveIntakeWithoutRevisionHistory() {
+        let store = StubJournalStore()
+        store.intakes = [intake(firstID)]
+        XCTAssertThrowsError(try makeExport(store: store)) { error in
+            XCTAssertEqual(error as? JournalExportError, .emptyRevisionHistory(firstID))
+        }
+    }
+
+    func testExporterRefusesEmptyRequiredIntakeAndRootMetadata() {
+        for (category, timeZone, appVersion) in [
+            ("", "UTC", "0.1.0"), ("food", "", "0.1.0"), ("food", "UTC", ""),
+        ] {
+            let store = StubJournalStore()
+            store.intakes = [Intake(
+                id: firstID, category: category, occurredAt: now, timeZoneIdentifier: timeZone,
+                currentRevision: 1)]
+            store.revisionsByIntake[firstID] = [revision(
+                firstID, number: 1, components: [component("oats", 40)])]
+            XCTAssertThrowsError(try JournalExporter.makeExport(
+                store: store, appVersion: appVersion, exportedAt: now))
+        }
+    }
+
+    func testExporterRefusesATombstoneWithoutItsRequiredTimeZone() {
+        let store = StubJournalStore()
+        store.deleted = [Intake(
+            id: firstID, category: "food", occurredAt: now, timeZoneIdentifier: "", lifecycle: .deleted,
+            currentRevision: 1)]
+        XCTAssertThrowsError(try makeExport(store: store))
+    }
+
+    func testExporterRefusesFavoriteRequiredMetadataThatStrictImportRejects() {
+        for (id, displayName, category) in [
+            ("", "Sample favorite", "food"),
+            ("fav-1", "", "food"),
+            ("fav-1", "Sample favorite", ""),
+        ] {
+            let favoritesStore = StubFavoritesStore()
+            favoritesStore.items = [FavoriteTemplate(
+                id: id, displayName: displayName, category: category,
+                components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "g")])]
+            XCTAssertThrowsError(try JournalExporter.makeExport(
+                store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+        }
+    }
+
+    func testExporterRefusesFavoriteComponentsWithoutRequiredUnits() {
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-1", displayName: "Sample favorite", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "")])]
+        XCTAssertThrowsError(try JournalExporter.makeExport(
+            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+    }
+
+    func testExporterRefusesFavoriteUnitsTheImporterCannotRestore() {
+        let favoritesStore = StubFavoritesStore()
+        favoritesStore.items = [FavoriteTemplate(
+            id: "fav-1", displayName: "Sample favorite", category: "food",
+            components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "cupful")])]
+        XCTAssertThrowsError(try JournalExporter.makeExport(
+            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)) { error in
+            XCTAssertEqual(error as? JournalExportError, .unknownFavoriteUnit("favorites[0].components[0].unit"))
+            XCTAssertFalse(String(describing: error).contains("cupful"))
+        }
+
+        let document = JournalExport(
+            exportedAt: now, appVersion: "0.1.0", intakes: [], tombstones: [],
+            favorites: [JournalExportFavorite(
+                id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
+                productSnapshotID: nil,
+                components: [JournalExportComponent(
+                    componentID: "oats", name: "Oats", amount: "40", unit: "cupful", valueState: .known)])])
+        XCTAssertThrowsError(try JournalExporter.encode(document))
+    }
+
+    func testExporterRefusesProductRequiredMetadataThatStrictImportRejects() {
+        for (snapshotID, productID, name, labelBasis, catalogOrigin, catalogVersion) in [
+            ("", "product-oats", "Oats", "per100g", "sample", "1"),
+            ("snap-1", "", "Oats", "per100g", "sample", "1"),
+            ("snap-1", "product-oats", "", "per100g", "sample", "1"),
+            ("snap-1", "product-oats", "Oats", "", "sample", "1"),
+            ("snap-1", "product-oats", "Oats", "per100g", "", "1"),
+            ("snap-1", "product-oats", "Oats", "per100g", "sample", ""),
+        ] {
+            let store = StubJournalStore()
+            store.intakes = [intake(firstID)]
+            store.revisionsByIntake[firstID] = [revision(
+                firstID, number: 1, components: [component("oats", 40)], snapshotID: "snap-1")]
+            store.products["snap-1"] = ProductDefinition(
+                snapshotID: snapshotID, productID: productID, name: name,
+                labelBasis: labelBasis, catalogOrigin: catalogOrigin, catalogVersion: catalogVersion)
+            XCTAssertThrowsError(try JournalExporter.makeExport(
+                store: store, appVersion: "0.1.0", exportedAt: now))
+        }
+    }
+
+    func testEncoderRefusesEmptyRequiredMetadataOnDirectExportDocuments() {
+        let document = JournalExport(
+            exportedAt: now, appVersion: "", intakes: [], tombstones: [], favorites: [])
+        XCTAssertThrowsError(try JournalExporter.encode(document))
+    }
+
     func testWellFormedFavoriteAmountsAreStillExported() throws {
+        let exactPrecision = "123456789012345678901234567890123456"
+        let padded = "000" + exactPrecision + ".1200"
         let favoritesStore = StubFavoritesStore()
         favoritesStore.items = [
             FavoriteTemplate(
@@ -470,13 +933,17 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 id: "fav-b-1", displayName: "Sample decimal", category: "food",
                 components: [FavoriteComponent(
                     componentID: "oats", name: "Oats", amountText: "0.5", unitSymbol: "g")]),
+            FavoriteTemplate(
+                id: "fav-c-1", displayName: "Sample exact precision", category: "food",
+                components: [FavoriteComponent(
+                    componentID: "oats", name: "Oats", amountText: padded, unitSymbol: "g")]),
         ]
         let document = try JournalExporter.makeExport(
             store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
         // Sorted by id, not by the order the store happens to list them in, so two exports of the same
         // favorites are the same document.
-        XCTAssertEqual(document.favorites.map(\.id), ["fav-a-1", "fav-b-1"])
-        XCTAssertEqual(document.favorites.map(\.components.first?.amount), ["250", "0.5"])
+        XCTAssertEqual(document.favorites.map(\.id), ["fav-a-1", "fav-b-1", "fav-c-1"])
+        XCTAssertEqual(document.favorites.map(\.components.first?.amount), ["250", "0.5", padded])
         let reversed = StubFavoritesStore()
         reversed.items = favoritesStore.items.reversed()
         let other = try JournalExporter.makeExport(

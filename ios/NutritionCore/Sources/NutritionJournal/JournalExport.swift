@@ -318,16 +318,15 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
         self.components = components
     }
 
-    /// A stored favorite holds decimal text that the favorites store does not itself validate, so a malformed
-    /// amount such as `"1.2.3"` reaches this initializer. Writing it out with `value_state: known` would
-    /// produce a document that fails the schema's decimal pattern, so the export fails loudly instead of
-    /// producing a backup that no reader can use.
+    /// A stored favorite holds decimal text that the favorites store does not itself validate. Writing a
+    /// malformed or inexact amount as `value_state: known` would produce a document that cannot be restored.
     public init(favorite: FavoriteTemplate) throws {
         self.init(
             id: favorite.id, displayName: favorite.displayName, category: favorite.category, meal: favorite.meal,
             productSnapshotID: favorite.productSnapshotID,
             components: try favorite.components.map { component in
-                guard DecimalText.isValidDecimalText(component.amountText) else {
+                guard DecimalText.isValidDecimalText(component.amountText),
+                      DecimalText.decode(component.amountText) != nil else {
                     throw JournalExportError.malformedFavoriteAmount(favorite.id, component.amountText)
                 }
                 return JournalExportComponent(
@@ -409,6 +408,96 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case unsupportedSchemaVersion(Int)
     /// A stored favorite holds an amount that is not exact decimal text, which the schema cannot express.
     case malformedFavoriteAmount(String, String)
+    /// A known component amount cannot be represented by the importer's exact Decimal parser.
+    case unrepresentableKnownAmount(String)
+    /// A favorite component has an unknown amount, which the importer does not accept for templates.
+    case unknownFavoriteAmount(String)
+    /// A revision uses a unit the importer cannot restore; the field path contains no user-provided value.
+    case unknownRevisionUnit(String)
+    /// A revision with no components cannot be restored under the journal export contract.
+    case emptyRevisionComponents(String, Int)
+    /// An active intake without any revision history cannot be restored under the journal export contract.
+    case emptyRevisionHistory(String)
+    /// A date in the document cannot be represented as a finite timestamp.
+    case nonFiniteDate
+    /// A finite timestamp falls outside the four-digit UTC date format this export writes.
+    case unrepresentableDate
+    /// A stored value is empty where the journal export schema requires a nonempty string.
+    case emptyRequiredField(String)
+    /// A favorite uses a unit the importer cannot restore; the field path is safe to show in diagnostics.
+    case unknownFavoriteUnit(String)
+}
+
+private func requireExportText(_ text: String, field: String) throws {
+    guard !text.isEmpty else { throw JournalExportError.emptyRequiredField(field) }
+}
+
+private func validateExportProvenance(_ provenance: JournalExportProvenance, path: String) throws {
+    try requireExportText(provenance.snapshotID, field: "\(path).snapshot_id")
+    try requireExportText(provenance.productID, field: "\(path).product_id")
+    try requireExportText(provenance.name, field: "\(path).name")
+    try requireExportText(provenance.labelBasis, field: "\(path).label_basis")
+    try requireExportText(provenance.catalogOrigin, field: "\(path).catalog_origin")
+    try requireExportText(provenance.catalogVersion, field: "\(path).catalog_version")
+}
+
+private func validateKnownExportAmount(_ component: JournalExportComponent, path: String) throws {
+    guard component.valueState == .known else { return }
+    guard let amount = component.amount,
+          DecimalText.isValidDecimalText(amount), DecimalText.decode(amount) != nil else {
+        throw JournalExportError.unrepresentableKnownAmount(path)
+    }
+}
+
+private func validateExportRequiredFields(_ document: JournalExport) throws {
+    try requireExportText(document.appVersion, field: "app_version")
+    for (index, intake) in document.intakes.enumerated() {
+        let path = "intakes[\(index)]"
+        try requireExportText(intake.category, field: "\(path).category")
+        try requireExportText(intake.timeZoneIdentifier, field: "\(path).time_zone")
+        guard !intake.revisions.isEmpty else {
+            throw JournalExportError.emptyRevisionHistory(intake.id)
+        }
+        for (revisionIndex, revision) in intake.revisions.enumerated() {
+            guard !revision.components.isEmpty else {
+                throw JournalExportError.emptyRevisionComponents(intake.id, revision.number)
+            }
+            for (componentIndex, component) in revision.components.enumerated() {
+                let componentPath = "\(path).revisions[\(revisionIndex)].components[\(componentIndex)]"
+                try validateKnownExportAmount(component, path: "\(componentPath).amount")
+                guard (try? MeasureUnit(symbol: component.unit)) != nil else {
+                    throw JournalExportError.unknownRevisionUnit("\(componentPath).unit")
+                }
+            }
+            if let provenance = revision.provenance {
+                try validateExportProvenance(provenance, path: "\(path).revisions[\(revisionIndex)].provenance")
+            }
+        }
+    }
+    for (index, tombstone) in document.tombstones.enumerated() {
+        try requireExportText(tombstone.timeZoneIdentifier, field: "tombstones[\(index)].time_zone")
+    }
+    for (index, favorite) in document.favorites.enumerated() {
+        let path = "favorites[\(index)]"
+        try requireExportText(favorite.id, field: "\(path).id")
+        try requireExportText(favorite.displayName, field: "\(path).display_name")
+        try requireExportText(favorite.category, field: "\(path).category")
+        for (componentIndex, component) in favorite.components.enumerated() {
+            let componentPath = "\(path).components[\(componentIndex)]"
+            guard component.valueState == .known else {
+                throw JournalExportError.unknownFavoriteAmount("\(componentPath).value_state")
+            }
+            try validateKnownExportAmount(component, path: "\(componentPath).amount")
+            let field = "\(componentPath).unit"
+            try requireExportText(component.unit, field: field)
+            guard (try? MeasureUnit(symbol: component.unit)) != nil else {
+                throw JournalExportError.unknownFavoriteUnit(field)
+            }
+        }
+    }
+    for (index, product) in document.products.enumerated() {
+        try validateExportProvenance(product, path: "products[\(index)]")
+    }
 }
 
 /// One active intake with every one of its revisions, as read in a single pass.
@@ -493,6 +582,9 @@ public enum JournalExporter {
             let intake = item.intake
             var revisions: [JournalExportRevision] = []
             for revision in item.revisions {
+                guard !revision.components.isEmpty else {
+                    throw JournalExportError.emptyRevisionComponents(intake.id, revision.number)
+                }
                 var provenance: JournalExportProvenance?
                 if let snapshotID = revision.productSnapshotID {
                     // A snapshot is immutable, so one that is already resolved needs no second query. A long
@@ -530,7 +622,7 @@ public enum JournalExporter {
                 productsByID[snapshotID] = JournalExportProvenance(product: product)
             }
         }
-        return JournalExport(
+        let document = JournalExport(
             exportedAt: exportedAt, appVersion: appVersion,
             intakes: intakes.sorted { $0.id < $1.id },
             tombstones: deletedIntakes.map { JournalExportTombstone(intake: $0) }.sorted { $0.intakeID < $1.intakeID },
@@ -538,11 +630,14 @@ public enum JournalExporter {
             // store lists newest first, which would otherwise make the order depend on when things were added.
             favorites: favoriteList.sorted { $0.id < $1.id },
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID })
+        try validateExportRequiredFields(document)
+        return document
     }
 
     /// Deterministic JSON: sorted keys and ISO-8601 dates with microsecond precision, so the same journal
     /// encodes to the same bytes and no timestamp is rounded on its way out.
     public static func encode(_ export: JournalExport) throws -> Data {
+        try validateExportRequiredFields(export)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         encoder.userInfo[exportSchemaVersionKey] = export.schemaVersion
@@ -584,7 +679,9 @@ public enum JournalExporter {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let text = try container.decode(String.self)
-            if let date = date(fromExportedText: text, using: formatter) ?? fallback.date(from: text) {
+            if let date = date(
+                fromExportedText: text, schemaVersion: version, using: formatter, fallback: fallback
+            ) {
                 return date
             }
             throw DecodingError.dataCorruptedError(
@@ -634,9 +731,13 @@ public enum JournalExporter {
     /// epoch value near 1.7e9 spends ten of its sixteen significant decimal digits on the whole seconds, so six
     /// fractional digits is the finest text that still parses back to the same instant. The schema describes the
     /// dates as `format: date-time`, which RFC 3339 allows at any fractional length.
-    static func microsecondText(from date: Date, using formatter: DateFormatter) -> String {
-        let whole = date.timeIntervalSince1970.rounded(.down)
-        var microseconds = Int(((date.timeIntervalSince1970 - whole) * 1_000_000).rounded())
+    static func microsecondText(from date: Date, using formatter: DateFormatter) throws -> String {
+        let interval = date.timeIntervalSince1970
+        guard interval.isFinite else { throw JournalExportError.nonFiniteDate }
+        let whole = interval.rounded(.down)
+        // This export's existing contract floors seconds and rounds the positive remainder, so exact
+        // negative half-microseconds round toward positive infinity (for example, -0.5 μs becomes epoch).
+        var microseconds = Int(((interval - whole) * 1_000_000).rounded())
         var seconds = whole
         if microseconds >= 1_000_000 {
             // Rounding up out of the fraction carries into the next second.
@@ -644,31 +745,206 @@ public enum JournalExporter {
             seconds += 1
         }
         let digits = String(format: "%06d", microseconds)
-        return "\(formatter.string(from: Date(timeIntervalSince1970: seconds))).\(digits)Z"
+        let secondDate = Date(timeIntervalSince1970: seconds)
+        guard seconds.isFinite, seconds >= earliestLegacyExportableUTCSecond,
+              seconds <= latestExportableUTCSecond else {
+            throw JournalExportError.unrepresentableDate
+        }
+        let formatted = formatter.string(from: secondDate)
+        // Versions 1 and 2 wrote Foundation's historical Julian/Gregorian calendar text. Keep doing so
+        // while those versions remain current, or a backup made before the cutover would restore to a
+        // different instant. The round-trip also prevents Foundation from normalizing an unrepresentable
+        // calendar date at the year boundaries.
+        guard let legacyDate = legacyUTCDate(fromWholeSecondText: formatted, using: formatter),
+              legacyDate.timeIntervalSince1970 == seconds else {
+            throw JournalExportError.unrepresentableDate
+        }
+        return "\(formatted).\(digits)Z"
     }
 
-    /// Reads back what `microsecondText(from:using:)` writes. Any number of fractional digits is accepted, so
-    /// the three-digit dates an earlier build wrote still import.
-    static func date(fromExportedText text: String, using formatter: DateFormatter) -> Date? {
-        guard let dot = text.firstIndex(of: ".") else {
-            return formatter.date(from: text)
+    /// Reads back fractional dates from earlier builds and other RFC-3339 writers. Fractions are converted
+    /// with a bounded decimal accumulator, while leading zeroes do not consume the significant-digit bound.
+    static func date(
+        fromExportedText text: String,
+        schemaVersion: Int,
+        using formatter: DateFormatter,
+        fallback: ISO8601DateFormatter
+    ) -> Date? {
+        guard hasSupportedFourDigitYearPrefix(text) else { return nil }
+        let dot = text.firstIndex(of: ".")
+        let digits: Substring?
+        let secondsText: String
+        if let dot {
+            let zoneStart = text[text.index(after: dot)...].firstIndex {
+                $0 == "Z" || $0 == "z" || $0 == "+" || $0 == "-"
+            }
+            guard let zoneStart else { return nil }
+            let fractionEnd = zoneStart
+            let fraction = text[text.index(after: dot)..<fractionEnd]
+            guard !fraction.isEmpty, fraction.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
+            digits = fraction
+            let zone = String(text[zoneStart...])
+            guard isValidRFC3339Zone(zone) else { return nil }
+            secondsText = String(text[..<dot]) + zone
+        } else {
+            guard text.count > 19 else { return nil }
+            let zoneStart = text.index(text.startIndex, offsetBy: 19)
+            guard isValidRFC3339Zone(String(text[zoneStart...])) else { return nil }
+            digits = nil
+            secondsText = text
         }
-        let secondsText = String(text[text.startIndex..<dot])
-        guard let seconds = formatter.date(from: secondsText) else { return nil }
-        var digits = text[text.index(after: dot)...]
-        if digits.hasSuffix("Z") { digits = digits.dropLast() }
-        guard !digits.isEmpty else { return nil }
-        // The fraction is scaled digit by digit rather than by a format string, so more than three digits
-        // survive the round trip.
+
+        let seconds: Date
+        let usesLegacyUTCCalendar = (1...2).contains(schemaVersion)
+            && (secondsText.hasSuffix("Z") || secondsText.hasSuffix("z"))
+        if hasCanonicalISOWholeSecondShape(secondsText) {
+            // V1/v2 backups were written and read with Foundation's historical Julian/Gregorian calendar.
+            // Keep that meaning for the schemas people already hold, while requiring a formatter round-trip
+            // so invalid or normalized calendar dates are still refused.
+            if usesLegacyUTCCalendar {
+                guard let parsed = legacyUTCDate(
+                    fromWholeSecondText: String(secondsText.dropLast()), using: formatter) else { return nil }
+                seconds = parsed
+            } else {
+                // A canonical four-digit timestamp that fails strict Gregorian parsing is invalid. Do not
+                // let DateFormatter normalize it (for example, February 29 in a non-leap Gregorian year).
+                guard let parsed = prolepticUTCDate(fromWholeSecondText: secondsText) else { return nil }
+                seconds = parsed
+            }
+        } else {
+            guard let parsed = formatter.date(from: secondsText) ?? fallback.date(from: secondsText) else {
+                return nil
+            }
+            seconds = parsed
+        }
+
+        // Explicit offsets remain subject to the strict proleptic four-digit UTC range. Only legacy
+        // UTC Z/z timestamps use the earlier Julian-calendar year-one boundary.
+        let earliest = usesLegacyUTCCalendar
+            ? earliestLegacyExportableUTCSecond
+            : earliestExportableUTCSecond
+        guard let digits else { return finiteDate(seconds, earliest: earliest) }
+
+        // All digits were validated above. Once the binary place underflows to zero, later
+        // fractional digits cannot affect the representable TimeInterval, so very long valid
+        // fractions remain compatible without an unbounded numeric-conversion loop.
         var scaled: TimeInterval = 0
-        var divisor: TimeInterval = 1
+        var place: TimeInterval = 0.1 // Date fractional seconds use TimeInterval. // lint-allow: binary-float
         for character in digits {
-            guard character.isNumber, let digit = character.wholeNumberValue else { return nil }
-            scaled = scaled * 10 + TimeInterval(digit)
-            divisor *= 10
+            if place == 0 { break }
+            let digit = TimeInterval(character.wholeNumberValue!)
+            scaled += digit * place
+            place /= 10
         }
-        return seconds.addingTimeInterval(scaled / divisor)
+        return finiteDate(seconds.addingTimeInterval(scaled), earliest: earliest)
     }
+
+    /// Parses a whole-second UTC date using Foundation's historic Gregorian cutover. Exact formatting back
+    /// to the same text rejects values Foundation would otherwise normalize, including the skipped 1582 days.
+    private static func legacyUTCDate(fromWholeSecondText text: String, using formatter: DateFormatter) -> Date? {
+        let bytes = Array(text.utf8)
+        guard bytes.count == 19, bytes[4] == 45, bytes[7] == 45, bytes[10] == 84,
+              bytes[13] == 58, bytes[16] == 58,
+              (0..<4).allSatisfy({ (48...57).contains(bytes[$0]) }),
+              (0..<4).contains(where: { bytes[$0] != 48 }) else { return nil }
+        guard let date = formatter.date(from: text), formatter.string(from: date) == text else { return nil }
+        return date.timeIntervalSince1970.isFinite ? date : nil
+    }
+
+    private static func isValidRFC3339Zone(_ zone: String) -> Bool {
+        if zone == "Z" || zone == "z" { return true }
+        let bytes = Array(zone.utf8)
+        guard bytes.count == 6, bytes[0] == 43 || bytes[0] == 45, bytes[3] == 58,
+              [1, 2, 4, 5].allSatisfy({ (48...57).contains(bytes[$0]) }) else { return false }
+        let hour = Int(bytes[1] - 48) * 10 + Int(bytes[2] - 48)
+        let minute = Int(bytes[4] - 48) * 10 + Int(bytes[5] - 48)
+        return hour <= 23 && minute <= 59
+    }
+
+    private static func finiteDate(_ date: Date?, earliest: TimeInterval = earliestExportableUTCSecond) -> Date? {
+        guard let date else { return nil }
+        let interval = date.timeIntervalSince1970
+        guard interval.isFinite else { return nil }
+        let whole = interval.rounded(.down)
+        let microseconds = ((interval - whole) * 1_000_000).rounded()
+        let exportedSecond = microseconds >= 1_000_000 ? whole + 1 : whole
+        guard exportedSecond >= earliest,
+              exportedSecond <= latestExportableUTCSecond else { return nil }
+        return date
+    }
+
+    private static func hasCanonicalISOWholeSecondShape(_ text: String) -> Bool {
+        let bytes = Array(text.utf8)
+        guard (bytes.count == 20 || bytes.count == 25),
+              bytes[4] == 45, bytes[7] == 45, bytes[10] == 84,
+              bytes[13] == 58, bytes[16] == 58,
+              [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
+                .allSatisfy({ (48...57).contains(bytes[$0]) }) else { return false }
+        if bytes.count == 20 { return bytes[19] == 90 || bytes[19] == 122 }
+        return (bytes[19] == 43 || bytes[19] == 45) && bytes[22] == 58
+            && (48...57).contains(bytes[20]) && (48...57).contains(bytes[21])
+            && (48...57).contains(bytes[23]) && (48...57).contains(bytes[24])
+    }
+
+    private static func hasSupportedFourDigitYearPrefix(_ text: String) -> Bool {
+        let bytes = Array(text.utf8)
+        guard bytes.count >= 5, bytes[4] == 45,
+              (0..<4).allSatisfy({ (48...57).contains(bytes[$0]) }) else { return false }
+        return bytes[0..<4].contains(where: { $0 != 48 })
+    }
+
+    private static func prolepticUTCDate(fromWholeSecondText text: String) -> Date? {
+        let bytes = Array(text.utf8)
+        guard bytes.count == 20 || bytes.count == 25,
+              bytes[4] == 45, bytes[7] == 45, bytes[10] == 84,
+              bytes[13] == 58, bytes[16] == 58 else { return nil }
+        let digitPositions = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
+        guard digitPositions.allSatisfy({ (48...57).contains(bytes[$0]) }) else { return nil }
+        func number(_ start: Int, _ count: Int) -> Int {
+            bytes[start..<(start + count)].reduce(0) { $0 * 10 + Int($1 - 48) }
+        }
+        let year = number(0, 4)
+        let month = number(5, 2)
+        let day = number(8, 2)
+        let hour = number(11, 2)
+        let minute = number(14, 2)
+        let second = number(17, 2)
+        guard (1...9_999).contains(year), (1...12).contains(month),
+              (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second) else { return nil }
+        let leap = year.isMultiple(of: 4) && (!year.isMultiple(of: 100) || year.isMultiple(of: 400))
+        let daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        guard (1...daysInMonth[month - 1]).contains(day) else { return nil }
+
+        var offset = 0
+        if bytes.count == 20 {
+            guard bytes[19] == 90 || bytes[19] == 122 else { return nil }
+        } else {
+            guard (bytes[19] == 43 || bytes[19] == 45), bytes[22] == 58,
+                  (48...57).contains(bytes[20]), (48...57).contains(bytes[21]),
+                  (48...57).contains(bytes[23]), (48...57).contains(bytes[24]) else { return nil }
+            let offsetHour = number(20, 2)
+            let offsetMinute = number(23, 2)
+            guard (0...23).contains(offsetHour), (0...59).contains(offsetMinute) else { return nil }
+            let sign = bytes[19] == 43 ? 1 : -1
+            offset = sign * (offsetHour * 3_600 + offsetMinute * 60)
+        }
+
+        // Inverse of the proleptic-Gregorian day conversion used by the writer.
+        var adjustedYear = year
+        adjustedYear -= month <= 2 ? 1 : 0
+        let era = adjustedYear / 400
+        let yearOfEra = adjustedYear - era * 400
+        let adjustedMonth = month + (month > 2 ? -3 : 9)
+        let dayOfYear = (153 * adjustedMonth + 2) / 5 + day - 1
+        let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+        let daysSinceEpoch = era * 146_097 + dayOfEra - 719_468
+        let localSeconds = daysSinceEpoch * 86_400 + hour * 3_600 + minute * 60 + second
+        return Date(timeIntervalSince1970: TimeInterval(localSeconds - offset))
+    }
+
+    private static let earliestExportableUTCSecond = -62_135_596_800.0 // Proleptic 0001-01-01T00:00:00Z. // lint-allow: binary-float
+    private static let earliestLegacyExportableUTCSecond = -62_135_769_600.0 // Julian 0001-01-01T00:00:00Z. // lint-allow: binary-float
+    private static let latestExportableUTCSecond = 253_402_300_799.0 // 9999-12-31T23:59:59Z; Date boundary uses TimeInterval. // lint-allow: binary-float
 
     /// A file name such as `journal-export-2024-01-15-101500.json`.
     public static func fileName(exportedAt: Date) -> String {

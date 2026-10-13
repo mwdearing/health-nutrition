@@ -221,20 +221,33 @@ public enum JournalImporter {
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
         try checkObject(root, keys: JournalImportV1Keys.root, path: "$", version: version)
+        try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
             let path = "$.intakes[\(index)]"
             let intake = try object(item, path: path)
             try checkObject(intake, keys: JournalImportV1Keys.intake, path: path, version: version)
+            try checkMinimumLengthOne(intake, keys: ["category", "time_zone"], path: path, version: version)
             let revisionList = try objects(intake["revisions"], path: "\(path).revisions")
+            guard !revisionList.isEmpty else {
+                throw JournalImportError.malformed("\(path).revisions must contain at least one revision")
+            }
             for (revisionIndex, revisionItem) in revisionList.enumerated() {
                 let revisionPath = "\(path).revisions[\(revisionIndex)]"
                 let revision = try object(revisionItem, path: revisionPath)
                 try checkObject(revision, keys: JournalImportV1Keys.revision, path: revisionPath, version: version)
                 if let provenance = revision["provenance"], !(provenance is NSNull) {
                     let provenancePath = "\(revisionPath).provenance"
+                    let provenanceFields = try object(provenance, path: provenancePath)
                     try checkObject(
-                        try object(provenance, path: provenancePath),
-                        keys: provenanceKeys, path: provenancePath, version: version)
+                        provenanceFields, keys: provenanceKeys, path: provenancePath, version: version)
+                    try checkProvenanceMinimumLengths(
+                        provenanceFields, path: provenancePath, version: version)
+                }
+                let componentList = try objects(
+                    revision["components"], path: "\(revisionPath).components")
+                guard !componentList.isEmpty else {
+                    throw JournalImportError.malformed(
+                        "\(revisionPath).components must contain at least one component")
                 }
                 try checkComponents(revision["components"], path: "\(revisionPath).components", version: version)
             }
@@ -244,19 +257,24 @@ public enum JournalImporter {
             let path = "$.tombstones[\(index)]"
             try checkObject(
                 try object(item, path: path), keys: JournalImportV1Keys.tombstone, path: path, version: version)
+            try checkMinimumLengthOne(
+                try object(item, path: path), keys: ["time_zone"], path: path, version: version)
         }
         let favoriteList = try objects(root["favorites"], path: "$.favorites")
         for (index, item) in favoriteList.enumerated() {
             let path = "$.favorites[\(index)]"
             let favorite = try object(item, path: path)
             try checkObject(favorite, keys: JournalImportV1Keys.favorite, path: path, version: version)
+            try checkMinimumLengthOne(
+                favorite, keys: ["id", "display_name", "category"], path: path, version: version)
             try checkComponents(favorite["components"], path: "\(path).components", version: version)
         }
         let productList = try objects(root["products"], path: "$.products")
         for (index, item) in productList.enumerated() {
             let path = "$.products[\(index)]"
-            try checkObject(
-                try object(item, path: path), keys: provenanceKeys, path: path, version: version)
+            let provenance = try object(item, path: path)
+            try checkObject(provenance, keys: provenanceKeys, path: path, version: version)
+            try checkProvenanceMinimumLengths(provenance, path: path, version: version)
         }
     }
 
@@ -267,6 +285,28 @@ public enum JournalImporter {
             try checkObject(
                 try object(item, path: componentPath), keys: JournalImportV1Keys.component, path: componentPath,
                 version: version)
+            try checkMinimumLengthOne(
+                try object(item, path: componentPath), keys: ["unit"], path: componentPath, version: version)
+        }
+    }
+
+    private static func checkProvenanceMinimumLengths(
+        _ fields: [String: Any], path: String, version: Int
+    ) throws {
+        try checkMinimumLengthOne(
+            fields,
+            keys: ["snapshot_id", "product_id", "name", "label_basis", "catalog_origin", "catalog_version"],
+            path: path, version: version)
+    }
+
+    /// JSON Schema's minLength counts characters, and every constrained string here has a minimum of one.
+    /// Type checks remain the decoder's job; this pass only refuses an empty string where the schema does.
+    private static func checkMinimumLengthOne(
+        _ fields: [String: Any], keys: Set<String>, path: String, version: Int
+    ) throws {
+        for key in keys.sorted() where (fields[key] as? String)?.isEmpty == true {
+            throw JournalImportError.malformed(
+                "\(path).\(key) is empty, but the version \(version) schema requires at least one character")
         }
     }
 
@@ -369,7 +409,8 @@ public enum JournalImporter {
             // backwards. This walks the revisions the file actually holds and compares each number with its
             // position, rather than building the range the file claims: a hand-edited current_revision of two
             // billion would otherwise turn into an enormous set of numbers to check two revisions against.
-            guard exported.currentRevision == revisions.count,
+            guard exported.currentRevision > 0, !revisions.isEmpty,
+                  exported.currentRevision == revisions.count,
                   revisions.indices.allSatisfy({ revisions[$0].number == $0 + 1 })
             else {
                 throw JournalImportError.corrupt(
@@ -414,12 +455,6 @@ public enum JournalImporter {
         for favorite in document.favorites {
             guard favoriteIDs.insert(favorite.id).inserted else {
                 throw JournalImportError.corrupt("the export lists the favorite \(favorite.id) twice")
-            }
-            // A favorite with nothing in it cannot be repeated: there are no amounts to repeat, so the row
-            // would show a name and no numbers and the intake it created would claim nothing. An empty list
-            // is a file that does not say what the template is, not a template of "none of the above".
-            guard !favorite.components.isEmpty else {
-                throw JournalImportError.corrupt("the favorite \(favorite.id) has no components")
             }
             var favoriteComponents: [FavoriteComponent] = []
             var favoriteComponentIDs = Set<String>()
