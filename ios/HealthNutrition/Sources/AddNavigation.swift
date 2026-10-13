@@ -30,6 +30,12 @@ enum AddRoute: Hashable {
 final class AddNavigationModel: ObservableObject {
     @Published var path: [AddRoute] = []
 
+    /// Opens the details form filled from an Open Food Facts name-search result.
+    func openLookedUp(_ product: LookedUpProduct, home: AddHomeViewModel) {
+        let model = home.makeDetails(now: Date())
+        model.applyLookedUp(product)
+        path.append(.details(AddPrefill(model: model)))
+    }
     func openProduct(_ product: CustomProductRevision, home: AddHomeViewModel, now: Date) throws {
         let model = try home.makeDetails(product: product, now: now)
         path.append(.details(AddPrefill(model: model)))

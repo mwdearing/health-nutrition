@@ -434,7 +434,7 @@ struct RootView: View {
             self.addIntakeModel = home.makeDetails(now: Date())
         case .productSearch:
             self.productSearchModel = CommunityProductSearchViewModel(store: services.journalStore, service: services.productService,
-                isSignedIn: { services.account?.phase == .signedIn })
+                openFoodFacts: services.productNameSearch, isSignedIn: { services.account?.phase == .signedIn })
         case .productEditor, .library: break
         }
         self.addNavigation.path.append(route)
@@ -506,7 +506,8 @@ struct RootView: View {
                 CommunityProductSearchView(model: search,
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
-                    onSignIn: { self.settingsAfterAdding = true; self.finishAdding() })
+                    onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
+                    onOpenFoodFacts: { self.addNavigation.openLookedUp($0, home: home) })
             }
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {

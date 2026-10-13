@@ -567,6 +567,16 @@ public final class AddIntakeViewModel: ObservableObject {
         barcode = trimmed
     }
 
+    /// Fills the form from a product the person picked in a name search, the way a barcode lookup fills
+    /// it: the code, the values, the attribution and the snapshot all come from that one product.
+    public func applyLookedUp(_ product: LookedUpProduct) {
+        lookupGeneration += 1
+        invalidateLookup()
+        barcode = product.barcode
+        apply(product)
+        lookupState = .found(product)
+    }
+
     /// Fills the form from a panel the user captured and confirmed, the way a barcode lookup fills it.
     ///
     /// The name is left for the user: a panel states nutrients, not what the food is called. The values
