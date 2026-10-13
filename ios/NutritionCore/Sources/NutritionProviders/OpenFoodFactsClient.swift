@@ -21,6 +21,9 @@ public actor OpenFoodFactsClient {
     private let monotonic: @Sendable () -> TimeInterval
     private var recent: [TimeInterval] = []
     private var recentSearches: [TimeInterval] = []
+    /// Replies to name searches sent inside the current window, by the trimmed query that was sent.
+    private var answeredSearches: [String: (sentAt: TimeInterval, outcome: OpenFoodFactsSearchOutcome)] = [:]
+    private var searchesInFlight: [String: Task<OpenFoodFactsSearchOutcome, Never>] = [:]
 
     public init(
         environment: OpenFoodFactsEnvironment = .production,
@@ -75,6 +78,10 @@ public actor OpenFoodFactsClient {
 
     /// Name search. The query is trimmed and capped; a query shorter than two characters is answered
     /// `.empty` without spending a rate-limit slot or sending a request.
+    ///
+    /// Submitting the same query again inside the window sends nothing and spends no slot: it gets the
+    /// reply already received, or waits for the request still running. Only a reply with results or
+    /// none is kept; a failed or refused search is sent again when the person retries.
     public func search(query: String) async -> OpenFoodFactsSearchOutcome {
         let trimmed = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.searchMaximumCharacters))
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,12 +89,35 @@ public actor OpenFoodFactsClient {
             return .empty
         }
         let current = monotonic()
+        answeredSearches = answeredSearches.filter { current - $0.value.sentAt < Self.windowSeconds }
+        if let answered = answeredSearches[trimmed] {
+            return answered.outcome
+        }
+        if let running = searchesInFlight[trimmed] {
+            return await running.value
+        }
         recentSearches.removeAll { current - $0 >= Self.windowSeconds }
         if recentSearches.count >= Self.maxSearches, let oldest = recentSearches.first {
             return .rateLimited(retryAfter: max(0, oldest + Self.windowSeconds - current))
         }
         recentSearches.append(current)
 
+        // The request runs in its own task, so a caller that stops waiting does not cancel it: the slot
+        // is already spent, and the reply answers the next submit of the same query.
+        let running = Task { await self.sendSearch(query: trimmed) }
+        searchesInFlight[trimmed] = running
+        let outcome = await running.value
+        searchesInFlight[trimmed] = nil
+        switch outcome {
+        case .results, .empty:
+            answeredSearches[trimmed] = (current, outcome)
+        case .rateLimited, .transport:
+            break
+        }
+        return outcome
+    }
+
+    private func sendSearch(query trimmed: String) async -> OpenFoodFactsSearchOutcome {
         guard let request = makeSearchRequest(query: trimmed) else {
             return .transport("could not build the request")
         }
@@ -102,9 +132,17 @@ public actor OpenFoodFactsClient {
         switch response.statusCode {
         case 200..<300:
             break
-        case 429, 503:
+        case 429:
             let header = response.value(forHTTPHeaderField: "Retry-After")
             return .rateLimited(retryAfter: header.flatMap { parseRetryAfter($0, now: now()) })
+        case 503:
+            // The search endpoint answers 503 with no Retry-After when it is down or shedding load. That
+            // is the source being unavailable, not a limit this person reached.
+            guard let wait = response.value(forHTTPHeaderField: "Retry-After")
+                .flatMap({ parseRetryAfter($0, now: now()) }) else {
+                return .transport("HTTP status 503")
+            }
+            return .rateLimited(retryAfter: wait)
         default:
             return .transport("HTTP status \(response.statusCode)")
         }

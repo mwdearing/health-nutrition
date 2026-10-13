@@ -11,13 +11,14 @@ public struct CommunityProductSearchView: View {
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
+    @FocusState private var searchFocused: Bool
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in }) {
         self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
     }
     public var body: some View {
         List {
             Section {
-                LabeledField("Search products") { focus in
+                LabeledField("Search products", focus: $searchFocused) { focus in
                     TextField("Search products", text: $query).focused(focus)
                 }.onSubmit { search() }
                 Picker("Kind", selection: $kind) {
@@ -122,8 +123,7 @@ public struct CommunityProductSearchView: View {
         case .results: EmptyView()
         case .empty: Text("No Open Food Facts products match this search.")
         case .rateLimited(let seconds):
-            Text(seconds.map { "Open Food Facts search is busy. Try again in about \($0) seconds." }
-                ?? "Open Food Facts search is busy. Try again in a minute.")
+            Text(CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: seconds))
         case .unavailable: Text("Open Food Facts is unavailable right now.")
         }
     }
@@ -143,7 +143,11 @@ public struct CommunityProductSearchView: View {
             Button("Retry") { Task { await model.retry() } }
         }
     }
-    private func search() { Task { await model.search(query: query, kind: kind) } }
+    private func search() {
+        // The keyboard covers the results below the form, which reads as if nothing happened.
+        searchFocused = false
+        Task { await model.search(query: query, kind: kind) }
+    }
     private func select(_ product: CommunityProduct) {
         do {
             switch product.product {

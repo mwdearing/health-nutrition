@@ -13,7 +13,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
     ]}
     """.utf8)
 
-    private func client(_ transport: StubTransport, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
+    private func client(_ transport: any OpenFoodFactsTransport, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
         OpenFoodFactsClient(
             environment: .production, transport: transport, appVersion: "1.0.0",
             now: { clock.now() }, monotonic: { clock.uptime() })
@@ -111,16 +111,139 @@ final class OpenFoodFactsSearchTests: XCTestCase {
     func testSixSearchesPerMinuteThenRateLimited() async {
         let transport = StubTransport(body: twoProducts)
         let model = client(transport)
-        for _ in 0..<6 {
-            guard case .results = await model.search(query: "oat") else {
+        for index in 0..<6 {
+            guard case .results = await model.search(query: "oat \(index)") else {
                 return XCTFail("expected results inside the limit")
             }
         }
-        let outcome = await model.search(query: "oat")
+        let outcome = await model.search(query: "oat 6")
         guard case .rateLimited(let retryAfter) = outcome else {
             return XCTFail("expected rate limit, got \(outcome)")
         }
         XCTAssertEqual(retryAfter, 60)
         XCTAssertEqual(transport.requests.count, 6)
+    }
+
+    func testRepeatedSearchIsAnsweredWithoutAnotherRequest() async {
+        let transport = StubTransport(body: twoProducts)
+        let model = client(transport)
+        let first = await model.search(query: "oat")
+        for _ in 0..<8 {
+            let repeated = await model.search(query: "  oat ")
+            XCTAssertEqual(repeated, first)
+        }
+        XCTAssertEqual(transport.requests.count, 1)
+        // The repeats spent nothing: five more different searches still fit in the same minute.
+        for index in 0..<5 {
+            guard case .results = await model.search(query: "oat \(index)") else {
+                return XCTFail("a repeated search spent a rate-limit slot")
+            }
+        }
+        XCTAssertEqual(transport.requests.count, 6)
+    }
+
+    func testRepeatedSearchIsSentAgainAfterTheWindow() async {
+        let transport = StubTransport(body: twoProducts)
+        let clock = TestClock()
+        let model = client(transport, clock: clock)
+        _ = await model.search(query: "oat")
+        clock.advance(60)
+        _ = await model.search(query: "oat")
+        XCTAssertEqual(transport.requests.count, 2)
+    }
+
+    func testFailedSearchIsNotRemembered() async {
+        let transport = StubTransport(status: 500)
+        let model = client(transport)
+        _ = await model.search(query: "oat")
+        _ = await model.search(query: "oat")
+        XCTAssertEqual(transport.requests.count, 2)
+    }
+
+    func testSameSearchWhileOneIsRunningSharesItsRequest() async {
+        let transport = GatedTransport(body: twoProducts)
+        let model = client(transport)
+        async let first = model.search(query: "oat")
+        await transport.waitForRequests(1)
+        async let second = model.search(query: "oat")
+        // Give the second call time to reach the client before the reply is released.
+        for _ in 0..<50 { await Task.yield() }
+        transport.release()
+        let outcomes = await [first, second]
+        XCTAssertEqual(outcomes[0], outcomes[1])
+        guard case .results = outcomes[0] else {
+            return XCTFail("expected results, got \(outcomes[0])")
+        }
+        XCTAssertEqual(transport.requestCount, 1)
+    }
+
+    func testCancelledCallerStillLetsARepeatUseTheReply() async {
+        let transport = GatedTransport(body: twoProducts)
+        let model = client(transport)
+        let abandoned = Task { await model.search(query: "oat") }
+        await transport.waitForRequests(1)
+        abandoned.cancel()
+        transport.release()
+        _ = await abandoned.value
+        guard case .results = await model.search(query: "oat") else {
+            return XCTFail("expected the reply to the abandoned search to be reused")
+        }
+        XCTAssertEqual(transport.requestCount, 1)
+    }
+
+    func testSearch503WithoutRetryAfterIsUnavailableNotRateLimited() async {
+        let outcome = await client(StubTransport(status: 503)).search(query: "oat")
+        guard case .transport = outcome else {
+            return XCTFail("expected transport, got \(outcome)")
+        }
+    }
+
+    func testSearch503WithRetryAfterIsRateLimited() async {
+        let transport = StubTransport(status: 503, headers: ["Retry-After": "30"])
+        let outcome = await client(transport).search(query: "oat")
+        XCTAssertEqual(outcome, .rateLimited(retryAfter: 30))
+    }
+}
+
+/// Holds every request open until `release()` is called, so a test can act while a search is running.
+private final class GatedTransport: OpenFoodFactsTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private let body: Data
+    private var count = 0
+    private var released = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(body: Data) {
+        self.body = body
+    }
+
+    var requestCount: Int {
+        lock.withLock { count }
+    }
+
+    func waitForRequests(_ wanted: Int) async {
+        while requestCount < wanted { await Task.yield() }
+    }
+
+    func release() {
+        let resumed = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            released = true
+            defer { waiting = [] }
+            return waiting
+        }
+        resumed.forEach { $0.resume() }
+    }
+
+    func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let open = lock.withLock { () -> Bool in
+                count += 1
+                if !released { waiting.append(continuation) }
+                return released
+            }
+            if open { continuation.resume() }
+        }
+        try Task.checkCancellation()
+        return (body, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
     }
 }
