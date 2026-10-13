@@ -25,6 +25,8 @@ final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Send
 
     func requestEmailCode(email: String) async throws {}
 
+    func discardLocalSession() async throws {}
+
     func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
         throw CommunityError.network
     }
