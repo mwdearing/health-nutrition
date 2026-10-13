@@ -16,6 +16,7 @@ from typing import cast
 import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/signed-beta.yml"
+XCODEGEN_INSTALLER = WORKFLOW.parents[1] / "scripts/install-xcodegen.sh"
 SECRET_NAMES = (
     "ASC_KEY_P8",
     "ASC_KEY_ID",
@@ -140,13 +141,13 @@ def test_xcodegen_is_a_pinned_release_verified_by_checksum() -> None:
     assert "brew install" not in text
     assert "mint " not in text
     install = next(s for s in _steps() if str(s["name"]).startswith("Install XcodeGen"))
-    env = cast("dict[str, str]", install["env"])
-    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", env["XCODEGEN_VERSION"])
-    assert re.fullmatch(r"[0-9a-f]{64}", env["XCODEGEN_SHA256"])
-    run = str(install["run"])
-    assert "releases/download/$XCODEGEN_VERSION/xcodegen.zip" in run
-    assert "shasum -a 256 -c -" in run
-    assert run.index("shasum") < run.index("unzip")
+    assert install["run"] == 'bash "$GITHUB_WORKSPACE/.github/scripts/install-xcodegen.sh"'
+    installer = XCODEGEN_INSTALLER.read_text()
+    assert re.search(r'(?m)^XCODEGEN_VERSION="[0-9]+\.[0-9]+\.[0-9]+"$', installer)
+    assert re.search(r'(?m)^XCODEGEN_SHA256="[0-9a-f]{64}"$', installer)
+    assert "releases/download/$XCODEGEN_VERSION/xcodegen.zip" in installer
+    assert "shasum -a 256 -c -" in installer
+    assert installer.index("shasum -a 256 -c -") < installer.index("unzip -q")
     generate = next(s for s in _steps() if s["name"] == "Generate the Xcode project")
     assert "xcodegen-dist/xcodegen/bin/xcodegen" in str(generate["run"])
 
