@@ -125,8 +125,8 @@ Close button and asks once: it does not keep retrying while the notice is on scr
 
 - Every request sends a User-Agent of the form
   `HealthNutrition/<version> (https://github.com/mwdearing/health-nutrition/issues)`.
-- Open Food Facts allows 100 product reads per minute per client. The client
-  limits itself to 15 lookups in any rolling 60 seconds and answers further calls
+- Open Food Facts publishes 15 product reads and 10 searches per minute per user
+  for apps. The client limits itself to 10 lookups in any rolling 60 seconds and answers further calls
   with a rate-limited outcome without sending a request. The window uses a monotonic
   clock. HTTP 429 and 503 are also reported as rate limited, using the Retry-After
   header (seconds or HTTP-date) when present.

@@ -59,8 +59,8 @@ The shipped manifest declares two required-reason API categories:
 
 `OpenFoodFactsClient` takes a `monotonic` clock, defaulting to
 `ProcessInfo.processInfo.systemUptime`, and uses it to measure elapsed time for
-its own rate limiting: Open Food Facts allows 100 product reads per minute and
-the client stays at 15, dropping lookups older than a 60 second window. Reason
+its own rate limiting: Open Food Facts publishes 15 product reads per minute and
+the client stays at 10, dropping lookups older than a 60 second window. Reason
 35F9.1 covers measuring the amount of time that elapses inside the app between
 events that happened in the app, which is exactly this. Wall-clock time
 (`Date()`) is used separately for the request's `last_modified_t` handling,

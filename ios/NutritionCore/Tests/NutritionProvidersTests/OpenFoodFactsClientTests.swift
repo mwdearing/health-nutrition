@@ -255,30 +255,30 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertEqual(outcome, .rateLimited(retryAfter: nil))
     }
 
-    func testClientLimiterBlocksSixteenthLookupAndAllowsLater() async throws {
+    func testClientLimiterBlocksEleventhLookupAndAllowsLater() async throws {
         let transport = StubTransport(body: try fixture("found_per_100g"))
         let clock = TestClock()
         let subject = client(transport, clock: clock)
-        for _ in 0..<15 {
+        for _ in 0..<10 {
             let outcome = await subject.lookup(barcode: foundCode)
             guard case .found = outcome else {
                 return XCTFail("expected found, got \(outcome)")
             }
             clock.advance(1)
         }
-        XCTAssertEqual(transport.requests.count, 15)
+        XCTAssertEqual(transport.requests.count, 10)
         let blocked = await subject.lookup(barcode: foundCode)
         guard case .rateLimited(let retryAfter) = blocked else {
             return XCTFail("expected rateLimited, got \(blocked)")
         }
         XCTAssertNotNil(retryAfter)
-        XCTAssertEqual(transport.requests.count, 15, "a blocked lookup must not reach the network")
+        XCTAssertEqual(transport.requests.count, 10, "a blocked lookup must not reach the network")
         clock.advance(60)
         let later = await subject.lookup(barcode: foundCode)
         guard case .found = later else {
             return XCTFail("expected found after the window, got \(later)")
         }
-        XCTAssertEqual(transport.requests.count, 16)
+        XCTAssertEqual(transport.requests.count, 11)
     }
 
     func testInvalidBarcodeLengthsMakeNoRequest() async throws {
