@@ -94,7 +94,8 @@ public actor OpenFoodFactsClient {
         let data: Data
         let response: HTTPURLResponse
         do {
-            (data, response) = try await transport.get(request)
+            (data, response) = try await transport.get(
+                request, maxBytes: BoundedResponseLimits.openFoodFactsSearch)
         } catch {
             return .transport(String(describing: error))
         }
