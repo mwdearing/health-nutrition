@@ -310,8 +310,8 @@ def test_the_import_helper_uses_secitemimport_with_cfstring_and_restricted_acl()
     source = SIGNING_IMPORT_HELPER.read_text()
     assert "SecItemImport(" in source
     assert "ProcessInfo.processInfo.environment[\"SIGNING_CERT_PASSWORD\"]" in source
-    assert "parameters.passphrase = cfPassphrase" in source
-    assert "parameters.accessRef = access" in source
+    assert "parameters.passphrase = Unmanaged.passUnretained(cfPassphrase as CFTypeRef)" in source
+    assert "parameters.accessRef = Unmanaged.passUnretained(access)" in source
     assert "SecAccessCreate(" in source
     assert '"/usr/bin/codesign"' in source
     assert '"/usr/bin/security"' in source
