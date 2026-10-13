@@ -363,6 +363,113 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(flattened.servingsPerContainer, dec("60"))
     }
 
+    func testServingSizeBoundaryDoesNotTreatPackagingColonAsMarkerColon() throws {
+        let gummies = parse(["Serving size 3 Gummies LOT#:260628007"])
+        XCTAssertEqual(gummies.servingSize?.text, "3 Gummies")
+        XCTAssertEqual(gummies.servingSize?.quantity, Quantity(value: dec("3"), unit: .gummy))
+
+        let cup = parse(["Serving size 1 cup (240mL) Net wt:12oz"])
+        XCTAssertEqual(cup.servingSize?.text, "1 cup (240mL)")
+        XCTAssertEqual(cup.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+    }
+
+    func testServingSizeMarkerColonAndNextLineDescription() {
+        XCTAssertEqual(parse(["Serving size: 3 Gummies"]).servingSize?.text, "3 Gummies")
+        XCTAssertEqual(parse(["Serving size", "1 cup (240mL)"]).servingSize?.text, "1 cup (240mL)")
+    }
+
+    func testServingSizeOnFollowingLineLeavesFlattenedNutrientsForParsing() throws {
+        let panel = parse(["Serving size", "1 cup (240mL) Calories 90 Protein 2g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 cup (240mL)")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+        XCTAssertEqual(try amount(.calories, panel), dec("90"))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"))
+    }
+
+    func testServingSizeColonMarkerConsumesImmediateNextLine() {
+        let panel = parse(["Serving size:", "1 cup (240mL)"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 cup (240mL)")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("240"), unit: .mL))
+    }
+
+    func testHouseholdServingStopsAtEarliestPackagingField() {
+        let panel = parse(["Serving size 1 large biscuit Best by:2027 LOT#:ABC"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 large biscuit")
+        XCTAssertNil(panel.servingSize?.quantity, "a household description has no invented measure")
+    }
+
+    func testPackagingColonDoesNotHideFlattenedNutrientsBehindServingSize() throws {
+        let panel = parse(["Serving size 3 Gummies LOT#:260628007 Calories 90 Protein 2g"])
+        XCTAssertEqual(panel.servingSize?.text, "3 Gummies")
+        XCTAssertEqual(try amount(.calories, panel), dec("90"))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"))
+    }
+
+    func testServingSizeOnFollowingLineIsNotSwallowedByNextLinePackagingColon() {
+        let panel = parse(["Serving size", "3 Gummies LOT#:260628007", "Calories 90"])
+        XCTAssertEqual(panel.servingSize?.text, "3 Gummies")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("3"), unit: .gummy))
+        XCTAssertEqual(panel.value(for: .calories), .known(dec("90"), .kcal))
+    }
+
+    func testBareServingMarkerDoesNotConsumeFollowingCompoundRow() throws {
+        let panel = parse(["Serving size", "Creatine Monohydrate 3g"])
+
+        XCTAssertNil(panel.servingSize, "a compound row is not a serving description")
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine-monohydrate"))
+        XCTAssertEqual(creatine.value, .known(dec("3"), .g))
+    }
+
+    func testBoundServingMeasureDoesNotBecomeAQuantity() {
+        for line in ["Serving size 1-2 g", "Serving size <1 g"] {
+            let panel = parse([line])
+            XCTAssertNil(panel.servingSize?.quantity, "an uncertain bound cannot supply a single scaling basis")
+            XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize])
+        }
+    }
+
+    func testMultiDigitServingRangesRequireConfirmation() {
+        for line in ["Serving size 10-12 g", "Serving size 1–20 g"] {
+            let panel = parse([line])
+            XCTAssertNil(panel.servingSize?.quantity, "a range cannot supply one scaling basis: \(line)")
+            XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize], line)
+        }
+    }
+
+    func testComparisonServingMeasuresRequireConfirmation() {
+        for line in ["Serving size >1 g", "Serving size >=1 g", "Serving size ≥1 g",
+                     "Serving size <=1 g", "Serving size ≤1 g"] {
+            let panel = parse([line])
+            XCTAssertNil(panel.servingSize?.quantity, "a comparison cannot supply one scaling basis: \(line)")
+            XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize], line)
+        }
+    }
+
+    func testBoundInLaterCompoundDoesNotMakeLeadingServingUncertain() throws {
+        let panel = parse(["Serving size 1 capsule Creatine <1g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 capsule")
+        XCTAssertEqual(panel.servingSize?.quantity, Quantity(value: dec("1"), unit: .capsule))
+        XCTAssertNil(panel.servingSize?.review)
+        let creatine = try XCTUnwrap(panel.additionalNutrient(for: "creatine"))
+        XCTAssertEqual(creatine.value, .belowReportingThreshold(.g))
+    }
+
+    func testRangeWithUnitsAtBothEndpointsRequiresConfirmation() {
+        let panel = parse(["Serving size 10 g - 12 g"])
+        XCTAssertNil(panel.servingSize?.quantity)
+        XCTAssertEqual(panel.servingSize?.review?.reasons, [.uncertainServingSize])
+    }
+
+    func testEmptyPackagingValueDoesNotConsumeTheNextNutrientRow() throws {
+        let panel = parse(["Serving size 1 gummy LOT#: Calories 90 Protein 2g"])
+        XCTAssertEqual(try amount(.calories, panel), dec("90"))
+        XCTAssertEqual(try amount(.protein, panel), dec("2"))
+    }
+
     /// A counted unit is a serving measure, never a nutrient row's. A panel states no nutrient per
     /// gummy, so a row whose amount sits behind such a word keeps no amount rather than one in a unit
     /// nobody printed for it, and an unknown word is still no unit at all.
@@ -404,6 +511,13 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.fat, panel), dec("9"))
         XCTAssertEqual(try unit(.fat, panel), .g)
         XCTAssertEqual(try amount(.sodium, panel), dec("210"))
+    }
+
+    func testAmountAfterServingMetadataSplitAcrossTwoLinesIsNotSkipped() throws {
+        let panel = parse(["Serving size", "1 gummy Protein", "6g"])
+
+        XCTAssertEqual(panel.servingSize?.text, "1 gummy")
+        XCTAssertEqual(try amount(.protein, panel), dec("6"))
     }
 
     func testSeveralRowsOnOneLineAreReadInOrder() throws {
