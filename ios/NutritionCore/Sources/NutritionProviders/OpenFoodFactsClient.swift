@@ -151,8 +151,9 @@ public actor OpenFoodFactsClient {
         }
         let products: [OpenFoodFactsProduct] = (decoded.products ?? []).compactMap { body in
             // A reply is untrusted: only a well-formed barcode becomes a result.
-            guard let code = body.code?.text?.trimmingCharacters(in: .whitespaces),
-                  BarcodeValidator.isValid(code) else {
+            // The stored code is the one that was validated: a padded value is refused, not trimmed for the
+            // check and kept as received.
+            guard let code = body.code?.text, BarcodeValidator.isValid(code) else {
                 return nil
             }
             return OpenFoodFactsProduct(body: body, requestedBarcode: code)

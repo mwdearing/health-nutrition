@@ -46,7 +46,8 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         {"count": 3, "products": [
           {"code": "not-a-code", "product_name": "Bad Code", "nutriments": {}},
           {"code": "2000000000015", "product_name": "Oat Biscuit", "nutriments": {}},
-          {"code": "2000000000016", "product_name": "Wrong Check Digit", "nutriments": {}}
+          {"code": "2000000000016", "product_name": "Wrong Check Digit", "nutriments": {}},
+          {"code": " 2000000000022 ", "product_name": "Padded Code", "nutriments": {}}
         ]}
         """.utf8)
         let outcome = await client(StubTransport(body: body)).search(query: "oat")
