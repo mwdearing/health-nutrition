@@ -65,7 +65,7 @@ jobs:
           TEST_RUNNER_SCREENSHOT_DIR: ${{ runner.temp }}/screenshots
         run: |
           mkdir -p "$RUNNER_TEMP/screenshots"
-          xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition \
+          xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -disableAutomaticPackageResolution \
             -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO \
             -only-testing:HealthNutritionTests/ScreenshotCaptureTests test
           ls -l "$RUNNER_TEMP/screenshots"

@@ -7,6 +7,16 @@ xcuserdata/
 *.xcuserstate
 # The app project is generated from ios/HealthNutrition/project.yml
 ios/HealthNutrition/*.xcodeproj/
+# Xcode stores the app's SwiftPM lock in its project workspace. Track only that file; the generated project stays ignored.
+!ios/HealthNutrition/HealthNutrition.xcodeproj/
+ios/HealthNutrition/HealthNutrition.xcodeproj/**
+!ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/
+ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/**
+!ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/xcshareddata/
+ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/xcshareddata/**
+!ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/**
+!ios/HealthNutrition/HealthNutrition.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # Python
 .venv/

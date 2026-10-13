@@ -76,6 +76,14 @@ open HealthNutrition.xcodeproj
 Re-run `xcodegen generate` after you change `project.yml`. Never commit the generated project; it
 is ignored by git and CI regenerates it.
 
+The app's package resolution is the one exception: commit
+`HealthNutrition.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` so Xcode builds use
+the reviewed SwiftPM graph. HCaptcha 3.1.0 is pinned to its verified upstream commit, and the lock also
+records its transitive RxSwift 6.10.2 dependency even though the app target links only HCaptcha. The lock
+uses Xcode's version 2 format; it omits `originHash` because the portable Linux resolver manifest used to
+confirm package pins is not the generated app project. The Xcode build remains the check that the generated
+project accepts and preserves this graph.
+
 ## Running on a device
 
 CI builds without signing, so the app runs in the iOS Simulator with no setup. To run it on an

@@ -180,6 +180,7 @@ jobs:
           quiet Archive "$RUNNER_TEMP/archive.log" xcodebuild archive \
             -project HealthNutrition.xcodeproj \
             -scheme HealthNutrition \
+            -disableAutomaticPackageResolution \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/HealthNutrition.xcarchive" \

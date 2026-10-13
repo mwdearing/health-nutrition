@@ -172,6 +172,8 @@ def test_it_signs_with_the_api_key_and_uploads_directly() -> None:
     ):
         assert needle in text
     assert "CODE_SIGNING_ALLOWED=NO" not in text
+    archive_command = text.split('quiet Archive "$RUNNER_TEMP/archive.log"', 1)[1].split('quiet Export', 1)[0]
+    assert "-disableAutomaticPackageResolution" in archive_command
 
 
 def test_the_bundle_id_is_a_secret_not_an_input_and_no_identity_is_in_the_file() -> (
