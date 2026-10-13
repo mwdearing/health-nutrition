@@ -270,9 +270,17 @@ def test_label_submission_copy_discloses_signed_in_account_linkage() -> None:
     )
     assert direct or bridged
 
+    editor = (ROOT / "ios/NutritionCore/Sources/NutritionUI/CustomProductEditorViewModel.swift").read_text(
+        encoding="utf-8"
+    )
+    publish = client.split("public func publish", 1)[1].split("public func", 1)[0]
+    assert "expectedownerid" in publish.lower() and "publish" in editor
+    assert "p_query" in client
     for document in (accounts, privacy):
         assert "linked to your signed-in account" in document
         assert "journal entries" in document and "photo" in document
+        assert "words you typed" in document and "custom product" in document
+        assert "withdrawn record" in document
         assert "account identifier" not in document or "is linked" in document
     summary = view_model.split("public static let privacysummary =", 1)[1].split(
         "public static let exportbuttontitle", 1
@@ -287,6 +295,7 @@ def test_label_submission_copy_guard_checks_latest_migration_override(tmp_path: 
         "PRIVACY.md",
         "docs/accounts.md",
         "ios/NutritionCore/Sources/NutritionProviders/Community/CommunityClient.swift",
+        "ios/NutritionCore/Sources/NutritionUI/CustomProductEditorViewModel.swift",
     ):
         destination = fixture_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)

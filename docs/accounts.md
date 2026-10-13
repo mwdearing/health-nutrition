@@ -19,13 +19,17 @@ Signing in sends the account email address and identifier to the project server.
 
 Open Food Facts is asked first when you submit the barcode field, tap Look up, or accept a barcode from the camera scanner. The camera scan sends nothing while the camera is open; after a code is accepted, it starts the lookup. If Open Food Facts has no product and you are signed in, the app also asks the authenticated community catalog. Turning Share labels off does not disable this read lookup. A signed-out person does not get the community fallback.
 
+## Searching and sharing a product you create
+
+When you are signed in and submit two or more characters in Find products, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account.
+
 ## Sharing a saved label
 
 The switch in Settings > Account controls new community submissions. Turning it off stops new labels from being submitted; it does not erase older submissions. The app submits a qualifying label only when the person is signed in, has acknowledged the disclosure for that account, and sharing is on at save time.
 
 What is sent: product name, brand, barcode, serving text and nutrient amounts. Each submission is linked to your signed-in account on the server. It does not include your journal entries, entry identifier, personal amount eaten, time, meal, notes or photo. A product label can be derived from a community aggregate. Community agreement does not verify a label, regardless of how many accounts agree. Only a label with an explicit owner-reviewed source is attributed exactly as **“Reviewed by the catalog owner.”** That is a statement about review source, not nutrition or medical accuracy.
 
-An owner-reviewed label is a separate product-catalog snapshot, not a contributor-owned journal record. Withdrawing submissions or deleting the contributor's account removes that account's submissions and profile, but an approved catalog snapshot can remain without contributor identity. The community account and submission data are not removed by **Erase all data**; use account controls to delete the server account.
+An owner-reviewed label is a separate product-catalog snapshot, not a contributor-owned journal record. Withdrawing a contribution removes it from publication, but the server keeps a withdrawn record and receipt linked to the account until the account is deleted. Deleting the contributor's account removes that account's submissions, records and profile, but an approved catalog snapshot can remain without contributor identity. The community account and submission data are not removed by **Erase all data**; use account controls to delete the server account.
 
 ## What stays on this device
 
