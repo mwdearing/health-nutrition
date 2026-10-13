@@ -55,8 +55,11 @@ let summary = try JournalImporter.importExport(data, into: store, favorites: fav
 ```
 
 `JournalImporter.importExport(_:into:favorites:)` reads the whole file, checks it, and only then writes.
-It returns a `JournalImportSummary` counting the intakes, revisions, tombstones, favorites and product
-snapshots it wrote, and it throws `JournalImportError` instead of writing part of a file:
+On success it returns a `JournalImportSummary` counting the intakes, revisions, tombstones, favorites and
+product snapshots it wrote. Most failures happen before a write or leave both stores unchanged through
+compensation. One typed error, `partialRestore`, means the journal write remains because a later favorites
+write failed and the narrow undo could not safely remove rows after concurrent journal changes; inspect the
+journal before trying that file again. The importer throws `JournalImportError` for these cases:
 
 | Case | Meaning |
 |---|---|
@@ -65,6 +68,7 @@ snapshots it wrote, and it throws `JournalImportError` instead of writing part o
 | `tooLarge` | The file is over the import ceiling of 20 MiB or its collections contain over 100,000 aggregate elements. The app refuses the whole file; it never truncates it. |
 | `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
 | `corrupt` | The file is an export that cannot be restored as it stands. |
+| `partialRestore` | The favorites write failed after the journal was restored, and undo refused to remove rows that may include concurrent edits. Journal entries may remain; inspect the journal before importing the file again. |
 
 The file picker checks available file-size metadata first, then reads in bounded chunks and stops at the first byte over 20 MiB. The importer separately checks the byte and aggregate-element ceilings before constructing restore objects. A missing or inaccurate file-size value cannot bypass the read ceiling, and canceling a read closes the file and releases any security-scoped access. These are import limits only: exports are still complete and are not capped or shortened. A journal whose backup exceeds either restore limit remains exportable, but this app cannot restore that file; keep a copy and use a reader that supports the full file rather than editing or truncating the backup.
 
@@ -134,26 +138,27 @@ history the destinations were already sent once, and re-sending yesterday's brea
 replaced would be a delivery nobody asked for. `create`, `edit` and `delete` are untouched and still queue
 what they always did, so an edit made after a restore is delivered normally.
 
-**All or nothing.** The whole document is read and checked before the first row is written, so a file that is
-refused - malformed, from a newer version, or internally inconsistent - changes nothing at all. A document
+**Validate before writing.** The whole document is read and checked before the first row is written, so a file
+that is refused - malformed, from a newer version, or internally inconsistent - changes nothing at all. A document
 that carries favorites also needs a favorites store to restore them into: that argument is optional and the
 screen can be built without one, so such a file is refused rather than reported as a success that quietly
 dropped them.
 
 The journal and the favorites then live in two separate store files, so their two writes cannot be one
 transaction. **The journal is written first**, in one `save()` covering every row, and the favorites in one
-`save()` after it. That order is what makes the import all-or-nothing: when the favorites write fails, the
-journal is emptied again and the failure is reported, so both stores are as they were found and the same file
-can simply be imported again. When the journal write itself fails, it rolls itself back and nothing was
-written at all.
+`save()` after it. When the favorites write fails, the importer tries to undo the journal rows it wrote. If
+that succeeds, the failure is reported and both stores are as they were found, so the same file can simply be
+imported again. When the journal write itself fails, it rolls itself back and nothing was written at all.
 
 The compensation is narrow on purpose. `restore` returns a receipt naming, for each entry it wrote, the
 lifecycle, the current revision and the revision numbers that are its own; `undoRestore` removes exactly those
 rows, one revision number at a time. If a write reached the same journal in between - an edit that added a
 revision, a delete that hid the entry - those rows are no longer only the restore's, and removing them would
-throw the person's work away to make the journal look empty. So the undo refuses, and the import reports that
-it could not be put back. Product rows are removed only for the snapshots that restore created, which nothing
-else writes.
+throw the person's work away to make the journal look empty. So the undo refuses. The import then reports a
+partial restore: journal entries may already be present, and the person should inspect the journal before
+importing that file again. The message does not include store errors or entry details. Product rows are removed
+only for the snapshots that restore created, which nothing else writes. This two-file compensation does not
+make the writes crash-atomic; that remains a separate design question.
 
 **The empty check is inside the transaction.** `SwiftDataJournalStore.restore(_:)` reads its own emptiness
 predicate inside the same `commit` closure as the inserts, under the same write lock, and throws
@@ -161,12 +166,15 @@ predicate inside the same `commit` closure as the inserts, under the same write 
 another write creates an entry and the restore joins it, which is the merge this refuses.
 
 The **Restore from an export** action under **Settings > Your data** is a file picker (`fileImporter`, JSON only) that reads the
-bytes and hands them to the model, which shows the summary line or the reason the file was refused. A picker
+bytes and hands them to the model, which shows the summary line, the reason the file was refused, or a warning
+that journal entries may already be present after a protected undo refusal. A picker
 that was canceled returns the screen to its empty import state, while a file that cannot be read at all is
-reported as a failed import: the person asked for it and nothing happened. A successful import also removes
-the exported file this screen was holding, because that copy was made from the journal as it was *before* the
-restore and sharing it would hand over the wrong journal. Nothing is sent anywhere: the file was already on
-the device, or somewhere the person opened it from.
+reported as a failed import: the person asked for it and nothing happened. A successful or partial restore
+also removes the exported file this screen was holding, because that copy was made from the journal as it was
+*before* the restore and sharing it would hand over the wrong journal. Nothing is sent anywhere: the file was
+already on the device, or somewhere the person opened it from. If a later import result supersedes a partial
+restore, its warning remains visible separately from that latest result until a complete restore or successful
+erase replaces the journal.
 
 ## Fields
 | Field | Meaning |
