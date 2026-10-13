@@ -143,9 +143,10 @@ public final class AccountViewModel: ObservableObject {
             message = Self.addressMessage
             return
         }
+        let identity = accountIdentity
         guard await run(Self.codeRequestFailedMessage, {
             try await self.service.requestEmailCode(email: trimmed)
-        }) != nil else { return }
+        }) != nil, accountIdentity == identity else { return }
         pendingEmail = trimmed
         emailStep = .enterCode
         message = Self.codeSentMessage
@@ -276,6 +277,14 @@ public final class AccountViewModel: ObservableObject {
         guard accountIdentity == identity else { return }
         productDeliveryPausedAfterDeletion = false
         clearSignedInState()
+    }
+
+    /// Clears this device's account presentation and stored session as part of Erase all data. It never
+    /// signs out from or deletes anything on the server. The presentation is cleared before the Keychain call
+    /// can fail, and the identity change makes every older service completion stale.
+    public func discardLocalSession() async throws {
+        clearSignedInState()
+        try await service.discardLocalSession()
     }
 
     /// Called after Erase all data cleared the stored preferences: a signed-in person who has not read the

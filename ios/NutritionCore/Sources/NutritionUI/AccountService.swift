@@ -11,6 +11,8 @@ public protocol CommunityAccountServicing: Sendable {
     func requestEmailCode(email: String) async throws
     func verifyEmailCode(email: String, code: String) async throws -> CommunitySession
     func signOut() async throws
+    /// Drops only the locally stored credentials, with no request to the community server.
+    func discardLocalSession() async throws
     func profile() async throws -> CommunityProfile
     func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile
     func deleteAccount() async throws
@@ -36,5 +38,9 @@ extension CommunityClient: CommunityAccountServicing {
 
     public func signOut() async throws {
         try await auth.signOut()
+    }
+
+    public func discardLocalSession() async throws {
+        try await auth.discardSession()
     }
 }

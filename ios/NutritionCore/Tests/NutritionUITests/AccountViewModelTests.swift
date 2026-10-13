@@ -47,8 +47,15 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
     var updateError: Error?
     var signOutError: Error?
     var deleteError: Error?
+    var discardError: Error?
     /// When set, `restore()` waits at this gate before it answers.
     var restoreGate: CallGate?
+    /// When set, `signInWithApple` waits at this gate before it answers.
+    var appleGate: CallGate?
+    /// When set, `requestEmailCode` waits at this gate before it answers.
+    var codeGate: CallGate?
+    /// When set, `updateProfile` waits at this gate before it answers.
+    var updateGate: CallGate?
     var signOutGate: CallGate?
     var deleteGate: CallGate?
     /// When set, `profile()` waits at this gate before it answers.
@@ -58,6 +65,7 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
     private(set) var verifyCalls: [(email: String, code: String)] = []
     private(set) var updates: [(displayName: String?, shareLabels: Bool)] = []
     private(set) var signOutCount = 0
+    private(set) var discardCount = 0
     private(set) var deleteCount = 0
 
     init(session: CommunitySession?) {
@@ -73,11 +81,13 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
 
     func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession {
         appleCalls.append((idToken, nonce))
+        await appleGate?.pass()
         return try appleResult.get()
     }
 
     func requestEmailCode(email: String) async throws {
         codeRequests.append(email)
+        await codeGate?.pass()
         if let codeError { throw codeError }
     }
 
@@ -92,6 +102,11 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
         if let signOutError { throw signOutError }
     }
 
+    func discardLocalSession() async throws {
+        discardCount += 1
+        if let discardError { throw discardError }
+    }
+
     func profile() async throws -> CommunityProfile {
         await profileGate?.pass()
         if let profileError { throw profileError }
@@ -100,6 +115,7 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
 
     func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile {
         updates.append((displayName, shareLabels))
+        await updateGate?.pass()
         // Suspend once, as a real request does, so two writes can overlap when nothing serializes them.
         await Task.yield()
         if let updateError { throw updateError }
@@ -463,6 +479,117 @@ final class AccountViewModelTests: XCTestCase {
         await model.load()
         await model.saveName(String(repeating: "a", count: 80))
         XCTAssertEqual(service.updates.last?.displayName?.count, 60)
+    }
+
+    /// A sharing save that fails after erase cannot put the pre-erase switch back on screen.
+    func testLateSharingFailureCannotRestorePreEraseUIState() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        service.profileValue = CommunityProfile(displayName: nil, shareLabels: false)
+        await model.load()
+        service.updateError = CommunityError.network
+        let gate = CallGate()
+        service.updateGate = gate
+        let updating = Task { await model.setSharing(true) }
+        await waitUntil { gate.entered }
+
+        try await model.discardLocalSession()
+        gate.open()
+        await updating.value
+
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertTrue(model.shareLabels)
+        XCTAssertEqual(model.email, "")
+    }
+
+    /// A profile read still running when erase starts cannot repopulate the account after it.
+    func testLateProfileCompletionCannotRepopulateAccountUIAfterLocalErase() async throws {
+        let (model, service, _) = makeModel(session: nil)
+        let gate = CallGate()
+        service.profileGate = gate
+        let signingIn = Task { await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce") }
+        await waitUntil { gate.entered }
+        XCTAssertEqual(model.phase, .signedIn)
+
+        try await model.discardLocalSession()
+        gate.open()
+        await signingIn.value
+
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertEqual(model.email, "")
+        XCTAssertEqual(model.displayName, "")
+        XCTAssertFalse(model.profileReady)
+    }
+
+    /// A sign-in reply that arrives after erase starts cannot bring the account back.
+    func testLateSignInReplyCannotRestoreAccountAfterLocalErase() async throws {
+        let (model, service, _) = makeModel(session: nil)
+        let gate = CallGate()
+        service.appleGate = gate
+        let signingIn = Task { await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce") }
+        await waitUntil { gate.entered }
+
+        try await model.discardLocalSession()
+        gate.open()
+        await signingIn.value
+
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertEqual(model.email, "")
+        XCTAssertFalse(model.profileReady)
+        XCTAssertEqual(service.discardCount, 1)
+    }
+
+    /// A code request still running when erase starts cannot show the code step afterwards.
+    func testLateCodeRequestCannotShowTheCodeStepAfterLocalErase() async throws {
+        let (model, service, _) = makeModel(session: nil)
+        let gate = CallGate()
+        service.codeGate = gate
+        let requesting = Task { await model.requestCode(email: "person@example.com") }
+        await waitUntil { gate.entered }
+
+        try await model.discardLocalSession()
+        gate.open()
+        await requesting.value
+
+        XCTAssertEqual(model.emailStep, .enterAddress)
+    }
+
+    /// Erase all data forgets the stored session on this device only: no server sign-out and no deletion.
+    func testDiscardLocalSessionClearsThePresentationWithoutAServerCall() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        try await model.discardLocalSession()
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertEqual(model.email, "")
+        XCTAssertEqual(service.discardCount, 1)
+        XCTAssertEqual(service.signOutCount, 0)
+        XCTAssertEqual(service.deleteCount, 0)
+    }
+
+    /// A failed Keychain clear is reported to the erase, and the signed-in presentation is still gone.
+    func testFailedLocalDiscardStillClearsThePresentationAndThrows() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        await model.load()
+        service.discardError = LeakyAccountError()
+        do {
+            try await model.discardLocalSession()
+            XCTFail("A failed local discard must be reported")
+        } catch {}
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertEqual(service.discardCount, 1)
+    }
+
+    /// A restore still running when the erase starts cannot sign the person back in once it answers.
+    func testARestoreThatAnswersAfterLocalDiscardDoesNotSignIn() async throws {
+        let (model, service, _) = makeModel(session: AccountTestSupport.session)
+        let gate = CallGate()
+        service.restoreGate = gate
+        let loading = Task { await model.load() }
+        await waitUntil { gate.entered }
+        try await model.discardLocalSession()
+        gate.open()
+        await loading.value
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertEqual(model.email, "")
     }
 
     func testSignOutReturnsToSignedOut() async throws {

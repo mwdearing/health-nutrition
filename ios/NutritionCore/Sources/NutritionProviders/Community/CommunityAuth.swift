@@ -21,6 +21,9 @@ public actor CommunityAuth {
     /// Successful deletion fences this owner's late replies even if token rejection emptied storage.
     /// A deliberate new authentication intent retires these fences; other owners remain eligible.
     private var deletedOwners: Set<AccountIdentity> = []
+    /// Set before a local erase, so a failed clear cannot leave the stored session usable by later calls.
+    /// A new accepted authentication clears it again.
+    private var localCredentialsRevoked = false
 
     private enum AccountIdentity: Hashable {
         case uuid(UUID)
@@ -125,6 +128,7 @@ public actor CommunityAuth {
     }
 
     private func loadSession() throws -> CommunitySession? {
+        guard !localCredentialsRevoked else { return nil }
         do { return try store.load() }
         catch {
             generation += 1
@@ -144,7 +148,9 @@ public actor CommunityAuth {
         // Reading the bearer is only for best-effort server logout. A read failure must not prevent
         // clearing credentials from this device.
         let session = try? store.load()
+        localCredentialsRevoked = true
         do { try store.clear() } catch { throw CommunityError.storage }
+        localCredentialsRevoked = false
         guard let session else { return }
         _ = try? await api.send(
             "/auth/v1/logout",
@@ -157,7 +163,9 @@ public actor CommunityAuth {
     public func discardSession() throws {
         generation += 1
         authenticationIntent += 1
+        localCredentialsRevoked = true
         do { try store.clear() } catch { throw CommunityError.storage }
+        localCredentialsRevoked = false
     }
 
     /// Clears the stored session only when a response belongs to the session still stored on this device.
@@ -253,7 +261,9 @@ public actor CommunityAuth {
         // A session-replacement request remains valid across failures to invalidate an older token,
         // but a later auth attempt, logout, or unknown storage state fences it.
         guard startedAtIntent == authenticationIntent else { throw CommunityError.signedOut }
-        return try save(data, response)
+        let session = try save(data, response)
+        localCredentialsRevoked = false
+        return session
     }
 
     private func acceptRefresh(

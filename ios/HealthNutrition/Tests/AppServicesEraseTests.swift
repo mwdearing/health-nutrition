@@ -1,11 +1,29 @@
 import Foundation
 import NutritionDomain
 import NutritionJournal
-import NutritionUI
 import NutritionProviders
+import NutritionUI
 import XCTest
 
 @testable import HealthNutrition
+
+private final class EraseAccountService: CommunityAccountServicing, @unchecked Sendable {
+    private(set) var discardCount = 0
+    private(set) var signOutCount = 0
+    private(set) var deleteCount = 0
+
+    func restore() async -> CommunitySession? { nil }
+    func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession { throw CommunityError.network }
+    func requestEmailCode(email: String) async throws {}
+    func verifyEmailCode(email: String, code: String) async throws -> CommunitySession { throw CommunityError.network }
+    func signOut() async throws { signOutCount += 1 }
+    func discardLocalSession() async throws { discardCount += 1 }
+    func profile() async throws -> CommunityProfile { CommunityProfile(displayName: nil, shareLabels: true) }
+    func updateProfile(displayName: String?, shareLabels: Bool) async throws -> CommunityProfile {
+        CommunityProfile(displayName: displayName, shareLabels: shareLabels)
+    }
+    func deleteAccount() async throws { deleteCount += 1 }
+}
 
 /// The app's own wiring, read from inside the app target.
 ///
@@ -46,14 +64,16 @@ final class AppServicesEraseTests: XCTestCase {
         let delivery = Task { await coordinator.runDueOperations(now: when) }
         let publicationStarted = await productService.waitForPublication(timeoutSeconds: 5)
         guard publicationStarted else {
-            XCTAssertTrue(services.connections.eraseAllData())
+            let erasedBeforeReceipt = await services.connections.eraseAllData()
+            XCTAssertTrue(erasedBeforeReceipt)
             await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
                 currentRevision: "1", currentState: .active, replayed: false))
             await delivery.value
             XCTFail("Product delivery did not reach publish within five seconds")
             return
         }
-        XCTAssertTrue(services.connections.eraseAllData())
+        let erasedDuringPublish = await services.connections.eraseAllData()
+        XCTAssertTrue(erasedDuringPublish)
         XCTAssertEqual(coordinator.pauseReason, .erase)
         await productService.finish(ProductDeliveryReceipt(operationID: publication.operationID, productID: UUID(), acknowledgedRevision: "1",
             currentRevision: "1", currentState: .active, replayed: false))
@@ -104,11 +124,11 @@ final class AppServicesEraseTests: XCTestCase {
     /// The erase empties the journal, the favorites, the recipes and the daily goals: every store
     /// the app keeps holds nothing afterwards, and the screen reports that it worked rather than
     /// leaving a person to believe data was deleted when it was not.
-    func testEraseEmptiesTheJournalTheFavoritesTheRecipesAndTheGoals() throws {
+    func testEraseEmptiesTheJournalTheFavoritesTheRecipesAndTheGoals() async throws {
         let (services, _) = try makeServices()
         try fill(services)
 
-        let erased = services.connections.eraseAllData()
+        let erased = await services.connections.eraseAllData()
 
         XCTAssertTrue(erased)
         XCTAssertNil(services.connections.errorMessage)
@@ -118,12 +138,36 @@ final class AppServicesEraseTests: XCTestCase {
         XCTAssertTrue(try services.goalStore.goals().isEmpty)
     }
 
+    /// The app supplies its account model to the privacy erase hook. The hook drops the local session
+    /// while leaving server sign-out and account deletion untouched.
+    func testEraseUsesTheAppWiredLocalAccountHookOnly() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let service = EraseAccountService()
+        let services = try AppServices.make(
+            directory: directory, reminderScheduler: RecordingReminderScheduler(), accountServiceOverride: service)
+
+        let erased = await services.connections.eraseAllData()
+        let erasedAgain = await services.connections.eraseAllData()
+
+        XCTAssertTrue(erased)
+        XCTAssertTrue(erasedAgain)
+        XCTAssertEqual(service.discardCount, 2)
+        XCTAssertEqual(service.signOutCount, 0)
+        XCTAssertEqual(service.deleteCount, 0)
+        XCTAssertEqual(services.account?.phase, .signedOut)
+        XCTAssertEqual(services.account?.email, "")
+    }
+
     /// An erase is a new start rather than a broken store: the same store instances take a write
     /// afterwards and the entry is readable again.
-    func testTheStoresStayUsableAfterAnErase() throws {
+    func testTheStoresStayUsableAfterAnErase() async throws {
         let (services, _) = try makeServices()
         try fill(services)
-        XCTAssertTrue(services.connections.eraseAllData())
+        let eraseResult1 = await services.connections.eraseAllData()
+        XCTAssertTrue(eraseResult1)
 
         try services.journalStore.create(sampleIntake(), components: [oats()], product: nil, now: when)
         try services.favoritesStore.add(sampleFavorite())
@@ -151,7 +195,7 @@ final class AppServicesEraseTests: XCTestCase {
 
     /// The welcome flag is one of the display settings, so the erase clears it and the welcome shows
     /// again on the next launch. The display settings here live in a defaults suite of this test's own.
-    func testEraseClearsTheWelcomeFlagWithTheDisplaySettings() throws {
+    func testEraseClearsTheWelcomeFlagWithTheDisplaySettings() async throws {
         let suiteName = "healthnutrition.tests.erase-welcome.\(UUID().uuidString)"
         let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         suite.removePersistentDomain(forName: suiteName)
@@ -167,7 +211,8 @@ final class AppServicesEraseTests: XCTestCase {
         services.displayPreferences.setHasSeenWelcome(true)
         XCTAssertTrue(services.displayPreferences.hasSeenWelcome)
 
-        XCTAssertTrue(services.connections.eraseAllData())
+        let eraseResult2 = await services.connections.eraseAllData()
+        XCTAssertTrue(eraseResult2)
 
         XCTAssertFalse(services.displayPreferences.hasSeenWelcome)
     }
@@ -195,7 +240,8 @@ final class AppServicesEraseTests: XCTestCase {
         let pendingBeforeErase = await scheduler.pendingDailyCount()
         XCTAssertEqual(pendingBeforeErase, 1)
 
-        XCTAssertTrue(services.connections.eraseAllData())
+        let eraseResult3 = await services.connections.eraseAllData()
+        XCTAssertTrue(eraseResult3)
 
         let pendingAfterErase = await scheduler.pendingDailyCount()
         XCTAssertEqual(pendingAfterErase, 0)

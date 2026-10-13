@@ -57,6 +57,26 @@ private final class RecordingEraser: JournalErasing, @unchecked Sendable {
     }
 }
 
+private actor AsyncEraseGate {
+    private var isOpen = false
+    private var hasEntered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func pause() async {
+        hasEntered = true
+        if isOpen { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func entered() -> Bool { hasEntered }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private struct EraseFailure: Error {}
 private struct RemoveFailure: Error {}
 
@@ -68,17 +88,18 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         ConnectionsPrivacyViewModel(store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: erasers)
     }
 
-    func testDeliveryGateClosesBeforeFirstEraserEvenWhenEraseFails() {
+    func testDeliveryGateClosesBeforeFirstEraserEvenWhenEraseFails() async {
         var closed = false
         let eraser = RecordingEraser(failure: EraseFailure())
         eraser.beforeErase = { XCTAssertTrue(closed) }
         let model = ConnectionsPrivacyViewModel(store: EraseStubStore(), erasers: [eraser], beforeErase: { closed = true })
-        XCTAssertFalse(model.eraseAllData())
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
         XCTAssertTrue(closed)
         XCTAssertEqual(eraser.eraseCount, 1)
     }
 
-    func testSuccessfulEraseCallbackRunsAfterAllErasersAndNeverAfterFailure() {
+    func testSuccessfulEraseCallbackRunsAfterAllErasersAndNeverAfterFailure() async {
         for fails in [false, true] {
             var closed = false, finished = false
             let first = RecordingEraser(), last = RecordingEraser(failure: fails ? EraseFailure() : nil)
@@ -87,12 +108,13 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             let model = ConnectionsPrivacyViewModel(store: EraseStubStore(), erasers: [first, last], beforeErase: { closed = true }, afterSuccessfulErase: {
                 XCTAssertEqual(first.eraseCount, 1); XCTAssertEqual(last.eraseCount, 1); finished = true
             })
-            XCTAssertEqual(model.eraseAllData(), !fails)
+            let erased = await model.eraseAllData()
+            XCTAssertEqual(erased, !fails)
             XCTAssertEqual(finished, !fails)
         }
     }
 
-    func testEraseAllDataRunsEveryInjectedStore() {
+    func testEraseAllDataRunsEveryInjectedStore() async {
         let journal = RecordingEraser()
         let favorites = RecordingEraser()
         let recipes = RecordingEraser()
@@ -100,7 +122,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let model = makeModel([journal, favorites, recipes, goals])
         XCTAssertTrue(model.canEraseAll)
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult1 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult1)
 
         XCTAssertEqual(journal.eraseCount, 1)
         XCTAssertEqual(favorites.eraseCount, 1)
@@ -114,7 +137,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
     /// The exported copy holds the same history as the stores, so it is deleted rather than left in the
     /// temporary directory with nothing able to remove it.
-    func testEraseAllDataRemovesTheExportFileAndResetsTheExportState() throws {
+    func testEraseAllDataRemovesTheExportFileAndResetsTheExportState() async throws {
         let model = ConnectionsPrivacyViewModel(
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()])
         XCTAssertTrue(model.export(now: now))
@@ -122,7 +145,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         XCTAssertEqual(model.exportState, .ready)
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult2 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult2)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
         XCTAssertNil(model.exportFileURL)
@@ -132,14 +156,34 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
+    /// The erase blocks imports before it awaits local Keychain cleanup, so a late import cannot
+    /// repopulate the journal while the account cleanup is suspended.
+    func testEraseMarksBusyBeforeAwaitingLocalAccountCleanup() async {
+        let gate = AsyncEraseGate()
+        let model = ConnectionsPrivacyViewModel(
+            store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
+            eraseLocalAccount: { await gate.pause() })
+        let erasing = Task { await model.eraseAllData() }
+        while !(await gate.entered()) { await Task.yield() }
+
+        model.importJournal(data: Data("[]".utf8))
+
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importDuringEraseMessage)
+        await gate.open()
+        let erased = await erasing.value
+        XCTAssertTrue(erased)
+    }
+
     /// One store that cannot erase must not stop the others, and the person has to be told that
     /// something was left behind.
-    func testAStoreThatFailsIsReportedAndTheRestStillRun() {
+    func testAStoreThatFailsIsReportedAndTheRestStillRun() async {
         let failing = RecordingEraser(failure: EraseFailure())
         let working = RecordingEraser()
         let model = makeModel([failing, working])
 
-        XCTAssertFalse(model.eraseAllData())
+        let eraseResult3 = await model.eraseAllData()
+        XCTAssertFalse(eraseResult3)
 
         XCTAssertEqual(failing.eraseCount, 1)
         XCTAssertEqual(working.eraseCount, 1)
@@ -148,19 +192,39 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(model.entryCount, 0)
     }
 
+    /// A local account-keychain failure is included in the partial result, while every other local eraser still runs.
+    func testLocalAccountEraseFailureDoesNotStopOtherErasers() async {
+        let journal = RecordingEraser()
+        var accountEraseCount = 0
+        let model = ConnectionsPrivacyViewModel(
+            store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [journal],
+            eraseLocalAccount: {
+                accountEraseCount += 1
+                throw EraseFailure()
+            })
+
+        let eraseResult = await model.eraseAllData()
+        XCTAssertFalse(eraseResult)
+
+        XCTAssertEqual(accountEraseCount, 1)
+        XCTAssertEqual(journal.eraseCount, 1)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+    }
+
     /// With no store injected there is nothing to erase, so the screen does not offer the action at all
     /// rather than reporting that an erase it never ran succeeded.
-    func testTheActionIsNotOfferedWithoutAnInjectedStore() {
+    func testTheActionIsNotOfferedWithoutAnInjectedStore() async {
         let model = makeModel([])
         XCTAssertFalse(model.canEraseAll)
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult4 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult4)
         XCTAssertNil(model.errorMessage)
     }
 
     /// An export this screen never made still belongs to the app and still holds the journal: the app
     /// can be killed after an export and relaunched into a model that has forgotten the URL. The erase
     /// has to sweep the temporary directory, not only the one file this model remembers.
-    func testEraseRemovesEveryExportFileEvenOneThisScreenNeverWrote() throws {
+    func testEraseRemovesEveryExportFileEvenOneThisScreenNeverWrote() async throws {
         let writtenEarlier = ConnectionsPrivacyViewModel.exportFileURL(for: now.addingTimeInterval(-86_400))
         let stray = ConnectionsPrivacyViewModel.exportFileURL(for: now.addingTimeInterval(-172_800))
         let unrelated = FileManager.default.temporaryDirectory
@@ -173,7 +237,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let model = makeModel([RecordingEraser()])
         XCTAssertNil(model.exportFileURL)
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult5 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult5)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: writtenEarlier.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: stray.path))
@@ -183,7 +248,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
     /// A name that only looks like an export is not this app's file, and an erase that deletes it would
     /// be destroying something it never wrote.
-    func testEraseLeavesAMalformedExportNameAlone() throws {
+    func testEraseLeavesAMalformedExportNameAlone() async throws {
         let malformed = FileManager.default.temporaryDirectory
             .appendingPathComponent("journal-export-.json")
         let shortStamp = FileManager.default.temporaryDirectory
@@ -194,7 +259,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         }
         let model = makeModel([RecordingEraser()])
 
-        XCTAssertTrue(model.eraseAllData())
+        let eraseResult6 = await model.eraseAllData()
+        XCTAssertTrue(eraseResult6)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: malformed.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: shortStamp.path))
@@ -202,7 +268,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
     /// A file that cannot be removed is an erase that did not finish. Reporting success would promise a
     /// deletion that never happened, so the failure is reported like a store's.
-    func testEraseReportsFailureWhenAnExportFileCannotBeRemoved() throws {
+    func testEraseReportsFailureWhenAnExportFileCannotBeRemoved() async throws {
         let stray = ConnectionsPrivacyViewModel.exportFileURL(for: now.addingTimeInterval(-86_400))
         try Data("{}".utf8).write(to: stray)
         addTeardownBlock { try? FileManager.default.removeItem(at: stray) }
@@ -210,7 +276,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             remover: { url in if url == stray { throw RemoveFailure() } })
 
-        XCTAssertFalse(model.eraseAllData())
+        let eraseResult7 = await model.eraseAllData()
+        XCTAssertFalse(eraseResult7)
 
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
         XCTAssertTrue(FileManager.default.fileExists(atPath: stray.path))
@@ -219,7 +286,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     /// The export names the sweep looks for have to be the names the exporter writes, or the sweep
     /// matches nothing and every strayed export survives. A name it matches wrongly is just as bad: it
     /// deletes a file this app never wrote.
-    func testTheSweepPatternMatchesTheNamesTheExporterWrites() throws {
+    func testTheSweepPatternMatchesTheNamesTheExporterWrites() async throws {
         let model = makeModel([RecordingEraser()])
         XCTAssertTrue(model.export(now: now.addingTimeInterval(-86_400)))
         let url = try XCTUnwrap(model.exportFileURL)
@@ -237,17 +304,17 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         ] {
             XCTAssertFalse(ConnectionsPrivacyViewModel.exportFilePatternMatches(rejected), rejected)
         }
-        model.eraseAllData()
+        await model.eraseAllData()
     }
 
     /// The host has to be able to see that an erase happened, or the tabs showing cached entries reload
     /// only on some unrelated state change.
-    func testErasingBumpsTheGenerationAHostWatches() {
+    func testErasingBumpsTheGenerationAHostWatches() async {
         let model = makeModel([RecordingEraser()])
         XCTAssertEqual(model.eraseGeneration, 0)
-        model.eraseAllData()
+        await model.eraseAllData()
         XCTAssertEqual(model.eraseGeneration, 1)
-        model.eraseAllData()
+        await model.eraseAllData()
         XCTAssertEqual(model.eraseGeneration, 2)
     }
 
@@ -263,6 +330,9 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertTrue(message.contains("reminder"), "the daily reminder is switched off too, so the warning says so")
         XCTAssertTrue(ConnectionsPrivacyViewModel.eraseFooterMessage.lowercased().contains("reminder"))
         XCTAssertTrue(message.contains("cannot be undone"))
+        XCTAssertTrue(message.contains("signs you out"))
+        XCTAssertTrue(message.contains("community account"))
+        XCTAssertTrue(message.contains("shared labels remain"))
         XCTAssertEqual(ConnectionsPrivacyViewModel.eraseButtonTitle, "Erase all data")
     }
 
