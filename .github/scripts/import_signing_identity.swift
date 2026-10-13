@@ -62,11 +62,12 @@ func importIdentity(from p12Path: String, into keychainPath: String, passphrase:
     // https://github.com/apple-oss-distributions/Security/blob/db15acbe6a7f257a859ad9a3bb86097bfe0679d9/OSX/include/security_keychain/SecAccess.h
     // https://github.com/apple-oss-distributions/Security/blob/db15acbe6a7f257a859ad9a3bb86097bfe0679d9/OSX/include/security_keychain/SecTrustedApplication.h
     let cfPassphrase = passphrase as CFString
-    parameters.passphrase = cfPassphrase
-    parameters.accessRef = access
+    // The C struct stores Unmanaged references; the owners stay alive through withExtendedLifetime below.
+    parameters.passphrase = Unmanaged.passUnretained(cfPassphrase as CFTypeRef)
+    parameters.accessRef = Unmanaged.passUnretained(access)
 
-    var format = kSecFormatPKCS12
-    var itemType = kSecItemTypeAggregate
+    var format: SecExternalFormat = .formatPKCS12
+    var itemType: SecExternalItemType = .itemTypeAggregate
     var importedItems: CFArray?
     // The C parameter struct contains borrowed CF references. Keep their owners alive through the call.
     let status = withExtendedLifetime((cfPassphrase, access)) {
