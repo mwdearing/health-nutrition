@@ -27,7 +27,7 @@ public struct AddHomeView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                if let onSearchProducts { tile("Find products", help: "Search products on this phone and shared foods, drinks and supplements.", action: onSearchProducts) }
+                if let onSearchProducts { tile("Find products", help: "Search products on this phone, Open Food Facts by name, and shared foods, drinks and supplements.", action: onSearchProducts) }
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
                     ForEach(MealLabel.allCases, id: \.self) { meal in
