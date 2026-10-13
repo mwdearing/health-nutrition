@@ -106,3 +106,24 @@ def test_macos_workflows_cancel_superseded_pull_request_runs() -> None:
         ), workflow_name
         # Only pull request runs may be cancelled; pushes to main must all finish.
         assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}", workflow_name
+
+
+def test_privacy_shield_capture_uses_only_resolved_package_versions() -> None:
+    job = _jobs("privacy-shield.yml")["simulator-capture"]
+    steps = cast("list[dict[str, object]]", job["steps"])
+    capture = next(step for step in steps if step.get("name") == "Capture inactive app-switcher privacy behavior")
+    words = shlex.split(str(capture["run"]))
+    assert "-disableAutomaticPackageResolution" in words
+    workflow = cast("dict[object, object]", yaml.safe_load((WORKFLOWS / "privacy-shield.yml").read_text()))
+    normalized = {("on" if key is True else str(key)): value for key, value in workflow.items()}
+    triggers = cast("dict[str, dict[str, object]]", normalized["on"])
+    for trigger in ("pull_request", "push"):
+        paths = cast("list[str]", cast("dict[str, object]", triggers[trigger])["paths"])
+        assert "**/Package.resolved" in paths
+
+    ios_raw = cast("dict[object, object]", yaml.safe_load((WORKFLOWS / "ios.yml").read_text()))
+    ios_normalized = {("on" if key is True else str(key)): value for key, value in ios_raw.items()}
+    ios_triggers = cast("dict[str, dict[str, object]]", ios_normalized["on"])
+    for trigger in ("pull_request", "push"):
+        ios_paths = cast("list[str]", cast("dict[str, object]", ios_triggers[trigger])["paths"])
+        assert ".github/workflows/privacy-shield.yml" in ios_paths
