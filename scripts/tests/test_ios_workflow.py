@@ -91,3 +91,18 @@ def test_attribution_scanner_tests_run_in_the_unprivileged_swift_workflow() -> N
     test_commands = [str(step.get("run", "")) for step in steps]
     assert any("scripts/tests/test_attribution_check.py" in command for command in test_commands)
     assert any("scripts/tests/test_ios_workflow.py" in command for command in test_commands)
+
+
+def test_macos_workflows_cancel_superseded_pull_request_runs() -> None:
+    # Every push to a PR otherwise queues a full macOS suite for a commit nobody will read.
+    for workflow_name in ("ios.yml", "screenshots.yml", "catalog.yml"):
+        raw = cast("dict[object, object]", yaml.safe_load((WORKFLOWS / workflow_name).read_text()))
+        concurrency = cast("dict[str, str]", raw.get("concurrency"))
+        assert concurrency, workflow_name
+        # Pull requests share a key per number; run_id is only the fallback for pushes and manual runs, because a
+        # pending run is dropped when another enters its group.
+        assert concurrency["group"] == (
+            "${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}"
+        ), workflow_name
+        # Only pull request runs may be cancelled; pushes to main must all finish.
+        assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}", workflow_name
