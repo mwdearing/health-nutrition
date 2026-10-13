@@ -16,43 +16,40 @@ is nothing to declare and nothing to opt out of.
 
 ## Collected data
 
-`NSPrivacyCollectedDataTypes` declares three types for the optional account, each
-linked to the user, not used for tracking and used for app functionality:
-Email Address (`NSPrivacyCollectedDataTypeEmailAddress`), User ID
-(`NSPrivacyCollectedDataTypeUserID`) and Name (`NSPrivacyCollectedDataTypeName`,
-the display name). Nothing else is declared. The reasoning for the rest:
+`NSPrivacyCollectedDataTypes` currently declares four types. All four are
+linked to the user, not used for tracking, and used for app functionality:
 
-- The journal, recipes, favorites and repeat rules live on the device. They are
-  written by the local stores under `ios/NutritionCore/Sources/NutritionJournal`
-  and nothing uploads them.
-- A barcode lookup sends only the barcode digits to Open Food Facts
-  (`/api/v3/product/<barcode>`, see [the data source note](providers/open-food-facts.md))
-  and nothing else from the device. That request returns product data; it does
-  not transmit anything the app holds, and no free-text, identifier or location
-  is attached to it.
-- The optional relay sends journal entries to a receiver the user configures and
-  owns themselves.
-  Data that never leaves the device except at the user's explicit direction to
-  their own endpoint is not "collection" by this app, and the app is the sender
-  here, not the recipient (`ios/NutritionCore/Sources/NutritionUI/ConnectionsPrivacyView.swift`).
-- The account is optional. A signed-in account sends the three values above to
-  the project's server. Logged-out use sends nothing to that server.
-- Signing in may show a challenge from hCaptcha first. It is a third-party SDK
-  in the app target, not first-party code, so the scanner does not read it. Its
-  data handling is described in `PRIVACY.md`.
-- Scanned-label values sent when sharing is on (product name, brand, barcode and
-  nutrient amounts) are described in `PRIVACY.md`. They are not declared as a
-  collected type in this manifest yet.
-- Photos and what the person eats or when are never sent.
-- Nothing is sold, shared for other purposes or used for tracking.
+| Manifest data type | Data the app handles |
+| --- | --- |
+| `NSPrivacyCollectedDataTypeEmailAddress` | The email address used for an account or email-code sign-in. |
+| `NSPrivacyCollectedDataTypeUserID` | The community account identifier. |
+| `NSPrivacyCollectedDataTypeName` | The optional display name on the account profile. |
+| `NSPrivacyCollectedDataTypeOtherUserContent` | Product-label facts submitted to the community catalog while sharing is on: product name, brand, barcode, serving text and nutrient amounts. |
 
-## Required-reason APIs
+The local journal is not uploaded as a journal. A barcode lookup sends the
+barcode to Open Food Facts only after the person asks for a lookup; when that
+source has no product, a signed-in person also gets a community-catalog lookup,
+even when label sharing is off. See [the privacy statement](../PRIVACY.md) and
+[account behavior](accounts.md). A signed-out lookup does not call the
+authenticated community catalog, but Open Food Facts and an email sign-in
+challenge are separate requests to external services.
 
-`NSPrivacyAccessedAPITypes` declares one category:
+The HealthRelay destination is unavailable in this version. Release builds do
+not enable Apple Health delivery either. In a debug build, after Health access
+is granted, nutrients from real logged food and water entries can be written to
+HealthKit; the debug HealthKit screen can also write separate test samples.
+Erasing local journal rows does not remove HealthKit samples already written.
+Photos and personal intake details such as amounts eaten, meal and time are not
+sent with label submissions. Nothing is sold or used for tracking.
+
+## Declared required-reason APIs
+
+The shipped manifest declares two required-reason API categories:
 
 | Category | Reason | Where the code uses it |
 | --- | --- | --- |
 | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | `ios/NutritionCore/Sources/NutritionProviders/OpenFoodFactsClient.swift` |
+| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | App display, reminder and disclosure preferences. |
 
 `OpenFoodFactsClient` takes a `monotonic` clock, defaulting to
 `ProcessInfo.processInfo.systemUptime`, and uses it to measure elapsed time for
@@ -71,9 +68,9 @@ is not declared with a reason Apple publishes for it, when a declaration is
 malformed (an unknown category, an empty reasons array, a reason that is not a
 string), when a declared reason is not one Apple publishes (a typo such as an
 extra `BOGUS`, or a reason belonging to another category), or when
-`NSPrivacyTracking` is not false. It also fails when one of the three account
-data types is missing, or is declared without linkage to the user, with tracking
-on, or without the app-functionality purpose.
+`NSPrivacyTracking` is not false. It also fails when one of the four collected
+data types is missing, or is declared without linkage to the user, with
+tracking on, or without the app-functionality purpose.
 
 ### Which code is scanned
 
@@ -88,9 +85,13 @@ the app does not link, are never scanned: a restricted API used only there does
 not ship and must not demand a declaration. A missing or unreadable
 `project.yml` or `Package.swift` is a usage error rather than a silent full scan.
 
-### What is matched
+## Categories supported by the checker
 
-| Category | Reason this app declares | Published reasons accepted | API spellings |
+The checker recognizes the categories below. The first two are the only
+categories in the current manifest; the remaining rows describe scanner
+coverage and are not manifest declarations.
+
+| Category | Expected reason when the category is used | Published reasons accepted | API spellings |
 | --- | --- | --- | --- |
 | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | `CA92.1`, `1C8F.1`, `C56D.1`, `AC6B.1` | `UserDefaults`, `@AppStorage` |
 | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | `35F9.1`, `8FFB.1`, `3D61.1` | `systemUptime`, `mach_absolute_time` |
@@ -120,5 +121,3 @@ Findings print one per line as `path:line: message` and the script exits 1.
 `.github/workflows/ios.yml` runs it, and its tests, in the `privacy-manifest`
 job next to the Swift build jobs. When a new use of one of these APIs lands,
 the check fails until the manifest and this table say why the reason applies.
-
-The values of a scanned label (product name, brand, barcode and nutrient amounts) are shared with the community catalog while sharing is on, so the manifest also declares Other User Content, linked to the account, not used for tracking, for app functionality.

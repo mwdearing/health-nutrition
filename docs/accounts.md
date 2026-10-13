@@ -1,31 +1,42 @@
 # Accounts
 
-An account is optional. Without one, everything stays on the phone, as it did before accounts existed. Signing in is needed only for the community catalog and for the account-backed features that come later.
+An account is optional. It is used for the community catalog and its account features. Signing in does not move or partition the journal on this device.
 
 ## Signing in
 
-- Sign in with Apple, or an email address and a six-digit code. The code is emailed to the address; there is no password.
-- The session is kept in the Keychain on this phone. It is readable only after the first unlock and is never copied to another device or a backup.
-- The first sign-in of each account on a phone shows a sharing disclosure once. It says what is shared before the sharing switch is left on.
-- The disclosure is acknowledged per account, not per phone. A second person who signs in on the same phone is shown it too, and nothing of theirs is shared until they have read it. An account that has read it is not shown it again on that phone, even after signing out and back in.
+- Sign in with Apple, or request a one-time code by email. The code is emailed to the address; there is no password.
+- The session is kept in the Keychain on this phone. It is readable only after the first unlock and is not copied by this app to another device.
+- The first sign-in of each account on a phone shows a sharing disclosure before the sharing switch can authorize submissions. Acknowledgment is stored separately for each account on this device.
+- The Account section appears only in a build that carries the project settings (see [the community client](community-client.md) and the [iOS app README](../ios/HealthNutrition/README.md)). A local, unsigned or CI build with no account service makes no account calls.
 
-The Account section appears only in a build that carries the project settings (see [the community client](community-client.md) and the [iOS app README](../ios/HealthNutrition/README.md)). A local, unsigned or CI build has no account section and makes no account call.
+Requesting an email sign-in code may first show an hCaptcha human check. Its embedded browser challenge can process browser/device signals and sends a verification result with the sign-in request. In rare cases the challenge may request camera access. The app does not send the journal or label facts to hCaptcha. Sign in with Apple does not show this email-code check.
 
-## What is shared
+## What the account sends
 
-- The sharing switch in Settings, Account, is on by default. It controls whether the labels you scan are shared with the community catalog. Turning it off stops new labels from being shared.
-- A shared label has its product name, brand, barcode, serving text and nutrient amounts. Photos, what you eat and when are never shared.
-- A label is shown to others once at least two people agree on it, and gets a verified badge once more people agree.
-- The name you enter is shown with the labels you share. It is at most 60 characters. Leave it empty to share without a name.
+Signing in sends the account email address and identifier to the project server. The optional display name is saved to the account profile. These account details are separate from the local journal.
 
-While sharing is on, a label you capture and save is sent to the catalog. When you are signed in, a barcode that Open Food Facts does not know is looked up there, whether or not sharing is on. See [the community catalog in the app](community-catalog-app.md) for the exact rules.
+## Barcode lookup
+
+Open Food Facts is asked first when you submit the barcode field, tap Look up, or accept a barcode from the camera scanner. The camera scan sends nothing while the camera is open; after a code is accepted, it starts the lookup. If Open Food Facts has no product and you are signed in, the app also asks the authenticated community catalog. Turning Share labels off does not disable this read lookup. A signed-out person does not get the community fallback.
+
+## Searching and sharing a product you create
+
+When you are signed in and submit two or more characters in Find products, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account.
+
+## Sharing a saved label
+
+The switch in Settings > Account controls new community submissions. Turning it off stops new labels from being submitted; it does not erase older submissions. The app submits a qualifying label only when the person is signed in, has acknowledged the disclosure for that account, and sharing is on at save time.
+
+What is sent: product name, brand, barcode, serving text and nutrient amounts. Each submission is linked to your signed-in account on the server. It does not include your journal entries, entry identifier, personal amount eaten, time, meal, notes or photo. A product label can be derived from a community aggregate. Community agreement does not verify a label, regardless of how many accounts agree. Only a label with an explicit owner-reviewed source is attributed exactly as **“Reviewed by the catalog owner.”** That is a statement about review source, not nutrition or medical accuracy.
+
+An owner-reviewed label is a separate product-catalog snapshot, not a contributor-owned journal record. Withdrawing a contribution removes it from publication, but the server keeps a withdrawn record and receipt linked to the account until the account is deleted. Deleting the contributor's account removes that account's submissions, records and profile, but an approved catalog snapshot can remain without contributor identity. The community account and submission data are not removed by **Erase all data**; use account controls to delete the server account.
 
 ## What stays on this device
 
-Signing in does not upload your journal, goals, recipes, favorites, reminders or exports. They stay on the phone. A backup of the journal through your own iCloud is planned and is not part of this change.
+Entries, product snapshots, goals, recipes, favorites, reminders and export files stay on this device. The unavailable Apple Health and HealthRelay controls are not saved as settings. Signing into another account does not partition, merge or replace local data. It remains available after sign-out or account deletion. Your device backup may also include its local app data, depending on your backup settings.
 
-## Sign out and delete
+## Sign out, delete and erase
 
-- **Sign out** asks the server to end the session and forgets it on this phone. Local data stays on the phone.
-- **Delete account** removes the account and every label it shared from the server. Data on this phone is kept. The phone also forgets that account's disclosure acknowledgment; other accounts' acknowledgments stay.
-- **Erase all data** in Settings removes the journal and the settings on this phone, including every account's disclosure acknowledgment, so the signed-in person is shown the disclosure again. It does not sign out and does not delete the account. Sign out first if you also want the session removed from this phone.
+- **Sign out** asks the server to end the session and clears the session stored on this phone. Local journal data stays on the phone.
+- **Delete account** removes the server account, its profile and its submissions. An independently approved owner-reviewed catalog snapshot may remain without contributor identity. Local journal data and other device settings are kept.
+- **Erase all data** removes local journal rows, favorites, recipes, goals, display preferences, reminders, the session in this phone's Keychain and export files the app can still reach. It does not call server sign-out, delete the account or retract shared submissions. Copies already shared outside the app remain with those destinations. Row deletion is not a promise of forensic erasure.
