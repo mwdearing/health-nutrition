@@ -282,13 +282,21 @@ public final class SupplementStackViewModel: ObservableObject {
                 favoriteID = id
                 key = Self.matchKey(favorite)
             case .recent(let template):
-                guard let favorite = makeFavorite(from: template, title: candidate.title) else {
-                    errorMessage = "This supplement has an amount that cannot be saved."
-                    return false
+                let recentKey = Self.matchKey(template)
+                if let starred = stored.first(where: { Self.matchKey($0) == recentKey }) {
+                    // Starred since the picker was built, here or in another window: that favorite goes on
+                    // the list rather than a second copy of it.
+                    favoriteID = starred.id
+                    key = recentKey
+                } else {
+                    guard let favorite = makeFavorite(from: template, title: candidate.title) else {
+                        errorMessage = "This supplement has an amount that cannot be saved."
+                        return false
+                    }
+                    newFavorite = favorite
+                    favoriteID = favorite.id
+                    key = Self.matchKey(favorite)
                 }
-                newFavorite = favorite
-                favoriteID = favorite.id
-                key = Self.matchKey(favorite)
             }
             guard !stored.contains(where: { current[$0.id] != nil && Self.matchKey($0) == key }) else {
                 return refuse("This is already on your supplements.", now: now)

@@ -307,12 +307,17 @@ struct SupplementScheduleEditor: View {
         return usual.first { !taken.contains(SupplementSchedule.minuteOfDay($0)) } ?? ReminderTime(hour: 12, minute: 0)
     }
 
-    private static func date(for time: ReminderTime) -> Date {
-        Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+    /// The picker's date for a stored time: that time on a fixed day with no clock change (15 January
+    /// 2001), as the reminder picker does. Today may be the day clocks spring forward, when 02:30 does not
+    /// exist and would read, and save, as 03:30.
+    static func date(for time: ReminderTime, calendar: Calendar = .current) -> Date {
+        var parts = DateComponents(year: 2001, month: 1, day: 15, hour: time.hour, minute: time.minute)
+        parts.calendar = calendar
+        return parts.date ?? Date()
     }
 
-    private static func time(from date: Date) -> ReminderTime {
-        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+    static func time(from date: Date, calendar: Calendar = .current) -> ReminderTime {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
         return ReminderTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
     }
 }

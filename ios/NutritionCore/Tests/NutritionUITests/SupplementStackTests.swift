@@ -491,6 +491,32 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, "Could not read your supplements.")
     }
 
+    func testARecentStarredSinceThePickerOpenedIsAddedNotCopied() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try log(store, at: now.addingTimeInterval(-3_600), product: supplement())
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
+
+        // Starred in another window while this picker was open.
+        try saveFavorite(favorites, id: "fav-starred-elsewhere")
+        XCTAssertTrue(model.add(candidate, schedule: .standard, now: now))
+        XCTAssertEqual(try favorites.list().map(\.id), ["fav-starred-elsewhere"])
+        XCTAssertEqual(Set(schedules.schedules().keys), ["fav-starred-elsewhere"])
+    }
+
+    func testPickerTimesRoundTripEveryMinuteInAZoneWithDaylightSaving() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
+        for minute in 0..<(24 * 60) {
+            let time = ReminderTime(hour: minute / 60, minute: minute % 60)
+            let date = SupplementScheduleEditor.date(for: time, calendar: calendar)
+            XCTAssertEqual(SupplementScheduleEditor.time(from: date, calendar: calendar), time)
+        }
+    }
+
     func testEraseEmptiesTheList() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
