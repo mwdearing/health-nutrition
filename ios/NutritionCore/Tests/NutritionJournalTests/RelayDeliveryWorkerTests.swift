@@ -422,6 +422,33 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(try pendingRelay(store).first { $0.operationID == id }).nextAttemptAt)
     }
 
+    /// An encoder refusal is the revision's own data, which no retry can change, so it is parked with the
+    /// encoder's reason instead of being retried on the backoff. The store keeps a zone identifier as given,
+    /// and the encoder refuses one the platform does not know with `unknownTimeZone`.
+    func testAnEncoderRefusalIsParkedWithItsReasonInsteadOfRetried() async throws {
+        let (store, _, worker) = try makeWorker()
+        let unknownZone = Intake(
+            id: intakeID, category: "beverage", occurredAt: when, timeZoneIdentifier: "Not/AZone", meal: "lunch")
+        try store.create(unknownZone, components: components(), product: nil, now: when)
+        let operationID = try XCTUnwrap(relayOperation(store)?.operationID)
+
+        let first = await worker.runOnce(now: when)
+
+        guard case .needsAttention(let id, let reason) = try XCTUnwrap(first.first) else {
+            return XCTFail("an encoder refusal must ask for a person, got \(first)")
+        }
+        XCTAssertEqual(id, operationID)
+        XCTAssertTrue(reason.contains("unknownTimeZone"), "the encoder's refusal is named: \(reason)")
+        XCTAssertNotNil(try store.suspensionReason(operationID: operationID), "the refusal is parked on the queue")
+
+        let second = await worker.runOnce(now: when.addingTimeInterval(3600))
+        let retried = second.contains(where: { outcome in
+            if case .retryScheduled(let retriedID, _, _) = outcome { return retriedID == operationID }
+            return false
+        })
+        XCTAssertFalse(retried, "a refusal the encoder repeats on every attempt is not retried: \(second)")
+    }
+
     /// `retryable_failure` is the receiver's own word for "send the same bytes again", so the operation goes
     /// back on the backoff rather than being parked.
     func testARetryableFailureResultSchedulesABackoff() async throws {
