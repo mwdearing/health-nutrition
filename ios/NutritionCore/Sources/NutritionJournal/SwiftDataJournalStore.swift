@@ -1260,14 +1260,14 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     }
 
     /// Runs `body` on a fresh context and saves once. Any failure rolls the context back.
-    func commit<T>(_ body: (ModelContext) throws -> T) throws -> T {
+    func commit<T>(injectable: Bool = true, _ body: (ModelContext) throws -> T) throws -> T {
         writeLock.lock()
         defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
         context.autosaveEnabled = false
         do {
             let result = try body(context)
-            if takeInjectedFailure() {
+            if injectable && takeInjectedFailure() {
                 throw JournalError.injectedSaveFailure
             }
             try context.save()
@@ -1705,8 +1705,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         return Set(row.keysCSV.split(separator: ",").map(String.init))
     }
 
+    /// Not subject to `failNextSaveForTesting`, which tests use to fail the delivery bookkeeping that
+    /// follows a write rather than this record.
     public func setWrittenHealthKitKeys(intakeID: String, keys: Set<String>) throws {
-        try commit { context in
+        try commit(injectable: false) { context in
             let csv = keys.sorted().joined(separator: ",")
             if let row = try Self.writtenRecord(intakeID, in: context) {
                 row.keysCSV = csv
