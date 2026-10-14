@@ -61,7 +61,7 @@ def test_scanner_and_ios_jobs_have_bounded_deadlines() -> None:
     ios = _jobs("ios.yml")
     assert swift["timeout-minutes"] == 10
     assert ios["privacy-manifest"]["timeout-minutes"] == 10
-    for name in ("swift-test", "app-build", "release-build", "app-test", "unsigned-ipa"):
+    for name in ("swift-and-app-tests", "release-build", "unsigned-ipa"):
         assert ios[name]["timeout-minutes"] == 30
 
 
@@ -137,5 +137,31 @@ def test_contract_changes_run_the_swift_tests_that_read_them() -> None:
     triggers = cast("dict[str, dict[str, object]]", raw.get(True, raw.get("on")))
     for event in ("pull_request", "push"):
         assert "contracts/**" in cast("list[str]", triggers[event]["paths"]), event
-    steps = cast("list[dict[str, object]]", _jobs("ios.yml")["swift-test"]["steps"])
+    steps = cast("list[dict[str, object]]", _jobs("ios.yml")["swift-and-app-tests"]["steps"])
     assert any(str(step.get("run", "")).strip() == "swift test" for step in steps)
+
+
+def test_pull_request_runs_hold_at_most_two_macos_runners() -> None:
+    # The account has five concurrent macOS runners shared by every repository, so each macOS job a pull
+    # request push starts is a slot another run waits for. Release stays apart because it must use the signed
+    # upload's image; everything that runs on macos-latest shares one job.
+    macos = [
+        name
+        for name, job in _jobs("ios.yml").items()
+        if str(job["runs-on"]).startswith("macos") and str(job.get("if", "")) != "github.event_name == 'workflow_dispatch'"
+    ]
+    assert sorted(macos) == ["release-build", "swift-and-app-tests"], macos
+
+
+def test_one_failing_check_does_not_hide_the_others_in_the_shared_job() -> None:
+    steps = cast("list[dict[str, object]]", _jobs("ios.yml")["swift-and-app-tests"]["steps"])
+    names = [str(step.get("name", "")) for step in steps]
+    after_core = steps[names.index("Test NutritionCore") + 1 :]
+    assert after_core
+    assert all(str(step.get("if", "")).startswith("${{ !cancelled()") for step in after_core), after_core
+    build = next(step for step in steps if step.get("name") == "Build the app for the iOS Simulator")
+    test = next(step for step in steps if step.get("name") == "Test the app target on the simulator")
+    # The Simulator build and the app tests are independent: neither waits on the other's outcome.
+    assert "steps.generate.outcome == 'success'" in str(build["if"])
+    assert "steps.simulator.outcome == 'success'" in str(test["if"])
+
