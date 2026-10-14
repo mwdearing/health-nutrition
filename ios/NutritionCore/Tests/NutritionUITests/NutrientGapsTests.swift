@@ -272,6 +272,23 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(zinc.amountText, "At least 0.65 mg")
     }
 
+    func testASupplementTypedByHandCountsTowardASupplementOnlyLimit() throws {
+        let store = try makeStore()
+        // No product snapshot, so the entry's own category is what says it is a supplement.
+        try log(store, "Magnesium", at: noon, category: "supplement")
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let lookup = GapsComponentFacts(values: ["magnesium": ["magnesium": .known(400, .mg)]])
+        let model = NutrientGapsViewModel(store: store, lookup: lookup, preferences: preferences)
+
+        model.load(now: noon)
+
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(magnesium.tally, NutrientDayTally(fromSupplements: 400, known: 1))
+        // 400 mg from supplements is above the 350 mg limit, which counts supplements only.
+        XCTAssertEqual(magnesium.status, .aboveUpperLimit)
+    }
+
     func testAnEntryWhoseDayCannotBeToldIsCountedAndSaid() throws {
         let store = try makeStore()
         try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
