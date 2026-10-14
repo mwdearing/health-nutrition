@@ -8,6 +8,8 @@ import XCTest
 private final class RefusingGoalStore: GoalStore, @unchecked Sendable {
     private let inner: InMemoryGoalStore
     var refused: Set<String> = []
+    /// When set, the number of writes still allowed; every write after that is refused.
+    var allowedWrites: Int?
 
     init(goals: [NutrientGoal]) {
         inner = InMemoryGoalStore(goals: goals)
@@ -19,6 +21,10 @@ private final class RefusingGoalStore: GoalStore, @unchecked Sendable {
     func goal(for nutrient: String) throws -> NutrientGoal? { try inner.goal(for: nutrient) }
     func setGoal(_ goal: NutrientGoal) throws {
         if refused.contains(goal.nutrient) { throw Refused() }
+        if let allowed = allowedWrites {
+            guard allowed > 0 else { throw Refused() }
+            allowedWrites = allowed - 1
+        }
         try inner.setGoal(goal)
     }
     func removeGoal(nutrient: String) throws { try inner.removeGoal(nutrient: nutrient) }
@@ -159,6 +165,52 @@ final class MacroSplitFollowTests: XCTestCase {
         XCTAssertEqual(try grams(store), [150, 200, 67])
         XCTAssertNil(model.followedMacroSplit)
         XCTAssertEqual(model.errorMessage, GoalsViewModel.macroSplitFollowFailedMessage)
+    }
+
+    func testARefusedFollowWhoseRollbackAlsoFailsSaysTheGoalsMayBeMixed() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        // The energy goal and the protein and carbohydrate moves are written; fat and every put-back fail.
+        store.allowedWrites = 3
+
+        commitEnergy(model, "2500")
+
+        XCTAssertEqual(try grams(store), [188, 250, 67])
+        XCTAssertNil(model.followedMacroSplit)
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.macroSplitFollowRestoreFailedMessage)
+    }
+
+    func testASetupSaveThatRollsBackKeepsFollowing() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        let setup = GoalSetupViewModel(goals: model)
+        setup.aim = .maintain
+        setup.sex = .male
+        setup.ageText = "30"
+        setup.heightCentimetersText = "180"
+        setup.weightKilogramsText = "80"
+        setup.activity = .moderate
+        setup.next(); setup.next(); setup.next(); setup.next()
+        // The estimate's energy and protein are written, then carbohydrate is refused and both are put back.
+        store.refused = ["carbohydrate"]
+
+        XCTAssertFalse(setup.save())
+
+        XCTAssertEqual(try store.goal(for: "energy"), energyGoal(2000))
+        XCTAssertEqual(try grams(store), [150, 200, 67])
+        XCTAssertNotNil(model.followedMacroSplit)
+    }
+
+    func testAFailedApplyPutsBackTheSplitFollowedBefore() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        store.refused = ["fat"]
+
+        XCTAssertNotNil(model.applyMacroSplit(protein: "25", carbohydrate: "45", fat: "30"))
+
+        XCTAssertEqual(try grams(store), [150, 200, 67])
+        XCTAssertEqual(
+            model.followedMacroSplit, try MacroSplit(proteinPercent: 30, carbohydratePercent: 40, fatPercent: 30))
     }
 
     func testAFailedApplyStoresNoSplit() {

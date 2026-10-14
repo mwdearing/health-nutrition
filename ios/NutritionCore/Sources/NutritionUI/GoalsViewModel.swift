@@ -440,6 +440,45 @@ public final class GoalsViewModel: ObservableObject {
     public static let macroSplitFollowFailedMessage =
         "Your energy goal is saved, but protein, carbohydrate and fat could not be updated to match it. Set the percentages again."
 
+    /// Shown when, on top of that, the earlier macro goals could not all be put back.
+    public static let macroSplitFollowRestoreFailedMessage =
+        "Your energy goal is saved, but protein, carbohydrate and fat could not be updated to match it, and the earlier ones could not all be put back. Check protein, carbohydrate and fat below."
+
+    /// An energy goal in kcal, or nil when there is none or it is not above zero.
+    static func kcal(_ goal: NutrientGoal?) -> Decimal? {
+        guard let goal, let value = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .kcal).value,
+            !value.isNaN, value > 0
+        else { return nil }
+        return value
+    }
+
+    /// The three stored macro goals and their amounts in grams, or nil when one is missing, unreadable
+    /// or not a mass.
+    private func storedMacroGoals() -> (goals: [NutrientGoal], grams: MacroSplit.Grams)? {
+        var goals: [NutrientGoal] = []
+        var grams: [Decimal] = []
+        for key in Self.macroSplitKeys {
+            guard let goal = try? store.goal(for: key),
+                let inGrams = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .g).value
+            else { return nil }
+            goals.append(goal)
+            grams.append(inGrams)
+        }
+        return (goals, MacroSplit.Grams(protein: grams[0], carbohydrate: grams[1], fat: grams[2]))
+    }
+
+    /// Puts back a split that a save then rolled back had cleared, so a failed save leaves following as
+    /// it was. Only stored while the macro goals are still exactly the split's output for the stored
+    /// energy goal, so the rule that a stored split describes the goals holds after any rollback.
+    public func restoreMacroSplit(_ split: MacroSplit?) {
+        guard let split, let splits = macroSplitPreferences, splits.macroSplit == nil,
+            let macros = storedMacroGoals(),
+            let energy = Self.kcal((try? store.goal(for: Self.energyKey)) ?? nil),
+            (try? split.grams(forEnergyKcal: energy)) == macros.grams
+        else { return }
+        splits.setMacroSplit(split)
+    }
+
     /// After the energy goal changes on this screen, moves the protein, carbohydrate and fat goals to the
     /// stored split's share of the new energy goal.
     ///
@@ -450,27 +489,9 @@ public final class GoalsViewModel: ObservableObject {
     /// three are written all or none; when one is refused the earlier ones are put back.
     private func followEnergyGoal(from previous: NutrientGoal?) {
         guard let splits = macroSplitPreferences, let split = splits.macroSplit else { return }
-        func kcal(_ goal: NutrientGoal?) -> Decimal? {
-            guard let goal, let value = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .kcal).value,
-                !value.isNaN, value > 0
-            else { return nil }
-            return value
-        }
-        var stored: [NutrientGoal?] = []
-        var grams: [Decimal] = []
-        for key in Self.macroSplitKeys {
-            guard let goal = try? store.goal(for: key),
-                let inGrams = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .g).value
-            else {
-                splits.setMacroSplit(nil)
-                return
-            }
-            stored.append(goal)
-            grams.append(inGrams)
-        }
-        guard let before = kcal(previous), let after = kcal((try? store.goal(for: Self.energyKey)) ?? nil),
-            let expected = try? split.grams(forEnergyKcal: before),
-            expected == MacroSplit.Grams(protein: grams[0], carbohydrate: grams[1], fat: grams[2]),
+        guard let macros = storedMacroGoals(), let before = Self.kcal(previous),
+            let after = Self.kcal((try? store.goal(for: Self.energyKey)) ?? nil),
+            let expected = try? split.grams(forEnergyKcal: before), expected == macros.grams,
             let next = try? split.grams(forEnergyKcal: after)
         else {
             splits.setMacroSplit(nil)
@@ -482,12 +503,16 @@ public final class GoalsViewModel: ObservableObject {
             do {
                 try store.setGoal(NutrientGoal(nutrient: key, target: targets[index], unit: .g))
             } catch {
+                // The write that failed changed nothing, so only the ones before it are put back, and a
+                // put-back that fails too is said, since the three may then be a mix of old and new.
+                var restored = true
                 for earlier in (0..<index).reversed() {
-                    if let goal = stored[earlier] { try? store.setGoal(goal) }
+                    do { try store.setGoal(macros.goals[earlier]) } catch { restored = false }
                 }
                 splits.setMacroSplit(nil)
                 load()
-                errorMessage = Self.macroSplitFollowFailedMessage
+                errorMessage = restored
+                    ? Self.macroSplitFollowFailedMessage : Self.macroSplitFollowRestoreFailedMessage
                 return
             }
         }

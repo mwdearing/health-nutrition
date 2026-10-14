@@ -174,6 +174,9 @@ extension GoalsViewModel {
                 }
             }
         }
+        // A failed apply puts back the split that was followed before, when the goals it rolls back to
+        // are still that split's output.
+        let previousSplit = self.followedMacroSplit
         self.macroSplitPreferences?.setMacroSplit(nil)
         var previous: [(key: String, goal: NutrientGoal?, draft: String?, unit: MeasureUnit?)] = []
         let storedEnergy: NutrientGoal?
@@ -216,6 +219,7 @@ extension GoalsViewModel {
                     self.draftText[earlier.key] = earlier.draft
                     self.selectedUnits[earlier.key] = earlier.unit
                 }
+                if restored { self.restoreMacroSplit(previousSplit) }
                 return restored ? Self.saveFailedMessage : Self.macroSplitRestoreFailedMessage
             }
         }

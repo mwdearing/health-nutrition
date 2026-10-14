@@ -199,6 +199,8 @@ public final class GoalSetupViewModel: ObservableObject {
             resultError = Self.saveFailedNotice
             return false
         }
+        // Writing the estimate's macros stops a followed split; a save rolled back puts it back.
+        let followedSplit = goals.followedMacroSplit
         var attempted: [(nutrient: String, goal: NutrientGoal?)] = []
         for (index, key) in Self.targetKeys.enumerated() {
             let text = (draftTargets[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -212,6 +214,7 @@ public final class GoalSetupViewModel: ObservableObject {
                 for entry in attempted.dropLast().reversed() {
                     if !goals.restoreGoal(entry.goal, for: entry.nutrient) { restored = false }
                 }
+                if restored { goals.restoreMacroSplit(followedSplit) }
                 resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
                 return false
             }

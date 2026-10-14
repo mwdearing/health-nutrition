@@ -83,7 +83,10 @@ the split is forgotten, when protein, carbohydrate or fat is changed any other w
 written by the setup estimate; committing the same value again does not count), when the energy goal
 is removed, when all goals are cleared, when the new energy goal is too small to share out, or when a
 goal changed behind the screen. If a gram write is refused after the energy goal saved, the earlier gram
-goals are put back and the screen says the macros could not follow. The share shown back is still
+goals are put back and the screen says the macros could not follow, or, when putting them back fails too,
+that the three may be a mix of old and new. A setup save or a percentage apply that fails and is rolled
+back puts the earlier split back too, as long as the goals it rolled back to are still that split's
+output, so a failed save leaves following as it was. The share shown back is still
 worked out from the stored gram goals and the stored energy goal. The energy used is what the energy row shows: an edit typed there and not yet saved is used for the preview and saved before the gram goals. Without an energy goal the section only says to set one first. The app
 offers no split of its own.
 
