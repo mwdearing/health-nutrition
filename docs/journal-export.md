@@ -171,7 +171,8 @@ while the app is alive.
 **A restore the app stopped between its two saves is finished by importing the same file again (#118).** Just
 before the journal's save the store writes a small flag beside its file holding the SHA-256 of the file being
 imported, and the import clears it once its run is over: favorites written, undone, or reported as a partial
-restore. One import runs at a time; another started meanwhile is refused as `notEmpty`. If the
+restore. A flag that cannot be cleared after the favorites were written is reported as a failed import rather
+than left in place silently; importing the file again then clears it. One import runs at a time; another started meanwhile is refused as `notEmpty`. If the
 app is stopped after the journal's save, the flag stays. Importing that same file again then finds the flag naming
 it and a journal that holds exactly that file's journal (the same entries field for field, the same revisions,
 the same deleted entries), and writes only the favorites; the flag stays until they are written, so a failure

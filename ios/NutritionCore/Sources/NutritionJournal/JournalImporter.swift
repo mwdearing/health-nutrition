@@ -208,13 +208,13 @@ public enum JournalImporter {
             try? progress?.clearRestoreInProgress()
             throw error
         }
-        // Whatever happens to the favorites below, this run settles them before it returns or throws, so the
-        // flag is not left for a later import to read as an unfinished restore.
-        defer { try? progress?.clearRestoreInProgress() }
         if let favoritesTarget {
             do {
                 try favoritesTarget.restore(plan.favorites)
             } catch let favoritesFailure {
+                // The journal is undone or reported as partial, so there is no unfinished restore of this file
+                // to finish, and a flag left here could only be misread later.
+                defer { try? progress?.clearRestoreInProgress() }
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
@@ -225,6 +225,10 @@ public enum JournalImporter {
                 }
                 throw favoritesFailure
             }
+            // A flag that outlived a finished restore would let a later import of this file write favorites the
+            // person deleted since, so a failure to clear it is reported rather than swallowed. Importing the
+            // file again then finds its own journal and favorites, writes the same favorites and clears it.
+            try progress?.clearRestoreInProgress()
         }
         return summary(of: plan)
     }
