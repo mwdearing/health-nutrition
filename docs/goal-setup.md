@@ -87,7 +87,10 @@ goals are put back and the screen says the macros could not follow, or, when put
 that the three may be a mix of old and new. A setup save or a percentage apply that fails and is rolled
 back puts the earlier split back too, as long as the goals it rolled back to are still that split's
 output, so a failed save leaves following as it was; an apply that stops before writing anything leaves
-it untouched, and a rollback that cannot be completed stops following. The section only says the gram
+it untouched, and a rollback that cannot be completed stops following. An apply that had already saved a
+changed energy goal when a gram write failed keeps that energy goal and says so ("Your energy goal is
+saved, but protein, carbohydrate and fat could not be set from the percentages."); the earlier split no
+longer describes the goals, so following stops. The section only says the gram
 goals follow while the stored split still describes them. The share shown back is still
 worked out from the stored gram goals and the stored energy goal. The energy used is what the energy row shows: an edit typed there and not yet saved is used for the preview and saved before the gram goals. Without an energy goal the section only says to set one first. The app
 offers no split of its own.

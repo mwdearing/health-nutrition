@@ -228,6 +228,23 @@ final class MacroSplitFollowTests: XCTestCase {
             model.followedMacroSplit, try MacroSplit(proteinPercent: 30, carbohydratePercent: 40, fatPercent: 30))
     }
 
+    func testAnApplyThatSavedANewEnergyGoalBeforeFailingSaysTheEnergySaved() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        model.draftText["energy"] = "2500"
+        store.refused = ["fat"]
+
+        XCTAssertEqual(
+            model.applyMacroSplit(protein: "25", carbohydrate: "45", fat: "30"),
+            GoalsViewModel.macroSplitEnergySavedMessage)
+
+        // The energy edit stays saved and the grams are put back, which 30/40/30 of 2,500 kcal no longer
+        // describes, so following stops rather than claiming a split the goals do not match.
+        XCTAssertEqual(try store.goal(for: "energy"), energyGoal(2500))
+        XCTAssertEqual(try grams(store), [150, 200, 67])
+        XCTAssertNil(model.followedMacroSplit)
+    }
+
     func testASetupRollbackThatFailsStopsFollowing() throws {
         let store = RefusingGoalStore(goals: [energyGoal(2000)])
         let preferences = InMemoryDisplayPreferences()

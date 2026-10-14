@@ -137,6 +137,11 @@ public final class GoalsViewModel: ObservableObject {
     @Published public var draftText: [String: String] = [:]
     @Published public var selectedUnits: [String: MeasureUnit] = [:]
     @Published public private(set) var rowError: [String: String] = [:]
+    /// The split the macro gram goals follow, or nil when they do not follow the energy goal. Worked out
+    /// when the goals load and whenever the stored split changes, never per render: a stored split that
+    /// no longer describes the goals (the three gram goals are not its output for the stored energy
+    /// goal) is not reported, so the screen never says goals follow when they would not.
+    @Published public private(set) var followedMacroSplit: MacroSplit?
 
     public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
 
@@ -235,8 +240,10 @@ public final class GoalsViewModel: ObservableObject {
             }
             self.loadedUnitSystem = self.preferences.unitSystem
             errorMessage = nil
+            refreshFollowedMacroSplit()
         } catch {
             rows = []
+            followedMacroSplit = nil
             errorMessage = Self.readFailedMessage
         }
     }
@@ -475,12 +482,19 @@ public final class GoalsViewModel: ObservableObject {
             macroSplitDescribesGoals(split)
         else { return }
         splits.setMacroSplit(split)
+        refreshFollowedMacroSplit()
+    }
+
+    /// Works `followedMacroSplit` out again from the stored split and the stored goals.
+    func refreshFollowedMacroSplit() {
+        followedMacroSplit = macroSplitPreferences?.macroSplit.flatMap { macroSplitDescribesGoals($0) ? $0 : nil }
     }
 
     /// Forgets the stored split, so the macro goals no longer follow the energy goal. Called when a save
     /// could not be fully rolled back, since the goals may then be anything.
     public func stopFollowingMacroSplit() {
         macroSplitPreferences?.setMacroSplit(nil)
+        followedMacroSplit = nil
     }
 
     /// Whether the three stored macro goals are exactly the split's output for the stored energy goal.
@@ -506,7 +520,7 @@ public final class GoalsViewModel: ObservableObject {
             let expected = try? split.grams(forEnergyKcal: before), expected == macros.grams,
             let next = try? split.grams(forEnergyKcal: after)
         else {
-            splits.setMacroSplit(nil)
+            stopFollowingMacroSplit()
             return
         }
         guard next != expected else { return }
