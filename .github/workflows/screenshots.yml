@@ -4,12 +4,9 @@ name: screenshots
 # artifact. The screens are the real views on invented data (ScreenshotCaptureTests); nothing here uses
 # a device or personal data. scripts/build_design_system.py puts the images on the design system pages.
 
+# Not run on pull requests: it is a documentation capture, not a gate, and each PR push would take
+# a shared macOS slot. It runs on main and on demand.
 on:
-  pull_request:
-    paths:
-      - "ios/**"
-      - ".github/workflows/screenshots.yml"
-      - ".github/scripts/install-xcodegen.sh"
   push:
     branches: [main]
     paths:
