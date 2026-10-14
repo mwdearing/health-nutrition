@@ -333,7 +333,14 @@ public final class GoalsViewModel: ObservableObject {
             } else {
                 stored = Quantity(value: target, unit: chosen)
             }
-            try store.setGoal(NutrientGoal(nutrient: nutrient, target: stored.value, unit: stored.unit))
+            let goal = NutrientGoal(nutrient: nutrient, target: stored.value, unit: stored.unit)
+            var before: NutrientGoal?
+            if Self.macroSplitKeys.contains(nutrient) { before = (try? store.goal(for: nutrient)) ?? nil }
+            try store.setGoal(goal)
+            // A macro goal changed any way but by its split (by hand, or by the setup estimate) is no
+            // longer that split's output, so the grams stop following the energy goal. Committing the
+            // same value again, as leaving a field does, changes nothing and keeps following.
+            if Self.macroSplitKeys.contains(nutrient), before != goal { macroSplitPreferences?.setMacroSplit(nil) }
             load()
             return true
         } catch {
@@ -383,6 +390,10 @@ public final class GoalsViewModel: ObservableObject {
     public func removeTarget(for nutrient: String) -> Bool {
         do {
             try store.removeGoal(nutrient: nutrient)
+            // Without that goal the split has nothing to share out or nothing to follow it with.
+            if Self.macroSplitKeys.contains(nutrient) || nutrient == Self.energyKey {
+                macroSplitPreferences?.setMacroSplit(nil)
+            }
             load()
             return true
         } catch {
@@ -409,9 +420,85 @@ public final class GoalsViewModel: ObservableObject {
             rowError[nutrient] = "Enter a number above zero."
             return false
         }
+        // Read before the write, so a split can be checked against the energy its grams were worked
+        // out from. A read that fails leaves nothing to check, and the split is then not followed.
+        var previousEnergy: NutrientGoal?
+        if nutrient == Self.energyKey { previousEnergy = (try? store.goal(for: Self.energyKey)) ?? nil }
         guard setTarget(text, for: nutrient, unit: selectedUnits[nutrient]) else { return false }
         draftText[nutrient] = DecimalFormatting.text(target)
+        if nutrient == Self.energyKey { followEnergyGoal(from: previousEnergy) }
         return true
+    }
+
+    /// The energy goal's key, which a macro split is a share of.
+    static let energyKey = "energy"
+
+    /// The preferences the stored split lives in, or nil for a store that keeps none.
+    var macroSplitPreferences: MacroSplitPreferences? { preferences as? MacroSplitPreferences }
+
+    /// Shown when the energy goal saved but the macro goals could not be moved to follow it.
+    public static let macroSplitFollowFailedMessage =
+        "Your energy goal is saved, but protein, carbohydrate and fat could not be updated to match it. Set the percentages again."
+
+    /// After the energy goal changes on this screen, moves the protein, carbohydrate and fat goals to the
+    /// stored split's share of the new energy goal.
+    ///
+    /// Only a split that still describes the goals is followed: the three stored macro goals must be
+    /// exactly what the split comes to for the energy goal before this change. Anything else (goals
+    /// edited behind this screen, an unreadable store, an energy goal too small to share out) clears
+    /// the split and leaves the macro goals as they are, so a goal a person set is never rescaled. The
+    /// three are written all or none; when one is refused the earlier ones are put back.
+    private func followEnergyGoal(from previous: NutrientGoal?) {
+        guard let splits = macroSplitPreferences, let split = splits.macroSplit else { return }
+        func kcal(_ goal: NutrientGoal?) -> Decimal? {
+            guard let goal, let value = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .kcal).value,
+                !value.isNaN, value > 0
+            else { return nil }
+            return value
+        }
+        var stored: [NutrientGoal?] = []
+        var grams: [Decimal] = []
+        for key in Self.macroSplitKeys {
+            guard let goal = try? store.goal(for: key),
+                let inGrams = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .g).value
+            else {
+                splits.setMacroSplit(nil)
+                return
+            }
+            stored.append(goal)
+            grams.append(inGrams)
+        }
+        guard let before = kcal(previous), let after = kcal((try? store.goal(for: Self.energyKey)) ?? nil),
+            let expected = try? split.grams(forEnergyKcal: before),
+            expected == MacroSplit.Grams(protein: grams[0], carbohydrate: grams[1], fat: grams[2]),
+            let next = try? split.grams(forEnergyKcal: after)
+        else {
+            splits.setMacroSplit(nil)
+            return
+        }
+        guard next != expected else { return }
+        let targets = [next.protein, next.carbohydrate, next.fat]
+        for (index, key) in Self.macroSplitKeys.enumerated() {
+            do {
+                try store.setGoal(NutrientGoal(nutrient: key, target: targets[index], unit: .g))
+            } catch {
+                for earlier in (0..<index).reversed() {
+                    if let goal = stored[earlier] { try? store.setGoal(goal) }
+                }
+                splits.setMacroSplit(nil)
+                load()
+                errorMessage = Self.macroSplitFollowFailedMessage
+                return
+            }
+        }
+        // The drafts follow too, so an old draft is not committed over the new goal when its field
+        // next loses focus, which would also stop the following.
+        for (index, key) in Self.macroSplitKeys.enumerated() {
+            draftText[key] = DecimalFormatting.text(targets[index])
+            selectedUnits[key] = .g
+            rowError[key] = nil
+        }
+        load()
     }
 
     @discardableResult
@@ -423,6 +510,7 @@ public final class GoalsViewModel: ObservableObject {
             draftText = [:]
             selectedUnits = [:]
             rowError = [:]
+            macroSplitPreferences?.setMacroSplit(nil)
             load()
             return errorMessage == nil
         } catch {

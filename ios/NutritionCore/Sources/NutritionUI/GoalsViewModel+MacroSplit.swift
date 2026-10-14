@@ -36,12 +36,24 @@ public enum MacroSplitProblem: Error, Equatable {
     }
 }
 
+/// Where the split the macro gram goals follow is kept: a display preference, erased with the others.
+/// Nil when the gram goals do not follow the energy goal.
+public protocol MacroSplitPreferences: AnyObject {
+    var macroSplit: MacroSplit? { get }
+    func setMacroSplit(_ split: MacroSplit?)
+}
+
 /// Macro targets stated as percentages of the energy goal.
 ///
-/// The percentages are not stored. Applying a split writes three ordinary gram goals, so Today, the
-/// Journal header and erase treat them as the gram goals they are. The split shown back is worked out
-/// from those stored grams and the energy goal each time.
+/// Applying a split writes three ordinary gram goals, so Today, the Journal header and erase treat them
+/// as the gram goals they are, and stores the split itself. While it is stored, changing the energy goal
+/// on the Goals screen moves the three gram goals to the split's share of the new energy goal. Setting
+/// any of the three by hand, the setup estimate, removing the energy goal or clearing all goals stops
+/// that and forgets the split. The share shown back is still worked out from the stored grams.
 extension GoalsViewModel {
+    /// The split the macro gram goals follow, or nil when they do not follow the energy goal.
+    public var followedMacroSplit: MacroSplit? { macroSplitPreferences?.macroSplit }
+
     /// The keys a split writes, in the order the screen names them.
     public static let macroSplitKeys = ["protein", "carbohydrate", "fat"]
 
@@ -153,6 +165,16 @@ extension GoalsViewModel {
         let targets: [(key: String, grams: Decimal)] = [
             ("protein", grams.protein), ("carbohydrate", grams.carbohydrate), ("fat", grams.fat),
         ]
+        // The split the grams came from, stored once all three are written. Until then no split is
+        // stored, so saving the energy edit below has nothing to follow and a failed write leaves none.
+        let split = AmountParser.parseTyped(protein).flatMap { p in
+            AmountParser.parseTyped(carbohydrate).flatMap { c in
+                AmountParser.parseTyped(fat).flatMap { f in
+                    try? MacroSplit(proteinPercent: p, carbohydratePercent: c, fatPercent: f)
+                }
+            }
+        }
+        self.macroSplitPreferences?.setMacroSplit(nil)
         var previous: [(key: String, goal: NutrientGoal?, draft: String?, unit: MeasureUnit?)] = []
         let storedEnergy: NutrientGoal?
         do {
@@ -197,6 +219,7 @@ extension GoalsViewModel {
                 return restored ? Self.saveFailedMessage : Self.macroSplitRestoreFailedMessage
             }
         }
+        self.macroSplitPreferences?.setMacroSplit(split)
         return nil
     }
 }

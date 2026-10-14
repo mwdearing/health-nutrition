@@ -147,7 +147,7 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     assert documented_stores == stores
 
     preference_keys = _reset_preference_keys()
-    assert len(preference_keys) == 11
+    assert len(preference_keys) == 12
     preference_section = (ROOT / "docs/erase-all-data.md").read_text(encoding="utf-8").lower()
     for key in preference_keys:
         assert key.lower() in preference_section

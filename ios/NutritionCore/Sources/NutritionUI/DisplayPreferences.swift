@@ -96,6 +96,9 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
     /// The reference group the vitamins and minerals screen compares with, stored as
     /// "<sex>.<age band>" (for example "female.years31To50"), absent until a person picks one.
     private let referenceGroupKey = "display.reference.group"
+    /// The macro split the gram goals follow, stored as "<protein>,<carbohydrate>,<fat>" percents (for
+    /// example "30,40,30"), absent when the macro goals do not follow the energy goal.
+    private let macroSplitKey = "display.goals.macroSplit"
 
     /// `defaults` is a parameter so a test can pass a suite of its own rather than touching the
     /// standard domain.
@@ -252,6 +255,7 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.removeObject(forKey: waterGoalSeededKey)
         defaults.removeObject(forKey: communityDisclosureKey)
         defaults.removeObject(forKey: referenceGroupKey)
+        defaults.removeObject(forKey: macroSplitKey)
     }
 }
 
@@ -268,6 +272,7 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
     public private(set) var hasSeededWaterGoal = false
     public func markWaterGoalSeeded() { hasSeededWaterGoal = true }
     public private(set) var referenceGroup: ReferenceGroup?
+    public private(set) var macroSplit: MacroSplit?
     private var productSharingPauses: [UUID: ProductSharePauseReason] = [:]
     public func productSharingPause(for userID: String) -> ProductSharePauseReason? {
         guard let owner = UUID(uuidString: userID) else { return nil }
@@ -341,6 +346,7 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         hasSeededWaterGoal = false
         acknowledgedAccountIDs = []
         referenceGroup = nil
+        macroSplit = nil
     }
 }
 
@@ -369,5 +375,36 @@ extension UserDefaultsDisplayPreferences: ReferenceGroupPreferences {
 extension InMemoryDisplayPreferences: ReferenceGroupPreferences {
     public func setReferenceGroup(_ group: ReferenceGroup?) {
         referenceGroup = group
+    }
+}
+
+extension UserDefaultsDisplayPreferences: MacroSplitPreferences {
+    /// Absent, or text that does not read back as three shares above zero totalling 100, is no split, so
+    /// nothing is rescaled from a value the app cannot vouch for.
+    public var macroSplit: MacroSplit? {
+        guard let text = defaults.string(forKey: macroSplitKey) else { return nil }
+        let parts = text.split(separator: ",", omittingEmptySubsequences: false)
+            .map { Decimal(string: String($0), locale: Locale(identifier: "en_US_POSIX")) }
+        guard parts.count == 3, let protein = parts[0], let carbohydrate = parts[1], let fat = parts[2] else {
+            return nil
+        }
+        return try? MacroSplit(proteinPercent: protein, carbohydratePercent: carbohydrate, fatPercent: fat)
+    }
+
+    public func setMacroSplit(_ split: MacroSplit?) {
+        guard let split else {
+            defaults.removeObject(forKey: macroSplitKey)
+            return
+        }
+        let text = [split.proteinPercent, split.carbohydratePercent, split.fatPercent]
+            .map { NSDecimalNumber(decimal: $0).description(withLocale: Locale(identifier: "en_US_POSIX")) }
+            .joined(separator: ",")
+        defaults.set(text, forKey: macroSplitKey)
+    }
+}
+
+extension InMemoryDisplayPreferences: MacroSplitPreferences {
+    public func setMacroSplit(_ split: MacroSplit?) {
+        macroSplit = split
     }
 }
