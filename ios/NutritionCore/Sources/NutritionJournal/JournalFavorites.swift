@@ -55,6 +55,20 @@ public protocol FavoritesRestoreTarget: AnyObject, Sendable {
     /// Writes every favorite in one save, keeping the ids and decimal text the export carried. A failure
     /// rolls the save back, so the store is left exactly as it was.
     func restore(_ favorites: [FavoriteTemplate]) throws
+    /// The same, and in the same save a receipt naming the restored file, so the fact that these favorites
+    /// were written survives a stop before anything else is recorded (#118).
+    func restore(_ favorites: [FavoriteTemplate], receipt: String) throws
+    /// Whether a restore that carried this receipt has been saved.
+    func hasRestoreReceipt(_ receipt: String) throws -> Bool
+    /// Forgets the receipt once nothing needs it.
+    func removeRestoreReceipt(_ receipt: String) throws
+}
+
+/// A store that keeps no receipts writes the favorites alone and never claims to have written a restore.
+public extension FavoritesRestoreTarget {
+    func restore(_ favorites: [FavoriteTemplate], receipt: String) throws { try restore(favorites) }
+    func hasRestoreReceipt(_ receipt: String) throws -> Bool { false }
+    func removeRestoreReceipt(_ receipt: String) throws {}
 }
 
 public enum FavoritesError: Error, Sendable, Equatable {
@@ -169,7 +183,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<FavoriteRecord>(
             sortBy: [SortDescriptor(\.addedAt, order: .reverse)]))
-        return try rows.map { row in
+        return try rows.filter { !Self.isReceipt($0.favoriteID) }.map { row in
             guard let components = try? JSONDecoder().decode([FavoriteComponent].self, from: Data(row.componentsJSON.utf8)) else {
                 throw FavoritesError.corruptRecord(row.favoriteID)
             }
@@ -180,6 +194,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
     }
 
     public func contains(id: String) throws -> Bool {
+        guard !Self.isReceipt(id) else { return false }
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<FavoriteRecord>(
             predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id }))
@@ -190,6 +205,32 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
     /// importer's path, not a new kind of add: `add` saves one favorite at a time, which is right for a
     /// button and wrong for a restore, where a failure halfway would leave half a favorites list behind.
     public func restore(_ favorites: [FavoriteTemplate]) throws {
+        try restore(favorites, receiptID: nil)
+    }
+
+    public func restore(_ favorites: [FavoriteTemplate], receipt: String) throws {
+        try restore(favorites, receiptID: Self.receiptPrefix + receipt)
+    }
+
+    public func hasRestoreReceipt(_ receipt: String) throws -> Bool {
+        let id = Self.receiptPrefix + receipt
+        let context = ModelContext(try openContainer())
+        return try !context.fetch(FetchDescriptor<FavoriteRecord>(
+            predicate: #Predicate<FavoriteRecord> { $0.favoriteID == id })).isEmpty
+    }
+
+    public func removeRestoreReceipt(_ receipt: String) throws {
+        try remove(id: Self.receiptPrefix + receipt)
+    }
+
+    /// A restore receipt is kept as a row of this same table, so it is written in the very save that writes
+    /// the favorites and needs no schema change. Its id cannot clash with a favorite's, which is a UUID, and
+    /// `list()` and `contains(id:)` never show it.
+    private static let receiptPrefix = "restore-receipt:"
+
+    private static func isReceipt(_ id: String) -> Bool { id.hasPrefix(receiptPrefix) }
+
+    private func restore(_ favorites: [FavoriteTemplate], receiptID: String?) throws {
         writeLock.lock()
         defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())
@@ -205,6 +246,15 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
                     favoriteID: favorite.id, displayName: favorite.displayName, category: favorite.category,
                     componentsJSON: String(decoding: data, as: UTF8.self),
                     productSnapshotID: favorite.productSnapshotID, addedAt: Date(), meal: favorite.meal))
+            }
+            if let receiptID {
+                for row in try context.fetch(FetchDescriptor<FavoriteRecord>(
+                    predicate: #Predicate<FavoriteRecord> { $0.favoriteID == receiptID })) {
+                    context.delete(row)
+                }
+                context.insert(FavoriteRecord(
+                    favoriteID: receiptID, displayName: "", category: "", componentsJSON: "[]",
+                    productSnapshotID: nil, addedAt: Date()))
             }
             if takeInjectedFailure() { throw FavoritesError.injectedSaveFailure }
             try context.save()

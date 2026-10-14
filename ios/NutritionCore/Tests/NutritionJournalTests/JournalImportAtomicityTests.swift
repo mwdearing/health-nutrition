@@ -198,6 +198,28 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertFalse(try favoritesStore.contains(id: deleted.id), "the deleted favorite stays deleted")
     }
 
+    /// A stop after the favorites' save but before the flag was cleared leaves the flag, and then every one of
+    /// that file's favorites is deleted. The receipt saved with the favorites says they were written, so the
+    /// same file imported again is refused and they stay deleted.
+    func testAFlagOutlivingTheFavoritesSaveDoesNotBringDeletedFavoritesBack() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        let digest = JournalImporter.fileDigest(data)
+        let plan = try JournalImporter.makePlan(try JournalImporter.readDocument(data))
+        try journal.markRestoreInProgress(fileDigest: digest)
+        _ = try journal.restore(plan)
+        try favoritesStore.restore(plan.favorites, receipt: digest)
+        XCTAssertEqual(try favoritesStore.list().count, 2, "the receipt is not listed as a favorite")
+        for favorite in try favoritesStore.list() { try favoritesStore.remove(id: favorite.id) }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertTrue(try favoritesStore.list().isEmpty, "deleted favorites are not put back")
+    }
+
     /// A restore that finished clears its flag, so running it again after the favorites were deleted is refused
     /// and does not put them back.
     func testAFinishedImportLeavesNoFlagAndIsRefusedWhenRunAgain() throws {

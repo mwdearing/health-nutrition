@@ -186,14 +186,20 @@ public enum JournalImporter {
             // writes identical rows twice at most; nothing here is read back from the other run.
             // The favorites are one save, so a restore stopped before it left none of the file's favorites on the
             // phone; any of them present means that save happened, and the flag is only a leftover.
+            // The receipt the favorites save writes with them is the durable record that it happened: a flag
+            // that outlived it (a stop after that save, before the flag was cleared) is not an unfinished
+            // restore, however many of those favorites were deleted since.
             guard let favorites, let favoritesTarget, let progress,
                   try progress.restoreInProgressDigest() == digest, try journalHolds(plan, store: store),
+                  try !favoritesTarget.hasRestoreReceipt(digest),
                   try Set(favorites.list().map(\.id)).isDisjoint(with: plan.favorites.map(\.id))
             else { throw JournalImportError.notEmpty }
-            try favoritesTarget.restore(plan.favorites)
+            try favoritesTarget.restore(plan.favorites, receipt: digest)
             // A flag that outlived a finished resume would let a later import of this file write favorites
             // the person deleted since, so a failure to clear it is reported rather than swallowed.
             try progress.clearRestoreInProgress()
+            // The flag is gone, so the receipt has nothing left to answer; one left by a stop here is harmless.
+            try? favoritesTarget.removeRestoreReceipt(digest)
             return summary(of: plan)
         }
 
@@ -213,7 +219,7 @@ public enum JournalImporter {
         }
         if let favoritesTarget {
             do {
-                try favoritesTarget.restore(plan.favorites)
+                try favoritesTarget.restore(plan.favorites, receipt: digest)
             } catch let favoritesFailure {
                 // The journal is undone or reported as partial, so there is no unfinished restore of this file
                 // to finish, and a flag left here could only be misread later.
@@ -231,6 +237,7 @@ public enum JournalImporter {
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over these
             // favorites: a resume needs none of the file's favorites on the phone.
             try progress?.clearRestoreInProgress()
+            try? favoritesTarget.removeRestoreReceipt(digest)
         }
         return summary(of: plan)
     }

@@ -172,7 +172,10 @@ while the app is alive.
 before the journal's save the store writes a small flag beside its file holding the SHA-256 of the file being
 imported, and the import clears it once its run is over: favorites written, undone, or reported as a partial
 restore. A flag that cannot be cleared after the favorites were written is reported as a failed import rather
-than left in place silently. One import runs at a time; another started meanwhile is refused as `notEmpty`. If the
+than left in place silently. The favorites' own save also writes a receipt naming the file (a hidden row in the
+favorites store, never listed), so a flag that outlived that save, because the app stopped before clearing it,
+is never taken for an unfinished restore. One import runs at a time; another started meanwhile is refused as
+`notEmpty`. If the
 app is stopped after the journal's save, the flag stays. Importing that same file again then finds the flag naming
 it, a journal that holds exactly that file's journal (the same entries field for field, the same revisions, the
 same deleted entries) and none of the file's favorites on the phone (they are one save, so a stopped restore left
