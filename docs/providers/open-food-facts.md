@@ -134,13 +134,13 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   brand as an earlier one is left out, because neither can be told apart in a list
   of names. The search index has per-100 figures but not the serving or whether a
   product is measured in grams or millilitres, so a result is listed as "per 100 g
-  or mL". When the person opens a result, the app reads that product by barcode
-  (an ordinary product read, counted against the 10 lookups per minute) and fills
-  the form from the full record; if the read fails, the form is filled from the
-  search result.
+  or mL" and opens with no serving filled in. Opening a result sends nothing: the
+  form is filled from the search reply. The owner decided on 2026-10-14 that a
+  picked result's barcode is not sent to Open Food Facts to read the fuller
+  record; scanning or typing a barcode remains the way to get the serving.
 - The results screen shows the attribution text on every result with a link to
   the license and source, and states that the search words are sent to Open Food
-  Facts and that opening a result asks for that product by its barcode.
+  Facts.
 - Submitting the same words again within those 60 seconds sends nothing and does
   not count toward the 6: the reply already received is shown again, and a submit
   made while that request is still running waits for its reply. The reply is held

@@ -214,8 +214,7 @@ extension OpenFoodFactsProduct {
         )
     }
 
-    /// A search result. The figures are per 100 with the unit unstated, and there is no serving; the
-    /// product read by barcode has both.
+    /// A search result. The figures are per 100 with the unit unstated, and there is no serving.
     init(hit: OpenFoodFactsSearchResponse.Hit, barcode: String, name: String) {
         let source = hit.nutriments ?? [:]
         var nutrients: [String: NutrientValue] = [:]

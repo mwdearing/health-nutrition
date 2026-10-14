@@ -19,42 +19,6 @@ private final class FakeNameSearch: ProductNameSearching, @unchecked Sendable {
     }
 }
 
-/// A source whose full record differs from its search result, and can be held open by a test.
-private final class FakeDetailedSearch: ProductNameSearching, @unchecked Sendable {
-    private let lock = NSLock()
-    private var asked: [String] = []
-    private var held: CheckedContinuation<Void, Never>?
-    private var holding: Bool
-    let full: LookedUpProduct
-
-    init(full: LookedUpProduct, hold: Bool = false) { self.full = full; self.holding = hold }
-
-    var detailBarcodes: [String] { lock.withLock { asked } }
-
-    func search(query: String) async -> ProductNameSearchOutcome { .empty }
-
-    func details(for product: LookedUpProduct) async -> LookedUpProduct {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let wait = lock.withLock { () -> Bool in
-                asked.append(product.barcode)
-                if holding { held = continuation }
-                return holding
-            }
-            if !wait { continuation.resume() }
-        }
-        return full
-    }
-
-    func release() {
-        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
-            holding = false
-            defer { held = nil }
-            return held
-        }
-        continuation?.resume()
-    }
-}
-
 final class OpenFoodFactsProductSearchTests: XCTestCase {
     private func product(_ name: String) -> LookedUpProduct {
         LookedUpProduct(barcode: "2000000000015", name: name, brand: nil, basis: .per100g, nutrients: [:])
@@ -108,52 +72,6 @@ final class OpenFoodFactsProductSearchTests: XCTestCase {
         XCTAssertEqual(
             CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: nil),
             "Too many Open Food Facts searches just now. Try again in a minute.")
-    }
-
-    @MainActor func testPickedResultIsFilledFromTheFullRecord() async {
-        let hit = LookedUpProduct(barcode: "2000000000015", name: "Oat Milk", brand: nil, basis: .per100Unspecified, nutrients: [:])
-        let full = LookedUpProduct(barcode: "2000000000015", name: "Oat Milk", brand: "Example Dairy", basis: .per100ml, nutrients: [:])
-        let source = FakeDetailedSearch(full: full)
-        let model = CommunityProductSearchViewModel(store: ProductEditorStorePort(), service: ProductSearchServicePort(), openFoodFacts: source, isSignedIn: { false })
-        let opened = await model.openFoodFactsDetails(for: hit)
-        XCTAssertEqual(opened, full)
-        XCTAssertEqual(source.detailBarcodes, ["2000000000015"])
-        XCTAssertNil(model.openingOpenFoodFactsBarcode)
-    }
-
-    @MainActor func testSourceWithoutFullRecordsOpensTheSearchResult() async {
-        let hit = product("Oat Biscuit")
-        let model = CommunityProductSearchViewModel(store: ProductEditorStorePort(), service: ProductSearchServicePort(), openFoodFacts: FakeNameSearch(outcome: .empty), isSignedIn: { false })
-        let opened = await model.openFoodFactsDetails(for: hit)
-        XCTAssertEqual(opened, hit)
-    }
-
-    @MainActor func testSecondPickWhileOneIsLoadingOpensNothing() async {
-        let hit = product("Oat Biscuit")
-        let source = FakeDetailedSearch(full: hit, hold: true)
-        let model = CommunityProductSearchViewModel(store: ProductEditorStorePort(), service: ProductSearchServicePort(), openFoodFacts: source, isSignedIn: { false })
-        let first = Task { @MainActor in await model.openFoodFactsDetails(for: hit) }
-        while source.detailBarcodes.isEmpty { await Task.yield() }
-        XCTAssertEqual(model.openingOpenFoodFactsBarcode, "2000000000015")
-        let second = await model.openFoodFactsDetails(for: hit)
-        XCTAssertNil(second)
-        source.release()
-        let opened = await first.value
-        XCTAssertEqual(opened, hit)
-        XCTAssertEqual(source.detailBarcodes.count, 1)
-    }
-
-    @MainActor func testNewSearchWhileAPickIsLoadingOpensNothing() async {
-        let hit = product("Oat Biscuit")
-        let source = FakeDetailedSearch(full: hit, hold: true)
-        let model = CommunityProductSearchViewModel(store: ProductEditorStorePort(), service: ProductSearchServicePort(), openFoodFacts: source, isSignedIn: { false })
-        let first = Task { @MainActor in await model.openFoodFactsDetails(for: hit) }
-        while source.detailBarcodes.isEmpty { await Task.yield() }
-        await model.search(query: "rice", kind: nil)
-        XCTAssertNil(model.openingOpenFoodFactsBarcode)
-        source.release()
-        let opened = await first.value
-        XCTAssertNil(opened)
     }
 
     @MainActor func testFailureIsUnavailableWithoutAffectingLocalResults() async throws {
