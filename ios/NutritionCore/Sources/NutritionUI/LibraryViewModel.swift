@@ -45,13 +45,8 @@ public struct RecentItemsProvider {
     /// amounts are added to the title; without them two quick adds would read alike and a tap could repeat
     /// amounts the row does not show.
     private func displayName(of revision: IntakeRevision) -> String {
-        let title = AmountText.title(revision.components)
-        guard let snapshotID = revision.productSnapshotID,
-              let product = try? store.product(snapshotID: snapshotID),
-              product.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin
-        else { return title }
-        let summary = QuickAddViewModel.summary(of: product.nutrients)
-        return summary.isEmpty ? title : title + " · " + summary
+        let product = revision.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+        return QuickAddViewModel.rowTitle(components: revision.components, product: product)
     }
 
     /// Distinct products the person has logged from a lookup, a label scan or another source that stored a

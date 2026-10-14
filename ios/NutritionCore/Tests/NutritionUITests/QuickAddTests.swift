@@ -221,6 +221,12 @@ final class QuickAddTests: XCTestCase {
 
         let titles = try RecentItemsProvider(store: store).recents().map(\.template.displayName)
         XCTAssertEqual(Set(titles), ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+
+        let journal = JournalViewModel(store: store)
+        journal.load(now: now)
+        XCTAssertEqual(
+            Set(journal.sections.flatMap(\.rows).map(\.title)),
+            ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
     }
 
     /// The region's own digits and separator are read, as the decimal pad types them.

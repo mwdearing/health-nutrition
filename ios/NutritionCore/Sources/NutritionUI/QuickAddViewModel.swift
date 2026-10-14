@@ -154,6 +154,15 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         }.joined(separator: ", ")
     }
 
+    /// A list row's title for an entry: a quick add's typed amounts follow its name, because every quick add is
+    /// one serving and two of them would otherwise read alike. Any other entry keeps its own title.
+    nonisolated static func rowTitle(components: [IntakeComponent], product: ProductDefinition?) -> String {
+        let title = AmountText.title(components)
+        guard let product, product.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin else { return title }
+        let amounts = Self.summary(of: product.nutrients)
+        return amounts.isEmpty ? title : title + " · " + amounts
+    }
+
     /// The snapshot id for one name and set of values. Everything the snapshot states is part of it, so
     /// two quick adds that differ in any way are two products and one id never stands for two contents.
     /// Each field is length-prefixed, so no typed name can read as another field, and the id is a

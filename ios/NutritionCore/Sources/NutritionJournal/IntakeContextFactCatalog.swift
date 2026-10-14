@@ -194,8 +194,8 @@ public enum IntakeContextFactCatalog {
     public static func provenance(for product: ProductDefinition?) -> String {
         guard let product else { return userConfirmedProvenance }
         switch product.catalogOrigin {
-        case recipeCalculatedOrigin: return recipeCalculatedProvenance
-        case quickAddOrigin: return userConfirmedProvenance
+        case Self.recipeCalculatedOrigin: return recipeCalculatedProvenance
+        case Self.quickAddOrigin: return userConfirmedProvenance
         default: return catalogReferenceProvenance
         }
     }
