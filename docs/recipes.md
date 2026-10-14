@@ -13,7 +13,7 @@ Personal recipes: you enter ingredients and what the recipe makes (the yield), t
 ## Math
 
 - All arithmetic is `Decimal`; text is parsed and written in the POSIX format ("1.5", never "1,5").
-- An ingredient's contribution is its quantity, converted exactly to the basis unit, times the per-unit value. Conversion goes through the unit registry only.
+- An ingredient's contribution is its quantity, converted to the basis unit, times the per-unit value. Conversion goes through the unit registry only.
 - Unknown is never zero. If an ingredient's value is unknown, not applicable, below a reporting threshold, missing, or cannot be converted (for example mass to volume without a density), the ingredient lacks that nutrient, the recipe total for it is unknown, and a lacking count is kept. A known zero stays zero.
 - No cooking or retention factors are applied.
 - Per portion: for servings, the total is multiplied by portion / servings; for a total yield, the portion is an amount converted to the yield's unit, and the factor is portion / yield. A portion of zero or less is rejected. Unknown stays unknown.
@@ -27,7 +27,7 @@ Saving always writes the next version number (1 for a new recipe, else latest pl
 
 Logging a portion makes one journal intake in category `recipe` with ONE component, named after the
 recipe and holding the portion in the yield's own unit: servings for a yield counted in servings, the
-yield's unit (converted exactly through the unit registry) for a total yield. So a journal row reads as
+yield's unit (converted through the unit registry) for a total yield. So a journal row reads as
 the recipe the user chose, not as a list of nutrients, and repeating or favoriting the entry copies
 one amount rather than one amount per nutrient.
 
