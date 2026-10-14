@@ -185,6 +185,8 @@ public final class GoalsViewModel: ObservableObject {
     private var loadedUnitSystem: UnitSystem?
     private var storedWaterDraft: String?
     private var storedWaterUnit: MeasureUnit?
+    /// The keys that had a stored goal at the last read, so a read can tell which goals went away since.
+    private var loadedGoalKeys: Set<String> = []
 
     public init(
         store: GoalStore, journal: (any JournalStore)? = nil,
@@ -245,6 +247,14 @@ public final class GoalsViewModel: ObservableObject {
                 DecimalFormatting.text(self.displayGoal($0).amount)
             }
             self.storedWaterUnit = byNutrient[DailyTotalsBuilder.waterKey].map { self.displayGoal($0).unit }
+            // A goal stored at the last read and gone now was removed, here or behind this screen (an
+            // erase of all data, or a clear that stopped partway). Its field is refilled from the store,
+            // so the old text is not saved back as a goal when the field next loses focus.
+            for key in loadedGoalKeys where byNutrient[key] == nil {
+                draftText[key] = nil
+                selectedUnits[key] = nil
+            }
+            loadedGoalKeys = Set(byNutrient.keys)
             for key in offeredKeys {
                 let waterUnitChanged = key == DailyTotalsBuilder.waterKey
                     && self.loadedUnitSystem != self.preferences.unitSystem

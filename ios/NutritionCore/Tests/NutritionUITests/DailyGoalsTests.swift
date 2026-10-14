@@ -804,6 +804,24 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.draftText["water"], "1500")
     }
 
+    func testAGoalRemovedBehindTheScreenLeavesNoTextToSaveBack() throws {
+        let goals = InMemoryGoalStore()
+        let model = GoalsViewModel(store: goals)
+        model.load()
+        model.draftText["zinc"] = "15"
+        XCTAssertTrue(model.commitTarget(for: "zinc"))
+        model.draftText["iron"] = "12"
+
+        try goals.removeGoal(nutrient: "zinc")
+        model.load()
+
+        XCTAssertEqual(model.draftText["zinc"], "")
+        XCTAssertTrue(model.commitTarget(for: "zinc"))
+        XCTAssertNil(try goals.goal(for: "zinc"))
+        // A number being typed in a row that had no goal is left alone.
+        XCTAssertEqual(model.draftText["iron"], "12")
+    }
+
     func testInlineStoreFailuresStayNoticesAndKeepTheDraft() {
         let model = GoalsViewModel(store: InMemoryGoalStore(refusesWrites: true))
         model.load()

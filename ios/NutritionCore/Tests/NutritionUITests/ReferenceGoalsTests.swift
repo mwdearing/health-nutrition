@@ -159,6 +159,20 @@ final class ReferenceGoalsTests: XCTestCase {
         XCTAssertNil(model.rowError["iron"])
     }
 
+    func testAGoalUsedThenErasedElsewhereIsNotSavedBackFromItsField() throws {
+        let (model, store) = makeModel(group: men31)
+        XCTAssertTrue(model.useReferenceGoal(for: "iron"))
+        // Erase all data removes the goal behind this screen, which then reads the store again.
+        try store.removeGoal(nutrient: "iron")
+        model.load()
+
+        XCTAssertEqual(model.draftText["iron"], "")
+        XCTAssertEqual(model.referenceGoalHint(for: "iron")?.text, "RDA 8 mg for Men 31 to 50")
+        // Focus leaving the field must not write the old 8 mg back into the erased store.
+        XCTAssertTrue(model.commitTarget(for: "iron"))
+        XCTAssertNil(try store.goal(for: "iron"))
+    }
+
     func testChangingTheGroupNeverRewritesAGoalAlreadyCopied() throws {
         let store = InMemoryGoalStore()
         let preferences = InMemoryDisplayPreferences()
