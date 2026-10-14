@@ -204,7 +204,12 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertTrue(model.save(now: now))
         let intake = try XCTUnwrap(store.activeIntakes().first)
         let revision = try XCTUnwrap(store.revisions(of: intake.id).first)
-        XCTAssertEqual(revision.productSnapshotID, RecipeLogger.snapshotID(recipeID: recipe.recipeID, number: recipe.number))
+        XCTAssertEqual(revision.productSnapshotID?.hasPrefix("recipe:\(recipe.recipeID):v\(recipe.number):"), true)
+        // The recipe screen logs the same version under the same snapshot, so the two paths share one.
+        let logged = try RecipeLogger.logPortion(
+            store: store, version: recipe, portion: 1, now: now, id: UUID().uuidString.lowercased(),
+            timeZoneIdentifier: "UTC")
+        XCTAssertEqual(try store.revisions(of: logged).first?.productSnapshotID, revision.productSnapshotID)
     }
 }
 
