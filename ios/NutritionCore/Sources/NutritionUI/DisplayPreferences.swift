@@ -72,7 +72,7 @@ public enum DisplayPreferenceDefaults {
 /// Written synchronously rather than deferred, so a preference a person just changed is read back
 /// the moment the next screen asks for it, and so a setting screen can never show a value the rest
 /// of the app has not seen yet.
-public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences, WaterGoalDefaultPreferences, CommunityDisclosurePreferences {
+public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences, WaterGoalDefaultPreferences, CommunityDisclosurePreferences, ActivityGoalPreferences {
     /// Every key this type owns carries this prefix, so a preference can never collide with another
     /// part of the app or with a value written by an OS framework into the same domain.
     public static let keyPrefix = "display."
@@ -256,11 +256,18 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.removeObject(forKey: communityDisclosureKey)
         defaults.removeObject(forKey: referenceGroupKey)
         defaults.removeObject(forKey: macroSplitKey)
+        defaults.removeObject(forKey: Self.keyPrefix + "addsActiveEnergyToGoal")
+    }
+
+    public var addsActiveEnergyToGoal: Bool { defaults.bool(forKey: Self.keyPrefix + "addsActiveEnergyToGoal") }
+
+    public func setAddsActiveEnergyToGoal(_ adds: Bool) {
+        defaults.set(adds, forKey: Self.keyPrefix + "addsActiveEnergyToGoal")
     }
 }
 
 /// The preferences held in memory. For tests and for previews, so neither needs a defaults domain.
-public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences, WaterGoalDefaultPreferences, CommunityDisclosurePreferences {
+public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstRunPreferences, ReminderPreferences, GoalVisibilityPreferences, WaterGoalDefaultPreferences, CommunityDisclosurePreferences, ActivityGoalPreferences {
     public var unitSystem: UnitSystem
     public var quickWaterMilliliters: Decimal
     public private(set) var hasSeenWelcome = false
@@ -347,7 +354,12 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         acknowledgedAccountIDs = []
         referenceGroup = nil
         macroSplit = nil
+        addsActiveEnergyToGoal = false
     }
+
+    public private(set) var addsActiveEnergyToGoal = false
+
+    public func setAddsActiveEnergyToGoal(_ adds: Bool) { addsActiveEnergyToGoal = adds }
 }
 
 extension UserDefaultsDisplayPreferences: ReferenceGroupPreferences {

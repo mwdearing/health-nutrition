@@ -48,6 +48,8 @@ public final class BodyActivityViewModel: ObservableObject {
     @Published public private(set) var hasAsked: Bool
     private let reader: any BodyActivityReading
     private let unitSystem: () -> UnitSystem
+    /// Called with every fresh read, so Today can count active energy toward the calorie goal.
+    public var onRead: ((BodyActivityReadings) -> Void)?
 
     /// Pounds per kilogram, exact to the definition of the pound.
     static let poundsPerKilogram = Decimal(string: "2.20462262185")!
@@ -62,9 +64,11 @@ public final class BodyActivityViewModel: ObservableObject {
         hasAsked = reader.hasAskedForReadAccess
         guard hasAsked else {
             readings = .empty
+            onRead?(readings)
             return
         }
         readings = await reader.read(now: now)
+        onRead?(readings)
     }
 
     /// Shows Health's read request, then reads.

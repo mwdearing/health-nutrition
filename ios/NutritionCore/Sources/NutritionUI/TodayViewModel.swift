@@ -91,6 +91,12 @@ public final class TodayViewModel: ObservableObject {
     /// One bar per tracked nutrient except water, in tracked order. A nutrient with a goal draws a bar;
     /// one without shows its value alone. Built from `progress` and `coverage`, which stay published.
     @Published public private(set) var goalBars: [GoalBarModel] = []
+    /// Today's active energy from Apple Health, set by the activity card after it reads. Only used
+    /// when the person switched on adding it to the calorie goal.
+    public var activeEnergyKcal: Decimal?
+    /// Says the calorie goal was raised by activity, and by how much; nil when it was not.
+    @Published public private(set) var activityGoalNote: String?
+    static let energyKey = "energy"
     /// The water bar, only where a water goal is set; without one the water card shows the total alone.
     @Published public private(set) var waterBar: GoalBarModel?
     /// The day's food, drink, and supplement entries grouped by meal: Breakfast, Lunch, Dinner, Snack, then Other for
@@ -271,6 +277,16 @@ public final class TodayViewModel: ObservableObject {
             } catch {
                 storedGoals = []
                 goalsUnreadable = true
+            }
+            // Today's active energy, when the person asked for it to count: the calorie target grows by
+            // what Health reports burned so far. The stored goal is never changed.
+            activityGoalNote = nil
+            if let bonus = activeEnergyKcal, bonus > 0,
+               (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true,
+               let index = storedGoals.firstIndex(where: { $0.nutrient == Self.energyKey && $0.unit == .kcal }) {
+                let goal = storedGoals[index]
+                storedGoals[index] = NutrientGoal(nutrient: goal.nutrient, target: goal.target + bonus, unit: goal.unit)
+                activityGoalNote = "Calorie goal includes \(BodyActivityViewModel.whole(bonus)) kcal from activity"
             }
             let tracked = Self.totalsNutrients(goals: storedGoals, fallback: trackedNutrients)
             // Coverage is built from the same goal-expanded list the totals are, so a nutrient with
