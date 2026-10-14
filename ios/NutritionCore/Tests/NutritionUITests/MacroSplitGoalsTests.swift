@@ -49,6 +49,32 @@ final class MacroSplitGoalsTests: XCTestCase {
         XCTAssertEqual(try store.goal(for: "protein"), NutrientGoal(nutrient: "protein", target: 150, unit: .g))
     }
 
+    func testAnEnergyEditNotYetSavedIsSavedAndUsedBeforeTheSplit() throws {
+        let store = InMemoryGoalStore(goals: [energyGoal(2000)])
+        let model = loadedModel(store)
+        model.draftText["energy"] = "2500"
+
+        XCTAssertNil(model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"))
+
+        // 750 / 4 = 187.5 -> 188, 1000 / 4 = 250, 750 / 9 = 83.33 -> 83
+        XCTAssertEqual(try store.goal(for: "energy"), energyGoal(2500))
+        XCTAssertEqual(try store.goal(for: "protein"), NutrientGoal(nutrient: "protein", target: 188, unit: .g))
+        XCTAssertEqual(
+            try store.goal(for: "carbohydrate"), NutrientGoal(nutrient: "carbohydrate", target: 250, unit: .g))
+        XCTAssertEqual(try store.goal(for: "fat"), NutrientGoal(nutrient: "fat", target: 83, unit: .g))
+    }
+
+    func testAnInvalidEnergyEditStopsTheSplitAndWritesNothing() throws {
+        let store = InMemoryGoalStore(goals: [energyGoal(2000)])
+        let model = loadedModel(store)
+        model.draftText["energy"] = "-1"
+
+        XCTAssertEqual(
+            model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"), "Enter a number above zero.")
+        XCTAssertEqual(try store.goal(for: "energy"), energyGoal(2000))
+        XCTAssertNil(try store.goal(for: "protein"))
+    }
+
     func testWithoutAnEnergyGoalNothingIsWritten() throws {
         let store = InMemoryGoalStore()
         let model = loadedModel(store)

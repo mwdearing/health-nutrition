@@ -122,6 +122,14 @@ extension GoalsViewModel {
     /// Returns nil when the goals were written, otherwise the message to show.
     @discardableResult
     public func applyMacroSplit(protein: String, carbohydrate: String, fat: String) -> String? {
+        // The energy row may still hold an edit that is not saved, because its field commits only when
+        // focus leaves it and tapping a button need not move focus. The split is a share of the energy
+        // goal the person sees, so that edit is saved first, and a refused one stops the split.
+        if self.draftText["energy"] != nil, self.rows.contains(where: { $0.nutrient == "energy" }) {
+            guard self.commitTarget(for: "energy") else {
+                return self.rowError["energy"] ?? self.errorMessage ?? Self.saveFailedMessage
+            }
+        }
         let grams: MacroSplit.Grams
         switch self.macroSplitGrams(protein: protein, carbohydrate: carbohydrate, fat: fat) {
         case .success(let worked): grams = worked
