@@ -61,11 +61,11 @@
       "pattern": "^prod_[a-z0-9][a-z0-9._-]{0,55}(?!\\n)$"
     },
     "shortText": {
-      "description": "Display text in any script, deny-listed for characters that hide or reorder what a person sees: no control characters, no line or paragraph separators, no bidirectional marks, overrides or isolates, no zero-width or other invisible format characters (soft hyphen, joiners, word joiner, byte order mark, interlinear annotation, tag characters), no unpaired surrogates or noncharacters, and no space of any kind at the start or the end.",
+      "description": "Display text in any script, deny-listed for characters that hide or reorder what a person sees: no control characters, no line or paragraph separators, no bidirectional marks, overrides or isolates, no zero-width or other invisible format characters (soft hyphen, joiners, word joiner, byte order mark, interlinear annotation, tag characters), no unpaired surrogates, none of the 66 Unicode noncharacters (U+FDD0 to U+FDEF and the last two code points of every plane), and no space of any kind at the start or the end.",
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
     },
     "barcode": {
       "description": "Digits only, 8 to 14 of them.",
@@ -73,18 +73,18 @@
       "pattern": "^[0-9]{8,14}(?!\\n)$"
     },
     "nonNegativeDecimal": {
-      "description": "An exact decimal that is zero or more: digits, optional fractional digits. No sign, no exponent, no thousands comma, no NaN, no infinity, no empty string, and never a JSON number.",
+      "description": "An exact decimal that is zero or more: at most 12 integer digits and at most 6 fraction digits. No sign, no exponent, no thousands comma, no NaN, no infinity, no empty string, and never a JSON number. The bound keeps every product of two amounts within the 38 significant digits the contract arithmetic allows.",
       "type": "string",
       "minLength": 1,
-      "maxLength": 40,
-      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?(?!\\n)$"
+      "maxLength": 19,
+      "pattern": "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?(?!\\n)$"
     },
     "positiveDecimal": {
       "description": "A nonNegativeDecimal that is greater than zero.",
       "type": "string",
       "minLength": 1,
-      "maxLength": 40,
-      "pattern": "^(?!0+(\\.0+)?(?!\\n)$)(0|[1-9][0-9]*)(\\.[0-9]+)?(?!\\n)$"
+      "maxLength": 19,
+      "pattern": "^(?!0+(\\.0+)?(?!\\n)$)(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?(?!\\n)$"
     },
     "servingUnit": {
       "description": "A mass, volume or count unit symbol from contracts/nutrients/registry.v1.json. A serving is never stated in kcal or IU.",
@@ -431,7 +431,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512,
-          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
         },
         "url": {
           "description": "Public https page describing the source record.",

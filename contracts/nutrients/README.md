@@ -13,7 +13,7 @@ What is here for v1:
 - `decimal-rules.md` - the numeric rules: exact decimals as strings, no negative
   amounts, display rounding that never replaces a stored amount, the one rounding
   rule for a division that does not terminate (10 fraction digits, halves away
-  from zero), one spelling per unit and energy in kcal, no cross-dimension
+  from zero), the 38 significant digit bound on all arithmetic, one spelling per unit and energy in kcal, no cross-dimension
   arithmetic without a stated density, portions for count units, international
   units that never convert, proprietary blend splits that are never inferred, and
   how each value state behaves in a total.

@@ -15,6 +15,9 @@ exponent (`1e3` is refused), no thousands comma (`5,2` is refused), no `NaN`, no
 infinity, and no empty string. A leading zero is refused except for the single
 `0` itself, so `"05.2"` is not a spelling of `5.2`.
 
+An amount in a published product has at most 12 integer digits and at most 6
+fraction digits, so `"1234567890123"` and `"1.1234567"` are refused.
+
 No amount in a published product is negative. A nutrient amount is zero or more,
 so `"-5"` and `"-0"` are refused; a serving amount is greater than zero, so `"0"`
 and `"0.0"` are refused there as well. An operation refuses a negative input:
@@ -57,7 +60,28 @@ decide the tenth digit. Ten fraction digits is the precision the iOS
 is its `.plain` rounding mode. Because the multiplication comes first,
 `3 x 1 / 3` is exactly `1`, never `0.9999999999`. `golden.v1.json` carries
 vectors for a repeating quotient in each of the three divisions, for the
-multiply-first order, and for a long quotient that terminates.
+multiply-first order, for a long quotient that terminates, and for the 38 digit
+bound described next.
+
+## Arithmetic is bounded to 38 significant digits
+
+Exact arithmetic needs room, and the iOS `Decimal` has room for 38 significant
+digits. So the contract sets that as the bound for every implementation, and no
+implementation may round or cut to stay inside it:
+
+- Every input, every product, every sum and every result must be a decimal of at
+  most 38 significant digits, counted without leading and trailing zeros. A unit
+  factor is a power of ten and never adds a digit.
+- An operation that would need more fails with `amount_out_of_range`. It never
+  returns a shortened number. This includes a quotient that does terminate, but
+  only after more than 38 digits.
+
+Two amounts within the wire bound (12 integer and 6 fraction digits, 18
+significant digits) always multiply within the bound: 18 + 18 = 36. So scaling
+one published value by one consumed amount and one basis never fails on the
+multiplication; only a longer chain, such as a count converted through a portion
+and then scaled, can reach the limit, and then it is refused rather than
+rounded.
 
 ## Units: one spelling each, and energy in kcal
 

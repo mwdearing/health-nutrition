@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere, and outside the reject cases every unit symbol is one the iOS UnitRegistry knows. Ops: convert (one unit conversion), scale (a label value scaled from its basis to a consumed amount: value times consumed, divided by the basis), sum (a total with its coverage), reject (the operation must fail with the named error). A result is exact unless a division does not terminate, in which case it is rounded to 10 fraction digits, halves away from zero, as contracts/nutrients/decimal-rules.md states. The vectors follow the model of ios/NutritionCore/Sources/NutritionDomain; running them against the Swift code is the job of the Swift/Python golden verification that follows this contract. The optional `nutrient` field names the registry nutrient each case is about.",
+  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere, and outside the reject cases every unit symbol is one the iOS UnitRegistry knows. Ops: convert (one unit conversion), scale (a label value scaled from its basis to a consumed amount: value times consumed, divided by the basis), sum (a total with its coverage), reject (the operation must fail with the named error). A result is exact unless a division does not terminate, in which case it is rounded to 10 fraction digits, halves away from zero, as contracts/nutrients/decimal-rules.md states. No input, product, sum or result may need more than 38 significant digits; one that would is refused as amount_out_of_range. The vectors follow the model of ios/NutritionCore/Sources/NutritionDomain; running them against the Swift code is the job of the Swift/Python golden verification that follows this contract. The optional `nutrient` field names the registry nutrient each case is about.",
   "error_names": [
     "unknown_symbol",
     "dimension_mismatch",
@@ -11,7 +11,8 @@
     "incompatible_count_units",
     "international_unit_not_convertible",
     "non_positive_amount",
-    "negative_amount"
+    "negative_amount",
+    "amount_out_of_range"
   ],
   "cases": [
     {
@@ -1178,6 +1179,90 @@
       },
       "expect": {
         "error": "dimension_mismatch"
+      }
+    },
+    {
+      "id": "scale_the_largest_wire_amounts_stays_exact",
+      "op": "scale",
+      "nutrient": "protein",
+      "note": "Two 18 digit amounts multiply to 36 significant digits, inside the 38 the contract allows, so nothing is rounded.",
+      "input": {
+        "basis": {
+          "amount": "1",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "999999999999.999999",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "999999999999.999999",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "999999999999999998000000.000000000001",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "reject_a_product_beyond_thirty_eight_significant_digits",
+      "op": "reject",
+      "note": "Scoops times the portion is 36 digits; times the label value it would need 54. The operation fails; it never rounds a product.",
+      "input": {
+        "basis": {
+          "amount": "1",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "999999999999.999999",
+          "unit": "scoop"
+        },
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "999999999999.999999",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "999999999999.999999",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "amount_out_of_range"
+      }
+    },
+    {
+      "id": "reject_an_input_beyond_thirty_eight_significant_digits",
+      "op": "reject",
+      "input": {
+        "amount": "1234567890123456789012345678901234567.89",
+        "unit": "g",
+        "to": "mg"
+      },
+      "expect": {
+        "error": "amount_out_of_range"
+      }
+    },
+    {
+      "id": "reject_a_terminating_quotient_beyond_thirty_eight_significant_digits",
+      "op": "reject",
+      "note": "The quotient terminates, but only after more digits than an amount may have, so it is refused rather than cut.",
+      "input": {
+        "amount": "999999999999.999999",
+        "unit": "g",
+        "to": "scoop",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "1099511627776",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "amount_out_of_range"
       }
     }
   ]

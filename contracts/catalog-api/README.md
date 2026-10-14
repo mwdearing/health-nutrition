@@ -8,7 +8,8 @@ What is here for v1:
   JSON Schema 2020-12. Deny by default: every object level is closed, so a field
   that is not listed is refused. The `nutrients` object accepts only the
   nutrient ids of `contracts/nutrients/registry.v1.json`, each with the units the
-  registry lists for it. Amounts are exact decimal strings and never negative;
+  registry lists for it. Amounts are exact decimal strings of at most 12 integer and 6 fraction
+  digits, and never negative;
   the serving is a positive amount in a mass, volume or count unit. Names, brands
   and attribution lines may be in any script, without control characters,
   direction marks or overrides, zero-width or other invisible format characters,

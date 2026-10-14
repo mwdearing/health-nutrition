@@ -209,7 +209,27 @@ def test_a_known_amount_is_never_negative(product_validator, amount):
     product_rejected(product_validator, doc)
 
 
-@pytest.mark.parametrize("amount", ["0", "0.0", "0.25", "12", "1500.000001"])
+@pytest.mark.parametrize("amount", ["1234567890123", "1.1234567", "0.0000001", "9999999999999.9", "1" * 40])
+def test_an_amount_is_bounded_to_twelve_integer_and_six_fraction_digits(product_validator, amount):
+    doc = valid_product()
+    doc["nutrients"]["protein"]["amount"] = amount
+    product_rejected(product_validator, doc)
+
+    doc = valid_product()
+    doc["serving"]["amount"] = amount
+    product_rejected(product_validator, doc)
+
+
+def test_two_of_the_largest_wire_amounts_multiply_within_the_arithmetic_bound(product_validator):
+    largest = "999999999999.999999"
+    doc = valid_product()
+    doc["nutrients"]["protein"]["amount"] = largest
+    doc["serving"]["amount"] = largest
+    product(product_validator, doc)
+    assert significant_digits(exact(largest) * exact(largest)) <= SIGNIFICANT_DIGITS
+
+
+@pytest.mark.parametrize("amount", ["0", "0.0", "0.25", "12", "1500.000001", "999999999999.999999"])
 def test_zero_and_positive_amounts_are_accepted(product_validator, amount):
     doc = valid_product()
     doc["nutrients"]["protein"]["amount"] = amount
@@ -357,7 +377,9 @@ def test_every_wire_unit_symbol_is_one_the_ios_unit_registry_knows(product_schem
 @pytest.mark.parametrize(
     "text",
     ["Éclair drink", "明治おいしい牛乳", "Müsli & Früchte 30 %", "Сырок глазированный", "x", "Crème fraîche d'Isigny",
-     "Fromage 30\u202f% MG", "Lait\u00a0entier", "Oats \U0001f33e", "عصير برتقال"],
+     "Fromage 30\u202f% MG", "Lait\u00a0entier", "Oats \U0001f33e", "عصير برتقال",
+     # The neighbours of the noncharacters are ordinary characters.
+     "Oa\ufdcfts", "Oa\ufdf0ts", "Oa\U0001fffdts", "Oa\U00020000ts"],
 )
 def test_display_text_may_be_in_any_script(product_validator, field, text):
     doc = valid_product()
@@ -375,7 +397,8 @@ def test_display_text_may_be_in_any_script(product_validator, field, text):
      # direction marks, word joiner, byte order mark, annotation anchors, a tag character, a lone surrogate.
      "Oa\u00adts", "Oa\u061cts", "Oa\u180ets", "Oa\u200bts", "Oa\u200cts", "Oa\u200dts", "Oa\u200ets",
      "Oa\u200fts", "Oats\u200f", "Oa\u2060ts", "Oa\u2064ts", "Oa\u206fts", "Oa\ufeffts", "\ufeffOats",
-     "Oa\ufff9ts", "Oa\ufffets", "Oa\uffffts", "Oa\U000e0041ts", "Oa\U000e007fts", "Oa\ud800ts",
+     "Oa\ufff9ts", "Oa\ufffets", "Oa\uffffts", "Oa\ufdd0ts", "Oa\ufdefts", "Oa\U0001fffets",
+     "Oa\U0001ffffts", "Oa\U0008fffets", "Oa\U0010fffets", "Oa\U0010ffffts", "Oa\U000e0041ts", "Oa\U000e007fts", "Oa\ud800ts",
      # Any kind of space at an edge.
      "\u00a0Oats", "Oats\u00a0", "\u2003Oats", "Oats\u202f", "Oats\u3000", "\u205fOats", "\u1680Oats"],
 )
@@ -474,14 +497,31 @@ class UnitError(Exception):
 
 
 FRACTION_DIGITS = 10
+SIGNIFICANT_DIGITS = 38
 
 
 def units(registry):
     return {unit["symbol"]: unit for unit in registry["units"]}
 
 
+def significant_digits(value: Fraction) -> int:
+    """Digits of a finite decimal with its leading and trailing zeros removed."""
+    assert terminates(value), value
+    while value.denominator != 1:
+        value *= 10
+    return len(str(abs(value.numerator)).rstrip("0"))
+
+
+def bounded(value: Fraction) -> Fraction:
+    """Every input, product, sum and result is checked here: it is refused, never cut, when it
+    needs more significant digits than an amount may have."""
+    if significant_digits(value) > SIGNIFICANT_DIGITS:
+        raise UnitError("amount_out_of_range")
+    return value
+
+
 def exact(text: str) -> Fraction:
-    return Fraction(Decimal(text))
+    return bounded(Fraction(Decimal(text)))
 
 
 def terminates(value: Fraction) -> bool:
@@ -500,11 +540,11 @@ def quotient(numerator: Fraction, denominator: Fraction) -> Fraction:
     """
     value = numerator / denominator
     if terminates(value):
-        return value
+        return bounded(value)
     scale_by = 10**FRACTION_DIGITS
     shifted = abs(value) * scale_by
     whole = (2 * shifted.numerator + shifted.denominator) // (2 * shifted.denominator)
-    rounded = Fraction(whole, scale_by)
+    rounded = bounded(Fraction(whole, scale_by))
     return -rounded if value < 0 else rounded
 
 
@@ -547,6 +587,7 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
         if source["dimension"] == "count":
             raise UnitError("incompatible_count_units")
         # Both factors are powers of ten, so this is exact.
+        # A power of ten moves the decimal point; it never adds a significant digit.
         return amount * exact(source["factor_to_canonical"]) / exact(dest["factor_to_canonical"])
     if "international_unit" in (source["dimension"], dest["dimension"]):
         raise UnitError("international_unit_not_convertible")
@@ -559,7 +600,7 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
         count_unit, portion_amount, portion_unit = valid_portion(portion, table)
         if count_unit != unit:
             raise UnitError("missing_portion_definition")
-        return convert(amount * portion_amount, portion_unit, target, registry, density)
+        return convert(bounded(amount * portion_amount), portion_unit, target, registry, density)
     if source["dimension"] in measurable and dest["dimension"] == "count":
         # The portion must define the count unit being converted into: the amount goes into the
         # portion's unit and is then divided by the portion.
@@ -581,7 +622,7 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
         if source["dimension"] == "mass":
             canonical = quotient(canonical, density)
         else:
-            canonical = canonical * density
+            canonical = bounded(canonical * density)
         return canonical / exact(dest["factor_to_canonical"])
     raise UnitError("dimension_mismatch")
 
@@ -605,7 +646,7 @@ def scale(case_input: dict, registry) -> dict:
         # Scaling passes a non-known value through unchanged, unit included.
         return {key: item for key, item in value.items() if key != "amount"}
     # Multiply first, divide once, last: value x consumed / basis.
-    scaled = quotient(exact(value["amount"]) * consumed_in_basis, exact(basis["amount"]))
+    scaled = quotient(bounded(exact(value["amount"]) * consumed_in_basis), exact(basis["amount"]))
     return {"state": "known", "amount": decimal_string(scaled), "unit": value["unit"]}
 
 
@@ -647,7 +688,7 @@ def sum_values(case_input: dict, registry) -> dict:
     target = case_input.get("unit") or known[0][1]
     running = Fraction(0)
     for amount, unit in known:
-        running += convert(amount, unit, target, registry)
+        running = bounded(running + convert(amount, unit, target, registry))
     return {
         "value": {"state": "known", "amount": decimal_string(running), "unit": target},
         "coverage": coverage,
@@ -723,15 +764,16 @@ def test_every_error_the_goldens_name_is_declared_and_every_declared_error_is_ex
 
 
 def test_every_golden_result_is_a_valid_wire_amount(golden, product_schema):
-    """No golden result is negative, uses an exponent, or carries more than the stated fraction digits
-    unless it is exact."""
-    pattern = re.compile(product_schema["$defs"]["nonNegativeDecimal"]["pattern"])
+    """No golden result is negative, uses an exponent, has a trailing zero, or needs more
+    significant digits than an amount may have."""
+    pattern = re.compile(r"^(0|[1-9][0-9]*)(\.[0-9]+)?\Z")
     for case in golden["cases"]:
         expect = case["expect"]
         amount = expect.get("amount") or expect.get("value", {}).get("amount")
         if amount is not None:
             assert pattern.search(amount), (case["id"], amount)
             assert not amount.endswith("0") or "." not in amount, (case["id"], amount)
+            assert significant_digits(Fraction(Decimal(amount))) <= SIGNIFICANT_DIGITS, (case["id"], amount)
 
 
 def test_a_repeating_quotient_is_rounded_to_ten_fraction_digits_halves_away_from_zero():
@@ -743,6 +785,28 @@ def test_a_repeating_quotient_is_rounded_to_ten_fraction_digits_halves_away_from
     # Just under and just over a half in the eleventh digit.
     assert decimal_string(quotient(Fraction(1), Fraction(3 * 10**10))) == "0"
     assert decimal_string(quotient(Fraction(2), Fraction(3 * 10**10))) == "0.0000000001"
+
+
+def test_display_text_refuses_every_unicode_noncharacter(product_schema):
+    pattern = re.compile(product_schema["$defs"]["shortText"]["pattern"])
+    noncharacters = list(range(0xFDD0, 0xFDF0))
+    for plane in range(17):
+        noncharacters += [plane * 0x10000 + 0xFFFE, plane * 0x10000 + 0xFFFF]
+    assert len(noncharacters) == 66
+    for code_point in noncharacters:
+        for text in (f"a{chr(code_point)}b", f"{chr(code_point)}b", f"a{chr(code_point)}"):
+            assert not pattern.search(text), hex(code_point)
+
+
+def test_a_result_beyond_thirty_eight_significant_digits_is_refused_not_cut(registry):
+    assert bounded(Fraction(10**38 - 1)) == 10**38 - 1
+    assert bounded(Fraction(10**60)) == 10**60, "trailing zeros are not significant"
+    with pytest.raises(UnitError) as raised:
+        bounded(Fraction(10**38 + 1))
+    assert raised.value.name == "amount_out_of_range"
+    with pytest.raises(UnitError) as raised:
+        quotient(Fraction(1), Fraction(2**130))
+    assert raised.value.name == "amount_out_of_range"
 
 
 def test_a_terminating_quotient_is_never_rounded():
