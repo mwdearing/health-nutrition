@@ -29,13 +29,15 @@ public struct TodayView: View {
     private let onOpenUnits: (() -> Void)?
     /// Steps, active energy and weight from Apple Health. Nil hides the card.
     private let bodyActivity: BodyActivityViewModel?
+    /// The supplement list. Nil hides the supplements tile, for a host that has none.
+    private let supplementStack: SupplementStackViewModel?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
         onEditGoals: (() -> Void)? = nil, onSelect: ((String) -> Void)? = nil,
         onAddToMeal: ((MealLabel?) -> Void)? = nil,
         checklist: FirstDayChecklistModel? = nil, onOpenUnits: (() -> Void)? = nil,
-        bodyActivity: BodyActivityViewModel? = nil
+        bodyActivity: BodyActivityViewModel? = nil, supplementStack: SupplementStackViewModel? = nil
     ) {
         self.model = model
         self.now = now
@@ -46,6 +48,7 @@ public struct TodayView: View {
         self.checklist = checklist
         self.onOpenUnits = onOpenUnits
         self.bodyActivity = bodyActivity
+        self.supplementStack = supplementStack
     }
 
     public var body: some View {
@@ -65,6 +68,9 @@ public struct TodayView: View {
                     Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                 }
                 waterCard
+                if let supplementStack {
+                    SupplementsTodayTile(model: supplementStack, now: now)
+                }
                 if let bodyActivity {
                     BodyActivityCard(model: bodyActivity, now: now)
                 }
