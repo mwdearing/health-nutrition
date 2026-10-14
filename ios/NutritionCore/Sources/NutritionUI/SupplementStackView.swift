@@ -121,27 +121,44 @@ public struct SupplementStackView: View {
 
     @ViewBuilder
     private func stackRow(_ row: SupplementStackRow) -> some View {
-        HStack(alignment: .top) {
-            Button { self.editing = row } label: {
-                VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-                    Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
-                    Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
-                    Text(SupplementStackText.summary(row.schedule))
-                        .font(.footnote).foregroundStyle(TokenColors.textSecondary)
-                    ForEach(Array(row.slots.enumerated()), id: \.offset) { _, slot in
-                        SupplementSlotLine(slot: slot)
+        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+            HStack(alignment: .top) {
+                Button { self.editing = row } label: {
+                    VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                        Text(row.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
+                        Text(row.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                        Text(SupplementStackText.summary(row.schedule))
+                            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
                     }
-                    Text(row.statusText).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityHint("Opens its times and days")
+                Spacer()
+                // With a time still open, each open time has its own Taken, so the tap says which time
+                // it was for. With none open (a day off the schedule, or every time taken) one Taken logs
+                // an entry that marks no time.
+                if !row.slots.contains(where: { $0.state != .taken }) {
+                    QuietCapsule("Taken") {
+                        if self.model.markTaken(row, now: self.now()) { self.onLogged() }
+                    }
+                    .disabled(!row.canLog)
+                    .accessibilityLabel("Log \(row.title) as taken now")
                 }
             }
-            .buttonStyle(.borderless)
-            .accessibilityHint("Opens its times and days")
-            Spacer()
-            QuietCapsule("Taken") {
-                if self.model.markTaken(row, now: self.now()) { self.onLogged() }
+            ForEach(Array(row.slots.enumerated()), id: \.offset) { _, slot in
+                HStack {
+                    SupplementSlotLine(slot: slot)
+                    Spacer()
+                    if slot.state != .taken {
+                        QuietCapsule("Taken") {
+                            if self.model.markTaken(row, at: slot.time, now: self.now()) { self.onLogged() }
+                        }
+                        .disabled(!row.canLog)
+                        .accessibilityLabel("Log \(row.title) as taken for \(SupplementStackText.time(slot.time))")
+                    }
+                }
             }
-            .disabled(!row.canLog)
-            .accessibilityLabel("Log \(row.title) as taken now")
+            Text(row.statusText).font(.footnote).foregroundStyle(TokenColors.textSecondary)
         }
     }
 }

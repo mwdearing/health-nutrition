@@ -101,7 +101,8 @@ struct RootView: View {
                     checklist: services.firstDayChecklist,
                     onOpenUnits: { self.openSettings(goals: false) },
                     bodyActivity: services.bodyActivity,
-                    supplementStack: services.supplementStack
+                    supplementStack: services.supplementStack,
+                    onSupplementLogged: { reload() }
                 )
                 .toolbar { settingsToolbar }
                 #if DEBUG

@@ -5,6 +5,9 @@ import SwiftUI
 struct SupplementsTodayTile: View {
     @ObservedObject var model: SupplementStackViewModel
     let now: () -> Date
+    /// Called after a Taken or an Undo on the list opened from here, so the app reloads its screens and
+    /// delivers to Apple Health, as the Library does for the same list.
+    var onLogged: () -> Void = {}
     /// The tile shows what the list's model reads, so it registers as a screen showing the list: the app's
     /// reloads then keep its count current while Today is on screen.
     @State private var screenID = UUID()
@@ -21,7 +24,7 @@ struct SupplementsTodayTile: View {
 
     var body: some View {
         NavigationLink {
-            SupplementStackView(model: model, now: now)
+            SupplementStackView(model: model, now: now, onLogged: onLogged)
         } label: {
             Card {
                 HStack(spacing: DesignSpacing.m) {

@@ -213,7 +213,9 @@ final class SupplementStackTests: XCTestCase {
     func testEntriesFillTimesInOrderAndOnlyPassedTimesReadNotLogged() throws {
         let schedule = try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))
         func states(_ taken: Int, _ minute: Int) -> [SupplementSlotState] {
-            SupplementStackDay.slots(for: schedule, takenCount: taken, minuteOfDay: minute).map(\.state)
+            SupplementStackDay.slots(
+                for: schedule, recordedMinutes: [], unrecordedCount: taken, minuteOfDay: minute
+            ).map(\.state)
         }
         XCTAssertEqual(states(0, 7 * 60 + 59), [.later, .later])
         XCTAssertEqual(states(0, 8 * 60), [.notLogged, .later])
@@ -222,6 +224,27 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(states(2, 12 * 60), [.taken, .taken])
         XCTAssertEqual(states(3, 12 * 60), [.taken, .taken])
         XCTAssertEqual(states(1, 21 * 60), [.taken, .notLogged])
+    }
+
+    func testARecordedTimeIsMarkedAndUnrecordedEntriesFillTheRest() throws {
+        let schedule = try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))
+        func states(_ recorded: [Int], _ unrecorded: Int, _ minute: Int) -> [SupplementSlotState] {
+            SupplementStackDay.slots(
+                for: schedule, recordedMinutes: recorded, unrecordedCount: unrecorded, minuteOfDay: minute
+            ).map(\.state)
+        }
+        let h = 60
+        // The morning was missed and the evening Taken: the evening is marked.
+        XCTAssertEqual(states([20 * h], 0, 21 * h), [.notLogged, .taken])
+        // An evening tap early, at dinner, still marks the evening.
+        XCTAssertEqual(states([20 * h], 0, 18 * h + 30), [.notLogged, .taken])
+        // An entry logged elsewhere fills the time still open.
+        XCTAssertEqual(states([20 * h], 1, 21 * h), [.taken, .taken])
+        // A recorded time the schedule no longer has, or one recorded twice, fills like an unrecorded entry.
+        XCTAssertEqual(states([12 * h], 0, 21 * h), [.taken, .notLogged])
+        XCTAssertEqual(states([20 * h, 20 * h], 0, 21 * h), [.taken, .taken])
+        // More than there are times marks nothing more.
+        XCTAssertEqual(states([8 * h, 20 * h], 2, 21 * h), [.taken, .taken])
     }
 
     func testClockReadsTheWallClockOnTheDayDaylightSavingStarts() throws {
@@ -530,7 +553,7 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertTrue(schedules.schedules().isEmpty)
     }
 
-    func testARecentWithOtherAmountsThanTheStarredFavoriteIsSavedAsItsOwn() throws {
+    func testARecentStarredMeanwhileWithOtherAmountsIsRefusedAndTheFavoriteOffered() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
@@ -539,12 +562,85 @@ final class SupplementStackTests: XCTestCase {
         model.load(now: now)
         let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
 
-        // One capsule starred elsewhere; the picker showed two.
+        // One capsule starred elsewhere; the picker showed two. A second favorite of the same item would be
+        // removed with the first by the Library's star, so nothing is saved.
         try saveFavorite(favorites, id: "fav-one-capsule")
-        XCTAssertTrue(model.add(candidate, schedule: .standard, now: now))
-        let planned = try XCTUnwrap(schedules.schedules().keys.first)
-        XCTAssertNotEqual(planned, "fav-one-capsule")
-        XCTAssertEqual(try favorites.list().first { $0.id == planned }?.components.map(\.amountText), ["2"])
+        XCTAssertFalse(model.add(candidate, schedule: .standard, now: now))
+        XCTAssertEqual(model.errorMessage, "Could not add it to your supplements.")
+        XCTAssertEqual(try favorites.list().map(\.id), ["fav-one-capsule"])
+        XCTAssertTrue(schedules.schedules().isEmpty)
+        XCTAssertEqual(model.candidates.map(\.id), ["favorite:fav-one-capsule"])
+    }
+
+    func testARecentWhoseAmountsChangedSinceThePickerOpenedIsNotSaved() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 2, product: supplement())
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
+
+        // A newer entry of the same item with one capsule, logged in another window.
+        try log(store, at: now.addingTimeInterval(-60), amount: 1, product: supplement())
+        XCTAssertFalse(model.add(candidate, schedule: .standard, now: now))
+        XCTAssertEqual(model.errorMessage, "Could not add it to your supplements.")
+        XCTAssertTrue(try favorites.list().isEmpty)
+        XCTAssertTrue(schedules.schedules().isEmpty)
+        // The picker now offers the amounts the journal holds.
+        XCTAssertEqual(model.candidates.count, 1)
+        XCTAssertNotEqual(model.candidates.first, candidate)
+    }
+
+    func testATakenForATimeMarksThatTimeAndUndoAndDeleteDropTheMark() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        // Wednesday 20:30: the morning was missed, the evening is taken.
+        let evening = now.addingTimeInterval(8.5 * 3_600)
+        model.load(now: evening)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), at: twenty, now: evening))
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.notLogged, .taken])
+        XCTAssertEqual(model.rows.first?.statusText, "1 of 2 taken today")
+        let entry = try XCTUnwrap(model.undoToken?.intakeID)
+        XCTAssertEqual(schedules.takenMarks()[entry]?.timeOfDay, twenty)
+
+        XCTAssertTrue(model.undo(now: evening))
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.notLogged, .notLogged])
+        XCTAssertTrue(schedules.takenMarks().isEmpty)
+
+        // A Taken with no time fills the earliest open time, as an entry logged elsewhere does.
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: evening))
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.taken, .notLogged])
+        XCTAssertTrue(schedules.takenMarks().isEmpty)
+
+        // A mark whose entry is deleted elsewhere goes with it.
+        model.clearUndo()
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), at: twenty, now: evening))
+        let marked = try XCTUnwrap(model.undoToken?.intakeID)
+        try store.delete(intakeID: marked, now: evening)
+        model.load(now: evening)
+        XCTAssertNil(schedules.takenMarks()[marked])
+    }
+
+    func testMarksFromAnotherDayAreDropped() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        let yesterday = now.addingTimeInterval(-86_400)
+        model.load(now: yesterday)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), at: eight, now: yesterday))
+        XCTAssertEqual(schedules.takenMarks().count, 1)
+
+        model.load(now: now)
+        XCTAssertTrue(schedules.takenMarks().isEmpty)
+        XCTAssertEqual(model.rows.first?.loggedToday, 0)
     }
 
     func testPickerTimesRoundTripEveryMinuteInAZoneWithDaylightSaving() throws {
@@ -623,6 +719,27 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertNil(model.undoToken)
         XCTAssertTrue(model.rows.isEmpty)
         XCTAssertTrue(model.candidates.isEmpty)
+    }
+
+    func testStoreKeepsReadableMarksAndEraseRemovesThemToo() throws {
+        let defaults = try makeDefaults()
+        let store = UserDefaultsSupplementStackStore(defaults: defaults)
+        let mark = SupplementTakenMark(favoriteID: "fav-a", dayKey: "2023-11-15", time: twenty)
+        try store.saveTakenMarks(["entry-a": mark])
+        XCTAssertEqual(store.takenMarks(), ["entry-a": mark])
+
+        let stored = """
+            {"entry-good": {"favoriteID": "fav-a", "dayKey": "2023-11-15", "time": "20:00"},
+             "entry-time": {"favoriteID": "fav-a", "dayKey": "2023-11-15", "time": "25:00"},
+             "entry-shape": "evening"}
+            """
+        defaults.set(Data(stored.utf8), forKey: UserDefaultsSupplementStackStore.takenKey)
+        XCTAssertEqual(Set(store.takenMarks().keys), ["entry-good"])
+
+        try store.save(["fav-a": .standard])
+        try store.eraseAll()
+        XCTAssertNil(defaults.object(forKey: UserDefaultsSupplementStackStore.key))
+        XCTAssertNil(defaults.object(forKey: UserDefaultsSupplementStackStore.takenKey))
     }
 
     func testEraseEmptiesTheList() throws {
