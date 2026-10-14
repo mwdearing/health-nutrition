@@ -29,7 +29,12 @@ public struct LogOnOtherDaysSheet: View {
         NavigationStack {
             Form {
                 Section {
+                    // The multi-day calendar is an iPhone control; the package's macOS test build has none.
+                    #if os(iOS)
                     MultiDatePicker("Days", selection: $days, in: Self.range(now: now()))
+                    #else
+                    Text("Choosing days needs the iPhone calendar.")
+                    #endif
                 } footer: {
                     Text("Adds a new entry on each day, at the same time of day and with the same amounts and meal. This entry's own day and times still to come are skipped. Up to \(IntakeMultiDayLogger.maximumDays) days at once.")
                 }
