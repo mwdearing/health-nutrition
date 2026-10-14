@@ -539,9 +539,7 @@ public final class EntryDetailViewModel: ObservableObject {
 
     /// A compound key spelled back out for the reader: `creatine-monohydrate` is `Creatine Monohydrate`.
     static func compoundName(for key: String) -> String {
-        key.split(separator: "-")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
+        NutrientNames.displayName(for: key)
     }
 
     /// Where the entry's values came from, as the line under "Where this came from". A manual entry, or

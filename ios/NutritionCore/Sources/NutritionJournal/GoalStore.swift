@@ -37,7 +37,9 @@ public struct NutrientGoal: Sendable, Hashable {
             throw GoalStoreError.unknownNutrient
         }
         guard !target.isNaN, target > 0 else { throw GoalStoreError.invalidTarget }
-        if let expected = HealthKitWritePlanner.mapping(for: key)?.unit,
+        // Only the canonical key is held to the mass unit; a captured alias (`vitamin-a`) may be IU.
+        if HealthKitWritePlanner.canonicalKey(for: key) == key,
+            let expected = HealthKitWritePlanner.mapping(for: key)?.unit,
             unit.dimension != expected.dimension
         {
             throw UnitError.dimensionMismatch(from: unit, to: expected)

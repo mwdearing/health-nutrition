@@ -267,7 +267,9 @@ public enum DailyTotalsBuilder {
         // The nutrient's canonical unit comes from the same mapping the goals and the HealthKit writer use.
         // A known value in another dimension (protein in IU, say) makes the sum throw, and a throw is
         // answered as unknown, the same as a mismatched pair. Without a mapping nothing is checked.
-        let expected = HealthKitWritePlanner.mapping(for: nutrient)?.unit
+        // A captured alias (`vitamin-a`) may state IU, so only the canonical key is held to the mass unit.
+        let expected = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
+            ? HealthKitWritePlanner.mapping(for: nutrient)?.unit : nil
         let total = (try? NutrientTotal.sum(values, expecting: expected)) ?? NutrientTotal(
             value: .unknown,
             coverage: Coverage(

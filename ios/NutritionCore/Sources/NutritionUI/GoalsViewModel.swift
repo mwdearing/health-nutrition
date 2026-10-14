@@ -12,7 +12,7 @@ public enum NutrientGoalChoices {
     /// Keys in the order the screen lists them.
     public static let keys = [
         "energy", "protein", "carbohydrate", "fiber", "fat", "sodium", "potassium", "water",
-    ]
+    ] + HealthKitWritePlanner.micronutrientKeys.filter { !["potassium", "vitaminA", "vitaminD", "vitaminE"].contains($0) }
 
     /// The fixed list plus any key the journal's own snapshots carry that it does not name — a compound
     /// a captured supplement panel states, such as `creatine-monohydrate`. A person can then set a goal
@@ -20,7 +20,11 @@ public enum NutrientGoalChoices {
     /// come after the fixed list, in the order the caller gives them.
     public static func keys(including extraKeys: [String]) -> [String] {
         var offered = keys
-        for key in extraKeys where !offered.contains(key) { offered.append(key) }
+        for key in extraKeys {
+            let canonical = HealthKitWritePlanner.canonicalKey(for: key)
+            guard !offered.contains(key), !offered.contains(canonical) else { continue }
+            offered.append(key)
+        }
         return offered
     }
 
@@ -38,7 +42,10 @@ public enum NutrientGoalChoices {
     /// target in milligrams would compare against nothing. The canonical mapping still wins where it
     /// exists, so a captured `Protein 500mg` is still grams.
     public static func unit(forKey key: String, snapshotUnit: MeasureUnit? = nil) -> MeasureUnit {
-        if let mapped = HealthKitWritePlanner.mapping(for: key)?.unit { return mapped }
+        // Only the canonical key is a mass row: a captured alias such as `vitamin-a` may state IU, which
+        // stays on its own snapshot-unit path.
+        if HealthKitWritePlanner.canonicalKey(for: key) == key,
+            let mapped = HealthKitWritePlanner.mapping(for: key)?.unit { return mapped }
         if key == DailyTotalsBuilder.waterKey { return DailyTotalsBuilder.waterUnit }
         return snapshotUnit ?? .g
     }
@@ -137,7 +144,10 @@ public final class GoalsViewModel: ObservableObject {
         let groups: [(String, [String])] = [
             ("Energy and macros", ["energy", "protein", "carbohydrate", "fat", "fiber"]),
             ("Water", ["water"]),
-            ("Minerals", ["sodium", "potassium"]),
+            ("Vitamins", ["vitaminB6", "vitaminB12", "vitaminC", "vitaminK",
+                "thiamin", "riboflavin", "niacin", "folate", "biotin", "pantothenicAcid"]),
+            ("Minerals", ["sodium", "potassium", "calcium", "iron", "magnesium", "phosphorus", "zinc",
+                "chloride", "chromium", "copper", "iodine", "manganese", "molybdenum", "selenium"]),
             ("From your labels", self.offeredKeys.filter { !NutrientGoalChoices.keys.contains($0) }),
         ]
         return groups.map { title, keys in
@@ -193,7 +203,10 @@ public final class GoalsViewModel: ObservableObject {
             // an existing compound goal can still be changed or removed after the entry that named it
             // is gone. The snapshot keys add the compounds a live capture states.
             let snapshotKeys = Self.snapshotNutrientKeys(in: journal)
-            offeredKeys = NutrientGoalChoices.keys(including: snapshotKeys + stored.map(\.nutrient))
+            var offered = NutrientGoalChoices.keys(including: snapshotKeys)
+            // A stored goal keeps its own key, even a captured alias of a fixed row, so it stays editable.
+            for goal in stored where !offered.contains(goal.nutrient) { offered.append(goal.nutrient) }
+            offeredKeys = offered
             let displayNames = Self.snapshotDisplayNames(in: journal)
             let hidden = hiddenTodayGoals(in: preferences)
             rows = offeredKeys.map { key in

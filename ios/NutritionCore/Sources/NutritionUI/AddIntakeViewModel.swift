@@ -278,6 +278,12 @@ public final class AddIntakeViewModel: ObservableObject {
             keys.append(key)
             covered.formUnion(accepted)
         }
+        for key in HealthKitWritePlanner.micronutrientKeys {
+            let accepted = HealthKitWritePlanner.acceptedKeys(for: key)
+            guard covered.isDisjoint(with: accepted) else { continue }
+            keys.append(key)
+            covered.formUnion(accepted)
+        }
         return keys
     }()
 
@@ -396,7 +402,7 @@ public final class AddIntakeViewModel: ObservableObject {
             let value = self.prefilledValue(for: key)
             guard value != .unknown else { return nil }
             return ThisAddsLine(
-                key: key, displayName: LookedUpProduct.displayNames[key] ?? key.capitalized,
+                key: key, displayName: LookedUpProduct.displayNames[key] ?? NutrientNames.displayName(for: key),
                 value: factor.map { value.scaled(by: $0) } ?? (value == .notApplicable ? .notApplicable : .unknown),
                 cannotScale: factor == nil && LookedUpProduct.statesAmount(value))
         }

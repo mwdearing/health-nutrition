@@ -178,7 +178,14 @@ public enum IntakeContextFactCatalog {
             let identifier = mapping.quantityTypeIdentifier
             let prefix = "HKQuantityTypeIdentifierDietary"
             if identifier.hasPrefix(prefix) {
-                return dietaryCodePrefix + identifier.dropFirst(prefix.count).lowercased()
+                // Word boundaries are the capitals: `VitaminB6` is `vitamin_b6`, the inverse of
+                // `healthKitTypeIdentifier(forCode:)`, so the code round-trips to its own type.
+                var code = ""
+                for (index, character) in identifier.dropFirst(prefix.count).enumerated() {
+                    if character.isUppercase, index > 0 { code += "_" }
+                    code += character.lowercased()
+                }
+                return dietaryCodePrefix + code
             }
         }
         return dietaryCode(named: nutrientSlug(for: canonical))
