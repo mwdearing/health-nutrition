@@ -70,8 +70,11 @@ has no goal shows that group's published value under it, "RDA 8 mg for Men 31 to
 31 to 50", with a **Use** button. Use writes it as an ordinary goal in the reference's own amount and unit,
 and sets the row's field to it so leaving the field keeps the goal. It is a one-time copy: the goal is then
 the person's to change, picking another group never rewrites it, and nothing new is stored. A row that
-already has a goal, a row the reference table does not cover (chloride, sodium, the macronutrients, water)
-and every row while no group is picked show nothing. `NutritionUI/GoalsViewModel+ReferenceGoals.swift`;
+already has a goal, a row the reference table does not cover (chloride, sodium, the macronutrients, water),
+vitamins A, D and E (labels state them in IU, which a goal in mcg or mg cannot be compared with), a row
+where a number is being typed, and every row while no group is picked show nothing. The value is worded and
+rounded as the vitamins and minerals screen states it, and Use commits the row like a typed target, so an
+error the row showed is cleared. `NutritionUI/GoalsViewModel+ReferenceGoals.swift`;
 tests in `NutritionUITests/ReferenceGoalsTests.swift`.
 
 ## Macros by percent

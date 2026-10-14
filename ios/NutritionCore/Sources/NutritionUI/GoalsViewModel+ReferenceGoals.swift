@@ -19,16 +19,23 @@ public struct ReferenceGoalHint: Equatable {
 /// vitamins and minerals screen never rewrites a goal, and nothing new is stored. A row that already has
 /// a goal is never offered one, so a number a person set is never overwritten.
 extension GoalsViewModel {
+    /// Vitamins A, D and E are never offered a reference goal: labels state them in IU, which a goal in
+    /// mcg or mg cannot be compared with, so they stay on the label-capture goal path.
+    public static let referenceGoalExcludedKeys: Set<String> = ["vitaminA", "vitaminD", "vitaminE"]
+
     /// The reference value a row may take, or nil when no group is chosen, the key is not in the
-    /// reference table (chloride, a captured alias such as `vitamin-a`, a macronutrient), the row is not
-    /// offered, or a goal is already set.
+    /// reference table (chloride, a captured alias such as `vitamin-a`, a macronutrient) or is one of
+    /// `referenceGoalExcludedKeys`, the row is not offered, a goal is already set, or the person has
+    /// started typing their own number in the row (Use would replace it).
     public func referenceGoalHint(for nutrient: String) -> ReferenceGoalHint? {
-        guard let group = self.referenceGroup,
+        guard let group = self.referenceGroup, !Self.referenceGoalExcludedKeys.contains(nutrient),
             let row = self.rows.first(where: { $0.nutrient == nutrient }), row.targetText == nil,
+            (self.draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let intake = ReferenceIntakes.intake(for: nutrient, group: group),
             intake.unit.dimension == self.unit(for: nutrient).dimension
         else { return nil }
-        let figure = "\(DecimalFormatting.text(intake.amount)) \(intake.unit.symbol)"
+        // Worded and rounded exactly as the vitamins and minerals screen states the same value.
+        let figure = NutrientGapRow.figure(intake.amount, intake.unit)
         return ReferenceGoalHint(
             nutrient: nutrient, amount: intake.amount, unit: intake.unit,
             text: "\(intake.kind.abbreviation) \(figure) for \(group.label)")
@@ -36,16 +43,19 @@ extension GoalsViewModel {
 
     /// Writes the row's reference value as its goal. Returns whether it was written.
     ///
-    /// The row's draft and unit are set to the new goal too: an empty row's draft is an empty string, and
-    /// left that way the next time its field loses focus it would be committed as a request to remove
-    /// the goal just written.
+    /// It goes through the row exactly as a typed target does: the row's draft and unit are set to the
+    /// value and the row is committed, so the field shows the new goal (an empty draft left behind would
+    /// be committed as a request to remove it when the field next loses focus) and any error the row
+    /// showed for earlier text is cleared.
     @discardableResult
     public func useReferenceGoal(for nutrient: String) -> Bool {
         guard let hint = self.referenceGoalHint(for: nutrient) else { return false }
-        let text = DecimalFormatting.text(hint.amount)
-        guard self.setTarget(text, for: nutrient, unit: hint.unit) else { return false }
-        self.draftText[nutrient] = text
+        self.draftText[nutrient] = DecimalFormatting.text(hint.amount)
         self.selectedUnits[nutrient] = hint.unit
+        guard self.commitTarget(for: nutrient) else {
+            self.draftText[nutrient] = ""
+            return false
+        }
         return true
     }
 }

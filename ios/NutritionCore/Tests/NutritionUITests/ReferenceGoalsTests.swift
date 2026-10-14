@@ -71,9 +71,38 @@ final class ReferenceGoalsTests: XCTestCase {
 
     func testRowsTheTableDoesNotCoverGetNoHint() {
         let (model, _) = makeModel(group: men31)
-        for key in ["chloride", "protein", "energy", "water", "sodium", "vitaminD"] {
+        for key in ["chloride", "protein", "energy", "water", "sodium", "vitamin-d"] {
             XCTAssertNil(model.referenceGoalHint(for: key), key)
         }
+    }
+
+    func testVitaminsStatedInIUAreNeverOfferedAReference() {
+        // The table covers them, but a goal in mcg or mg could not be compared with an IU label.
+        XCTAssertEqual(GoalsViewModel.referenceGoalExcludedKeys, ["vitaminA", "vitaminD", "vitaminE"])
+        XCTAssertNotNil(ReferenceIntakes.intake(for: "vitaminD", group: men31))
+        let (model, _) = makeModel(group: men31)
+        for key in ["vitaminA", "vitaminD", "vitaminE"] {
+            XCTAssertNil(model.referenceGoalHint(for: key), key)
+        }
+    }
+
+    func testANumberBeingTypedIsNotReplacedByTheReference() throws {
+        let (model, store) = makeModel(group: men31)
+        model.draftText["iron"] = "12"
+        XCTAssertNil(model.referenceGoalHint(for: "iron"))
+        XCTAssertFalse(model.useReferenceGoal(for: "iron"))
+        XCTAssertEqual(model.draftText["iron"], "12")
+        XCTAssertNil(try store.goal(for: "iron"))
+    }
+
+    func testUsingTheReferenceClearsAnErrorTheRowShowed() throws {
+        let (model, _) = makeModel(group: men31)
+        model.draftText["iron"] = "0"
+        XCTAssertFalse(model.commitTarget(for: "iron"))
+        XCTAssertNotNil(model.rowError["iron"])
+        model.draftText["iron"] = ""
+        XCTAssertTrue(model.useReferenceGoal(for: "iron"))
+        XCTAssertNil(model.rowError["iron"])
     }
 
     func testChangingTheGroupNeverRewritesAGoalAlreadyCopied() throws {
