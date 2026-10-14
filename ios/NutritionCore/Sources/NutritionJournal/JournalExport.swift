@@ -166,6 +166,12 @@ public struct JournalExportRevision: Sendable, Hashable, Codable {
     public var productSnapshotID: String?
     public var provenance: JournalExportProvenance?
     public var components: [JournalExportComponent]
+    /// The instant this revision says the intake happened, from version 3. Nil for a revision recorded before
+    /// revisions carried their own time, and for every revision read from a version 1 or 2 file: such a
+    /// revision means "the entry's own time", which is what the store does with nil.
+    public var occurredAt: Date?
+    /// The time zone `occurredAt` was recorded in. Set exactly when `occurredAt` is.
+    public var timeZoneIdentifier: String?
 
     enum CodingKeys: String, CodingKey {
         case number
@@ -174,11 +180,14 @@ public struct JournalExportRevision: Sendable, Hashable, Codable {
         case productSnapshotID = "product_snapshot_id"
         case provenance
         case components
+        case occurredAt = "occurred_at"
+        case timeZoneIdentifier = "time_zone"
     }
 
     public init(
         number: Int, createdAt: Date, changeReason: String, productSnapshotID: String?,
-        provenance: JournalExportProvenance?, components: [JournalExportComponent]
+        provenance: JournalExportProvenance?, components: [JournalExportComponent],
+        occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
     ) {
         self.number = number
         self.createdAt = createdAt
@@ -186,17 +195,38 @@ public struct JournalExportRevision: Sendable, Hashable, Codable {
         self.productSnapshotID = productSnapshotID
         self.provenance = provenance
         self.components = components
+        self.occurredAt = occurredAt
+        self.timeZoneIdentifier = timeZoneIdentifier
     }
 
     public init(revision: IntakeRevision, provenance: JournalExportProvenance?) {
         self.init(
             number: revision.number, createdAt: revision.createdAt, changeReason: revision.changeReason,
             productSnapshotID: revision.productSnapshotID, provenance: provenance,
-            components: revision.components.map(JournalExportComponent.init(component:)))
+            components: revision.components.map(JournalExportComponent.init(component:)),
+            occurredAt: revision.occurredAt, timeZoneIdentifier: revision.timeZoneIdentifier)
+    }
+
+    /// Before version 3 a revision has no time of its own, so whatever a file holds there is not read.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let hasOwnTime = (decoder.userInfo[exportSchemaVersionKey] as? Int ?? 1) >= 3
+        self.init(
+            number: try container.decode(Int.self, forKey: .number),
+            createdAt: try container.decode(Date.self, forKey: .createdAt),
+            changeReason: try container.decode(String.self, forKey: .changeReason),
+            productSnapshotID: try container.decodeIfPresent(String.self, forKey: .productSnapshotID),
+            provenance: try container.decodeIfPresent(JournalExportProvenance.self, forKey: .provenance),
+            components: try container.decode([JournalExportComponent].self, forKey: .components),
+            occurredAt: try hasOwnTime ? container.decodeIfPresent(Date.self, forKey: .occurredAt) : nil,
+            timeZoneIdentifier: try hasOwnTime
+                ? container.decodeIfPresent(String.self, forKey: .timeZoneIdentifier) : nil)
     }
 
     /// `product_snapshot_id` and `provenance` are required-but-nullable in the schema, so an intake recorded
-    /// by hand rather than from a product writes both as `null` instead of leaving them out.
+    /// by hand rather than from a product writes both as `null` instead of leaving them out. From version 3
+    /// `occurred_at` and `time_zone` are written the same way: present, and `null` for a revision with no time
+    /// of its own.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(number, forKey: .number)
@@ -205,6 +235,10 @@ public struct JournalExportRevision: Sendable, Hashable, Codable {
         try encodeNullable(productSnapshotID, forKey: .productSnapshotID, in: &container)
         try encodeNullable(provenance, forKey: .provenance, in: &container)
         try container.encode(components, forKey: .components)
+        if (encoder.userInfo[exportSchemaVersionKey] as? Int ?? JournalExport.currentSchemaVersion) >= 3 {
+            try encodeNullable(occurredAt, forKey: .occurredAt, in: &container)
+            try encodeNullable(timeZoneIdentifier, forKey: .timeZoneIdentifier, in: &container)
+        }
     }
 }
 
@@ -347,21 +381,23 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
     }
 }
 
-/// The exported document, schema version 2. See `contracts/journal-export/v2.schema.json`.
+/// The exported document, schema version 3. See `contracts/journal-export/v3.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
-/// written against version 1 keeps working. This build writes only version 2 and reads both, so a backup
-/// taken before the product kind existed still restores.
+/// written against version 1 keeps working. This build writes only version 3 and reads all three, so a backup
+/// taken before the product kind or a revision's own time existed still restores. Version 3 is also what
+/// tells an older build to stop: a build that reads only versions 1 and 2 refuses the file by its version,
+/// instead of refusing a newer unit symbol (`gummy`, `piece`) partway through as a corrupt amount.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
 
     /// Every version this build reads, in the order they were written.
     ///
     /// Version 1 is here because its documents are still backups people hold: it has no product kind and
     /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
     /// backup. Anything outside this set is refused by value rather than by shape.
-    public static let readableSchemaVersions: Set<Int> = [1, currentSchemaVersion]
+    public static let readableSchemaVersions: Set<Int> = [1, 2, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
@@ -426,6 +462,9 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case emptyRequiredField(String)
     /// A favorite uses a unit the importer cannot restore; the field path is safe to show in diagnostics.
     case unknownFavoriteUnit(String)
+    /// A revision has its own instant without its time zone, or a zone without an instant, so it cannot say
+    /// when the intake happened where the person was and the importer would refuse the file.
+    case unpairedRevisionTime(String)
 }
 
 private func requireExportText(_ text: String, field: String) throws {
@@ -471,6 +510,17 @@ private func validateExportRequiredFields(_ document: JournalExport) throws {
             }
             if let provenance = revision.provenance {
                 try validateExportProvenance(provenance, path: "\(path).revisions[\(revisionIndex)].provenance")
+            }
+            // A revision's own time is written from version 3, and the importer takes both fields or neither.
+            if document.schemaVersion >= 3 {
+                switch (revision.occurredAt, revision.timeZoneIdentifier) {
+                case (nil, nil):
+                    break
+                case (.some, .some(let zone)):
+                    try requireExportText(zone, field: "\(path).revisions[\(revisionIndex)].time_zone")
+                default:
+                    throw JournalExportError.unpairedRevisionTime("\(path).revisions[\(revisionIndex)]")
+                }
             }
         }
     }
@@ -797,10 +847,11 @@ public enum JournalExporter {
         }
 
         let seconds: Date
-        let usesLegacyUTCCalendar = (1...2).contains(schemaVersion)
+        let usesLegacyUTCCalendar = (1...3).contains(schemaVersion)
             && (secondsText.hasSuffix("Z") || secondsText.hasSuffix("z"))
         if hasCanonicalISOWholeSecondShape(secondsText) {
-            // V1/v2 backups were written and read with Foundation's historical Julian/Gregorian calendar.
+            // V1-v3 backups are written and read with Foundation's historical Julian/Gregorian calendar (the
+            // writer still uses it, so the version this build writes has to read it the same way).
             // Keep that meaning for the schemas people already hold, while requiring a formatter round-trip
             // so invalid or normalized calendar dates are still refused.
             if usesLegacyUTCCalendar {

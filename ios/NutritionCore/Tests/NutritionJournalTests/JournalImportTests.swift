@@ -143,6 +143,9 @@ class JournalImportTestCase: XCTestCase {
                     provenance.removeValue(forKey: "kind")
                     revisions[revisionIndex]["provenance"] = provenance
                 }
+                // A revision's own time is a version 3 field too.
+                revisions[revisionIndex].removeValue(forKey: "occurred_at")
+                revisions[revisionIndex].removeValue(forKey: "time_zone")
             }
             intakes[index]["revisions"] = revisions
         }
@@ -634,6 +637,50 @@ final class JournalImportTests: JournalImportTestCase {
         }
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
         XCTAssertTrue(try favoritesStore.list().isEmpty)
+    }
+
+    /// A revision keeps its own time through an export and an import (#135). Before version 3 every restored
+    /// revision took the entry's final time, so a corrected time rewrote what the earlier revision had said.
+    func testEachRevisionKeepsItsOwnTimeThroughExportAndImport() throws {
+        let source = try store(try directory())
+        try source.create(
+            Intake(id: oatsID, category: "food", occurredAt: base, timeZoneIdentifier: "Europe/Berlin"),
+            components: [oats("37.5")], product: nil, now: base)
+        let corrected = base.addingTimeInterval(1800)
+        try source.edit(
+            intakeID: oatsID, components: [oats("37.5")], product: nil, changeReason: "time corrected",
+            now: base.addingTimeInterval(600), occurredAt: corrected, timeZoneIdentifier: "America/Chicago")
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: source, favorites: nil, appVersion: appVersion, exportedAt: exportedAt))
+
+        let target = try store(try directory())
+        _ = try JournalImporter.importExport(data, into: target, favorites: nil)
+
+        let restored = try target.revisions(of: oatsID)
+        XCTAssertEqual(restored.map(\.occurredAt), [base, corrected])
+        XCTAssertEqual(restored.map(\.timeZoneIdentifier), ["Europe/Berlin", "America/Chicago"])
+    }
+
+    /// A revision's own time is both fields or neither: an instant with no zone cannot say when the intake
+    /// happened where the person was, so the file is refused rather than half-read.
+    func testARevisionTimeWithoutItsZoneIsRefused() throws {
+        var root = try object(of: try exportData(favorites: false))
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+        revisions[0]["occurred_at"] = "2024-01-15T07:15:00Z"
+        revisions[0]["time_zone"] = NSNull()
+        intakes[0]["revisions"] = revisions
+        root["intakes"] = intakes
+
+        let journal = try store(try directory())
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)) { error in
+            guard case .corrupt? = error as? JournalImportError else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
     }
 
     func testAnAmountThatIsNotExactDecimalTextIsRejectedRatherThanRounded() throws {

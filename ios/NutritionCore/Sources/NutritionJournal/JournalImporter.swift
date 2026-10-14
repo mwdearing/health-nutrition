@@ -105,6 +105,19 @@ enum JournalImportV2Keys {
     static let favorite = JournalImportV1Keys.favorite
 }
 
+/// The keys each object in a version 3 export has, taken from `contracts/journal-export/v3.schema.json`.
+///
+/// Version 3 is version 2 with a revision's own `occurred_at` and `time_zone`, both required and nullable.
+enum JournalImportV3Keys {
+    static let root = JournalImportV2Keys.root
+    static let intake = JournalImportV2Keys.intake
+    static let revision: Set<String> = JournalImportV2Keys.revision.union(["occurred_at", "time_zone"])
+    static let provenance = JournalImportV2Keys.provenance
+    static let component = JournalImportV2Keys.component
+    static let tombstone = JournalImportV2Keys.tombstone
+    static let favorite = JournalImportV2Keys.favorite
+}
+
 /// Restores a journal export into an empty journal: the entries with their whole revision history, the
 /// tombstones of deleted entries and the favorites.
 ///
@@ -227,6 +240,7 @@ public enum JournalImporter {
     /// `kind` in one is as unknown a key as any other.
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
+        let revisionKeys = version >= 3 ? JournalImportV3Keys.revision : JournalImportV1Keys.revision
         try checkObject(root, keys: JournalImportV1Keys.root, path: "$", version: version)
         try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
@@ -241,7 +255,10 @@ public enum JournalImporter {
             for (revisionIndex, revisionItem) in revisionList.enumerated() {
                 let revisionPath = "\(path).revisions[\(revisionIndex)]"
                 let revision = try object(revisionItem, path: revisionPath)
-                try checkObject(revision, keys: JournalImportV1Keys.revision, path: revisionPath, version: version)
+                try checkObject(revision, keys: revisionKeys, path: revisionPath, version: version)
+                if version >= 3 {
+                    try checkMinimumLengthOne(revision, keys: ["time_zone"], path: revisionPath, version: version)
+                }
                 if let provenance = revision["provenance"], !(provenance is NSNull) {
                     let provenancePath = "\(revisionPath).provenance"
                     let provenanceFields = try object(provenance, path: provenancePath)
@@ -399,6 +416,18 @@ public enum JournalImporter {
 
             var revisions: [IntakeRevision] = []
             for revision in exported.revisions {
+                // A revision's own time is all or nothing: an instant with no zone, or a zone with no instant,
+                // cannot say when the intake happened where the person was.
+                switch (revision.occurredAt, revision.timeZoneIdentifier) {
+                case (nil, nil):
+                    break
+                case (.some, .some(let zone)):
+                    try checkTimeZone(zone, of: exported.id)
+                default:
+                    throw JournalImportError.corrupt(
+                        "revision \(revision.number) of \(exported.id) has an occurred_at or a time_zone "
+                            + "without the other")
+                }
                 if let snapshotID = revision.productSnapshotID, productsByID[snapshotID] == nil {
                     throw JournalImportError.corrupt(
                         "revision \(revision.number) of \(exported.id) uses the product snapshot "
@@ -409,7 +438,8 @@ public enum JournalImporter {
                         intakeID: exported.id, number: revision.number,
                         components: try components(of: revision, in: exported.id),
                         productSnapshotID: revision.productSnapshotID, changeReason: revision.changeReason,
-                        createdAt: revision.createdAt))
+                        createdAt: revision.createdAt, occurredAt: revision.occurredAt,
+                        timeZoneIdentifier: revision.timeZoneIdentifier))
             }
             // The revisions must read 1, 2, ... in order and the current one must be the last: an importer
             // that kept the file's order as it stands would write a history that reads as if time ran
