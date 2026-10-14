@@ -425,7 +425,7 @@ public final class SupplementStackViewModel: ObservableObject {
     /// something no longer on the list.
     @discardableResult
     public func markTaken(_ row: SupplementStackRow, at time: ReminderTime? = nil, now: Date) -> Bool {
-        undoToken = nil
+        // An earlier Taken's Undo offer stays up unless this one writes an entry and replaces it.
         do {
             guard schedules.schedules()[row.id] != nil,
                   let favorite = try favorites.list().first(where: { $0.id == row.id })
