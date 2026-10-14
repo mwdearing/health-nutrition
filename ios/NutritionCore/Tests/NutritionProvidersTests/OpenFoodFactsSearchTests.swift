@@ -144,19 +144,103 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertEqual(milkRows.map(\.barcode), ["2000000000046"])
     }
 
-    /// One plural rule per word, so no shortened stem is produced that starts unrelated words.
-    func testPluralFormsAreOnlyTheSingular() {
-        XCTAssertEqual(OpenFoodFactsClient.forms("cookies"), ["cookies", "cooky", "cookie"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("berries"), ["berries", "berry", "berrie"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("apples"), ["apples", "apple"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("spices"), ["spices", "spice"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("tomatoes"), ["tomatoes", "tomato"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("peaches"), ["peaches", "peach"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("boxes"), ["boxes", "box"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("eggs"), ["eggs", "egg"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("glass"), ["glass"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("gas"), ["gas"])
-        XCTAssertEqual(OpenFoodFactsClient.forms("milk"), ["milk"])
+    /// Singular candidates are compared only as whole words, so extra candidates cannot start unrelated
+    /// words; the typed word itself still matches the start of a shown word.
+    func testSingularCandidates() {
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("cookies").isSuperset(of: ["cookies", "cookie"]))
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("berries").contains("berry"))
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("chilies").contains("chili"))
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("loaves").contains("loaf"))
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("knives").contains("knife"))
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("tomatoes").contains("tomato"))
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("cases").contains("case"))
+        XCTAssertTrue(OpenFoodFactsSearchWords.forms("glasses").contains("glass"))
+        XCTAssertEqual(OpenFoodFactsSearchWords.forms("glass"), ["glass"])
+        XCTAssertEqual(OpenFoodFactsSearchWords.forms("milk"), ["milk"])
+    }
+
+    func testWordsAreWrittenTheSameWayOnBothSides() {
+        XCTAssertEqual(OpenFoodFactsSearchWords.words("Ben & Jerry’s"), ["ben", "and", "jerrys"])
+        XCTAssertEqual(OpenFoodFactsSearchWords.words("Kellogg's Corn-Flakes"), ["kelloggs", "corn", "flakes"])
+        XCTAssertEqual(OpenFoodFactsSearchWords.words("Œufs Bœuf Smør Æbleskiver Straße"), ["oeufs", "boeuf", "smor", "aebleskiver", "strasse"])
+        XCTAssertEqual(OpenFoodFactsSearchWords.words("Crème Brûlée 2%"), ["creme", "brulee", "2"])
+        XCTAssertEqual(OpenFoodFactsSearchWords.words(".. %% ’’"), [])
+    }
+
+    /// Cases an independent review found: the row shows the typed words in its own notation and is kept,
+    /// or it only shares a short stem and is dropped.
+    func testRowsAreKeptWhenTheyShowTheWordsInTheirOwnNotation() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Macaroni & Cheese Dinner", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Kelloggs Corn Flakes", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Œufs frais", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "希腊酸奶", "nutriments": {}},
+          {"code": "2000000000053", "product_name": "นมถั่วเหลือง", "nutriments": {}},
+          {"code": "2000000000060", "product_name": "Sourdough Loaf", "nutriments": {}},
+          {"code": "2000000000077", "product_name": "Chili Garlic Sauce", "nutriments": {}},
+          {"code": "2000000000084", "product_name": "Friendly Farms Oat Milk", "nutriments": {}},
+          {"code": "2000000000091", "product_name": "Plum Jam", "nutriments": {}},
+          {"code": "2000000000107", "product_name": "Cashew Nuts", "nutriments": {}},
+          {"code": "2000000000114", "product_name": "Pencil Case Cookies", "nutriments": {}},
+          {"code": "2000000000121", "product_name": "Ben & Jerry's Chunky Monkey", "nutriments": {}}
+        ]}
+        """.utf8)
+        let cases: [(query: String, barcodes: [String])] = [
+            ("mac and cheese", ["2000000000015"]),
+            ("Kellogg's", ["2000000000022"]),
+            ("oeufs", ["2000000000039"]),
+            ("酸奶", ["2000000000046"]),
+            ("ถั่วเหลือง", ["2000000000053"]),
+            ("loaves", ["2000000000060"]),
+            ("chilies", ["2000000000077"]),
+            ("fries", []),
+            ("plus", []),
+            ("cases", ["2000000000114"]),
+            ("ben and jerry's", ["2000000000121"]),
+        ]
+        for entry in cases {
+            let outcome = await client(StubTransport(body: body)).search(query: entry.query)
+            switch outcome {
+            case .results(let rows): XCTAssertEqual(rows.map(\.barcode), entry.barcodes, entry.query)
+            case .empty: XCTAssertEqual([], entry.barcodes, entry.query)
+            default: XCTFail("unexpected \(outcome) for \(entry.query)")
+            }
+        }
+    }
+
+    func testTextWithNoWordsSendsNothing() async {
+        let transport = StubTransport(body: twoProducts)
+        for query in ["..", "%%", "’’", "__ __"] {
+            let outcome = await client(transport).search(query: query)
+            XCTAssertEqual(outcome, .empty, query)
+        }
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
+    func testCapIsAppliedAfterSyntaxIsRemoved() async throws {
+        let transport = StubTransport(body: twoProducts)
+        _ = await client(transport).search(query: String(repeating: "=", count: 80) + " milk")
+        let items = try queryItems(of: try XCTUnwrap(transport.requests.first))
+        XCTAssertEqual(items["q"], "milk")
+    }
+
+    func testOneMalformedHitDoesNotDiscardTheReply() async {
+        let body = Data("""
+        {"hits": [
+          null,
+          {"code": "2000000000015", "product_name": "Oat Milk One", "nutriments": []},
+          {"code": "2000000000022", "product_name": "Oat Milk Two", "brands": ["Example", null, 7, " Dairy "], "nutriments": {}},
+          "not a hit"
+        ]}
+        """.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "oat milk")
+        guard case .results(let products) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(products.map(\.barcode), ["2000000000015", "2000000000022"])
+        XCTAssertEqual(products.last?.brands, "Example, Dairy")
+        XCTAssertEqual(products.first?.nutrients[OpenFoodFactsProduct.energyKcal], .unknown)
     }
 
     func testPluralSearchDoesNotKeepWordsSharingOnlyAStem() async {

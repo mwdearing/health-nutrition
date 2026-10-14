@@ -82,16 +82,16 @@ public actor OpenFoodFactsClient {
     }
 
     /// Name search on the full-text search service, which ranks products by how well their name matches.
-    /// The query is trimmed, capped and reduced to plain words; one shorter than two characters is
-    /// answered `.empty` without spending a rate-limit slot or sending a request.
+    /// The query is reduced to plain words and then capped; one shorter than two characters, or with no
+    /// letters or digits, is answered `.empty` without spending a rate-limit slot or sending a request.
     ///
     /// Submitting the same query again inside the window sends nothing and spends no slot: it gets the
     /// reply already received, or waits for the request still running. Only a reply with results or
     /// none is kept; a failed or refused search is sent again when the person retries.
     public func search(query: String) async -> OpenFoodFactsSearchOutcome {
-        let trimmed = Self.plainWords(
-            String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.searchMaximumCharacters)))
-        guard trimmed.count >= Self.searchMinimumScalars else {
+        let trimmed = String(Self.plainWords(query).prefix(Self.searchMaximumCharacters))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= Self.searchMinimumScalars, !OpenFoodFactsSearchWords.words(trimmed).isEmpty else {
             return .empty
         }
         guard environment.searchBaseURL != nil else {
@@ -195,47 +195,12 @@ public actor OpenFoodFactsClient {
         return request
     }
 
-    /// Lowercased with accents removed, so "Crème" and "creme" compare equal.
-    private static func folded(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-    }
-
-    /// The words of a text, folded and split at anything that is not a letter or digit.
-    private static func words(_ text: String) -> [String] {
-        folded(text).split { !($0.isLetter || $0.isNumber) }.map(String.init)
-    }
-
-    /// A word and its singular when it ends in an English plural ending. The service matches word
-    /// forms, so an exact comparison would discard rows it rightly returned. Only one rule applies to a
-    /// word, so no shortened stem is made that would start unrelated words ("cookies" never gives
-    /// "cooki", which starts "Cooking"):
-    /// - "-ies" gives both "-y" and "-ie" ("berries" to "berry", "cookies" to "cookie"), since English
-    ///   uses both and each is longer than any stem;
-    /// - "-es" after s, x, z, ch, sh or o drops "es" ("peaches" to "peach", "tomatoes" to "tomato");
-    /// - any other "-s", except "-ss", drops the "s" ("apples" to "apple", "spices" to "spice").
-    static func forms(_ word: String) -> [String] {
-        guard word.count > 3, word.hasSuffix("s"), !word.hasSuffix("ss") else {
-            return [word]
-        }
-        if word.count > 4, word.hasSuffix("ies") {
-            let base = word.dropLast(3)
-            return [word, base + "y", base + "ie"]
-        }
-        if word.hasSuffix("es") {
-            let base = String(word.dropLast(2))
-            if ["s", "x", "z", "ch", "sh", "o"].contains(where: { base.hasSuffix($0) }) {
-                return [word, base]
-            }
-        }
-        return [word, String(word.dropLast())]
-    }
-
     private static func interpretSearch(_ data: Data, query: String) -> OpenFoodFactsSearchOutcome {
         guard let decoded = try? JSONDecoder().decode(OpenFoodFactsSearchResponse.self, from: data) else {
             return .transport("unreadable response")
         }
         var seen: Set<String> = []
-        let products: [OpenFoodFactsProduct] = (decoded.hits ?? []).compactMap { hit in
+        let products: [OpenFoodFactsProduct] = (decoded.hits ?? []).compactMap(\.hit).compactMap { hit in
             // A reply is untrusted: only a well-formed barcode becomes a result.
             // The stored code is the one that was validated: a padded value is refused, not trimmed for the
             // check and kept as received.
@@ -254,16 +219,11 @@ public actor OpenFoodFactsClient {
             }
             return product
         }
-        // The service also matches on category, label and names in other languages, so a row can come
-        // back without the typed words anywhere in what the list shows. Only rows that show every word
-        // are kept: first those with the words in the name, then those that need the brand as well, in
-        // the service's order inside each group. A typed word must begin a shown word, so "ham" does not
-        // match "Champagne" and "milk" does not match "Millet".
-        let typed = words(query).map(forms)
-        func shows(_ text: String) -> Bool {
-            let shown = words(text).flatMap(forms)
-            return typed.allSatisfy { word in word.contains { form in shown.contains { $0.hasPrefix(form) } } }
-        }
+        // Only rows that show every typed word are kept (see OpenFoodFactsSearchWords): first those with
+        // the words in the name, then those that need the brand as well, in the service's order inside
+        // each group.
+        let typed = OpenFoodFactsSearchWords.words(query)
+        func shows(_ text: String) -> Bool { OpenFoodFactsSearchWords.shows(typed, in: text) }
         let inName = products.filter { shows($0.name ?? "") }
         let withBrand = products.filter { !shows($0.name ?? "") && shows(($0.name ?? "") + " " + ($0.brands ?? "")) }
         let ordered = inName + withBrand

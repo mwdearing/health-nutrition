@@ -153,8 +153,9 @@ struct OpenFoodFactsTextList: Decodable {
         let container = try decoder.singleValueContainer()
         if let string = try? container.decode(String.self) {
             text = string
-        } else if let list = try? container.decode([String].self) {
-            let parts = list.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        } else if let list = try? container.decode([OpenFoodFactsScalar].self) {
+            // Entries that are not text (null, numbers) are skipped rather than losing the whole list.
+            let parts = list.compactMap { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
             text = parts.isEmpty ? nil : parts.joined(separator: ", ")
         } else {
             text = nil
@@ -165,15 +166,38 @@ struct OpenFoodFactsTextList: Decodable {
 /// A reply from the full-text search service. Its index holds names, brands and per-100 figures, but
 /// not the serving or whether a product is measured in grams or millilitres.
 struct OpenFoodFactsSearchResponse: Decodable {
+    /// A field of the wrong shape is read as missing, so one odd hit cannot fail the whole reply.
     struct Hit: Decodable {
         let code: OpenFoodFactsScalar?
         let product_name: OpenFoodFactsScalar?
         let brands: OpenFoodFactsTextList?
         let nutriments: [String: OpenFoodFactsScalar]?
         let last_modified_t: OpenFoodFactsScalar?
+
+        enum CodingKeys: String, CodingKey {
+            case code, product_name, brands, nutriments, last_modified_t
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            code = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .code)
+            product_name = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .product_name)
+            brands = try? container.decodeIfPresent(OpenFoodFactsTextList.self, forKey: .brands)
+            nutriments = try? container.decodeIfPresent([String: OpenFoodFactsScalar].self, forKey: .nutriments)
+            last_modified_t = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .last_modified_t)
+        }
     }
 
-    let hits: [Hit]?
+    /// One entry of `hits`; an entry that is not an object at all is read as no hit.
+    struct Entry: Decodable {
+        let hit: Hit?
+
+        init(from decoder: Decoder) throws {
+            hit = try? Hit(from: decoder)
+        }
+    }
+
+    let hits: [Entry]?
 }
 
 extension OpenFoodFactsProduct {

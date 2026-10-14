@@ -135,14 +135,19 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   of names. The service also matches on category, label and names in other
   languages, so a result is kept only when its name, or its name and brand
   together, show every typed word; results with the words in the name come first.
-  Each typed word has to begin a word in the name or brand, with plural and
-  singular compared both ways, so "apples" matches "Apple juice" while "ham" does
-  not match "Champagne" and "milk" does not match "Millet". A plural gets only its
-  singular ("cookies" to "cookie", "peaches" to "peach"), never a shorter stem
-  that would start unrelated words such as "Cooking". The
-  search index has per-100 figures but not the serving or whether a
-  product is measured in grams or millilitres, so a result is listed as "per 100 g
-  or mL" and opens with no serving filled in. Opening a result sends nothing: the
+  Both sides are written the same way first: case and accents folded, ligatures
+  spelled out ("Œufs" and "oeufs"), apostrophes removed inside words ("Kellogg's"
+  and "Kelloggs"), and "&" read as "and". A typed word is shown when it begins a
+  shown word ("choc" and "Chocolate"), or when a singular of it is a whole shown
+  word or the singular of one ("loaves" and "Loaf", "berries" and "Berry"); those
+  singular guesses are only compared as whole words, so "ham" does not match
+  "Champagne", "milk" does not match "Millet" and "cookies" does not match
+  "Cooking". Words in scripts written without spaces (Chinese, Japanese, Thai and
+  similar) are matched anywhere in the name. Text with no letters or digits sends
+  nothing, and a reply entry of the wrong shape is skipped without losing the
+  rest of the reply. The search index has per-100 figures but not the serving or
+  whether a product is measured in grams or millilitres, so a result is listed as
+  "per 100 g or mL" and opens with no serving filled in. Opening a result sends nothing: the
   form is filled from the search reply. The owner decided on 2026-10-14 that a
   picked result's barcode is not sent to Open Food Facts to read the fuller
   record; scanning or typing a barcode remains the way to get the serving.
