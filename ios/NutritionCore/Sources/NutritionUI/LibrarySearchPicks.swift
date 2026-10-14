@@ -14,7 +14,8 @@ extension LibraryViewModel {
     /// How many matching rows the screen lists while the person types.
     public static let searchMatchesLimit = 8
 
-    /// The person's own favorites, recents and logged products for the Find products screen, built from
+    /// The person's own favorites, recents and logged products (`loggedProducts`, every product logged,
+    /// standalone ones included) for the Find products screen, built from
     /// what `load()` last read. It reads no store and sends nothing anywhere, so it can run on every
     /// keystroke. It never sets `searchText` or `segment`: this model is shared with the Library screen,
     /// and a filter set here would stay applied there.
@@ -32,7 +33,8 @@ extension LibraryViewModel {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let favorites = items(inSection: "Favorites")
         let recents = items(inSection: "Recents")
-        let products = items(inSection: "Products")
+        // Not the Products section: it leaves out a logged product it lists as a standalone row instead.
+        let products = loggedProducts
         var seen = Set<String>()
         func take(_ items: [LibraryItem], limit: Int, where matches: (LibraryItem) -> Bool) -> [LibraryItem] {
             var picked: [LibraryItem] = []

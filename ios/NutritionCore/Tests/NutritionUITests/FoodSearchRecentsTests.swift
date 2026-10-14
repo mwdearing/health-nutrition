@@ -115,6 +115,31 @@ final class FoodSearchRecentsTests: XCTestCase {
         XCTAssertEqual(library.searchGroups(matching: "bar").first?.items.map(\.title), ["Example bar"])
     }
 
+    func testStandaloneProductLoggedPastTheRecentsCapIsStillFoundByName() throws {
+        let store = try makeStore()
+        let saved = syntheticCommunityRevision(name: "Custom shake", kind: .drink)
+        let shake = ProductDefinition(
+            snapshotID: "s-shake", productID: saved.localProductID.uuidString, name: "Custom shake", barcode: nil,
+            labelBasis: "per_serving", catalogOrigin: "custom", catalogVersion: saved.revisionID.uuidString)
+        try addEntry(store, name: "Custom shake", at: now, product: shake)
+        // Twenty newer entries push it out of Recents.
+        for index in 1...RecentItemsProvider.defaultLimit {
+            try addEntry(store, name: "Food \(index)", at: now.addingTimeInterval(TimeInterval(index)))
+        }
+        let products = ProductEditorStorePort()
+        products.products = [saved]
+        let favorites = try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
+        let library = LibraryViewModel(store: store, favorites: favorites, productStore: products, timeZoneIdentifier: "UTC")
+        library.load()
+        // The Products segment lists it as a standalone row instead of a logged row.
+        XCTAssertEqual(library.sections.first { $0.title == "Products" }?.items.count, 0)
+        XCTAssertFalse(library.sections.first { $0.title == "Recents" }?.items.contains { $0.title == "Custom shake" } ?? true)
+
+        let match = try XCTUnwrap(library.searchGroups(matching: "shake").first?.items.first)
+        XCTAssertEqual(match.title, "Custom shake")
+        XCTAssertEqual(match.template.productSnapshotID, "s-shake")
+    }
+
     func testNoMatchKeepsAnEmptyGroupSoTheScreenCanSaySo() throws {
         let store = try makeStore()
         try addEntry(store, name: "Green tea", at: now)
