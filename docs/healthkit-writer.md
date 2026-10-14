@@ -160,7 +160,9 @@ predictable: whether an operation is due, and when a retry is scheduled.
    whose label states 13 g of protein per 100 g carries 5.2 g. So the stated value is **scaled** by
    that basis and the logged quantity, with the exact decimal arithmetic
    `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)` already uses for the relay encoder —
-   no float, no rounding — and the stated unit is kept for the planner to convert. **Nothing is written
+   no float, and no rounding beyond what `Decimal` itself does (`contracts/nutrients/decimal-rules.md`,
+   "The journal keeps the digits its arithmetic gives") — and the stated unit is kept for the planner to
+   convert. **Nothing is written
    for the snapshot when that basis cannot be resolved** ("per 100 kcal", "per 100 g or mL") or the
    logged components cannot answer it: an unscaled label value states the whole package rather than
    the portion eaten, so the planner plans no sample rather than a wrong one. A nutrient the label

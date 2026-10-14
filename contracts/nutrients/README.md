@@ -14,12 +14,12 @@ What is here for v1:
 - `decimal-rules.md` - the numeric rules: exact decimals as strings, no negative
   amounts, display rounding that never replaces a stored amount, the one rounding
   rule for a division that does not terminate (10 fraction digits, halves away
-  from zero) and why the app's journal keeps full precision instead, the bounds
-  on all arithmetic (38 significant digits, adjusted exponent within 127), one
-  spelling per unit and energy in kcal, no cross-dimension arithmetic without a
-  stated density, portions for count units, international units that never
-  convert, proprietary blend splits that are never inferred, and how each value
-  state behaves in a total.
+  from zero) and why the app's journal keeps its own arithmetic instead, the
+  bounds on all arithmetic (38 significant digits, adjusted exponent within
+  127), one spelling per unit and energy in kcal, no cross-dimension arithmetic
+  without a stated density, portions for count units, international units that
+  never convert, proprietary blend splits that are never inferred, and how each
+  value state behaves in a total.
 - `golden.v1.json` - reference vectors for the ops `convert`, `scale`, `sum` and
   `reject`. Every quantity is a decimal string. `catalog/tests/test_contract_v1.py`
   reproduces every one of them with a pure-Python evaluator in rational
@@ -33,9 +33,9 @@ wire set is a subset of the app's set (the app also has `oz`, `fl oz`, `cup`,
 The vectors follow the model of the Swift `NutritionDomain` (same operations,
 same error names, same order of multiplication and division), but they are not
 yet run against it. Apart from a conversion into an input unit (`oz`, `fl oz`,
-`cup`, `tbsp`, `tsp`), which `UnitRegistry.reciprocalFractionDigits` rounds to 10
-fraction digits, the Swift code does not round a repeating quotient to the
+`cup`, `tbsp`, `tsp`), which `UnitRegistry.reciprocalFractionDigits` rounds to
+10 fraction digits, the Swift code does not round a repeating quotient to the
 contract's 10 fraction digits today; the Swift/Python golden verification that
 follows this contract makes `NutritionDomain` conform and runs these vectors in
-Swift. The journal's own scaling is outside it and keeps full precision by
-design (`decimal-rules.md`, "The journal keeps full precision").
+Swift. The journal's own scaling is outside it by design (`decimal-rules.md`,
+"The journal keeps the digits its arithmetic gives").

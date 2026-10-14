@@ -4,7 +4,8 @@ Every amount in this contract is an exact decimal carried as a JSON string. The
 rules govern the catalog and its wire format: published products, the reference
 vectors in `golden.v1.json` and any service that builds against these files. The
 iOS app (which stores `Decimal`) follows them for catalog data; how its journal
-scales a logged entry is set out under "The journal keeps full precision" below.
+scales a logged entry is set out under "The journal keeps the digits its
+arithmetic gives" below.
 
 ## Decimals are strings, never JSON numbers
 
@@ -50,7 +51,9 @@ basis is `0.333...` of it. There are exactly three divisions in this contract:
 - a mass or volume to count conversion divides by the portion amount, after the
   amount has been converted into the portion's unit.
 
-Each of them follows the same rule, in every language:
+Each of them follows the same rule, in every language that implements the
+catalog (the iOS journal's own scaling is the exception described under "The
+journal keeps the digits its arithmetic gives"):
 
 1. If the exact quotient has a finite decimal form, that is the result, with
    every digit: `1 / 8192` is `0.0001220703125`.
@@ -93,32 +96,33 @@ multiplication; only a longer chain, such as a count converted through a portion
 and then scaled, can reach the limit, and then it is refused rather than
 rounded.
 
-## The journal keeps full precision
+## The journal keeps the digits its arithmetic gives
 
 The iOS journal does not follow the two sections above when it scales a logged
-entry. It divides first, `consumed / basis`, keeps the quotient at the 38
-significant digits a Foundation `Decimal` holds (cut there, not rounded and not
-refused), and then multiplies each stated value by that factor, cutting the
-product the same way. A quotient that does not terminate is not rounded to 10
-fraction digits: 24 fl oz (709.7647095 mL) of a 710 mL serving is the factor
-`0.99966860492957746478873239436619718309`, where the exact quotient rounds to
-`...310` at that length. Because the division comes first, the multiply-first
-promise does not hold either: 1 g logged of a 3 g serving that states 3 g comes
-to `0.99999999999999999999999999999999999999 g`, not `1 g`.
+entry. It converts the logged amount into the basis unit, divides first,
+`consumed / basis`, and multiplies each stated value by that factor, keeping
+whatever Foundation's `Decimal` arithmetic returns. A quotient that does not
+terminate is cut at 38 significant digits rather than rounded to 10 fraction
+digits or refused: 24 fl oz (709.7647095 mL) of a 710 mL serving gives the
+factor `0.99966860492957746478873239436619718309`, where the exact quotient
+rounds to `...310` at that length. Because the division comes first, 1 g logged
+of a 3 g serving that states 3 g comes to
+`0.99999999999999999999999999999999999999 g`, not `1 g`. The one rounding it
+does is a conversion into an input unit (`oz`, `fl oz`, `cup`, `tbsp`, `tsp`),
+which `UnitRegistry` rounds to 10 fraction digits.
 
 The relay encoder and the Apple Health samples scale by
-`IntakeContextSnapshotBasis.scalingFactor`; the day's totals use the same factor
-and answer one more basis shape the same way (a count other than a serving that
-states its weight or volume, logged as an amount).
+`IntakeContextSnapshotBasis.scalingFactor`. The day's totals use the same
+factor, and also scale a few count bases that the other two leave unknown.
 
-That is deliberate. A relay payload is hashed exactly as written, and the same
-operation sent again with different bytes is a conflict, not a duplicate
-(`contracts/intake-context/README.md`, under `client_payload_hash` and
-`projection_hash`). Moving the journal to the rules above would change the bytes
-of any revision whose factor does not terminate, once it is encoded again after
-the change. So the journal's scaling stays as it is, and a screen rounds its
-figures only when it shows them, as "Display rounding never replaces a stored
-amount" requires. Every other rule here still holds for the catalog.
+That is deliberate. Every amount the encoder sends is covered by the payload's
+digests (`domain_facts_hash` and `client_payload_hash` in
+`contracts/intake-context/README.md`), and different facts or bytes for the same
+revision or operation are a conflict, not a replay. Changing the journal's
+arithmetic would change the amounts of a revision encoded before the change and
+sent again after it. So the journal's scaling stays as it is, and a screen
+rounds its figures only when it shows them, as "Display rounding never replaces
+a stored amount" requires. The other sections still govern the catalog.
 
 ## Units: one spelling each, and energy in kcal
 
