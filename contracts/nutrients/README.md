@@ -14,8 +14,9 @@ What is here for v1:
 - `decimal-rules.md` - the numeric rules: exact decimals as strings, no negative
   amounts, display rounding that never replaces a stored amount, the one rounding
   rule for a division that does not terminate (10 fraction digits, halves away
-  from zero), the bounds on all arithmetic (38 significant digits, adjusted exponent
-  within 127), one spelling per unit and energy in kcal, no cross-dimension
+  from zero) and why the app's journal keeps full precision instead, the bounds
+  on all arithmetic (38 significant digits, adjusted exponent within 127), one
+  spelling per unit and energy in kcal, no cross-dimension
   arithmetic without a stated density, portions for count units, international
   units that never convert, proprietary blend splits that are never inferred, and
   how each value state behaves in a total.
@@ -34,3 +35,5 @@ same error names, same order of multiplication and division), but they are not
 yet run against it. The Swift code does not round a repeating quotient to the
 contract's 10 fraction digits today; the Swift/Python golden verification that
 follows this contract makes the app conform and runs these vectors in Swift.
+That covers the catalog operations only: the journal's own scaling keeps full
+precision by design (`decimal-rules.md`, "The journal keeps full precision").
