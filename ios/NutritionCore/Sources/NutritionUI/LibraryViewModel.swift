@@ -220,6 +220,9 @@ public struct LibraryUndoToken: Equatable {
 public final class LibraryViewModel: ObservableObject {
     /// Favorites first, then Products, then Recents.
     @Published public private(set) var sections: [LibrarySection] = []
+    /// Every logged product, including those the Products segment lists as a standalone product row
+    /// instead. Find products searches these, so a typed name still finds the logged amount and meal.
+    @Published public private(set) var loggedProducts: [LibraryItem] = []
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
     @Published public var searchText = ""
@@ -306,13 +309,15 @@ public final class LibraryViewModel: ObservableObject {
                       let id = UUID(uuidString: product.productID) else { return true }
                 return !standaloneIDs.contains(id)
             }
-            let foodItems = legacyFoods.map { food -> LibraryItem in
+            func foodItem(_ food: RecentItem) -> LibraryItem {
                 LibraryItem(
                     id: "food:\(food.id)", title: food.template.displayName,
                     detail: Self.detail(food.template),
                     isFavorite: favoriteKeys.contains(food.id), template: food.template,
                     kind: kind(of: food.template))
             }
+            let foodItems = legacyFoods.map(foodItem)
+            loggedProducts = foods.map(foodItem)
             sections = [
                 LibrarySection(title: "Favorites", items: favoriteItems),
                 LibrarySection(title: "Products", items: foodItems),

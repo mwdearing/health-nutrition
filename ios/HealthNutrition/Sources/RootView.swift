@@ -455,6 +455,22 @@ struct RootView: View {
         self.addNavigation.path.append(.labelScanner)
     }
 
+    /// Opens the details form prefilled from a favorite or recent picked in Add. Nothing is logged until Save.
+    private func openTemplate(_ template: RepeatTemplate, home: AddHomeViewModel) {
+        // The picker and Find products share this message: one screen's failure must not show on the other.
+        self.addFlowError = nil
+        do {
+            let model = try home.makeDetails(prefill: template, now: Date())
+            // A meal chosen on Add wins. With none chosen (Find products opened from the Library tab starts
+            // with none), the item keeps the meal it was logged under, as a tap in the Library does.
+            if home.meal == nil { model.meal = LibraryViewModel.mealLabel(for: template) }
+            self.addIntakeModel = model
+            self.addNavigation.path.append(.details(AddPrefill(model: model)))
+        } catch {
+            self.addFlowError = "Could not open this item. Its saved product may no longer be available."
+        }
+    }
+
     @ViewBuilder
     private func addDestination(_ route: AddRoute, home: AddHomeViewModel) -> some View {
         switch route {
@@ -477,15 +493,7 @@ struct RootView: View {
             }
         case .library:
             AddLibraryPicker(library: self.services.library, recipes: self.recipeList,
-                onPick: { template in
-                    do {
-                        let model = try home.makeDetails(prefill: template, now: Date())
-                        self.addIntakeModel = model
-                        self.addNavigation.path.append(.details(AddPrefill(model: model)))
-                    } catch {
-                        self.addFlowError = "Could not open this item. Its saved product may no longer be available."
-                    }
-                }, onRecipe: { item in
+                onPick: { self.openTemplate($0, home: home) }, onRecipe: { item in
                     do {
                         guard let version = try self.services.recipeStore.version(
                             recipeID: item.id, number: item.versionNumber) else {
@@ -516,7 +524,13 @@ struct RootView: View {
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
                     onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
-                    onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) })
+                    onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
+                    library: self.services.library, onPick: { self.openTemplate($0, home: home) })
+                    .overlay(alignment: .bottom) {
+                        if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
+                    }
+                    // An item the picker could not open must not read as a failure on this screen.
+                    .onAppear { self.addFlowError = nil }
             }
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {
