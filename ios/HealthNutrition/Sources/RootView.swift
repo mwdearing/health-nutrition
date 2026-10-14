@@ -460,6 +460,9 @@ struct RootView: View {
         self.addFlowError = nil
         do {
             let model = try home.makeDetails(prefill: template, now: Date())
+            // A meal chosen on Add wins. With none chosen (Find products opened from the Library tab starts
+            // with none), the item keeps the meal it was logged under, as a tap in the Library does.
+            if home.meal == nil { model.meal = LibraryViewModel.mealLabel(for: template) }
             self.addIntakeModel = model
             self.addNavigation.path.append(.details(AddPrefill(model: model)))
         } catch {
