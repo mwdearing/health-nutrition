@@ -148,7 +148,7 @@ final class AppServices {
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
             erasers: ([journalStore, favoritesStore, recipeStore, goalStore, savedMealStore] as [JournalErasing])
-                + reminderErasers + ([supplementSchedules] as [JournalErasing]),
+                + reminderErasers + ([supplementSchedules, WidgetSnapshotEraser()] as [JournalErasing]),
             preferences: displayPreferences,
             beforeErase: {
                 if let owner = productSharing?.accountContext?.ownerID {

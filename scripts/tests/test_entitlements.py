@@ -1,4 +1,4 @@
-"""The app's entitlements: HealthKit stays on, and Sign in with Apple is the only addition.
+"""The app's entitlements: HealthKit stays on, Sign in with Apple and the widgets' App Group are the only others.
 
 The iOS workflow runs this file, so a change to the entitlements that drops either capability fails
 the build before it reaches a signed upload.
@@ -16,6 +16,9 @@ ENTITLEMENTS = ROOT / "ios/HealthNutrition/HealthNutrition.entitlements"
 WORKFLOW = ROOT / ".github/workflows/ios.yml"
 APPLE_SIGN_IN = "com.apple.developer.applesignin"
 HEALTHKIT = "com.apple.developer.healthkit"
+APP_GROUPS = "com.apple.security.application-groups"
+WIDGET_ENTITLEMENTS = ROOT / "ios/HealthNutrition/Widgets/HealthNutritionWidgets.entitlements"
+GROUP = "group.$(APP_BUNDLE_ID)"
 
 
 def _entitlements() -> dict[str, object]:
@@ -32,7 +35,15 @@ def test_healthkit_stays_enabled() -> None:
 
 
 def test_no_other_capability_is_declared() -> None:
-    assert set(_entitlements()) == {APPLE_SIGN_IN, HEALTHKIT}
+    assert set(_entitlements()) == {APPLE_SIGN_IN, HEALTHKIT, APP_GROUPS}
+
+
+def test_the_app_group_is_named_after_the_app_bundle_identifier_in_the_app_and_the_widgets() -> None:
+    # The signed-beta workflow sets APP_BUNDLE_ID, so the group follows whichever identifier is signed.
+    assert _entitlements()[APP_GROUPS] == [GROUP]
+    with WIDGET_ENTITLEMENTS.open("rb") as handle:
+        widgets = plistlib.load(handle)
+    assert widgets == {APP_GROUPS: [GROUP]}
 
 
 def test_project_generation_preserves_account_and_health_capabilities() -> None:
@@ -40,8 +51,10 @@ def test_project_generation_preserves_account_and_health_capabilities() -> None:
     project = yaml.safe_load((ROOT / "ios/HealthNutrition/project.yml").read_text())
     declaration = project["targets"]["HealthNutrition"]["entitlements"]
     assert declaration.get("properties", {}) == {
-        APPLE_SIGN_IN: ["Default"], HEALTHKIT: True,
+        APPLE_SIGN_IN: ["Default"], HEALTHKIT: True, APP_GROUPS: [GROUP],
     }
+    widgets = project["targets"]["HealthNutritionWidgets"]["entitlements"]
+    assert widgets.get("properties", {}) == {APP_GROUPS: [GROUP]}
 
 
 def test_the_ios_workflow_runs_this_test_on_every_relevant_change() -> None:

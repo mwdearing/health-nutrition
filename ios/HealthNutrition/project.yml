@@ -23,6 +23,10 @@ settings:
     ALWAYS_SEARCH_USER_PATHS: NO
     CLANG_ENABLE_MODULES: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
+    # The app's bundle identifier. The widget extension's is this plus ".widgets" and the App Group is
+    # "group." plus this, so the signed-beta and unsigned-ipa workflows set this one value, never
+    # PRODUCT_BUNDLE_IDENTIFIER (which would give the extension the app's own identifier).
+    APP_BUNDLE_ID: dev.example.HealthNutrition
 
 targets:
   HealthNutrition:
@@ -32,7 +36,10 @@ targets:
     sources:
       - path: Sources
       - path: Resources
+      # The snapshot the widgets read, compiled into the app and into the widget extension.
+      - path: Shared
     dependencies:
+      - target: HealthNutritionWidgets
       - package: NutritionCore
         product: NutritionCore
       - package: NutritionCore
@@ -56,6 +63,7 @@ targets:
       properties:
         com.apple.developer.applesignin: [Default]
         com.apple.developer.healthkit: true
+        com.apple.security.application-groups: ["group.$(APP_BUNDLE_ID)"]
     # The Info.plist keys the account settings read. Their values are the build settings above, so the
     # repository never holds a project address or key.
     info:
@@ -66,7 +74,7 @@ targets:
         HCAPTCHA_SITE_KEY: "$(HCAPTCHA_SITE_KEY)"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutrition
+        PRODUCT_BUNDLE_IDENTIFIER: "$(APP_BUNDLE_ID)"
         PRODUCT_NAME: HealthNutrition
         MARKETING_VERSION: "0.1.25"
         CURRENT_PROJECT_VERSION: "1"
@@ -102,6 +110,39 @@ targets:
         SUPABASE_ANON_KEY: ""
         # The challenge site key of the sign-in requests. Empty here, so a build without it sends no challenge token.
         HCAPTCHA_SITE_KEY: ""
+
+  # The Today widgets (Lock Screen and home screen). They read only the summary the app writes into the App
+  # Group (Shared/WidgetSnapshot.swift); they link no package and open nothing but the app.
+  HealthNutritionWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Widgets
+        excludes:
+          - Info.plist
+          - HealthNutritionWidgets.entitlements
+      - path: Shared
+    entitlements:
+      path: Widgets/HealthNutritionWidgets.entitlements
+      properties:
+        com.apple.security.application-groups: ["group.$(APP_BUNDLE_ID)"]
+    settings:
+      base:
+        # The extension point is declared in Widgets/Info.plist; the rest of the Info.plist is generated.
+        INFOPLIST_FILE: Widgets/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: "$(APP_BUNDLE_ID).widgets"
+        PRODUCT_NAME: HealthNutritionWidgets
+        # Must equal the app's: App Store Connect rejects an extension whose version differs from its app.
+        MARKETING_VERSION: "0.1.22"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Today
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
 
   # Unit tests for the app target itself. They depend on the app so the bundle is hosted by it, which
   # is what lets them read the app's own types through @testable and run against a real UIKit runtime.
@@ -161,6 +202,7 @@ schemes:
     build:
       targets:
         HealthNutrition: all
+        HealthNutritionWidgets: all
         HealthNutritionTests: [test]
     run:
       config: Debug

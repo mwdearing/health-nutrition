@@ -253,7 +253,7 @@ jobs:
           CONFIGURATION: ${{ inputs.configuration }}
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
-          xcodebuild -project HealthNutrition.xcodeproj -target HealthNutrition -sdk iphoneos -configuration "$CONFIGURATION" -disableAutomaticPackageResolution SYMROOT="$RUNNER_TEMP/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" MARKETING_VERSION="${MARKETING_VERSION:-0.1.$GITHUB_RUN_NUMBER}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
+          xcodebuild -project HealthNutrition.xcodeproj -target HealthNutrition -sdk iphoneos -configuration "$CONFIGURATION" -disableAutomaticPackageResolution SYMROOT="$RUNNER_TEMP/build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" APP_BUNDLE_ID="$BUNDLE_ID" MARKETING_VERSION="${MARKETING_VERSION:-0.1.$GITHUB_RUN_NUMBER}" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
       - name: Package the unsigned ipa
         run: |
           app=$(find "$RUNNER_TEMP/build" -type d -name HealthNutrition.app -path '*iphoneos*' -print -quit)
