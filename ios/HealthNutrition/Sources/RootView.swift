@@ -100,7 +100,8 @@ struct RootView: View {
                     onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
                     checklist: services.firstDayChecklist,
                     onOpenUnits: { self.openSettings(goals: false) },
-                    bodyActivity: services.bodyActivity
+                    bodyActivity: services.bodyActivity,
+                    supplementStack: services.supplementStack
                 )
                 .toolbar { settingsToolbar }
                 #if DEBUG

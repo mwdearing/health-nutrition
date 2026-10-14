@@ -126,6 +126,12 @@ renders it as one compact line per day with the nutrients that have a target fir
 for is left off that line rather than written as "unknown", because the entries below it say which could not be
 read; a day where nothing at all is known says so on its own.
 
+## Supplements tile
+
+Below the water card, a **Supplements** tile shows how many supplement entries are logged today (or "Set up your
+supplements" when the list is empty) and opens the supplement list, where each supplement can be taken. It is hidden
+when the host passes no supplement list. Code: `SupplementsTodayTile`.
+
 ## Daily goals
 A **NutrientGoal** (`ios/NutritionCore/Sources/NutritionJournal/GoalStore.swift`) is a nutrient key, an exact
 `Decimal` target and a `MeasureUnit`. Goals are data rather than settings: they are stored, not `UserDefaults` or
