@@ -23,7 +23,7 @@ final class HealthKitReader: BodyActivityReading {
 
     /// Erase all data returns the card to its opt-in state: the next read waits for the person again.
     nonisolated static func forgetReadAccess(defaults: UserDefaults = .standard) {
-        defaults.removeObject(forKey: askedKey)
+        defaults.removeObject(forKey: "healthKitReader.askedForReadAccess")
     }
 
     func requestReadAccess() async {
