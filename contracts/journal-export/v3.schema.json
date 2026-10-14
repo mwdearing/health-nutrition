@@ -177,7 +177,31 @@
           ],
           "minLength": 1
         }
-      }
+      },
+      "oneOf": [
+        {
+          "description": "The revision has its own time: both fields are set.",
+          "properties": {
+            "occurred_at": {
+              "type": "string"
+            },
+            "time_zone": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "description": "The revision has no time of its own and means the intake's: both fields are null.",
+          "properties": {
+            "occurred_at": {
+              "type": "null"
+            },
+            "time_zone": {
+              "type": "null"
+            }
+          }
+        }
+      ]
     },
     "provenance": {
       "type": "object",

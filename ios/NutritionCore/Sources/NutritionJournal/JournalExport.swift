@@ -218,9 +218,9 @@ public struct JournalExportRevision: Sendable, Hashable, Codable {
             productSnapshotID: try container.decodeIfPresent(String.self, forKey: .productSnapshotID),
             provenance: try container.decodeIfPresent(JournalExportProvenance.self, forKey: .provenance),
             components: try container.decode([JournalExportComponent].self, forKey: .components),
-            occurredAt: hasOwnTime ? try container.decodeIfPresent(Date.self, forKey: .occurredAt) : nil,
-            timeZoneIdentifier: hasOwnTime
-                ? try container.decodeIfPresent(String.self, forKey: .timeZoneIdentifier) : nil)
+            occurredAt: try hasOwnTime ? container.decodeIfPresent(Date.self, forKey: .occurredAt) : nil,
+            timeZoneIdentifier: try hasOwnTime
+                ? container.decodeIfPresent(String.self, forKey: .timeZoneIdentifier) : nil)
     }
 
     /// `product_snapshot_id` and `provenance` are required-but-nullable in the schema, so an intake recorded
@@ -462,6 +462,9 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case emptyRequiredField(String)
     /// A favorite uses a unit the importer cannot restore; the field path is safe to show in diagnostics.
     case unknownFavoriteUnit(String)
+    /// A revision has its own instant without its time zone, or a zone without an instant, so it cannot say
+    /// when the intake happened where the person was and the importer would refuse the file.
+    case unpairedRevisionTime(String)
 }
 
 private func requireExportText(_ text: String, field: String) throws {
@@ -507,6 +510,17 @@ private func validateExportRequiredFields(_ document: JournalExport) throws {
             }
             if let provenance = revision.provenance {
                 try validateExportProvenance(provenance, path: "\(path).revisions[\(revisionIndex)].provenance")
+            }
+            // A revision's own time is written from version 3, and the importer takes both fields or neither.
+            if document.schemaVersion >= 3 {
+                switch (revision.occurredAt, revision.timeZoneIdentifier) {
+                case (nil, nil):
+                    break
+                case (.some, .some(let zone)):
+                    try requireExportText(zone, field: "\(path).revisions[\(revisionIndex)].time_zone")
+                default:
+                    throw JournalExportError.unpairedRevisionTime("\(path).revisions[\(revisionIndex)]")
+                }
             }
         }
     }

@@ -1089,6 +1089,21 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertTrue(written[1]["time_zone"] is NSNull)
     }
 
+    /// A stored revision with an instant but no zone would be written into a file the importer refuses, so the
+    /// export stops instead of producing it.
+    func testAnUnpairedRevisionTimeFailsTheExport() throws {
+        let store = filledStore()
+        var revisions = try XCTUnwrap(store.revisionsByIntake[firstID])
+        revisions[0].occurredAt = Date(timeIntervalSince1970: 1_705_260_000)
+        revisions[0].timeZoneIdentifier = nil
+        store.revisionsByIntake[firstID] = revisions
+        XCTAssertThrowsError(try JournalExporter.encode(try makeExport(store: store))) { error in
+            guard case .unpairedRevisionTime? = error as? JournalExportError else {
+                return XCTFail("expected an unpaired revision time, got \(error)")
+            }
+        }
+    }
+
     /// A version 2 document has no such field: it is not written there, and a decoded one carries none.
     func testAVersion2DocumentHasNoRevisionTime() throws {
         var document = try makeExport(store: filledStore())
