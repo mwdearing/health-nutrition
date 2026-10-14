@@ -27,6 +27,7 @@ REGISTRY_PATH = CONTRACTS / "nutrients" / "registry.v1.json"
 GOLDEN_PATH = CONTRACTS / "nutrients" / "golden.v1.json"
 SWIFT_UNITS_PATH = ROOT / "ios" / "NutritionCore" / "Sources" / "NutritionDomain" / "Units.swift"
 SWIFT_STANDARD_KEYS_PATH = ROOT / "ios" / "NutritionCore" / "Sources" / "NutritionDomain" / "CustomProductValidation.swift"
+SWIFT_HEALTHKIT_PLAN_PATH = ROOT / "ios" / "NutritionCore" / "Sources" / "NutritionJournal" / "HealthKitWritePlan.swift"
 
 
 def load(path: Path):
@@ -752,6 +753,11 @@ def sum_values(case_input: dict, registry, nutrient: str | None = None) -> dict:
             state = {"state": "unknown"} if not case_input["values"] else {"state": "not_applicable"}
         return {"value": state, "coverage": coverage}
 
+    # A nutrient whose IU is one fixed mass (vitamin D) is summed as that mass whichever value comes first,
+    # so IU is restated in mcg before the total's unit is chosen.
+    if mcg_per_international_unit(registry, nutrient) is not None:
+        known = [(convert(amount, unit, "mcg", registry, nutrient=nutrient), "mcg") if unit == "IU" else (amount, unit)
+                 for amount, unit in known]
     target = case_input.get("unit") or known[0][1]
     running = Fraction(0)
     for amount, unit in known:
@@ -1040,4 +1046,14 @@ def test_vitamin_d_converts_only_from_international_units_into_a_mass(registry):
     with pytest.raises(UnitError) as raised:
         convert(Fraction(400), "IU", "mcg", registry)
     assert raised.value.name == "international_unit_not_convertible"
+
+
+def test_the_app_and_the_registry_state_the_same_vitamin_d_factor(registry):
+    """The app restates vitamin D IU through its nutrient mapping; that factor must be the registry's."""
+    text = SWIFT_HEALTHKIT_PLAN_PATH.read_text()
+    row = next(line for line in text.splitlines() if 'nutrientKey: "vitaminD"' in line)
+    found = re.findall(r'amountPerInternationalUnit: Decimal\(string: "([0-9.]+)"', row)
+    assert found, "the Swift vitamin D factor was not read"
+    stated = {entry["id"]: entry.get("mcg_per_international_unit") for entry in registry["nutrients"]}
+    assert exact(found[0]) == exact(stated["vitamin_d"])
 

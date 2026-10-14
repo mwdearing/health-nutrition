@@ -1191,6 +1191,74 @@
       }
     },
     {
+      "id": "sum_vitamin_d_stated_in_international_units_first",
+      "op": "sum",
+      "nutrient": "vitamin_d",
+      "note": "The order does not matter: IU is restated in mcg before the total's unit is chosen.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "400",
+            "unit": "IU"
+          },
+          {
+            "state": "known",
+            "amount": "10",
+            "unit": "mcg"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "20",
+          "unit": "mcg"
+        },
+        "coverage": {
+          "known_count": 2,
+          "total_count": 2,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
+      "id": "sum_vitamin_d_stated_only_in_international_units",
+      "op": "sum",
+      "nutrient": "vitamin_d",
+      "note": "Two IU amounts of vitamin D total as a mass, never as IU.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "400",
+            "unit": "IU"
+          },
+          {
+            "state": "known",
+            "amount": "1000",
+            "unit": "IU"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "35",
+          "unit": "mcg"
+        },
+        "coverage": {
+          "known_count": 2,
+          "total_count": 2,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
       "id": "reject_sum_of_mass_and_international_units",
       "op": "reject",
       "nutrient": "vitamin_a",
