@@ -129,7 +129,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         case .total(let quantity): unit = quantity.unit
         }
         let product = ProductDefinition(
-            snapshotID: RecipeLogger.snapshotID(recipeID: recipe.recipeID, number: recipe.number),
+            snapshotID: RecipeLogger.snapshotID(
+                recipeID: recipe.recipeID, number: recipe.number, labelBasis: RecipeLogger.basisText(recipe.yield),
+                nutrients: values),
             productID: recipe.recipeID, name: recipe.title,
             labelBasis: RecipeLogger.basisText(recipe.yield),
             catalogOrigin: RecipeLogger.catalogOrigin, catalogVersion: String(recipe.number), nutrients: values)

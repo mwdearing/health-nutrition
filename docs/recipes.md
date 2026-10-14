@@ -31,7 +31,10 @@ yield's unit (converted through the unit registry) for a total yield. So a journ
 the recipe the user chose, not as a list of nutrients, and repeating or favoriting the entry copies
 one amount rather than one amount per nutrient.
 
-The intake references a product snapshot with id `recipe:<recipeID>:v<N>`, origin `recipe_calculated`,
+The intake references a product snapshot with id `recipe:<recipeID>:v<N>:<digest>`, where the digest is a
+short hash of the label basis and values the snapshot holds, so a version whose values change with the
+app's arithmetic gets a new snapshot instead of colliding with the one earlier entries keep. Its origin is
+`recipe_calculated`,
 catalog version `N` and a label basis that says what the values are per. The snapshot carries the
 per-serving nutrient values, so Today resolves a logged recipe from its product the same way it
 resolves a barcode-looked-up product, through `SnapshotNutrientFacts`. A nutrient that is unknown for

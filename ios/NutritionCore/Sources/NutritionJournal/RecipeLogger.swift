@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NutritionDomain
 
@@ -13,8 +14,8 @@ public enum RecipeLogger {
     ///
     /// A nutrient that is unknown for this version is stored as `.unknown` in the snapshot, never as
     /// a zero-valued component. Throws `RecipeError.nothingToLog` when no nutrient is known at all.
-    /// The product snapshot id names the exact version, and the frozen version itself stays in the
-    /// recipe store.
+    /// The product snapshot id names the exact version and what its snapshot holds, and the frozen
+    /// version itself stays in the recipe store.
     @discardableResult
     public static func logPortion(
         store: JournalStore,
@@ -41,7 +42,9 @@ public enum RecipeLogger {
             componentID: componentID(for: version.recipeID), name: version.title,
             amount: quantity.value, unit: quantity.unit)
         let product = ProductDefinition(
-            snapshotID: snapshotID(recipeID: version.recipeID, number: version.number),
+            snapshotID: snapshotID(
+                recipeID: version.recipeID, number: version.number, labelBasis: basisText(version.yield),
+                nutrients: perServing),
             productID: version.recipeID, name: version.title,
             labelBasis: basisText(version.yield),
             catalogOrigin: catalogOrigin, catalogVersion: String(version.number),
@@ -72,8 +75,31 @@ public enum RecipeLogger {
         }
     }
 
-    public static func snapshotID(recipeID: String, number: Int) -> String {
-        "recipe:\(recipeID):v\(number)"
+    /// The version, then a short digest of the label basis and values the snapshot holds:
+    /// `recipe:<recipeID>:v<N>:<digest>`. A stored snapshot never changes, but the values worked out for
+    /// a version can, when the app's arithmetic does (vitamin D stated in IU is now restated in mcg). The
+    /// digest gives new values their own snapshot, so logging the version again never collides with the
+    /// one an earlier entry was logged with, and that entry keeps it. The digest only keeps two
+    /// snapshots apart; it is not a security measure.
+    public static func snapshotID(
+        recipeID: String, number: Int, labelBasis: String, nutrients: [String: NutrientValue]
+    ) -> String {
+        var signature = "basis=" + labelBasis
+        for key in nutrients.keys.sorted() {
+            signature += "|" + key + "=" + describe(nutrients[key] ?? .unknown)
+        }
+        let digest = SHA256.hash(data: Data(signature.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
+        return "recipe:\(recipeID):v\(number):\(digest)"
+    }
+
+    /// One value as the digest reads it, exact and independent of the device locale.
+    private static func describe(_ value: NutrientValue) -> String {
+        switch value {
+        case .known(let amount, let unit): return "known " + DecimalText.encode(amount) + " " + unit.symbol
+        case .unknown: return "unknown"
+        case .notApplicable: return "not applicable"
+        case .belowReportingThreshold(let unit): return "below " + (unit?.symbol ?? "")
+        }
     }
 
     public static func basisText(_ yield: RecipeYield) -> String {

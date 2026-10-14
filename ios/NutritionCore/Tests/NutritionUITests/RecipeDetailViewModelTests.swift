@@ -42,7 +42,7 @@ final class RecipeDetailViewModelTests: XCTestCase {
             version: uiSampleVersion(), journal: journal, timeZoneIdentifier: "UTC", makeID: { self.intakeID })
         XCTAssertTrue(model.logPortion(now: when))
         XCTAssertEqual(try journal.activeIntakes().count, 1)
-        XCTAssertEqual(try journal.revisions(of: intakeID)[0].productSnapshotID, "recipe:recipe-1:v1")
+        XCTAssertEqual(try journal.revisions(of: intakeID)[0].productSnapshotID?.hasPrefix("recipe:recipe-1:v1:"), true)
     }
 
     /// A logged recipe is one component named after the recipe, so Journal and Library name the recipe
