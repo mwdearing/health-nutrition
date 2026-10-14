@@ -119,14 +119,19 @@ struct SupplementStackClock: Equatable {
 enum SupplementStackDay {
     /// How long before a time an entry can be and still count for it: a dose taken a little early.
     static let earlyWindowMinutes = 60
+    /// How long before the day's first time an entry still counts for it. Wider than the early window,
+    /// because nothing earlier competes for the entry, but not reaching back to just after midnight, when
+    /// an entry is more likely the night before's dose logged late.
+    static let firstTimeEarlyWindowMinutes = 6 * 60
 
     /// Today's times for one schedule, earliest first, and where each stands. `loggedMinutes` are when
     /// today's entries were logged, in minutes since each entry's own local midnight.
     ///
     /// Each entry, in time order, belongs to one time: the latest time at or before it (a dose taken on
     /// time or late), unless the next time is at most an hour away and nearer (a dose taken early). An
-    /// entry before every time belongs to the first only within that hour: one logged just after midnight
-    /// is more likely the night before's than this morning's, so it marks nothing. An entry whose time is
+    /// entry before every time belongs to the first if it is at most six hours early; one logged just
+    /// after midnight is more likely the night before's than this morning's, so it marks nothing. An entry
+    /// whose time is
     /// already marked is an extra one and marks nothing, so a second tap never marks a time that was
     /// missed: a missed morning stays "Not logged" whatever is logged in the evening. A time no entry
     /// marks reads "not logged" once it has passed and "later" before.
@@ -153,12 +158,10 @@ enum SupplementStackDay {
     /// are sorted and distinct, as a schedule's times are.
     static func owner(of logged: Int, among minutes: [Int]) -> Int? {
         let previous = minutes.lastIndex { $0 <= logged }
-        if let next = minutes.firstIndex(where: { $0 > logged }), minutes[next] - logged <= earlyWindowMinutes,
-           previous.map({ minutes[next] - logged < logged - minutes[$0] }) ?? true
-        {
-            return next
-        }
-        return previous
+        guard let next = minutes.firstIndex(where: { $0 > logged }) else { return previous }
+        let early = minutes[next] - logged
+        guard let before = previous else { return early <= firstTimeEarlyWindowMinutes ? next : nil }
+        return early <= earlyWindowMinutes && early < logged - minutes[before] ? next : before
     }
 
     /// The local day key (`yyyy-MM-dd`, the copier's, so it matches the Journal's day rule), weekday and

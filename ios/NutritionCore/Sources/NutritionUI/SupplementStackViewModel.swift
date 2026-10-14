@@ -301,12 +301,14 @@ public final class SupplementStackViewModel: ObservableObject {
                 favoriteID = id
                 key = Self.matchKey(favorite)
             case .recent(let template):
-                let recentKey = Self.matchKey(template)
-                if let starred = stored.first(where: { Self.matchKey($0) == recentKey }) {
-                    // Starred since the picker was built, here or in another window: that favorite goes on
-                    // the list rather than a second copy of it.
+                // Starred since the picker was built, here or in another window, with the same amounts: that
+                // favorite goes on the list rather than a second copy of it. A favorite of the same product
+                // with other amounts is not what the picker showed, so a new one is saved instead.
+                if let starred = stored.first(where: { RepeatTemplate(favorite: $0)?.components == template.components
+                    && Self.matchKey($0) == Self.matchKey(template) })
+                {
                     favoriteID = starred.id
-                    key = recentKey
+                    key = Self.matchKey(template)
                 } else {
                     guard let favorite = makeFavorite(from: template, title: candidate.title) else {
                         errorMessage = "This supplement has an amount that cannot be saved."

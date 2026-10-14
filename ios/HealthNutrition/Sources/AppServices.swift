@@ -69,9 +69,9 @@ final class AppServices {
     var productNameSearch: (any ProductNameSearching)? = nil
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
-    /// Reads the supplement list again when the journal changes: after any reload of the app's screens, an
-    /// erase or a restore. The list keeps what it last read, so without this an entry logged in another
-    /// window, or an erase run from the Settings sheet above it, would not show until the next day.
+    /// Keeps the supplement list in step with the journal: the app's reloads reread it while the list is on
+    /// screen, and an erase or a restore drops what it read whether or not it is. A list out of view reads
+    /// everything when it next appears.
     private var supplementStackRefresh: [AnyCancellable] = []
 
     deinit { connectivityMonitor?.cancel() }

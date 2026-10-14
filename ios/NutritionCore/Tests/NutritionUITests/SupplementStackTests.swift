@@ -221,8 +221,10 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(states([9 * h], at: 12 * h), [.taken, .later])
         // Early: a little before its time, or before every time, still counts for that time.
         XCTAssertEqual(states([7 * h + 50], at: 12 * h), [.taken, .later])
-        // More than an hour before every time: likely last night's, so it marks nothing.
-        XCTAssertEqual(states([6 * h], at: 12 * h), [.notLogged, .later])
+        // Before every time: up to six hours early still counts for the first; just after midnight is
+        // likely last night's, so it marks nothing.
+        XCTAssertEqual(states([6 * h], at: 12 * h), [.taken, .later])
+        XCTAssertEqual(states([2 * h], at: 12 * h), [.taken, .later])
         XCTAssertEqual(states([0 * h + 30], at: 12 * h), [.notLogged, .later])
         XCTAssertEqual(states([19 * h + 55], at: 21 * h), [.notLogged, .taken])
         // Late: the morning dose taken in the afternoon is still the morning's, not the evening's.
@@ -553,6 +555,38 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(Set(schedules.schedules().keys), ["fav-starred-elsewhere"])
     }
 
+    func testTakenEarlyForTheOnlyTimeOfTheDayCounts() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [twenty]))])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        // Wednesday 18:30, an hour and a half before the evening time.
+        let evening = now.addingTimeInterval(6.5 * 3_600)
+        model.load(now: evening)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: evening))
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.taken])
+        XCTAssertEqual(model.rows.first?.statusText, "1 of 1 taken today")
+    }
+
+    func testARecentWithOtherAmountsThanTheStarredFavoriteIsSavedAsItsOwn() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 2, product: supplement())
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
+
+        // One capsule starred elsewhere; the picker showed two.
+        try saveFavorite(favorites, id: "fav-one-capsule")
+        XCTAssertTrue(model.add(candidate, schedule: .standard, now: now))
+        let planned = try XCTUnwrap(schedules.schedules().keys.first)
+        XCTAssertNotEqual(planned, "fav-one-capsule")
+        XCTAssertEqual(try favorites.list().first { $0.id == planned }?.components.map(\.amountText), ["2"])
+    }
+
     func testPickerTimesRoundTripEveryMinuteInAZoneWithDaylightSaving() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
@@ -621,9 +655,10 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertNil(model.undoToken)
         XCTAssertEqual(model.rows.count, 1)
 
-        // Hidden: nothing read before is kept for the next appearance.
-        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
+        // Hidden: nothing read before is kept for the next appearance, and an offer made while hidden goes.
         model.disappeared(screen)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
+        XCTAssertNotNil(model.undoToken)
         model.storesWereReplaced(now: now)
         XCTAssertNil(model.undoToken)
         XCTAssertTrue(model.rows.isEmpty)
