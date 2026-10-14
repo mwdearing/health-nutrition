@@ -108,7 +108,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         + "linked to your signed-in account, but does not include your journal entries or photo. A product you create "
         + "and share is linked the same way. Searching shared products sends your search words to the project's server "
         + "with your account when you are signed in. After you connect Apple Health in Settings, the app writes "
-        + "nutrients from real logged food and water entries to HealthKit on this phone and reads nothing from it; "
+        + "nutrients from real logged food and water entries to HealthKit on this phone and reads only its own samples back, to update or remove them; "
         + "a debug build's HealthKit screen can also write test samples. Erasing journal rows does not remove "
         + "HealthKit samples already written. "
         + "For email sign-in, hCaptcha can process browser/device signals and sends a verification result; a rare "
