@@ -135,6 +135,15 @@ public enum IntakeContextFactCatalog {
         components[componentID]
     }
 
+    /// Whether a component id already means something to the catalog: a row of its own, or the slug a
+    /// stated nutrient is written under. A food the user named must not take one of these ids.
+    public static func isReserved(componentID: String) -> Bool {
+        if components[componentID] != nil { return true }
+        return HealthKitWritePlanner.mappings.contains { mapping in
+            mapping.acceptedKeys.contains { nutrientSlug(for: $0) == componentID }
+        }
+    }
+
     /// The code for a component or a snapshot nutrient that names itself: `dietary_<its own name>`.
     ///
     /// The schema caps a slug at 64 characters and the journal will accept a component id that fills all of

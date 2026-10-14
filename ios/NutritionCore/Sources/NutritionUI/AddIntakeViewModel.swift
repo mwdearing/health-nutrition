@@ -396,7 +396,8 @@ public final class AddIntakeViewModel: ObservableObject {
         else { return [] }
         let stored = storedQuantity(amount: amount, unit: unit, name: typedName)
         let components = [IntakeComponent(
-            componentID: Self.slug(typedName), name: typedName, amount: stored.amount, unit: stored.unit)]
+            componentID: Self.componentID(forFoodNamed: typedName, unit: stored.unit),
+            name: typedName, amount: stored.amount, unit: stored.unit)]
         let factor = DailyTotalsBuilder.scalingFactor(labelBasis: basis, logged: components)
         return Self.thisAddsKeys.compactMap { key in
             let value = self.prefilledValue(for: key)
@@ -738,10 +739,14 @@ public final class AddIntakeViewModel: ObservableObject {
             id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier,
             meal: meal?.rawValue)
         let (storedAmount, storedUnit) = storedQuantity(amount: amount, unit: unit, name: trimmedName)
+        let snapshot = productSnapshot()
         let component = IntakeComponent(
-            componentID: Self.slug(trimmedName), name: trimmedName, amount: storedAmount, unit: storedUnit)
+            componentID: Self.componentID(
+                forFoodNamed: trimmedName, unit: storedUnit,
+                snapshotNutrientKeys: snapshot.map { Array($0.nutrients.keys) } ?? []),
+            name: trimmedName, amount: storedAmount, unit: storedUnit)
         do {
-            try store.create(intake, components: [component], product: productSnapshot(), now: now)
+            try store.create(intake, components: [component], product: snapshot, now: now)
         } catch {
             saveError = "Could not save the entry."
             return false
@@ -875,6 +880,31 @@ public final class AddIntakeViewModel: ObservableObject {
     /// spelling itself is `Slug`, which the label parser reads a compound's name into as well.
     nonisolated static func slug(_ text: String) -> String {
         Slug.make(text)
+    }
+
+    /// The component id for a food the user named. The name's slug, unless the catalog reserves it or the
+    /// entry's own product snapshot states a nutrient under it, in which case it is namespaced so the food
+    /// keeps its own meaning and the snapshot's fact is not crowded out (a supplement named "Collagen" that
+    /// states collagen). Water poured by volume is the one food that is what the catalog row says it is, so
+    /// it keeps the catalog id, unless its own snapshot states water, which then keeps that id for the label.
+    nonisolated static func componentID(
+        forFoodNamed name: String, unit: MeasureUnit, snapshotNutrientKeys: [String] = []
+    ) -> String {
+        let base = Self.slug(name)
+        let stated = Set(snapshotNutrientKeys.map { IntakeContextFactCatalog.nutrientSlug(for: $0) })
+        if base == "water", unit.dimension == .volume, !stated.contains(base) { return base }
+        func isTaken(_ id: String) -> Bool {
+            stated.contains(id) || IntakeContextFactCatalog.isReserved(componentID: id)
+        }
+        guard isTaken(base) else { return base }
+        // The namespaced id is checked the same way, since a snapshot can state a nutrient under it too; a
+        // counter goes after the prefix until one is free, which a real label runs out of long before 100.
+        for counter in 1...100 {
+            let prefix = counter == 1 ? "food-" : "food-\(counter)-"
+            let candidate = String((prefix + base).prefix(64))
+            if !isTaken(candidate) { return candidate }
+        }
+        return String(("food-" + UUID().uuidString.lowercased()).prefix(64))
     }
 }
 
