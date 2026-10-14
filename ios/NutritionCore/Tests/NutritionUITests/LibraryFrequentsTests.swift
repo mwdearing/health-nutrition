@@ -91,7 +91,7 @@ final class LibraryFrequentsTests: XCTestCase {
 
     // MARK: On Find products
 
-    func testOftenLoggedSitsBetweenRecentAndFavoritesWithoutRepeatingRecent() throws {
+    func testOftenLoggedFollowsRecentWithoutRepeatingIt() throws {
         let store = try makeStore()
         for seconds in [1, 2, 3] { try addEntry(store, "Oat porridge", at: seconds) }
         for seconds in 10...15 { try addEntry(store, "Food \(seconds)", at: seconds) }

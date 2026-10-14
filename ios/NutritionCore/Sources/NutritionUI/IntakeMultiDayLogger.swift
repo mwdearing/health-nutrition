@@ -1,17 +1,42 @@
 import Foundation
 import NutritionJournal
 
+/// Why a chosen day got no entry.
+public enum MultiDaySkipReason: Equatable, Sendable {
+    /// The entry's own day: it is already logged there.
+    case entryDay
+    /// Today, but the entry's time of day has not come yet.
+    case laterToday
+    /// A day after today.
+    case future
+    /// Not a date that exists, such as February 31.
+    case notADate
+}
+
+/// One chosen day that got no entry, as yyyy-MM-dd, and why.
+public struct MultiDaySkippedDay: Equatable, Sendable {
+    public let day: String
+    public let reason: MultiDaySkipReason
+
+    public init(day: String, reason: MultiDaySkipReason) {
+        self.day = day
+        self.reason = reason
+    }
+}
+
 /// What logging an entry on other days wrote: the new entries, and the chosen days it left out.
 public struct IntakeMultiDayResult: Equatable, Sendable {
     public let createdIDs: [String]
-    /// Chosen days that got no entry, as yyyy-MM-dd: the entry's own day, and a day whose time has not
-    /// come yet (later today, or a future day).
-    public let skippedDays: [String]
+    /// Chosen days that got no entry, in day order, each with its reason.
+    public let skipped: [MultiDaySkippedDay]
 
-    public init(createdIDs: [String], skippedDays: [String]) {
+    public init(createdIDs: [String], skipped: [MultiDaySkippedDay]) {
         self.createdIDs = createdIDs
-        self.skippedDays = skippedDays
+        self.skipped = skipped
     }
+
+    /// The skipped days alone, as yyyy-MM-dd.
+    public var skippedDays: [String] { skipped.map(\.day) }
 }
 
 /// What Log on other days did, for the screen that ran it.
@@ -57,8 +82,9 @@ public struct IntakeMultiDayLogger {
             guard let parts = Self.dayParts(key) else { throw IntakeMultiDayError.invalidDays }
             return (key, parts)
         }
+        // A revision that cannot be read leaves nothing to repeat, as a deleted entry does.
         guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }),
-            let current = try store.revisions(of: intakeID).first(where: { $0.number == intake.currentRevision })
+            let current = (try? store.revisions(of: intakeID))?.first(where: { $0.number == intake.currentRevision })
         else { throw IntakeMultiDayError.entryUnavailable }
         guard let zone = TimeZone(identifier: intake.timeZoneIdentifier),
             let ownDay = IntakeCopier.dayKey(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier)
@@ -72,19 +98,28 @@ public struct IntakeMultiDayLogger {
         calendar.timeZone = zone
         let time = calendar.dateComponents([.hour, .minute, .second], from: intake.occurredAt)
 
+        let today = IntakeCopier.dayKey(now, zoneIdentifier: intake.timeZoneIdentifier)
         var created: [String] = []
-        var skipped: [String] = []
+        var skipped: [MultiDaySkippedDay] = []
         for day in days {
+            guard day.key != ownDay else {
+                skipped.append(MultiDaySkippedDay(day: day.key, reason: .entryDay))
+                continue
+            }
             var parts = day.parts
             parts.hour = time.hour
             parts.minute = time.minute
             parts.second = time.second
             // A time a clock change skips on that day moves to the next valid time, as the calendar reads it.
             // The result must still fall on the chosen day, which also refuses a date such as February 31.
-            guard day.key != ownDay, let occurredAt = calendar.date(from: parts), occurredAt <= now,
+            guard let occurredAt = calendar.date(from: parts),
                 IntakeCopier.dayKey(occurredAt, zoneIdentifier: intake.timeZoneIdentifier) == day.key
             else {
-                skipped.append(day.key)
+                skipped.append(MultiDaySkippedDay(day: day.key, reason: .notADate))
+                continue
+            }
+            guard occurredAt <= now else {
+                skipped.append(MultiDaySkippedDay(day: day.key, reason: day.key == today ? .laterToday : .future))
                 continue
             }
             let copy = Intake(
@@ -108,7 +143,7 @@ public struct IntakeMultiDayLogger {
                 throw writeError
             }
         }
-        return IntakeMultiDayResult(createdIDs: created, skippedDays: skipped)
+        return IntakeMultiDayResult(createdIDs: created, skipped: skipped)
     }
 
     /// The year, month and day of a yyyy-MM-dd key, or nil for anything else.

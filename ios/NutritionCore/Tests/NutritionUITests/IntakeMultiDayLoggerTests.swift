@@ -84,8 +84,10 @@ final class IntakeMultiDayLoggerTests: XCTestCase {
 
         let result = try IntakeMultiDayLogger(store: journal).log(
             intakeID: entry.id, onDays: ["2023-11-10", "2023-11-12", "2023-11-14", "2023-11-15"], now: now)
-        // The entry's own day and a day still to come are skipped.
-        XCTAssertEqual(result.skippedDays, ["2023-11-10", "2023-11-15"])
+        // The entry's own day and a day still to come are skipped, each with its reason.
+        XCTAssertEqual(result.skipped, [
+            MultiDaySkippedDay(day: "2023-11-10", reason: .entryDay), MultiDaySkippedDay(day: "2023-11-15", reason: .future),
+        ])
         let copies = try journal.activeIntakes().filter { $0.id != entry.id }
         XCTAssertEqual(Set(copies.map(\.id)), Set(result.createdIDs))
         XCTAssertEqual(
@@ -104,7 +106,7 @@ final class IntakeMultiDayLoggerTests: XCTestCase {
 
         let result = try IntakeMultiDayLogger(store: journal).log(intakeID: entry.id, onDays: ["2023-11-14"], now: now)
         XCTAssertEqual(result.createdIDs, [])
-        XCTAssertEqual(result.skippedDays, ["2023-11-14"])
+        XCTAssertEqual(result.skipped, [MultiDaySkippedDay(day: "2023-11-14", reason: .laterToday)])
     }
 
     func testTheTimeOfDayIsReadInTheEntrysOwnZone() throws {
@@ -124,7 +126,7 @@ final class IntakeMultiDayLoggerTests: XCTestCase {
 
         let result = try IntakeMultiDayLogger(store: journal).log(intakeID: entry.id, onDays: ["2023-02-31"], now: now)
         XCTAssertEqual(result.createdIDs, [])
-        XCTAssertEqual(result.skippedDays, ["2023-02-31"])
+        XCTAssertEqual(result.skipped, [MultiDaySkippedDay(day: "2023-02-31", reason: .notADate)])
     }
 
     func testRefusals() throws {
@@ -187,6 +189,32 @@ final class IntakeMultiDayLoggerTests: XCTestCase {
         guard case .logged(let result) = model.logOnDays(["2023-11-12"], now: now) else { return XCTFail("nothing logged") }
         XCTAssertEqual(result.createdIDs.count, 1)
         XCTAssertNil(model.multiDayMessage)
+    }
+
+    func testTheSheetNamesEachSkippedDayWithItsReason() throws {
+        let locale = Locale(identifier: "en_US")
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        func text(_ created: Int, _ skipped: [(String, MultiDaySkipReason)], now: Date) -> String? {
+            let result = IntakeMultiDayResult(
+                createdIDs: (0..<created).map { "id-\($0)" },
+                skipped: skipped.map { MultiDaySkippedDay(day: $0.0, reason: $0.1) })
+            return LogOnOtherDaysSheet.loggedText(result, now: now, locale: locale, calendar: calendar)
+        }
+
+        XCTAssertNil(text(2, [], now: now))
+        XCTAssertEqual(
+            text(2, [("2023-11-10", .entryDay), ("2023-11-15", .future)], now: now),
+            "Logged on 2 days. Skipped Nov 10 (this entry's day) and Nov 15 (in the future).")
+        XCTAssertEqual(text(1, [("2023-11-10", .entryDay)], now: now), "Logged on 1 day. Skipped Nov 10 (this entry's day).")
+        XCTAssertEqual(
+            text(1, [("2023-11-10", .entryDay), ("2023-11-15", .future), ("2023-11-16", .future)], now: now),
+            "Logged on 1 day. Skipped Nov 10 (this entry's day), Nov 15 (in the future), and Nov 16 (in the future).")
+        XCTAssertEqual(text(1, [("2023-11-14", .laterToday)], now: now), "Logged on 1 day. Skipped Nov 14 (later today).")
+        // A day in another year carries its year.
+        XCTAssertEqual(
+            text(1, [("2023-12-31", .entryDay)], now: date("2024-01-02T09:00:00Z")),
+            "Logged on 1 day. Skipped Dec 31, 2023 (this entry's day).")
     }
 
     func testPickedDatesBecomeGregorianDayKeys() throws {
