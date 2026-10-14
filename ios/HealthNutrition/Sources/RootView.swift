@@ -173,8 +173,10 @@ struct RootView: View {
             #endif
         }
         .onChange(of: selection) { previous, current in
-            guard current == .settings else { return }
-            selection = previous == .settings ? .today : previous
+            let outcome = SettingsTabRedirect.resolve(
+                previous: previous, current: current, settings: .settings, fallback: .today)
+            guard outcome.opensSettings else { return }
+            selection = outcome.selection
             openSettings(goals: false)
         }
         .background {
