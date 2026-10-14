@@ -212,6 +212,9 @@ public final class GoalsViewModel: ObservableObject {
     /// The unit system the screen shows amounts in, read from the same preferences as the rest of the app.
     public var unitSystem: UnitSystem { preferences.unitSystem }
 
+    /// The reference group chosen on the vitamins and minerals screen, or nil when none is.
+    var referenceGroup: ReferenceGroup? { (preferences as? ReferenceGroupPreferences)?.referenceGroup }
+
     /// Every offered nutrient, with a target's text where one is stored.
     public func load() {
         snapshotUnits = Self.snapshotValueUnits(in: journal)
