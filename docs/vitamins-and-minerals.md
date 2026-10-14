@@ -21,8 +21,8 @@ heading reads "Not known this week", and without a group the amounts are under "
 Each nutrient is averaged over the logged days with an entry that states it or could have: a food (which states the
 nutrient or is unknown for it) or a supplement that declares it. A day logged with only supplements that do not declare
 a nutrient says nothing about it, like a day nothing was logged, so it is left out of that nutrient's average rather
-than read as a day with none of it; the row then says "Averaged over 1 of the 2 logged days; the others had nothing
-that states it." A food that does not state the nutrient still counts, as an unknown entry, so the average is a floor
+than read as a day with none of it; the row then says "Averaged over 1 of 2 logged days. Nothing else you logged
+lists it." A food that does not state the nutrient still counts, as an unknown entry, so the average is a floor
 there: the row reads "At least" and "Below the RDA so far".
 
 Each average is compared with the RDA or AI, so "Below the RDA" on the week means the daily average is

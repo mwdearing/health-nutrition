@@ -137,7 +137,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
             lines.append("Unknown for \(tally.missing) \(tally.missing == 1 ? "entry" : "entries")")
         }
         if tally.known > 0, let days = averagedOverDays, let logged = loggedDays, days < logged {
-            lines.append("Averaged over \(days) of the \(logged) logged days; the others had nothing that states it.")
+            lines.append("Averaged over \(days) of \(logged) logged days. Nothing else you logged lists it.")
         }
         if let days = averagedOverDays, daysAboveLimit > 0, reference?.upperLimit != nil {
             lines.append("Above the upper limit on \(daysAboveLimit) of \(days) logged \(days == 1 ? "day" : "days").")

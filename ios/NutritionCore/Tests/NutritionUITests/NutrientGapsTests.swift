@@ -372,7 +372,7 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 60, known: 1))
         XCTAssertEqual(vitaminC.averagedOverDays, 1)
         XCTAssertTrue(vitaminC.detailLines.contains(
-            "Averaged over 1 of the 2 logged days; the others had nothing that states it."))
+            "Averaged over 1 of 2 logged days. Nothing else you logged lists it."))
         // Magnesium was stated only by the supplement; the orange says nothing about it either way.
         let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
         XCTAssertEqual(magnesium.averagedOverDays, 2)
