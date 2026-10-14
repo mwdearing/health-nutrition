@@ -81,13 +81,35 @@ final class HealthKitWritePlanTests: XCTestCase {
         XCTAssertTrue(plan([:]).isEmpty)
     }
 
-    func testInternationalUnitsAreSkippedRatherThanConverted() {
+    func testVitaminDInIUIsWrittenInMcgAndOtherIUsAreSkipped() throws {
+        // 400 IU of vitamin D is defined as 10 mcg. Vitamin A's IU depends on the form, so it is skipped.
         let specs = plan([
             "vitaminD": .known(dec("400"), .iu),
+            "vitaminA": .known(dec("900"), .iu),
             "vitaminB12": .known(dec("2.4"), .mcg),
         ])
 
-        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):vitaminB12"])
+        XCTAssertEqual(
+            specs.map(\.syncIdentifier), ["intake:\(intakeID):vitaminB12", "intake:\(intakeID):vitaminD"])
+        let vitaminD = try spec("vitaminD", in: specs)
+        XCTAssertEqual(vitaminD.amount, dec("10"))
+        XCTAssertEqual(vitaminD.unitSymbol, "mcg")
+    }
+
+    func testVitaminDInIUUnderItsAliasIsWrittenInMcg() throws {
+        let specs = plan(["vitamin-d": .known(dec("1000"), .iu)])
+        XCTAssertEqual(try spec("vitaminD", in: specs).amount, dec("25"))
+    }
+
+    func testOnlyVitaminDHasAFixedAmountPerInternationalUnit() throws {
+        let withFactor = HealthKitWritePlanner.mappings.filter { $0.amountPerInternationalUnit != nil }
+        XCTAssertEqual(withFactor.map(\.nutrientKey), ["vitaminD"])
+        let vitaminD = try XCTUnwrap(HealthKitWritePlanner.mapping(for: "vitaminD"))
+        XCTAssertEqual(vitaminD.restatingInternationalUnits(.known(dec("2000"), .iu)), .known(dec("50"), .mcg))
+        XCTAssertEqual(vitaminD.restatingInternationalUnits(.belowReportingThreshold(.iu)), .belowReportingThreshold(.mcg))
+        XCTAssertEqual(vitaminD.restatingInternationalUnits(.known(dec("5"), .mcg)), .known(dec("5"), .mcg))
+        let vitaminA = try XCTUnwrap(HealthKitWritePlanner.mapping(for: "vitaminA"))
+        XCTAssertEqual(vitaminA.restatingInternationalUnits(.known(dec("900"), .iu)), .known(dec("900"), .iu))
     }
 
     func testAnUnmappedNutrientKeyIsSkipped() {

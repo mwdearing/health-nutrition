@@ -102,15 +102,39 @@ public struct HealthKitNutrientMapping: Sendable {
     public let aliases: [String]
     public let quantityTypeIdentifier: String
     public let unit: MeasureUnit
+    /// How much of `unit` one international unit of this nutrient is, where that is one fixed amount,
+    /// or nil where it is not. Only vitamin D has one: an IU of vitamin D (D2 or D3) is defined as
+    /// 0.025 mcg. Vitamin A's and vitamin E's IU depend on the form (retinol or beta carotene, natural or
+    /// synthetic alpha-tocopherol), which a label's IU figure does not say, so they have none.
+    public let amountPerInternationalUnit: Decimal?
 
     /// The canonical key first, then the aliases, which is the order a total is resolved in.
     public var acceptedKeys: [String] { [nutrientKey] + aliases }
 
-    public init(nutrientKey: String, aliases: [String] = [], quantityTypeIdentifier: String, unit: MeasureUnit) {
+    public init(
+        nutrientKey: String, aliases: [String] = [], quantityTypeIdentifier: String, unit: MeasureUnit,
+        amountPerInternationalUnit: Decimal? = nil
+    ) {
         self.nutrientKey = nutrientKey
         self.aliases = aliases
         self.quantityTypeIdentifier = quantityTypeIdentifier
         self.unit = unit
+        self.amountPerInternationalUnit = amountPerInternationalUnit
+    }
+
+    /// The value with an international-unit amount restated in `unit` where this nutrient's IU has one
+    /// fixed amount; every other value, and an IU for a nutrient without one, is returned unchanged.
+    /// The multiplication is exact: 400 IU of vitamin D is 10 mcg.
+    public func restatingInternationalUnits(_ value: NutrientValue) -> NutrientValue {
+        guard let factor = amountPerInternationalUnit else { return value }
+        switch value {
+        case .known(let amount, let stated) where stated == .iu:
+            return .known(amount * factor, unit)
+        case .belowReportingThreshold(let stated) where stated == .iu:
+            return .belowReportingThreshold(unit)
+        default:
+            return value
+        }
     }
 }
 
@@ -148,7 +172,7 @@ public enum HealthKitWritePlanner {
         HealthKitNutrientMapping(nutrientKey: "iron", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryIron, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "zinc", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryZinc, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "caffeine", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCaffeine, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "vitaminD", aliases: ["vitamin-d"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminD, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminD", aliases: ["vitamin-d"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminD, unit: .mcg, amountPerInternationalUnit: Decimal(string: "0.025", locale: Locale(identifier: "en_US_POSIX"))!),
         HealthKitNutrientMapping(nutrientKey: "vitaminB12", aliases: ["vitamin-b12"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminB12, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "folate", aliases: ["folic-acid"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFolate, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "vitaminA", aliases: ["vitamin-a"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminA, unit: .mcg),
@@ -213,7 +237,10 @@ public enum HealthKitWritePlanner {
     /// produce two samples, and an alias can stand in for a canonical key that is not known.
     private static func resolvedAmount(for mapping: HealthKitNutrientMapping, in totals: [String: NutrientValue]) -> Decimal? {
         for key in mapping.acceptedKeys {
-            guard let total = totals[key], case .known(let amount, let unit) = total else {
+            // Vitamin D stated in IU is restated in mcg first; any other IU total stays unconvertible.
+            guard let total = totals[key].map(mapping.restatingInternationalUnits),
+                case .known(let amount, let unit) = total
+            else {
                 continue
             }
             if let converted = try? Quantity(value: amount, unit: unit).converted(to: mapping.unit) {
