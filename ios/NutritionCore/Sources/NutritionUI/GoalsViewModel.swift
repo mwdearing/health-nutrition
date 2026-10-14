@@ -137,6 +137,11 @@ public final class GoalsViewModel: ObservableObject {
     @Published public var draftText: [String: String] = [:]
     @Published public var selectedUnits: [String: MeasureUnit] = [:]
     @Published public private(set) var rowError: [String: String] = [:]
+    /// The split the macro gram goals follow, or nil when they do not follow the energy goal. Worked out
+    /// when the goals load and whenever the stored split changes, never per render: a stored split that
+    /// no longer describes the goals (the three gram goals are not its output for the stored energy
+    /// goal) is not reported, so the screen never says goals follow when they would not.
+    @Published public private(set) var followedMacroSplit: MacroSplit?
 
     public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
 
@@ -235,8 +240,10 @@ public final class GoalsViewModel: ObservableObject {
             }
             self.loadedUnitSystem = self.preferences.unitSystem
             errorMessage = nil
+            refreshFollowedMacroSplit()
         } catch {
             rows = []
+            followedMacroSplit = nil
             errorMessage = Self.readFailedMessage
         }
     }
@@ -409,13 +416,125 @@ public final class GoalsViewModel: ObservableObject {
             rowError[nutrient] = "Enter a number above zero."
             return false
         }
+        // Read before the write, so a split can be checked against the energy its grams were worked
+        // out from. A read that fails leaves nothing to check, and the split is then not followed.
+        var previousEnergy: NutrientGoal?
+        if nutrient == Self.energyKey { previousEnergy = (try? store.goal(for: Self.energyKey)) ?? nil }
         guard setTarget(text, for: nutrient, unit: selectedUnits[nutrient]) else { return false }
         draftText[nutrient] = DecimalFormatting.text(target)
+        if nutrient == Self.energyKey { followEnergyGoal(from: previousEnergy) }
         return true
+    }
+
+    /// The energy goal's key, which a macro split is a share of.
+    static let energyKey = "energy"
+
+    /// True while `applyMacroSplit` saves its own energy edit, so that save does not move the gram
+    /// goals by the old split just before the new ones replace them.
+    var isApplyingMacroSplit = false
+
+    /// The preferences the stored split lives in, or nil for a store that keeps none.
+    var macroSplitPreferences: MacroSplitPreferences? { preferences as? MacroSplitPreferences }
+
+    /// Shown when the energy goal saved but the macro goals could not be moved to follow it.
+    public static let macroSplitFollowFailedMessage =
+        "Your energy goal is saved, but protein, carbohydrate and fat could not be updated to match it. Set the percentages again."
+
+    /// Shown when, on top of that, the earlier macro goals could not all be put back.
+    public static let macroSplitFollowRestoreFailedMessage =
+        "Your energy goal is saved, but protein, carbohydrate and fat could not be updated to match it, and the earlier ones could not all be put back. Check protein, carbohydrate and fat below."
+
+    /// An energy goal in kcal, or nil when there is none or it is not above zero.
+    static func kcal(_ goal: NutrientGoal?) -> Decimal? {
+        guard let goal, let value = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .kcal).value,
+            !value.isNaN, value > 0
+        else { return nil }
+        return value
+    }
+
+    /// The three stored macro goals and their amounts in grams, or nil when one is missing, unreadable
+    /// or not a mass.
+    func storedMacroGoals() -> (goals: [NutrientGoal], grams: MacroSplit.Grams)? {
+        var goals: [NutrientGoal] = []
+        var grams: [Decimal] = []
+        for key in Self.macroSplitKeys {
+            guard let goal = try? store.goal(for: key),
+                let inGrams = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .g).value
+            else { return nil }
+            goals.append(goal)
+            grams.append(inGrams)
+        }
+        return (goals, MacroSplit.Grams(protein: grams[0], carbohydrate: grams[1], fat: grams[2]))
+    }
+
+    /// Works `followedMacroSplit` out again from the stored split and the stored goals.
+    func refreshFollowedMacroSplit() {
+        followedMacroSplit = macroSplitPreferences?.macroSplit.flatMap { macroSplitDescribesGoals($0) ? $0 : nil }
+    }
+
+    /// Whether the three stored macro goals are exactly the split's output for the stored energy goal.
+    func macroSplitDescribesGoals(_ split: MacroSplit) -> Bool {
+        guard let macros = storedMacroGoals(),
+            let energy = Self.kcal((try? store.goal(for: Self.energyKey)) ?? nil)
+        else { return false }
+        return (try? split.grams(forEnergyKcal: energy)) == macros.grams
+    }
+
+    /// After the energy goal changes on this screen, moves the protein, carbohydrate and fat goals to the
+    /// stored split's share of the new energy goal.
+    ///
+    /// The rule is decided here, from the goals, every time: the split is followed only when the three
+    /// stored macro goals are exactly what it comes to for the energy goal before this change. A macro
+    /// goal edited by hand or by the setup estimate, goals changed behind this screen, an unreadable
+    /// store or an energy goal too small to share out all fail that, and the macro goals are then left
+    /// as they are, so a goal a person set is never rescaled. Nothing is cleared: whether the goals
+    /// follow is a fact about the goals, not a flag to keep in step. The three are written all or none;
+    /// when one is refused the earlier ones are put back.
+    private func followEnergyGoal(from previous: NutrientGoal?) {
+        guard !isApplyingMacroSplit, let split = macroSplitPreferences?.macroSplit else { return }
+        guard let macros = storedMacroGoals(), let before = Self.kcal(previous),
+            let after = Self.kcal((try? store.goal(for: Self.energyKey)) ?? nil),
+            let expected = try? split.grams(forEnergyKcal: before), expected == macros.grams,
+            let next = try? split.grams(forEnergyKcal: after)
+        else { return }
+        guard next != expected else { return }
+        let targets = [next.protein, next.carbohydrate, next.fat]
+        for (index, key) in Self.macroSplitKeys.enumerated() {
+            do {
+                try store.setGoal(NutrientGoal(nutrient: key, target: targets[index], unit: .g))
+            } catch {
+                // The write that failed changed nothing, so only the ones before it are put back, and a
+                // put-back that fails too is said, since the three may then be a mix of old and new.
+                var restored = true
+                for earlier in (0..<index).reversed() {
+                    do { try store.setGoal(macros.goals[earlier]) } catch { restored = false }
+                }
+                // The fields are refilled from what is actually stored, so a field holding a value the
+                // store no longer has is not committed back over it when it next loses focus.
+                for key in Self.macroSplitKeys {
+                    draftText[key] = nil
+                    selectedUnits[key] = nil
+                }
+                load()
+                errorMessage = restored
+                    ? Self.macroSplitFollowFailedMessage : Self.macroSplitFollowRestoreFailedMessage
+                return
+            }
+        }
+        // The drafts follow too, so an old draft is not committed over the new goal when its field
+        // next loses focus, which would also stop the following.
+        for (index, key) in Self.macroSplitKeys.enumerated() {
+            draftText[key] = DecimalFormatting.text(targets[index])
+            selectedUnits[key] = .g
+            rowError[key] = nil
+        }
+        load()
     }
 
     @discardableResult
     public func clearAllGoals() -> Bool {
+        // Forgotten first, so a removal that fails partway cannot leave a split to follow.
+        macroSplitPreferences?.setMacroSplit(nil)
         do {
             for goal in try store.goals() {
                 try store.removeGoal(nutrient: goal.nutrient)
@@ -426,6 +545,7 @@ public final class GoalsViewModel: ObservableObject {
             load()
             return errorMessage == nil
         } catch {
+            refreshFollowedMacroSplit()
             errorMessage = Self.removeFailedMessage
             return false
         }

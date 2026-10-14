@@ -45,7 +45,7 @@ struct MacroSplitSection: View {
                 if let failure = self.failure {
                     InlineNotice(failure, tone: .failed)
                 }
-                Text("If you change your energy goal later, set the percentages again to update the grams.")
+                Text(MacroSplitCopy.followText(self.model.followedMacroSplit))
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
             }
@@ -104,5 +104,18 @@ private extension View {
         #else
         self
         #endif
+    }
+}
+
+/// What the section says about the gram goals following the energy goal, in one place a test can read.
+enum MacroSplitCopy {
+    static func followText(_ split: MacroSplit?) -> String {
+        guard let split else {
+            return "After you set them, the gram goals follow your energy goal when you change it here, "
+                + "until you edit protein, carbohydrate or fat by hand."
+        }
+        return "Your gram goals follow your energy goal at protein \(DecimalFormatting.text(split.proteinPercent))%, "
+            + "carbohydrate \(DecimalFormatting.text(split.carbohydratePercent))%, "
+            + "fat \(DecimalFormatting.text(split.fatPercent))%. Editing one of them by hand stops this."
     }
 }

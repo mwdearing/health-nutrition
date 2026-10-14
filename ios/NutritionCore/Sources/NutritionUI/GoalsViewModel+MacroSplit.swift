@@ -36,11 +36,22 @@ public enum MacroSplitProblem: Error, Equatable {
     }
 }
 
+/// Where the split the macro gram goals follow is kept: a display preference, erased with the others.
+/// Nil when the gram goals do not follow the energy goal.
+public protocol MacroSplitPreferences: AnyObject {
+    var macroSplit: MacroSplit? { get }
+    func setMacroSplit(_ split: MacroSplit?)
+}
+
 /// Macro targets stated as percentages of the energy goal.
 ///
-/// The percentages are not stored. Applying a split writes three ordinary gram goals, so Today, the
-/// Journal header and erase treat them as the gram goals they are. The split shown back is worked out
-/// from those stored grams and the energy goal each time.
+/// Applying a split writes three ordinary gram goals, so Today, the Journal header and erase treat them
+/// as the gram goals they are, and stores the split itself. The gram goals follow the split exactly
+/// while the three stored macro goals are its output for the energy goal: changing the energy goal on
+/// the Goals screen then moves them to its share of the new one. That is decided from the goals each
+/// time, so a gram goal changed by hand or by the setup estimate stops it, and nothing has to be kept
+/// in step. Clearing all goals and erase forget the split. The share shown back is still worked out from
+/// the stored grams.
 extension GoalsViewModel {
     /// The keys a split writes, in the order the screen names them.
     public static let macroSplitKeys = ["protein", "carbohydrate", "fat"]
@@ -49,6 +60,11 @@ extension GoalsViewModel {
     /// may hold the new value and some the old.
     public static let macroSplitRestoreFailedMessage =
         "Could not save all three macro goals, and the earlier ones could not all be put back. Check protein, carbohydrate and fat below."
+
+    /// Shown when an apply saved a changed energy goal first and then could not write the gram goals:
+    /// the energy goal stays saved, so the message must not say nothing was saved.
+    public static let macroSplitEnergySavedMessage =
+        "Your energy goal is saved, but protein, carbohydrate and fat could not be set from the percentages."
 
     /// The energy goal the split is a share of, in kcal, or nil when there is none.
     ///
@@ -73,11 +89,7 @@ extension GoalsViewModel {
             else { throw MacroSplitProblem.energyNotValid }
             return kcal
         }
-        guard let goal = stored,
-              let kcal = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .kcal).value,
-              !kcal.isNaN, kcal > 0
-        else { return nil }
-        return kcal
+        return Self.kcal(stored)
     }
 
     /// Why the section cannot offer a split yet, or nil when there is an energy goal to share out.
@@ -104,10 +116,9 @@ extension GoalsViewModel {
         } catch {
             return .failure(.readFailed)
         }
-        guard let proteinShare = AmountParser.parseTyped(protein),
-              let carbohydrateShare = AmountParser.parseTyped(carbohydrate),
-              let fatShare = AmountParser.parseTyped(fat)
+        guard let shares = Self.typedShares(protein: protein, carbohydrate: carbohydrate, fat: fat)
         else { return .failure(.notNumbers) }
+        let (proteinShare, carbohydrateShare, fatShare) = shares
         do {
             let split = try MacroSplit(
                 proteinPercent: proteinShare, carbohydratePercent: carbohydrateShare, fatPercent: fatShare)
@@ -121,20 +132,27 @@ extension GoalsViewModel {
         }
     }
 
+    /// The three typed percentages as numbers, or nil when one is not a number. One parse for the preview,
+    /// the save and the split the save stores, so they cannot read the same text differently.
+    static func typedShares(protein: String, carbohydrate: String, fat: String) -> (Decimal, Decimal, Decimal)? {
+        guard let proteinShare = AmountParser.parseTyped(protein),
+              let carbohydrateShare = AmountParser.parseTyped(carbohydrate),
+              let fatShare = AmountParser.parseTyped(fat)
+        else { return nil }
+        return (proteinShare, carbohydrateShare, fatShare)
+    }
+
+    /// The split the typed percentages state, or nil when they do not make one.
+    static func typedMacroSplit(protein: String, carbohydrate: String, fat: String) -> MacroSplit? {
+        guard let shares = typedShares(protein: protein, carbohydrate: carbohydrate, fat: fat) else { return nil }
+        return try? MacroSplit(proteinPercent: shares.0, carbohydratePercent: shares.1, fatPercent: shares.2)
+    }
+
     /// The share of the energy goal each stored macro goal supplies, as whole percents, or nil unless
     /// there is an energy goal and all three macro goals are stored, readable and in mass units.
     public func currentMacroPercents() -> MacroSplit.Grams? {
-        guard let energy = try? self.macroSplitEnergyKcal() else { return nil }
-        var grams: [Decimal] = []
-        for key in Self.macroSplitKeys {
-            guard let goal = try? self.storedGoal(for: key),
-                  let inGrams = try? Quantity(value: goal.target, unit: goal.unit).converted(to: .g).value
-            else { return nil }
-            grams.append(inGrams)
-        }
-        return MacroSplit.percents(
-            ofEnergyKcal: energy,
-            grams: MacroSplit.Grams(protein: grams[0], carbohydrate: grams[1], fat: grams[2]))
+        guard let energy = try? self.macroSplitEnergyKcal(), let macros = self.storedMacroGoals() else { return nil }
+        return MacroSplit.percents(ofEnergyKcal: energy, grams: macros.grams)
     }
 
     /// Writes the three gram goals the typed percentages come to. All three are written or none is:
@@ -153,6 +171,10 @@ extension GoalsViewModel {
         let targets: [(key: String, grams: Decimal)] = [
             ("protein", grams.protein), ("carbohydrate", grams.carbohydrate), ("fat", grams.fat),
         ]
+        // The split the grams came from, stored only once all three are written. A failed apply leaves
+        // the earlier split stored, and whether the goals still follow it is decided from the goals.
+        let split = Self.typedMacroSplit(protein: protein, carbohydrate: carbohydrate, fat: fat)
+        var energySaved = false
         var previous: [(key: String, goal: NutrientGoal?, draft: String?, unit: MeasureUnit?)] = []
         let storedEnergy: NutrientGoal?
         do {
@@ -172,9 +194,15 @@ extension GoalsViewModel {
             let typed = AmountParser.parseTyped(draft.trimmingCharacters(in: .whitespacesAndNewlines))
             let unit = self.selectedUnits["energy"] ?? .kcal
             if typed != storedEnergy?.target || unit != storedEnergy?.unit {
-                guard self.commitTarget(for: "energy") else {
+                // Saved without following: the old split must not move the grams just before the new
+                // ones replace them.
+                self.isApplyingMacroSplit = true
+                let committed = self.commitTarget(for: "energy")
+                self.isApplyingMacroSplit = false
+                guard committed else {
                     return self.rowError["energy"] ?? self.errorMessage ?? Self.saveFailedMessage
                 }
+                energySaved = true
             }
         }
         // Each goal is written through its own row, so the row's draft, unit and any error it showed for
@@ -191,12 +219,19 @@ extension GoalsViewModel {
                     if !self.restoreGoal(earlier.goal, for: earlier.key) { restored = false }
                 }
                 for earlier in previous.prefix(index + 1) {
-                    self.draftText[earlier.key] = earlier.draft
-                    self.selectedUnits[earlier.key] = earlier.unit
+                    // A goal that could not be put back keeps its new value, so its field is refilled
+                    // from the store rather than shown the old draft it would commit back over it.
+                    self.draftText[earlier.key] = restored ? earlier.draft : nil
+                    self.selectedUnits[earlier.key] = restored ? earlier.unit : nil
                 }
-                return restored ? Self.saveFailedMessage : Self.macroSplitRestoreFailedMessage
+                self.load()
+                // A changed energy goal saved first stays saved, and the message must say so.
+                guard restored else { return Self.macroSplitRestoreFailedMessage }
+                return energySaved ? Self.macroSplitEnergySavedMessage : Self.saveFailedMessage
             }
         }
+        self.macroSplitPreferences?.setMacroSplit(split)
+        self.refreshFollowedMacroSplit()
         return nil
     }
 }

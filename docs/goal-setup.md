@@ -70,10 +70,25 @@ section shows the grams that comes to (4 kcal per gram for protein and carbohydr
 rounded to whole grams) and, on "Set gram goals from percentages", writes them as the ordinary gram
 goals for those three nutrients. All three are written or none is.
 
-The percentages themselves are not stored. The share shown back is worked out from the stored gram
-goals and the stored energy goal, so it need not total 100 after a gram goal is edited by hand or
-the energy goal changes; the grams do not follow a later change to the energy goal until the
-percentages are set again. The energy used is what the energy row shows: an edit typed there and not yet saved is used for the preview and saved before the gram goals. Without an energy goal the section only says to set one first. The app
+Once all three gram goals are written, the split itself is stored as a display preference
+(`display.goals.macroSplit`, for example `30,40,30`). The gram goals follow it exactly while the three
+stored macro goals are its output for the energy goal; that is decided from the goals each time rather
+than kept as a flag. While they follow, changing the energy goal on the Goals screen moves protein,
+carbohydrate and fat to the split's share of the new energy goal, written all three or none, and the
+section says the gram goals follow at those percentages. 30/40/30 of 2,000 kcal is 150/200/67 g;
+changing energy to 2,500 kcal makes it 188/250/83 g.
+
+So a gram goal changed by hand or by the setup estimate stops following (typing exactly the split's
+grams back in resumes it), and so do removing the energy goal, an energy goal too small to share out,
+and goals changed behind the screen; none of those rescales anything. Clearing all goals and erase forget
+the split. If a gram write is refused after the energy goal saved, the earlier gram goals are put back
+and the screen says the macros could not follow, or, when putting them back fails too, that the three
+may be a mix of old and new, with the fields refilled from what is stored. A percentage apply that saved
+a changed energy goal before a gram write failed keeps that energy goal and says so ("Your energy goal is
+saved, but protein, carbohydrate and fat could not be set from the percentages."). A failed apply or
+setup save leaves the earlier split stored, and whether the goals still follow it is again decided from
+the goals. The share shown back is still
+worked out from the stored gram goals and the stored energy goal. The energy used is what the energy row shows: an edit typed there and not yet saved is used for the preview and saved before the gram goals. Without an energy goal the section only says to set one first. The app
 offers no split of its own.
 
 ## Code
