@@ -2,10 +2,9 @@
 
 Every amount in this contract is an exact decimal carried as a JSON string. The
 rules govern the catalog and its wire format: published products, the reference
-vectors in `golden.v1.json` and any service that builds against these files. The
-iOS app (which stores `Decimal`) follows them for catalog data; how its journal
-scales a logged entry is set out under "The journal keeps the digits its
-arithmetic gives" below.
+vectors in `golden.v1.json` and any service that builds against these files.
+How the iOS app (which stores `Decimal`) scales a logged entry in its journal is
+set out under "The journal keeps the digits its arithmetic gives" below.
 
 ## Decimals are strings, never JSON numbers
 
@@ -109,19 +108,20 @@ not refuse a result past 38 significant digits: `Decimal` shortens it to 38
 instead. For example, 24 fl oz (709.7647095 mL) of a 710 mL serving gives the
 factor `0.99966860492957746478873239436619718309` on an iPhone, where the exact
 quotient rounds to `...310` at that length. For a basis that states its
-serving, the division comes before the multiplication, so 1 g logged of a 3 g
-serving that states 3 g comes to `0.99999999999999999999999999999999999999 g`
-rather than `1 g`. The relay encoder, the Apple Health samples and the day's
-totals all scale this way.
+serving, the division comes before the multiplication: with 1 g logged of a
+"per serving (3 g)" label that states 3 g of carbohydrate, the scaled
+carbohydrate is `0.99999999999999999999999999999999999999 g` rather than `1 g`.
+The relay encoder, the Apple Health samples and the day's totals all use this
+arithmetic.
 
 That is deliberate. Every amount the encoder sends is covered by the payload's
 digests (`domain_facts_hash` and `client_payload_hash` in
 `contracts/intake-context/README.md`), and different facts or bytes for the same
 revision or operation are a conflict, not a replay. Changing the journal's
 arithmetic would change the amounts of a revision encoded before the change and
-sent again after it. So the journal's scaling stays as it is, and a screen
-rounds its figures only when it shows them, as "Display rounding never replaces
-a stored amount" requires. The other sections still govern the catalog.
+sent again after it. So the journal's scaling stays as it is, and the screens
+round its scaled figures for display only, as "Display rounding never replaces a
+stored amount" requires. The other sections still govern the catalog.
 
 ## Units: one spelling each, and energy in kcal
 
