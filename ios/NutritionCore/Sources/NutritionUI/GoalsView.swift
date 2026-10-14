@@ -24,6 +24,7 @@ public struct GoalsView: View {
                     self.showingSetup = true
                 }
             }
+            MacroSplitSection(model: model)
             ForEach(model.sections) { section in
                 Section(section.title) {
                     ForEach(section.rows) { row in
