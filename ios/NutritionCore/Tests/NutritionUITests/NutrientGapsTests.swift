@@ -349,6 +349,22 @@ final class NutrientGapsTests: XCTestCase {
         }
     }
 
+    func testAPregnancyRowIsComparedWithItsOwnValuesAndLimit() throws {
+        let pregnant = try XCTUnwrap(ReferenceGroup(lifeStage: .pregnancy, ageBand: .years31To50))
+        // 3,600 mg of phosphorus is under the adult 4,000 mg limit but over pregnancy's 3,500 mg.
+        let phosphorus = NutrientGapRow(
+            nutrient: "phosphorus", label: "Phosphorus", unit: .mg,
+            tally: NutrientDayTally(fromFood: 3600, known: 1),
+            reference: ReferenceIntakes.intake(for: "phosphorus", group: pregnant))
+        XCTAssertEqual(phosphorus.status, .aboveUpperLimit)
+        XCTAssertEqual(phosphorus.referenceText, "RDA 700 mg, upper limit 3500 mg")
+        // 18 mg of iron reaches a woman's RDA but is below pregnancy's 27 mg.
+        let iron = NutrientGapRow(
+            nutrient: "iron", label: "Iron", unit: .mg, tally: NutrientDayTally(fromFood: 18, known: 1),
+            reference: ReferenceIntakes.intake(for: "iron", group: pregnant))
+        XCTAssertEqual(iron.status, .belowReference)
+    }
+
     func testAPregnancyOrBreastfeedingGroupIsStoredAndReadBack() throws {
         let defaults = gapsSuite()
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)

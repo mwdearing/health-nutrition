@@ -70,7 +70,8 @@ public struct ReferenceGroup: Sendable, Hashable, Codable {
         self.lifeStage = .standard
     }
 
-    /// A pregnancy or breastfeeding group, or nil for a band the tables do not publish it for.
+    /// A pregnancy or breastfeeding group, or nil for a band the tables do not publish it for. Nil for
+    /// `.standard` too: a standard group needs a sex, so it is made with `init(sex:ageBand:)`.
     public init?(lifeStage: ReferenceLifeStage, ageBand: ReferenceAgeBand) {
         guard lifeStage != .standard, lifeStage.ageBands.contains(ageBand) else { return nil }
         self.sex = .female
