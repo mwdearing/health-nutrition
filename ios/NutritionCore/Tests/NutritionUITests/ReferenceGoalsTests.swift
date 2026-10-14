@@ -54,6 +54,23 @@ final class ReferenceGoalsTests: XCTestCase {
         XCTAssertEqual(try store.goal(for: "iron"), NutrientGoal(nutrient: "iron", target: 8, unit: .mg))
     }
 
+    func testUseWritesTheReferencesOwnUnitWhateverThePickerHeld() throws {
+        let (model, store) = makeModel(group: men31)
+        model.selectedUnits["iron"] = .g
+        XCTAssertTrue(model.useReferenceGoal(for: "iron"))
+        XCTAssertEqual(try store.goal(for: "iron"), NutrientGoal(nutrient: "iron", target: 8, unit: .mg))
+        XCTAssertEqual(model.selectedUnits["iron"], .mg)
+    }
+
+    func testAGoalKeptUnderAnAliasIsAGoalForTheNutrient() throws {
+        // A label's `vitamin-c` goal is a goal for vitamin C, so the canonical row is not offered a second.
+        let (model, store) = makeModel(
+            goals: [NutrientGoal(nutrient: "vitamin-c", target: 500, unit: .mg)], group: men31)
+        XCTAssertNil(model.referenceGoalHint(for: "vitaminC"))
+        XCTAssertFalse(model.useReferenceGoal(for: "vitaminC"))
+        XCTAssertNil(try store.goal(for: "vitaminC"))
+    }
+
     func testAFractionalReferenceIsWrittenExactly() throws {
         let (model, store) = makeModel(group: men31)
         XCTAssertTrue(model.useReferenceGoal(for: "copper"))

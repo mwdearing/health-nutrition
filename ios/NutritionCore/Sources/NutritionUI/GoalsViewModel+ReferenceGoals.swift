@@ -31,10 +31,16 @@ extension GoalsViewModel {
     /// started typing their own number in the row (Use would replace it).
     public func referenceGoalHint(for nutrient: String) -> ReferenceGoalHint? {
         let row = self.rows.first(where: { $0.nutrient == nutrient })
+        // A goal kept under another key for the same nutrient, such as a label's `vitamin-c`, is a goal for
+        // this nutrient too, so the row is not offered a second one.
+        let hasGoalUnderAlias = self.rows.contains {
+            $0.nutrient != nutrient && $0.targetText != nil
+                && HealthKitWritePlanner.canonicalKey(for: $0.nutrient) == nutrient
+        }
         return Self.referenceGoalHint(
             nutrient: nutrient, group: self.referenceGroup,
-            isOfferedWithoutGoal: row != nil && row?.targetText == nil, draft: self.draftText[nutrient],
-            goalUnit: self.unit(for: nutrient))
+            isOfferedWithoutGoal: row != nil && row?.targetText == nil && !hasGoalUnderAlias,
+            draft: self.draftText[nutrient], goalUnit: self.unit(for: nutrient))
     }
 
     /// The rule behind `referenceGoalHint(for:)`, with the row's state passed in so each condition can be
