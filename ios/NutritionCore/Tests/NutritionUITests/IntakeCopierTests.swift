@@ -120,6 +120,18 @@ final class IntakeCopierTests: XCTestCase {
         let store = try makeStore()
         try add(store, name: "Odd", at: yesterday, zone: "Not/AZone")
         XCTAssertEqual(try copier(store).sources(dayKey: "2023-11-14").count, 0)
-        XCTAssertEqual(try copier(store).copyYesterday(now: now).copiedCount, 0)
+        let result = try copier(store).copyYesterday(now: now)
+        XCTAssertEqual(result.copiedCount, 0)
+        XCTAssertEqual(result.skippedCount, 1)
+    }
+
+    func testStoreFailureStopsAndReportsWhatWasWritten() throws {
+        let store = try makeStore()
+        try add(store, name: "A", at: yesterday)
+        store.failNextSaveForTesting = true
+        XCTAssertThrowsError(try copier(store).copyYesterday(now: now)) { error in
+            guard case IntakeCopyError.stoppedEarly(let partial, _) = error else { return XCTFail("\(error)") }
+            XCTAssertEqual(partial.copiedCount, 0)
+        }
     }
 }

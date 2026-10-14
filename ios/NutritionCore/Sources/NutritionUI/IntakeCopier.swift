@@ -63,13 +63,15 @@ public struct IntakeCopier {
     /// Copies every entry of `dayKey` to `now`. A day with no entries copies nothing.
     @discardableResult
     public func copyDay(dayKey: String, now: Date) throws -> IntakeCopyResult {
-        try copy(try sources(dayKey: dayKey), now: now)
+        try copy(try sources(dayKey: dayKey), now: now, unreadableZone: try unreadableZoneCount(dayKey: dayKey))
     }
 
     /// Copies the entries of one meal of `dayKey` to `now`.
     @discardableResult
     public func copyMeal(_ meal: MealSelector, dayKey: String, now: Date) throws -> IntakeCopyResult {
-        try copy(try sources(dayKey: dayKey, meal: meal), now: now)
+        try copy(
+            try sources(dayKey: dayKey, meal: meal), now: now,
+            unreadableZone: try unreadableZoneCount(dayKey: dayKey, meal: meal))
     }
 
     /// Copies yesterday's whole log to `now`.
@@ -78,15 +80,30 @@ public struct IntakeCopier {
         try copyDay(dayKey: yesterdayKey(now: now), now: now)
     }
 
-    private func copy(_ intakes: [Intake], now: Date) throws -> IntakeCopyResult {
+    /// Active entries whose zone names no zone and whose UTC day is `dayKey`: they cannot be placed on a
+    /// local day, so a copy of that day reports them as skipped rather than silently dropping them.
+    private func unreadableZoneCount(dayKey: String, meal: MealSelector? = nil) throws -> Int {
+        try store.activeIntakes()
+            .filter { $0.lifecycle == .active && TimeZone(identifier: $0.timeZoneIdentifier) == nil }
+            .filter { Self.dayKey($0.occurredAt, zoneIdentifier: "UTC") == dayKey }
+            .filter { meal?.matches($0.meal) ?? true }
+            .count
+    }
+
+    private func copy(_ intakes: [Intake], now: Date, unreadableZone: Int = 0) throws -> IntakeCopyResult {
         var created: [String] = []
-        var skipped = 0
+        var skipped = unreadableZone
         for intake in intakes {
             do {
                 created.append(try repeater.create(repeating: intake, now: now))
-            } catch {
-                // Any one source failing never aborts the batch or hides what was already written.
+            } catch IntakeRepeatError.productUnavailable {
                 skipped += 1
+            } catch JournalError.corruptRecord {
+                skipped += 1
+            } catch {
+                // A store failure is not a bad source: stop, and say what was already written.
+                throw IntakeCopyError.stoppedEarly(
+                    IntakeCopyResult(createdIDs: created, skippedCount: skipped), underlying: error)
             }
         }
         return IntakeCopyResult(createdIDs: created, skippedCount: skipped)
@@ -100,6 +117,11 @@ public struct IntakeCopier {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
+}
+
+/// A copy that stopped on a store failure: what was already written is not undone.
+public enum IntakeCopyError: Error {
+    case stoppedEarly(IntakeCopyResult, underlying: Error)
 }
 
 /// Which meal of a day to copy: one of the four named meals, or Other (no meal, or one the four do not name).
