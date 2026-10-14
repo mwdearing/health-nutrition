@@ -378,7 +378,7 @@ answer is changed in the Health app.
 
 With mixed permissions an upsert writes the nutrients Health allows and parks the operation in
 `needsAttention` with the refused nutrients named, so one turned-off type never keeps the rest of an
-entry out of Health. Stale-sample deletion on an edit only touches types this app may write; an edit that drops a nutrient an earlier revision stated, whose type is no longer writable, parks too, because the old sample cannot be removed. Allowing
+entry out of Health. Stale-sample deletion on an edit only touches types this app may write; an edit that drops a nutrient whose sample can still be in Health (stated by the newest fully delivered revision or a later attempted one) and whose type is no longer writable parks too, because the old sample cannot be removed. Allowing
 the refused types later re-delivers the same revision, an equal-version replacement of what was
 already written.
 

@@ -439,8 +439,8 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // An edit that drops a nutrient an earlier revision wrote has to remove that sample, which needs
         // write access to its type. Where the type is no longer writable the sample cannot be removed,
         // so the edit waits for a person rather than being acknowledged over a stale value in Health.
-        // Earlier revisions are read only when such a type exists, which is never the case while every
-        // type is allowed.
+        // Only the revisions that can still have samples in Health are read, and only when such a type
+        // exists, which is never the case while every type is allowed.
         if operation.revision > 1 {
             let planned = Set(plan.map { Self.nutrientKey(of: $0.syncIdentifier) })
             let unwritableOmitted = Set(HealthKitWritePlanner.mappings
@@ -449,7 +449,8 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             if !unwritableOmitted.isEmpty {
                 do {
                     var earlier = Set<String>()
-                    for number in 1..<operation.revision {
+                    for number in try Self.revisionsThatMayHaveWritten(
+                        before: operation.revision, of: operation.intakeID, in: store) {
                         let earlierPlan = HealthKitWritePlanner.plan(
                             intakeID: operation.intakeID, revision: number, occurredAt: occurredAt,
                             totals: try await totals(operation.intakeID, number))
@@ -575,6 +576,28 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     /// Every key the mapping table names, so a delete covers every sample this app could have written
     /// for the intake, not only the ones the current revision happens to state.
     private static let mappedKeys: [String] = HealthKitWritePlanner.mappings.map(\.nutrientKey)
+
+    /// The earlier revisions whose samples can still be in Health, newest first: back to and including
+    /// the newest one delivered in full. A fully delivered revision wrote its whole plan and removed
+    /// everything it no longer stated, so nothing older can still be there; revisions after it that
+    /// were attempted but parked may have written part of their plan. Revisions never attempted wrote
+    /// nothing.
+    private static func revisionsThatMayHaveWritten(
+        before revision: Int, of intakeID: String, in store: any JournalDeliverySuspension
+    ) throws -> [Int] {
+        let attempted = try store.projections(of: intakeID)
+            .filter {
+                $0.destination == .healthKit && $0.desiredAction == .upsert && $0.revision < revision
+                    && ($0.state == .succeeded || $0.state == .needsAttention || $0.state == .inProgress)
+            }
+            .sorted { $0.revision > $1.revision }
+        var revisions: [Int] = []
+        for projection in attempted where !revisions.contains(projection.revision) {
+            revisions.append(projection.revision)
+            if projection.state == .succeeded { break }
+        }
+        return revisions
+    }
 
     /// The nutrient key a sync identifier ends with (`intake:<id>:<key>`).
     private static func nutrientKey(of syncIdentifier: String) -> String {

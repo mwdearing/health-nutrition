@@ -480,6 +480,35 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertTrue(reason.contains("calcium"), "got \(reason)")
     }
 
+    /// A nutrient an intermediate revision already removed is not stale any more, so turning its type
+    /// off afterwards does not hold up later edits.
+    func testANutrientAlreadyRemovedByADeliveredEditIsNotStale() async throws {
+        let store = try makeStore(try makeDirectory())
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings { writer.allow(mapping.quantityTypeIdentifier) }
+        let byRevision: [Int: [String: NutrientValue]] = [
+            1: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)],
+            2: ["protein": .known(dec("13"), .g)],
+            3: ["protein": .known(dec("20"), .g)],
+        ]
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer, totals: { _, revision in byRevision[revision] ?? [:] })
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "no calcium", now: when)
+        _ = await worker.runOnce(now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.edit(
+            intakeID: intakeID, components: [component(amount: 55)], product: nil, changeReason: "more", now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .delivered = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("revision 2 already removed the calcium, got \(outcomes)")
+        }
+    }
+
     /// A nutrient no revision ever stated is not stale, so a type turned off for it does not hold up
     /// an edit.
     func testAnEditIsDeliveredWhenTheRefusedTypeWasNeverWritten() async throws {
