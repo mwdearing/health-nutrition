@@ -344,7 +344,7 @@ public struct RelayDeliveryWorker: Sendable {
                     outcomes.append(acknowledge(
                         operation, now: now, outcome: .superseded(
                             operationID: operation.operationID, detail: detail)))
-                case .failed(let reason):
+                case .failed(let reason), .unreadable(let reason):
                     outcomes.append(retry(operation, reason: reason, now: now))
                     blocking[intakeID] = operation.operationID
                 case .encoded(let item):
@@ -391,6 +391,16 @@ public struct RelayDeliveryWorker: Sendable {
                 // run would not know the projection had been settled.
                 await projections.resolve(projection, with: .superseded)
                 outcomes.append(.superseded(operationID: projection.operationID, detail: detail))
+            case .unreadable(let reason):
+                // **A store read that failed is tried again, not parked.** The projection is intact in the
+                // queue; the read is what went wrong, and a person cannot fix a read by re-arming the
+                // projection. The queue is told the date, so the next run waits for it rather than retrying
+                // straight away, and this run blocks the projections behind it the same way a refusal does.
+                let next = now.addingTimeInterval(TimeInterval(Self.backoffSeconds(afterAttempt: 1)))
+                await projections.resolve(projection, with: .retryAfter(next, reason: reason))
+                outcomes.append(.retryScheduled(
+                    operationID: projection.operationID, nextAttemptAt: next, reason: reason))
+                blocking[projection.intakeID] = projection.operationID
             case .failed:
                 // A projection that cannot be encoded is the queue's problem to hear about: it offered a
                 // payload this module refuses, and recording a failure here would be recording it with
@@ -566,6 +576,9 @@ public struct RelayDeliveryWorker: Sendable {
         case superseded(detail: String?)
         /// A refusal the receiver would make anyway, caught here before a batch was built.
         case failed(reason: String)
+        /// A store read failed while the payload was being built. That says nothing about the payload itself,
+        /// so it is worth another attempt rather than a person's attention.
+        case unreadable(reason: String)
         case encoded(RelayEncodedOperation)
     }
 
@@ -685,7 +698,7 @@ public struct RelayDeliveryWorker: Sendable {
             intake = try store.activeIntakes().first { $0.id == projection.intakeID }
             revisions = try store.revisions(of: projection.intakeID)
         } catch {
-            return .failed(reason: "the intake could not be read")
+            return .unreadable(reason: "the intake could not be read")
         }
         guard let intake, let revision = revisions.first(where: { $0.number == projection.revision })
         else { return .superseded(detail: nil) }
@@ -693,7 +706,7 @@ public struct RelayDeliveryWorker: Sendable {
         do {
             product = try revision.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
         } catch {
-            return .failed(reason: "the product snapshot could not be read")
+            return .unreadable(reason: "the product snapshot could not be read")
         }
         do {
             return .encoded(RelayEncodedOperation(
@@ -1081,7 +1094,7 @@ public struct RelayDeliveryWorker: Sendable {
             switch encodeUpsert(operation) {
             case .encoded(let rebuilt):
                 ready.append(rebuilt)
-            case .failed(let reason):
+            case .failed(let reason), .unreadable(let reason):
                 deliveries.append(RelayDelivery(
                     intakeID: item.intakeID, outcome: retry(operation, reason: reason, now: now)))
                 blockedBy[item.intakeID] = item.operationID
