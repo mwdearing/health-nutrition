@@ -495,7 +495,9 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         do {
             // A refused key only still holds a sample when one was there before this pass: a nutrient
             // this revision states for the first time under a denied type was never written.
-            let refusedStillThere = refusedKeys.isEmpty || operation.revision == 1
+            // The ledger includes what an earlier attempt of this same revision wrote, so a retry after
+            // the access changed keeps a sample it can no longer replace.
+            let refusedStillThere = refusedKeys.isEmpty
                 ? Set<String>()
                 : refusedKeys.intersection(try await keysPossiblyInHealth(
                     intakeID: operation.intakeID, before: operation.revision, occurredAt: occurredAt))
