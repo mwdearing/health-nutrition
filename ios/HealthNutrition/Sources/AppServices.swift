@@ -134,6 +134,7 @@ final class AppServices {
             },
             afterSuccessfulErase: {
                 displayPreferences.clearProductSharingPausesAfterErase()
+                HealthKitReader.forgetReadAccess()
                 account?.refreshAfterErase()
             },
             eraseLocalAccount: {

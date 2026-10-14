@@ -58,7 +58,10 @@ public final class BodyActivityViewModel: ObservableObject {
 
     public func load(now: Date) async {
         hasAsked = reader.hasAskedForReadAccess
-        guard hasAsked else { return }
+        guard hasAsked else {
+            readings = .empty
+            return
+        }
         readings = await reader.read(now: now)
     }
 

@@ -63,6 +63,21 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertEqual(model.weightTrendText, "Down 1 kg over 30 days")
     }
 
+    func testForgettingTheRequestClearsWhatWasShown() async {
+        let reader = FakeReader()
+        reader.hasAskedForReadAccess = true
+        reader.readings = BodyActivityReadings(steps: 100)
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+        await model.load(now: now)
+        XCTAssertNotNil(model.stepsText)
+
+        reader.hasAskedForReadAccess = false
+        await model.load(now: now)
+
+        XCTAssertTrue(model.showsConnect)
+        XCTAssertTrue(model.readings.isEmpty)
+    }
+
     func testNoEarlierWeightMeansNoTrend() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true
