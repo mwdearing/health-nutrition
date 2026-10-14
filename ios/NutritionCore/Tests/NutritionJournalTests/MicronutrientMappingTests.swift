@@ -38,3 +38,15 @@ final class MicronutrientMappingTests: XCTestCase {
         XCTAssertEqual(specs.first?.unitSymbol, "mcg")
     }
 }
+
+final class MicronutrientAliasTests: XCTestCase {
+    func testSlugKeysFromLabelCaptureResolveToCanonicalKeys() {
+        XCTAssertEqual(HealthKitWritePlanner.canonicalKey(for: "vitamin-b6"), "vitaminB6")
+        XCTAssertEqual(HealthKitWritePlanner.canonicalKey(for: "vitamin-a"), "vitaminA")
+        XCTAssertEqual(HealthKitWritePlanner.canonicalKey(for: "pantothenic-acid"), "pantothenicAcid")
+        let specs = HealthKitWritePlanner.plan(
+            intakeID: "i", revision: 1, occurredAt: Date(timeIntervalSince1970: 0),
+            totals: ["vitamin-b6": .known(2, .mg)])
+        XCTAssertEqual(specs.map(\.quantityTypeIdentifier), ["HKQuantityTypeIdentifierDietaryVitaminB6"])
+    }
+}
