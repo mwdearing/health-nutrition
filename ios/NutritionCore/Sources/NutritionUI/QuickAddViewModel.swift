@@ -49,6 +49,10 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     }
 
     public static let defaultName = "Quick add"
+    /// The one component's id, whatever the entry is called. A slug of the typed name could spell a nutrient
+    /// (`Protein` is `protein`), and the relay encoder would then take the serving for that nutrient's fact
+    /// and drop the typed value; this id is never a nutrient slug.
+    static let componentID = "quick-add"
     public static let nameLimit = 120
 
     public let id = UUID()
@@ -126,7 +130,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
             id: makeID(), category: ProductKind.food.rawValue, occurredAt: date,
             timeZoneIdentifier: timeZoneIdentifier(), meal: meal?.rawValue)
         let component = IntakeComponent(
-            componentID: Slug.make(entryName), name: entryName, amount: 1, unit: .serving)
+            componentID: Self.componentID, name: entryName, amount: 1, unit: .serving)
         let product = ProductDefinition(
             snapshotID: identity, productID: identity, name: entryName, brand: nil,
             labelBasis: "per serving", catalogOrigin: "manual", catalogVersion: "1", kind: .food,

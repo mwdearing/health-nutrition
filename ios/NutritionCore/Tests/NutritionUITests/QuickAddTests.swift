@@ -83,6 +83,24 @@ final class QuickAddTests: XCTestCase {
 
         let intake = try XCTUnwrap(store.activeIntakes().first)
         XCTAssertEqual(try store.revisions(of: intake.id).first?.components.first?.name, "Work lunch")
+        XCTAssertEqual(try store.revisions(of: intake.id).first?.components.first?.componentID, "quick-add")
+    }
+
+    /// A name that spells a nutrient keeps the reserved component id, so the typed protein stays the
+    /// protein fact rather than the serving.
+    func testANutrientNameDoesNotBecomeTheComponentID() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.name = "Protein"
+        model.proteinText = "32"
+        XCTAssertNotNil(model.save())
+
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        let component = try XCTUnwrap(store.revisions(of: intake.id).first?.components.first)
+        XCTAssertEqual(component.componentID, "quick-add")
+        XCTAssertEqual(component.name, "Protein")
+        XCTAssertNotEqual(IntakeContextFactCatalog.nutrientSlug(for: "protein"), component.componentID)
+        XCTAssertEqual(try totals(store).total(for: "protein")?.value, .known(Decimal(32), .g))
     }
 
     /// Two quick adds with different amounts are two products, and the day holds both.
