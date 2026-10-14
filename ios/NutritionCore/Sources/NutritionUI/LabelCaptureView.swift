@@ -619,7 +619,7 @@ public struct LabelCaptureView: View {
                     .amountWithUnitKeyboard()
                     .focused(focus)
                     .accessibilityLabel("Amount for \(row.name)")
-                    .accessibilityHint("Zero or more, in \(unitSymbol(for: row))")
+                    .accessibilityHint("Zero or more, in \(unitSymbol(for: row)) unless you type another unit")
                 }
                 Text(unitSymbol(for: row))
                     .font(.body)
