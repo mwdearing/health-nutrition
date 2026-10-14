@@ -609,12 +609,14 @@ public struct LabelCaptureView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 LabeledField("Amount") { focus in
-                    TextField(text: $draft, prompt: Text("For example, 0.5")) {
+                    TextField(text: $draft, prompt: Text("For example, 0.5 or 500 mg")) {
                         Text("Amount")
                     }
                     .labelsHidden()
                     .font(.body)
-                    .amountKeyboard()
+                    // Letters as well as digits: a value captured in the wrong dimension can only be
+                    // repaired by typing the unit it should have, which a decimal pad cannot.
+                    .amountWithUnitKeyboard()
                     .focused(focus)
                     .accessibilityLabel("Amount for \(row.name)")
                     .accessibilityHint("Zero or more, in \(unitSymbol(for: row))")
@@ -724,6 +726,16 @@ private extension View {
     func amountKeyboard() -> some View {
         #if os(iOS)
         self.keyboardType(.decimalPad)
+        #else
+        self
+        #endif
+    }
+
+    /// Digits and punctuation first, with letters one key away, for an amount that may name its unit.
+    @ViewBuilder
+    func amountWithUnitKeyboard() -> some View {
+        #if os(iOS)
+        self.keyboardType(.numbersAndPunctuation)
         #else
         self
         #endif

@@ -1011,6 +1011,13 @@ public final class LabelCaptureViewModel: ObservableObject {
             servingSizeError = "Enter what one serving is, as an amount with its unit, for example 30 g or 240 mL."
             return false
         }
+        // A serving is how much of the product is eaten, so it is a weight, a volume or a count. "100 kcal" or
+        // "5 IU" parse as amounts, but a basis such as "per serving (100 kcal)" cannot relate an intake amount
+        // to the captured values.
+        guard [.mass, .volume, .count].contains(unit.dimension) else {
+            servingSizeError = "A serving is a weight, a volume or a count, for example 30 g, 240 mL or 2 gummies."
+            return false
+        }
         servingText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         servingQuantity = Quantity(value: parsed.value, unit: unit)
         servingIsMissing = false
@@ -1118,9 +1125,16 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// Whether the captured values may be used. False while a value the parser was unsure about is
     /// unanswered, false while two photos disagree about a value and the user has not chosen, false for
     /// a panel that stated no amount at all, and false while one serving is still unstated:
-    /// per-serving numbers that cannot be scaled are not worth saving.
+    /// per-serving numbers that cannot be scaled are not worth saving. Also false while a correction field
+    /// is open: the typed value only reaches the row when it is saved, so using the values then would apply
+    /// the old one and drop the correction on screen.
     public var canApply: Bool {
-        hasPanel && !isUnreadable && !rows.isEmpty && pendingCount == 0
+        hasPanel && !isUnreadable && !rows.isEmpty && pendingCount == 0 && !isCorrecting
+    }
+
+    /// Whether a nutrient or compound correction field is open.
+    public var isCorrecting: Bool {
+        editingKey != nil || editingAdditionalKey != nil
     }
 
     /// The title of the one button that hands the values on, counting the answers still owed.
@@ -1128,6 +1142,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         // Nothing to confirm on an unreadable capture or with no panel loaded: the title stays neutral.
         if isUnreadable || !hasPanel { return "Use these values" }
         switch pendingCount {
+        case 0 where isCorrecting: return "Save or cancel the correction first"
         case 0: return "Use these values"
         case 1: return "Confirm 1 value first"
         default: return "Confirm \(pendingCount) values first"
