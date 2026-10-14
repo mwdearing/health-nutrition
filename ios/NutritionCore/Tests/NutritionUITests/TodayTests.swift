@@ -309,8 +309,9 @@ final class TodayTests: XCTestCase {
         _ = try addFood(store, name: "Banana", id: "banana", at: now)
         let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
         model.load(now: now)
-        XCTAssertEqual(model.coverage.map(\.nutrient), ["potassium", "sodium", "protein", "fiber"])
-        XCTAssertEqual(model.coverage.first?.text, "1 of 1 foods lack potassium")
+        XCTAssertEqual(
+            model.coverage.map(\.nutrient), ["energy", "protein", "carbohydrate", "fat", "fiber", "sodium", "potassium"])
+        XCTAssertEqual(model.coverage.first?.text, "1 of 1 foods lack energy")
     }
 
     /// Today's lookup reads the values the entry's product snapshot carries, so a logged recipe counts

@@ -73,8 +73,8 @@ files already opened and names the one that failed on the startup failure screen
 
 ## What the editor can change
 
-The editor asks for every nutrient the Today screen tracks by default: energy, protein, sodium,
-potassium and fiber. A nutrient left blank is unknown, never zero.
+The editor asks for every nutrient the Today screen tracks by default: energy, protein, carbohydrate,
+fat, sodium, potassium and fiber. A nutrient left blank is unknown, never zero.
 
 The amount fields (what the recipe makes, each ingredient amount, each per-unit nutrient field and
 Weight per mL) use a decimal keyboard on iOS. The weight per mL field's placeholder reads "Weight per
