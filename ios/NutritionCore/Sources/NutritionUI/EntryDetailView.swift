@@ -193,14 +193,17 @@ public struct EntryDetailView: View {
                         .accessibilityLabel(row.sentToLabel)
                         .accessibilityValue(row.sentToText)
                         if row.state == .needsAttention {
-                            Button {} label: {
-                                HStack {
-                                    Text("Try again").font(.body)
-                                    Spacer()
-                                    LaterBadge()
-                                }
+                            if let reason = row.attentionReason {
+                                Text(reason)
+                                    .font(.footnote)
+                                    .foregroundStyle(TokenColors.textSecondary)
+                                    .accessibilityLabel("Why: \(reason)")
                             }
-                            .laterPlaceholder()
+                            if model.canRetry(row) {
+                                Button("Try again") { model.retry(row) }
+                                    .font(.body)
+                                    .accessibilityHint("Sends this entry again the next time the app delivers")
+                            }
                         }
                     }
                 }

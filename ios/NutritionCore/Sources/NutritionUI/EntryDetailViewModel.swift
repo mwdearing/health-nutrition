@@ -73,6 +73,9 @@ public struct EntryDestinationRow: Equatable, Identifiable {
     public let sentToText: String
     /// The destination's state as a value, so a reader compares states rather than their words.
     public let state: DestinationState
+    /// Why the delivery needs a person, as the delivery recorded it. Nil unless the state is needs attention
+    /// and a reason was recorded.
+    public var attentionReason: String? = nil
 }
 
 /// One choice on the entry screen's Meal menu: a named meal, or nil for "Not set".
@@ -149,6 +152,9 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var changes: [EntryChangeRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
     @Published public private(set) var destinations: [EntryDestinationRow] = []
+    /// The parked operations behind each destination that needs attention, oldest revision first. These are
+    /// what "Try again" re-arms.
+    private var parkedOperations: [JournalDestination: [String]] = [:]
     @Published public private(set) var currentRevision: Int = 0
     @Published public private(set) var fieldErrors: [String: String] = [:]
     @Published public private(set) var errorMessage: String?
@@ -268,12 +274,22 @@ public final class EntryDetailViewModel: ObservableObject {
             }
             changes = Self.changeRows(of: all)
             let projections = try store.projections(of: intakeID).filter { $0.isCurrent }
+            parkedOperations = try Self.parkedOperations(of: intakeID, in: store)
+            let suspension = store as? JournalDeliverySuspension
+            let parked = parkedOperations
             destinations = projections.sorted { $0.destination.rawValue < $1.destination.rawValue }.map {
-                EntryDestinationRow(
-                    destination: $0.destination, label: Self.label($0.destination),
-                    stateText: Self.stateText($0.state), iconName: Self.icon($0.state),
-                    sentToLabel: Self.sentToLabel($0.destination), sentToText: Self.sentToText($0.state),
-                    state: $0.state)
+                projection -> EntryDestinationRow in
+                // The oldest parked operation is the one holding the entry back, so its reason is the one shown.
+                var reason: String?
+                if projection.state == .needsAttention, let oldest = parked[projection.destination]?.first {
+                    reason = (try? suspension?.suspensionReason(operationID: oldest)) ?? nil
+                }
+                return EntryDestinationRow(
+                    destination: projection.destination, label: Self.label(projection.destination),
+                    stateText: Self.stateText(projection.state), iconName: Self.icon(projection.state),
+                    sentToLabel: Self.sentToLabel(projection.destination),
+                    sentToText: Self.sentToText(projection.state), state: projection.state,
+                    attentionReason: reason)
             }
             fieldErrors = [:]
             errorMessage = nil
@@ -281,6 +297,43 @@ public final class EntryDetailViewModel: ObservableObject {
         } catch {
             errorMessage = "Could not read this entry."
         }
+    }
+
+    /// Whether "Try again" has anything to re-arm for this destination: a delivery of this entry that was
+    /// parked for a person and is still queued.
+    public func canRetry(_ row: EntryDestinationRow) -> Bool {
+        row.state == .needsAttention && !(parkedOperations[row.destination] ?? []).isEmpty
+    }
+
+    /// Re-arms every parked delivery of this entry to one destination, so the next delivery pass tries it
+    /// again (#103). Re-arming is a person's decision that the cause is resolved, which is why it is a button
+    /// and never something a pass does on its own. It enables nothing: a destination that is off stays off.
+    public func retry(_ row: EntryDestinationRow, now: Date = Date()) {
+        guard let operations = parkedOperations[row.destination], !operations.isEmpty,
+              let outbox = store as? JournalOutboxDelivery else { return }
+        do {
+            for operationID in operations {
+                try outbox.rearmDelivery(operationID: operationID)
+            }
+        } catch {
+            load(now: now)
+            errorMessage = "Could not try again."
+            return
+        }
+        load(now: now)
+    }
+
+    /// The queued, parked operations of one entry by destination, oldest revision first.
+    private static func parkedOperations(
+        of intakeID: String, in store: JournalStore
+    ) throws -> [JournalDestination: [String]] {
+        guard let outbox = store as? JournalOutboxDelivery else { return [:] }
+        let suspended = try outbox.suspendedOperationIDs()
+        guard !suspended.isEmpty else { return [:] }
+        let parked = try store.pendingOutbox()
+            .filter { $0.intakeID == intakeID && suspended.contains($0.operationID) }
+            .sorted { $0.revision < $1.revision }
+        return Dictionary(grouping: parked, by: \.destination).mapValues { $0.map(\.operationID) }
     }
 
     /// Whether the screen holds a change the person has not saved: an amount draft that differs from
