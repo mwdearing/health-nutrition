@@ -32,6 +32,9 @@ final class AppServices {
     let connections: ConnectionsPrivacyViewModel
     /// The Daily goals screen, reached from the Library screen's Connections section.
     let goals: GoalsViewModel
+    /// Saved meals, saved from the Journal and logged from Find products. Kept in the defaults domain and
+    /// erased with everything else.
+    let savedMeals: SavedMealsModel
     /// The first-day checklist on Today. It reads the journal and the goals, and the display settings
     /// for the units step; the app shell loads it.
     let firstDayChecklist: FirstDayChecklistModel
@@ -123,6 +126,9 @@ final class AppServices {
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)
+        let savedMealStore = UserDefaultsSavedMealStore()
+        let savedMeals = SavedMealsModel(store: savedMealStore, journal: journalStore)
+        self.savedMeals = savedMeals
         let reminderEraser = ReminderEraser(scheduler: reminderScheduler, erasures: reminderErasures)
         var reminderErasers: [JournalErasing] = [reminderEraser]
         // Only the system scheduler also schedules the custom reminders; a test's fake leaves them out.
@@ -134,8 +140,8 @@ final class AppServices {
         }
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
-            erasers: ([journalStore, favoritesStore, recipeStore, goalStore] as [JournalErasing]) + reminderErasers
-                + ([supplementSchedules] as [JournalErasing]),
+            erasers: ([journalStore, favoritesStore, recipeStore, goalStore, savedMealStore] as [JournalErasing])
+                + reminderErasers + ([supplementSchedules] as [JournalErasing]),
             preferences: displayPreferences,
             beforeErase: {
                 if let owner = productSharing?.accountContext?.ownerID {
@@ -148,6 +154,10 @@ final class AppServices {
                 displayPreferences.clearProductSharingPausesAfterErase()
                 HealthKitReader.forgetReadAccess()
                 account?.refreshAfterErase()
+                // The list is read again so no screen shows a meal the erase removed, and an Undo offer
+                // for entries the erase already removed goes with it.
+                savedMeals.load()
+                savedMeals.clearUndo()
             },
             eraseLocalAccount: {
                 guard let account else { return }
@@ -203,6 +213,9 @@ final class AppServices {
             connectivityMonitor = monitor
             monitor.start(queue: DispatchQueue(label: "product-sharing-connectivity"))
         }
+        // Set once every stored property is, so the Journal and Find products can reach saved meals.
+        library.savedMeals = savedMeals
+        journal.savedMeals = savedMeals
     }
 
     /// The community client, or nil when the build carries no project settings. The client reads them from the

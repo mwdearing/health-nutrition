@@ -16,6 +16,8 @@ public struct CommunityProductSearchView: View {
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
+    /// The saved meal whose "Log to which meal" choice is up.
+    @State private var mealToLog: SavedMeal?
     @FocusState private var searchFocused: Bool
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil) {
@@ -35,6 +37,11 @@ public struct CommunityProductSearchView: View {
                 Button("Search", action: search)
             } footer: {
                 Text("Your foods and products on this phone narrow as you type. Open Food Facts and shared products are searched only when you tap Search or press Return.")
+            }
+            // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
+            // warning about entries a failed log left behind shows under any kind.
+            if let savedMeals = library?.savedMeals, onPick != nil {
+                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
             }
             if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
             Section("On this phone") {
@@ -124,7 +131,31 @@ public struct CommunityProductSearchView: View {
         }
         .navigationTitle("Find products")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
-        .onAppear { if onPick != nil { library?.load() } }
+        .onAppear {
+            if onPick != nil {
+                library?.load()
+                library?.savedMeals?.load()
+            }
+        }
+        // The Undo window ends with this screen, as it does on the Library screen.
+        .onDisappear { library?.savedMeals?.clearUndo() }
+        .safeAreaInset(edge: .bottom) {
+            if let savedMeals = library?.savedMeals { SavedMealUndoBar(model: savedMeals) }
+        }
+        .confirmationDialog(
+            mealToLog.map { "Log \($0.name)" } ?? "Log saved meal",
+            isPresented: Binding(get: { mealToLog != nil }, set: { if !$0 { mealToLog = nil } }),
+            titleVisibility: .visible, presenting: mealToLog
+        ) { saved in
+            ForEach(SavedMealsModel.mealChoices(for: saved), id: \.self) { choice in
+                Button(choice.map { "Log to \($0.displayName)" } ?? "Log with no meal") {
+                    library?.savedMeals?.log(saved, as: choice, now: Date())
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { saved in
+            Text("Adds \(SavedMealsModel.itemsText(saved.items.count)) now, as new entries. Like any entry, they are written to Apple Health once it is connected.")
+        }
         // Typing narrows what is already on this phone. It never starts a search that leaves the phone.
         .onChange(of: query) { _, text in model.filterLocal(query: text, kind: kind) }
         .onChange(of: kind) { _, selected in model.filterLocal(query: query, kind: selected) }
@@ -170,6 +201,59 @@ public struct CommunityProductSearchView: View {
             }
             selectionError = nil
         } catch { selectionError = "Could not open this product. Search again to refresh the results." }
+    }
+}
+
+/// The saved meals on Find products, narrowed by name as the person types. A tap asks which meal to log it
+/// under; nothing is logged until one is chosen.
+struct SavedMealSections: View {
+    @ObservedObject var model: SavedMealsModel
+    let query: String
+    /// False under a Kind other than All kinds: only a leftover warning is shown then.
+    let showsMeals: Bool
+    let onLog: (SavedMeal) -> Void
+    var body: some View {
+        let meals = showsMeals ? model.matching(query) : []
+        let showsNotes = showsMeals && (model.loadError != nil || (model.notice != nil && model.noticeIsFailure))
+        if model.leftoverWarning != nil || !meals.isEmpty || showsNotes {
+            Section("Saved meals") {
+                if let warning = model.leftoverWarning { InlineNotice(warning, tone: .failed) }
+                if showsMeals, let error = model.loadError { Text(error).foregroundStyle(TokenColors.error) }
+                if showsMeals, let notice = model.notice, model.noticeIsFailure { InlineNotice(notice, tone: .failed) }
+                ForEach(meals) { saved in
+                    Button { onLog(saved) } label: {
+                        VStack(alignment: .leading) {
+                            Text(saved.name).font(.headline).foregroundStyle(TokenColors.textPrimary)
+                            Text(Self.detail(saved)).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                        }
+                    }
+                    .accessibilityHint("Asks which meal to log it under")
+                    .swipeActions {
+                        Button("Remove", role: .destructive) { model.remove(saved) }
+                    }
+                }
+            }
+        }
+    }
+    static func detail(_ saved: SavedMeal) -> String {
+        let items = SavedMealsModel.itemsText(saved.items.count)
+        guard let meal = saved.meal else { return items }
+        return "\(items) · \(meal.displayName)"
+    }
+}
+
+/// The Undo offer for the saved meal just logged, for ten seconds.
+struct SavedMealUndoBar: View {
+    @ObservedObject var model: SavedMealsModel
+    var body: some View {
+        if let token = model.undoToken {
+            UndoToast(token.message) { model.undo(now: Date()) }
+                .padding(DesignSpacing.m)
+                .task(id: token.id) {
+                    do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                    model.expireUndo(token)
+                }
+        }
     }
 }
 

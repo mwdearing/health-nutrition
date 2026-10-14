@@ -16,6 +16,11 @@ public struct JournalView: View {
     /// even when two jumps choose the same day.
     @State private var jumpSection: String?
     @State private var jumpSerial = 0
+    /// The meal group "Save as meal" is naming, while its name prompt is up.
+    @State private var saveMealTarget: SaveMealTarget?
+    @State private var saveMealName = ""
+    /// True once Save was tapped in the open prompt, so the prompt shows only its own refusal.
+    @State private var saveMealTried = false
 
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
@@ -92,7 +97,46 @@ public struct JournalView: View {
             .sheet(isPresented: $showingJumpSheet) {
                 jumpSheet
             }
+            .sheet(item: $saveMealTarget) { target in
+                saveMealSheet(target)
+            }
         }
+    }
+
+    /// Names a meal group and saves it as a saved meal. Save waits for a name; a refusal shows as the notice.
+    private func saveMealSheet(_ target: SaveMealTarget) -> some View {
+        NavigationStack {
+            Form {
+                LabeledField("Meal name") { focus in
+                    TextField("Such as Usual breakfast", text: $saveMealName).focused(focus)
+                }
+                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Find products.")
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                // A refusal keeps the prompt open with the typed name, so the person can change it.
+                if saveMealTried, model.copyFailed, let notice = model.copyNotice {
+                    InlineNotice(notice, tone: .failed)
+                }
+            }
+            .navigationTitle("Save as meal")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { saveMealTarget = nil }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        // The outcome shows at the top of the list, where an earlier jump's note would hide it.
+                        jumpNotice = nil
+                        saveMealTried = true
+                        if model.saveMeal(target.sectionID, groupID: target.groupID, name: saveMealName) {
+                            saveMealTarget = nil
+                        }
+                    }
+                    .disabled(saveMealName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     /// Opens the jump sheet on today. The row is a button, so a screen reader hears what it does.
@@ -241,6 +285,21 @@ public struct JournalView: View {
                 .foregroundStyle(TokenColors.textSecondary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: DesignSpacing.s)
+            if model.savedMeals != nil, !group.rows.isEmpty {
+                Button {
+                    saveMealName = ""
+                    saveMealTried = false
+                    saveMealTarget = SaveMealTarget(
+                        sectionID: section.id, groupID: group.id, title: group.title,
+                        entryCountText: group.rows.count == 1 ? "1 entry" : "\(group.rows.count) entries")
+                } label: {
+                    Label("Save as meal", systemImage: "bookmark")
+                        .labelStyle(.iconOnly)
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Save \(group.title) as a meal")
+            }
             if model.canCopyToToday(section, now: now()) {
                 Button {
                     model.copyMealToToday(section.id, groupID: group.id, now: now())
@@ -290,4 +349,13 @@ public struct JournalView: View {
         let detail = [row.detail, row.meal].compactMap { $0 }.joined(separator: " · ")
         return EntryRow(title: row.title, detail: detail, kind: row.kind, isWater: row.isWater)
     }
+}
+
+/// The meal group a Save as meal prompt is for.
+private struct SaveMealTarget: Identifiable, Equatable {
+    let sectionID: String
+    let groupID: String
+    let title: String
+    let entryCountText: String
+    var id: String { sectionID + "|" + groupID }
 }
