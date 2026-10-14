@@ -76,6 +76,24 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertEqual(products.map(\.barcode), ["2000000000015", "2000000000039", "2000000000046"])
     }
 
+    /// The service can rank a row high on its brand or a name in another language. Rows whose shown
+    /// name has every typed word come first, in the service's order; the rest follow, none dropped.
+    func testResultsWithEveryWordInTheNameComeFirst() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Leche Entera", "brands": ["Oat Milk Co"], "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Organic OAT Drink, Mílk style", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Milk", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Oatmilk Barista", "nutriments": {}}
+        ]}
+        """.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "Oat milk")
+        guard case .results(let products) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(products.map(\.barcode), ["2000000000022", "2000000000046", "2000000000015", "2000000000039"])
+    }
+
     func testSearchWithOnlyUnnamedResultsIsEmpty() async {
         let body = Data(#"{"hits": [{"code": "2000000000015", "nutriments": {}}]}"#.utf8)
         let outcome = await client(StubTransport(body: body)).search(query: "oat")

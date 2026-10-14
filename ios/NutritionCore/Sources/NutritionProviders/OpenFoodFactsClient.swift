@@ -158,7 +158,7 @@ public actor OpenFoodFactsClient {
         guard data.count <= BoundedResponseLimits.openFoodFactsSearch else {
             return .transport("response too large")
         }
-        return Self.interpretSearch(data)
+        return Self.interpretSearch(data, query: trimmed)
     }
 
     /// The typed text as plain words. The service parses its query as a language, so every syntax
@@ -195,7 +195,12 @@ public actor OpenFoodFactsClient {
         return request
     }
 
-    private static func interpretSearch(_ data: Data) -> OpenFoodFactsSearchOutcome {
+    /// Lowercased with accents removed, so "Crème" and "creme" compare equal.
+    private static func folded(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+
+    private static func interpretSearch(_ data: Data, query: String) -> OpenFoodFactsSearchOutcome {
         guard let decoded = try? JSONDecoder().decode(OpenFoodFactsSearchResponse.self, from: data) else {
             return .transport("unreadable response")
         }
@@ -219,7 +224,16 @@ public actor OpenFoodFactsClient {
             }
             return product
         }
-        let limited = Array(products.prefix(Self.searchPageSize))
+        // The service also matches on brand, category and names in other languages, so a row can rank
+        // high without the words in the name shown. Rows whose name has every word go first; the
+        // service's order is kept inside each group and nothing is dropped.
+        let words = folded(query).split(separator: " ").map(String.init)
+        func named(_ product: OpenFoodFactsProduct) -> Bool {
+            let name = folded(product.name ?? "")
+            return words.allSatisfy { name.contains($0) }
+        }
+        let ordered = products.filter(named) + products.filter { !named($0) }
+        let limited = Array(ordered.prefix(Self.searchPageSize))
         return limited.isEmpty ? .empty : .results(limited)
     }
 

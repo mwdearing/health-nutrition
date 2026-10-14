@@ -100,11 +100,13 @@ extension OpenFoodFactsProductLookup: ProductNameSearching {
 
     /// A search result has no serving and does not say grams or millilitres; the product read by
     /// barcode has both. The name and brand the person picked are kept when the full record lacks them.
+    /// The barcode stays the one that was picked and checked: a reply is untrusted, and the code it
+    /// carries is not allowed to replace the product the person chose.
     func details(for product: LookedUpProduct) async -> LookedUpProduct {
         guard case .found(let found) = await client.lookup(barcode: product.barcode) else { return product }
         let full = Self.product(from: found)
         return LookedUpProduct(
-            barcode: full.barcode, name: full.name ?? product.name, brand: full.brand ?? product.brand,
+            barcode: product.barcode, name: full.name ?? product.name, brand: full.brand ?? product.brand,
             basis: full.basis, nutrients: full.nutrients, attribution: full.attribution,
             serving: full.serving, version: full.version)
     }
