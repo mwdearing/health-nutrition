@@ -12,11 +12,11 @@ import Foundation
 /// "Friendly". Words in scripts written without spaces (Chinese, Japanese, Thai and similar) are matched
 /// anywhere in the text, because there a name is one unbroken run.
 enum OpenFoodFactsSearchWords {
-    /// Lowercased with accents removed and ligatures spelled out, so "Crème", "creme", "Œuf" and "oeuf"
-    /// compare equal.
+    /// Lowercased with accents removed, full-width forms narrowed and ligatures spelled out, so "Crème",
+    /// "creme", "ＣＲＥＭＥ", "Œuf" and "oeuf" compare as written alike.
     static func folded(_ text: String) -> String {
         var folded = text.folding(
-            options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
         for (ligature, spelled) in [("œ", "oe"), ("æ", "ae"), ("ø", "o"), ("ß", "ss"), ("ł", "l"), ("đ", "d"), ("þ", "th")] {
             folded = folded.replacingOccurrences(of: ligature, with: spelled)
         }
@@ -34,9 +34,11 @@ enum OpenFoodFactsSearchWords {
             .map(String.init)
     }
 
-    /// A word with every singular it could have under English plural endings. More than one guess is
-    /// made on purpose ("cases" gives "case" and "cas", "cookies" gives "cookie" and "cooky"); the wrong
-    /// guesses are harmless because these forms are only compared as whole words.
+    /// A word with the singulars it could have under English plural endings. More than one guess is
+    /// made on purpose ("cookies" gives "cookie" and "cooky"); the wrong ones do no harm because these
+    /// forms are only compared as whole words. "-es" is taken off only after s, x, z, ch, sh or o, where
+    /// English adds it ("peaches", "tomatoes"), so "cones" does not also give "con" and match "Chili con
+    /// carne".
     static func forms(_ word: String) -> Set<String> {
         var forms: Set<String> = [word]
         guard word.count > 3, word.hasSuffix("s"), !word.hasSuffix("ss") else {
@@ -44,7 +46,10 @@ enum OpenFoodFactsSearchWords {
         }
         forms.insert(String(word.dropLast()))
         if word.hasSuffix("es") {
-            forms.insert(String(word.dropLast(2)))
+            let base = String(word.dropLast(2))
+            if ["s", "x", "z", "ch", "sh", "o"].contains(where: { base.hasSuffix($0) }) {
+                forms.insert(base)
+            }
         }
         if word.count > 4, word.hasSuffix("ies") {
             let base = word.dropLast(3)

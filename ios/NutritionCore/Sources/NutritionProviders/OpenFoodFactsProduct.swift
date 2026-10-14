@@ -152,7 +152,8 @@ struct OpenFoodFactsTextList: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let string = try? container.decode(String.self) {
-            text = string
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            text = trimmed.isEmpty ? nil : trimmed
         } else if let list = try? container.decode([OpenFoodFactsScalar].self) {
             // Entries that are not text (null, numbers) are skipped rather than losing the whole list.
             let parts = list.compactMap { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }

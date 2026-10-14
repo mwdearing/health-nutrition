@@ -156,6 +156,9 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertTrue(OpenFoodFactsSearchWords.forms("cases").contains("case"))
         XCTAssertTrue(OpenFoodFactsSearchWords.forms("glasses").contains("glass"))
         XCTAssertEqual(OpenFoodFactsSearchWords.forms("glass"), ["glass"])
+        // "-es" comes off only where English adds it, so no short foreign word is guessed.
+        XCTAssertEqual(OpenFoodFactsSearchWords.forms("cones"), ["cones", "cone"])
+        XCTAssertEqual(OpenFoodFactsSearchWords.forms("ales"), ["ales", "ale"])
         XCTAssertEqual(OpenFoodFactsSearchWords.forms("milk"), ["milk"])
     }
 
@@ -165,6 +168,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertEqual(OpenFoodFactsSearchWords.words("Œufs Bœuf Smør Æbleskiver Straße"), ["oeufs", "boeuf", "smor", "aebleskiver", "strasse"])
         XCTAssertEqual(OpenFoodFactsSearchWords.words("Crème Brûlée 2%"), ["creme", "brulee", "2"])
         XCTAssertEqual(OpenFoodFactsSearchWords.words(".. %% ’’"), [])
+        XCTAssertEqual(OpenFoodFactsSearchWords.words("ＫＩＴ　ＫＡＴ ５００ｍｌ"), ["kit", "kat", "500ml"])
     }
 
     /// Cases an independent review found: the row shows the typed words in its own notation and is kept,
@@ -198,6 +202,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
             ("plus", []),
             ("cases", ["2000000000114"]),
             ("ben and jerry's", ["2000000000121"]),
+            ("ｍａｃ and cheese", ["2000000000015"]),
         ]
         for entry in cases {
             let outcome = await client(StubTransport(body: body)).search(query: entry.query)
@@ -207,6 +212,51 @@ final class OpenFoodFactsSearchTests: XCTestCase {
             default: XCTFail("unexpected \(outcome) for \(entry.query)")
             }
         }
+    }
+
+    func testShortGuessesDoNotKeepForeignWords() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Chili con carne", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Pasta al pomodoro", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Waffle Cones", "nutriments": {}}
+        ]}
+        """.utf8)
+        for (query, barcodes) in [("cones", ["2000000000039"]), ("ales", [String]())] {
+            let outcome = await client(StubTransport(body: body)).search(query: query)
+            switch outcome {
+            case .results(let rows): XCTAssertEqual(rows.map(\.barcode), barcodes, query)
+            case .empty: XCTAssertEqual([], barcodes, query)
+            default: XCTFail("unexpected \(outcome) for \(query)")
+            }
+        }
+    }
+
+    func testTypedAmpersandStillRequiresAnd() async throws {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Mac Cheese Dinner", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Mac & Cheese Dinner", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Mac and Cheese", "nutriments": {}}
+        ]}
+        """.utf8)
+        let transport = StubTransport(body: body)
+        let outcome = await client(transport).search(query: "mac & cheese")
+        guard case .results(let rows) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(rows.map(\.barcode), ["2000000000022", "2000000000039"])
+        let items = try queryItems(of: try XCTUnwrap(transport.requests.first))
+        XCTAssertEqual(items["q"], "mac and cheese")
+    }
+
+    func testBlankBrandIsNoBrand() async {
+        let body = Data(#"{"hits": [{"code": "2000000000015", "product_name": "Oat Drink", "brands": "   ", "nutriments": {}}]}"#.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "oat")
+        guard case .results(let rows) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertNil(rows.first?.brands)
     }
 
     func testTextWithNoWordsSendsNothing() async {
@@ -376,7 +426,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
     /// operators, ranges, wildcards or negation can be formed from what a person types.
     func testQuerySyntaxCharactersAndOperatorWordsAreNeutralized() async throws {
         let cases: [(typed: String, sent: String)] = [
-            ("c++ oat & honey", "c oat honey"),
+            ("c++ oat & honey", "c oat and honey"),
             ("countries_tags:\"en:france\"", "countries_tags en france"),
             ("milk AND NOT (soy OR oat)", "milk and not soy or oat"),
             ("-milk +oat", "milk oat"),

@@ -126,21 +126,25 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   lookups. Supplements are not searched here.
 - Only the typed words (2 to 80 characters) are sent, with the page size and the
   list of fields wanted: no language, country, sort order or identifier. The
-  service reads its query as a query language, so the client replaces every
-  syntax character (`+ - & | ! ( ) { } [ ] ^ " ~ * ? : \ / < > =`) with a space
-  and lowercases the operator words `AND`, `OR`, `NOT` and `TO`. What is sent can
-  only be a list of words to match; text that is only syntax sends nothing.
+  service reads its query as a query language, so the client writes a single `&`
+  as the word "and", replaces every other syntax character
+  (`+ - && | ! ( ) { } [ ] ^ " ~ * ? : \ / < > =`) with a space, and lowercases
+  the operator words `AND`, `OR`, `NOT` and `TO`. The 80-character cap applies
+  after that. What is sent can only be a list of words to match; text with no
+  letters or digits sends nothing.
 - A result with no product name is left out, and a result with the same name and
   brand as an earlier one is left out, because neither can be told apart in a list
   of names. The service also matches on category, label and names in other
   languages, so a result is kept only when its name, or its name and brand
   together, show every typed word; results with the words in the name come first.
-  Both sides are written the same way first: case and accents folded, ligatures
-  spelled out ("Œufs" and "oeufs"), apostrophes removed inside words ("Kellogg's"
-  and "Kelloggs"), and "&" read as "and". A typed word is shown when it begins a
+  Both sides are written the same way first: case and accents folded, full-width
+  letters and digits narrowed, ligatures spelled out ("Œufs" and "oeufs"),
+  apostrophes removed inside words ("Kellogg's" and "Kelloggs"), and "&" read as
+  "and" (a typed "&" is sent as "and"). A typed word is shown when it begins a
   shown word ("choc" and "Chocolate"), or when a singular of it is a whole shown
-  word or the singular of one ("loaves" and "Loaf", "berries" and "Berry"); those
-  singular guesses are only compared as whole words, so "ham" does not match
+  word or the singular of one ("loaves" and "Loaf", "berries" and "Berry"); "-es" is
+  only taken off after s, x, z, ch, sh or o, and those singular guesses are only
+  compared as whole words, so "ham" does not match
   "Champagne", "milk" does not match "Millet" and "cookies" does not match
   "Cooking". Words in scripts written without spaces (Chinese, Japanese, Thai and
   similar) are matched anywhere in the name. Text with no letters or digits sends

@@ -165,7 +165,10 @@ public actor OpenFoodFactsClient {
     /// character becomes a space and an operator word is lowercased, which makes it an ordinary word.
     /// What is sent can then only ever be a list of words to match.
     static func plainWords(_ text: String) -> String {
-        String(String.UnicodeScalarView(text.unicodeScalars.map { searchSyntax.contains($0) ? " " : $0 }))
+        // A single "&" is written out as "and" first, so the words the reply is checked against still say
+        // it; "&&" is the operator and goes with the rest of the syntax.
+        let spelled = text.replacingOccurrences(of: "&&", with: " ").replacingOccurrences(of: "&", with: " and ")
+        return String(String.UnicodeScalarView(spelled.unicodeScalars.map { searchSyntax.contains($0) ? " " : $0 }))
             .split(whereSeparator: \.isWhitespace)
             .map { searchOperators.contains(String($0)) ? $0.lowercased() : String($0) }
             .joined(separator: " ")
