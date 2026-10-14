@@ -96,7 +96,8 @@ struct RootView: View {
                     onSelect: { selectedIntakeID = $0 },
                     onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
                     checklist: services.firstDayChecklist,
-                    onOpenUnits: { self.openSettings(goals: false) }
+                    onOpenUnits: { self.openSettings(goals: false) },
+                    bodyActivity: services.bodyActivity
                 )
                 .toolbar { settingsToolbar }
                 #if DEBUG
@@ -571,6 +572,7 @@ struct RootView: View {
         services.journal.load(now: now)
         services.library.load()
         services.firstDayChecklist.load()
+        Task { await services.bodyActivity.load(now: now) }
         deliverToHealthKit(now: now)
     }
 

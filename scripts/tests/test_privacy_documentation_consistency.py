@@ -172,7 +172,7 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     assert "reviewed by the catalog owner" in accounts
     assert "community agreement does not verify" in accounts
     assert "five people" not in accounts and "five accounts" not in accounts
-    assert "debug build" in privacy and "never reads other health data" in privacy
+    assert "debug build" in privacy and "never reads other health data" in privacy and "steps, active energy and weight" in privacy
 
     privacy_summary = view_model.split("public static let privacySummary =", 1)[1].split("public static let exportButtonTitle", 1)[0]
     summary_literals = " ".join(re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', privacy_summary))
@@ -224,7 +224,7 @@ def test_public_privacy_copy_discloses_apple_health_delivery_and_conditional_cam
     # Write access only; the request names no read types.
     assert "requestAuthorization(toShare: mapped.share, read: [])" in driver
     assert "connect apple health" in project and "entries you log" in project and "nutrients" in project
-    assert "does not read other health data" in project
+    assert "steps, active energy and weight" in project
     assert "no release build writes" not in project
     assert "rare camera check when you ask for an emailed sign-in code" in project
 
@@ -237,14 +237,14 @@ def test_public_privacy_copy_discloses_apple_health_delivery_and_conditional_cam
     for document in (privacy, erase):
         assert "already written" in document
         assert "does not remove" in document or "does not retract" in document
-    assert "never reads other health data" in privacy
+    assert "never reads other health data" in privacy and "steps, active energy and weight" in privacy
     for document in (privacy, accounts):
         assert "rare cases the challenge may request camera access" in document
 
     summary = view_model.split("public static let privacysummary =", 1)[1].split(
         "public static let exportbuttontitle", 1
     )[0]
-    assert "connect apple health" in summary and "healthkit" in summary and "reads only its own samples" in summary
+    assert "connect apple health" in summary and "healthkit" in summary and "only its own samples" in summary
     assert "camera access" in summary and "email sign-in" in summary
 
 

@@ -45,6 +45,8 @@ final class AppServices {
     let healthKitDeliveryStatus: HealthKitDeliveryStatus
     /// The Apple Health row in Settings, backed by the driver above.
     let appleHealth: AppleHealthConnectionViewModel
+    /// Today's steps, active energy and weight, read from Apple Health once the person allows it.
+    let bodyActivity: BodyActivityViewModel
     /// The display settings, shared by every screen that offers or shows units. One instance for the
     /// app's lifetime, so a unit system changed on the settings screen is the one the Today screen
     /// reads on the next reload rather than one screen's private copy.
@@ -153,6 +155,8 @@ final class AppServices {
             healthKitDelivery: healthKitDelivery, store: journalStore, accessDefaults: .standard)
         self.healthKitDeliveryStatus = healthKitDeliveryStatus
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
+        bodyActivity = BodyActivityViewModel(
+            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
         if let productSharing {
             let monitor = NWPathMonitor()
             monitor.pathUpdateHandler = { [weak productSharing] path in

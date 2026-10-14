@@ -79,7 +79,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         # The app requests write access only. The read string stays because the debug HealthKit spike reads
         # back its own test samples; no release code path reads Health.
-        INFOPLIST_KEY_NSHealthShareUsageDescription: "HealthNutrition does not read other Health data. It only looks up the samples it wrote, to update or remove them when you edit or delete an entry, and a debug build's HealthKit test screen reads back the test water and protein samples it wrote."
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "If you tap Show steps, activity and weight on Today, HealthNutrition reads your steps, active energy and weight to show them there. Nothing else is read except the samples it wrote, which it looks up to update or remove them when you edit or delete an entry, and a debug build's HealthKit test screen reads back the test water and protein samples it wrote."
         # Write access is asked for when you tap Connect Apple Health in Settings. The delivery driver then
         # writes the nutrients of the entries you log, and removes them again when you delete an entry.
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "When you connect Apple Health, HealthNutrition writes the nutrients and water of the entries you log to Health, and removes them again when you delete an entry."

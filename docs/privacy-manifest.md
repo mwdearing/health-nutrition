@@ -45,8 +45,9 @@ The screen says so beside the results; supplements are not searched there.
 The HealthRelay destination is unavailable in this version. After the person
 connects Apple Health in Settings and allows it, nutrients from
 real logged food and water entries are written to HealthKit on the device. That
-is not data collection: nothing leaves the phone, and the app reads back only
-the samples it wrote itself, to replace or remove them after an edit or delete. A debug build's
+is not data collection: nothing leaves the phone. The app reads back the
+samples it wrote itself, to replace or remove them after an edit or delete, and,
+only after the person asks on Today, their steps, active energy and weight. A debug build's
 HealthKit screen can also write separate test samples.
 Erasing local journal rows does not remove HealthKit samples already written.
 Photos and personal intake details such as amounts eaten, meal and time are not
