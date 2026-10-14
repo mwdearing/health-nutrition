@@ -34,15 +34,24 @@ public struct RecentItemsProvider {
             result.append(RecentItem(
                 id: key,
                 template: RepeatTemplate(
-                    displayName: AmountText.title(current.components), category: intake.category, meal: intake.meal,
+                    displayName: displayName(of: current), category: intake.category, meal: intake.meal,
                     components: current.components, productSnapshotID: current.productSnapshotID),
                 lastUsedAt: intake.occurredAt))
         }
         return result
     }
 
+    /// The row title for one revision. A quick add is always one serving of the same name, so its typed
+    /// amounts are added to the title; without them two quick adds would read alike and a tap could repeat
+    /// amounts the row does not show.
+    private func displayName(of revision: IntakeRevision) -> String {
+        let product = revision.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+        return QuickAddViewModel.rowTitle(components: revision.components, product: product)
+    }
+
     /// Distinct products the person has logged from a lookup, a label scan or another source that stored a
-    /// product snapshot. Typed-in entries (origin `manual`), recipes and water are left out.
+    /// product snapshot. Typed-in entries (origin `manual`), quick adds (`quick_add`, amounts with no product
+    /// behind them), recipes and water are left out.
     ///
     /// Read from every active entry rather than from `recents(limit:)`, so the Products segment is not capped at
     /// the Recents rows. One row per product (its lineage `productID`), built from the newest entry of that
@@ -69,6 +78,7 @@ public struct RecentItemsProvider {
             }
             guard let product = loaded,
                 product.catalogOrigin != Self.manualOrigin,
+                product.catalogOrigin != IntakeContextFactCatalog.quickAddOrigin,
                 product.catalogOrigin != RecipeLogger.catalogOrigin
             else { continue }
             // Catalog products share a lineage id across versions. A label capture's lineage id is the same
@@ -351,7 +361,12 @@ public final class LibraryViewModel: ObservableObject {
         return try productStore?.customProducts().first { $0.localProductID == localID }
     }
     public func canCompleteProduct(_ item: LibraryItem) -> Bool {
-        item.template.productSnapshotID != nil || ["food", "supplement"].contains(item.template.category)
+        // A quick add is amounts with no product behind them, so there is no product to edit.
+        if let id = item.template.productSnapshotID,
+           (try? store.product(snapshotID: id))?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin {
+            return false
+        }
+        return item.template.productSnapshotID != nil || ["food", "supplement"].contains(item.template.category)
     }
     public func legacyDraft(_ item: LibraryItem) throws -> LegacyCustomProductDraft {
         if item.template.productSnapshotID == nil { return try CustomProductMapping.legacyDraft(from: item.template) }

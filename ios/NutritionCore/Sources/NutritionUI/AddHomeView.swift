@@ -10,6 +10,7 @@ public struct AddHomeView: View {
     private let onNewProduct: (() -> Void)?
     private let onSearchProducts: (() -> Void)?
     private let onChanged: () -> Void
+    @State private var quickAdd: QuickAddViewModel?
 
     public init(model: AddHomeViewModel, onBarcode: @escaping () -> Void,
         onLabel: @escaping () -> Void, onLibrary: @escaping () -> Void,
@@ -70,13 +71,29 @@ public struct AddHomeView: View {
                 }
                 Text("More ways").font(.headline).accessibilityAddTraits(.isHeader)
                 placeholder("Describe or photograph a meal")
-                placeholder("Amounts only")
+                tile("Amounts only", help: "Log calories and macros without choosing a food.") {
+                    self.quickAdd = self.model.makeQuickAdd()
+                }
                 if let message = model.errorMessage { InlineNotice(message, tone: .failed) }
             }
             .padding(DesignSpacing.m)
         }
         .background(TokenColors.background)
         .navigationTitle("Add")
+        .sheet(item: $quickAdd) { form in
+            NavigationStack {
+                QuickAddView(model: form) { token in
+                    self.model.quickAdded(token)
+                    self.quickAdd = nil
+                    self.onChanged()
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { self.quickAdd = nil }
+                    }
+                }
+            }
+        }
         .onAppear { self.model.load() }
         .safeAreaInset(edge: .bottom) {
             if let token = model.undoToken {

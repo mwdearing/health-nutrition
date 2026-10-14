@@ -202,8 +202,9 @@ public final class JournalViewModel: ObservableObject {
                     skipped += 1
                     continue
                 }
+                let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
                 let row = JournalRow(
-                    id: intake.id, title: AmountText.title(current.components),
+                    id: intake.id, title: QuickAddViewModel.rowTitle(components: current.components, product: snapshot),
                     detail: current.components.isEmpty ? "unknown" : current.components.map { component in
                         guard intake.category == "water", !component.amount.isNaN else {
                             return AmountText.describe(component)
@@ -214,7 +215,7 @@ public final class JournalViewModel: ObservableObject {
                     occurredAt: intake.occurredAt,
                     timeZoneIdentifier: intake.timeZoneIdentifier,
                     meal: MealLabel.displayName(for: intake.meal),
-                    kind: Self.snapshot(of: current, in: &snapshots, using: store)?.kind ?? .food,
+                    kind: snapshot?.kind ?? .food,
                     isWater: intake.category == "water")
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
