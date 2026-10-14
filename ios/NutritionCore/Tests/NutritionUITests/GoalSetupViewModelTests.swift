@@ -307,6 +307,24 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertEqual(try store.goal(for: "protein"), protein)
     }
 
+    func testASaveSetsTheFieldsUnitSoLeavingItKeepsTheSavedGoal() throws {
+        // The protein picker was on mg; setup saves in grams, so the field must say grams too.
+        let (model, store, goalsModel) = makeModel(goals: [NutrientGoal(nutrient: "protein", target: 60, unit: .mg)])
+        XCTAssertEqual(goalsModel.selectedUnits["protein"], .mg)
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        let saved = try XCTUnwrap(model.draftTargets["protein"])
+
+        XCTAssertTrue(model.save())
+
+        XCTAssertEqual(goalsModel.selectedUnits["protein"], .g)
+        let stored = try XCTUnwrap(try store.goal(for: "protein"))
+        XCTAssertEqual(stored.unit, .g)
+        XCTAssertEqual(stored.target, AmountParser.parseTyped(saved))
+        XCTAssertTrue(goalsModel.commitTarget(for: "protein"))
+        XCTAssertEqual(try store.goal(for: "protein"), stored)
+    }
+
     func testAFailedSaveShowsTheSentenceAndKeepsTheResults() {
         let goalsModel = GoalsViewModel(
             store: InMemoryGoalStore(refusesWrites: true),

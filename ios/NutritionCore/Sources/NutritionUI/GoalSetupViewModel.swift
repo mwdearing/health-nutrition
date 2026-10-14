@@ -218,9 +218,11 @@ public final class GoalSetupViewModel: ObservableObject {
         }
         for key in Self.targetKeys {
             let text = (draftTargets[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            // The Goals screen keeps its own text per field. Set it to what was stored, so leaving that
-            // field later does not read the empty text as a request to remove the new goal.
+            // The Goals screen keeps its own text and unit per field. Set both to what was stored, so
+            // leaving that field later neither reads the empty text as a request to remove the new goal
+            // nor saves the number again in a unit the picker held before (150 g as 150 mg).
             goals.draftText[key] = text.isEmpty ? "" : DecimalFormatting.text(AmountParser.parseTyped(text) ?? 0)
+            if !text.isEmpty { goals.selectedUnits[key] = goals.unit(for: key) }
         }
         return true
     }
