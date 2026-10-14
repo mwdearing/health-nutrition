@@ -383,8 +383,15 @@ extension UserDefaultsDisplayPreferences: MacroSplitPreferences {
     /// nothing is rescaled from a value the app cannot vouch for.
     public var macroSplit: MacroSplit? {
         guard let text = defaults.string(forKey: macroSplitKey) else { return nil }
-        let parts = text.split(separator: ",", omittingEmptySubsequences: false)
-            .map { Decimal(string: String($0), locale: Locale(identifier: "en_US_POSIX")) }
+        // Each part must be plain digits with at most one point: `Decimal(string:)` alone accepts trailing
+        // text such as "30x" and would read it as 30.
+        let parts = text.split(separator: ",", omittingEmptySubsequences: false).map { part -> Decimal? in
+            let digits = part.filter { $0 != "." }
+            guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }),
+                part.filter({ $0 == "." }).count <= 1, part.first != ".", part.last != "."
+            else { return nil }
+            return Decimal(string: String(part), locale: Locale(identifier: "en_US_POSIX"))
+        }
         guard parts.count == 3, let protein = parts[0], let carbohydrate = parts[1], let fat = parts[2] else {
             return nil
         }

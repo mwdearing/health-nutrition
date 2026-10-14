@@ -46,10 +46,12 @@ public protocol MacroSplitPreferences: AnyObject {
 /// Macro targets stated as percentages of the energy goal.
 ///
 /// Applying a split writes three ordinary gram goals, so Today, the Journal header and erase treat them
-/// as the gram goals they are, and stores the split itself. While it is stored, changing the energy goal
-/// on the Goals screen moves the three gram goals to the split's share of the new energy goal. Setting
-/// any of the three by hand, the setup estimate, removing the energy goal or clearing all goals stops
-/// that and forgets the split. The share shown back is still worked out from the stored grams.
+/// as the gram goals they are, and stores the split itself. The gram goals follow the split exactly
+/// while the three stored macro goals are its output for the energy goal: changing the energy goal on
+/// the Goals screen then moves them to its share of the new one. That is decided from the goals each
+/// time, so a gram goal changed by hand or by the setup estimate stops it, and nothing has to be kept
+/// in step. Clearing all goals and erase forget the split. The share shown back is still worked out from
+/// the stored grams.
 extension GoalsViewModel {
     /// The keys a split writes, in the order the screen names them.
     public static let macroSplitKeys = ["protein", "carbohydrate", "fat"]
@@ -169,12 +171,9 @@ extension GoalsViewModel {
         let targets: [(key: String, grams: Decimal)] = [
             ("protein", grams.protein), ("carbohydrate", grams.carbohydrate), ("fat", grams.fat),
         ]
-        // The split the grams came from, stored once all three are written. Until then no split is
-        // stored, so saving the energy edit below has nothing to follow and a failed write leaves none.
+        // The split the grams came from, stored only once all three are written. A failed apply leaves
+        // the earlier split stored, and whether the goals still follow it is decided from the goals.
         let split = Self.typedMacroSplit(protein: protein, carbohydrate: carbohydrate, fat: fat)
-        // A failed apply puts back the split that was followed before, when the goals it rolls back to
-        // are still that split's output.
-        let previousSplit = self.followedMacroSplit
         var energySaved = false
         var previous: [(key: String, goal: NutrientGoal?, draft: String?, unit: MeasureUnit?)] = []
         let storedEnergy: NutrientGoal?
@@ -189,18 +188,18 @@ extension GoalsViewModel {
         } catch {
             return Self.saveFailedMessage
         }
-        // Cleared only once the reads succeeded, so an apply that stops before writing anything leaves
-        // following as it was. Clearing before the energy edit is saved keeps that save from moving the
-        // grams by the old split just before they are replaced.
-        self.stopFollowingMacroSplit()
         // The grams above are shares of the energy the row shows. When that is an edit not yet saved,
         // it is saved first, so the stored energy goal is the one the grams were worked out from.
         if self.rows.contains(where: { $0.nutrient == "energy" }), let draft = self.draftText["energy"] {
             let typed = AmountParser.parseTyped(draft.trimmingCharacters(in: .whitespacesAndNewlines))
             let unit = self.selectedUnits["energy"] ?? .kcal
             if typed != storedEnergy?.target || unit != storedEnergy?.unit {
-                guard self.commitTarget(for: "energy") else {
-                    self.restoreMacroSplit(previousSplit)
+                // Saved without following: the old split must not move the grams just before the new
+                // ones replace them.
+                self.isApplyingMacroSplit = true
+                let committed = self.commitTarget(for: "energy")
+                self.isApplyingMacroSplit = false
+                guard committed else {
                     return self.rowError["energy"] ?? self.errorMessage ?? Self.saveFailedMessage
                 }
                 energySaved = true
@@ -220,13 +219,13 @@ extension GoalsViewModel {
                     if !self.restoreGoal(earlier.goal, for: earlier.key) { restored = false }
                 }
                 for earlier in previous.prefix(index + 1) {
-                    self.draftText[earlier.key] = earlier.draft
-                    self.selectedUnits[earlier.key] = earlier.unit
+                    // A goal that could not be put back keeps its new value, so its field is refilled
+                    // from the store rather than shown the old draft it would commit back over it.
+                    self.draftText[earlier.key] = restored ? earlier.draft : nil
+                    self.selectedUnits[earlier.key] = restored ? earlier.unit : nil
                 }
-                // With the energy goal unchanged the goals are back where they were and so is following.
-                // With a changed energy goal saved first, the earlier split no longer describes the goals,
-                // so following stays stopped and the message says the energy goal did save.
-                if restored { self.restoreMacroSplit(previousSplit) }
+                self.load()
+                // A changed energy goal saved first stays saved, and the message must say so.
                 guard restored else { return Self.macroSplitRestoreFailedMessage }
                 return energySaved ? Self.macroSplitEnergySavedMessage : Self.saveFailedMessage
             }

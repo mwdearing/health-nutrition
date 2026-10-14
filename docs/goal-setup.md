@@ -71,27 +71,23 @@ rounded to whole grams) and, on "Set gram goals from percentages", writes them a
 goals for those three nutrients. All three are written or none is.
 
 Once all three gram goals are written, the split itself is stored as a display preference
-(`display.goals.macroSplit`, for example `30,40,30`, erased with the other preferences). While it is
-stored, changing the energy goal on the Goals screen moves protein, carbohydrate and fat to the split's
-share of the new energy goal, written all three or none, and the section says the gram goals follow it
-at those percentages. 30/40/30 of 2,000 kcal is 150/200/67 g; changing energy to 2,500 kcal makes it
-188/250/83 g.
+(`display.goals.macroSplit`, for example `30,40,30`). The gram goals follow it exactly while the three
+stored macro goals are its output for the energy goal; that is decided from the goals each time rather
+than kept as a flag. While they follow, changing the energy goal on the Goals screen moves protein,
+carbohydrate and fat to the split's share of the new energy goal, written all three or none, and the
+section says the gram goals follow at those percentages. 30/40/30 of 2,000 kcal is 150/200/67 g;
+changing energy to 2,500 kcal makes it 188/250/83 g.
 
-Following is only done while the split still describes the goals: the three stored gram goals must be
-exactly what it comes to for the energy goal before the change, or nothing is rescaled. It stops, and
-the split is forgotten, when protein, carbohydrate or fat is changed any other way (typed by hand, or
-written by the setup estimate; committing the same value again does not count), when the energy goal
-is removed, when all goals are cleared, when the new energy goal is too small to share out, or when a
-goal changed behind the screen. If a gram write is refused after the energy goal saved, the earlier gram
-goals are put back and the screen says the macros could not follow, or, when putting them back fails too,
-that the three may be a mix of old and new. A setup save or a percentage apply that fails and is rolled
-back puts the earlier split back too, as long as the goals it rolled back to are still that split's
-output, so a failed save leaves following as it was; an apply that stops before writing anything leaves
-it untouched, and a rollback that cannot be completed stops following. An apply that had already saved a
-changed energy goal when a gram write failed keeps that energy goal and says so ("Your energy goal is
-saved, but protein, carbohydrate and fat could not be set from the percentages."); the earlier split no
-longer describes the goals, so following stops. The section only says the gram
-goals follow while the stored split still describes them. The share shown back is still
+So a gram goal changed by hand or by the setup estimate stops following (typing exactly the split's
+grams back in resumes it), and so do removing the energy goal, an energy goal too small to share out,
+and goals changed behind the screen; none of those rescales anything. Clearing all goals and erase forget
+the split. If a gram write is refused after the energy goal saved, the earlier gram goals are put back
+and the screen says the macros could not follow, or, when putting them back fails too, that the three
+may be a mix of old and new, with the fields refilled from what is stored. A percentage apply that saved
+a changed energy goal before a gram write failed keeps that energy goal and says so ("Your energy goal is
+saved, but protein, carbohydrate and fat could not be set from the percentages."). A failed apply or
+setup save leaves the earlier split stored, and whether the goals still follow it is again decided from
+the goals. The share shown back is still
 worked out from the stored gram goals and the stored energy goal. The energy used is what the energy row shows: an edit typed there and not yet saved is used for the preview and saved before the gram goals. Without an energy goal the section only says to set one first. The app
 offers no split of its own.
 

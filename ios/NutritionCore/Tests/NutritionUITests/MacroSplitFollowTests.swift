@@ -27,7 +27,12 @@ private final class RefusingGoalStore: GoalStore, @unchecked Sendable {
         }
         try inner.setGoal(goal)
     }
-    func removeGoal(nutrient: String) throws { try inner.removeGoal(nutrient: nutrient) }
+    /// Keys whose removal is refused.
+    var refusedRemovals: Set<String> = []
+    func removeGoal(nutrient: String) throws {
+        if refusedRemovals.contains(nutrient) { throw Refused() }
+        try inner.removeGoal(nutrient: nutrient)
+    }
     func close() { inner.close() }
 }
 
@@ -178,6 +183,58 @@ final class MacroSplitFollowTests: XCTestCase {
         XCTAssertEqual(try grams(store), [188, 250, 67])
         XCTAssertNil(model.followedMacroSplit)
         XCTAssertEqual(model.errorMessage, GoalsViewModel.macroSplitFollowRestoreFailedMessage)
+        // The fields show what is stored, so leaving one cannot write an old value back over a new one.
+        XCTAssertEqual(model.draftText["protein"], "188")
+        XCTAssertEqual(model.draftText["carbohydrate"], "250")
+        XCTAssertEqual(model.draftText["fat"], "67")
+    }
+
+    func testTypingTheSplitsGramsBackByHandResumesFollowing() throws {
+        let store = InMemoryGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        model.draftText["protein"] = "160"
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+        XCTAssertNil(model.followedMacroSplit)
+        // Following is decided from the goals: back at exactly the split's grams, they follow again.
+        model.draftText["protein"] = "150"
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+        XCTAssertNotNil(model.followedMacroSplit)
+        commitEnergy(model, "2500")
+        XCTAssertEqual(try grams(store), [188, 250, 83])
+    }
+
+    func testAClearAllThatFailsPartwayLeavesNothingToFollow() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let preferences = InMemoryDisplayPreferences()
+        let model = try appliedModel(store, preferences: preferences)
+        // Goals are removed in key order: carbohydrate goes, then energy is refused.
+        store.refusedRemovals = ["energy"]
+
+        XCTAssertFalse(model.clearAllGoals())
+
+        XCTAssertNil(preferences.macroSplit)
+        XCTAssertNil(model.followedMacroSplit)
+    }
+
+    func testASetupSaveStopsFollowingWhenItsGramsDiffer() throws {
+        let store = InMemoryGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        let setup = GoalSetupViewModel(goals: model)
+        setup.aim = .maintain
+        setup.sex = .male
+        setup.ageText = "30"
+        setup.heightCentimetersText = "180"
+        setup.weightKilogramsText = "80"
+        setup.activity = .moderate
+        setup.next(); setup.next(); setup.next(); setup.next()
+
+        XCTAssertTrue(setup.save())
+
+        XCTAssertNil(model.followedMacroSplit)
+        let saved = try grams(store)
+        // A later energy change on the Goals screen leaves the estimate's grams alone.
+        commitEnergy(model, "3000")
+        XCTAssertEqual(try grams(store), saved)
     }
 
     func testASetupSaveThatRollsBackKeepsFollowing() throws {
@@ -245,10 +302,9 @@ final class MacroSplitFollowTests: XCTestCase {
         XCTAssertNil(model.followedMacroSplit)
     }
 
-    func testASetupRollbackThatFailsStopsFollowing() throws {
+    func testASetupRollbackThatFailsDoesNotClaimTheGoalsFollow() throws {
         let store = RefusingGoalStore(goals: [energyGoal(2000)])
-        let preferences = InMemoryDisplayPreferences()
-        let model = try appliedModel(store, preferences: preferences)
+        let model = try appliedModel(store)
         let setup = GoalSetupViewModel(goals: model)
         setup.aim = .maintain
         setup.sex = .male
@@ -262,7 +318,7 @@ final class MacroSplitFollowTests: XCTestCase {
 
         XCTAssertFalse(setup.save())
 
-        XCTAssertNil(preferences.macroSplit)
+        // The estimate's energy stayed and the grams did not, so the split does not describe the goals.
         XCTAssertNil(model.followedMacroSplit)
     }
 
@@ -298,7 +354,7 @@ final class MacroSplitFollowTests: XCTestCase {
     func testAStoredValueThatIsNotASplitReadsAsNone() {
         let defaults = splitSuite()
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
-        for text in ["", "30,40", "30,40,40", "a,b,c", "0,50,50", "30,40,30,0"] {
+        for text in ["", "30,40", "30,40,40", "a,b,c", "0,50,50", "30,40,30,0", "30x,40,30", ".5,50,49.5", "30.,40,30", "3 0,40,30"] {
             defaults.set(text, forKey: "display.goals.macroSplit")
             XCTAssertNil(preferences.macroSplit, text)
         }

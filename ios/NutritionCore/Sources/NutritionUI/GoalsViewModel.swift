@@ -340,14 +340,7 @@ public final class GoalsViewModel: ObservableObject {
             } else {
                 stored = Quantity(value: target, unit: chosen)
             }
-            let goal = NutrientGoal(nutrient: nutrient, target: stored.value, unit: stored.unit)
-            var before: NutrientGoal?
-            if Self.macroSplitKeys.contains(nutrient) { before = (try? store.goal(for: nutrient)) ?? nil }
-            try store.setGoal(goal)
-            // A macro goal changed any way but by its split (by hand, or by the setup estimate) is no
-            // longer that split's output, so the grams stop following the energy goal. Committing the
-            // same value again, as leaving a field does, changes nothing and keeps following.
-            if Self.macroSplitKeys.contains(nutrient), before != goal { macroSplitPreferences?.setMacroSplit(nil) }
+            try store.setGoal(NutrientGoal(nutrient: nutrient, target: stored.value, unit: stored.unit))
             load()
             return true
         } catch {
@@ -397,10 +390,6 @@ public final class GoalsViewModel: ObservableObject {
     public func removeTarget(for nutrient: String) -> Bool {
         do {
             try store.removeGoal(nutrient: nutrient)
-            // Without that goal the split has nothing to share out or nothing to follow it with.
-            if Self.macroSplitKeys.contains(nutrient) || nutrient == Self.energyKey {
-                macroSplitPreferences?.setMacroSplit(nil)
-            }
             load()
             return true
         } catch {
@@ -440,6 +429,10 @@ public final class GoalsViewModel: ObservableObject {
     /// The energy goal's key, which a macro split is a share of.
     static let energyKey = "energy"
 
+    /// True while `applyMacroSplit` saves its own energy edit, so that save does not move the gram
+    /// goals by the old split just before the new ones replace them.
+    var isApplyingMacroSplit = false
+
     /// The preferences the stored split lives in, or nil for a store that keeps none.
     var macroSplitPreferences: MacroSplitPreferences? { preferences as? MacroSplitPreferences }
 
@@ -474,27 +467,9 @@ public final class GoalsViewModel: ObservableObject {
         return (goals, MacroSplit.Grams(protein: grams[0], carbohydrate: grams[1], fat: grams[2]))
     }
 
-    /// Puts back a split that a save then rolled back had cleared, so a failed save leaves following as
-    /// it was. Only stored while the macro goals are still exactly the split's output for the stored
-    /// energy goal, so the rule that a stored split describes the goals holds after any rollback.
-    public func restoreMacroSplit(_ split: MacroSplit?) {
-        guard let split, let splits = macroSplitPreferences, splits.macroSplit == nil,
-            macroSplitDescribesGoals(split)
-        else { return }
-        splits.setMacroSplit(split)
-        refreshFollowedMacroSplit()
-    }
-
     /// Works `followedMacroSplit` out again from the stored split and the stored goals.
     func refreshFollowedMacroSplit() {
         followedMacroSplit = macroSplitPreferences?.macroSplit.flatMap { macroSplitDescribesGoals($0) ? $0 : nil }
-    }
-
-    /// Forgets the stored split, so the macro goals no longer follow the energy goal. Called when a save
-    /// could not be fully rolled back, since the goals may then be anything.
-    public func stopFollowingMacroSplit() {
-        macroSplitPreferences?.setMacroSplit(nil)
-        followedMacroSplit = nil
     }
 
     /// Whether the three stored macro goals are exactly the split's output for the stored energy goal.
@@ -508,21 +483,20 @@ public final class GoalsViewModel: ObservableObject {
     /// After the energy goal changes on this screen, moves the protein, carbohydrate and fat goals to the
     /// stored split's share of the new energy goal.
     ///
-    /// Only a split that still describes the goals is followed: the three stored macro goals must be
-    /// exactly what the split comes to for the energy goal before this change. Anything else (goals
-    /// edited behind this screen, an unreadable store, an energy goal too small to share out) clears
-    /// the split and leaves the macro goals as they are, so a goal a person set is never rescaled. The
-    /// three are written all or none; when one is refused the earlier ones are put back.
+    /// The rule is decided here, from the goals, every time: the split is followed only when the three
+    /// stored macro goals are exactly what it comes to for the energy goal before this change. A macro
+    /// goal edited by hand or by the setup estimate, goals changed behind this screen, an unreadable
+    /// store or an energy goal too small to share out all fail that, and the macro goals are then left
+    /// as they are, so a goal a person set is never rescaled. Nothing is cleared: whether the goals
+    /// follow is a fact about the goals, not a flag to keep in step. The three are written all or none;
+    /// when one is refused the earlier ones are put back.
     private func followEnergyGoal(from previous: NutrientGoal?) {
-        guard let splits = macroSplitPreferences, let split = splits.macroSplit else { return }
+        guard !isApplyingMacroSplit, let split = macroSplitPreferences?.macroSplit else { return }
         guard let macros = storedMacroGoals(), let before = Self.kcal(previous),
             let after = Self.kcal((try? store.goal(for: Self.energyKey)) ?? nil),
             let expected = try? split.grams(forEnergyKcal: before), expected == macros.grams,
             let next = try? split.grams(forEnergyKcal: after)
-        else {
-            stopFollowingMacroSplit()
-            return
-        }
+        else { return }
         guard next != expected else { return }
         let targets = [next.protein, next.carbohydrate, next.fat]
         for (index, key) in Self.macroSplitKeys.enumerated() {
@@ -535,7 +509,12 @@ public final class GoalsViewModel: ObservableObject {
                 for earlier in (0..<index).reversed() {
                     do { try store.setGoal(macros.goals[earlier]) } catch { restored = false }
                 }
-                splits.setMacroSplit(nil)
+                // The fields are refilled from what is actually stored, so a field holding a value the
+                // store no longer has is not committed back over it when it next loses focus.
+                for key in Self.macroSplitKeys {
+                    draftText[key] = nil
+                    selectedUnits[key] = nil
+                }
                 load()
                 errorMessage = restored
                     ? Self.macroSplitFollowFailedMessage : Self.macroSplitFollowRestoreFailedMessage
@@ -554,6 +533,8 @@ public final class GoalsViewModel: ObservableObject {
 
     @discardableResult
     public func clearAllGoals() -> Bool {
+        // Forgotten first, so a removal that fails partway cannot leave a split to follow.
+        macroSplitPreferences?.setMacroSplit(nil)
         do {
             for goal in try store.goals() {
                 try store.removeGoal(nutrient: goal.nutrient)
@@ -561,10 +542,10 @@ public final class GoalsViewModel: ObservableObject {
             draftText = [:]
             selectedUnits = [:]
             rowError = [:]
-            macroSplitPreferences?.setMacroSplit(nil)
             load()
             return errorMessage == nil
         } catch {
+            refreshFollowedMacroSplit()
             errorMessage = Self.removeFailedMessage
             return false
         }
