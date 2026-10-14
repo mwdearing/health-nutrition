@@ -252,10 +252,15 @@ public final class TodayViewModel: ObservableObject {
             var storedGoals: [NutrientGoal]
             do {
                 storedGoals = try goals?.goals() ?? []
-                // A person who never set a water goal still gets one to see progress against: the
-                // default below, shown until they set their own on the Goals screen. It is not stored.
-                if goals != nil, !storedGoals.contains(where: { $0.nutrient == DailyTotalsBuilder.waterKey }) {
-                    storedGoals.append(Self.defaultWaterGoal)
+                // First run: store the default water goal once so there is a bar to see. After that
+                // the person owns it; removing it or clearing all goals is not undone.
+                if let goals, let seeding = preferences as? WaterGoalDefaultPreferences,
+                   !seeding.hasSeededWaterGoal {
+                    if !storedGoals.contains(where: { $0.nutrient == DailyTotalsBuilder.waterKey }) {
+                        try goals.setGoal(Self.defaultWaterGoal)
+                        storedGoals.append(Self.defaultWaterGoal)
+                    }
+                    seeding.markWaterGoalSeeded()
                 }
             } catch {
                 storedGoals = []

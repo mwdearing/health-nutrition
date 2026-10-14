@@ -323,6 +323,21 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(metric.waterTotalMilliliters, 500)
     }
 
+    func testDefaultWaterGoalIsSeededOnceAndRemovalSticks() throws {
+        let store = try makeStore()
+        let goals = InMemoryGoalStore(goals: [])
+        let prefs = InMemoryDisplayPreferences()
+        let today = TodayViewModel(
+            store: store, preferences: prefs, goals: goals, lookup: SnapshotNutrientFacts(),
+            trackedNutrients: [], timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        XCTAssertEqual(try goals.goals().first { $0.nutrient == "water" }?.target, 2000)
+        try goals.removeGoal(nutrient: "water")
+        today.load(now: now)
+        XCTAssertNil(try goals.goals().first { $0.nutrient == "water" })
+        XCTAssertNil(today.waterBar)
+    }
+
     func testWaterBarIsNothingLoggedUntilAWaterEntryExists() throws {
         let store = try makeStore()
         try log(store, product: oats(withValues: true))
