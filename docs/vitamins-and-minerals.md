@@ -7,14 +7,16 @@ gives no advice and no score.
 
 ## Comparing with a group
 
-**Compare with** offers the eight published adult rows ("Women 19 to 30" to "Men 71 and over") and **Nothing**. Until a
-group is picked the screen shows amounts alone, because the sources publish no row for someone who has not said which one
-is theirs. The choice is a display preference on this phone: `UserDefaultsDisplayPreferences` stores it under
-`display.reference.group` as `<sex>.<age band>` (for example `female.years31To50`), a value that does not read back as one
-published row is no group, and **Erase all data** removes it with the other display preferences.
+**Compare with** offers the twelve published adult rows ("Women 19 to 30" to "Men 71 and over", then "Pregnancy 19 to
+30", "Pregnancy 31 to 50", "Breastfeeding 19 to 30" and "Breastfeeding 31 to 50") and **Nothing**. Until a group is
+picked the screen shows amounts alone, because the sources publish no row for someone who has not said which one is
+theirs. The choice is a display preference on this phone: `UserDefaultsDisplayPreferences` stores it under
+`display.reference.group` as `<sex>.<age band>` (for example `female.years31To50`), or with the life stage after it for
+pregnancy and breastfeeding (`female.years31To50.pregnancy`); a value that does not read back as one published row is no
+group, and **Erase all data** removes it with the other display preferences.
 
 The footer says what the values are: the published adult RDA or AI and upper limit, from the NIH Office of Dietary
-Supplements, describing populations rather than the person, and not covering pregnancy, breastfeeding or anyone under 19.
+Supplements, describing populations rather than the person, and not covering anyone under 19.
 
 ## How the day is added up
 

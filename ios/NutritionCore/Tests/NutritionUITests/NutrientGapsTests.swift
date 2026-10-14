@@ -339,10 +339,42 @@ final class NutrientGapsTests: XCTestCase {
     func testAStoredValueThatIsNotAPublishedRowReadsAsNoGroup() {
         let defaults = gapsSuite()
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
-        for text in ["", "female", "female.years12To18", "other.years19To30", "female.years19To30.extra"] {
+        for text in [
+            "", "female", "female.years12To18", "other.years19To30", "female.years19To30.extra",
+            "male.years19To30.pregnancy", "female.years51To70.lactation", "female.years19To30.standard",
+            "female.years19To30.pregnancy.extra",
+        ] {
             defaults.set(text, forKey: "display.reference.group")
             XCTAssertNil(preferences.referenceGroup, text)
         }
+    }
+
+    func testAPregnancyRowIsComparedWithItsOwnValuesAndLimit() throws {
+        let pregnant = try XCTUnwrap(ReferenceGroup(lifeStage: .pregnancy, ageBand: .years31To50))
+        // 3,600 mg of phosphorus is under the adult 4,000 mg limit but over pregnancy's 3,500 mg.
+        let phosphorus = NutrientGapRow(
+            nutrient: "phosphorus", label: "Phosphorus", unit: .mg,
+            tally: NutrientDayTally(fromFood: 3600, known: 1),
+            reference: ReferenceIntakes.intake(for: "phosphorus", group: pregnant))
+        XCTAssertEqual(phosphorus.status, .aboveUpperLimit)
+        XCTAssertEqual(phosphorus.referenceText, "RDA 700 mg, upper limit 3500 mg")
+        // 18 mg of iron reaches a woman's RDA but is below pregnancy's 27 mg.
+        let iron = NutrientGapRow(
+            nutrient: "iron", label: "Iron", unit: .mg, tally: NutrientDayTally(fromFood: 18, known: 1),
+            reference: ReferenceIntakes.intake(for: "iron", group: pregnant))
+        XCTAssertEqual(iron.status, .belowReference)
+    }
+
+    func testAPregnancyOrBreastfeedingGroupIsStoredAndReadBack() throws {
+        let defaults = gapsSuite()
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        let pregnant = try XCTUnwrap(ReferenceGroup(lifeStage: .pregnancy, ageBand: .years31To50))
+        preferences.setReferenceGroup(pregnant)
+        XCTAssertEqual(defaults.string(forKey: "display.reference.group"), "female.years31To50.pregnancy")
+        XCTAssertEqual(UserDefaultsDisplayPreferences(defaults: defaults).referenceGroup, pregnant)
+        // An adult row keeps the two-part form it was stored in before.
+        preferences.setReferenceGroup(ReferenceGroup(sex: .female, ageBand: .years31To50))
+        XCTAssertEqual(defaults.string(forKey: "display.reference.group"), "female.years31To50")
     }
 
     func testTheInMemoryStoreClearsTheGroupOnReset() {

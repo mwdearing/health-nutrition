@@ -97,7 +97,7 @@ final class ReferenceIntakesTests: XCTestCase {
         let keys = ReferenceIntakes.nutrients
         XCTAssertEqual(Set(keys).count, keys.count, "a nutrient is listed twice")
         XCTAssertEqual(keys.count, 25)
-        XCTAssertEqual(ReferenceGroup.all.count, 8)
+        XCTAssertEqual(ReferenceGroup.all.count, 12)
         for group in ReferenceGroup.all {
             let intakes = ReferenceIntakes.intakes(for: group)
             XCTAssertEqual(intakes.map(\.nutrient), keys)
@@ -136,5 +136,66 @@ final class ReferenceIntakesTests: XCTestCase {
     func testGroupLabelsReadAsWords() {
         XCTAssertEqual(ReferenceGroup(sex: .female, ageBand: .years19To30).label, "Women 19 to 30")
         XCTAssertEqual(ReferenceGroup(sex: .male, ageBand: .years71Plus).label, "Men 71 and over")
+    }
+
+    // MARK: Pregnancy and breastfeeding
+
+    private func stage(_ stage: ReferenceLifeStage, _ band: ReferenceAgeBand) throws -> ReferenceGroup {
+        try XCTUnwrap(ReferenceGroup(lifeStage: stage, ageBand: band))
+    }
+
+    func testPregnancyRowsCarryTheirOwnValues() throws {
+        let pregnant = try stage(.pregnancy, .years19To30)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "iron", group: pregnant)?.amount, 27)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "folate", group: pregnant)?.amount, 600)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "iodine", group: pregnant)?.amount, 220)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "magnesium", group: pregnant)?.amount, 350)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "magnesium", group: try stage(.pregnancy, .years31To50))?.amount, 360)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "copper", group: pregnant)?.amount, try dec("1.0"))
+        XCTAssertEqual(ReferenceIntakes.intake(for: "vitaminB6", group: pregnant)?.amount, try dec("1.9"))
+        // The one limit the tables set differently in pregnancy: phosphorus, 3,500 mg instead of 4,000.
+        XCTAssertEqual(ReferenceIntakes.intake(for: "phosphorus", group: pregnant)?.upperLimit, 3500)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "iron", group: pregnant)?.upperLimit, 45)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "folate", group: pregnant)?.upperLimitScope, .folicAcid)
+    }
+
+    func testBreastfeedingRowsCarryTheirOwnValues() throws {
+        let nursing = try stage(.lactation, .years31To50)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "vitaminA", group: nursing)?.amount, 1300)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "iodine", group: nursing)?.amount, 290)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "iron", group: nursing)?.amount, 9)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "magnesium", group: nursing)?.amount, 320)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "chromium", group: nursing)?.amount, 45)
+        XCTAssertEqual(ReferenceIntakes.intake(for: "phosphorus", group: nursing)?.upperLimit, 4000)
+    }
+
+    func testPregnancyAndBreastfeedingArePublishedOnlyFor19To50() {
+        XCTAssertNil(ReferenceGroup(lifeStage: .pregnancy, ageBand: .years51To70))
+        XCTAssertNil(ReferenceGroup(lifeStage: .lactation, ageBand: .years71Plus))
+        XCTAssertNil(ReferenceGroup(lifeStage: .standard, ageBand: .years19To30))
+        XCTAssertEqual(ReferenceGroup(lifeStage: .pregnancy, ageBand: .years31To50)?.sex, .female)
+    }
+
+    func testTheNewGroupsReadAsWordsAndComeLastInThePicker() {
+        XCTAssertEqual(ReferenceGroup.all.suffix(4).map(\.label), [
+            "Pregnancy 19 to 30", "Pregnancy 31 to 50", "Breastfeeding 19 to 30", "Breastfeeding 31 to 50",
+        ])
+        XCTAssertEqual(Set(ReferenceGroup.all).count, ReferenceGroup.all.count)
+    }
+
+    func testADecodedGroupCannotNameARowThatIsNotPublished() throws {
+        let decoder = JSONDecoder()
+        func decode(_ json: String) -> ReferenceGroup? {
+            try? decoder.decode(ReferenceGroup.self, from: Data(json.utf8))
+        }
+        XCTAssertEqual(
+            decode(#"{"sex":"female","ageBand":"years19To30","lifeStage":"pregnancy"}"#),
+            ReferenceGroup(lifeStage: .pregnancy, ageBand: .years19To30))
+        XCTAssertEqual(
+            decode(#"{"sex":"male","ageBand":"years31To50"}"#), ReferenceGroup(sex: .male, ageBand: .years31To50))
+        XCTAssertNil(decode(#"{"sex":"male","ageBand":"years19To30","lifeStage":"pregnancy"}"#))
+        XCTAssertNil(decode(#"{"sex":"female","ageBand":"years51To70","lifeStage":"lactation"}"#))
+        let encoded = try JSONEncoder().encode(try stage(.lactation, .years19To30))
+        XCTAssertEqual(try decoder.decode(ReferenceGroup.self, from: encoded), try stage(.lactation, .years19To30))
     }
 }
