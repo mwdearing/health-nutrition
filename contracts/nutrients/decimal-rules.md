@@ -1,8 +1,10 @@
 # Nutrient numbers
 
 Every amount in this contract is an exact decimal carried as a JSON string. The
-same rules apply to the iOS app (which stores `Decimal`) and to any service that
-builds against these files.
+rules govern the catalog and its wire format: published products, the reference
+vectors in `golden.v1.json` and any service that builds against these files.
+How the iOS app (which stores `Decimal`) scales a logged entry in its journal is
+set out under "The journal keeps the digits its arithmetic gives" below.
 
 ## Decimals are strings, never JSON numbers
 
@@ -28,10 +30,11 @@ portion of zero or less is `invalid_portion_definition`. `-0` is zero.
 
 ## Display rounding never replaces a stored amount
 
-A stated amount is stored as stated. Scaling a label value to a consumed amount
-keeps every digit an exact result has: 40 g of a 100 g basis scales `5.2 g` to
-`2.08 g`, not to `2.1 g`. Rounding for display happens at the moment a number is
-shown to a person, and the rounded copy never replaces the stored one.
+A stated amount is stored as stated. In the catalog, scaling a label value to a
+consumed amount keeps every digit an exact result has: 40 g of a 100 g basis
+scales `5.2 g` to `2.08 g`, not to `2.1 g`. Rounding for display happens at the
+moment a number is shown to a person, and the rounded copy never replaces the
+stored one.
 
 ## One rounding rule, for a division that does not terminate
 
@@ -48,7 +51,9 @@ basis is `0.333...` of it. There are exactly three divisions in this contract:
 - a mass or volume to count conversion divides by the portion amount, after the
   amount has been converted into the portion's unit.
 
-Each of them follows the same rule, in every language:
+Each of them follows the same rule, in every language that implements the
+catalog (the iOS journal's own scaling is the exception described under "The
+journal keeps the digits its arithmetic gives"):
 
 1. If the exact quotient has a finite decimal form, that is the result, with
    every digit: `1 / 8192` is `0.0001220703125`.
@@ -68,8 +73,8 @@ described next.
 ## Arithmetic is bounded: 38 significant digits, exponents within 127
 
 Exact arithmetic needs room, and the iOS `Decimal` has room for 38 significant
-digits. So the contract sets that as the bound for every implementation, and no
-implementation may round or cut to stay inside it:
+digits. So the contract sets that as the bound for every implementation of the
+catalog, and no such implementation may round or cut to stay inside it:
 
 - Every input, every intermediate (including an amount expressed in its
   dimension's canonical unit on the way to the target unit), every product,
@@ -90,6 +95,33 @@ one published value by one consumed amount and one basis never fails on the
 multiplication; only a longer chain, such as a count converted through a portion
 and then scaled, can reach the limit, and then it is refused rather than
 rounded.
+
+## The journal keeps the digits its arithmetic gives
+
+The iOS journal's own scaling of a logged entry is outside the two sections
+above. It works out how much of the label's basis was logged and multiplies each
+stated value by that factor in Foundation `Decimal` arithmetic, keeping whatever
+that arithmetic returns. It does not round the scaling quotient to 10 fraction
+digits (only a conversion into an input unit on the way, such as mL into cups,
+is rounded to 10 fraction digits, as `UnitRegistry` always does), and it does
+not refuse a result past 38 significant digits: `Decimal` shortens it to 38
+instead. For example, 24 fl oz (709.7647095 mL) of a 710 mL serving gives the
+factor `0.99966860492957746478873239436619718309` on an iPhone, where the exact
+quotient rounds to `...310` at that length. For a basis that states its
+serving, the division comes before the multiplication: with 1 g logged of a
+"per serving (3 g)" label that states 3 g of carbohydrate, the scaled
+carbohydrate is `0.99999999999999999999999999999999999999 g` rather than `1 g`.
+The relay encoder, the Apple Health samples and the day's totals all use this
+arithmetic.
+
+That is deliberate. Every amount the encoder sends is covered by the payload's
+digests (`domain_facts_hash` and `client_payload_hash` in
+`contracts/intake-context/README.md`), and different facts or bytes for the same
+revision or operation are a conflict, not a replay. Changing the journal's
+arithmetic would change the amounts of a revision encoded before the change and
+sent again after it. So the journal's scaling stays as it is, and the screens
+round its scaled figures for display only, as "Display rounding never replaces a
+stored amount" requires. The other sections still govern the catalog.
 
 ## Units: one spelling each, and energy in kcal
 

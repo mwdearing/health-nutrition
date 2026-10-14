@@ -86,7 +86,7 @@ public typealias NutrientTotalsProvider = @Sendable (_ intakeID: String, _ revis
 ///   `labelBasis` (typically per 100 g), not for the amount the component records, so a 40 g
 ///   component of a product whose label states 13 g of protein per 100 g carries 5.2 g. The factor
 ///   comes from `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`, the same arithmetic the
-///   relay encoder uses, and the multiplication is exact decimal: no float, no rounding. **Nothing is
+///   relay encoder uses, and the multiplication is in `Decimal`, never a float. **Nothing is
 ///   written when that factor cannot be resolved** — a basis the journal cannot answer ("per 100 kcal",
 ///   "per 100 g or mL") or components that cannot scale it. An unscaled label value states the whole
 ///   package rather than the portion eaten, which is a wrong number in Health, and a guessed one
