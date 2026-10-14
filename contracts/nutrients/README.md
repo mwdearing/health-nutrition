@@ -37,5 +37,6 @@ yet run against it. Apart from a conversion into an input unit (`oz`, `fl oz`,
 10 fraction digits, the Swift code does not round a repeating quotient to the
 contract's 10 fraction digits today; the Swift/Python golden verification that
 follows this contract makes `NutritionDomain` conform and runs these vectors in
-Swift. The journal's own scaling is outside it by design (`decimal-rules.md`,
-"The journal keeps the digits its arithmetic gives").
+Swift. The journal's own scaling keeps its present arithmetic by design and is
+not part of that work (`decimal-rules.md`, "The journal keeps the digits its
+arithmetic gives").

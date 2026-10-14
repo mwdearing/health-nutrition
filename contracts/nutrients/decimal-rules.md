@@ -31,10 +31,11 @@ portion of zero or less is `invalid_portion_definition`. `-0` is zero.
 
 ## Display rounding never replaces a stored amount
 
-A stated amount is stored as stated. Scaling a label value to a consumed amount
-keeps every digit an exact result has: 40 g of a 100 g basis scales `5.2 g` to
-`2.08 g`, not to `2.1 g`. Rounding for display happens at the moment a number is
-shown to a person, and the rounded copy never replaces the stored one.
+A stated amount is stored as stated. In the catalog, scaling a label value to a
+consumed amount keeps every digit an exact result has: 40 g of a 100 g basis
+scales `5.2 g` to `2.08 g`, not to `2.1 g`. Rounding for display happens at the
+moment a number is shown to a person, and the rounded copy never replaces the
+stored one.
 
 ## One rounding rule, for a division that does not terminate
 
@@ -101,11 +102,13 @@ rounded.
 The iOS journal's own scaling of a logged entry is outside the two sections
 above. It works out how much of the label's basis was logged and multiplies each
 stated value by that factor in Foundation `Decimal` arithmetic, keeping whatever
-that arithmetic returns. It does not round a quotient that does not terminate to
-10 fraction digits, and it does not refuse a result past 38 significant digits:
-`Decimal` cuts it there instead. For example, 24 fl oz (709.7647095 mL) of a
-710 mL serving gives the factor `0.99966860492957746478873239436619718309`, where
-the exact quotient rounds to `...310` at that length. For a basis that states its
+that arithmetic returns. It does not round the scaling quotient to 10 fraction
+digits (only a conversion into an input unit on the way, such as mL into cups,
+is rounded to 10 fraction digits, as `UnitRegistry` always does), and it does
+not refuse a result past 38 significant digits: `Decimal` shortens it to 38
+instead. For example, 24 fl oz (709.7647095 mL) of a 710 mL serving gives the
+factor `0.99966860492957746478873239436619718309` on an iPhone, where the exact
+quotient rounds to `...310` at that length. For a basis that states its
 serving, the division comes before the multiplication, so 1 g logged of a 3 g
 serving that states 3 g comes to `0.99999999999999999999999999999999999999 g`
 rather than `1 g`. The relay encoder, the Apple Health samples and the day's
