@@ -91,6 +91,30 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertEqual(model.weightTrendText, "No change over 30 days")
     }
 
+    func testEveryReadIsHandedOnForTheCalorieGoal() async {
+        let reader = FakeReader()
+        reader.hasAskedForReadAccess = true
+        reader.readings = BodyActivityReadings(activeEnergyKcal: 300)
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+        var handed: [Decimal?] = []
+        model.onRead = { handed.append($0.activeEnergyKcal) }
+
+        await model.load(now: now)
+        reader.hasAskedForReadAccess = false
+        await model.load(now: now)
+
+        XCTAssertEqual(handed, [300, nil], "a forgotten request hands on nothing, so the goal drops back")
+    }
+
+    func testTheActivityGoalChoiceIsOffByDefaultAndErased() {
+        let preferences = InMemoryDisplayPreferences()
+        XCTAssertFalse(preferences.addsActiveEnergyToGoal)
+        preferences.setAddsActiveEnergyToGoal(true)
+        XCTAssertTrue(preferences.addsActiveEnergyToGoal)
+        preferences.resetToDefaults()
+        XCTAssertFalse(preferences.addsActiveEnergyToGoal)
+    }
+
     func testNoEarlierWeightMeansNoTrend() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true

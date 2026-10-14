@@ -25,6 +25,15 @@ public struct GoalsView: View {
                 }
             }
             MacroSplitSection(model: model)
+            if model.offersActivityGoal {
+                Section {
+                    Toggle(GoalsViewModel.activityGoalTitle, isOn: Binding(
+                        get: { self.model.addsActiveEnergyToGoal },
+                        set: { self.model.setAddsActiveEnergyToGoal($0) }))
+                } footer: {
+                    Text(GoalsViewModel.activityGoalFooter)
+                }
+            }
             ForEach(model.sections) { section in
                 Section(section.title) {
                     ForEach(section.rows) { row in

@@ -17,6 +17,13 @@ func hiddenTodayGoals(in preferences: DisplayPreferences) -> Set<String> {
     (preferences as? GoalVisibilityPreferences)?.hiddenTodayGoals ?? []
 }
 
+/// Whether today's active energy from Apple Health is added to the calorie goal. Off unless the person
+/// switches it on; the stored goal itself never changes.
+public protocol ActivityGoalPreferences: AnyObject {
+    var addsActiveEnergyToGoal: Bool { get }
+    func setAddsActiveEnergyToGoal(_ adds: Bool)
+}
+
 /// Whether the default water goal has been written once. It is written a single time, so a person
 /// who later removes it, or clears all goals, is not given it back.
 public protocol WaterGoalDefaultPreferences: AnyObject {

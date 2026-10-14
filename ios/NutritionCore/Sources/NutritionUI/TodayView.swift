@@ -61,6 +61,9 @@ public struct TodayView: View {
                         onGoals: { onEditGoals?() }, onUnits: { onOpenUnits?() })
                 }
                 NourishTodayHeader(model: model, onEditGoals: onEditGoals)
+                if let note = model.activityGoalNote {
+                    Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
                 waterCard
                 if let bodyActivity {
                     BodyActivityCard(model: bodyActivity, now: now)

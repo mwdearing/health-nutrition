@@ -195,6 +195,20 @@ public final class GoalsViewModel: ObservableObject {
         self.preferences = preferences
     }
 
+    /// Whether this preference store can keep the activity choice.
+    public var offersActivityGoal: Bool { preferences is ActivityGoalPreferences }
+    public var addsActiveEnergyToGoal: Bool {
+        (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal ?? false
+    }
+    public func setAddsActiveEnergyToGoal(_ adds: Bool) {
+        (preferences as? ActivityGoalPreferences)?.setAddsActiveEnergyToGoal(adds)
+        objectWillChange.send()
+    }
+    public static let activityGoalTitle = "Add active energy to my calorie goal"
+    public static let activityGoalFooter =
+        "Raises today's calorie goal by the active energy Apple Health reports so far. Needs Show steps, "
+        + "activity and weight on Today. Your saved goal does not change."
+
     /// The unit system the screen shows amounts in, read from the same preferences as the rest of the app.
     public var unitSystem: UnitSystem { preferences.unitSystem }
 
