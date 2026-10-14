@@ -60,7 +60,7 @@ The shipped manifest declares two required-reason API categories:
 | Category | Reason | Where the code uses it |
 | --- | --- | --- |
 | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` | `ios/NutritionCore/Sources/NutritionProviders/OpenFoodFactsClient.swift` |
-| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | App display, reminder and disclosure preferences. |
+| `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` | App display, reminder and disclosure preferences, and saved meals kept on this phone. |
 
 `OpenFoodFactsClient` takes a `monotonic` clock, defaulting to
 `ProcessInfo.processInfo.systemUptime`, and uses it to measure elapsed time for
