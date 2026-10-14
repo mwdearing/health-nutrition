@@ -576,13 +576,15 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         }
     }
 
-    /// The quantity types the revisions that may have reached Health stated, or nil when they cannot
-    /// be read.
+    /// The quantity types any revision of the entry stated, or nil when they cannot be read.
     private func statedTypes(of operation: OutboxOperation) async -> Set<String>? {
         do {
             var types = Set<String>()
-            for number in try Self.revisionsThatMayHaveWritten(
-                before: Int.max, of: operation.intakeID, in: store) {
+            // Every revision, not only those back to the newest one marked delivered: an upsert
+            // acknowledged as superseded by this delete is also marked delivered without having removed
+            // anything, so stopping there could miss a sample an older revision wrote. Over-stating only
+            // keeps the delete waiting for a person.
+            for number in try store.revisions(of: operation.intakeID).map(\.number) {
                 let plan = HealthKitWritePlanner.plan(
                     intakeID: operation.intakeID, revision: number, occurredAt: Date(timeIntervalSince1970: 0),
                     totals: try await totals(operation.intakeID, number))
