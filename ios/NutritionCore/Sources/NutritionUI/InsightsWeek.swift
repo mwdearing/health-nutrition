@@ -86,14 +86,16 @@ public struct InsightsWeek: Equatable {
 public enum InsightsLoadState: Equatable {
     case loading
     case failed(String)
-    case ready(InsightsWeek)
+    /// `skipped` is how many entries the diary could not read and left out, so the week is not shown as complete.
+    case ready(InsightsWeek, skipped: Int)
 
     public static func resolve(
-        errorMessage: String?, loadCount: Int, entries: [InsightsWeek.Entry], now: Date, zone: TimeZone,
-        locale: Locale = .current
+        errorMessage: String?, loadCount: Int, skippedCount: Int = 0, entries: [InsightsWeek.Entry], now: Date,
+        zone: TimeZone, locale: Locale = .current
     ) -> InsightsLoadState {
         if let errorMessage { return .failed(errorMessage) }
         guard loadCount > 0 else { return .loading }
-        return .ready(InsightsWeek.make(entries: entries, now: now, zone: zone, locale: locale))
+        return .ready(
+            InsightsWeek.make(entries: entries, now: now, zone: zone, locale: locale), skipped: max(0, skippedCount))
     }
 }

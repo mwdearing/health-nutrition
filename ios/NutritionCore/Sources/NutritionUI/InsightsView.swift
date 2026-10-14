@@ -6,14 +6,21 @@ import SwiftUI
 /// medical claim.
 public struct InsightsView: View {
     private let week: InsightsWeek
+    private let skippedCount: Int
 
-    public init(week: InsightsWeek) {
+    public init(week: InsightsWeek, skippedCount: Int = 0) {
         self.week = week
+        self.skippedCount = skippedCount
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                if skippedCount > 0 {
+                    InlineNotice(
+                        "\(skippedCount) \(skippedCount == 1 ? "entry" : "entries") can't be shown and \(skippedCount == 1 ? "is" : "are") not counted here.",
+                        tone: .waiting)
+                }
                 Card {
                     VStack(alignment: .leading, spacing: DesignSpacing.m) {
                         Text(week.hasAnyEntry ? week.headline : "Nothing logged this week")

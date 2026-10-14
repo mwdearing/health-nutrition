@@ -18,7 +18,7 @@ public struct InsightsHost: View {
 
     private var state: InsightsLoadState {
         InsightsLoadState.resolve(
-            errorMessage: journal.errorMessage, loadCount: journal.loadCount,
+            errorMessage: journal.errorMessage, loadCount: journal.loadCount, skippedCount: journal.skippedCount,
             entries: journal.sections.flatMap(\.rows).map {
                 InsightsWeek.Entry(occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier)
             },
@@ -28,8 +28,8 @@ public struct InsightsHost: View {
     public var body: some View {
         Group {
             switch state {
-            case .ready(let week):
-                InsightsView(week: week)
+            case .ready(let week, let skipped):
+                InsightsView(week: week, skippedCount: skipped)
             case .failed(let message):
                 ScrollView {
                     InlineNotice(message, tone: .failed)
