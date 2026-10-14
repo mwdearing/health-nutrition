@@ -627,6 +627,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// implementation that refuses to clear something would be visible here rather than papered over.
     private func forgetDisplayPreferences() {
         preferences.resetToDefaults()
+        // The erase just deleted every goal. Mark the default water goal as already offered so the
+        // reload that follows does not write a new one into the erased goal store.
+        (preferences as? WaterGoalDefaultPreferences)?.markWaterGoalSeeded()
         isPublishingStoredPreference = true
         unitSystem = preferences.unitSystem
         quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)

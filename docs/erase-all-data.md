@@ -34,7 +34,7 @@ Erase removes all ten keys owned by `UserDefaultsDisplayPreferences` from the ap
 | Today goals (2) | `display.goals.hiddenOnToday`, `display.goals.waterDefaultSeeded` |
 | Sharing disclosure, separately acknowledged per account (1) | `display.community.disclosureSeen` |
 
-Removing the keys restores defaults; it does not write replacement values. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this phone.
+Removing the keys restores defaults; it does not write replacement values, with one exception: `display.goals.waterDefaultSeeded` is set to true again right after the erase, so the default water goal is not written back into the just-erased goal store. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this phone.
 
 ### Other local cleanup
 
