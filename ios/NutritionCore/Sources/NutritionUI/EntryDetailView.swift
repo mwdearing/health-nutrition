@@ -229,6 +229,7 @@ public struct EntryDetailView: View {
                 }
                 .accessibilityLabel("Log this entry again")
                 .accessibilityHint("Adds a new entry with the same amounts at the current time")
+                LogOnOtherDaysButton(model: model, now: now, onFinished: onFinished)
                 Button {} label: {
                     HStack {
                         Text("Favorite").font(.body)

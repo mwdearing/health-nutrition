@@ -516,6 +516,50 @@ public final class EntryDetailViewModel: ObservableObject {
         }
     }
 
+    /// Why the last Log on other days logged nothing, for its sheet; nil when it has not run or it logged.
+    @Published public private(set) var multiDayMessage: String?
+
+    /// Logs this entry again on each chosen day (yyyy-MM-dd), at the same time of day in its own time zone;
+    /// this entry is untouched. When nothing was logged the reason is in `multiDayMessage`, for the sheet to
+    /// show. When a write failed and its cleanup left new entries behind, the reason is in `errorMessage`
+    /// instead, for this screen: the sheet closes so the same days cannot be logged a second time.
+    @discardableResult
+    public func logOnDays(_ dayKeys: Set<String>, now: Date) -> MultiDayLogOutcome {
+        multiDayMessage = nil
+        do {
+            let result = try IntakeMultiDayLogger(store: store).log(intakeID: intakeID, onDays: dayKeys, now: now)
+            guard !result.createdIDs.isEmpty else {
+                return nothingLogged("Nothing was logged: the days chosen are this entry's own day or still to come.")
+            }
+            return .logged(result)
+        } catch IntakeRepeatError.productUnavailable {
+            return nothingLogged(IntakeRepeatError.productUnavailableMessage)
+        } catch IntakeMultiDayError.invalidDays {
+            return nothingLogged("Choose 1 to \(IntakeMultiDayLogger.maximumDays) days.")
+        } catch IntakeMultiDayError.unreadableTimeZone {
+            return nothingLogged("This entry's time zone can't be read, so it can't be logged on other days.")
+        } catch IntakeMultiDayError.partial(let remaining) {
+            errorMessage = remaining.count == 1
+                ? "Could not log on every day, and 1 new entry was left in the Journal. Delete it there."
+                : "Could not log on every day, and \(remaining.count) new entries were left in the Journal. Delete them there."
+            return .leftEntries(remaining)
+        } catch IntakeMultiDayError.entryUnavailable {
+            return nothingLogged("This entry is no longer available.")
+        } catch {
+            return nothingLogged("Could not log the entry on those days. Nothing was logged.")
+        }
+    }
+
+    /// Drops the sheet's reason, for when the sheet opens again.
+    public func clearMultiDayMessage() {
+        multiDayMessage = nil
+    }
+
+    private func nothingLogged(_ message: String) -> MultiDayLogOutcome {
+        multiDayMessage = message
+        return .nothingLogged
+    }
+
     /// The rows a product snapshot states under a name the fifteen journal nutrients do not — a
     /// compound a captured supplement panel stored under a slug of its printed name — sorted so the
     /// order is stable. A snapshot with none gives no rows.
