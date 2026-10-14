@@ -35,6 +35,8 @@ public enum IntakeContextEncoderError: Error, Equatable, Sendable {
     case unknownTimeZone(String)
     /// The component id is not a slug, so it has no contract form: `^[a-z0-9][a-z0-9._-]{0,63}$`.
     case invalidComponentID(String)
+    /// The intake's category is not a contract slug, so the receiver would refuse the operation.
+    case invalidCategory(String)
     /// The same component id appears twice in one revision, and the contract requires unique component ids.
     case duplicateComponent(String)
     /// A component amount is negative, and the contract's decimal strings are non-negative.
@@ -283,6 +285,9 @@ public struct IntakeContextEncoder: Sendable {
         try checked(operation, kind: .upsert, intakeID: intake.id, revision: revision.number)
         guard revision.intakeID == intake.id else {
             throw IntakeContextEncoderError.revisionIntakeMismatch(intake.id)
+        }
+        guard IntakeContextFactCatalog.isSlug(intake.category) else {
+            throw IntakeContextEncoderError.invalidCategory(intake.category)
         }
         let snapshot = try checkedProduct(product, for: revision)
         let facts = try encodedFacts(of: revision, product: snapshot)
@@ -663,9 +668,20 @@ public struct IntakeContextEncoder: Sendable {
         else { return [] }
         let provenance = IntakeContextFactCatalog.provenance(for: product)
         var facts: [IntakeContextJSONValue] = []
-        // Sorted by the journal's key, so the same snapshot always produces the same fact order, and the first
-        // key of a canonical pair is the one that speaks for it.
+        // One key per slug speaks for its pair: the first in sorted order, unless a later key of the pair is
+        // known and the chosen one is not, so a known value wins over an unknown canonical key. The chosen keys
+        // are then walked in sorted order, so the same snapshot always produces the same fact order.
+        var speaking: [String: String] = [:]
         for key in product.nutrients.keys.sorted() {
+            let slug = IntakeContextFactCatalog.nutrientSlug(for: key)
+            guard let current = speaking[slug] else {
+                speaking[slug] = key
+                continue
+            }
+            if case .some(.known) = product.nutrients[current] { continue }
+            if case .some(.known) = product.nutrients[key] { speaking[slug] = key }
+        }
+        for key in speaking.values.sorted() {
             guard let value = product.nutrients[key] else { continue }
             let slug = IntakeContextFactCatalog.nutrientSlug(for: key)
             guard IntakeContextFactCatalog.isSlug(slug), covered.insert(slug).inserted else { continue }
