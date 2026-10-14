@@ -553,6 +553,23 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertNil(try healthKitOperation(store, kind: .delete))
     }
 
+    /// A nutrient first stated under a denied type was never written, so deleting the entry while the
+    /// type is still denied does not wait for a person.
+    func testANutrientRefusedOnItsFirstDeliveryIsNotRecordedAsWritten() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.delete(intakeID: intakeID, now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertTrue(
+            outcomes.contains { if case .retracted = $0 { return true } else { return false } },
+            "no calcium sample was written, got \(outcomes)")
+    }
+
     /// #318: revision 1 wrote calcium, revision 2 (dropping it) is superseded by a delete before it is
     /// delivered, so the calcium sample is still in Health. A calcium denial keeps the delete waiting.
     func testADeleteWaitsForADeniedTypeAnEarlierDeliveryWrote() async throws {

@@ -493,9 +493,15 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // before the outcome, so a later edit or delete reads what is actually there; a failure to
         // record retries the delivery, which rewrites the same samples at the same version.
         do {
+            // A refused key only still holds a sample when one was there before this pass: a nutrient
+            // this revision states for the first time under a denied type was never written.
+            let refusedStillThere = refusedKeys.isEmpty || operation.revision == 1
+                ? Set<String>()
+                : refusedKeys.intersection(try await keysPossiblyInHealth(
+                    intakeID: operation.intakeID, before: operation.revision, occurredAt: occurredAt))
             try ledger?.setWrittenHealthKitKeys(
                 intakeID: operation.intakeID,
-                keys: Set(writable.map { Self.nutrientKey(of: $0.syncIdentifier) }).union(refusedKeys))
+                keys: Set(writable.map { Self.nutrientKey(of: $0.syncIdentifier) }).union(refusedStillThere))
         } catch {
             return transient(operation, now: now, reason: "the samples written could not be recorded")
         }
