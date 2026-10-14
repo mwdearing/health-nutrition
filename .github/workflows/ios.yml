@@ -126,34 +126,76 @@ jobs:
       - name: Check shared CI tool and image pins
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_dependency_workflow_locks.py
 
-  swift-test:
+  # NutritionCore's Swift tests, the app's Simulator build and the app target's unit tests share one runner.
+  # They were three jobs, and each one held a whole shared macOS slot for two to six minutes of work plus its own
+  # checkout and XcodeGen install. Every check runs even when an earlier one fails, and the Simulator build and the
+  # app tests each need only the generated project, so one failure does not hide the others' results. Each check,
+  # and the XcodeGen install and generate steps they rely on, has its own deadline, so a hang in one still leaves
+  # time for the rest.
+  swift-and-app-tests:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
         run: xcodebuild -version
       - name: Test NutritionCore
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
         working-directory: ios/NutritionCore
         run: swift test
-
-  app-build:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Show Xcode version
-        run: xcodebuild -version
       - name: Install XcodeGen (pinned release, checksum verified)
+        id: xcodegen
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
         run: bash "$GITHUB_WORKSPACE/.github/scripts/install-xcodegen.sh"
       - name: Generate the Xcode project
+        id: generate
+        if: ${{ !cancelled() && steps.xcodegen.outcome == 'success' }}
+        timeout-minutes: 3
         working-directory: ios/HealthNutrition
         run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
       - name: Build the app for the iOS Simulator
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        timeout-minutes: 15
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -disableAutomaticPackageResolution -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      # The simulator is picked from what this runner actually has, never a name that might not exist:
+      # GitHub adds and retires runtimes, so a hard-coded iPhone would start failing on its own.
+      - name: Pick an available iPhone simulator
+        id: simulator
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
+          name=$(python3 - "$RUNNER_TEMP/simulators.json" <<'PY'
+          import json
+          import sys
+
+          devices = json.load(open(sys.argv[1]))["devices"]
+          names = [
+              device["name"]
+              for runtime in sorted(devices)
+              for device in devices[runtime]
+              if device.get("isAvailable") and device["name"].startswith("iPhone")
+          ]
+          print(names[0] if names else "")
+          PY
+          )
+          if [ -z "$name" ]; then
+            echo "No available iPhone simulator on this runner." >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Test the app target on the simulator
+        if: ${{ !cancelled() && steps.simulator.outcome == 'success' }}
+        timeout-minutes: 20
+        working-directory: ios/HealthNutrition
+        env:
+          SIMULATOR: ${{ steps.simulator.outputs.name }}
+        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -disableAutomaticPackageResolution -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO test
 
   # A Release build for a real device, unsigned. The signed upload archives in Release and cannot show its
   # log (the Actions log is public), so an error that only the optimizer raises (for example a view body the
@@ -183,54 +225,6 @@ jobs:
       - name: Build the app in Release for a generic iOS device
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -configuration Release -disableAutomaticPackageResolution -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
-
-  # The app target's own unit tests. Same shape as app-build: regenerate the project, then run the
-  # HealthNutritionTests bundle, which is hosted by the app so @testable import HealthNutrition works.
-  app-test:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Show Xcode version
-        run: xcodebuild -version
-      - name: Install XcodeGen (pinned release, checksum verified)
-        run: bash "$GITHUB_WORKSPACE/.github/scripts/install-xcodegen.sh"
-      - name: Generate the Xcode project
-        working-directory: ios/HealthNutrition
-        run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
-      # The simulator is picked from what this runner actually has, never a name that might not exist:
-      # GitHub adds and retires runtimes, so a hard-coded iPhone would start failing on its own.
-      - name: Pick an available iPhone simulator
-        id: simulator
-        run: |
-          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
-          name=$(python3 - "$RUNNER_TEMP/simulators.json" <<'PY'
-          import json
-          import sys
-
-          devices = json.load(open(sys.argv[1]))["devices"]
-          names = [
-              device["name"]
-              for runtime in sorted(devices)
-              for device in devices[runtime]
-              if device.get("isAvailable") and device["name"].startswith("iPhone")
-          ]
-          print(names[0] if names else "")
-          PY
-          )
-          if [ -z "$name" ]; then
-            echo "No available iPhone simulator on this runner." >&2
-            xcrun simctl list devices available >&2
-            exit 1
-          fi
-          echo "Using simulator: $name"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-      - name: Test the app target on the simulator
-        working-directory: ios/HealthNutrition
-        env:
-          SIMULATOR: ${{ steps.simulator.outputs.name }}
-        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -disableAutomaticPackageResolution -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO test
 
   # Manual only: an unsigned device build, for whoever runs it to sign with their own identity and sideload.
   unsigned-ipa:
