@@ -146,6 +146,14 @@ public struct TodayView: View {
                     }
                     Spacer(minLength: DesignSpacing.s)
                 }
+                HStack(spacing: DesignSpacing.s) {
+                    ForEach(model.waterPresets) { preset in
+                        QuietCapsule(preset.label) {
+                            model.quickAddWater(milliliters: preset.milliliters, now: now())
+                        }
+                        .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
+                    }
+                }
                 HStack(spacing: DesignSpacing.m) {
                     QuietCapsule("Other amount") {
                         self.otherWaterOpen.toggle()

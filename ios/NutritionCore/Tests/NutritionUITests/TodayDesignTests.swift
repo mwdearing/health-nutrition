@@ -295,18 +295,32 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(journal.sections.first?.totalsText, "Water 12 fl oz")
     }
 
-    func testWaterBarExistsOnlyWithAWaterGoalAndCountsWaterEntries() throws {
+    func testWaterBarUsesTheDefaultGoalUntilOneIsSetAndCountsWaterEntries() throws {
         let store = try makeStore()
         try log(store, name: "Water", grams: 250, category: "water")
         try log(store, name: "Water", grams: 250, category: "water")
         let without = model(store)
         without.load(now: now)
-        XCTAssertNil(without.waterBar)
+        XCTAssertEqual(without.waterBar?.state, .progress, "the default goal draws the bar")
         XCTAssertEqual(without.waterEntryCount, 2)
         let goal = NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL)
         let with = model(store, goals: [goal])
         with.load(now: now)
         XCTAssertEqual(with.waterBar?.state, .progress)
+    }
+
+    func testWaterPresetsFollowTheUnitSystemAndAddExactAmounts() throws {
+        let store = try makeStore()
+        let metric = model(store)
+        XCTAssertEqual(metric.waterPresets.map(\.milliliters), [250, 500, 750])
+        XCTAssertEqual(metric.waterPresets.first?.label, "Glass 250 mL")
+        let us = TodayViewModel(
+            store: store, preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary),
+            goals: InMemoryGoalStore(goals: []), lookup: SnapshotNutrientFacts(),
+            trackedNutrients: [], timeZoneIdentifier: "UTC")
+        XCTAssertEqual(us.waterPresets.map(\.label), ["Glass 8 fl oz", "Bottle 16 fl oz", "Large bottle 24 fl oz"])
+        metric.quickAddWater(milliliters: metric.waterPresets[1].milliliters, now: now)
+        XCTAssertEqual(metric.waterTotalMilliliters, 500)
     }
 
     func testWaterBarIsNothingLoggedUntilAWaterEntryExists() throws {
