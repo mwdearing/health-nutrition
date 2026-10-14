@@ -181,6 +181,7 @@ public final class JournalViewModel: ObservableObject {
     public func load(now: Date) {
         defer { loadCount += 1 }
         copyNotice = nil
+        copyFailed = false
         do {
             var skipped = 0
             var groups: [String: [JournalRow]] = [:]
@@ -355,6 +356,8 @@ public final class JournalViewModel: ObservableObject {
 
     /// The sentence for the last copy, such as "Copied 3 entries to today."; nil until a copy runs.
     @Published public private(set) var copyNotice: String?
+    /// True when `copyNotice` reports a copy that failed or stopped partway.
+    @Published public private(set) var copyFailed = false
 
     /// True for a day the person can copy into today: any loaded day before today in the journal's zone.
     public func canCopyToToday(_ section: JournalDaySection, now: Date) -> Bool {
@@ -383,14 +386,14 @@ public final class JournalViewModel: ObservableObject {
             return result
         } catch IntakeCopyError.stoppedEarly(let partial, _) {
             load(now: now)
-            copyNotice = nil
-            errorMessage = partial.copiedCount == 0
+            copyNotice = partial.copiedCount == 0
                 ? "Could not copy the entries."
                 : "Copied \(Self.entriesText(partial.copiedCount)), then the copy stopped. The rest were not copied."
+            copyFailed = true
             return partial
         } catch {
-            copyNotice = nil
-            errorMessage = "Could not copy the entries."
+            copyNotice = "Could not copy the entries."
+            copyFailed = true
             return nil
         }
     }
