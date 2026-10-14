@@ -137,7 +137,10 @@ public final class GoalsViewModel: ObservableObject {
         let groups: [(String, [String])] = [
             ("Energy and macros", ["energy", "protein", "carbohydrate", "fat", "fiber"]),
             ("Water", ["water"]),
-            ("Minerals", ["sodium", "potassium"]),
+            ("Vitamins", ["vitaminA", "vitaminB6", "vitaminB12", "vitaminC", "vitaminD", "vitaminE", "vitaminK",
+                "thiamin", "riboflavin", "niacin", "folate", "biotin", "pantothenicAcid"]),
+            ("Minerals", ["sodium", "potassium", "calcium", "iron", "magnesium", "phosphorus", "zinc",
+                "chloride", "chromium", "copper", "iodine", "manganese", "molybdenum", "selenium"]),
             ("From your labels", self.offeredKeys.filter { !NutrientGoalChoices.keys.contains($0) }),
         ]
         return groups.map { title, keys in
