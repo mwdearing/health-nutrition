@@ -739,11 +739,14 @@ public final class AddIntakeViewModel: ObservableObject {
             id: makeID(), category: category, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier,
             meal: meal?.rawValue)
         let (storedAmount, storedUnit) = storedQuantity(amount: amount, unit: unit, name: trimmedName)
+        let snapshot = productSnapshot()
         let component = IntakeComponent(
-            componentID: Self.componentID(forFoodNamed: trimmedName, unit: storedUnit),
+            componentID: Self.componentID(
+                forFoodNamed: trimmedName, unit: storedUnit,
+                snapshotNutrientKeys: snapshot.map { Array($0.nutrients.keys) } ?? []),
             name: trimmedName, amount: storedAmount, unit: storedUnit)
         do {
-            try store.create(intake, components: [component], product: productSnapshot(), now: now)
+            try store.create(intake, components: [component], product: snapshot, now: now)
         } catch {
             saveError = "Could not save the entry."
             return false
@@ -879,13 +882,18 @@ public final class AddIntakeViewModel: ObservableObject {
         Slug.make(text)
     }
 
-    /// The component id for a food the user named. The name's slug, unless the catalog reserves it, in
-    /// which case it is namespaced so the food keeps its own meaning. Water poured by volume is the one
-    /// food that is what the catalog row says it is, so it keeps the catalog id.
-    nonisolated static func componentID(forFoodNamed name: String, unit: MeasureUnit) -> String {
+    /// The component id for a food the user named. The name's slug, unless the catalog reserves it or the
+    /// entry's own product snapshot states a nutrient under it, in which case it is namespaced so the food
+    /// keeps its own meaning and the snapshot's fact is not crowded out (a supplement named "Collagen" that
+    /// states collagen). Water poured by volume is the one food that is what the catalog row says it is, so
+    /// it keeps the catalog id.
+    nonisolated static func componentID(
+        forFoodNamed name: String, unit: MeasureUnit, snapshotNutrientKeys: [String] = []
+    ) -> String {
         let base = Self.slug(name)
         if base == "water", unit.dimension == .volume { return base }
-        guard IntakeContextFactCatalog.isReserved(componentID: base) else { return base }
+        let statedBySnapshot = snapshotNutrientKeys.contains { IntakeContextFactCatalog.nutrientSlug(for: $0) == base }
+        guard statedBySnapshot || IntakeContextFactCatalog.isReserved(componentID: base) else { return base }
         return String(("food-" + base).prefix(64))
     }
 }
