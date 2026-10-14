@@ -80,6 +80,8 @@ public enum IntakeContextFactCatalog {
     /// The catalog origin a recipe-built snapshot carries. Its values were calculated from the recipe's
     /// ingredients rather than read off a label.
     public static let recipeCalculatedOrigin = "recipe_calculated"
+    /// The catalog origin a quick add carries: amounts the user typed straight in, with no product behind them.
+    public static let quickAddOrigin = "quick_add"
     /// The provenance of a value the user recorded with no product behind it.
     public static let userConfirmedProvenance = "user_confirmed"
     /// The provenance of a value read from a product catalog.
@@ -188,11 +190,14 @@ public enum IntakeContextFactCatalog {
     ///
     /// A snapshot a recipe built was calculated from that recipe's ingredients, and the contract records that
     /// as `recipe_calculated`: a consumer must not read calculated values as catalog-sourced.
+    /// A quick add's values were typed by the user, so they are `user_confirmed` like an entry with no product.
     public static func provenance(for product: ProductDefinition?) -> String {
         guard let product else { return userConfirmedProvenance }
-        return product.catalogOrigin == recipeCalculatedOrigin
-            ? recipeCalculatedProvenance
-            : catalogReferenceProvenance
+        switch product.catalogOrigin {
+        case recipeCalculatedOrigin: return recipeCalculatedProvenance
+        case quickAddOrigin: return userConfirmedProvenance
+        default: return catalogReferenceProvenance
+        }
     }
 
     /// Whether the text is one of the contract's slugs, which every code and every component id must be.

@@ -133,7 +133,8 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
             componentID: Self.componentID, name: entryName, amount: 1, unit: .serving)
         let product = ProductDefinition(
             snapshotID: identity, productID: identity, name: entryName, brand: nil,
-            labelBasis: "per serving", catalogOrigin: "manual", catalogVersion: "1", kind: .food,
+            labelBasis: "per serving", catalogOrigin: IntakeContextFactCatalog.quickAddOrigin, catalogVersion: "1",
+            kind: .food,
             nutrients: nutrients)
         do {
             try store.create(intake, components: [component], product: product, now: date)
@@ -168,10 +169,27 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     }
 
     /// Reads one field: digits with at most one separator, zero allowed, never above the field's cap.
+    ///
+    /// The decimal pad types the region's own digits and separator, so both are read: any decimal digit
+    /// (Arabic-Indic `٢` is 2) and the region's separator when it is the only one in the text (`٫` where
+    /// that is the separator). A point is accepted everywhere; the comma rule is `AmountParser`'s.
     static func parse(
         _ text: String, field: Field, decimalSeparator: String? = Locale.current.decimalSeparator
     ) -> Parsed {
-        let typed = AmountParser.normalizedTyped(text, decimalSeparator: decimalSeparator)
+        var raw = ""
+        for scalar in text.trimmingCharacters(in: .whitespaces).unicodeScalars {
+            if scalar.properties.numericType == .decimal, let number = scalar.properties.numericValue,
+               let digit = Int(exactly: number), (0...9).contains(digit) {
+                raw += String(digit)
+            } else {
+                raw.unicodeScalars.append(scalar)
+            }
+        }
+        if let separator = decimalSeparator, !separator.isEmpty, separator != ".", separator != ",",
+           !raw.contains("."), raw.components(separatedBy: separator).count == 2 {
+            raw = raw.replacingOccurrences(of: separator, with: ".")
+        }
+        let typed = AmountParser.normalizedTyped(raw, decimalSeparator: decimalSeparator)
         guard !typed.isEmpty else { return .blank }
         guard typed.count <= 12 else { return .invalid }
         var dots = 0

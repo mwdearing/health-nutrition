@@ -553,6 +553,8 @@ public final class EntryDetailViewModel: ObservableObject {
             return "Label scan · \(product.labelBasis)"
         case RecipeLogger.catalogOrigin:
             return "Recipe · \(product.name)"
+        case IntakeContextFactCatalog.quickAddOrigin:
+            return "Quick add · amounts typed in"
         default:
             return "Barcode lookup · values \(product.labelBasis)"
         }
@@ -580,6 +582,8 @@ public final class EntryDetailViewModel: ObservableObject {
             if !version.isEmpty {
                 rows.append(SourceDetailRow(label: "Version", value: version))
             }
+        case IntakeContextFactCatalog.quickAddOrigin:
+            rows.append(SourceDetailRow(label: "Input", value: "Quick add"))
         default:
             rows.append(SourceDetailRow(label: "Input", value: "Barcode lookup"))
             if let barcode = product.barcode, !barcode.isEmpty {

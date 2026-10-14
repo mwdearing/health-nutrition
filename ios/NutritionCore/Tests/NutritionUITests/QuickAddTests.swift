@@ -176,6 +176,33 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, 0)
     }
 
+    /// A quick add is the user's own numbers: the relay says so, and the entry screen shows what it adds.
+    func testAQuickAddReadsAsTypedInValues() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.caloriesText = "300"
+        model.proteinText = "20"
+        XCTAssertNotNil(model.save())
+
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        let revision = try XCTUnwrap(store.revisions(of: intake.id).first)
+        let product = try XCTUnwrap(store.product(snapshotID: try XCTUnwrap(revision.productSnapshotID)))
+        XCTAssertEqual(product.catalogOrigin, "quick_add")
+        XCTAssertEqual(IntakeContextFactCatalog.provenance(for: product), "user_confirmed")
+        XCTAssertEqual(EntryDetailViewModel.sourceLine(for: product), "Quick add · amounts typed in")
+        XCTAssertEqual(EntryDetailViewModel.sourceDetails(for: product).map(\.value), ["Quick add"])
+        XCTAssertFalse(EntryDetailViewModel.adds(of: product, logged: revision.components).isEmpty)
+    }
+
+    /// The region's own digits and separator are read, as the decimal pad types them.
+    func testParsingReadsTheRegionsDigitsAndSeparator() {
+        XCTAssertEqual(QuickAddViewModel.parse("2٫5", field: .protein, decimalSeparator: "٫"), .value(Decimal(string: "2.5")!))
+        XCTAssertEqual(QuickAddViewModel.parse("٢٫٥", field: .protein, decimalSeparator: "٫"), .value(Decimal(string: "2.5")!))
+        XCTAssertEqual(QuickAddViewModel.parse("2.5", field: .protein, decimalSeparator: "٫"), .value(Decimal(string: "2.5")!))
+        XCTAssertEqual(QuickAddViewModel.parse("2٫5٫1", field: .protein, decimalSeparator: "٫"), .invalid)
+        XCTAssertEqual(QuickAddViewModel.parse("2٫5", field: .protein, decimalSeparator: "."), .invalid)
+    }
+
     /// A comma is read as the decimal separator only where the region uses one.
     func testParsingFollowsTheRegionsSeparator() {
         XCTAssertEqual(QuickAddViewModel.parse("2,5", field: .protein, decimalSeparator: ","), .value(Decimal(string: "2.5")!))
