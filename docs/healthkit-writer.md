@@ -376,6 +376,12 @@ asked about). Its button asks again where Health still can; where every type was
 same call re-arms what a denial parked and runs a pass, because iOS shows the sheet only once and the
 answer is changed in the Health app.
 
+With mixed permissions an upsert writes the nutrients Health allows and parks the operation in
+`needsAttention` with the refused nutrients named, so one turned-off type never keeps the rest of an
+entry out of Health. Stale-sample deletion on an edit only touches types this app may write. Allowing
+the refused types later re-delivers the same revision, an equal-version replacement of what was
+already written.
+
 A change of access made in the Health app re-arms parked operations on the next automatic run: the
 first automatic run of each launch, and any run that sees different access counts from the one before,
 re-arms every suspended operation before it reads the queue. An operation that is still refused simply

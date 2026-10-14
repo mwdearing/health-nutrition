@@ -428,10 +428,19 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         } catch {
             return transient(operation, now: now, reason: "the totals for this revision could not be read")
         }
+        // Write what Health allows and park the rest. A person who allows protein but turns calcium off
+        // still gets protein in Health; the entry then waits for them with the refused types named, and
+        // allowing those later re-delivers the same revision, which HealthKit treats as an equal-version
+        // replacement of what was already written.
+        let allowed = await writer.canWrite(identifiers: Self.mappedTypeIdentifiers)
+        let writable = plan.filter { allowed[$0.quantityTypeIdentifier] == true }
+        let refusedKeys = Set(plan.filter { allowed[$0.quantityTypeIdentifier] != true }
+            .compactMap { spec in spec.syncIdentifier.split(separator: ":").last.map(String.init) })
         do {
-            try await requireAccess(for: plan.map(\.quantityTypeIdentifier))
-            try await deleteStaleSamples(for: operation, plan: plan)
-            try await writer.save(plan)
+            try await deleteStaleSamples(for: operation, plan: plan, allowed: allowed)
+            if !writable.isEmpty {
+                try await writer.save(writable)
+            }
         } catch let error as HealthSampleWriterError {
             return handle(error, for: operation, now: now)
         } catch let error as HealthSampleRejectedError {
@@ -441,22 +450,17 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             // is the safe direction: it retries, and a typed denial arrives as the typed error.
             return transient(operation, now: now, reason: "the samples could not be written")
         }
+        guard refusedKeys.isEmpty else {
+            // Only a person can grant Health access, so this needs a person rather than a retry. The
+            // allowed types are already written; the reason names the ones that are not.
+            let reason = writable.isEmpty
+                ? "HealthKit access is not granted, so it cannot be written"
+                : "HealthKit access is not granted for \(refusedKeys.sorted().joined(separator: ", ")), "
+                    + "so only the allowed nutrients were written"
+            return needsAttention(operation, now: now, reason: reason)
+        }
         return acknowledge(
             operation, now: now, outcome: .delivered(operationID: operation.operationID, samples: plan.count))
-    }
-
-    /// Refuses the delivery when this app may not write one of the types involved.
-    ///
-    /// Asked once per type rather than once per sample, because write access is a property of the
-    /// type. A type that is not authorized raises the same typed denial a failed save would, so both
-    /// routes end in `needsAttention` and neither schedules a retry: only a person can grant Health
-    /// access. This is also cheaper than discovering it from a save, and ADR 0002's run is why the
-    /// permission sheet cannot be trusted to have reported what was granted.
-    private func requireAccess(for identifiers: [String]) async throws {
-        let allowed = await writer.canWrite(identifiers: identifiers)
-        guard identifiers.allSatisfy({ allowed[$0] == true }) else {
-            throw HealthSampleWriterError.authorizationDenied
-        }
     }
 
     /// Removes the samples of the mapped nutrients this plan does not write, so an edit cannot leave
@@ -464,13 +468,21 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     ///
     /// A failure here is the caller's to handle: deleting and saving is one delivery, so if the
     /// deletion fails the save is not attempted and the whole operation is retried.
-    private func deleteStaleSamples(for operation: OutboxOperation, plan: [HealthKitSampleSpec]) async throws {
+    ///
+    /// Only types this app may write are asked about: a delete needs the same access a save does, and a
+    /// type the person turned off would fail the whole delivery for a sample nobody can remove anyway.
+    private func deleteStaleSamples(
+        for operation: OutboxOperation, plan: [HealthKitSampleSpec], allowed: [String: Bool]
+    ) async throws {
         // Revision 1 has nothing to retract: no earlier revision wrote anything for this intake, so
         // there is no stale sample to remove and asking HealthKit to delete 16 identifiers that were
         // never written would be 16 pointless queries.
         guard operation.revision > 1 else { return }
         let planned = Set(plan.map(\.syncIdentifier))
-        let stale = HealthKitWritePlanner.deletion(intakeID: operation.intakeID, keys: Self.mappedKeys)
+        let writableKeys = Set(HealthKitWritePlanner.mappings
+            .filter { allowed[$0.quantityTypeIdentifier] == true }.map(\.nutrientKey))
+        let stale = HealthKitWritePlanner.deletion(
+            intakeID: operation.intakeID, keys: Self.mappedKeys.filter { writableKeys.contains($0) })
             .filter { !planned.contains($0) }
         guard !stale.isEmpty else { return }
         _ = try await writer.deleteSamples(syncIdentifiers: stale)

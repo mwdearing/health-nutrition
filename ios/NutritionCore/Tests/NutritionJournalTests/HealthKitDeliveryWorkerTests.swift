@@ -411,6 +411,45 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(writer.saveCalls, 0)
     }
 
+    /// Mixed permissions: the allowed nutrient still reaches Health, and the entry waits for a person
+    /// with the refused one named. Refusing the whole plan meant one turned-off type kept every
+    /// nutrient of the entry out of Health.
+    func testAnAllowedNutrientIsWrittenWhileARefusedOneParksTheEntry() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [proteinIdentifier(intakeID)])
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a refused type still needs a person, got \(outcomes)")
+        }
+        XCTAssertTrue(reason.contains("calcium"), "the reason names the refused nutrient, got \(reason)")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
+    }
+
+    /// Allowing the refused type later and re-arming writes the same revision again, now complete.
+    func testAllowingTheRefusedTypeLaterWritesTheWholeRevision() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+
+        writer.allow("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.rearmDelivery(operationID: try XCTUnwrap(healthKitOperation(store, kind: .upsert)).operationID)
+        writer.reset()
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            Set(writer.saved.map(\.syncIdentifier)),
+            ["intake:\(intakeID):calcium", proteinIdentifier(intakeID)])
+        XCTAssertNil(try healthKitOperation(store, kind: .upsert))
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
     /// A retraction is per type: the 16 types still authorized are removed, and only the denied one
     /// keeps the operation queued. Aborting the whole retraction is what used to strand them.
     func testADeniedDeleteStillRemovesTheAuthorizedTypesAndIsLeftForAPerson() async throws {
