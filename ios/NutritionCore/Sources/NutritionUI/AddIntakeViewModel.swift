@@ -886,13 +886,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// entry's own product snapshot states a nutrient under it, in which case it is namespaced so the food
     /// keeps its own meaning and the snapshot's fact is not crowded out (a supplement named "Collagen" that
     /// states collagen). Water poured by volume is the one food that is what the catalog row says it is, so
-    /// it keeps the catalog id.
+    /// it keeps the catalog id, unless its own snapshot states water, which then keeps that id for the label.
     nonisolated static func componentID(
         forFoodNamed name: String, unit: MeasureUnit, snapshotNutrientKeys: [String] = []
     ) -> String {
         let base = Self.slug(name)
-        if base == "water", unit.dimension == .volume { return base }
         let stated = Set(snapshotNutrientKeys.map { IntakeContextFactCatalog.nutrientSlug(for: $0) })
+        if base == "water", unit.dimension == .volume, !stated.contains(base) { return base }
         func isTaken(_ id: String) -> Bool {
             stated.contains(id) || IntakeContextFactCatalog.isReserved(componentID: id)
         }

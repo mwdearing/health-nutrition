@@ -39,6 +39,9 @@ final class AddIntakeComponentIDTests: XCTestCase {
 
     func testWaterPouredByVolumeKeepsTheCatalogID() {
         XCTAssertEqual(AddIntakeViewModel.componentID(forFoodNamed: "Water", unit: .mL), "water")
+        XCTAssertEqual(
+            AddIntakeViewModel.componentID(forFoodNamed: "Water", unit: .mL, snapshotNutrientKeys: ["water"]),
+            "food-water", "a product whose label states water keeps that id for the label's fact")
     }
 
     func testANamespacedIDIsAValidComponentIDWithinTheSchemaLimit() {
