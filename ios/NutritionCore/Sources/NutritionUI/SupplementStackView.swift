@@ -70,6 +70,12 @@ public struct SupplementStackView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { self.model.reloadIfShown(now: self.now()) }
         }
+        // An erase or a restore replaced the stores: a picker or an editor still open shows what was there
+        // before, so both close.
+        .onChange(of: model.replacements) { _, _ in
+            self.adding = false
+            self.editing = nil
+        }
         .task {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }

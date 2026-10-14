@@ -15,22 +15,17 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   the Library's star makes.
   Nothing is offered or added that matches the same entries as an item already on the list (for
   example the same product saved once with breakfast and once with dinner), since both would count
-  every entry of it.
+  every entry of it. A recently logged supplement that is no longer in the journal when Save is tapped
+  (erased or deleted in another window) is not saved, and an erase or a restore closes an open picker or
+  editor.
 - **Schedule.** One to six distinct times a day and at least one day of the week; a new item starts at
   08:00 every day. Removing an item from the list keeps the favorite and every entry.
 - **Taken is read, not stored.** Each load counts today's entries of each item in the journal: an entry
   logged from the Library counts too, and deleting or undoing an entry un-marks its time. An entry's day
   is the local day of its own time zone, the rule the Journal groups by. Entries match an item by its
   product snapshot, or by category and component names when there is none; the meal is ignored.
-  Each of today's entries belongs to one time, by its own minute alone: the latest time at or before it (on
-  time or late), unless the next time is at most an hour away and nearer (early). An entry before every
-  time belongs to the first if it is at most six hours early; one logged just after midnight belongs to
-  none. It marks that time taken; an entry whose time is already marked is an extra
-  and marks nothing, so a missed morning stays "Not logged" whatever is logged in the evening. The count
-  reads "1 of 2 taken today" from the marked times, with "logged N today" added when some entries
-  marked no time.
-  A time with no entry reads "Not logged" once it has passed and "Later today" before; the wording
-  reports the journal and gives no advice.
+  Entries fill today's times earliest first. A time with no entry reads "Not logged" once it has passed
+  and "Later today" before; the wording reports the journal and gives no advice.
   An entry whose record cannot be read is not counted as missing: the screen says how many of today's
   entries it could not read, since any of them may be an item on the list.
   The screen reads the journal again when it appears, when the app returns to the foreground, and, while
@@ -44,15 +39,10 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   favorite is gone is dropped on the next load. A damaged entry is skipped, not fatal to the list.
 - **Erase all data** removes the key. Favorites are erased with their own store. An open list reads
   everything again when an erase or a restore finishes, so nothing erased stays on screen.
-- **Known limits of the time marks.** Each entry is placed on its own, in time order, without looking
-  at later entries. So an entry that is early for one time and late for the one before goes to the time it
-  is nearer, even if a later entry turns out to be on time for that one: with times at 08:00 and 09:00,
-  doses at 08:40 and 09:05 read the 09:00 time taken and the second entry as one that marked no time
-  ("1 of 2 taken today · logged 2 today"). The six-hour reach before the first time is counted from
-  that time, so with a first time at 06:00 or earlier an entry just after midnight still counts for it.
-  An entry's minute is its own local time, compared with the
-  times in the zone the phone is in now, so a dose logged in another time zone earlier the same day can
-  mark a different time, or none.
+- **Known limit of the time marks.** Entries fill the times by count, earliest first, whenever they were
+  logged: with a missed morning and an evening dose taken, the list reads the morning time as taken and the
+  evening one as not logged. The count ("1 of 2 taken today") is right. A later change records which time
+  each Taken was tapped for.
 - **Not in the journal export yet.** Export schema version 2 has no field for schedules, so a restore
   brings the favorites back without their times. Adding them needs a new export schema version.
 - **No notifications.** Supplement reminders are separate ([custom reminders](custom-reminders.md)).

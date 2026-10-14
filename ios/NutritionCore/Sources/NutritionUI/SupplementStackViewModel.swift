@@ -20,15 +20,13 @@ public struct SupplementStackRow: Identifiable, Equatable {
     /// False when the favorite's amounts cannot be read back, so there is nothing to log.
     public let canLog: Bool
 
-    /// "1 of 2 taken today", from the times marked taken, with the entries logged added when there were
-    /// more of them than marked times; or "Not on today's schedule".
+    /// "1 of 2 taken today", "Not on today's schedule", or the count when more was logged than planned.
     public var statusText: String {
         guard isDueToday else {
             return loggedToday > 0 ? "Not on today's schedule · logged \(loggedToday) today" : "Not on today's schedule"
         }
-        let taken = slots.filter { $0.state == .taken }.count
-        let base = "\(taken) of \(slots.count) taken today"
-        return loggedToday > taken ? "\(base) · logged \(loggedToday) today" : base
+        if loggedToday > slots.count { return "All taken today · logged \(loggedToday) times" }
+        return "\(loggedToday) of \(slots.count) taken today"
     }
 }
 
@@ -66,6 +64,9 @@ public final class SupplementStackViewModel: ObservableObject {
     /// Today's entries whose current revision could not be read. Each may be an item on the list, so the
     /// screen says a time may read "Not logged" when it was taken rather than showing a count it cannot back.
     @Published public private(set) var unreadableEntriesToday = 0
+    /// Advances each time an erase or a restore replaced the stores, so a screen can close a picker or an
+    /// editor that still shows what was there before.
+    @Published public private(set) var replacements = 0
 
     private let store: JournalStore
     private let favorites: FavoritesStore
@@ -101,9 +102,8 @@ public final class SupplementStackViewModel: ObservableObject {
     }
 
     private var bases: [RowBasis] = []
-    /// When today's entries of each item were logged (minutes since their local midnight), as of the last
-    /// full read, and the day they were read for.
-    private var logged: [String: [Int]] = [:]
+    /// Today's entries per item, as of the last full read, and the day they were counted for.
+    private var counts: [String: Int] = [:]
     private var countedDay: String?
     /// The screens showing the list, one id each, in case more than one window shows it. A set rather than
     /// a count, so an appearance reported twice without a disappearance in between is still one screen.
@@ -153,7 +153,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 let order = left.title.localizedCaseInsensitiveCompare(right.title)
                 return order == .orderedSame ? left.favoriteID < right.favoriteID : order == .orderedAscending
             }
-            logged = counted
+            counts = counted
             countedDay = clock.dayKey
             unreadableEntriesToday = unreadable
             rows = makeRows(clock: clock)
@@ -186,22 +186,22 @@ public final class SupplementStackViewModel: ObservableObject {
 
     private func makeRows(clock: SupplementStackClock) -> [SupplementStackRow] {
         bases.map { basis in
-            let minutes = logged[basis.matchKey] ?? []
+            let logged = counts[basis.matchKey] ?? 0
             let isDue = basis.schedule.weekdays.contains(clock.weekday)
             return SupplementStackRow(
                 id: basis.favoriteID, title: basis.title, detail: basis.detail, kind: basis.kind,
                 schedule: basis.schedule, isDueToday: isDue,
                 slots: isDue
-                    ? SupplementStackDay.slots(for: basis.schedule, loggedMinutes: minutes, minuteOfDay: clock.minuteOfDay)
+                    ? SupplementStackDay.slots(for: basis.schedule, takenCount: logged, minuteOfDay: clock.minuteOfDay)
                     : [],
-                loggedToday: minutes.count, canLog: basis.canLog)
+                loggedToday: logged, canLog: basis.canLog)
         }
     }
 
     /// Drops what the last read kept, so the next refresh reads everything again.
     private func forget() {
         bases = []
-        logged = [:]
+        counts = [:]
         countedDay = nil
         unreadableEntriesToday = 0
     }
@@ -216,20 +216,16 @@ public final class SupplementStackViewModel: ObservableObject {
         return kept
     }
 
-    /// When each of today's entries of each item was logged, as minutes since the entry's own local midnight,
-    /// with each entry on the local day of its own time zone, the rule the Journal groups by; and how many of
-    /// today's entries could not be read. An unreadable entry is counted apart rather than skipped, because
-    /// skipping it would read as "not taken".
-    private func loggedCounts(on dayKey: String) throws -> (counts: [String: [Int]], unreadable: Int) {
-        var counts: [String: [Int]] = [:]
+    /// Today's entries per item, each on the local day of its own time zone, the rule the Journal groups by,
+    /// and how many of today's entries could not be read. An unreadable entry is counted apart rather than
+    /// skipped, because skipping it would read as "not taken".
+    private func loggedCounts(on dayKey: String) throws -> (counts: [String: Int], unreadable: Int) {
+        var counts: [String: Int] = [:]
         var unreadable = 0
-        for intake in try store.activeIntakes() where intake.lifecycle == .active {
-            // An entry's day and minute are its own local ones. A zone that names none has no day, so
-            // the entry is on no day's list, as in the Journal. The day is checked first, so only today's
-            // entries pay for reading the wall clock.
-            guard IntakeCopier.dayKey(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier) == dayKey,
-                  let local = SupplementStackDay.wallClock(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier)
-            else { continue }
+        let today = try store.activeIntakes().filter {
+            $0.lifecycle == .active && IntakeCopier.dayKey($0.occurredAt, zoneIdentifier: $0.timeZoneIdentifier) == dayKey
+        }
+        for intake in today {
             guard let revisions = try? store.revisions(of: intake.id),
                   let current = revisions.first(where: { $0.number == intake.currentRevision })
             else {
@@ -238,7 +234,7 @@ public final class SupplementStackViewModel: ObservableObject {
             }
             let key = SupplementStackDay.matchKey(
                 category: intake.category, snapshotID: current.productSnapshotID, names: current.components.map(\.name))
-            counts[key, default: []].append(local.minuteOfDay)
+            counts[key, default: 0] += 1
         }
         return (counts, unreadable)
     }
@@ -301,6 +297,14 @@ public final class SupplementStackViewModel: ObservableObject {
                 favoriteID = id
                 key = Self.matchKey(favorite)
             case .recent(let template):
+                // The picker can be older than the journal: an erase, a restore or a delete in another
+                // window may have removed the entry it showed. Only a supplement the journal still holds is
+                // saved, so nothing erased comes back as a favorite.
+                guard try RecentItemsProvider(store: store).recents(limit: .max)
+                    .contains(where: { "recent:\($0.id)" == candidate.id })
+                else {
+                    return refuse("Could not add it to your supplements.", now: now)
+                }
                 // Starred since the picker was built, here or in another window, with the same amounts: that
                 // favorite goes on the list rather than a second copy of it. A favorite of the same product
                 // with other amounts is not what the picker showed, so a new one is saved instead.
@@ -460,6 +464,7 @@ public final class SupplementStackViewModel: ObservableObject {
     /// screen and emptied if it is not, so no erased name waits in memory for the next appearance.
     public func storesWereReplaced(now: Date) {
         undoToken = nil
+        replacements += 1
         if isShown {
             load(now: now)
         } else {
