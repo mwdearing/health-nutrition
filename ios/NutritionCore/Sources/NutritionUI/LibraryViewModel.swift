@@ -230,6 +230,8 @@ public final class LibraryViewModel: ObservableObject {
     /// typed name finds any of them. Find products lists the first few as "Often logged"; the Library
     /// screen itself does not show them.
     @Published public private(set) var frequentItems: [LibraryItem] = []
+    /// The saved meals Find products offers to log. Set once by the app; nil leaves them out.
+    public var savedMeals: SavedMealsModel?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
     @Published public var searchText = ""

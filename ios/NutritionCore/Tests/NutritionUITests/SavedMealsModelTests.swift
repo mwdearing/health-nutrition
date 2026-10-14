@@ -1,0 +1,260 @@
+import Foundation
+import NutritionDomain
+import NutritionJournal
+import XCTest
+@testable import NutritionUI
+
+/// A real journal that can fail one intake's revision read, or every write after the first create.
+private final class FaultyJournal: JournalStore, @unchecked Sendable {
+    struct Failure: Error {}
+    let inner: SwiftDataJournalStore
+    var unreadableIntakeID: String?
+    /// From when it is set, one more create succeeds and every later create and delete fails.
+    var failWritesAfterFirstCreate = false { didSet { creates = 0 } }
+    private var creates = 0
+
+    init(_ inner: SwiftDataJournalStore) { self.inner = inner }
+
+    var failNextSaveForTesting: Bool {
+        get { inner.failNextSaveForTesting }
+        set { inner.failNextSaveForTesting = newValue }
+    }
+    func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision {
+        creates += 1
+        if failWritesAfterFirstCreate && creates > 1 { throw Failure() }
+        return try inner.create(intake, components: components, product: product, now: now)
+    }
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+    ) throws -> IntakeRevision {
+        try inner.edit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+    }
+    func delete(intakeID: String, now: Date) throws {
+        if failWritesAfterFirstCreate { throw Failure() }
+        try inner.delete(intakeID: intakeID, now: now)
+    }
+    func activeIntakes() throws -> [Intake] { try inner.activeIntakes() }
+    func revisions(of intakeID: String) throws -> [IntakeRevision] {
+        if intakeID == unreadableIntakeID { throw Failure() }
+        return try inner.revisions(of: intakeID)
+    }
+    func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }
+    func pendingOutbox() throws -> [OutboxOperation] { try inner.pendingOutbox() }
+    func product(snapshotID: String) throws -> ProductDefinition? { try inner.product(snapshotID: snapshotID) }
+    func activeIntakesFromBackground() async throws -> [Intake] { try await inner.activeIntakesFromBackground() }
+    func close() { inner.close() }
+}
+
+/// The screen model for saved meals, and Save as meal from the Journal.
+///
+/// Synthetic names and ids only. Lowercase UUID intake ids.
+@MainActor
+final class SavedMealsModelTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeDefaults() -> UserDefaults {
+        let suite = "saved-meals-model-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return defaults
+    }
+
+    private func makeJournal() throws -> SwiftDataJournalStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+    }
+
+    @discardableResult
+    private func addEntry(_ store: JournalStore, _ name: String, at date: Date, meal: String? = "breakfast") throws -> Intake {
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: date, timeZoneIdentifier: "UTC", meal: meal)
+        try store.create(
+            intake, components: [IntakeComponent(componentID: name.lowercased(), name: name, amount: 40, unit: .g)],
+            product: nil, now: date)
+        return intake
+    }
+
+    // MARK: Saving
+
+    func testSaveKeepsTheEntriesInTheOrderTheyWereEaten() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let oats = try addEntry(journal, "Oats", at: now.addingTimeInterval(-120))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+
+        XCTAssertTrue(model.save(name: "Usual breakfast", meal: .breakfast, intakes: [milk, oats]))
+        XCTAssertEqual(model.meals.first?.items.map(\.displayName), ["Oats", "Milk"])
+        XCTAssertEqual(model.meals.first?.meal, .breakfast)
+        XCTAssertFalse(model.noticeIsFailure)
+    }
+
+    func testAnUnreadableEntryRefusesTheWholeSave() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let oats = try addEntry(journal, "Oats", at: now.addingTimeInterval(-120))
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        journal.unreadableIntakeID = milk.id
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        let model = SavedMealsModel(store: store, journal: journal)
+
+        XCTAssertFalse(model.save(name: "Usual breakfast", meal: .breakfast, intakes: [oats, milk]))
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "One of these entries can't be read, so the meal was not saved.")
+        XCTAssertEqual(try store.meals(), [])
+    }
+
+    func testARefusalKeepsItsMessageAfterTheReload() throws {
+        let journal = try makeJournal()
+        let oats = try addEntry(journal, "Oats", at: now)
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        model.save(name: "Usual breakfast", meal: .breakfast, intakes: [oats])
+
+        XCTAssertFalse(model.save(name: "usual breakfast", meal: .breakfast, intakes: [oats]))
+        XCTAssertEqual(model.notice, SavedMealError.duplicateName.message)
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.meals.count, 1)
+        // A later read, such as another screen opening, drops the notice with it.
+        model.load()
+        XCTAssertNil(model.notice)
+    }
+
+    func testAFailedReadEmptiesTheListRatherThanKeepingTheLastOne() throws {
+        let journal = try makeJournal()
+        let oats = try addEntry(journal, "Oats", at: now)
+        let defaults = makeDefaults()
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: defaults), journal: journal)
+        model.save(name: "Usual breakfast", meal: .breakfast, intakes: [oats])
+        XCTAssertEqual(model.meals.count, 1)
+
+        defaults.set(Data("damaged".utf8), forKey: UserDefaultsSavedMealStore.key)
+        model.load()
+        XCTAssertEqual(model.meals, [])
+        XCTAssertEqual(model.loadError, SavedMealError.unreadable.message)
+    }
+
+    // MARK: Logging
+
+    private func modelWithMeal(_ journal: JournalStore, names: [String]) throws -> (SavedMealsModel, SavedMeal) {
+        var intakes: [Intake] = []
+        for (index, name) in names.enumerated() {
+            intakes.append(try addEntry(journal, name, at: now.addingTimeInterval(TimeInterval(-600 + index))))
+        }
+        let model = SavedMealsModel(
+            store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal, timeZoneIdentifier: "UTC")
+        XCTAssertTrue(model.save(name: "Usual breakfast", meal: .breakfast, intakes: intakes))
+        return (model, try XCTUnwrap(model.meals.first))
+    }
+
+    func testLogOffersUndoForExactlyWhatItWrote() throws {
+        let journal = try makeJournal()
+        let (model, saved) = try modelWithMeal(journal, names: ["Oats", "Milk"])
+
+        XCTAssertTrue(model.log(saved, as: .lunch, now: now))
+        let token = try XCTUnwrap(model.undoToken)
+        XCTAssertEqual(token.message, "Logged Usual breakfast.")
+        XCTAssertEqual(token.result.loggedCount, 2)
+        XCTAssertEqual(try journal.activeIntakes().filter { $0.occurredAt == now }.map(\.meal), ["lunch", "lunch"])
+
+        XCTAssertTrue(model.undo(now: now))
+        XCTAssertNil(model.undoToken)
+        XCTAssertEqual(try journal.activeIntakes().filter { $0.occurredAt == now }, [])
+    }
+
+    func testAMealWithNothingLeftToLogSaysSoAndOffersNoUndo() throws {
+        let journal = try makeJournal()
+        let (model, saved) = try modelWithMeal(journal, names: ["Oats"])
+        var damaged = saved
+        damaged.items[0].components[0].amountText = "a lot"
+
+        XCTAssertFalse(model.log(damaged, as: .breakfast, now: now))
+        XCTAssertNil(model.undoToken)
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "Nothing was logged: 1 item can no longer be logged.")
+    }
+
+    func testAFailedWriteWhoseCleanupFailsOffersToRemoveWhatWasLeft() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let (model, saved) = try modelWithMeal(journal, names: ["Oats", "Milk"])
+        journal.failWritesAfterFirstCreate = true
+
+        XCTAssertFalse(model.log(saved, as: .breakfast, now: now))
+        let token = try XCTUnwrap(model.undoToken)
+        XCTAssertEqual(token.result.createdIDs.count, 1)
+        XCTAssertEqual(token.message, "Could not log Usual breakfast. 1 entry was left in the journal.")
+        let warning = "1 entry from a saved meal that could not be logged is still in the Journal. Delete it there."
+        XCTAssertEqual(model.leftoverWarning, warning)
+        // The warning outlives the timed Undo offer, a later read and a later log.
+        model.expireUndo(token)
+        XCTAssertNil(model.undoToken)
+        model.load()
+        XCTAssertEqual(model.leftoverWarning, warning)
+        // It goes once the entry is gone, here deleted in the Journal.
+        try inner.delete(intakeID: token.result.createdIDs[0], now: now)
+        model.load()
+        XCTAssertNil(model.leftoverWarning)
+    }
+
+    func testAFailedUndoWarnsUntilTheEntriesAreGone() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let (model, saved) = try modelWithMeal(journal, names: ["Oats", "Milk"])
+        XCTAssertTrue(model.log(saved, as: .breakfast, now: now))
+        journal.failWritesAfterFirstCreate = true
+
+        XCTAssertFalse(model.undo(now: now))
+        XCTAssertEqual(model.undoToken?.message, "Could not remove 2 entries. Try again.")
+        XCTAssertEqual(
+            model.leftoverWarning,
+            "2 entries from a saved meal that could not be logged are still in the Journal. Delete them there.")
+        journal.failWritesAfterFirstCreate = false
+        XCTAssertTrue(model.undo(now: now))
+        XCTAssertNil(model.leftoverWarning)
+    }
+
+    func testMealChoicesPutTheSavedMealFirstThenTheOthersThenNone() {
+        let saved = SavedMeal(id: "m", name: "Usual dinner", meal: .dinner, items: [])
+        XCTAssertEqual(SavedMealsModel.mealChoices(for: saved), [.dinner, .breakfast, .lunch, .snack, nil])
+        let unnamed = SavedMeal(id: "n", name: "Anything", meal: nil, items: [])
+        XCTAssertEqual(SavedMealsModel.mealChoices(for: unnamed), [.breakfast, .lunch, .dinner, .snack, nil])
+    }
+
+    func testMatchingNarrowsByNameIgnoringCase() throws {
+        let journal = try makeJournal()
+        let (model, _) = try modelWithMeal(journal, names: ["Oats"])
+
+        XCTAssertEqual(model.matching("  BREAK ").map(\.name), ["Usual breakfast"])
+        XCTAssertEqual(model.matching("lunch"), [])
+        XCTAssertEqual(model.matching("").count, 1)
+    }
+
+    // MARK: Save as meal from the Journal
+
+    func testJournalSavesOneMealGroupOfADay() throws {
+        let journal = try makeJournal()
+        let yesterday = now.addingTimeInterval(-86_400)
+        try addEntry(journal, "Oats", at: yesterday)
+        try addEntry(journal, "Milk", at: yesterday.addingTimeInterval(60))
+        try addEntry(journal, "Rice", at: yesterday.addingTimeInterval(120), meal: "dinner")
+        let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC")
+        let savedMeals = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        model.savedMeals = savedMeals
+        model.load(now: now)
+        let day = try XCTUnwrap(model.sections.first)
+
+        XCTAssertTrue(model.saveMeal(day.id, groupID: "Breakfast", name: "Usual breakfast"))
+        XCTAssertEqual(savedMeals.meals.first?.items.map(\.displayName), ["Oats", "Milk"])
+        XCTAssertEqual(savedMeals.meals.first?.meal, .breakfast)
+        XCTAssertEqual(model.copyNotice, "Saved Usual breakfast. Log it again from Add, in Find products.")
+        XCTAssertFalse(model.copyFailed)
+
+        XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))
+        XCTAssertEqual(model.copyNotice, SavedMealError.duplicateName.message)
+        XCTAssertTrue(model.copyFailed)
+    }
+}

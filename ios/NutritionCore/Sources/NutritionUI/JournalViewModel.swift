@@ -355,7 +355,7 @@ public final class JournalViewModel: ObservableObject {
         !section.isCollapsedByDefault || expandedDays.contains(section.id)
     }
 
-    /// The sentence for the last copy, such as "Copied 3 entries to today."; nil until a copy runs.
+    /// The sentence for the last copy or Save as meal, such as "Copied 3 entries to today."; nil until one runs.
     @Published public private(set) var copyNotice: String?
     /// True when `copyNotice` reports a copy that failed or stopped partway.
     @Published public private(set) var copyFailed = false
@@ -377,6 +377,31 @@ public final class JournalViewModel: ObservableObject {
     public func copyMealToToday(_ sectionID: String, groupID: String, now: Date) -> IntakeCopyResult? {
         let selector = MealLabel.allCases.first { $0.displayName == groupID }.map(MealSelector.named) ?? .other
         return runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+    }
+
+    /// The saved meals "Save as meal" writes to. Set once by the app; nil leaves the action out.
+    public var savedMeals: SavedMealsModel?
+
+    /// Saves one meal group of a day as a saved meal named `name`, its entries in the order they were eaten.
+    /// The group's meal is the meal it is logged under by default; "Other" saves one with no meal. The
+    /// outcome, a refusal included, is shown as the copy notice.
+    @discardableResult
+    public func saveMeal(_ sectionID: String, groupID: String, name: String) -> Bool {
+        guard let savedMeals else { return false }
+        let label = MealLabel.allCases.first { $0.displayName == groupID }
+        let selector = label.map(MealSelector.named) ?? .other
+        let intakes: [Intake]
+        do {
+            intakes = try copier.sources(dayKey: sectionID, meal: selector)
+        } catch {
+            copyNotice = "Could not read this meal's entries, so it was not saved."
+            copyFailed = true
+            return false
+        }
+        let saved = savedMeals.save(name: name, meal: label, intakes: intakes)
+        copyNotice = savedMeals.notice
+        copyFailed = savedMeals.noticeIsFailure
+        return saved
     }
 
     private func runCopy(now: Date, _ body: () throws -> IntakeCopyResult) -> IntakeCopyResult? {
