@@ -343,6 +343,62 @@ final class LabelCaptureViewModelTests: XCTestCase {
         }
     }
 
+    /// A serving is how much of the product is eaten: an energy or an international-unit amount parses, but it
+    /// cannot relate an intake amount to the captured values, so it is refused with a reason.
+    func testAServingSizeMustBeAWeightAVolumeOrACount() {
+        let model = makeModel()
+        model.load(lines: ["Calories 180", "Total Fat 4g"])
+
+        for text in ["100 kcal", "5 IU"] {
+            XCTAssertFalse(model.enterServingSize(text: text), text)
+            XCTAssertNotNil(model.servingSizeError, text)
+            XCTAssertTrue(model.servingIsMissing, text)
+        }
+        XCTAssertTrue(model.enterServingSize(text: "30 g"))
+        XCTAssertNil(model.servingSizeError)
+    }
+
+    /// The values cannot be used while a correction field is open: the typed value only reaches the row when
+    /// it is saved, so using them then would apply the old value and drop the correction on screen.
+    func testValuesCannotBeUsedWhileACorrectionIsOpen() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+        XCTAssertTrue(model.canApply)
+
+        model.beginCorrection(for: .sodium)
+        XCTAssertFalse(model.canApply)
+        XCTAssertNil(model.makeProduct())
+        XCTAssertEqual(model.primaryActionTitle, "Save or cancel the correction first")
+
+        model.endCorrection()
+        XCTAssertTrue(model.canApply)
+        XCTAssertEqual(model.primaryActionTitle, "Use these values")
+    }
+
+    /// The same holds for the printed serving: an open serving field holds the values until it is saved or
+    /// cancelled, so a typed serving cannot be dropped by using the values first.
+    func testValuesCannotBeUsedWhileTheServingIsBeingCorrected() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+        XCTAssertTrue(model.servingCanBeCorrected)
+        XCTAssertTrue(model.canApply)
+
+        model.beginServingCorrection()
+        XCTAssertTrue(model.isEditingServing)
+        XCTAssertFalse(model.canApply)
+        XCTAssertNil(model.makeProduct())
+
+        model.endServingCorrection()
+        XCTAssertTrue(model.canApply)
+
+        model.beginServingCorrection()
+        XCTAssertTrue(model.correctServingSize(text: "30 g"))
+        XCTAssertFalse(model.isEditingServing, "a saved serving closes its field")
+        XCTAssertTrue(model.canApply)
+    }
+
     func testEnteringAServingSizeWantsAnAmountWithItsUnit() {
         let model = makeModel()
         model.load(lines: ["Calories 180", "Total Fat 4g"])

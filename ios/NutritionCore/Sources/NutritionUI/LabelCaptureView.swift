@@ -31,8 +31,6 @@ public struct LabelCaptureView: View {
     /// The unit a compound correction is stated in, chosen from the picker beside its amount field. It
     /// starts on the unit the label printed.
     @State private var additionalUnit: MeasureUnit = .g
-    /// Whether the field for correcting a printed serving size is open.
-    @State private var editingServing = false
 
     public init(
         model: LabelCaptureViewModel,
@@ -180,7 +178,7 @@ public struct LabelCaptureView: View {
                 if model.servingNeedsReview {
                     correctServingControl
                 }
-                if editingServing {
+                if model.isEditingServing {
                     servingEntry
                 }
             }
@@ -192,7 +190,7 @@ public struct LabelCaptureView: View {
     @ViewBuilder
     private var correctServingControl: some View {
         if model.servingCanBeCorrected {
-            Button("Correct") { editingServing = true }
+            Button("Correct") { model.beginServingCorrection() }
                 .font(.body)
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Correct the serving size")
@@ -233,13 +231,23 @@ public struct LabelCaptureView: View {
                     : model.correctServingSize(text: servingDraft)
                 if accepted {
                     servingDraft = ""
-                    editingServing = false
                 }
             }
             .font(.body)
             .buttonStyle(.borderless)
             .accessibilityLabel("Use this serving size")
             .accessibilityHint("Keeps the values per serving, with this serving written down")
+            if model.isEditingServing {
+                // While a printed serving is being corrected the values cannot be used, so the edit has a way
+                // out that keeps the serving as printed.
+                Button("Cancel") {
+                    servingDraft = ""
+                    model.endServingCorrection()
+                }
+                .font(.body)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Keep the printed serving size")
+            }
         }
     }
 
@@ -609,15 +617,17 @@ public struct LabelCaptureView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 LabeledField("Amount") { focus in
-                    TextField(text: $draft, prompt: Text("For example, 0.5")) {
+                    TextField(text: $draft, prompt: Text("For example, 0.5 or 500 mg")) {
                         Text("Amount")
                     }
                     .labelsHidden()
                     .font(.body)
-                    .amountKeyboard()
+                    // Letters as well as digits: a value captured in the wrong dimension can only be
+                    // repaired by typing the unit it should have, which a decimal pad cannot.
+                    .amountWithUnitKeyboard()
                     .focused(focus)
                     .accessibilityLabel("Amount for \(row.name)")
-                    .accessibilityHint("Zero or more, in \(unitSymbol(for: row))")
+                    .accessibilityHint("Zero or more, in \(unitSymbol(for: row)) unless you type another unit")
                 }
                 Text(unitSymbol(for: row))
                     .font(.body)
@@ -695,7 +705,6 @@ public struct LabelCaptureView: View {
                     // closed here, on the way out, and only what was already saved on the model is kept.
                     draft = ""
                     servingDraft = ""
-                    editingServing = false
                     model.clearCorrectionError()
                     onAddPhoto()
                 }
@@ -724,6 +733,16 @@ private extension View {
     func amountKeyboard() -> some View {
         #if os(iOS)
         self.keyboardType(.decimalPad)
+        #else
+        self
+        #endif
+    }
+
+    /// Digits and punctuation first, with letters one key away, for an amount that may name its unit.
+    @ViewBuilder
+    func amountWithUnitKeyboard() -> some View {
+        #if os(iOS)
+        self.keyboardType(.numbersAndPunctuation)
         #else
         self
         #endif
