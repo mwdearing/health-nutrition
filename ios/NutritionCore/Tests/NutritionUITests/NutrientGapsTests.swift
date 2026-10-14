@@ -355,6 +355,30 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertFalse(iodine.accessibilityText.contains("daily average"))
     }
 
+    func testTheUpperLimitLineCountsEveryLoggedDay() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        try log(store, "Magnesium", at: noon - day, product: product("mag", kind: .supplement, nutrients: [
+            "magnesium": .known(400, .mg),
+        ]))
+        // Today only a vitamin C supplement was logged, which says nothing about magnesium.
+        try log(store, "Vitamin C", at: noon, product: product("c", kind: .supplement, nutrients: [
+            "vitaminC": .known(500, .mg),
+        ]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: noon)
+
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(model.loggedDays, 2)
+        XCTAssertEqual(magnesium.averagedOverDays, 1)
+        XCTAssertTrue(magnesium.detailLines.contains(
+            "Averaged over 1 of 2 logged days. Nothing else you logged lists it."))
+        XCTAssertTrue(magnesium.detailLines.contains("Above the upper limit on 1 of 2 logged days."))
+    }
+
     func testADayThatSaysNothingAboutANutrientDoesNotDiluteItsAverage() throws {
         let store = try makeStore()
         let day: TimeInterval = 86_400

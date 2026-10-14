@@ -139,8 +139,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
         if tally.known > 0, let days = averagedOverDays, let logged = loggedDays, days < logged {
             lines.append("Averaged over \(days) of \(logged) logged days. Nothing else you logged lists it.")
         }
-        if let days = averagedOverDays, daysAboveLimit > 0, reference?.upperLimit != nil {
-            lines.append("Above the upper limit on \(daysAboveLimit) of \(days) logged \(days == 1 ? "day" : "days").")
+        // Counted against every logged day, the same M the averaged-over line states.
+        if let logged = loggedDays, daysAboveLimit > 0, reference?.upperLimit != nil {
+            lines.append("Above the upper limit on \(daysAboveLimit) of \(logged) logged \(logged == 1 ? "day" : "days").")
         }
         if let reference, reference.upperLimit != nil, let scope = reference.upperLimitScope {
             if let note = NutrientGaps.limitNote(scope) { lines.append(note) }
