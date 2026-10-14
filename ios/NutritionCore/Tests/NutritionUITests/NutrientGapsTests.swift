@@ -355,6 +355,29 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertFalse(iodine.accessibilityText.contains("daily average"))
     }
 
+    func testADayThatSaysNothingAboutANutrientDoesNotDiluteItsAverage() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: ["vitaminC": .known(60, .mg)]))
+        // Yesterday only a magnesium supplement was logged: it says nothing about vitamin C.
+        try log(store, "Magnesium", at: noon - day, product: product("mag", kind: .supplement, nutrients: [
+            "magnesium": .known(200, .mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+
+        model.chooseSpan(.week, now: noon)
+
+        XCTAssertEqual(model.loggedDays, 2)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 60, known: 1))
+        XCTAssertEqual(vitaminC.averagedOverDays, 1)
+        XCTAssertTrue(vitaminC.detailLines.contains(
+            "Averaged over 1 of the 2 logged days; the others had nothing that states it."))
+        // Magnesium was stated only by the supplement; the orange says nothing about it either way.
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(magnesium.averagedOverDays, 2)
+    }
+
     func testAWeekWithNothingLoggedSaysSo() throws {
         let model = NutrientGapsViewModel(store: try makeStore(), lookup: GapsSnapshotFacts())
         model.chooseSpan(.week, now: noon)

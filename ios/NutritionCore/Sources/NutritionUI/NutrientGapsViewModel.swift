@@ -61,8 +61,11 @@ public struct NutrientGapRow: Equatable, Identifiable {
     public let tally: NutrientDayTally
     /// Nil when no group is chosen.
     public let reference: ReferenceIntake?
-    /// For a week, the logged days the amounts are a daily average over; nil for a single day.
+    /// For a week, the days the amounts are a daily average over: the logged days with an entry that
+    /// states this nutrient or could have. Nil for a single day.
     public let averagedOverDays: Int?
+    /// For a week, every logged day in it; nil for a single day.
+    public let loggedDays: Int?
     /// For a week, the logged days on which the part of the day the upper limit counts was certainly
     /// above it. An upper limit is a daily one, so a week is above it when any of its days is, however
     /// the average reads.
@@ -73,7 +76,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
 
     public init(
         nutrient: String, label: String, unit: MeasureUnit, tally: NutrientDayTally, reference: ReferenceIntake?,
-        averagedOverDays: Int? = nil, daysAboveLimit: Int = 0
+        averagedOverDays: Int? = nil, loggedDays: Int? = nil, daysAboveLimit: Int = 0
     ) {
         self.nutrient = nutrient
         self.label = label
@@ -81,6 +84,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
         self.tally = tally
         self.reference = reference
         self.averagedOverDays = averagedOverDays
+        self.loggedDays = loggedDays
         self.daysAboveLimit = daysAboveLimit
         self.status = Self.status(tally: tally, reference: reference, daysAboveLimit: daysAboveLimit)
     }
@@ -131,6 +135,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
         }
         if tally.missing > 0 {
             lines.append("Unknown for \(tally.missing) \(tally.missing == 1 ? "entry" : "entries")")
+        }
+        if tally.known > 0, let days = averagedOverDays, let logged = loggedDays, days < logged {
+            lines.append("Averaged over \(days) of the \(logged) logged days; the others had nothing that states it.")
         }
         if let days = averagedOverDays, daysAboveLimit > 0, reference?.upperLimit != nil {
             lines.append("Above the upper limit on \(daysAboveLimit) of \(days) logged \(days == 1 ? "day" : "days").")
@@ -336,7 +343,7 @@ public final class NutrientGapsViewModel: ObservableObject {
         do {
             let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount)
             loggedDays = read.loggedDays
-            tallies = span == .week ? Self.averaged(read.tallies, over: read.loggedDays) : read.tallies
+            tallies = span == .week ? Self.averaged(read.tallies, byDay: read.byDay) : read.tallies
             dayTallies = span == .week ? read.byDay : []
             skippedIntakeCount = read.skipped
             errorMessage = nil
@@ -356,16 +363,30 @@ public final class NutrientGapsViewModel: ObservableObject {
         load(now: now)
     }
 
-    /// The week's totals as a daily average over the logged days. Entry counts stay totals, so "Unknown
-    /// for 3 entries" still counts entries; a span with nothing logged is left as it is.
-    static func averaged(_ tallies: [String: NutrientDayTally], over days: Int) -> [String: NutrientDayTally] {
-        guard days > 1 else { return tallies }
-        let divisor = Decimal(days)
-        return tallies.mapValues { tally in
-            NutrientDayTally(
-                fromFood: tally.fromFood / divisor, fromSupplements: tally.fromSupplements / divisor,
-                known: tally.known, missing: tally.missing)
+    /// For each nutrient, the days in the span with at least one entry that states it or could have
+    /// (a food, or a supplement that declares it). A day logged with only supplements that do not
+    /// declare a nutrient says nothing about it, like a day nothing was logged, so it is not one of them.
+    static func statedDays(_ byDay: [[String: NutrientDayTally]]) -> [String: Int] {
+        var days: [String: Int] = [:]
+        for day in byDay {
+            for nutrient in day.keys { days[nutrient, default: 0] += 1 }
         }
+        return days
+    }
+
+    /// The week's totals as a daily average over each nutrient's own stated days, so a day that said
+    /// nothing about a nutrient never reads as a day with none of it. Entry counts stay totals, so
+    /// "Unknown for 3 entries" still counts entries.
+    static func averaged(_ tallies: [String: NutrientDayTally], byDay: [[String: NutrientDayTally]]) -> [String: NutrientDayTally] {
+        let days = statedDays(byDay)
+        return Dictionary(uniqueKeysWithValues: tallies.map { nutrient, tally in
+            let count = days[nutrient] ?? 0
+            guard count > 1 else { return (nutrient, tally) }
+            let divisor = Decimal(count)
+            return (nutrient, NutrientDayTally(
+                fromFood: tally.fromFood / divisor, fromSupplements: tally.fromSupplements / divisor,
+                known: tally.known, missing: tally.missing))
+        })
     }
 
     /// Stores the group a person picked, or clears it, and compares the same day against it.
@@ -378,6 +399,7 @@ public final class NutrientGapsViewModel: ObservableObject {
     private func rebuild() {
         let group = referenceGroup
         let isWeek = span == .week
+        let statedDays = Self.statedDays(dayTallies)
         rows = Self.nutrients.map { nutrient in
             let reference = group.flatMap { ReferenceIntakes.intake(for: nutrient, group: $0) }
             let daysAbove = reference.map { reference in
@@ -390,7 +412,8 @@ public final class NutrientGapsViewModel: ObservableObject {
             return NutrientGapRow(
                 nutrient: nutrient, label: NutrientNames.displayName(for: nutrient),
                 unit: Self.unit(for: nutrient), tally: tallies[nutrient] ?? NutrientDayTally(),
-                reference: reference, averagedOverDays: isWeek ? loggedDays : nil, daysAboveLimit: daysAbove)
+                reference: reference, averagedOverDays: isWeek ? (statedDays[nutrient] ?? 0) : nil,
+                loggedDays: isWeek ? loggedDays : nil, daysAboveLimit: daysAbove)
         }
         sections = errorMessage == nil ? Self.sections(rows, hasGroup: group != nil, span: span) : []
     }

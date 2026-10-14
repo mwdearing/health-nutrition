@@ -16,9 +16,14 @@ logged day once something is logged, so early in the day the averages read lower
 line says what the figures are ("Average per day over the 3 days you logged in the last 7.", or "Nothing
 was logged in the last 7 days."), and VoiceOver reads each figure as a daily average. The "Not known"
 heading reads "Not known this week", and without a group the amounts are under "Last 7 days".
-"Unknown for 2 entries" still counts entries. A logged day whose entries do not state a nutrient still counts in that
-nutrient's average, so the average is a floor there too: the row reads "At least" and "Below the RDA so far" rather
-than as a complete figure.
+"Unknown for 2 entries" still counts entries.
+
+Each nutrient is averaged over the logged days with an entry that states it or could have: a food (which states the
+nutrient or is unknown for it) or a supplement that declares it. A day logged with only supplements that do not declare
+a nutrient says nothing about it, like a day nothing was logged, so it is left out of that nutrient's average rather
+than read as a day with none of it; the row then says "Averaged over 1 of the 2 logged days; the others had nothing
+that states it." A food that does not state the nutrient still counts, as an unknown entry, so the average is a floor
+there: the row reads "At least" and "Below the RDA so far".
 
 Each average is compared with the RDA or AI, so "Below the RDA" on the week means the daily average is
 below it. An upper limit is a daily limit, so it is checked day by day rather than against the average: a
@@ -57,7 +62,7 @@ app can't read and is left out, so these figures may be low.").
 | Status | When | Section |
 |---|---|---|
 | Above the upper limit | The part of the day the limit counts is above it | Above an upper limit |
-| Below the RDA (or AI) | Every entry that could state it did, and the day is below | Below the reference |
+| Below the RDA (or AI) | Every entry that could state it did, and the day (or, on Week, the daily average) is below | Below the reference |
 | Below the RDA so far | What is known is below, and some entries do not state it | Below the reference |
 | Reached the RDA | The known amounts alone reach it | Reached the reference |
 | Unknown / Nothing logged | No entry states an amount / no entry could | Not known today (Week: Not known this week) |
