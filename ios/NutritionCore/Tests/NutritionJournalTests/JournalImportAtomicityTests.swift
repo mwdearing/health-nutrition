@@ -173,7 +173,9 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         other["app_version"] = "9.9.9"
         let otherData = try JSONSerialization.data(withJSONObject: other)
 
-        XCTAssertThrowsError(try JournalImporter.importExport(otherData, into: journal, favorites: favoritesStore))
+        XCTAssertThrowsError(try JournalImporter.importExport(otherData, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
         XCTAssertEqual(try journal.restoreInProgressDigest(), digest)
 
         _ = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)

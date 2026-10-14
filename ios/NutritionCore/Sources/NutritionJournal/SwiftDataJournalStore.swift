@@ -1588,13 +1588,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     ///
     /// The container is not closed: the store reads empty and accepts new entries afterwards.
     public func eraseAll() throws {
-        // A restore flag left behind would let the next import of that file skip straight to its favorites, so
-        // it goes with the journal (after the rows, so a failed erase keeps both).
-        defer {
-            if (try? activeIntakes().isEmpty) == true, (try? deletedIntakes().isEmpty) == true {
-                try? clearRestoreInProgress()
-            }
-        }
+        // A restore flag left behind would let the next import of that file put back favorites the person is
+        // erasing, so it goes first: an erase that fails partway (this store or another) can then leave journal
+        // rows, but never a way for a re-import to bring erased favorites back.
+        try? clearRestoreInProgress()
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
