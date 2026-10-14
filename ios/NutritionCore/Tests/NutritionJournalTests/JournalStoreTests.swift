@@ -358,6 +358,28 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertTrue(try store.pendingOutbox().isEmpty)
     }
 
+    /// A state the export contract refuses is refused where it would be written (#290).
+    func testStoreRefusesAnEmptyRevisionOrCategoryWithoutWriting() throws {
+        let store = try makeStore(try makeDirectory())
+        XCTAssertThrowsError(try store.create(sampleIntake(), components: [], product: nil, now: when)) {
+            XCTAssertEqual($0 as? JournalError, .noComponents(intakeID))
+        }
+        var uncategorized = sampleIntake()
+        uncategorized.category = ""
+        XCTAssertThrowsError(try store.create(uncategorized, components: [oats()], product: nil, now: when)) {
+            XCTAssertEqual($0 as? JournalError, .emptyCategory(intakeID))
+        }
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+        XCTAssertTrue(try store.pendingOutbox().isEmpty)
+
+        try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        XCTAssertThrowsError(try store.edit(
+            intakeID: intakeID, components: [], product: nil, changeReason: "emptied", now: when)) {
+            XCTAssertEqual($0 as? JournalError, .noComponents(intakeID))
+        }
+        XCTAssertEqual(try store.revisions(of: intakeID).count, 1, "the refused edit wrote no revision")
+    }
+
     func testStoreRefusesANegativeComponentAmountWithoutWriting() throws {
         let store = try makeStore(try makeDirectory())
         let negative = IntakeComponent(componentID: "oats", name: "Rolled oats", amount: -1, unit: .g)

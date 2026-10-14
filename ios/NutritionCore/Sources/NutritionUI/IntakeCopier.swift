@@ -119,6 +119,9 @@ public struct IntakeCopier {
                 skipped += 1
             } catch JournalError.corruptRecord {
                 skipped += 1
+            } catch JournalError.noComponents, JournalError.emptyCategory {
+                // An entry written before the store refused these states is a bad source, not a store failure.
+                skipped += 1
             } catch {
                 // A store failure is not a bad source: stop, and say what was already written.
                 throw IntakeCopyError.stoppedEarly(

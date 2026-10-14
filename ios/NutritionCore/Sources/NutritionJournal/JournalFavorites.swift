@@ -63,6 +63,8 @@ public enum FavoritesError: Error, Sendable, Equatable {
     /// The next restore inserted its rows and then failed before committing. Only the test flag asks for
     /// it; it is the same seam the journal store has, so a test can see what a failed write leaves behind.
     case injectedSaveFailure
+    /// A favorite whose id, name or category is empty, which the export contract refuses. Carries the field.
+    case emptyRequiredField(String)
 }
 
 @Model
@@ -132,6 +134,12 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
     }
 
     public func add(_ favorite: FavoriteTemplate) throws {
+        // The same fields the export requires, checked where a favorite is made, so a saved favorite can
+        // always be backed up (#290).
+        let required = [("id", favorite.id), ("display_name", favorite.displayName), ("category", favorite.category)]
+        for (field, value) in required where value.isEmpty {
+            throw FavoritesError.emptyRequiredField(field)
+        }
         writeLock.lock()
         defer { writeLock.unlock() }
         let context = ModelContext(try openContainer())

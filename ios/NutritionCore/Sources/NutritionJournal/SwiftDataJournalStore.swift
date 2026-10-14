@@ -1293,6 +1293,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     func insertIntake(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?,
                       now: Date, context: ModelContext) throws -> IntakeRevision {
         guard JournalValidation.isValidIntakeID(intake.id) else { throw JournalError.invalidIntakeID(intake.id) }
+        // Refused here rather than only at export: a state the importer would refuse must not be writable,
+        // or the person finds out only when a backup cannot be made (#290).
+        guard !intake.category.isEmpty else { throw JournalError.emptyCategory(intake.id) }
+        guard !components.isEmpty else { throw JournalError.noComponents(intake.id) }
         let json = try Self.encode(components)
         if try Self.intakeRecord(intake.id, in: context) != nil { throw JournalError.intakeAlreadyExists(intake.id) }
         context.insert(IntakeRecord(
@@ -1310,6 +1314,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision {
+        guard !components.isEmpty else { throw JournalError.noComponents(intakeID) }
         let json = try Self.encode(components)
         return try commit { context in
             guard let record = try Self.intakeRecord(intakeID, in: context) else {

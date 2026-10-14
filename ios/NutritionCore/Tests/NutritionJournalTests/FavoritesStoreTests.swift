@@ -30,6 +30,25 @@ final class FavoritesStoreTests: XCTestCase {
         second.close()
     }
 
+    /// A favorite the export would refuse is refused when it is saved (#290).
+    func testAFavoriteWithAnEmptyIdNameOrCategoryIsRefused() throws {
+        let store = try SwiftDataFavoritesStore(url: try makeURL())
+        var noName = sample("fav-1")
+        noName.displayName = ""
+        XCTAssertThrowsError(try store.add(noName)) {
+            XCTAssertEqual($0 as? FavoritesError, .emptyRequiredField("display_name"))
+        }
+        var noCategory = sample("fav-1")
+        noCategory.category = ""
+        XCTAssertThrowsError(try store.add(noCategory)) {
+            XCTAssertEqual($0 as? FavoritesError, .emptyRequiredField("category"))
+        }
+        XCTAssertThrowsError(try store.add(sample(""))) {
+            XCTAssertEqual($0 as? FavoritesError, .emptyRequiredField("id"))
+        }
+        XCTAssertTrue(try store.list().isEmpty)
+    }
+
     func testFavoritesRemoveAndContains() throws {
         let store = try SwiftDataFavoritesStore(url: try makeURL())
         try store.add(sample("fav-1"))
