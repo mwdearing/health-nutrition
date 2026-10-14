@@ -21,6 +21,16 @@ public enum SavedMealUndoError: Error, Equatable, Sendable {
     case incomplete(remainingIDs: [String])
 }
 
+/// A write failed while logging a meal and the entries already created could not all be deleted again.
+/// `remainingIDs` are the entries still in the journal, so a screen can offer to remove them with Undo
+/// rather than leave part of the meal logged unseen; `underlying` is the write failure itself.
+public struct SavedMealPartialLogError: Error {
+    public let remainingIDs: [String]
+    public let underlying: any Error
+
+    public var result: SavedMealLogResult { SavedMealLogResult(createdIDs: remainingIDs, skippedCount: 0) }
+}
+
 /// Logs a saved meal as ordinary new entries: one `create` per item, all at `now`, under one meal.
 ///
 /// Each entry is like any other entry, so it is written to Apple Health once that is connected.
@@ -42,9 +52,10 @@ public struct SavedMealLogger {
     /// Logs every item of `saved` under `meal` (nil logs them with no meal), in the order they were saved.
     ///
     /// An item that cannot be logged as it was saved (an amount that no longer reads back, or a saved product
-    /// that is gone) is skipped and counted, and the rest are logged. Any other store failure logs nothing:
-    /// the entries this call already created are deleted again before the error is rethrown, so a meal is
-    /// never left half logged by a failed write.
+    /// that is gone) is skipped and counted, and the rest are logged. Any other store failure leaves no
+    /// entry behind: the entries this call already created are deleted again before the error is rethrown,
+    /// so a meal is never left half logged by a failed write. If one of those deletes fails too, the error
+    /// is a `SavedMealPartialLogError` naming the entries still in the journal.
     public func log(_ saved: SavedMeal, as meal: MealLabel?, now: Date) throws -> SavedMealLogResult {
         var created: [String] = []
         var skipped = 0
@@ -58,9 +69,21 @@ public struct SavedMealLogger {
                 created.append(try repeater.create(from: template, now: now))
             } catch IntakeRepeatError.productUnavailable {
                 skipped += 1
-            } catch {
-                for id in created.reversed() { try? store.delete(intakeID: id, now: now) }
-                throw error
+            } catch let writeError {
+                var remaining: [String] = []
+                for id in created.reversed() {
+                    do {
+                        try store.delete(intakeID: id, now: now)
+                    } catch JournalError.intakeDeleted(_) {
+                        continue
+                    } catch {
+                        remaining.append(id)
+                    }
+                }
+                guard remaining.isEmpty else {
+                    throw SavedMealPartialLogError(remainingIDs: Array(remaining.reversed()), underlying: writeError)
+                }
+                throw writeError
             }
         }
         return SavedMealLogResult(createdIDs: created, skippedCount: skipped)

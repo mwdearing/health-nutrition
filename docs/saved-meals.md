@@ -19,9 +19,12 @@ A saved meal is a named group of foods logged together, such as "Usual breakfast
 | `nameTooLong` | The trimmed name is over 60 characters. |
 | `duplicateName` | Another saved meal has the same name, ignoring case and outer spaces. A meal may be renamed to its own name in another case. |
 | `itemCount` | There are no items, or more than 30. |
+| `tooManyMeals` | There are already 100 saved meals. |
 | `unsavableAmount` | An item has no components, an unknown amount, or an amount that does not read back as the same number in the app's decimal format (a zero amount is one). This is the rule favorites follow, so a saved meal logs exactly what was eaten. |
 | `notFound` | A rename or removal names a meal that is no longer there. |
-| `unreadable` | The stored list exists but cannot be read. It is reported, never read as an empty list, and nothing is saved over it. |
+| `unreadable` | A stored value exists but is not a list this build can read. It is reported, never read as an empty list, and nothing is saved over it. |
+
+Each change reads the list, edits it and writes it back as one step under a lock, so two changes made at once cannot drop one another.
 
 ## Where it is kept
 
@@ -34,7 +37,7 @@ The list is kept on this phone only, as JSON in the app's defaults domain under 
 `SavedMealLogger.log(_:as:now:)` logs every item as its own ordinary entry: one `create` per item, all at the same time, under the meal picked (or none), in the order the items were saved. Each entry is like any other entry, so once Apple Health is connected it is written there as usual (see [HealthKit writer](healthkit-writer.md)).
 
 - **An item that cannot be logged as it was saved is skipped and counted, and the rest are logged.** That is an item whose amounts no longer read back, or whose saved product is no longer in the journal. The result, `SavedMealLogResult`, lists the entries created and how many items were skipped, so a screen can say what happened.
-- **A failed write logs nothing.** Any other store failure deletes the entries that call already created before the error is passed on, so a meal is never left half logged.
+- **A failed write leaves no entry behind.** Any other store failure deletes the entries that call already created before the error is passed on, so a meal is never left half logged. Those deletes go through the journal's usual delete, so like any deleted entry they are kept as hidden history and retracted from Apple Health if a delivery already ran. If one of those deletes fails as well, the error is a `SavedMealPartialLogError` that names the entries still in the journal, so a screen can offer to remove them.
 - **Undo** (`undo(_:now:)`) deletes exactly the entries the result lists. An entry already deleted counts as undone. When another delete fails, every remaining entry is still tried, and the ones left are reported as `SavedMealUndoError.incomplete(remainingIDs:)`.
 
 Tests: `ios/NutritionCore/Tests/NutritionUITests/SavedMealsTests.swift`.

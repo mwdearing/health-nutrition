@@ -9,6 +9,8 @@ private final class SecondCreateFailsStore: JournalStore, @unchecked Sendable {
     struct WriteFailed: Error {}
     let inner: SwiftDataJournalStore
     private var creates = 0
+    /// Makes every delete fail too, as a closed store or a full disk would.
+    var failDeletes = false
 
     init(_ inner: SwiftDataJournalStore) { self.inner = inner }
 
@@ -29,7 +31,10 @@ private final class SecondCreateFailsStore: JournalStore, @unchecked Sendable {
             intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
-    func delete(intakeID: String, now: Date) throws { try inner.delete(intakeID: intakeID, now: now) }
+    func delete(intakeID: String, now: Date) throws {
+        if failDeletes { throw WriteFailed() }
+        try inner.delete(intakeID: intakeID, now: now)
+    }
     func activeIntakes() throws -> [Intake] { try inner.activeIntakes() }
     func revisions(of intakeID: String) throws -> [IntakeRevision] { try inner.revisions(of: intakeID) }
     func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }
@@ -134,6 +139,28 @@ final class SavedMealsTests: XCTestCase {
         XCTAssertEqual(defaults.data(forKey: UserDefaultsSavedMealStore.key), Data("not a list".utf8))
     }
 
+    func testAValueOfAnotherTypeIsAnErrorNotAnEmptyList() throws {
+        let defaults = makeDefaults()
+        defaults.set("not data", forKey: UserDefaultsSavedMealStore.key)
+
+        XCTAssertThrowsError(try UserDefaultsSavedMealStore(defaults: defaults).meals()) {
+            XCTAssertEqual($0 as? SavedMealError, .unreadable)
+        }
+    }
+
+    func testTheListIsCappedAtTheMaximumNumberOfMeals() throws {
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        let book = SavedMealBook(store: store)
+        for index in 1...SavedMealBook.maximumMeals {
+            try book.add(name: "Meal \(index)", meal: nil, templates: [template("Oats")])
+        }
+
+        XCTAssertThrowsError(try book.add(name: "One more", meal: nil, templates: [template("Oats")])) {
+            XCTAssertEqual($0 as? SavedMealError, .tooManyMeals)
+        }
+        XCTAssertEqual(try store.meals().count, SavedMealBook.maximumMeals)
+    }
+
     func testEraseRemovesTheList() throws {
         let defaults = makeDefaults()
         let store = UserDefaultsSavedMealStore(defaults: defaults)
@@ -195,6 +222,21 @@ final class SavedMealsTests: XCTestCase {
             XCTAssertTrue($0 is SecondCreateFailsStore.WriteFailed)
         }
         XCTAssertEqual(try journal.activeIntakes(), [])
+    }
+
+    func testAFailedWriteWhoseCleanupFailsNamesTheEntriesLeft() throws {
+        let journal = try makeJournal()
+        let store = SecondCreateFailsStore(journal)
+        store.failDeletes = true
+        let saved = try savedMeal([template("Oats"), template("Milk")])
+
+        XCTAssertThrowsError(try SavedMealLogger(store: store, timeZoneIdentifier: "UTC").log(saved, as: .breakfast, now: now)) {
+            let failure = $0 as? SavedMealPartialLogError
+            XCTAssertNotNil(failure)
+            XCTAssertTrue(failure?.underlying is SecondCreateFailsStore.WriteFailed)
+            XCTAssertEqual(failure?.remainingIDs, (try? journal.activeIntakes().map(\.id)) ?? [])
+            XCTAssertEqual(failure?.remainingIDs.count, 1)
+        }
     }
 
     func testUndoRemovesExactlyTheLoggedEntries() throws {

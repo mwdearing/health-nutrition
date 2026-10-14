@@ -31,6 +31,8 @@ public enum SavedMealError: Error, Equatable, Sendable {
     case duplicateName
     /// There is nothing to save, or more than `SavedMealBook.maximumItems` items.
     case itemCount
+    /// There are already `SavedMealBook.maximumMeals` saved meals.
+    case tooManyMeals
     /// An item has an amount that is unknown or cannot be written back as exact decimal text.
     case unsavableAmount
     /// No saved meal has this id any more.
@@ -45,6 +47,7 @@ public enum SavedMealError: Error, Equatable, Sendable {
         case .nameTooLong: return "Use a name of \(SavedMealBook.maximumNameLength) characters or fewer."
         case .duplicateName: return "You already have a saved meal with this name."
         case .itemCount: return "A saved meal holds 1 to \(SavedMealBook.maximumItems) items."
+        case .tooManyMeals: return "You can keep up to \(SavedMealBook.maximumMeals) saved meals. Remove one first."
         case .unsavableAmount: return "An item has an amount that cannot be saved."
         case .notFound: return "This saved meal is no longer available."
         case .unreadable: return "Could not read your saved meals."
@@ -54,33 +57,46 @@ public enum SavedMealError: Error, Equatable, Sendable {
 
 /// Where saved meals are kept. Newest first.
 public protocol SavedMealStoring: AnyObject, Sendable {
-    /// Throws `SavedMealError.unreadable` when a stored list exists but cannot be decoded, so a damaged
-    /// list is never read as an empty one. No stored list at all is an empty list.
+    /// Throws `SavedMealError.unreadable` when a stored value exists but is not a list this build can
+    /// read, so a damaged list is never read as an empty one. No stored value at all is an empty list.
     func meals() throws -> [SavedMeal]
-    func replaceAll(with meals: [SavedMeal]) throws
+    /// Reads the list, lets `change` edit it and writes the result, as one step no other update on this
+    /// store can interleave with. Nothing is written when the read or `change` throws.
+    func update(_ change: (inout [SavedMeal]) throws -> Void) throws
 }
 
-/// Saved meals in the app's defaults domain, as one JSON list under `key`. Erase all data removes the key.
+/// Saved meals in the app's defaults domain, as one JSON list under `key`. `eraseAll()` removes the key.
 public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing, @unchecked Sendable {
     public static let key = "library.savedMeals.v1"
     private let defaults: UserDefaults
+    private let lock = NSLock()
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
     public func meals() throws -> [SavedMeal] {
-        guard let data = defaults.data(forKey: Self.key) else { return [] }
-        guard let list = try? JSONDecoder().decode([SavedMeal].self, from: data) else { throw SavedMealError.unreadable }
-        return list
+        try lock.withLock { try read() }
     }
 
-    public func replaceAll(with meals: [SavedMeal]) throws {
-        defaults.set(try JSONEncoder().encode(meals), forKey: Self.key)
+    public func update(_ change: (inout [SavedMeal]) throws -> Void) throws {
+        try lock.withLock {
+            var list = try read()
+            try change(&list)
+            defaults.set(try JSONEncoder().encode(list), forKey: Self.key)
+        }
     }
 
     public func eraseAll() throws {
-        defaults.removeObject(forKey: Self.key)
+        lock.withLock { defaults.removeObject(forKey: Self.key) }
+    }
+
+    private func read() throws -> [SavedMeal] {
+        guard let value = defaults.object(forKey: Self.key) else { return [] }
+        guard let data = value as? Data, let list = try? JSONDecoder().decode([SavedMeal].self, from: data) else {
+            throw SavedMealError.unreadable
+        }
+        return list
     }
 }
 
@@ -88,6 +104,7 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
 public struct SavedMealBook {
     public static let maximumNameLength = 60
     public static let maximumItems = 30
+    public static let maximumMeals = 100
     private let store: any SavedMealStoring
     private let makeID: () -> String
 
@@ -104,26 +121,30 @@ public struct SavedMealBook {
     /// Each template's own meal is dropped: the group is logged under `meal`, or under the meal picked then.
     @discardableResult
     public func add(name: String, meal: MealLabel?, templates: [RepeatTemplate]) throws -> SavedMeal {
-        let current = try store.meals()
-        let trimmed = try Self.validName(name, among: current, excluding: nil)
-        guard (1...Self.maximumItems).contains(templates.count) else { throw SavedMealError.itemCount }
         let items = try templates.map { try Self.item(from: $0, id: makeID()) }
-        let saved = SavedMeal(id: makeID(), name: trimmed, meal: meal, items: items)
-        try store.replaceAll(with: [saved] + current)
+        let id = makeID()
+        var saved = SavedMeal(id: id, name: name, meal: meal, items: items)
+        try store.update { list in
+            saved.name = try Self.validName(name, among: list, excluding: nil)
+            guard (1...Self.maximumItems).contains(items.count) else { throw SavedMealError.itemCount }
+            guard list.count < Self.maximumMeals else { throw SavedMealError.tooManyMeals }
+            list.insert(saved, at: 0)
+        }
         return saved
     }
 
     public func rename(id: String, to name: String) throws {
-        var current = try store.meals()
-        guard let index = current.firstIndex(where: { $0.id == id }) else { throw SavedMealError.notFound }
-        current[index].name = try Self.validName(name, among: current, excluding: id)
-        try store.replaceAll(with: current)
+        try store.update { list in
+            guard let index = list.firstIndex(where: { $0.id == id }) else { throw SavedMealError.notFound }
+            list[index].name = try Self.validName(name, among: list, excluding: id)
+        }
     }
 
     public func remove(id: String) throws {
-        let current = try store.meals()
-        guard current.contains(where: { $0.id == id }) else { throw SavedMealError.notFound }
-        try store.replaceAll(with: current.filter { $0.id != id })
+        try store.update { list in
+            guard list.contains(where: { $0.id == id }) else { throw SavedMealError.notFound }
+            list.removeAll { $0.id == id }
+        }
     }
 
     private static func validName(_ name: String, among meals: [SavedMeal], excluding id: String?) throws -> String {
