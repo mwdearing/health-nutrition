@@ -38,7 +38,7 @@ contain neither debug surface.
   store instance per database file is required: the store serializes writes with a lock that
   belongs to the instance, so two instances on the same file would assign duplicate revision
   numbers (see [docs/journal-store.md](../../docs/journal-store.md)).
-- `Sources/RootView.swift`: the tab shell with Today, Diary (the journal), Library and a Settings tab that opens the settings sheet, plus a HealthKit tab in
+- `Sources/RootView.swift`: the tab shell with Today, Diary (the journal), Library, Trends (Nutrients and Insights) and a Settings tab that opens the settings sheet, plus a HealthKit tab in
   debug builds only. Library opens the personal recipes in its own navigation stack
   (see [docs/recipes.md](../../docs/recipes.md)).
 - `Sources/RecipeNavigation.swift`: the recipe sheet's presentation and navigation stack on one small

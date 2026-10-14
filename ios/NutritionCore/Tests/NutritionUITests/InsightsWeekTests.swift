@@ -8,7 +8,9 @@ final class InsightsWeekTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_049_600)
 
     private func make(_ dates: [Date]) -> InsightsWeek {
-        InsightsWeek.make(occurredAt: dates, now: now, zone: utc, locale: locale)
+        InsightsWeek.make(
+            entries: dates.map { InsightsWeek.Entry(occurredAt: $0, timeZoneIdentifier: "UTC") },
+            now: now, zone: utc, locale: locale)
     }
 
     func testSevenDaysEndingTodayWithCountsPerDay() {
@@ -44,5 +46,42 @@ final class InsightsWeekTests: XCTestCase {
         let week = make([now, now - 60, now - 86_400])
         XCTAssertEqual(week.barFraction(for: week.days[6]), 1)
         XCTAssertEqual(week.barFraction(for: week.days[5]), 0.5, accuracy: 0.0001)
+    }
+
+    func testAnEntryStaysOnTheDayItWasLoggedOnInItsOwnZone() {
+        // 2023-11-14 23:30 in Los Angeles is 2023-11-15 07:30 UTC. The device zone is UTC (today is the 15th),
+        // but the entry was logged on the 14th, so it belongs to yesterday, as the Diary files it.
+        let entry = InsightsWeek.Entry(
+            occurredAt: Date(timeIntervalSince1970: 1_700_011_800), timeZoneIdentifier: "America/Los_Angeles")
+        let week = InsightsWeek.make(entries: [entry], now: now, zone: utc, locale: locale)
+        XCTAssertEqual(week.days.last?.entryCount, 0)
+        XCTAssertEqual(week.days[5].entryCount, 1)
+    }
+
+    func testAFailedReadIsReportedNotShownAsAnEmptyWeek() {
+        let state = InsightsLoadState.resolve(
+            errorMessage: "Could not read the diary.", loadCount: 1, entries: [], now: now, zone: utc,
+            locale: locale)
+        XCTAssertEqual(state, .failed("Could not read the diary."))
+    }
+
+    func testNothingIsSummarisedBeforeTheFirstReadFinishes() {
+        let state = InsightsLoadState.resolve(
+            errorMessage: nil, loadCount: 0, entries: [], now: now, zone: utc, locale: locale)
+        XCTAssertEqual(state, .loading)
+    }
+
+    func testAFinishedReadWithNoEntriesIsAnEmptyWeek() {
+        let state = InsightsLoadState.resolve(
+            errorMessage: nil, loadCount: 1, entries: [], now: now, zone: utc, locale: locale)
+        guard case .ready(let week, _) = state else { return XCTFail("expected ready") }
+        XCTAssertFalse(week.hasAnyEntry)
+    }
+
+    func testSkippedEntriesAreCarriedSoTheWeekIsNotShownAsComplete() {
+        let state = InsightsLoadState.resolve(
+            errorMessage: nil, loadCount: 1, skippedCount: 2, entries: [], now: now, zone: utc, locale: locale)
+        guard case .ready(_, let skipped) = state else { return XCTFail("expected ready") }
+        XCTAssertEqual(skipped, 2)
     }
 }
