@@ -5,7 +5,7 @@ import NutritionJournal
 import NutritionDomain
 import NutritionUI
 
-/// The tab shell: Today, Diary (the journal), Library and Settings, all reading the same store.
+/// The tab shell: Today, Diary (the journal), Library, Trends and Settings, all reading the same store.
 @MainActor
 struct RootView: View {
     let services: AppServices
@@ -78,6 +78,7 @@ struct RootView: View {
         case today
         case journal
         case library
+        case trends
         /// Not a screen: choosing it opens the settings sheet and returns to the tab the person was on.
         case settings
         #if DEBUG
@@ -149,6 +150,14 @@ struct RootView: View {
                 .sheet(isPresented: $recipeNavigation.showingRecipes) {
                     recipesSheet
                 }
+
+            NavigationStack {
+                TrendsView(today: services.today, journal: services.journal)
+                    .toolbar { settingsToolbar }
+            }
+                .safeAreaInset(edge: .bottom) { addCapsule }
+                .tabItem { Label("Trends", systemImage: "chart.bar") }
+                .tag(AppTab.trends)
 
             // The mockup's fourth tab. The settings sheet keeps every existing entry point (goals, the
             // welcome, erase), so this tab only opens it and puts the selection back.
