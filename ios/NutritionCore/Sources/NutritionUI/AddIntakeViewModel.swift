@@ -396,7 +396,8 @@ public final class AddIntakeViewModel: ObservableObject {
         else { return [] }
         let stored = storedQuantity(amount: amount, unit: unit, name: typedName)
         let components = [IntakeComponent(
-            componentID: Self.slug(typedName), name: typedName, amount: stored.amount, unit: stored.unit)]
+            componentID: Self.componentID(forFoodNamed: typedName, unit: stored.unit),
+            name: typedName, amount: stored.amount, unit: stored.unit)]
         let factor = DailyTotalsBuilder.scalingFactor(labelBasis: basis, logged: components)
         return Self.thisAddsKeys.compactMap { key in
             let value = self.prefilledValue(for: key)
@@ -739,7 +740,8 @@ public final class AddIntakeViewModel: ObservableObject {
             meal: meal?.rawValue)
         let (storedAmount, storedUnit) = storedQuantity(amount: amount, unit: unit, name: trimmedName)
         let component = IntakeComponent(
-            componentID: Self.slug(trimmedName), name: trimmedName, amount: storedAmount, unit: storedUnit)
+            componentID: Self.componentID(forFoodNamed: trimmedName, unit: storedUnit),
+            name: trimmedName, amount: storedAmount, unit: storedUnit)
         do {
             try store.create(intake, components: [component], product: productSnapshot(), now: now)
         } catch {
@@ -875,6 +877,16 @@ public final class AddIntakeViewModel: ObservableObject {
     /// spelling itself is `Slug`, which the label parser reads a compound's name into as well.
     nonisolated static func slug(_ text: String) -> String {
         Slug.make(text)
+    }
+
+    /// The component id for a food the user named. The name's slug, unless the catalog reserves it, in
+    /// which case it is namespaced so the food keeps its own meaning. Water poured by volume is the one
+    /// food that is what the catalog row says it is, so it keeps the catalog id.
+    nonisolated static func componentID(forFoodNamed name: String, unit: MeasureUnit) -> String {
+        let slug = slug(name)
+        if slug == "water", unit.dimension == .volume { return slug }
+        guard IntakeContextFactCatalog.isReserved(componentID: slug) else { return slug }
+        return String(("food-" + slug).prefix(64))
     }
 }
 
