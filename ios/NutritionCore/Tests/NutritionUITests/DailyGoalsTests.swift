@@ -822,7 +822,7 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.draftText["iron"], "12")
     }
 
-    func testAGoalRemovedBehindTheScreenTakesItsRowErrorWithIt() throws {
+    func testAnEraseTakesTypedTextAndItsRowErrorWithIt() throws {
         let goals = InMemoryGoalStore(goals: [NutrientGoal(nutrient: "zinc", target: 15, unit: .mg)])
         let model = GoalsViewModel(store: goals)
         model.load()
@@ -830,11 +830,29 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertFalse(model.commitTarget(for: "zinc"))
         XCTAssertNotNil(model.rowError["zinc"])
 
+        // Erase all data removes the goal and reloads the screen through the erase path.
         try goals.removeGoal(nutrient: "zinc")
-        model.load()
+        model.reloadAfterErase()
 
         XCTAssertEqual(model.draftText["zinc"], "")
         XCTAssertNil(model.rowError["zinc"])
+    }
+
+    func testAnUntouchedFieldFollowsAGoalChangedBehindTheScreenAndTypedTextIsKept() throws {
+        let goals = InMemoryGoalStore(goals: [
+            NutrientGoal(nutrient: "zinc", target: 15, unit: .mg),
+            NutrientGoal(nutrient: "iron", target: 8, unit: .mg),
+        ])
+        let model = GoalsViewModel(store: goals)
+        model.load()
+        model.draftText["iron"] = "12"
+
+        try goals.setGoal(NutrientGoal(nutrient: "zinc", target: 20, unit: .mg))
+        try goals.setGoal(NutrientGoal(nutrient: "iron", target: 10, unit: .mg))
+        model.load()
+
+        XCTAssertEqual(model.draftText["zinc"], "20")
+        XCTAssertEqual(model.draftText["iron"], "12")
     }
 
     func testInlineStoreFailuresStayNoticesAndKeepTheDraft() {

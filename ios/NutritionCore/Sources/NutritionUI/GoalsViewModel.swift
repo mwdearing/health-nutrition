@@ -185,8 +185,9 @@ public final class GoalsViewModel: ObservableObject {
     private var loadedUnitSystem: UnitSystem?
     private var storedWaterDraft: String?
     private var storedWaterUnit: MeasureUnit?
-    /// The keys that had a stored goal at the last read, so a read can tell which goals went away since.
-    private var loadedGoalKeys: Set<String> = []
+    /// The text each field was last filled with from the store, so a read can tell a field the person
+    /// has not typed in since from one they have.
+    private var loadedDraftText: [String: String] = [:]
 
     public init(
         store: GoalStore, journal: (any JournalStore)? = nil,
@@ -247,20 +248,18 @@ public final class GoalsViewModel: ObservableObject {
                 DecimalFormatting.text(self.displayGoal($0).amount)
             }
             self.storedWaterUnit = byNutrient[DailyTotalsBuilder.waterKey].map { self.displayGoal($0).unit }
-            // A goal stored at the last read and gone now was removed, here or behind this screen (an
-            // erase of all data, or a clear that stopped partway). Its field is refilled from the store,
-            // so the old text is not saved back as a goal when the field next loses focus.
-            for key in loadedGoalKeys where byNutrient[key] == nil {
-                draftText[key] = nil
-                rowError[key] = nil
-            }
-            loadedGoalKeys = Set(byNutrient.keys)
             for key in offeredKeys {
                 let waterUnitChanged = key == DailyTotalsBuilder.waterKey
                     && self.loadedUnitSystem != self.preferences.unitSystem
-                if draftText[key] == nil || waterUnitChanged {
-                    draftText[key] = byNutrient[key].map { DecimalFormatting.text(self.displayGoal($0).amount) } ?? ""
+                // A field the person has not typed in since the last read always shows what is stored,
+                // so a goal removed, put back or changed behind this screen (a clear that stopped
+                // partway, a setup save rolled back) is never saved back over the store from old text
+                // when the field next loses focus. Text the person typed is theirs and is kept.
+                let storedText = byNutrient[key].map { DecimalFormatting.text(self.displayGoal($0).amount) } ?? ""
+                if draftText[key] == nil || draftText[key] == loadedDraftText[key] || waterUnitChanged {
+                    draftText[key] = storedText
                 }
+                loadedDraftText[key] = storedText
                 if selectedUnits[key] == nil || waterUnitChanged {
                     selectedUnits[key] = byNutrient[key].map { self.displayGoal($0).unit } ?? self.unit(for: key)
                 }
@@ -555,6 +554,14 @@ public final class GoalsViewModel: ObservableObject {
             selectedUnits[key] = .g
             rowError[key] = nil
         }
+        load()
+    }
+
+    /// Reads the goals again after Erase all data. An erase is an explicit wipe, so text a person was
+    /// typing and the errors under it go too, not only the fields that follow the store.
+    public func reloadAfterErase() {
+        draftText = [:]
+        rowError = [:]
         load()
     }
 

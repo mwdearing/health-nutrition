@@ -294,7 +294,7 @@ struct RootView: View {
             self.finishAdding()
             reload()
             recipeList.load()
-            services.goals.load()
+            services.goals.reloadAfterErase()
             services.firstDayChecklist.load()
         }
         // A restore writes the journal without going through the normal view-model reload path. This

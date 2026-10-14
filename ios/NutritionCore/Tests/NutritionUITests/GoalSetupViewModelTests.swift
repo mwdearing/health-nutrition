@@ -284,6 +284,29 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertEqual(goalsModel.draftText["energy"], "2000")
     }
 
+    func testAGoalASaveRemovedAndPutBackKeepsItsFieldText() throws {
+        // Setup blanks protein, which had a goal, so its removal is the second write; the third
+        // (carbohydrate) fails and protein is put back. Its field must show the goal again, or leaving
+        // it would remove the goal that was just restored.
+        let energy = NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)
+        let protein = NutrientGoal(nutrient: "protein", target: 60, unit: .g)
+        let store = ThirdWriteFailingGoalStore(goals: [energy, protein])
+        let goalsModel = GoalsViewModel(
+            store: store, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goalsModel.load()
+        let model = GoalSetupViewModel(goals: goalsModel)
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        model.draftTargets["protein"] = ""
+
+        XCTAssertFalse(model.save())
+
+        XCTAssertEqual(try store.goals(), [energy, protein])
+        XCTAssertEqual(goalsModel.draftText["protein"], "60")
+        XCTAssertTrue(goalsModel.commitTarget(for: "protein"))
+        XCTAssertEqual(try store.goal(for: "protein"), protein)
+    }
+
     func testAFailedSaveShowsTheSentenceAndKeepsTheResults() {
         let goalsModel = GoalsViewModel(
             store: InMemoryGoalStore(refusesWrites: true),
