@@ -154,7 +154,7 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var destinations: [EntryDestinationRow] = []
     /// The parked operations behind each destination that needs attention, oldest revision first. These are
     /// what "Try again" re-arms.
-    private var parkedOperations: [JournalDestination: [String]] = [:]
+    private var parkedOperations: [JournalDestination: [(operationID: String, revision: Int)]] = [:]
     @Published public private(set) var currentRevision: Int = 0
     @Published public private(set) var fieldErrors: [String: String] = [:]
     @Published public private(set) var errorMessage: String?
@@ -280,9 +280,12 @@ public final class EntryDetailViewModel: ObservableObject {
             destinations = projections.sorted { $0.destination.rawValue < $1.destination.rawValue }.map {
                 projection -> EntryDestinationRow in
                 // The oldest parked operation is the one holding the entry back, so its reason is the one shown.
+                // The reason of the operation for the revision on screen, when that one is parked; otherwise the
+                // oldest parked one, which is what holds the later revisions back.
                 var reason: String?
-                if projection.state == .needsAttention, let oldest = parked[projection.destination]?.first {
-                    reason = (try? suspension?.suspensionReason(operationID: oldest)) ?? nil
+                if projection.state == .needsAttention, let operations = parked[projection.destination],
+                   let shown = operations.first(where: { $0.revision == projection.revision }) ?? operations.first {
+                    reason = (try? suspension?.suspensionReason(operationID: shown.operationID)) ?? nil
                 }
                 return EntryDestinationRow(
                     destination: projection.destination, label: Self.label(projection.destination),
@@ -308,12 +311,17 @@ public final class EntryDetailViewModel: ObservableObject {
     /// Re-arms every parked delivery of this entry to one destination, so the next delivery pass tries it
     /// again (#103). Re-arming is a person's decision that the cause is resolved, which is why it is a button
     /// and never something a pass does on its own. It enables nothing: a destination that is off stays off.
+    ///
+    /// Every parked revision is re-armed, older ones included: an older parked revision holds the newer ones
+    /// back, and the worker acknowledges one as superseded when a newer one replaces it. A pass already running
+    /// read these operations as suspended and writes nothing for them, so a re-arm under it changes nothing that
+    /// pass does; the host starts a new pass afterwards (`onRetried` on the view), which delivers them.
     public func retry(_ row: EntryDestinationRow, now: Date = Date()) {
         guard let operations = parkedOperations[row.destination], !operations.isEmpty,
               let outbox = store as? JournalOutboxDelivery else { return }
         do {
-            for operationID in operations {
-                try outbox.rearmDelivery(operationID: operationID)
+            for operation in operations {
+                try outbox.rearmDelivery(operationID: operation.operationID)
             }
         } catch {
             load(now: now)
@@ -326,14 +334,16 @@ public final class EntryDetailViewModel: ObservableObject {
     /// The queued, parked operations of one entry by destination, oldest revision first.
     private static func parkedOperations(
         of intakeID: String, in store: JournalStore
-    ) throws -> [JournalDestination: [String]] {
+    ) throws -> [JournalDestination: [(operationID: String, revision: Int)]] {
         guard let outbox = store as? JournalOutboxDelivery else { return [:] }
         let suspended = try outbox.suspendedOperationIDs()
         guard !suspended.isEmpty else { return [:] }
         let parked = try store.pendingOutbox()
             .filter { $0.intakeID == intakeID && suspended.contains($0.operationID) }
             .sorted { $0.revision < $1.revision }
-        return Dictionary(grouping: parked, by: \.destination).mapValues { $0.map(\.operationID) }
+        return Dictionary(grouping: parked, by: \.destination).mapValues { group in
+            group.map { (operationID: $0.operationID, revision: $0.revision) }
+        }
     }
 
     /// Whether the screen holds a change the person has not saved: an amount draft that differs from

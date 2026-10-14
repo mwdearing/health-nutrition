@@ -8,12 +8,18 @@ public struct EntryDetailView: View {
     @ObservedObject var model: EntryDetailViewModel
     private let now: () -> Date
     private let onFinished: () -> Void
+    /// Called after "Try again" re-armed a delivery, so the host can start a delivery pass for it.
+    private let onRetried: () -> Void
     @State private var confirmingDelete = false
 
-    public init(model: EntryDetailViewModel, now: @escaping () -> Date = { Date() }, onFinished: @escaping () -> Void) {
+    public init(
+        model: EntryDetailViewModel, now: @escaping () -> Date = { Date() }, onFinished: @escaping () -> Void,
+        onRetried: @escaping () -> Void = {}
+    ) {
         self.model = model
         self.now = now
         self.onFinished = onFinished
+        self.onRetried = onRetried
     }
 
     public var body: some View {
@@ -200,7 +206,10 @@ public struct EntryDetailView: View {
                                     .accessibilityLabel("Why: \(reason)")
                             }
                             if model.canRetry(row) {
-                                Button("Try again") { model.retry(row) }
+                                Button("Try again") {
+                                    model.retry(row, now: now())
+                                    if model.errorMessage == nil { onRetried() }
+                                }
                                     .font(.body)
                                     .accessibilityHint("Sends this entry again the next time the app delivers")
                             }
