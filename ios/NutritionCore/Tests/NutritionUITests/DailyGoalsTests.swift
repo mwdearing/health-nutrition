@@ -748,7 +748,7 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.sections[0].rows.map(\.nutrient),
             ["energy", "protein", "carbohydrate", "fat", "fiber"])
         XCTAssertEqual(model.sections[1].rows.map(\.nutrient), ["water"])
-        XCTAssertEqual(model.sections[2].rows.count, 13)
+        XCTAssertEqual(model.sections[2].rows.count, 10)
         XCTAssertEqual(model.sections[3].rows.map(\.nutrient).prefix(2), ["sodium", "potassium"])
         XCTAssertEqual(model.sections[3].rows.count, 14)
         XCTAssertEqual(model.sections[4].rows.map(\.nutrient), ["creatine-monohydrate"])

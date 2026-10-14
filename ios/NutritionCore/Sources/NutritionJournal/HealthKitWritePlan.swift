@@ -126,8 +126,6 @@ public enum HealthKitWritePlanner {
     /// same nutrient under; it resolves to this row, never to a second one.
     /// The vitamin and mineral keys, in the order the app lists them. Every one has a row in `mappings`
     /// (a test pins that), so each lands in its own HealthKit dietary type.
-    // Slug aliases are left off vitamins A, D and E: labels state them in IU, which a mass row would turn
-    // into an unknown total, so a captured IU value stays on its own snapshot-unit goal path.
     public static let micronutrientKeys: [String] = [
         "vitaminA", "vitaminB6", "vitaminB12", "vitaminC", "vitaminD", "vitaminE", "vitaminK",
         "thiamin", "riboflavin", "niacin", "folate", "biotin", "pantothenicAcid",
@@ -150,13 +148,13 @@ public enum HealthKitWritePlanner {
         HealthKitNutrientMapping(nutrientKey: "iron", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryIron, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "zinc", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryZinc, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "caffeine", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCaffeine, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "vitaminD", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminD, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminD", aliases: ["vitamin-d"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminD, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "vitaminB12", aliases: ["vitamin-b12"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminB12, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "folate", aliases: ["folic-acid"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFolate, unit: .mcg),
-        HealthKitNutrientMapping(nutrientKey: "vitaminA", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminA, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminA", aliases: ["vitamin-a"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminA, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "vitaminB6", aliases: ["vitamin-b6"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminB6, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "vitaminC", aliases: ["vitamin-c"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminC, unit: .mg),
-        HealthKitNutrientMapping(nutrientKey: "vitaminE", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminE, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminE", aliases: ["vitamin-e"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminE, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "vitaminK", aliases: ["vitamin-k"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminK, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "thiamin", aliases: ["thiamine", "vitamin-b1"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryThiamin, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "riboflavin", aliases: ["vitamin-b2"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryRiboflavin, unit: .mg),
