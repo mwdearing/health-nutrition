@@ -36,7 +36,7 @@ public struct CommunityProductSearchView: View {
             } footer: {
                 Text("Your foods and products on this phone narrow as you type. Open Food Facts and shared products are searched only when you tap Search or press Return.")
             }
-            if let library, let onPick { LibrarySearchSections(library: library, query: query, onPick: onPick) }
+            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
             Section("On this phone") {
                 if model.localError { Text("Could not read local products.") }
                 else if model.localResults.isEmpty { Text("No matching local products.") }
@@ -178,6 +178,8 @@ public struct CommunityProductSearchView: View {
 struct LibrarySearchSections: View {
     @ObservedObject var library: LibraryViewModel
     let query: String
+    /// The screen's Kind selection; nil lists every kind.
+    let kind: ProductKind?
     let onPick: (RepeatTemplate) -> Void
     var body: some View {
         // The screen loads the Library as it appears, and only a failed load leaves a message after it:
@@ -191,7 +193,7 @@ struct LibrarySearchSections: View {
         }
     }
     @ViewBuilder private var groups: some View {
-        ForEach(library.searchGroups(matching: query)) { group in
+        ForEach(library.searchGroups(matching: query, kind: kind)) { group in
             Section(group.title) {
                 if group.items.isEmpty { Text("Nothing you have logged or saved matches.").foregroundStyle(TokenColors.textSecondary) }
                 ForEach(group.items) { item in

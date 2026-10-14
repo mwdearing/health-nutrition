@@ -42,10 +42,10 @@ final class FoodSearchRecentsTests: XCTestCase {
     }
 
     private func addEntry(
-        _ store: JournalStore, name: String, at date: Date, product: ProductDefinition? = nil
+        _ store: JournalStore, name: String, at date: Date, category: String = "food", product: ProductDefinition? = nil
     ) throws {
         let intake = Intake(
-            id: UUID().uuidString.lowercased(), category: "food", occurredAt: date, timeZoneIdentifier: "UTC", meal: nil)
+            id: UUID().uuidString.lowercased(), category: category, occurredAt: date, timeZoneIdentifier: "UTC", meal: nil)
         let slug = name.lowercased().replacingOccurrences(of: " ", with: "-")
         try store.create(
             intake, components: [IntakeComponent(componentID: slug, name: name, amount: 40, unit: .g)],
@@ -138,6 +138,27 @@ final class FoodSearchRecentsTests: XCTestCase {
         let match = try XCTUnwrap(library.searchGroups(matching: "shake").first?.items.first)
         XCTAssertEqual(match.title, "Custom shake")
         XCTAssertEqual(match.template.productSnapshotID, "s-shake")
+    }
+
+    func testKindKeepsOnlyItemsOfThatKind() throws {
+        let store = try makeStore()
+        let capsule = ProductDefinition(
+            snapshotID: "s-capsule", productID: "p-capsule", name: "Example capsule", labelBasis: "per_serving",
+            catalogOrigin: "custom", catalogVersion: "1", kind: .supplement)
+        try addEntry(store, name: "Example capsule", at: now.addingTimeInterval(-300), product: capsule)
+        try addEntry(store, name: "Example juice", at: now.addingTimeInterval(-200), category: "drink")
+        try addEntry(store, name: "Example toast", at: now.addingTimeInterval(-100))
+        let library = try makeLibrary(store: store)
+        library.load()
+
+        func titles(_ kind: ProductKind?) -> [String] {
+            library.searchGroups(matching: "example", kind: kind).flatMap { $0.items.map(\.title) }
+        }
+        XCTAssertEqual(Set(titles(nil)), ["Example capsule", "Example juice", "Example toast"])
+        XCTAssertEqual(titles(.supplement), ["Example capsule"])
+        XCTAssertEqual(titles(.drink), ["Example juice"])
+        XCTAssertEqual(titles(.food), ["Example toast"])
+        XCTAssertEqual(library.searchGroups(matching: "", kind: .drink).map(\.title), ["Recent"])
     }
 
     func testNoMatchKeepsAnEmptyGroupSoTheScreenCanSaySo() throws {

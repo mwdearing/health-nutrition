@@ -29,7 +29,11 @@ extension LibraryViewModel {
     /// One item shows once: two rows are the same item when they share the Library's identity key
     /// (category, snapshot, component names and meal). Favorites are taken before recents and products.
     /// An item with no amounts, such as a malformed favorite, is left out, since it cannot be opened.
-    public func searchGroups(matching query: String) -> [LibrarySearchGroup] {
+    ///
+    /// A `kind` keeps only items of that kind, as the screen's Kind control does for products: an item
+    /// with a product snapshot is the kind its snapshot states (the kind its row marks), and one without
+    /// is the kind its category names. Water names no kind, so it shows only under all kinds.
+    public func searchGroups(matching query: String, kind: ProductKind? = nil) -> [LibrarySearchGroup] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let favorites = items(inSection: "Favorites")
         let recents = items(inSection: "Recents")
@@ -41,7 +45,7 @@ extension LibraryViewModel {
             for item in items {
                 guard picked.count < limit else { break }
                 // An item with no amounts cannot open the details form, so it is not offered here.
-                guard !item.template.components.isEmpty, matches(item),
+                guard !item.template.components.isEmpty, kind == nil || Self.kind(of: item) == kind, matches(item),
                       seen.insert(Self.searchIdentity(of: item)).inserted else { continue }
                 picked.append(item)
             }
@@ -72,6 +76,10 @@ extension LibraryViewModel {
         RecentItemsProvider.identityKey(
             category: item.template.category, snapshotID: item.template.productSnapshotID,
             names: item.template.components.map { $0.name }, meal: item.template.meal)
+    }
+
+    private static func kind(of item: LibraryItem) -> ProductKind? {
+        item.template.productSnapshotID == nil ? ProductKind(rawValue: item.template.category) : item.kind
     }
 
     private static func titleStarts(_ title: String, with text: String) -> Bool {
