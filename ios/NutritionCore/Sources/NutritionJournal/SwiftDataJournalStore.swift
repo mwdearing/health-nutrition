@@ -1073,7 +1073,8 @@ private struct StoredNutrient: Codable {
 /// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
 /// initializer.
 public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWrittenLedger, JournalSnapshotSource,
-    JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalErasing, JournalMealEditing,
+    JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalRestoreProgress, JournalErasing,
+    JournalMealEditing,
     @unchecked Sendable
 {
     private let lock = NSLock()
@@ -1081,6 +1082,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private let writeLock = NSLock()
     private var failFlag = false
     private var container: ModelContainer?
+    /// Where `markRestoreInProgress(fileDigest:)` keeps its flag, beside the store file.
+    private let restoreMarkerURL: URL
     private let enabledDestinations: Set<JournalDestination>
 
     public var failNextSaveForTesting: Bool {
@@ -1092,6 +1095,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
+        restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
         let schema = Schema(versionedSchema: JournalSchemaV8.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
@@ -1584,6 +1588,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     ///
     /// The container is not closed: the store reads empty and accepts new entries afterwards.
     public func eraseAll() throws {
+        // A restore flag left behind would let the next import of that file put back favorites the person is
+        // erasing, so it goes first: an erase that fails partway (this store or another) can then leave journal
+        // rows, but never a way for a re-import to bring erased favorites back. A flag that cannot be removed
+        // fails the erase before anything is deleted, so the screen reports it.
+        try clearRestoreInProgress()
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
@@ -1596,6 +1605,25 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
         }
+    }
+
+    // MARK: Restore in progress (#118)
+
+    /// A small file beside the store holding the digest of the file being restored. A file rather than a row:
+    /// it has to be written before the journal's save and read before anything else, and it holds no journal
+    /// content, so it needs no schema version.
+    public func markRestoreInProgress(fileDigest: String) throws {
+        try Data(fileDigest.utf8).write(to: restoreMarkerURL, options: [.atomic])
+    }
+
+    public func restoreInProgressDigest() throws -> String? {
+        guard FileManager.default.fileExists(atPath: restoreMarkerURL.path) else { return nil }
+        return String(decoding: try Data(contentsOf: restoreMarkerURL), as: UTF8.self)
+    }
+
+    public func clearRestoreInProgress() throws {
+        guard FileManager.default.fileExists(atPath: restoreMarkerURL.path) else { return }
+        try FileManager.default.removeItem(at: restoreMarkerURL)
     }
 
     // MARK: Delivery bookkeeping

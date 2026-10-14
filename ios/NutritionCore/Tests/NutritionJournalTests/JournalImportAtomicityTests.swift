@@ -105,6 +105,155 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertEqual(summary.favorites, 2)
     }
 
+    /// The app can be stopped between the journal's save and the favorites' save, where the in-process undo never
+    /// runs. The flag beside the store names the file, so importing that same file again writes the favorites
+    /// and clears the flag instead of refusing a journal that is no longer empty (#118).
+    func testAnImportStoppedBetweenItsSavesIsFinishedByImportingTheSameFileAgain() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        // What a stop after the journal's save leaves: the flag, the journal, and no favorites.
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(data))
+        _ = try journal.restore(try JournalImporter.makePlan(try JournalImporter.readDocument(data)))
+
+        let summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+
+        XCTAssertEqual(summary.favorites, 2)
+        XCTAssertEqual(try favoritesStore.list().count, 2)
+        XCTAssertEqual(try journal.revisions(of: oatsID).map(\.number), [1, 2], "nothing was written twice")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished restore clears its flag")
+    }
+
+    /// Without the flag, or with the flag of another file, a journal that is not empty is refused as before.
+    func testOnlyTheFileTheFlagNamesIsFinished() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(Data("another file".utf8)))
+        _ = try journal.restore(try JournalImporter.makePlan(try JournalImporter.readDocument(data)))
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertTrue(try favoritesStore.list().isEmpty)
+    }
+
+    /// A flag left by a stop before the journal's save, with an entry logged since, is not taken for an unfinished
+    /// restore of that file: the journal does not hold the file's journal, so the import is refused.
+    func testAStaleFlagWithOtherEntriesIsRefused() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(data))
+        try journal.create(
+            Intake(id: otherID, category: "food", occurredAt: base, timeZoneIdentifier: "UTC"),
+            components: [water("100")], product: nil, now: base)
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertTrue(try favoritesStore.list().isEmpty)
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "a refused import leaves a flag it did not write")
+    }
+
+    /// Importing another file while a restore is unfinished is refused and leaves that restore's flag, so the
+    /// right file can still finish it.
+    func testAnotherFileLeavesTheUnfinishedRestoresFlag() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        let digest = JournalImporter.fileDigest(data)
+        try journal.markRestoreInProgress(fileDigest: digest)
+        _ = try journal.restore(try JournalImporter.makePlan(try JournalImporter.readDocument(data)))
+        var other = try object(of: data)
+        other["app_version"] = "9.9.9"
+        let otherData = try JSONSerialization.data(withJSONObject: other)
+
+        XCTAssertThrowsError(try JournalImporter.importExport(otherData, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertEqual(try journal.restoreInProgressDigest(), digest)
+
+        _ = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+        XCTAssertEqual(try favoritesStore.list().count, 2)
+    }
+
+    /// A flag that outlived a finished restore (its removal failed) does not start a resume while any of the file's
+    /// favorites are on the phone, so a favorite deleted since is not put back.
+    func testALeftoverFlagDoesNotResumeOverTheFilesFavorites() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        _ = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(data))
+        let deleted = try XCTUnwrap(try favoritesStore.list().first)
+        try favoritesStore.remove(id: deleted.id)
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertFalse(try favoritesStore.contains(id: deleted.id), "the deleted favorite stays deleted")
+    }
+
+    /// A stop after the favorites' save but before the flag was cleared leaves the flag, and then every one of
+    /// that file's favorites is deleted. The receipt saved with the favorites says they were written, so the
+    /// same file imported again is refused and they stay deleted.
+    func testAFlagOutlivingTheFavoritesSaveDoesNotBringDeletedFavoritesBack() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        let digest = JournalImporter.fileDigest(data)
+        let plan = try JournalImporter.makePlan(try JournalImporter.readDocument(data))
+        try journal.markRestoreInProgress(fileDigest: digest)
+        _ = try journal.restore(plan)
+        try favoritesStore.restore(plan.favorites, receipt: digest)
+        XCTAssertEqual(try favoritesStore.list().count, 2, "the receipt is not listed as a favorite")
+        for favorite in try favoritesStore.list() { try favoritesStore.remove(id: favorite.id) }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertTrue(try favoritesStore.list().isEmpty, "deleted favorites are not put back")
+    }
+
+    /// A restore that finished clears its flag, so running it again after the favorites were deleted is refused
+    /// and does not put them back.
+    func testAFinishedImportLeavesNoFlagAndIsRefusedWhenRunAgain() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        _ = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+        XCTAssertNil(try journal.restoreInProgressDigest())
+        for favorite in try favoritesStore.list() { try favoritesStore.remove(id: favorite.id) }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertTrue(try favoritesStore.list().isEmpty, "deleted favorites are not put back")
+    }
+
+    /// A failed favorites write that the undo cleans up leaves no flag behind either, and erasing removes one.
+    func testAFailedImportAndAnEraseLeaveNoFlag() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        favoritesStore.failNextSaveForTesting = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
+        XCTAssertNil(try journal.restoreInProgressDigest())
+
+        try journal.markRestoreInProgress(fileDigest: "left behind")
+        try journal.eraseAll()
+        XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
     func testFavoritesFailureAndConcurrentEditRefusalReportsRetainedJournal() throws {
         let data = try exportData()
         let target = try directory()

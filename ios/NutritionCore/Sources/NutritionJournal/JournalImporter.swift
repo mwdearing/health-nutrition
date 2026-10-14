@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NutritionDomain
 
@@ -135,6 +136,11 @@ public enum JournalImporter {
     /// When the favorites write fails, a narrow undo puts the journal back if its rows are untouched. If a
     /// concurrent write means that undo would throw away somebody's work, a typed partial outcome reports
     /// how many imported rows may remain rather than mislabeling the file as corrupt.
+    ///
+    /// A restore the app was stopped in between those two saves is finished by importing the same file again:
+    /// a flag beside the journal store names the file, and only the favorites are written (#118). One import
+    /// runs at a time; another started meanwhile is refused as `notEmpty`, as it would be once the first one's
+    /// journal is written.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
         limits: JournalImportLimits = .default
@@ -159,13 +165,65 @@ public enum JournalImporter {
             favoritesTarget = target
         }
 
+        // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
+        // alongside could resume over a journal the first is about to undo, or clear a flag the first still
+        // needs. A second import is refused at once rather than queued: it would be refused as `notEmpty` as soon
+        // as the first one's journal is written, and waiting here would hold its caller for as long as the
+        // first takes.
+        guard importLock.try() else { throw JournalImportError.notEmpty }
+        defer { importLock.unlock() }
+
+        let progress = favoritesTarget == nil ? nil : store as? JournalRestoreProgress
+        let digest = fileDigest(data)
+        if try journalHoldsAnything(store) {
+            // **A restore of this same file that the app stopped between its two saves is finished (#118).** The
+            // flag beside the store names the file whose journal was written and whose favorites were not, and
+            // the journal has to hold exactly that file's journal: a flag left by a stop before the journal's
+            // save, with entries logged since, is not taken for one. Only the favorites are written. The flag
+            // stays until they are, so a failure here can be retried the same way. Anything else in a journal
+            // that is not empty is refused as before, and the flag is left alone: it is not this run's. An
+            // import of the same file still running in parallel writes the same favorites, so the overlap
+            // writes identical rows twice at most; nothing here is read back from the other run.
+            // The favorites are one save, so a restore stopped before it left none of the file's favorites on the
+            // phone; any of them present means that save happened, and the flag is only a leftover.
+            // The receipt the favorites save writes with them is the durable record that it happened: a flag
+            // that outlived it (a stop after that save, before the flag was cleared) is not an unfinished
+            // restore, however many of those favorites were deleted since.
+            guard let favorites, let favoritesTarget, let progress,
+                  try progress.restoreInProgressDigest() == digest, try journalHolds(plan, store: store),
+                  try !favoritesTarget.hasRestoreReceipt(digest),
+                  try Set(favorites.list().map(\.id)).isDisjoint(with: plan.favorites.map(\.id))
+            else { throw JournalImportError.notEmpty }
+            try favoritesTarget.restore(plan.favorites, receipt: digest)
+            // A flag that outlived a finished resume would let a later import of this file write favorites
+            // the person deleted since, so a failure to clear it is reported rather than swallowed.
+            try progress.clearRestoreInProgress()
+            // The flag is gone, so the receipt has nothing left to answer; one left by a stop here is harmless.
+            try? favoritesTarget.removeRestoreReceipt(digest)
+            return summary(of: plan)
+        }
+
+        // The journal is empty, so any flag found is stale and this run's own replaces it. It goes down before
+        // the journal's save, so a stop after that save leaves it behind. A flag that cannot be written only
+        // loses the resume; the import itself goes ahead as before.
+        try? progress?.markRestoreInProgress(fileDigest: digest)
         // The store refuses a journal that is not empty, and refuses it from inside this same transaction,
         // so the check and the inserts cannot be pulled apart by another write.
-        let receipt = try journal.restore(plan)
+        let receipt: JournalRestoreReceipt
+        do {
+            receipt = try journal.restore(plan)
+        } catch {
+            // The journal wrote nothing, so there is nothing to resume.
+            try? progress?.clearRestoreInProgress()
+            throw error
+        }
         if let favoritesTarget {
             do {
-                try favoritesTarget.restore(plan.favorites)
+                try favoritesTarget.restore(plan.favorites, receipt: digest)
             } catch let favoritesFailure {
+                // The journal is undone or reported as partial, so there is no unfinished restore of this file
+                // to finish, and a flag left here could only be misread later.
+                defer { try? progress?.clearRestoreInProgress() }
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
@@ -176,13 +234,49 @@ public enum JournalImporter {
                 }
                 throw favoritesFailure
             }
+            // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over these
+            // favorites: a resume needs none of the file's favorites on the phone.
+            try progress?.clearRestoreInProgress()
+            try? favoritesTarget.removeRestoreReceipt(digest)
         }
-        return JournalImportSummary(
+        return summary(of: plan)
+    }
+
+    private static let importLock = NSLock()
+
+    /// Whether the journal holds this plan's journal and nothing else: the same live intakes, field for field,
+    /// with the same revisions, and the same deleted ones.
+    static func journalHolds(_ plan: JournalRestorePlan, store: JournalStore) throws -> Bool {
+        let active = try store.activeIntakes()
+        let planned = Dictionary(
+            plan.entries.map { ($0.intake.id, $0.intake) }, uniquingKeysWith: { first, _ in first })
+        guard active.count == plan.entries.count, active.allSatisfy({ planned[$0.id] == $0 }) else { return false }
+        for entry in plan.entries {
+            guard try store.revisions(of: entry.intake.id).sorted(by: { $0.number < $1.number }) == entry.revisions
+            else { return false }
+        }
+        let deleted = try (store as? JournalTombstoneSource)?.deletedIntakes() ?? []
+        return Set(deleted.map(\.id)) == Set(plan.tombstones.map(\.id)) && deleted.count == plan.tombstones.count
+    }
+
+    private static func summary(of plan: JournalRestorePlan) -> JournalImportSummary {
+        JournalImportSummary(
             intakes: plan.entries.count,
             revisions: plan.entries.reduce(0) { $0 + $1.revisions.count },
             tombstones: plan.tombstones.count,
             favorites: plan.favorites.count,
             products: plan.products.count)
+    }
+
+    /// Whether the journal holds any intake, live or deleted.
+    private static func journalHoldsAnything(_ store: JournalStore) throws -> Bool {
+        if try !store.activeIntakes().isEmpty { return true }
+        return try !((store as? JournalTombstoneSource)?.deletedIntakes().isEmpty ?? true)
+    }
+
+    /// The SHA-256 of the file's bytes as lowercase hex, which is how the restore flag names the file.
+    static func fileDigest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: Reading

@@ -165,8 +165,27 @@ revision, a delete that hid the entry - those rows are no longer only the restor
 throw the person's work away to make the journal look empty. So the undo refuses. The import then reports a
 partial restore: journal entries may already be present, and the person should inspect the journal before
 importing that file again. The message does not include store errors or entry details. Product rows are removed
-only for the snapshots that restore created, which nothing else writes. This two-file compensation does not
-make the writes crash-atomic; that remains a separate design question.
+only for the snapshots that restore created, which nothing else writes. This two-file compensation runs only
+while the app is alive.
+
+**A restore the app stopped between its two saves is finished by importing the same file again (#118).** Just
+before the journal's save the store writes a small flag beside its file holding the SHA-256 of the file being
+imported, and the import clears it once its run is over: favorites written, undone, or reported as a partial
+restore. A flag that cannot be cleared after the favorites were written is reported as a failed import rather
+than left in place silently. The favorites' own save also writes a receipt naming the file (a hidden row in the
+favorites store, never listed), so a flag that outlived that save, because the app stopped before clearing it,
+is never taken for an unfinished restore. One import runs at a time; another started meanwhile is refused as
+`notEmpty`. If the
+app is stopped after the journal's save, the flag stays. Importing that same file again then finds the flag naming
+it, a journal that holds exactly that file's journal (the same entries field for field, the same revisions, the
+same deleted entries) and none of the file's favorites on the phone (they are one save, so a stopped restore left
+none), and writes only the favorites; the flag stays until they are written, so a failure
+there can be retried the same way. Anything else in a journal that is not empty is refused as `notEmpty` as
+before and leaves the flag alone: another file, a journal without a flag, a flag left by a stop before the
+journal's save with entries logged since, and a restore that finished (which cleared its flag), so favorites
+deleted or changed since are never put back. Erasing all data removes the flag first; if it cannot be removed, the journal's erase fails before deleting
+anything and the screen reports the failed erase. The flag holds only the digest,
+no journal content.
 
 **The empty check is inside the transaction.** `SwiftDataJournalStore.restore(_:)` reads its own emptiness
 predicate inside the same `commit` closure as the inserts, under the same write lock, and throws
