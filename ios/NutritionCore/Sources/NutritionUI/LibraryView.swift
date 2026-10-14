@@ -51,6 +51,9 @@ public struct LibraryView: View {
                 }
                 if let onSearchProducts { Button("Find shared products", action: onSearchProducts) }
                 if let onNewProduct { Button("Create product", action: onNewProduct) }
+                if let stack = model.supplementStack {
+                    NavigationLink("My supplements") { SupplementStackView(model: stack, now: now, onLogged: onAdded) }
+                }
                 Picker("Library segment", selection: $model.segment) {
                     ForEach(LibrarySegment.allCases) { segment in
                         Text(segment.title).tag(segment)
