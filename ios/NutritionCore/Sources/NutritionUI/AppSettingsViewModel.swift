@@ -44,6 +44,9 @@ public final class AppSettingsViewModel: ObservableObject {
         reminders?.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }.store(in: &observations)
+        reminders?.customReminders?.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }.store(in: &observations)
         account?.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }.store(in: &observations)

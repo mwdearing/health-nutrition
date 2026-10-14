@@ -262,6 +262,39 @@ private struct SettingsContent: View {
             if let message = reminders.message {
                 InlineNotice(message, tone: .failed)
             }
+            if let custom = reminders.customReminders {
+                customReminderRows(custom)
+            }
+        }
+    }
+
+    /// One water and one supplement reminder: a switch each, and a time of day while it is on.
+    @ViewBuilder
+    private func customReminderRows(_ controller: CustomReminderController) -> some View {
+        ForEach(CustomReminderKind.allCases, id: \.self) { kind in
+            let reminder = controller.reminders.first { $0.kind == kind }
+            Toggle("\(kind.title) reminder", isOn: Binding(
+                get: { reminder?.isOn ?? false },
+                set: { on in
+                    Task {
+                        if let reminder { await controller.setOn(on, id: reminder.id) }
+                        else if on { await controller.add(kind) }
+                    }
+                }
+            ))
+            if let reminder, reminder.isOn {
+                DatePicker("\(kind.title) time", selection: Binding(
+                    get: { Self.date(for: reminder.time) },
+                    set: { date in
+                        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                        let time = ReminderTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
+                        Task { await controller.setTime(time, id: reminder.id) }
+                    }
+                ), displayedComponents: .hourAndMinute)
+            }
+        }
+        if let message = controller.message {
+            InlineNotice(message, tone: .failed)
         }
     }
 

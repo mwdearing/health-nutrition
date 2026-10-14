@@ -86,8 +86,9 @@ final class AppServices {
         self.community = community
         self.account = account
         let reminderErasures = ReminderErasures()
-        self.reminders = ReminderController(
+        let reminderController = ReminderController(
             preferences: displayPreferences, scheduler: reminderScheduler, erasures: reminderErasures)
+        self.reminders = reminderController
         self.journalStore = journalStore
         self.favoritesStore = favoritesStore
         self.recipeStore = recipeStore
@@ -105,9 +106,17 @@ final class AppServices {
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)
         let reminderEraser = ReminderEraser(scheduler: reminderScheduler, erasures: reminderErasures)
+        var reminderErasers: [JournalErasing] = [reminderEraser]
+        // Only the system scheduler also schedules the custom reminders; a test's fake leaves them out.
+        if let custom = reminderScheduler as? (ReminderScheduling & CustomReminderScheduling) {
+            let store = UserDefaultsCustomReminderStore()
+            reminderController.customReminders = CustomReminderController(
+                store: store, permissions: custom, scheduler: custom, erasures: reminderErasures)
+            reminderErasers.append(CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures))
+        }
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
-            erasers: [journalStore, favoritesStore, recipeStore, goalStore, reminderEraser],
+            erasers: ([journalStore, favoritesStore, recipeStore, goalStore] as [JournalErasing]) + reminderErasers,
             preferences: displayPreferences,
             beforeErase: {
                 if let owner = productSharing?.accountContext?.ownerID {

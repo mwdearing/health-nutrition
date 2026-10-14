@@ -47,6 +47,8 @@ public final class ReminderController: ObservableObject {
     @Published public private(set) var isOn: Bool
     @Published public private(set) var time: ReminderTime
     @Published public private(set) var message: String?
+    /// The water and supplement reminders, when this build wires them in. Set once at startup.
+    public var customReminders: CustomReminderController?
 
     private let preferences: ReminderPreferences
     private let scheduler: ReminderScheduling
@@ -83,6 +85,7 @@ public final class ReminderController: ObservableObject {
     /// Called at launch and each time the app becomes active.
     public func syncOnLaunch() async {
         await enqueue { [self] erased in await self.applySync(erased: erased) }
+        await customReminders?.sync()
     }
 
     /// Re-reads the stored values. Erase all data resets them, so the screen reads them again.
@@ -92,6 +95,7 @@ public final class ReminderController: ObservableObject {
         isOn = preferences.isReminderOn
         time = preferences.reminderTime
         message = nil
+        customReminders?.refreshFromStore()
     }
 
     // MARK: Queue
