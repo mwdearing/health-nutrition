@@ -36,10 +36,15 @@ final class AppServices {
     let barcodeLookup: BarcodeProductLookup
     /// Delivers queued journal revisions to HealthKit.
     ///
-    /// Built in every build and driven in every build, but only a debug build queues anything for it:
-    /// the store below enables `.healthKit` only under `#if DEBUG`, so a release build's `runOnce`
-    /// always finds an empty queue (see `docs/healthkit-writer.md`).
+    /// Built and driven in every build. The store below queues `.healthKit` work for it, and nothing is
+    /// written until the person connects Apple Health in Settings (see `docs/healthkit-writer.md`).
     let healthKitDelivery: HealthKitDeliveryWorker
+    /// The one driver of that worker: the automatic runs, the authorization request and the queue's
+    /// counts. One instance for the app's lifetime, because two drivers over one worker would each
+    /// start a pass for the same queued operation.
+    let healthKitDeliveryStatus: HealthKitDeliveryStatus
+    /// The Apple Health row in Settings, backed by the driver above.
+    let appleHealth: AppleHealthConnectionViewModel
     /// The display settings, shared by every screen that offers or shows units. One instance for the
     /// app's lifetime, so a unit system changed on the settings screen is the one the Today screen
     /// reads on the next reload rather than one screen's private copy.
@@ -129,11 +134,15 @@ final class AppServices {
         barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
         productNameSearch = openFoodFacts
         let totals = JournalSnapshotTotals(store: journalStore)
-        healthKitDelivery = HealthKitDeliveryWorker(
+        let healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,
             writer: HealthKitSampleWriter(),
             totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
         )
+        self.healthKitDelivery = healthKitDelivery
+        let healthKitDeliveryStatus = HealthKitDeliveryStatus(healthKitDelivery: healthKitDelivery, store: journalStore)
+        self.healthKitDeliveryStatus = healthKitDeliveryStatus
+        appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
         if let productSharing {
             let monitor = NWPathMonitor()
             monitor.pathUpdateHandler = { [weak productSharing] path in
@@ -204,28 +213,19 @@ final class AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.
         //
-        // **A release build enables none.** Nothing is queued, so `healthKitDelivery` finds an empty
-        // queue on every run and no Health authorization is ever asked for. Turning delivery on writes
-        // real intake data into Health, which is a deliberate decision rather than a consequence of the
-        // worker existing (docs/healthkit-writer.md).
+        // **`.healthKit` only, in every build.** Queuing is not writing: an operation waits in the
+        // outbox until the person connects Apple Health in Settings, and `HealthKitDeliveryStatus`
+        // starts no automatic run before Health has been asked about every mapped type. An entry
+        // logged before connecting is therefore written when they connect, and nothing reaches Health
+        // for someone who never does (docs/healthkit-writer.md).
         //
-        // **A debug build enables `.healthKit` only**, and does so for one reason: the device
-        // acceptance run (NC-08) has to drive the real writer against real entries, and a store that
-        // queues nothing gives the worker nothing to deliver. The relay destination is off in every
-        // build, for the same reason as above.
+        // The relay destination is off in every build.
         let journalStore: SwiftDataJournalStore
         do {
-            #if DEBUG
             journalStore = try SwiftDataJournalStore(
                 url: directory.appendingPathComponent("journal.store"),
                 enabledDestinations: [.healthKit]
             )
-            #else
-            journalStore = try SwiftDataJournalStore(
-                url: directory.appendingPathComponent("journal.store"),
-                enabledDestinations: []
-            )
-            #endif
         } catch {
             throw StoreStartupError.journal(error)
         }

@@ -1,28 +1,28 @@
-#if DEBUG
 import Foundation
 import HealthKit
 import NutritionJournal
+import NutritionUI
 import Observation
 import SwiftUI
 
-/// DEBUG-only status for the real HealthKit delivery worker (NC-08 device acceptance).
+/// The driver of the real HealthKit delivery worker, in every build.
 ///
-/// `HealthKitDeliveryWorker` is built in every build but has no caller in a release one, because the
-/// journal store enables no destinations there. This model is what makes the worker reachable on a
-/// debug device: it runs one delivery pass, asks HealthKit for write access to every mapped type,
-/// and holds enough state for a screen to say plainly what is queued, what is waiting for a person
-/// and what the last run did.
+/// This model is what makes `HealthKitDeliveryWorker` reachable: it runs one delivery pass, asks
+/// HealthKit for write access to every mapped type, and holds enough state for a screen to say plainly
+/// what is queued, what is waiting for a person and what the last run did. Settings reaches it through
+/// `AppleHealthConnecting` ("Connect Apple Health"); the debug tab's section at the bottom of this file
+/// shows the same state in full.
 ///
 /// **The status is read from the store, not remembered.** Pending, needing-attention and suspended
 /// are counted from the outbox every time they are shown, so a number on screen is the queue as it
 /// stands rather than what an earlier run left behind.
 ///
 /// Nothing here changes the worker, the writer or any journal behavior: it calls `runOnce(now:)`,
-/// asks for authorization, and reads the store's own counts. The whole file is behind `#if DEBUG`,
-/// so a release build does not contain it and requests no Health access at all.
+/// asks for authorization, and reads the store's own counts. Health is asked for write access only
+/// when a person taps Connect in Settings (or the debug tab's button), never on launch.
 @MainActor
 @Observable
-final class HealthKitDeliveryStatus {
+final class HealthKitDeliveryStatus: AppleHealthConnecting {
     /// How much is queued, split the way a person needs to read it: what will be attempted, what is
     /// waiting for them, and what is parked.
     struct Counts: Equatable {
@@ -103,16 +103,51 @@ final class HealthKitDeliveryStatus {
     /// How the gate reads Health's answer. Injectable so the app tests can drive it without a device;
     /// production reads `HKHealthStore`, which is the only authority on what was granted.
     private let authorizationProbe: () -> AuthorizationState
+    /// How many mapped types Health allows, refuses and has not been asked about. Injectable for the
+    /// same reason as the gate's probe; production reads `HKHealthStore`.
+    private let accessProbe: () -> AppleHealthAccess
+    /// The access the last run saw, or nil before this launch's first run. A change since then is a
+    /// person's answer given outside the app, in the Health app's own sharing screen.
+    private var lastSeenAccess: AppleHealthAccess?
 
     init(
         healthKitDelivery: HealthKitDeliveryWorker,
         store: any JournalDeliverySuspension,
-        authorizationProbe: @escaping () -> AuthorizationState = HealthKitDeliveryStatus.readHealthKitAuthorization
+        authorizationProbe: @escaping () -> AuthorizationState = HealthKitDeliveryStatus.readHealthKitAuthorization,
+        accessProbe: @escaping () -> AppleHealthAccess = HealthKitDeliveryStatus.readHealthKitAccess
     ) {
         self.healthKitDelivery = healthKitDelivery
         self.store = store
         self.authorizationProbe = authorizationProbe
+        self.accessProbe = accessProbe
     }
+
+    /// Write access across the mapped types, counted from Health itself. Unlike read access, HealthKit
+    /// does report whether an app may write a type, so "connected" and "turned off" here are Health's
+    /// own answer and not a guess from the sheet.
+    static func readHealthKitAccess() -> AppleHealthAccess {
+        guard HKHealthStore.isHealthDataAvailable() else { return .unavailable }
+        let store = HKHealthStore()
+        var access = AppleHealthAccess.unavailable
+        for type in mappedTypes().share {
+            switch store.authorizationStatus(for: type) {
+            case .sharingAuthorized: access.authorized += 1
+            case .sharingDenied: access.denied += 1
+            case .notDetermined: access.undetermined += 1
+            @unknown default: access.undetermined += 1
+            }
+        }
+        return access
+    }
+
+    // MARK: - AppleHealthConnecting
+
+    func currentAccess() -> AppleHealthAccess { accessProbe() }
+
+    /// Settings' Connect button. Where Health has already been asked about every type the system shows
+    /// no sheet and the request returns at once, so the same call is also "check again": it re-arms
+    /// what a denial parked and runs a pass against whatever Health allows now.
+    func connect() async { await requestAuthorizationForMappedTypes() }
 
     /// Whether every mapped type that resolves has been asked about, read from Health itself rather
     /// than remembered: a type that has been through the request sheet is no longer `.notDetermined`,
@@ -235,6 +270,15 @@ final class HealthKitDeliveryStatus {
         }
         isBusy = true
         defer { isBusy = false }
+        // Access that changed since the last run was changed by a person in the Health app, which is
+        // as much their answer to a denial as the sheet is: without this an entry parked by "Don't
+        // Allow" stays parked after they allow it. The first run of a launch counts as a change, since
+        // nothing remembers what Health said before the app was closed.
+        let access = accessProbe()
+        if automatic && access != lastSeenAccess {
+            authorizationPending = true
+        }
+        lastSeenAccess = access
         var passTime = now
         repeat {
             rerunRequested = false
@@ -242,7 +286,7 @@ final class HealthKitDeliveryStatus {
             if authorizationPending {
                 authorizationPending = false
                 refresh()
-                rearmSuspended()
+                rearmSuspendedNow()
             }
             let outcomes = await healthKitDelivery.runOnce(now: passTime)
             lastRunAt = passTime
@@ -274,7 +318,14 @@ final class HealthKitDeliveryStatus {
     /// deliberately a person pressing a button rather than something a run does on its own, which is
     /// the same reasoning the store gives for making the call explicit.
     func rearmSuspended() {
-        guard !isBusy, !suspendedIDs.isEmpty else { return }
+        guard !isBusy else { return }
+        rearmSuspendedNow()
+    }
+
+    /// The re-arm itself, without the busy check: the delivery pass calls it while it holds `isBusy`,
+    /// before it reads the queue, so there is no second pass for it to race.
+    private func rearmSuspendedNow() {
+        guard !suspendedIDs.isEmpty else { return }
         let targets = suspendedIDs.sorted()
         var failures: [String] = []
         for operationID in targets {
@@ -368,6 +419,7 @@ final class HealthKitDeliveryStatus {
     }
 }
 
+#if DEBUG
 /// The DEBUG section that drives the real writer: request access, run a delivery pass, and read the
 /// queue. It sits at the top of the debug tab, above the spike's own steps, because everything here is
 /// about the app's real entries while the spike below it is about synthetic samples.

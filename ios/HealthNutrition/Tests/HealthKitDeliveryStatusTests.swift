@@ -13,7 +13,7 @@ import XCTest
 /// that each outcome is reported in plain text. The delivery itself, the authorization prompt and the
 /// counts a real HealthKit failure produces need a device and are not covered here.
 @MainActor
-final class HealthKitDeliveryDebugTests: XCTestCase {
+final class HealthKitDeliveryStatusTests: XCTestCase {
     private let when = Date(timeIntervalSince1970: 1_700_000_000)
     private let intakeID = "9b2d4f60-1c73-4a58-8f21-6d0c5a7e93b4"
 

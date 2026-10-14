@@ -7,6 +7,7 @@ public struct AppSettingsView: View {
     private let connections: ConnectionsPrivacyViewModel?
     private let reminders: ReminderController?
     private let account: AccountViewModel?
+    private let appleHealth: AppleHealthConnectionViewModel?
     private let now: () -> Date
     private let opensGoals: Bool
     private let onShowWelcome: (() -> Void)?
@@ -15,6 +16,7 @@ public struct AppSettingsView: View {
         goals: GoalsViewModel? = nil, connections: ConnectionsPrivacyViewModel? = nil,
         reminders: ReminderController? = nil,
         account: AccountViewModel? = nil,
+        appleHealth: AppleHealthConnectionViewModel? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
         onShowWelcome: (() -> Void)? = nil
     ) {
@@ -22,6 +24,7 @@ public struct AppSettingsView: View {
         self.connections = connections
         self.reminders = reminders
         self.account = account
+        self.appleHealth = appleHealth
         self.now = now
         self.opensGoals = opensGoals
         self.onShowWelcome = onShowWelcome
@@ -30,7 +33,38 @@ public struct AppSettingsView: View {
     public var body: some View {
         if let connections {
             SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders, account: account),
+                            appleHealth: appleHealth,
                             now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome)
+        }
+    }
+}
+
+/// The Apple Health connection: what Health currently allows, and the one thing a person can do about
+/// it. The status is read again whenever the row appears or the app returns to the foreground, because
+/// the answer can be changed in the Health app while this one is in the background.
+private struct AppleHealthRows: View {
+    @ObservedObject var model: AppleHealthConnectionViewModel
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+            HStack {
+                Text(AppleHealthConnectionViewModel.title)
+                Spacer()
+                Text(model.statusText).foregroundStyle(TokenColors.textSecondary)
+            }
+            Text(model.detailText).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
+        .onAppear { self.model.refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { self.model.refresh() }
+        }
+        if let action = model.actionTitle {
+            Button(action) {
+                Task { await self.model.connect() }
+            }
+            .disabled(!model.canAct)
         }
     }
 }
@@ -46,14 +80,17 @@ private struct SettingsContent: View {
     @State private var importReadGate = JournalImportReadGate()
     @State private var importReadTask: Task<Data, Error>?
     @State private var confirmingErase = false
+    private let appleHealth: AppleHealthConnectionViewModel?
     private let now: () -> Date
     private let onShowWelcome: (() -> Void)?
 
     init(
-        model: AppSettingsViewModel, now: @escaping () -> Date, opensGoals: Bool,
+        model: AppSettingsViewModel, appleHealth: AppleHealthConnectionViewModel? = nil,
+        now: @escaping () -> Date, opensGoals: Bool,
         onShowWelcome: (() -> Void)? = nil
     ) {
         _model = StateObject(wrappedValue: model)
+        self.appleHealth = appleHealth
         _showingGoals = State(initialValue: opensGoals && model.goals != nil)
         self.now = now
         self.onShowWelcome = onShowWelcome
@@ -107,8 +144,12 @@ private struct SettingsContent: View {
                 reminderRows
             }
             Section("Connections") {
-                HStack { placeholderText("appleHealth"); Spacer(); LaterBadge() }
-                    .disabled(true).accessibilityValue("Not available yet")
+                if let appleHealth {
+                    AppleHealthRows(model: appleHealth)
+                } else {
+                    HStack { placeholderText("appleHealth"); Spacer(); LaterBadge() }
+                        .disabled(true).accessibilityValue("Not available yet")
+                }
                 HStack { placeholderText("healthRelay"); Spacer(); LaterBadge() }
                     .disabled(true).accessibilityValue("Not available yet")
             }
