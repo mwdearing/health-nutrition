@@ -29,8 +29,10 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   is marked taken. Entries with no recorded time (logged from the Library, or a Taken on a day off the
   schedule or after every time is taken) fill the times still open, earliest first. A recorded time the
   schedule no longer has, or one recorded twice, fills like an unrecorded entry, and what is left over
-  marks nothing. A time with no entry reads "Not logged" once it has passed and "Later today" before; the
-  wording reports the journal and gives no advice.
+  marks nothing. A time a Taken recorded has **Undo Taken**, which deletes that entry, so a Taken on
+  the wrong time is put right after the Undo offer is gone; a time an entry logged elsewhere filled is
+  corrected in the Journal. A time with no entry reads "Not logged" once it has passed and "Later today"
+  before; the wording reports the journal and gives no advice.
   An entry whose record cannot be read is not counted as missing: the screen says how many of today's
   entries it could not read, since any of them may be an item on the list.
   The screen reads the journal again when it appears, when the app returns to the foreground, and, while

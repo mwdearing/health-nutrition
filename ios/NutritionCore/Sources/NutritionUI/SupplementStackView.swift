@@ -155,6 +155,12 @@ public struct SupplementStackView: View {
                         }
                         .disabled(!row.canLog)
                         .accessibilityLabel("Log \(row.title) as taken for \(SupplementStackText.time(slot.time))")
+                    } else if slot.recordedEntryID != nil {
+                        // A Taken on the wrong time is undone here, by deleting the entry it wrote.
+                        QuietCapsule("Undo Taken") {
+                            if self.model.undoTaken(slot, now: self.now()) { self.onLogged() }
+                        }
+                        .accessibilityLabel("Undo Taken for \(row.title) at \(SupplementStackText.time(slot.time))")
                     }
                 }
             }

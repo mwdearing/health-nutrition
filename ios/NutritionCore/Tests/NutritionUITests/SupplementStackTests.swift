@@ -659,6 +659,37 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertTrue(schedules.takenMarks().isEmpty)
     }
 
+    func testUndoTakenDeletesTheEntryARecordedTimeCameFromAfterTheOfferIsGone() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        // Wednesday 08:05: the 20:00 line is tapped by mistake, and the Undo offer lapses.
+        let morning = now.addingTimeInterval(-3.9 * 3_600)
+        model.load(now: morning)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), at: twenty, now: morning))
+        model.clearUndo()
+        let evening = try XCTUnwrap(model.rows.first?.slots.last)
+        XCTAssertEqual(evening.state, .taken)
+        let entry = try XCTUnwrap(evening.recordedEntryID)
+
+        XCTAssertTrue(model.undoTaken(evening, now: morning))
+        XCTAssertTrue(try store.activeIntakes().filter { $0.lifecycle == .active && $0.id == entry }.isEmpty)
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.notLogged, .later])
+        XCTAssertTrue(schedules.takenMarks().isEmpty)
+
+        // A time an entry logged elsewhere filled names no entry, so there is nothing to undo here.
+        try log(store, at: morning)
+        model.load(now: morning)
+        let filled = try XCTUnwrap(model.rows.first?.slots.first)
+        XCTAssertEqual(filled.state, .taken)
+        XCTAssertNil(filled.recordedEntryID)
+        XCTAssertFalse(model.undoTaken(filled, now: morning))
+        XCTAssertEqual(model.rows.first?.loggedToday, 1)
+    }
+
     func testMarksFromAnotherDayAreDropped() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()

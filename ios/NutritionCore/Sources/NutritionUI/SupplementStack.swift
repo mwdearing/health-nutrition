@@ -89,10 +89,14 @@ public enum SupplementSlotState: Equatable, Sendable {
 public struct SupplementSlot: Equatable, Sendable {
     public let time: ReminderTime
     public let state: SupplementSlotState
+    /// The journal entry a Taken tap recorded for this time, when it was marked that way. Nil for a time
+    /// an entry logged elsewhere filled, or one not taken: only a recorded Taken can be undone from here.
+    public let recordedEntryID: String?
 
-    public init(time: ReminderTime, state: SupplementSlotState) {
+    public init(time: ReminderTime, state: SupplementSlotState, recordedEntryID: String? = nil) {
         self.time = time
         self.state = state
+        self.recordedEntryID = recordedEntryID
     }
 }
 
@@ -152,12 +156,25 @@ enum SupplementStackDay {
     static func slots(
         for schedule: SupplementSchedule, recordedMinutes: [Int], unrecordedCount: Int, minuteOfDay: Int
     ) -> [SupplementSlot] {
+        slots(
+            for: schedule, recorded: recordedMinutes.map { (minute: $0, entryID: String?.none) },
+            unrecordedCount: unrecordedCount, minuteOfDay: minuteOfDay)
+    }
+
+    /// The same, with the entry each recorded time came from, so a time marked by a Taken tap can name
+    /// the entry to undo.
+    static func slots(
+        for schedule: SupplementSchedule, recorded: [(minute: Int, entryID: String?)], unrecordedCount: Int,
+        minuteOfDay: Int
+    ) -> [SupplementSlot] {
         let minutes = schedule.times.map(SupplementSchedule.minuteOfDay)
         var taken = Array(repeating: false, count: minutes.count)
+        var entryIDs = [String?](repeating: nil, count: minutes.count)
         var unrecorded = unrecordedCount
-        for recorded in recordedMinutes {
-            if let index = minutes.firstIndex(of: recorded), !taken[index] {
+        for mark in recorded {
+            if let index = minutes.firstIndex(of: mark.minute), !taken[index] {
                 taken[index] = true
+                entryIDs[index] = mark.entryID
             } else {
                 unrecorded += 1
             }
@@ -175,7 +192,7 @@ enum SupplementStackDay {
             } else {
                 state = .later
             }
-            return SupplementSlot(time: schedule.times[index], state: state)
+            return SupplementSlot(time: schedule.times[index], state: state, recordedEntryID: entryIDs[index])
         }
     }
 

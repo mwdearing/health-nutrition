@@ -195,11 +195,11 @@ public final class SupplementStackViewModel: ObservableObject {
         bases.map { basis in
             let entries = counts[basis.matchKey] ?? []
             // Entries a Taken tap recorded mark their own time; the rest fill the open times.
-            let recorded = entries.compactMap { id -> Int? in
+            let recorded = entries.compactMap { id -> (minute: Int, entryID: String?)? in
                 guard let mark = marks[id], mark.favoriteID == basis.favoriteID, mark.dayKey == clock.dayKey,
                       let time = mark.timeOfDay
                 else { return nil }
-                return SupplementSchedule.minuteOfDay(time)
+                return (minute: SupplementSchedule.minuteOfDay(time), entryID: id as String?)
             }
             let logged = entries.count
             let isDue = basis.schedule.weekdays.contains(clock.weekday)
@@ -208,7 +208,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 schedule: basis.schedule, isDueToday: isDue,
                 slots: isDue
                     ? SupplementStackDay.slots(
-                        for: basis.schedule, recordedMinutes: recorded, unrecordedCount: logged - recorded.count,
+                        for: basis.schedule, recorded: recorded, unrecordedCount: logged - recorded.count,
                         minuteOfDay: clock.minuteOfDay)
                     : [],
                 loggedToday: logged, canLog: basis.canLog)
@@ -474,6 +474,26 @@ public final class SupplementStackViewModel: ObservableObject {
             return true
         } catch JournalError.intakeDeleted(_) {
             undoToken = nil
+            load(now: now)
+            return false
+        } catch {
+            errorMessage = "Could not undo. Try again."
+            return false
+        }
+    }
+
+    /// Deletes the entry a Taken tap recorded for this time, after the Undo offer is gone: a Taken on the
+    /// wrong time is put right from the list. False, with a message, when nothing was deleted. A time an
+    /// entry logged elsewhere filled has no recorded entry, and is corrected in the Journal instead.
+    @discardableResult
+    public func undoTaken(_ slot: SupplementSlot, now: Date) -> Bool {
+        guard let entryID = slot.recordedEntryID else { return false }
+        do {
+            try store.delete(intakeID: entryID, now: now)
+            if undoToken?.intakeID == entryID { undoToken = nil }
+            load(now: now)
+            return true
+        } catch JournalError.intakeDeleted(_) {
             load(now: now)
             return false
         } catch {
