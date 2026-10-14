@@ -339,10 +339,26 @@ final class NutrientGapsTests: XCTestCase {
     func testAStoredValueThatIsNotAPublishedRowReadsAsNoGroup() {
         let defaults = gapsSuite()
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
-        for text in ["", "female", "female.years12To18", "other.years19To30", "female.years19To30.extra"] {
+        for text in [
+            "", "female", "female.years12To18", "other.years19To30", "female.years19To30.extra",
+            "male.years19To30.pregnancy", "female.years51To70.lactation", "female.years19To30.standard",
+            "female.years19To30.pregnancy.extra",
+        ] {
             defaults.set(text, forKey: "display.reference.group")
             XCTAssertNil(preferences.referenceGroup, text)
         }
+    }
+
+    func testAPregnancyOrBreastfeedingGroupIsStoredAndReadBack() throws {
+        let defaults = gapsSuite()
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        let pregnant = try XCTUnwrap(ReferenceGroup(lifeStage: .pregnancy, ageBand: .years31To50))
+        preferences.setReferenceGroup(pregnant)
+        XCTAssertEqual(defaults.string(forKey: "display.reference.group"), "female.years31To50.pregnancy")
+        XCTAssertEqual(UserDefaultsDisplayPreferences(defaults: defaults).referenceGroup, pregnant)
+        // An adult row keeps the two-part form it was stored in before.
+        preferences.setReferenceGroup(ReferenceGroup(sex: .female, ageBand: .years31To50))
+        XCTAssertEqual(defaults.string(forKey: "display.reference.group"), "female.years31To50")
     }
 
     func testTheInMemoryStoreClearsTheGroupOnReset() {

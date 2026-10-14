@@ -67,8 +67,8 @@ public enum NutrientGapsCopy {
 
     public static let footer = "Reference values are the published adult RDA (Recommended Dietary Allowance) "
         + "or AI (Adequate Intake) and upper limit, from the NIH Office of Dietary Supplements. They describe "
-        + "populations, not you, and are not advice. They do not cover pregnancy, breastfeeding or anyone "
-        + "under 19. Unknown means an entry does not state the nutrient, not that it has none."
+        + "populations, not you, and are not advice. They do not cover anyone under 19. "
+        + "Unknown means an entry does not state the nutrient, not that it has none."
 }
 
 /// One nutrient: its name and the day's figure, a bar against the reference when there is one, and

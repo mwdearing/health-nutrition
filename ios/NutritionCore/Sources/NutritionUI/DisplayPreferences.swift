@@ -367,12 +367,16 @@ extension UserDefaultsDisplayPreferences: ReferenceGroupPreferences {
     /// then shows amounts alone rather than guessing a row.
     public var referenceGroup: ReferenceGroup? {
         guard let text = defaults.string(forKey: referenceGroupKey) else { return nil }
+        // "<sex>.<band>", or "female.<band>.pregnancy" / "female.<band>.lactation" for those rows.
         let parts = text.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 2,
+        guard parts.count == 2 || parts.count == 3,
               let sex = ReferenceSex(rawValue: String(parts[0])),
               let band = ReferenceAgeBand(rawValue: String(parts[1]))
         else { return nil }
-        return ReferenceGroup(sex: sex, ageBand: band)
+        guard parts.count == 3 else { return ReferenceGroup(sex: sex, ageBand: band) }
+        guard sex == .female, let stage = ReferenceLifeStage(rawValue: String(parts[2])), stage != .standard
+        else { return nil }
+        return ReferenceGroup(lifeStage: stage, ageBand: band)
     }
 
     public func setReferenceGroup(_ group: ReferenceGroup?) {
@@ -380,7 +384,8 @@ extension UserDefaultsDisplayPreferences: ReferenceGroupPreferences {
             defaults.removeObject(forKey: referenceGroupKey)
             return
         }
-        defaults.set("\(group.sex.rawValue).\(group.ageBand.rawValue)", forKey: referenceGroupKey)
+        let stage = group.lifeStage == .standard ? "" : ".\(group.lifeStage.rawValue)"
+        defaults.set("\(group.sex.rawValue).\(group.ageBand.rawValue)\(stage)", forKey: referenceGroupKey)
     }
 }
 
