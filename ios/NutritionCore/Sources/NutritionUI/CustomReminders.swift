@@ -164,6 +164,8 @@ public final class CustomReminderController: ObservableObject {
     /// each time the app becomes active.
     public func sync() async {
         reminders = store.reminders
+        // A notice about notifications being off no longer holds once they are allowed again.
+        if message == Self.withdrawnMessage, await permissions.permission() == .allowed { message = nil }
         await apply(askForPermission: false)
     }
 
