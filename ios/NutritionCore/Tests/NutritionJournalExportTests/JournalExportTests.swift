@@ -562,6 +562,9 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 + fraction + #"Z","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
             XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), fraction)
         }
+        // The same document with an ASCII fraction reads, so the refusal above is about the digit alone.
+        let valid = #"{"schema_version":1,"exported_at":"2024-01-15T09:15:00.5Z","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+        XCTAssertNoThrow(try JournalExporter.decode(Data(valid.utf8)))
     }
 
     func testDateDecoderAcceptsLongValidFractionsButRejectsMalformedDigits() throws {
