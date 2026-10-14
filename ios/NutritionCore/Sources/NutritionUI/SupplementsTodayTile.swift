@@ -11,6 +11,7 @@ struct SupplementsTodayTile: View {
     }
 
     private var detail: String {
+        if let message = model.errorMessage { return message }
         if model.rows.isEmpty { return "Set up your supplements" }
         return loggedToday == 1 ? "1 logged today" : "\(loggedToday) logged today"
     }
