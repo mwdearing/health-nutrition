@@ -45,6 +45,7 @@ struct WidgetSnapshotStore {
     static let fileName = "today-widget.json"
 
     let directory: URL
+    var fileManager: FileManager = .default
 
     /// The store in the App Group container, or nil where the group is not available (an unsigned
     /// simulator build without the entitlement, for instance), in which case nothing is written.
@@ -52,7 +53,7 @@ struct WidgetSnapshotStore {
         guard let group = WidgetAppGroup.current,
             let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: group)
         else { return nil }
-        return WidgetSnapshotStore(directory: url)
+        return WidgetSnapshotStore(directory: url, fileManager: fileManager)
     }
 
     private var fileURL: URL { directory.appendingPathComponent(Self.fileName) }
@@ -74,7 +75,7 @@ struct WidgetSnapshotStore {
     }
 
     func erase() throws {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
-        try FileManager.default.removeItem(at: fileURL)
+        guard fileManager.fileExists(atPath: fileURL.path) else { return }
+        try fileManager.removeItem(at: fileURL)
     }
 }

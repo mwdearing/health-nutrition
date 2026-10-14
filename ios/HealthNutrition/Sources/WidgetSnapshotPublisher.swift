@@ -11,13 +11,17 @@ import WidgetKit
 final class WidgetSnapshotPublisher {
     private var subscription: AnyCancellable?
     private let store: WidgetSnapshotStore?
+    private var isErasing: () -> Bool = { false }
 
     init(store: WidgetSnapshotStore? = WidgetSnapshotStore.appGroup()) {
         self.store = store
     }
 
-    func start(today: TodayViewModel) {
+    /// - Parameter isErasing: true while Erase all data runs. A write then would put figures back that the
+    ///   eraser just removed; the reload Today does once the erase finishes publishes the empty day.
+    func start(today: TodayViewModel, isErasing: @escaping () -> Bool = { false }) {
         guard store != nil else { return }
+        self.isErasing = isErasing
         subscription = today.objectWillChange
             // objectWillChange fires before the values change; the next run loop turn sees the new ones.
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
@@ -29,7 +33,7 @@ final class WidgetSnapshotPublisher {
     }
 
     func publish(from today: TodayViewModel) {
-        guard let store else { return }
+        guard let store, !isErasing() else { return }
         let snapshot = Self.snapshot(from: today, now: Date())
         do {
             try store.write(snapshot)

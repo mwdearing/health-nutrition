@@ -263,6 +263,10 @@ jobs:
             exit 1
           fi
           echo "Found $app"
+          if [ ! -d "$app/PlugIns/HealthNutritionWidgets.appex" ]; then
+            echo "The widget extension is not embedded in $app" >&2
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/ipa"
           cd "$RUNNER_TEMP/ipa"
           mkdir -p Payload

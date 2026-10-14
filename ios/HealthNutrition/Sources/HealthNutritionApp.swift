@@ -26,7 +26,7 @@ struct HealthNutritionApp: App {
         do {
             let made = try AppServices.make(reminderScheduler: SystemReminderScheduler())
             AppServicesRegistry.register(made)
-            Self.widgetSnapshots.start(today: made.today)
+            Self.widgetSnapshots.start(today: made.today, isErasing: { made.connections.isErasing })
             _services = State(initialValue: made)
         } catch {
             _services = State(initialValue: nil)

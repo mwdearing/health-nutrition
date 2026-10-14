@@ -113,7 +113,7 @@ struct TodayWidget: Widget {
 }
 
 @main
-struct HealthNutritionWidgets: WidgetBundle {
+struct TodayWidgetBundle: WidgetBundle {
     var body: some Widget {
         TodayWidget()
     }

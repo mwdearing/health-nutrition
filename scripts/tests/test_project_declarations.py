@@ -119,3 +119,9 @@ def test_the_workflows_set_the_app_identifier_not_the_product_identifier() -> No
         text = (ROOT / ".github/workflows" / name).read_text()
         assert "PRODUCT_BUNDLE_IDENTIFIER" not in text, name
         assert "APP_BUNDLE_ID=" in text, name
+
+
+def test_the_unsigned_device_build_fails_when_the_widget_extension_is_not_embedded() -> None:
+    text = (ROOT / ".github/workflows/ios.yml").read_text()
+    assert "PlugIns/HealthNutritionWidgets.appex" in text
+
