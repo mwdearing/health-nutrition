@@ -25,7 +25,7 @@ public struct IntakeCopyResult: Equatable, Sendable {
 /// An entry whose time zone names no zone has no day and is never copied.
 public struct IntakeCopier {
     private let store: JournalStore
-    private let repeater: IntakeRepeater
+    private let makeID: () -> String
     private let zoneID: () -> String
 
     public init(
@@ -37,7 +37,7 @@ public struct IntakeCopier {
         self.store = store
         let resolved = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
         self.zoneID = resolved
-        self.repeater = IntakeRepeater(store: store, timeZoneProvider: resolved, makeID: makeID)
+        self.makeID = makeID
     }
 
     /// The `yyyy-MM-dd` key of the day before `now`, in the copier's zone. What "copy yesterday" reads.
@@ -91,7 +91,10 @@ public struct IntakeCopier {
     }
 
     private func copy(_ intakes: [Intake], now: Date, unreadableZone: Int = 0) throws -> IntakeCopyResult {
-        guard TimeZone(identifier: zoneID()) != nil else { throw IntakeCopyError.invalidDestinationZone }
+        // One zone for the whole batch: the provider is asked once, validated, then fixed.
+        let destination = zoneID()
+        guard TimeZone(identifier: destination) != nil else { throw IntakeCopyError.invalidDestinationZone }
+        let repeater = IntakeRepeater(store: store, timeZoneProvider: { destination }, makeID: makeID)
         var created: [String] = []
         var skipped = unreadableZone
         for intake in intakes {
