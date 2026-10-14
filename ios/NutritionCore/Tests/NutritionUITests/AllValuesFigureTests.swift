@@ -104,7 +104,7 @@ final class AllValuesFigureTests: XCTestCase {
     // MARK: The rule
 
     /// Six fraction digits is as many as a stated figure carries; one more and the figure was worked out.
-    func testAStatedFigureIsListedExactly() {
+    func testSixFractionDigitsSeparateAStatedFigureFromAWorkedOutOne() {
         XCTAssertEqual(AmountDisplay.stated(decimal("1.25"), unit: .g).text, "1.25 g")
         XCTAssertEqual(AmountDisplay.stated(decimal("0.000123"), unit: .g).text, "0.000123 g")
         XCTAssertEqual(AmountDisplay.stated(decimal("107.728187875"), unit: .kcal).text, "108 kcal")
