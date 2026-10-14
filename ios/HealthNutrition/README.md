@@ -169,7 +169,8 @@ CI has four jobs. `swift-and-app-tests` runs on one macOS runner: it runs the pa
 `ios/NutritionCore`, installs XcodeGen, generates this project, runs an unsigned
 `xcodebuild ... -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`, and then runs
 `xcodebuild ... -destination 'platform=iOS Simulator,name=<picked at run time>' CODE_SIGNING_ALLOWED=NO test`
-for the app tests above. A failing step does not stop the others from reporting. `release-build` compiles
+for the app tests above. A failing check does not stop the others from reporting, as long as the project
+could be generated. `release-build` compiles
 Release for a generic device, unsigned, on the same runner image as the signed upload.
 `privacy-manifest` checks the privacy manifest against the Swift sources, and `unsigned-ipa` is the manual
 device build described above.

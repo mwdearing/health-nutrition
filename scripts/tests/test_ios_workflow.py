@@ -8,6 +8,7 @@ with signing disabled, on the same runner image the signed upload uses.
 
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path
 from typing import cast
@@ -150,7 +151,7 @@ def test_ios_workflow_pull_request_runs_hold_at_most_two_macos_runners() -> None
     macos = [
         name
         for name, job in _jobs("ios.yml").items()
-        if str(job["runs-on"]).startswith("macos") and str(job.get("if", "")) != "github.event_name == 'workflow_dispatch'"
+        if "macos" in str(job["runs-on"]).lower() and "pull_request" in str(job.get("if", "pull_request"))
     ]
     assert sorted(macos) == ["release-build", "swift-and-app-tests"], macos
 
@@ -169,6 +170,14 @@ def test_one_failing_check_does_not_hide_the_others_in_the_shared_job() -> None:
         "Pick an available iPhone simulator": "${{ !cancelled() && steps.generate.outcome == 'success' }}",
         "Test the app target on the simulator": "${{ !cancelled() && steps.simulator.outcome == 'success' }}",
     }, conditions
+    # Every step a condition waits on is declared before it, so a renamed or moved step cannot leave a condition
+    # that reads an unknown id and silently skips the checks after it.
+    declared: set[str] = set()
+    for step in steps:
+        for referenced in re.findall(r"steps\.([a-z0-9_-]+)\.outcome", str(step.get("if", ""))):
+            assert referenced in declared, (step.get("name"), referenced)
+        if "id" in step:
+            declared.add(str(step["id"]))
 
 
 def test_each_check_in_the_shared_job_has_its_own_deadline() -> None:
@@ -177,7 +186,13 @@ def test_each_check_in_the_shared_job_has_its_own_deadline() -> None:
     steps = {str(step.get("name", "")): step for step in cast("list[dict[str, object]]", job["steps"])}
     deadlines = [
         cast(int, steps[name]["timeout-minutes"])
-        for name in ("Test NutritionCore", "Build the app for the iOS Simulator", "Test the app target on the simulator")
+        for name in (
+            "Test NutritionCore",
+            "Install XcodeGen (pinned release, checksum verified)",
+            "Generate the Xcode project",
+            "Build the app for the iOS Simulator",
+            "Test the app target on the simulator",
+        )
     ]
     assert all(minutes > 0 for minutes in deadlines), deadlines
     assert sum(deadlines) < cast(int, job["timeout-minutes"])
