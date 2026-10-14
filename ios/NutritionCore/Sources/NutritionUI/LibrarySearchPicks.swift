@@ -14,20 +14,22 @@ extension LibraryViewModel {
     /// How many matching rows the screen lists while the person types.
     public static let searchMatchesLimit = 8
 
-    /// The person's own favorites, recents and logged products (`loggedProducts`, every product logged,
-    /// standalone ones included) for the Find products screen, built from
-    /// what `load()` last read. It reads no store and sends nothing anywhere, so it can run on every
-    /// keystroke. It never sets `searchText` or `segment`: this model is shared with the Library screen,
-    /// and a filter set here would stay applied there.
+    /// The person's own favorites, often logged items (`frequentItems`), recents and logged products
+    /// (`loggedProducts`, every product logged, standalone ones included) for the Find products screen,
+    /// built from what `load()` last read. It reads no store and sends nothing anywhere, so it can run on
+    /// every keystroke. It never sets `searchText` or `segment`: this model is shared with the Library
+    /// screen, and a filter set here would stay applied there.
     ///
-    /// With no query: "Recent", the newest recents, then "Favorites" not already listed, each capped at
-    /// `searchPicksLimit`; a group with nothing in it is left out. With a query: one "Your foods" group of
+    /// With no query: "Recent", the newest recents, then "Often logged" and "Favorites", each without what
+    /// is already listed above it and each capped at `searchPicksLimit`; a group with nothing in it is left
+    /// out. With a query: one "Your foods" group of
     /// the distinct items whose title contains it, ignoring case, with titles that start with it first,
     /// capped at `searchMatchesLimit`. That group is returned even when nothing matches, so the screen can
     /// say so, but only when the person has something in the Library at all.
     ///
     /// One item shows once: two rows are the same item when they share the Library's identity key
-    /// (category, snapshot, component names and meal). Favorites are taken before recents and products.
+    /// (category, snapshot, component names and meal). While typing, favorites are taken first, then
+    /// often logged items, recents and products, and that order holds within each of the two title orders.
     /// An item with no amounts, such as a malformed favorite, is left out, since it cannot be opened.
     ///
     /// A `kind` keeps only items of that kind, as the screen's Kind control does for products: an item
@@ -37,6 +39,7 @@ extension LibraryViewModel {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let favorites = items(inSection: "Favorites")
         let recents = items(inSection: "Recents")
+        let frequents = frequentItems
         // Not the Products section: it leaves out a logged product it lists as a standalone row instead.
         let products = loggedProducts
         var seen = Set<String>()
@@ -53,14 +56,16 @@ extension LibraryViewModel {
         }
         guard !text.isEmpty else {
             let recent = take(recents, limit: Self.searchPicksLimit) { _ in true }
+            let often = take(frequents, limit: Self.searchPicksLimit) { _ in true }
             let favorite = take(favorites, limit: Self.searchPicksLimit) { _ in true }
             return [
                 LibrarySearchGroup(title: "Recent", items: recent),
+                LibrarySearchGroup(title: "Often logged", items: often),
                 LibrarySearchGroup(title: "Favorites", items: favorite),
             ].filter { !$0.items.isEmpty }
         }
         guard !(favorites.isEmpty && recents.isEmpty && products.isEmpty) else { return [] }
-        let matches = take(favorites + recents + products, limit: Int.max) {
+        let matches = take(favorites + frequents + recents + products, limit: Int.max) {
             $0.title.localizedCaseInsensitiveContains(text)
         }
         let startsWith = matches.filter { Self.titleStarts($0.title, with: text) }

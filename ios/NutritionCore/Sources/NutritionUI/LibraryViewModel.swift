@@ -223,6 +223,9 @@ public final class LibraryViewModel: ObservableObject {
     /// Every logged product, including those the Products segment lists as a standalone product row
     /// instead. Find products searches these, so a typed name still finds the logged amount and meal.
     @Published public private(set) var loggedProducts: [LibraryItem] = []
+    /// What the person logs most often, most often first (see `FrequentItemsProvider`). Find products lists
+    /// these as "Often logged"; the Library screen itself does not show them.
+    @Published public private(set) var frequentItems: [LibraryItem] = []
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
     @Published public var searchText = ""
@@ -271,6 +274,7 @@ public final class LibraryViewModel: ObservableObject {
             let favoriteKeys = Set(stored.map(Self.key(of:)))
             let recents = try RecentItemsProvider(store: store).recents()
             let foods = try RecentItemsProvider(store: store).foods()
+            let frequents = try FrequentItemsProvider(store: store).frequents()
             let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
                 RepeatTemplate(favorite: favorite) ?? RepeatTemplate(
@@ -281,7 +285,8 @@ public final class LibraryViewModel: ObservableObject {
             // favorite and a recent can repeat the same product, and each read is a store query. A
             // template with no snapshot states no product at all and is the food it was recorded as.
             let snapshotIDs = Set(
-                (favoriteTemplates + recents.map(\.template) + foods.map(\.template)).compactMap(\.productSnapshotID))
+                (favoriteTemplates + recents.map(\.template) + foods.map(\.template) + frequents.map(\.template))
+                    .compactMap(\.productSnapshotID))
             var kinds: [String: ProductKind] = [:]
             for snapshotID in snapshotIDs {
                 kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
@@ -320,6 +325,13 @@ public final class LibraryViewModel: ObservableObject {
             }
             let foodItems = legacyFoods.map(foodItem)
             loggedProducts = foods.map(foodItem)
+            frequentItems = frequents.map { frequent -> LibraryItem in
+                LibraryItem(
+                    id: "frequent:\(frequent.id)", title: frequent.template.displayName,
+                    detail: Self.detail(frequent.template),
+                    isFavorite: favoriteKeys.contains(frequent.id), template: frequent.template,
+                    kind: kind(of: frequent.template))
+            }
             sections = [
                 LibrarySection(title: "Favorites", items: favoriteItems),
                 LibrarySection(title: "Products", items: foodItems),
