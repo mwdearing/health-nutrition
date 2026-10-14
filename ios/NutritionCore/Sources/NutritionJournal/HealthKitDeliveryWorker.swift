@@ -474,6 +474,19 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
                 }
             }
         }
+        // Before anything is written, the ledger is widened to everything this pass may leave in
+        // Health, so a crash or a failed record after the save never hides a sample that is there.
+        if !writable.isEmpty {
+            do {
+                let before = try await keysPossiblyInHealth(
+                    intakeID: operation.intakeID, before: operation.revision, occurredAt: occurredAt)
+                try ledger?.setWrittenHealthKitKeys(
+                    intakeID: operation.intakeID,
+                    keys: before.union(writable.map { Self.nutrientKey(of: $0.syncIdentifier) }))
+            } catch {
+                return transient(operation, now: now, reason: "the samples about to be written could not be recorded")
+            }
+        }
         do {
             try await deleteStaleSamples(for: operation, plan: plan, allowed: allowed)
             if !writable.isEmpty {
@@ -582,12 +595,16 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         let removable = identifiers.filter { allowed[Self.typeIdentifier(for: $0)] == true }
         do {
             let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
-            // What stays in Health is exactly the denied types' samples. A failure to record it leaves the
-            // ledger naming more than is there, which only errs toward asking.
-            try? ledger?.setWrittenHealthKitKeys(
-                intakeID: operation.intakeID,
-                keys: Set(HealthKitWritePlanner.mappings
-                    .filter { denied.contains($0.quantityTypeIdentifier) }.map(\.nutrientKey)))
+            // What stays in Health is exactly the denied types' samples. A failure to record it keeps the
+            // operation retryable rather than parking it over a ledger that names deleted samples.
+            do {
+                try ledger?.setWrittenHealthKitKeys(
+                    intakeID: operation.intakeID,
+                    keys: Set(HealthKitWritePlanner.mappings
+                        .filter { denied.contains($0.quantityTypeIdentifier) }.map(\.nutrientKey)))
+            } catch {
+                return transient(operation, now: now, reason: "the samples removed could not be recorded")
+            }
             if denied.isEmpty {
                 return acknowledge(
                     operation, now: now, outcome: .retracted(operationID: operation.operationID, samples: deleted))
