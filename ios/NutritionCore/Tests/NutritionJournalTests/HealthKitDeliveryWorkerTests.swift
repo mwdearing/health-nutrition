@@ -1162,9 +1162,12 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     /// Denying one type must not strand the samples this app is authorized to delete: the authorized
     /// water sample would otherwise stay in Health after the journal entry was deleted.
     func testRetractionDeletesAuthorizedTypesEvenWhenAnotherMappedTypeIsDenied() async throws {
-        let (store, writer, _, worker) = try makeWorker()
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        writer.reset()
         try store.delete(intakeID: intakeID, now: when)
         writer.deny("HKQuantityTypeIdentifierDietaryProtein")
         let deleteID = try XCTUnwrap(healthKitOperation(store, kind: .delete)?.operationID)
@@ -1186,6 +1189,24 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             try healthKitOperation(store, kind: .delete),
             "the delete stays queued until the denied samples can be removed too")
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
+    }
+
+    /// A type turned off that the entry never stated holds nothing for it, so deleting a water-only
+    /// entry is not left waiting for a person because calcium is off.
+    func testADeniedTypeTheEntryNeverStatedDoesNotHoldUpTheDelete() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.delete(intakeID: intakeID, now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertTrue(
+            outcomes.contains { if case .retracted = $0 { return true } else { return false } },
+            "the delete retracts cleanly, got \(outcomes)")
+        XCTAssertNil(try healthKitOperation(store, kind: .delete))
+        XCTAssertTrue(try store.suspendedOperationIDs().isEmpty)
     }
 
     // MARK: - Revision 6c: the three states a mapped type can be in
@@ -1228,7 +1249,11 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     /// person, while the authorized water sample still goes. Everything else was never asked and is
     /// skipped, so the deleted set is exactly the authorized water sample.
     func testWaterAuthorizedProteinDeniedPartlyRetractsAndNamesProtein() async throws {
-        let (store, writer, _, worker) = try makeWorker()
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        writer.reset()
 
         for mapping in HealthKitWritePlanner.mappings {
             switch mapping.quantityTypeIdentifier {
@@ -1240,7 +1265,6 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
                 writer.neverAsked(mapping.quantityTypeIdentifier)
             }
         }
-        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         try store.delete(intakeID: intakeID, now: when)
 
         let outcomes = await worker.runOnce(now: when)

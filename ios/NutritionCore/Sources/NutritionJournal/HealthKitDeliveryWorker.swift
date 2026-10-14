@@ -534,7 +534,14 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     private func retract(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome {
         let identifiers = HealthKitWritePlanner.deletion(intakeID: operation.intakeID, keys: Self.mappedKeys)
         let allowed = await writer.canWrite(identifiers: Self.mappedTypeIdentifiers)
-        let denied = await writer.deniedWriteTypes(identifiers: Self.mappedTypeIdentifiers)
+        var denied = await writer.deniedWriteTypes(identifiers: Self.mappedTypeIdentifiers)
+        // A denied type only strands a sample when this entry could have written one. The revisions that
+        // may have reached Health say which nutrients that is; a type none of them stated holds nothing
+        // for this entry, so it does not keep the delete waiting for a person. When those revisions
+        // cannot be read, every denied type is kept, which errs toward asking.
+        if !denied.isEmpty, let stated = await statedTypes(of: operation) {
+            denied.formIntersection(stated)
+        }
         // A type that is neither writable nor denied was never asked (`.notDetermined`), so nothing
         // can exist for it and it is silently skipped: no delete is attempted for it.
         let removable = identifiers.filter { allowed[Self.typeIdentifier(for: $0)] == true }
@@ -560,6 +567,24 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             return rejectedSample(error, for: operation, now: now)
         } catch {
             return transient(operation, now: now, reason: "the samples could not be deleted")
+        }
+    }
+
+    /// The quantity types the revisions that may have reached Health stated, or nil when they cannot
+    /// be read.
+    private func statedTypes(of operation: OutboxOperation) async -> Set<String>? {
+        do {
+            var types = Set<String>()
+            for number in try Self.revisionsThatMayHaveWritten(
+                before: Int.max, of: operation.intakeID, in: store) {
+                let plan = HealthKitWritePlanner.plan(
+                    intakeID: operation.intakeID, revision: number, occurredAt: Date(timeIntervalSince1970: 0),
+                    totals: try await totals(operation.intakeID, number))
+                types.formUnion(plan.map(\.quantityTypeIdentifier))
+            }
+            return types
+        } catch {
+            return nil
         }
     }
 
