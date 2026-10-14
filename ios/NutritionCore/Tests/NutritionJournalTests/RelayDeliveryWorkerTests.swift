@@ -933,6 +933,130 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         }
     }
 
+    /// A store that forwards every requirement to a real store, except that the first `activeIntakes()` call
+    /// throws, the way a transient read failure would.
+    final class FlakyReadStore: RelayDeliveryStore, @unchecked Sendable {
+        private let wrapped: SwiftDataJournalStore
+        private let lock = NSLock()
+        private let failure: any Error
+        private var hasFailed = false
+
+        init(wrapped: SwiftDataJournalStore, failure: any Error = JournalError.closed) {
+            self.wrapped = wrapped
+            self.failure = failure
+        }
+
+        var failNextSaveForTesting: Bool {
+            get { wrapped.failNextSaveForTesting }
+            set { wrapped.failNextSaveForTesting = newValue }
+        }
+
+        @discardableResult
+        func create(
+            _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+        ) throws -> IntakeRevision {
+            try wrapped.create(intake, components: components, product: product, now: now)
+        }
+
+        @discardableResult
+        func edit(
+            intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+            now: Date, occurredAt: Date?, timeZoneIdentifier: String?
+        ) throws -> IntakeRevision {
+            try wrapped.edit(
+                intakeID: intakeID, components: components, product: product, changeReason: changeReason,
+                now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+        }
+
+        func delete(intakeID: String, now: Date) throws {
+            try wrapped.delete(intakeID: intakeID, now: now)
+        }
+
+        func activeIntakes() throws -> [Intake] {
+            let shouldFail = lock.withLock { () -> Bool in
+                if hasFailed { return false }
+                hasFailed = true
+                return true
+            }
+            if shouldFail { throw failure }
+            return try wrapped.activeIntakes()
+        }
+
+        func revisions(of intakeID: String) throws -> [IntakeRevision] {
+            try wrapped.revisions(of: intakeID)
+        }
+
+        func projections(of intakeID: String) throws -> [DestinationProjection] {
+            try wrapped.projections(of: intakeID)
+        }
+
+        func pendingOutbox() throws -> [OutboxOperation] {
+            try wrapped.pendingOutbox()
+        }
+
+        func product(snapshotID: String) throws -> ProductDefinition? {
+            try wrapped.product(snapshotID: snapshotID)
+        }
+
+        func activeIntakesFromBackground() async throws -> [Intake] {
+            try await wrapped.activeIntakesFromBackground()
+        }
+
+        func close() {
+            wrapped.close()
+        }
+
+        func acknowledge(operationID: String, at date: Date) throws {
+            try wrapped.acknowledge(operationID: operationID, at: date)
+        }
+
+        func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+            try wrapped.recordFailure(operationID: operationID, retryAt: retryAt, needsAttention: needsAttention)
+        }
+
+        func suspendedOperationIDs() throws -> Set<String> {
+            try wrapped.suspendedOperationIDs()
+        }
+
+        func rearmDelivery(operationID: String) throws {
+            try wrapped.rearmDelivery(operationID: operationID)
+        }
+
+        func recordFailure(
+            operationID: String, retryAt: Date?, needsAttention: Bool, reason: String?
+        ) throws {
+            try wrapped.recordFailure(
+                operationID: operationID, retryAt: retryAt, needsAttention: needsAttention, reason: reason)
+        }
+
+        func suspensionReason(operationID: String) throws -> String? {
+            try wrapped.suspensionReason(operationID: operationID)
+        }
+
+        func deletedIntakes() throws -> [Intake] {
+            try wrapped.deletedIntakes()
+        }
+
+        func deletionInstant(operationID: String) throws -> Date? {
+            try wrapped.deletionInstant(operationID: operationID)
+        }
+
+        func recordedLinks(operationID: String) throws -> [IntakeContextLink]? {
+            try wrapped.recordedLinks(operationID: operationID)
+        }
+
+        @discardableResult
+        func recordLinks(
+            _ links: [IntakeContextLink], operationID: String
+        ) throws -> (snapshot: [IntakeContextLink], isNew: Bool) {
+            try wrapped.recordLinks(links, operationID: operationID)
+        }
+
+        func releaseLinks(operationID: String) throws {
+            try wrapped.releaseLinks(operationID: operationID)
+        }
+    }
+
     /// Answers links per call in queue order, alternating between a sound snapshot and one the encoder refuses.
 ///
 /// That alternation is what puts the failures at revisions 1 and 3 with revision 2 sound between them: the
@@ -1404,6 +1528,85 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         }
         XCTAssertEqual(reported, date)
         XCTAssertEqual(queue.pending, [], "a projection told to wait is not offered again yet")
+    }
+
+    /// A transient store read failure parks nothing: the projection is retried after the first backoff step,
+    /// and the run reports a retry rather than a projection that needs a person.
+    func testAProjectionIsRetriedAfterATransientStoreReadFailure() async throws {
+        let store = try makeStore(try makeDirectory(), enabled: [.healthKit])
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let flaky = FlakyReadStore(wrapped: store)
+        let queue = RecordingProjectionQueue()
+        let queued = projection(sequence: 2)
+        queue.offer([queued])
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        let worker = RelayDeliveryWorker(
+            store: flaky, transport: transport, encoder: encoder, token: { "synthetic-test-token" },
+            projections: queue)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(queue.recorded.count, 1)
+        guard case .retryAfter(let date, _) = try XCTUnwrap(queue.recorded.first) else {
+            return XCTFail("a store read failure is retried, not parked, got \(queue.recorded)")
+        }
+        XCTAssertEqual(date, when.addingTimeInterval(60))
+        XCTAssertEqual(queue.pending, [], "a projection told to wait is not offered again yet")
+        let retried = outcomes.contains { outcome in
+            if case .retryScheduled(let operationID, _, _) = outcome { return operationID == queued.operationID }
+            return false
+        }
+        XCTAssertTrue(retried, "the run reports the projection as retry scheduled, got \(outcomes)")
+    }
+
+    /// A stored record that does not decode reads the same way on every run, so the projection is parked
+    /// for a person rather than rescheduled forever.
+    func testAProjectionIsParkedWhenTheStoredRecordIsCorrupt() async throws {
+        let store = try makeStore(try makeDirectory(), enabled: [.healthKit])
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let flaky = FlakyReadStore(wrapped: store, failure: JournalError.corruptRecord("components"))
+        let queue = RecordingProjectionQueue()
+        queue.offer([projection(sequence: 2)])
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        let worker = RelayDeliveryWorker(
+            store: flaky, transport: transport, encoder: encoder, token: { "synthetic-test-token" },
+            projections: queue)
+
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(queue.recorded.count, 1)
+        guard case .needsAttention = try XCTUnwrap(queue.recorded.first) else {
+            return XCTFail("a corrupt record is parked, not retried, got \(queue.recorded)")
+        }
+    }
+
+    /// Only busy or locked storage is retried; a corrupt database file from the same layer is parked.
+    func testAStorageErrorIsRetriedOnlyWhenItIsBusyOrLocked() async throws {
+        let busy = NSError(domain: "NSSQLiteErrorDomain", code: 5)
+        let busyTimeout = NSError(domain: "NSSQLiteErrorDomain", code: 773)
+        let corrupt = NSError(domain: "NSSQLiteErrorDomain", code: 11)
+        let wrappedBusy = NSError(domain: NSCocoaErrorDomain, code: 256, userInfo: [NSUnderlyingErrorKey: busy])
+        for (failure, retried) in [(busy, true), (busyTimeout, true), (wrappedBusy, true), (corrupt, false)] {
+            let store = try makeStore(try makeDirectory(), enabled: [.healthKit])
+            try store.create(sampleIntake(), components: components(), product: nil, now: when)
+            let queue = RecordingProjectionQueue()
+            queue.offer([projection(sequence: 2)])
+            let worker = RelayDeliveryWorker(
+                store: FlakyReadStore(wrapped: store, failure: failure),
+                transport: FakeIntakeContextTransport(capabilities: Self.capabilities()), encoder: encoder,
+                token: { "synthetic-test-token" }, projections: queue)
+
+            _ = await worker.runOnce(now: when)
+
+            let resolution = try XCTUnwrap(queue.recorded.first, "\(failure)")
+            if case .retryAfter = resolution {
+                XCTAssertTrue(retried, "\(failure) must be parked, got \(resolution)")
+            } else if case .needsAttention = resolution {
+                XCTAssertFalse(retried, "\(failure) must be retried, got \(resolution)")
+            } else {
+                XCTFail("unexpected resolution \(resolution) for \(failure)")
+            }
+        }
     }
 
     /// A 429's stated `Retry-After` reaches the projection queue too, so the wait the receiver asked for is

@@ -344,7 +344,7 @@ public struct RelayDeliveryWorker: Sendable {
                     outcomes.append(acknowledge(
                         operation, now: now, outcome: .superseded(
                             operationID: operation.operationID, detail: detail)))
-                case .failed(let reason):
+                case .failed(let reason), .unreadable(let reason):
                     outcomes.append(retry(operation, reason: reason, now: now))
                     blocking[intakeID] = operation.operationID
                 case .encoded(let item):
@@ -391,6 +391,16 @@ public struct RelayDeliveryWorker: Sendable {
                 // run would not know the projection had been settled.
                 await projections.resolve(projection, with: .superseded)
                 outcomes.append(.superseded(operationID: projection.operationID, detail: detail))
+            case .unreadable(let reason):
+                // **A store read that failed is tried again, not parked.** The projection is intact in the
+                // queue; the read is what went wrong, and a person cannot fix a read by re-arming the
+                // projection. The queue is told the date, so the next run waits for it rather than retrying
+                // straight away, and this run blocks the projections behind it the same way a refusal does.
+                let next = now.addingTimeInterval(TimeInterval(Self.backoffSeconds(afterAttempt: 1)))
+                await projections.resolve(projection, with: .retryAfter(next, reason: reason))
+                outcomes.append(.retryScheduled(
+                    operationID: projection.operationID, nextAttemptAt: next, reason: reason))
+                blocking[projection.intakeID] = projection.operationID
             case .failed:
                 // A projection that cannot be encoded is the queue's problem to hear about: it offered a
                 // payload this module refuses, and recording a failure here would be recording it with
@@ -566,6 +576,9 @@ public struct RelayDeliveryWorker: Sendable {
         case superseded(detail: String?)
         /// A refusal the receiver would make anyway, caught here before a batch was built.
         case failed(reason: String)
+        /// A store read failed while the payload was being built. That says nothing about the payload itself,
+        /// so it is worth another attempt rather than a person's attention.
+        case unreadable(reason: String)
         case encoded(RelayEncodedOperation)
     }
 
@@ -677,6 +690,34 @@ public struct RelayDeliveryWorker: Sendable {
         }
     }
 
+    /// Whether a store read failed for a reason another attempt can get past.
+    ///
+    /// **Only what is recognised as passing is retried.** A closed store, a database another connection holds
+    /// busy or locked, and a persistent-store timeout can clear by the next run. Everything else cannot be
+    /// assumed to: a stored record that does not decode, a corrupt file or a refused permission reads the same
+    /// way every time, so retrying it would reschedule the projection forever and hold back the ones behind
+    /// it. Anything not recognised here is treated as lasting and goes to a person.
+    private static func isTransientRead(_ error: any Error) -> Bool {
+        if error is DecodingError { return false }
+        if let journal = error as? JournalError { return journal == .closed }
+        let ns = error as NSError
+        if ns.domain == "NSSQLiteErrorDomain" { return transientSQLiteCodes.contains(ns.code & 0xff) }
+        if ns.domain == NSCocoaErrorDomain {
+            if ns.code == persistentStoreTimeoutCode { return true }
+            if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError,
+               underlying.domain == "NSSQLiteErrorDomain" {
+                return transientSQLiteCodes.contains(underlying.code & 0xff)
+            }
+        }
+        return false
+    }
+
+    /// SQLITE_BUSY and SQLITE_LOCKED: another connection holds the database, which passes. They are compared
+    /// on the low eight bits, the primary result code, so extended forms such as SQLITE_BUSY_TIMEOUT (773) match.
+    private static let transientSQLiteCodes: Set<Int> = [5, 6]
+    /// Core Data's NSPersistentStoreTimeoutError, raised when the store could not be reached in time.
+    private static let persistentStoreTimeoutCode = 134_090
+
     /// Encodes a link-only change as the contract's `link_projection`, which takes no outbox row.
     private func encode(_ projection: RelayLinkProjection) -> RelayEncoding {
         let intake: Intake?
@@ -685,7 +726,9 @@ public struct RelayDeliveryWorker: Sendable {
             intake = try store.activeIntakes().first { $0.id == projection.intakeID }
             revisions = try store.revisions(of: projection.intakeID)
         } catch {
-            return .failed(reason: "the intake could not be read")
+            return Self.isTransientRead(error)
+                ? .unreadable(reason: "the intake could not be read")
+                : .failed(reason: "the intake could not be read")
         }
         guard let intake, let revision = revisions.first(where: { $0.number == projection.revision })
         else { return .superseded(detail: nil) }
@@ -693,7 +736,9 @@ public struct RelayDeliveryWorker: Sendable {
         do {
             product = try revision.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
         } catch {
-            return .failed(reason: "the product snapshot could not be read")
+            return Self.isTransientRead(error)
+                ? .unreadable(reason: "the product snapshot could not be read")
+                : .failed(reason: "the product snapshot could not be read")
         }
         do {
             return .encoded(RelayEncodedOperation(
@@ -1081,7 +1126,7 @@ public struct RelayDeliveryWorker: Sendable {
             switch encodeUpsert(operation) {
             case .encoded(let rebuilt):
                 ready.append(rebuilt)
-            case .failed(let reason):
+            case .failed(let reason), .unreadable(let reason):
                 deliveries.append(RelayDelivery(
                     intakeID: item.intakeID, outcome: retry(operation, reason: reason, now: now)))
                 blockedBy[item.intakeID] = item.operationID
