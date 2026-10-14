@@ -11,20 +11,27 @@ cached `DateFormatter` per run and writes the fraction itself, reading it back t
 whole-second dates written by earlier builds still import. Favorites are written in id order, so two exports
 of the same favorites are the same document.
 
-Versions 1 and 2 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
-the 1582 cutover. Earlier exports used that calendar, so interpreting their text proleptically would shift
-some restored timestamps; the reader requires exact calendar round-tripping and rejects dates Foundation
-would normalize, including the skipped cutover days. This compatibility rule does not change the v1 or v2
-schema shape.
+Versions 1 to 3 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
+the 1582 cutover. Earlier exports used that calendar, and the writer still does, so interpreting their text
+proleptically would shift some restored timestamps; the reader requires exact calendar round-tripping and
+rejects dates Foundation would normalize, including the skipped cutover days. This compatibility rule does
+not change any schema's shape.
 
 The contract lives in the repository next to the code:
-- `contracts/journal-export/v2.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
-- `contracts/journal-export/example.v2.json` - a small synthetic document that validates against it.
-- `contracts/journal-export/v1.schema.json` and `example.v1.json` - the version 1 contract, kept unchanged and still read.
+- `contracts/journal-export/v3.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
+- `contracts/journal-export/example.v3.json` - a small synthetic document that validates against it.
+- `contracts/journal-export/v2.schema.json`, `v1.schema.json` and their examples - the version 2 and version 1 contracts, kept unchanged and still read.
 
 Version 2 is version 1 with one field: `provenance.kind`, which says whether a product is a `food`, a
 `drink` or a `supplement`. It is what a restore needs to know whether a snapshot joins the day's count of
 foods, so a restore that dropped it would quietly change what the day says about the person.
+
+Version 3 is version 2 with two fields on every revision: its own `occurred_at` and `time_zone`, both
+required and `null` together for a revision recorded before revisions carried their own time. Since the
+store gave each revision its own time, a correction of an entry's time is a new revision; without these
+fields a restored history gave every revision the entry's final time, which rewrote what the earlier
+revisions had said (#135). A revision's time is restored as it was written, and a file whose revision has one
+of the two fields without the other is `corrupt`.
 
 Those files are the canonical ones. SwiftPM can only bundle resources that live inside a target, so copies
 sit in `ios/NutritionCore/Tests/NutritionJournalExportTests/Contracts/`; a test compares the two locations
@@ -41,10 +48,11 @@ the backup.
 `JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
-**Both version 1 and version 2 are read**, so a backup taken before the kind existed still restores;
-`decode(_:)` reads the version off the document and hands it to the matching `init(from:)`. New exports
-write version 2. Re-encoding a decoded version 1 document preserves version 1 and omits `kind` from
-both revision provenance and the products list, so the strict importer still accepts it.
+**Versions 1, 2 and 3 are read**, so a backup taken before the kind or a revision's own time existed still
+restores; `decode(_:)` reads the version off the document and hands it to the matching `init(from:)`. New
+exports write version 3. Re-encoding a decoded older document preserves its version and omits the fields
+that version does not have (`kind` for version 1, a revision's time for versions 1 and 2), so the strict
+importer still accepts it.
 
 ## Importing
 
@@ -78,8 +86,8 @@ required-but-nullable ones such as `note`, `provenance`, `brand` and `amount`, w
 explicit `null` rather than left out. An ordinary `JSONDecoder` can see neither difference - it ignores an
 unknown key and reads an absent required-but-nullable key the same as a null one - so without this pass a
 file that breaks the contract would import, and whatever it carried that this build does not understand would
-quietly disappear on the next export. The key sets live in `JournalImportV1Keys` and `JournalImportV2Keys`,
-and a test holds both to the committed schemas so they cannot drift from the contract.
+quietly disappear on the next export. The key sets live in `JournalImportV1Keys`, `JournalImportV2Keys` and
+`JournalImportV3Keys`, and a test holds each to its committed schema so they cannot drift from the contract.
 
 **Each version is held to its own keys.** A version 1 document is checked against the version 1 sets and a
 version 2 document against the version 2 sets, because a `kind` is required from version 2 on and an unknown
@@ -222,8 +230,8 @@ already resolved is reused instead of being fetched again for every revision tha
 means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
 `JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
 ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
-build **writes version 2 and reads version 1 and version 2**; `decode(_:)` refuses anything else by value
-rather than by shape, so a version 3 file is never half-understood.
+build **writes version 3 and reads versions 1, 2 and 3**; `decode(_:)` refuses anything else by value
+rather than by shape, so a version 4 file is never half-understood.
 
 Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
 in its own right: its documents carry no kind, and refusing them would take away the only backup a person
@@ -231,6 +239,11 @@ has. Writing only version 2 is also a decision: an older build that reads versio
 the field is the one thing an older reader cannot ignore, so the two builds are not interchangeable in that
 direction. The strict shape pass makes that visible rather than silent - an older reader would refuse a
 version 2 document outright instead of importing it with the kind quietly dropped.
+
+Version 3 also settles which builds can read a new export (#142). The `gummy` and `piece` units arrived
+without a version change, so a build that reads version 2 but predates them refused such a file partway
+through, as a corrupt amount. Every export is now version 3, which a build that reads only versions 1 and 2
+refuses by its version, before reading anything, with a message that says the file is newer than the app.
 
 ## Privacy
 - The export is **local and user-initiated**. Nothing is uploaded, and no network call is involved: the

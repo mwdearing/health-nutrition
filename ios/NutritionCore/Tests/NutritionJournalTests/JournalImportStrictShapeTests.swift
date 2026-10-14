@@ -83,6 +83,19 @@ final class JournalImportStrictShapeTests: XCTestCase {
     private func fieldsForSchemaVersion(_ original: [String: Any], version: Int) throws -> [String: Any] {
         var root = original
         root["schema_version"] = version
+        if version < 3 {
+            // A revision's own time is a version 3 field, so an earlier document has no such keys.
+            var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+            for index in intakes.indices {
+                var revisions = try XCTUnwrap(intakes[index]["revisions"] as? [[String: Any]])
+                for revisionIndex in revisions.indices {
+                    revisions[revisionIndex].removeValue(forKey: "occurred_at")
+                    revisions[revisionIndex].removeValue(forKey: "time_zone")
+                }
+                intakes[index]["revisions"] = revisions
+            }
+            root["intakes"] = intakes
+        }
         guard version == 1 else { return root }
         var products = try XCTUnwrap(root["products"] as? [[String: Any]])
         for index in products.indices { products[index].removeValue(forKey: "kind") }
@@ -237,6 +250,55 @@ final class JournalImportStrictShapeTests: XCTestCase {
             "version 2 adds the kind and changes nothing else")
     }
 
+    /// Version 3 is version 2 with a revision's own time, so the sets are held to the committed version 3 schema,
+    /// and the one that differs is the revision.
+    func testTheVersion3KeySetsAreExactlyWhatTheCommittedSchemaStates() throws {
+        let schema = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: try Data(contentsOf: try schemaURL(version: 3))) as? [String: Any])
+        let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
+        let expected: [(definition: String?, keys: Set<String>)] = [
+            (nil, JournalImportV3Keys.root),
+            ("intake", JournalImportV3Keys.intake),
+            ("revision", JournalImportV3Keys.revision),
+            ("provenance", JournalImportV3Keys.provenance),
+            ("component", JournalImportV3Keys.component),
+            ("tombstone", JournalImportV3Keys.tombstone),
+            ("favorite", JournalImportV3Keys.favorite),
+        ]
+        let minimumLengthFields: [String: Set<String>] = [
+            "root": ["app_version"], "intake": ["category", "time_zone"], "revision": ["time_zone"],
+            "provenance": ["snapshot_id", "product_id", "name", "label_basis", "catalog_origin", "catalog_version"],
+            "component": ["unit"], "tombstone": ["time_zone"],
+            "favorite": ["id", "display_name", "category"],
+        ]
+        for entry in expected {
+            var shape = schema
+            if let definition = entry.definition {
+                shape = try XCTUnwrap(definitions[definition] as? [String: Any], definition)
+            }
+            let properties = try XCTUnwrap(shape["properties"] as? [String: Any], "\(entry.keys)")
+            let required = try XCTUnwrap(shape["required"] as? [String], "\(entry.keys)")
+            XCTAssertEqual(Set(properties.keys), entry.keys)
+            XCTAssertEqual(Set(required), entry.keys)
+            XCTAssertEqual(
+                minimumLengthOneFields(in: properties), minimumLengthFields[entry.definition ?? "root"] ?? [])
+        }
+        XCTAssertEqual(
+            JournalImportV3Keys.revision.subtracting(JournalImportV2Keys.revision), ["occurred_at", "time_zone"],
+            "version 3 adds a revision's own time and changes nothing else")
+    }
+
+    /// A revision's own time is required from version 3 on, written as null when the revision has none.
+    func testAMissingRevisionTimeInAVersion3DocumentIsRefused() throws {
+        var fields = try fields(document(intakes: [intake(revisions: [revision()])]))
+        var intakes = try XCTUnwrap(fields["intakes"] as? [[String: Any]])
+        var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+        revisions[0].removeValue(forKey: "occurred_at")
+        intakes[0]["revisions"] = revisions
+        fields["intakes"] = intakes
+        try assertRefusedAsMalformed(fields)
+    }
+
     /// The kind is required from version 2 on: a document that declares version 2 and leaves it out is
     /// not a version 2 document, whatever a decoder would make of it.
     func testAMissingKindInAVersion2ProvenanceIsRefused() throws {
@@ -257,6 +319,7 @@ final class JournalImportStrictShapeTests: XCTestCase {
             document(
                 intakes: [intake(revisions: [revision(snapshotID: "snap-oats-1", product: provenance())])],
                 products: [provenance()]))
+        fields = try fieldsForSchemaVersion(fields, version: 2)
         fields["schema_version"] = 1
         var products = try XCTUnwrap(fields["products"] as? [[String: Any]])
         products[0].removeValue(forKey: "kind")
@@ -325,9 +388,19 @@ final class JournalImportStrictShapeTests: XCTestCase {
             "favorites.0.id", "favorites.0.display_name", "favorites.0.category",
             "favorites.0.components.0.unit",
         ]
-        for version in [1, 2] {
-            for path in paths {
-                let versioned = try fieldsForSchemaVersion(valid, version: version)
+        for version in [1, 2, 3] {
+            let versionPaths = version >= 3 ? paths + ["intakes.0.revisions.0.time_zone"] : paths
+            for path in versionPaths {
+                var versioned = try fieldsForSchemaVersion(valid, version: version)
+                if version >= 3 {
+                    // A revision written with its own time, so the time zone is a string that can be emptied.
+                    var intakes = try XCTUnwrap(versioned["intakes"] as? [[String: Any]])
+                    var revisions = try XCTUnwrap(intakes[0]["revisions"] as? [[String: Any]])
+                    revisions[0]["occurred_at"] = "2024-01-15T07:15:00Z"
+                    revisions[0]["time_zone"] = "Europe/Berlin"
+                    intakes[0]["revisions"] = revisions
+                    versioned["intakes"] = intakes
+                }
                 let candidate = try replacingValue(
                     in: versioned, path: path.split(separator: ".").map(String.init), with: "")
                 try assertReadRefusedAsMalformed(try XCTUnwrap(candidate as? [String: Any]))
