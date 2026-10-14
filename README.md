@@ -14,7 +14,7 @@ A native iOS app for a local food, supplement and hydration journal. This reposi
 - Custom products with optional barcodes, serving information and structured facts; a selected product can be shared after review, and shared products can be found by name
 - Community catalog client: label submission, a barcode fallback for barcodes that Open Food Facts does not know, and product search
 - Bounded response reads for the Community, Open Food Facts and NIH DSLD transports
-- HealthKit write planning and a delivery worker, with a debug-only device spike
+- Apple Health: Connect in Settings writes the nutrients and water of logged entries to HealthKit, with a debug-only device spike
 - Intake-context canonical JSON, digest calculation and journal-revision encoding
 - Swift package and app-target tests, source lint, privacy checks and unsigned build workflows
 - A manual, reviewer-gated signed-upload workflow for beta builds
@@ -27,7 +27,7 @@ Health Nutrition is not on the App Store. Signed beta builds go out through Test
 
 ## Integration and release status
 
-The app keeps both HealthKit and HealthRelay destinations disabled. Implemented planners, workers and encoders do not establish enabled end-to-end delivery or device acceptance. The debug-only HealthKit spike is separate from normal journal delivery. See the [writer lifecycle](docs/healthkit-writer.md) and [intake-context contract](docs/intake-context.md).
+Apple Health delivery is enabled in every build and starts when the person connects Apple Health in Settings; device acceptance of the release path is still separate evidence. The HealthRelay destination stays disabled. The debug-only HealthKit spike is separate from normal journal delivery. See the [writer lifecycle](docs/healthkit-writer.md) and [intake-context contract](docs/intake-context.md).
 
 The shared catalog backend is in source: Supabase migrations, row-level security and tests under `supabase/`, and the app's community client. The repository does not show that these migrations are applied to a hosted project, so no hosted shared service is established here. Community agreement never verifies a label; only an explicit owner review does. Shared custom products are implemented in source; the [0.1.17 release note](docs/releases/0.1.17-shared-products.md) records the deployment, validation and release status it was written with, and [the backend README](supabase/README.md) explains why checked-in configuration is not evidence of hosted state. Provider clients and fixtures do not establish a deployed shared service. Pull-request and push CI builds are unsigned; the signed beta workflow is manual and reviewer-gated, and public distribution still requires separate privacy, compatibility and release verification.
 

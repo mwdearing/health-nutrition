@@ -411,6 +411,121 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(writer.saveCalls, 0)
     }
 
+    /// Mixed permissions: the allowed nutrient still reaches Health, and the entry waits for a person
+    /// with the refused one named. Refusing the whole plan meant one turned-off type kept every
+    /// nutrient of the entry out of Health.
+    func testAnAllowedNutrientIsWrittenWhileARefusedOneParksTheEntry() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [proteinIdentifier(intakeID)])
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a refused type still needs a person, got \(outcomes)")
+        }
+        XCTAssertTrue(reason.contains("calcium"), "the reason names the refused nutrient, got \(reason)")
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .needsAttention)
+    }
+
+    /// Allowing the refused type later and re-arming writes the same revision again, now complete.
+    func testAllowingTheRefusedTypeLaterWritesTheWholeRevision() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+
+        writer.allow("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.rearmDelivery(operationID: try XCTUnwrap(healthKitOperation(store, kind: .upsert)).operationID)
+        writer.reset()
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(
+            Set(writer.saved.map(\.syncIdentifier)),
+            ["intake:\(intakeID):calcium", proteinIdentifier(intakeID)])
+        XCTAssertNil(try healthKitOperation(store, kind: .upsert))
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    /// An edit that drops a nutrient whose type is now turned off cannot remove the old sample, so it
+    /// waits for a person instead of being acknowledged over a stale value in Health.
+    func testAnEditDroppingANowRefusedNutrientWaitsForAPerson() async throws {
+        let directory = try makeDirectory()
+        let store = try makeStore(directory)
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings { writer.allow(mapping.quantityTypeIdentifier) }
+        let byRevision: [Int: [String: NutrientValue]] = [
+            1: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)],
+            2: ["protein": .known(dec("13"), .g)],
+        ]
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer, totals: { _, revision in byRevision[revision] ?? [:] })
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "no calcium", now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertFalse(writer.deleted.contains("intake:\(intakeID):calcium"), "a refused type is not asked to delete")
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [proteinIdentifier(intakeID)])
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("the stale calcium needs a person, got \(outcomes)")
+        }
+        XCTAssertTrue(reason.contains("calcium"), "got \(reason)")
+    }
+
+    /// A nutrient an intermediate revision already removed is not stale any more, so turning its type
+    /// off afterwards does not hold up later edits.
+    func testANutrientAlreadyRemovedByADeliveredEditIsNotStale() async throws {
+        let store = try makeStore(try makeDirectory())
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings { writer.allow(mapping.quantityTypeIdentifier) }
+        let byRevision: [Int: [String: NutrientValue]] = [
+            1: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)],
+            2: ["protein": .known(dec("13"), .g)],
+            3: ["protein": .known(dec("20"), .g)],
+        ]
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer, totals: { _, revision in byRevision[revision] ?? [:] })
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "no calcium", now: when)
+        _ = await worker.runOnce(now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.edit(
+            intakeID: intakeID, components: [component(amount: 55)], product: nil, changeReason: "more", now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .delivered = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("revision 2 already removed the calcium, got \(outcomes)")
+        }
+    }
+
+    /// A nutrient no revision ever stated is not stale, so a type turned off for it does not hold up
+    /// an edit.
+    func testAnEditIsDeliveredWhenTheRefusedTypeWasNeverWritten() async throws {
+        let (store, writer, _, worker) = try makeWorker(totals: ["protein": .known(dec("13"), .g)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component(amount: 55)], product: nil, changeReason: "more", now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .delivered = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("nothing stale is left behind, got \(outcomes)")
+        }
+    }
+
     /// A retraction is per type: the 16 types still authorized are removed, and only the denied one
     /// keeps the operation queued. Aborting the whole retraction is what used to strand them.
     func testADeniedDeleteStillRemovesTheAuthorizedTypesAndIsLeftForAPerson() async throws {

@@ -167,12 +167,12 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     assert "healthrelayavailable = false" in view_model.lower()
     assert "@published public var applehealthenabled = false" in view_model.lower()
     assert "@published public var healthrelayenabled = false" in view_model.lower()
-    assert "neither connection can be enabled in release builds" in privacy
-    assert "not saved as connection settings" in privacy
+    assert "off until you tap connect apple health" in privacy
+    assert "not saved as a connection setting" in privacy
     assert "reviewed by the catalog owner" in accounts
     assert "community agreement does not verify" in accounts
     assert "five people" not in accounts and "five accounts" not in accounts
-    assert "release builds" in privacy and "debug builds" in privacy
+    assert "debug build" in privacy and "never reads other health data" in privacy
 
     privacy_summary = view_model.split("public static let privacySummary =", 1)[1].split("public static let exportButtonTitle", 1)[0]
     summary_literals = " ".join(re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', privacy_summary))
@@ -201,7 +201,7 @@ def test_privacy_documentation_checks_run_for_docs_and_behavior_changes() -> Non
     assert "scripts/tests/test_journal_restore_import_race.py" in commands
 
 
-def test_public_privacy_copy_discloses_debug_journal_delivery_and_conditional_camera_check() -> None:
+def test_public_privacy_copy_discloses_apple_health_delivery_and_conditional_camera_check() -> None:
     privacy = (ROOT / "PRIVACY.md").read_text(encoding="utf-8").lower()
     accounts = (ROOT / "docs/accounts.md").read_text(encoding="utf-8").lower()
     erase = (ROOT / "docs/erase-all-data.md").read_text(encoding="utf-8").lower()
@@ -210,33 +210,41 @@ def test_public_privacy_copy_discloses_debug_journal_delivery_and_conditional_ca
     app_services = APP_SERVICES.read_text(encoding="utf-8")
     root_view = (ROOT / "ios/HealthNutrition/Sources/RootView.swift").read_text(encoding="utf-8")
     project = (ROOT / "ios/HealthNutrition/project.yml").read_text(encoding="utf-8").lower()
+    driver = (ROOT / "ios/HealthNutrition/Sources/HealthKitDeliveryStatus.swift").read_text(encoding="utf-8")
 
     destination_setup = app_services.split("// Which destinations the journal queues work for.", 1)[1].split(
         "        } catch {", 1
     )[0]
-    debug_delivery = destination_setup.split("#if DEBUG", 1)[1].split("#else", 1)[0]
-    release_delivery = destination_setup.split("#else", 1)[1].split("#endif", 1)[0]
-    assert "enabledDestinations: [.healthKit]" in debug_delivery
-    assert "enabledDestinations: []" in release_delivery
+    # Every build queues HealthKit work and none queues relay work; the person's Connect gates writing.
+    assert "#if DEBUG" not in destination_setup
+    assert "enabledDestinations: [.healthKit]" in destination_setup
+    assert ".relay" not in destination_setup.split("enabledDestinations:", 1)[1]
     assert "deliverToHealthKit(now: now)" in root_view
-    assert "healthkit" in project and "entries you log" in project and "nutrients" in project
+    assert "#if DEBUG\n        deliverToHealthKit" not in root_view
+    # Write access only; the request names no read types.
+    assert "requestAuthorization(toShare: mapped.share, read: [])" in driver
+    assert "connect apple health" in project and "entries you log" in project and "nutrients" in project
+    assert "does not read other health data" in project
+    assert "no release build writes" not in project
     assert "rare camera check when you ask for an emailed sign-in code" in project
 
     for document in (privacy, erase, manifest_docs):
-        assert "debug build" in document
+        assert "connect" in document and "apple health" in document
         assert "real logged food and water entries" in document
         assert "nutrients" in document and "healthkit" in document
         assert "test samples" in document
+        assert "release builds do not" not in document and "cannot enable healthkit" not in document
     for document in (privacy, erase):
         assert "already written" in document
         assert "does not remove" in document or "does not retract" in document
+    assert "never reads other health data" in privacy
     for document in (privacy, accounts):
         assert "rare cases the challenge may request camera access" in document
 
     summary = view_model.split("public static let privacysummary =", 1)[1].split(
         "public static let exportbuttontitle", 1
     )[0]
-    assert "debug" in summary and "healthkit" in summary and "journal" in summary
+    assert "connect apple health" in summary and "healthkit" in summary and "reads only its own samples" in summary
     assert "camera access" in summary and "email sign-in" in summary
 
 

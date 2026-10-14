@@ -42,10 +42,12 @@ Opening one of the results sends nothing: the form is filled from the reply
 already received. It works signed out and is limited to six searches a minute.
 The screen says so beside the results; supplements are not searched there.
 
-The HealthRelay destination is unavailable in this version. Release builds do
-not enable Apple Health delivery either. In a debug build, after Health access
-is granted, nutrients from real logged food and water entries can be written to
-HealthKit; the debug HealthKit screen can also write separate test samples.
+The HealthRelay destination is unavailable in this version. After the person
+connects Apple Health in Settings and allows it, nutrients from
+real logged food and water entries are written to HealthKit on the device. That
+is not data collection: nothing leaves the phone, and the app reads back only
+the samples it wrote itself, to replace or remove them after an edit or delete. A debug build's
+HealthKit screen can also write separate test samples.
 Erasing local journal rows does not remove HealthKit samples already written.
 Photos and personal intake details such as amounts eaten, meal and time are not
 sent with label submissions. Nothing is sold or used for tracking.

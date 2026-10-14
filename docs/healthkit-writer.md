@@ -359,39 +359,54 @@ the future is skipped and reported as `.notDue`.
 A retry rebuilds the plan from the stored revision, so it is byte-identical to the first attempt: an
 equal-version replacement, which ADR 0002's run showed HealthKit accepts and which changes nothing.
 
-## Delivery is off in every release build
+## Delivery is on in every build, and starts when the person connects
 
-`AppServices` constructs the worker in every build, but only a **debug** build opens
-`SwiftDataJournalStore` with `.healthKit` enabled. A release build passes `enabledDestinations: []`, so
-**no HealthKit operation is ever queued, `runOnce` always finds an empty queue, and the app writes
-nothing to Health and asks for no Health access.** Turning delivery on for real users means changing
-that one setting, and it is a separate decision because it starts writing real intake data into a user's
-health store — scaling the totals first, and asking the user, are both still open. Nothing in this
-repository changes it.
+`AppServices` opens `SwiftDataJournalStore` with `.healthKit` enabled in every build, so every logged
+revision queues a HealthKit operation. Queuing is not writing: `HealthKitDeliveryStatus`
+(`ios/HealthNutrition/Sources/HealthKitDeliveryStatus.swift`) starts no automatic run before Health has
+been asked about every mapped type, and Health is asked only when the person taps **Connect Apple
+Health** in Settings. An entry logged before connecting therefore waits on the device and is written
+when they connect; nothing reaches Health for someone who never does. Snapshot nutrients are scaled by
+the logged amount before they are written (see the planner section above).
 
-A debug build enables the destination so the writer can be exercised on a device against real entries
-(NC-08 device acceptance). `ios/HealthNutrition/Sources/Debug/HealthKitDeliveryDebug.swift` is the whole
-of that: it asks HealthKit for write access to every type in `HealthKitWritePlanner.mappings`, calls
-`runOnce(now:)` when the app becomes active and after every journal change, and shows the pending,
-needing-attention and suspended counts plus the last run's outcome list. Today carries one line of the
-same counts. It changes no behavior in the worker, the writer or the journal, and the whole file is
-behind `#if DEBUG`.
+The Settings row reads write access per mapped type from `HKHealthStore.authorizationStatus(for:)`,
+which, unlike read access, HealthKit reports truthfully, and shows Not connected, Connected, Partly
+allowed, Turned off in Health, or Needs your answer (a build that maps more types than the person was
+asked about). Its button asks again where Health still can; where every type was already answered, the
+same call re-arms what a denial parked and runs a pass, because iOS shows the sheet only once and the
+answer is changed in the Health app.
+
+With mixed permissions an upsert writes the nutrients Health allows and parks the operation in
+`needsAttention` with the refused nutrients named, so one turned-off type never keeps the rest of an
+entry out of Health. Stale-sample deletion on an edit only touches types this app may write; an edit that drops a nutrient whose sample can still be in Health (stated by the newest fully delivered revision or a later attempted one) and whose type is no longer writable parks too, because the old sample cannot be removed. Allowing
+the refused types later re-delivers the same revision, an equal-version replacement of what was
+already written.
+
+A change of access made in the Health app re-arms parked operations on the next automatic run: the
+first run of a launch when access differs from what the previous launch recorded (kept in user defaults), and any run that sees different access from the one before (counts or the set of allowed types),
+re-arms every suspended operation before it reads the queue. An operation that is still refused simply
+parks again with the same reason.
+
+Entries logged by an earlier build that queued nothing for HealthKit keep their `disabled` projection
+and are not written retroactively.
+
+The debug tab (`HealthKitDeliveryDebugSection`, at the bottom of the same file, behind `#if DEBUG`)
+shows the same state in full: the pending, needing-attention and suspended counts plus the last run's
+outcome list, with buttons to request access, run a pass and re-arm. Today carries one line of the same
+counts in a debug build.
 
 ### The automatic-run gate
 
 An automatic run — one the app starts itself after a journal change or on foreground — waits until
 **every** mapped type that resolves has been asked about; a partial request does not open the gate,
 because the types it left out stay `.notDetermined`, which the writer reads as denied and the worker
-then parks for good. The debug tab's request asks for the whole `mappings` table, share and read, not
+then parks for good. Both requests ask for the whole `mappings` table, not
 only the two types the spike writes, and the spike's transcript lists exactly which identifiers were
 requested. Answering that sheet also re-arms every suspended operation and runs one delivery pass
 immediately, so an operation parked for a missing request is retried in the same action rather than
 at the next launch.
 
 The relay destination stays off in every build, debug included.
-
-Outside a debug build the journal store keeps the `disabled` projection for HealthKit, so entries do not
-sit in a permanent `pending` state while delivery is off.
 
 ## Tests
 `ios/NutritionCore/Tests/NutritionJournalTests/HealthKitWritePlanTests.swift` covers the identifier

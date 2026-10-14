@@ -47,9 +47,9 @@ targets:
       - package: HCaptcha
         product: HCaptcha
     # HealthKit capability. Nothing in the app reaches HealthKit except the writer
-    # (Sources/HealthKitSampleWriter.swift) and the two debug surfaces under Sources/Debug, and no Health
-    # authorization is requested outside #if DEBUG. The entitlement and the usage strings still have to be
-    # in the target for a debug build to run on a device.
+    # (Sources/HealthKitSampleWriter.swift), its driver (Sources/HealthKitDeliveryStatus.swift), which
+    # asks for write access only when the person taps Connect Apple Health in Settings, and the debug
+    # spike under Sources/Debug.
     entitlements:
       path: HealthNutrition.entitlements
       # XcodeGen rewrites the file from these properties during generation.
@@ -77,11 +77,12 @@ targets:
         # does not wait on the compliance question before it reaches testers.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_NSHealthShareUsageDescription: "The debug HealthKit spike reads back the water and protein samples this app wrote, so the spike can show what HealthKit kept. Nothing else is read."
-        # Both strings describe debug-only behavior, which is the only thing that reaches Health in any
-        # build. The delivery driver on the HealthKit tab writes the nutrients of the entries you log, and
-        # removes them again when you delete an entry; the spike writes its own two test samples.
-        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "In a debug build, the HealthKit tab writes the nutrients of the entries you log to Health, and removes them again when you delete an entry. It also writes a few test water and protein samples you can delete from that screen. No release build writes anything to Health."
+        # The app requests write access only. The read string stays because the debug HealthKit spike reads
+        # back its own test samples; no release code path reads Health.
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "HealthNutrition does not read other Health data. It only looks up the samples it wrote, to update or remove them when you edit or delete an entry, and a debug build's HealthKit test screen reads back the test water and protein samples it wrote."
+        # Write access is asked for when you tap Connect Apple Health in Settings. The delivery driver then
+        # writes the nutrients of the entries you log, and removes them again when you delete an entry.
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "When you connect Apple Health, HealthNutrition writes the nutrients and water of the entries you log to Health, and removes them again when you delete an entry."
         # The camera in Add intake. It is used for two things and nothing else: reading the barcode
         # printed on a package, and reading the text of a Nutrition Facts panel so the values can be
         # checked before they are filled in. Text recognition runs on the device; the picture is never

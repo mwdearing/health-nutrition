@@ -46,7 +46,7 @@ Removing the keys restores defaults; it does not write replacement values. The r
 
 - **The community server account and submissions.** Local erase does not call the server. Use account controls to sign out or delete an account. Account deletion removes that profile and its submissions; an independently approved owner-reviewed catalog snapshot can remain without contributor identity.
 - **Export copies outside the app.** A file shared through the system share sheet belongs to Files, mail, cloud storage or another destination. This app no longer has a handle to that copy and cannot remove it.
-- **Apple Health.** Release builds cannot enable HealthKit delivery and do not queue HealthKit writes. In a debug build, after Health access is granted, nutrients from real logged food and water entries can be written to HealthKit; the debug HealthKit screen can also write separate test samples. Erasing local rows does not remove HealthKit samples already written. HealthKit has its own store.
+- **Apple Health.** After the person connects Apple Health in Settings and allows it, nutrients from real logged food and water entries are written to HealthKit; a debug build's HealthKit screen can also write separate test samples. Erasing local rows does not remove HealthKit samples already written. HealthKit has its own store.
 - **HealthRelay.** It is unavailable in this version, so there is no active relay destination for this erase to contact.
 
 Deleting rows from the existing store containers is a logical app-level erase. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered. Device-level protection and physical erase behavior have not been established by this change.
