@@ -3,7 +3,7 @@ name: ios
 on:
   pull_request:
     # Draft pull requests do not use the shared macOS runners; marking one ready runs the checks.
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "ios/**"
       - "contracts/**"
