@@ -135,7 +135,9 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   of names. The service also matches on category, label and names in other
   languages, so a result is kept only when its name, or its name and brand
   together, show every typed word; results with the words in the name come first.
-  A word is compared by its start, so "apples" still matches "Apple juice". The
+  Each typed word has to begin a word in the name or brand, after an English
+  plural ending is removed from both, so "apples" matches "Apple juice" while
+  "ham" does not match "Champagne" and "milk" does not match "Millet". The
   search index has per-100 figures but not the serving or whether a
   product is measured in grams or millilitres, so a result is listed as "per 100 g
   or mL" and opens with no serving filled in. Opening a result sends nothing: the

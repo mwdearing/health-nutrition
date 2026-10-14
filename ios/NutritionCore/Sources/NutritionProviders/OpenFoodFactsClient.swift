@@ -200,10 +200,20 @@ public actor OpenFoodFactsClient {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
 
-    /// The start of a word that its plural and singular share ("apples" and "apple" both hold "appl"),
-    /// because the service matches word forms and an exact comparison would discard those rows.
-    private static func stem(_ word: String) -> String {
-        word.count > 3 ? String(word.prefix(max(3, word.count - 2))) : word
+    /// The words of a text, folded and split at anything that is not a letter or digit.
+    private static func words(_ text: String) -> [String] {
+        folded(text).split { !($0.isLetter || $0.isNumber) }.map(String.init)
+    }
+
+    /// A word and the forms it would have without an English plural ending ("cookies" also gives
+    /// "cookie", "berries" "berry", "tomatoes" "tomato"). The service matches word forms, so an exact
+    /// comparison would discard rows it rightly returned.
+    private static func forms(_ word: String) -> [String] {
+        var forms = [word]
+        if word.count > 3, word.hasSuffix("s") { forms.append(String(word.dropLast())) }
+        if word.count > 4, word.hasSuffix("es") { forms.append(String(word.dropLast(2))) }
+        if word.count > 4, word.hasSuffix("ies") { forms.append(String(word.dropLast(3)) + "y") }
+        return forms
     }
 
     private static func interpretSearch(_ data: Data, query: String) -> OpenFoodFactsSearchOutcome {
@@ -233,11 +243,12 @@ public actor OpenFoodFactsClient {
         // The service also matches on category, label and names in other languages, so a row can come
         // back without the typed words anywhere in what the list shows. Only rows that show every word
         // are kept: first those with the words in the name, then those that need the brand as well, in
-        // the service's order inside each group.
-        let stems = folded(query).split(separator: " ").map { stem(String($0)) }
+        // the service's order inside each group. A typed word must begin a shown word, so "ham" does not
+        // match "Champagne" and "milk" does not match "Millet".
+        let typed = words(query).map(forms)
         func shows(_ text: String) -> Bool {
-            let shown = folded(text)
-            return stems.allSatisfy { shown.contains($0) }
+            let shown = words(text).flatMap(forms)
+            return typed.allSatisfy { word in word.contains { form in shown.contains { $0.hasPrefix(form) } } }
         }
         let inName = products.filter { shows($0.name ?? "") }
         let withBrand = products.filter { !shows($0.name ?? "") && shows(($0.name ?? "") + " " + ($0.brands ?? "")) }

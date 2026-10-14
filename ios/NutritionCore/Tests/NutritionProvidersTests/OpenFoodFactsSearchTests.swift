@@ -87,7 +87,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
           {"code": "2000000000015", "product_name": "Leche Entera", "brands": ["Oat Milk Co"], "nutriments": {}},
           {"code": "2000000000022", "product_name": "Organic OAT Drink, Mílk style", "nutriments": {}},
           {"code": "2000000000039", "product_name": "Milk", "nutriments": {}},
-          {"code": "2000000000046", "product_name": "Oatmilk Barista", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Oat-Milk Barista", "nutriments": {}},
           {"code": "2000000000053", "product_name": "Barista Blend", "brands": "Example Oat", "nutriments": {}}
         ]}
         """.utf8)
@@ -116,6 +116,63 @@ final class OpenFoodFactsSearchTests: XCTestCase {
             return XCTFail("expected results, got \(eggs)")
         }
         XCTAssertEqual(eggRows.map(\.barcode), ["2000000000022"])
+    }
+
+    /// A typed word has to begin a word in the name or brand. A word that only appears inside another
+    /// word ("ham" in "Champagne") or shares its first letters with a different word ("milk" and
+    /// "Millet") is not a match.
+    func testTypedWordsMustBeginAShownWord() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Champagne Brut", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Ham slices", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Millet flakes", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Whole milk", "nutriments": {}},
+          {"code": "2000000000053", "product_name": "Hamburger buns", "nutriments": {}},
+          {"code": "2000000000060", "product_name": "Oatmilk", "nutriments": {}}
+        ]}
+        """.utf8)
+        let ham = await client(StubTransport(body: body)).search(query: "ham")
+        guard case .results(let hamRows) = ham else {
+            return XCTFail("expected results, got \(ham)")
+        }
+        XCTAssertEqual(hamRows.map(\.barcode), ["2000000000022", "2000000000053"])
+        let milk = await client(StubTransport(body: body)).search(query: "milk")
+        guard case .results(let milkRows) = milk else {
+            return XCTFail("expected results, got \(milk)")
+        }
+        XCTAssertEqual(milkRows.map(\.barcode), ["2000000000046"])
+    }
+
+    /// A plural and its singular match in either direction.
+    func testPluralEndingsAreRemovedOnBothSides() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Mixed Berry Jam", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Tomato Soup", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Rolled Oats", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Glass Noodles", "nutriments": {}},
+          {"code": "2000000000053", "product_name": "Chocolate Chip Cookie", "nutriments": {}},
+          {"code": "2000000000060", "product_name": "Blueberries", "nutriments": {}}
+        ]}
+        """.utf8)
+        let cases: [(query: String, barcodes: [String])] = [
+            ("berries", ["2000000000015"]),
+            ("berry", ["2000000000015"]),
+            ("tomatoes", ["2000000000022"]),
+            ("oat", ["2000000000039"]),
+            ("glass noodle", ["2000000000046"]),
+            ("cookies", ["2000000000053"]),
+            ("blueberry", ["2000000000060"]),
+        ]
+        for entry in cases {
+            let outcome = await client(StubTransport(body: body)).search(query: entry.query)
+            guard case .results(let rows) = outcome else {
+                XCTFail("expected results for \(entry.query), got \(outcome)")
+                continue
+            }
+            XCTAssertEqual(rows.map(\.barcode), entry.barcodes, entry.query)
+        }
     }
 
     func testSearchWhereNoResultShowsTheWordsIsEmpty() async {
