@@ -13,11 +13,16 @@ public struct AppleHealthAccess: Equatable, Sendable {
     public var authorized: Int
     /// Types the person turned off.
     public var denied: Int
+    /// Which types are allowed, as opaque identifiers. Not shown anywhere: it is here so two answers
+    /// with the same counts but a different set of allowed types (one type turned on, another turned
+    /// off) still compare as a change.
+    public var authorizedTypes: Set<String>
 
-    public init(undetermined: Int, authorized: Int, denied: Int) {
+    public init(undetermined: Int, authorized: Int, denied: Int, authorizedTypes: Set<String> = []) {
         self.undetermined = undetermined
         self.authorized = authorized
         self.denied = denied
+        self.authorizedTypes = authorizedTypes
     }
 
     /// No Health on this device, or no type to ask about.

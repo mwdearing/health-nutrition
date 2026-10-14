@@ -131,7 +131,9 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
         var access = AppleHealthAccess.unavailable
         for type in mappedTypes().share {
             switch store.authorizationStatus(for: type) {
-            case .sharingAuthorized: access.authorized += 1
+            case .sharingAuthorized:
+                access.authorized += 1
+                access.authorizedTypes.insert(type.identifier)
             case .sharingDenied: access.denied += 1
             case .notDetermined: access.undetermined += 1
             @unknown default: access.undetermined += 1
@@ -270,7 +272,8 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
         }
         isBusy = true
         defer { isBusy = false }
-        // Access that changed since the last run was changed by a person in the Health app, which is
+        // Access that changed since the last run (counts or which types are allowed) was changed by a
+        // person in the Health app, which is
         // as much their answer to a denial as the sheet is: without this an entry parked by "Don't
         // Allow" stays parked after they allow it. The first run of a launch counts as a change, since
         // nothing remembers what Health said before the app was closed.

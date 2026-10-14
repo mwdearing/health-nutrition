@@ -126,6 +126,32 @@ final class AppleHealthDeliveryTests: XCTestCase {
         XCTAssertTrue(status.lastRunLines.contains { $0.hasPrefix("delivered \(operation.operationID)") })
     }
 
+    /// Turning one type on and another off leaves the counts equal; the set of allowed types still
+    /// differs, so the parked entry is re-armed.
+    func testSwappingWhichTypesAreAllowedReArmsWhatADenialParked() async throws {
+        let services = try makeServices()
+        let box = AccessBox()
+        box.access = AppleHealthAccess(undetermined: 0, authorized: 1, denied: 1, authorizedTypes: ["protein"])
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: worker(services, writer: RecordingWriter()), store: services.journalStore,
+            authorizationProbe: { .requested }, accessProbe: { box.access })
+        await status.run(now: when, automatic: true)
+        try services.journalStore.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "water", name: "Water", amount: 250, unit: .mL)],
+            product: nil, now: when)
+        let operation = try XCTUnwrap(try services.journalStore.pendingOutbox().first)
+        try services.journalStore.recordFailure(
+            operationID: operation.operationID, retryAt: nil, needsAttention: true,
+            reason: "HealthKit access is not granted, so it cannot be written")
+
+        box.access = AppleHealthAccess(undetermined: 0, authorized: 1, denied: 1, authorizedTypes: ["water"])
+        await status.run(now: when, automatic: true)
+
+        XCTAssertEqual(status.counts.suspended, 0)
+        XCTAssertTrue(status.lastRunLines.contains { $0.hasPrefix("delivered \(operation.operationID)") })
+    }
+
     /// Settings' row reads the same driver, so what it shows is Health's answer.
     func testTheSettingsRowReflectsTheDriversAccess() throws {
         let services = try makeServices()

@@ -434,8 +434,34 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // replacement of what was already written.
         let allowed = await writer.canWrite(identifiers: Self.mappedTypeIdentifiers)
         let writable = plan.filter { allowed[$0.quantityTypeIdentifier] == true }
-        let refusedKeys = Set(plan.filter { allowed[$0.quantityTypeIdentifier] != true }
-            .compactMap { spec in spec.syncIdentifier.split(separator: ":").last.map(String.init) })
+        var refusedKeys = Set(plan.filter { allowed[$0.quantityTypeIdentifier] != true }
+            .map { Self.nutrientKey(of: $0.syncIdentifier) })
+        // An edit that drops a nutrient an earlier revision wrote has to remove that sample, which needs
+        // write access to its type. Where the type is no longer writable the sample cannot be removed,
+        // so the edit waits for a person rather than being acknowledged over a stale value in Health.
+        // Earlier revisions are read only when such a type exists, which is never the case while every
+        // type is allowed.
+        if operation.revision > 1 {
+            let planned = Set(plan.map { Self.nutrientKey(of: $0.syncIdentifier) })
+            let unwritableOmitted = Set(HealthKitWritePlanner.mappings
+                .filter { allowed[$0.quantityTypeIdentifier] != true && !planned.contains($0.nutrientKey) }
+                .map(\.nutrientKey))
+            if !unwritableOmitted.isEmpty {
+                do {
+                    var earlier = Set<String>()
+                    for number in 1..<operation.revision {
+                        let earlierPlan = HealthKitWritePlanner.plan(
+                            intakeID: operation.intakeID, revision: number, occurredAt: occurredAt,
+                            totals: try await totals(operation.intakeID, number))
+                        earlier.formUnion(earlierPlan.map { Self.nutrientKey(of: $0.syncIdentifier) })
+                    }
+                    refusedKeys.formUnion(unwritableOmitted.intersection(earlier))
+                } catch {
+                    return transient(
+                        operation, now: now, reason: "the totals of an earlier revision could not be read")
+                }
+            }
+        }
         do {
             try await deleteStaleSamples(for: operation, plan: plan, allowed: allowed)
             if !writable.isEmpty {
@@ -455,8 +481,8 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             // allowed types are already written; the reason names the ones that are not.
             let reason = writable.isEmpty
                 ? "HealthKit access is not granted, so it cannot be written"
-                : "HealthKit access is not granted for \(refusedKeys.sorted().joined(separator: ", ")), "
-                    + "so only the allowed nutrients were written"
+                : "HealthKit access is not granted for \(refusedKeys.sorted().joined(separator: ", ")); "
+                    + "only the allowed nutrients were updated"
             return needsAttention(operation, now: now, reason: reason)
         }
         return acknowledge(
@@ -549,6 +575,11 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     /// Every key the mapping table names, so a delete covers every sample this app could have written
     /// for the intake, not only the ones the current revision happens to state.
     private static let mappedKeys: [String] = HealthKitWritePlanner.mappings.map(\.nutrientKey)
+
+    /// The nutrient key a sync identifier ends with (`intake:<id>:<key>`).
+    private static func nutrientKey(of syncIdentifier: String) -> String {
+        String(syncIdentifier.split(separator: ":").last ?? "")
+    }
 
     /// Every quantity type the mapping table names, so a retraction can ask the writer about all of
     /// them at once and still tell an authorized type from an explicitly denied one.

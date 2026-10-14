@@ -450,6 +450,53 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
     }
 
+    /// An edit that drops a nutrient whose type is now turned off cannot remove the old sample, so it
+    /// waits for a person instead of being acknowledged over a stale value in Health.
+    func testAnEditDroppingANowRefusedNutrientWaitsForAPerson() async throws {
+        let directory = try makeDirectory()
+        let store = try makeStore(directory)
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings { writer.allow(mapping.quantityTypeIdentifier) }
+        let byRevision: [Int: [String: NutrientValue]] = [
+            1: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)],
+            2: ["protein": .known(dec("13"), .g)],
+        ]
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer, totals: { _, revision in byRevision[revision] ?? [:] })
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "no calcium", now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        writer.reset()
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertFalse(writer.deleted.contains("intake:\(intakeID):calcium"), "a refused type is not asked to delete")
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [proteinIdentifier(intakeID)])
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("the stale calcium needs a person, got \(outcomes)")
+        }
+        XCTAssertTrue(reason.contains("calcium"), "got \(reason)")
+    }
+
+    /// A nutrient no revision ever stated is not stale, so a type turned off for it does not hold up
+    /// an edit.
+    func testAnEditIsDeliveredWhenTheRefusedTypeWasNeverWritten() async throws {
+        let (store, writer, _, worker) = try makeWorker(totals: ["protein": .known(dec("13"), .g)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component(amount: 55)], product: nil, changeReason: "more", now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .delivered = try XCTUnwrap(outcomes.last) else {
+            return XCTFail("nothing stale is left behind, got \(outcomes)")
+        }
+    }
+
     /// A retraction is per type: the 16 types still authorized are removed, and only the denied one
     /// keeps the operation queued. Aborting the whole retraction is what used to strand them.
     func testADeniedDeleteStillRemovesTheAuthorizedTypesAndIsLeftForAPerson() async throws {
