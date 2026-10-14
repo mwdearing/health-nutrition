@@ -305,6 +305,23 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
+    // The amounts-only form as the Add screen presents it, with a few values typed in.
+    func testQuickAddView() throws {
+        let services = try makeSeededServices()
+        let model = QuickAddViewModel(store: services.journalStore, meal: .lunch)
+        model.caloriesText = "540"
+        model.proteinText = "32"
+        model.carbohydratesText = "60"
+        try capture("QuickAddView") {
+            NavigationStack {
+                QuickAddView(model: model, onSaved: { _ in })
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                    }
+            }
+        }
+    }
+
     func testAddLibraryPicker() throws {
         let services = try makeSeededServices()
         try services.recipeStore.saveNewVersion(sampleRecipe())

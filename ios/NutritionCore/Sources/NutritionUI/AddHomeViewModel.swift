@@ -163,6 +163,17 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         } catch { errorMessage = "Could not add the item."; return nil }
     }
 
+    /// The amounts-only form for the meal chosen here.
+    public func makeQuickAdd() -> QuickAddViewModel {
+        QuickAddViewModel(store: store, meal: meal, now: now)
+    }
+
+    /// Offers undo for an entry the amounts-only form wrote, as a recent item's Add does.
+    public func quickAdded(_ token: AddUndoToken) {
+        undoToken = token
+        load()
+    }
+
     @discardableResult
     public func undo() -> Bool {
         guard let token = undoToken, now() < token.expiresAt else { undoToken = nil; return false }

@@ -167,6 +167,45 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(QuickAddViewModel.parse("5000.1", field: .fat, decimalSeparator: "."), .invalid)
     }
 
+    /// A typed name can never read as another field, so two different entries never share a snapshot id.
+    func testSnapshotIdentityCannotBeForgedByTheName() throws {
+        let forged = QuickAddViewModel.snapshotIdentity(
+            name: "foo|energyKcal=100 kcal", nutrients: ["protein": .known(1, .g)])
+        let plain = QuickAddViewModel.snapshotIdentity(
+            name: "foo", nutrients: ["energyKcal": .known(100, .kcal), "protein": .known(1, .g)])
+        XCTAssertNotEqual(forged, plain)
+        XCTAssertEqual(plain, QuickAddViewModel.snapshotIdentity(
+            name: "foo", nutrients: ["protein": .known(1, .g), "energyKcal": .known(100, .kcal)]))
+
+        let store = try makeStore()
+        let first = makeModel(store)
+        first.name = "foo|energyKcal=100 kcal"
+        first.proteinText = "1"
+        XCTAssertNotNil(first.save())
+        let second = makeModel(store)
+        second.name = "foo"
+        second.caloriesText = "100"
+        second.proteinText = "1"
+        XCTAssertNotNil(second.save())
+        XCTAssertEqual(try store.activeIntakes().count, 2)
+    }
+
+    /// Add opens the form on the meal chosen there, and an entry it writes can be undone from Add.
+    func testAddHomeOpensTheFormAndOffersUndo() throws {
+        let store = try makeStore()
+        let home = AddHomeViewModel(store: store, meal: .dinner, now: { self.now })
+        let form = home.makeQuickAdd()
+        XCTAssertEqual(form.meal, .dinner)
+        form.caloriesText = "400"
+        let token = try XCTUnwrap(form.save())
+        XCTAssertEqual(try store.activeIntakes().first?.meal, "dinner")
+
+        home.quickAdded(token)
+        XCTAssertEqual(home.undoToken, token)
+        XCTAssertTrue(home.undo())
+        XCTAssertEqual(try store.activeIntakes().count, 0)
+    }
+
     /// A store that fails leaves no entry and says so.
     func testAFailedSaveReportsAndWritesNothing() throws {
         let store = try makeStore()

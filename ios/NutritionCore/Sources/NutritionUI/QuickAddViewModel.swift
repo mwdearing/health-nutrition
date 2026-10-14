@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NutritionDomain
 import NutritionJournal
@@ -119,13 +120,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
             parts.append(field == .calories ? amount : amount + " " + field.label.lowercased())
         }
         let entryName = storedName
-        // The values are part of the identity: two quick adds that state different amounts are two
-        // products, and one snapshot id must never stand for two contents.
-        var signature = "quick-add|name=" + entryName
-        for key in nutrients.keys.sorted() {
-            signature += "|" + key + "=" + LookedUpProduct.describe(nutrients[key] ?? .unknown)
-        }
-        let identity = "quick-" + Slug.make(signature) + "-" + LookedUpProduct.checksum(signature)
+        let identity = Self.snapshotIdentity(name: entryName, nutrients: nutrients)
         let date = now()
         let intake = Intake(
             id: makeID(), category: ProductKind.food.rawValue, occurredAt: date,
@@ -145,6 +140,21 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         return AddUndoToken(
             intakeID: intake.id, message: "Added \(entryName), \(parts.joined(separator: ", "))",
             expiresAt: date.addingTimeInterval(10))
+    }
+
+    /// The snapshot id for one name and set of values. Everything the snapshot states is part of it, so
+    /// two quick adds that differ in any way are two products and one id never stands for two contents.
+    /// Each field is length-prefixed, so no typed name can read as another field, and the id is a
+    /// SHA-256 of that encoding rather than a short checksum.
+    static func snapshotIdentity(name: String, nutrients: [String: NutrientValue]) -> String {
+        var fields = ["quick-add", name]
+        for key in nutrients.keys.sorted() {
+            fields.append(key)
+            fields.append(LookedUpProduct.describe(nutrients[key] ?? .unknown))
+        }
+        let encoded = fields.map { "\($0.utf8.count):\($0)" }.joined()
+        let digest = SHA256.hash(data: Data(encoded.utf8))
+        return "quick-" + digest.prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 
     /// The typed name, trimmed and capped, or the default when none was typed.

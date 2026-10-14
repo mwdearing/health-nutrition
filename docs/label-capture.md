@@ -33,8 +33,11 @@ immediately with the currently selected meal and shows an Undo toast for ten sec
 Undo removes only that new entry. Without recent items, home says
 "Things you log will show up here."
 
-**Search foods**, **Describe or photograph a meal** (#149) and **Amounts only** (#146)
-remain disabled, carry a Later badge, and announce "Not available yet".
+**Amounts only** (#146) opens a form for calories, protein, carbs and fat. It saves one
+serving under the selected meal, with the typed values as its per-serving facts, and shows
+the same Undo toast. An empty field stays unknown; a typed zero is stored as zero.
+**Describe or photograph a meal** (#149) remains disabled, carries a Later badge, and
+announces "Not available yet".
 
 ## The flow
 
