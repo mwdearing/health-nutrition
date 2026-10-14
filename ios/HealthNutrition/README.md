@@ -141,8 +141,8 @@ The ipa is **unsigned**, so it will not install as it is. Sign it yourself (AltS
 a free or paid Apple developer certificate, your own provisioning profile) and then sideload it
 on your iPhone. Do not commit any certificate, profile or team id while doing so.
 
-The other jobs (`swift-test`, `app-build` and `app-test`) run on pull requests and pushes to
-`main`, and `app-build` produces a simulator build only, which needs no signing at all.
+The other macOS jobs (`swift-and-app-tests` and `release-build`) run on pull requests that are ready
+for review and on pushes to `main`. Their builds turn signing off, so they need no certificate at all.
 
 ## Running the tests
 
@@ -165,10 +165,11 @@ in the Test navigator and press Run.
 
 ## Checks
 
-CI has five jobs. `swift-test` runs the package tests in `ios/NutritionCore`, `app-build`
-installs XcodeGen, generates this project and runs an unsigned
-`xcodebuild ... -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`,
-`app-test` does the same and then runs
+CI has four jobs. `swift-and-app-tests` runs on one macOS runner: it runs the package tests in
+`ios/NutritionCore`, installs XcodeGen, generates this project, runs an unsigned
+`xcodebuild ... -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`, and then runs
 `xcodebuild ... -destination 'platform=iOS Simulator,name=<picked at run time>' CODE_SIGNING_ALLOWED=NO test`
-for the app tests above, `privacy-manifest` checks the privacy manifest against the Swift sources,
-and `unsigned-ipa` is the manual device build described above.
+for the app tests above. A failing step does not stop the others from reporting. `release-build` compiles
+Release for a generic device, unsigned, on the same runner image as the signed upload.
+`privacy-manifest` checks the privacy manifest against the Swift sources, and `unsigned-ipa` is the manual
+device build described above.

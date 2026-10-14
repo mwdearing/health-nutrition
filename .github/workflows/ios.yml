@@ -128,17 +128,20 @@ jobs:
 
   # NutritionCore's Swift tests, the app's Simulator build and the app target's unit tests share one runner.
   # They were three jobs, and each one held a whole shared macOS slot for two to six minutes of work plus its own
-  # checkout and XcodeGen install. The app steps run even when `swift test` fails, and the Simulator build and the
-  # app tests each need only the generated project, so one failure does not hide the others' results.
+  # checkout and XcodeGen install. Every check runs even when an earlier one fails, and the Simulator build and the
+  # app tests each need only the generated project, so one failure does not hide the others' results. Each check
+  # has its own deadline, so a hang in one still leaves time for the rest.
   swift-and-app-tests:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
         run: xcodebuild -version
       - name: Test NutritionCore
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
         working-directory: ios/NutritionCore
         run: swift test
       - name: Install XcodeGen (pinned release, checksum verified)
@@ -152,6 +155,7 @@ jobs:
         run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
       - name: Build the app for the iOS Simulator
         if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        timeout-minutes: 15
         working-directory: ios/HealthNutrition
         run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -disableAutomaticPackageResolution -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
       # The simulator is picked from what this runner actually has, never a name that might not exist:
@@ -184,6 +188,7 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
       - name: Test the app target on the simulator
         if: ${{ !cancelled() && steps.simulator.outcome == 'success' }}
+        timeout-minutes: 20
         working-directory: ios/HealthNutrition
         env:
           SIMULATOR: ${{ steps.simulator.outputs.name }}

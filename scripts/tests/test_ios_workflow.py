@@ -61,8 +61,9 @@ def test_scanner_and_ios_jobs_have_bounded_deadlines() -> None:
     ios = _jobs("ios.yml")
     assert swift["timeout-minutes"] == 10
     assert ios["privacy-manifest"]["timeout-minutes"] == 10
-    for name in ("swift-and-app-tests", "release-build", "unsigned-ipa"):
+    for name in ("release-build", "unsigned-ipa"):
         assert ios[name]["timeout-minutes"] == 30
+    assert ios["swift-and-app-tests"]["timeout-minutes"] == 55
 
 
 def test_attribution_scanner_tests_run_in_the_unprivileged_swift_workflow() -> None:
@@ -141,10 +142,11 @@ def test_contract_changes_run_the_swift_tests_that_read_them() -> None:
     assert any(str(step.get("run", "")).strip() == "swift test" for step in steps)
 
 
-def test_pull_request_runs_hold_at_most_two_macos_runners() -> None:
-    # The account has five concurrent macOS runners shared by every repository, so each macOS job a pull
-    # request push starts is a slot another run waits for. Release stays apart because it must use the signed
-    # upload's image; everything that runs on macos-latest shares one job.
+def test_ios_workflow_pull_request_runs_hold_at_most_two_macos_runners() -> None:
+    # The account has five concurrent macOS runners shared by every repository, so each macOS job this workflow
+    # starts for a pull request push is a slot another run waits for. Release stays apart because it must use the
+    # signed upload's image; everything that runs on macos-latest shares one job. (Other workflows, such as
+    # privacy-shield.yml and catalog.yml, start their own macOS jobs on the paths they watch.)
     macos = [
         name
         for name, job in _jobs("ios.yml").items()
@@ -155,13 +157,27 @@ def test_pull_request_runs_hold_at_most_two_macos_runners() -> None:
 
 def test_one_failing_check_does_not_hide_the_others_in_the_shared_job() -> None:
     steps = cast("list[dict[str, object]]", _jobs("ios.yml")["swift-and-app-tests"]["steps"])
-    names = [str(step.get("name", "")) for step in steps]
-    after_core = steps[names.index("Test NutritionCore") + 1 :]
-    assert after_core
-    assert all(str(step.get("if", "")).startswith("${{ !cancelled()") for step in after_core), after_core
-    build = next(step for step in steps if step.get("name") == "Build the app for the iOS Simulator")
-    test = next(step for step in steps if step.get("name") == "Test the app target on the simulator")
-    # The Simulator build and the app tests are independent: neither waits on the other's outcome.
-    assert "steps.generate.outcome == 'success'" in str(build["if"])
-    assert "steps.simulator.outcome == 'success'" in str(test["if"])
+    conditions = {str(step.get("name", "")): str(step.get("if", "")) for step in steps}
+    # Every check runs even when an earlier one failed; each waits only on the step it needs.
+    assert conditions == {
+        "": "",  # checkout
+        "Show Xcode version": "",
+        "Test NutritionCore": "${{ !cancelled() }}",
+        "Install XcodeGen (pinned release, checksum verified)": "${{ !cancelled() }}",
+        "Generate the Xcode project": "${{ !cancelled() && steps.xcodegen.outcome == 'success' }}",
+        "Build the app for the iOS Simulator": "${{ !cancelled() && steps.generate.outcome == 'success' }}",
+        "Pick an available iPhone simulator": "${{ !cancelled() && steps.generate.outcome == 'success' }}",
+        "Test the app target on the simulator": "${{ !cancelled() && steps.simulator.outcome == 'success' }}",
+    }, conditions
 
+
+def test_each_check_in_the_shared_job_has_its_own_deadline() -> None:
+    # A hang in one check must not use up the job's whole budget and cancel the checks after it.
+    job = _jobs("ios.yml")["swift-and-app-tests"]
+    steps = {str(step.get("name", "")): step for step in cast("list[dict[str, object]]", job["steps"])}
+    deadlines = [
+        cast(int, steps[name]["timeout-minutes"])
+        for name in ("Test NutritionCore", "Build the app for the iOS Simulator", "Test the app target on the simulator")
+    ]
+    assert all(minutes > 0 for minutes in deadlines), deadlines
+    assert sum(deadlines) < cast(int, job["timeout-minutes"])
