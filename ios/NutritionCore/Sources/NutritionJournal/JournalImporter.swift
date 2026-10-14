@@ -136,6 +136,11 @@ public enum JournalImporter {
     /// When the favorites write fails, a narrow undo puts the journal back if its rows are untouched. If a
     /// concurrent write means that undo would throw away somebody's work, a typed partial outcome reports
     /// how many imported rows may remain rather than mislabeling the file as corrupt.
+    ///
+    /// A restore the app was stopped in between those two saves is finished by importing the same file again:
+    /// a flag beside the journal store names the file, and only the favorites are written (#118). One import
+    /// runs at a time; another started meanwhile is refused as `notEmpty`, as it would be once the first one's
+    /// journal is written.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
         limits: JournalImportLimits = .default
@@ -160,6 +165,14 @@ public enum JournalImporter {
             favoritesTarget = target
         }
 
+        // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
+        // alongside could resume over a journal the first is about to undo, or clear a flag the first still
+        // needs. A second import is refused at once rather than queued: it would be refused as `notEmpty` as soon
+        // as the first one's journal is written, and waiting here would hold its caller for as long as the
+        // first takes.
+        guard importLock.try() else { throw JournalImportError.notEmpty }
+        defer { importLock.unlock() }
+
         let progress = favoritesTarget == nil ? nil : store as? JournalRestoreProgress
         let digest = fileDigest(data)
         if try journalHoldsAnything(store) {
@@ -175,7 +188,9 @@ public enum JournalImporter {
                   try journalHolds(plan, store: store)
             else { throw JournalImportError.notEmpty }
             try favoritesTarget.restore(plan.favorites)
-            try? progress.clearRestoreInProgress()
+            // A flag that outlived a finished resume would let a later import of this file write favorites
+            // the person deleted since, so a failure to clear it is reported rather than swallowed.
+            try progress.clearRestoreInProgress()
             return summary(of: plan)
         }
 
@@ -213,6 +228,8 @@ public enum JournalImporter {
         }
         return summary(of: plan)
     }
+
+    private static let importLock = NSLock()
 
     /// Whether the journal holds this plan's journal and nothing else: the same live intakes, field for field,
     /// with the same revisions, and the same deleted ones.
