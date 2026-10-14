@@ -347,6 +347,11 @@ public struct RelayDeliveryWorker: Sendable {
                 case .failed(let reason), .unreadable(let reason):
                     outcomes.append(retry(operation, reason: reason, now: now))
                     blocking[intakeID] = operation.operationID
+                case .refused(let reason):
+                    // The encoder answers the same way for the same immutable revision, so a retry could never
+                    // succeed. It is parked for a person instead of being retried on every backoff step.
+                    outcomes.append(park(operation, reason: reason, now: now))
+                    blocking[intakeID] = operation.operationID
                 case .encoded(let item):
                     sendable.append(item)
                 }
@@ -411,6 +416,11 @@ public struct RelayDeliveryWorker: Sendable {
                 outcomes.append(.needsAttention(
                     operationID: projection.operationID,
                     reason: "the link projection could not be encoded for delivery"))
+                blocking[projection.intakeID] = projection.operationID
+            case .refused(let reason):
+                // The same parking as `.failed`, with the encoder's own reason in place of the fixed sentence.
+                await projections.resolve(projection, with: .needsAttention(reason))
+                outcomes.append(.needsAttention(operationID: projection.operationID, reason: reason))
                 blocking[projection.intakeID] = projection.operationID
             case .encoded(let item):
                 sendable.append(item)
@@ -576,6 +586,9 @@ public struct RelayDeliveryWorker: Sendable {
         case superseded(detail: String?)
         /// A refusal the receiver would make anyway, caught here before a batch was built.
         case failed(reason: String)
+        /// The encoder refused the revision's own data. Every input is immutable, so no retry can change the
+        /// answer: it waits for a person rather than being retried on the backoff.
+        case refused(reason: String)
         /// A store read failed while the payload was being built. That says nothing about the payload itself,
         /// so it is worth another attempt rather than a person's attention.
         case unreadable(reason: String)
@@ -647,6 +660,8 @@ public struct RelayDeliveryWorker: Sendable {
             value = try encoder.upsert(
                 intake: intake, revision: revision, product: product, operation: operation,
                 links: snapshot)
+        } catch let error as IntakeContextEncoderError {
+            return .refused(reason: "the revision does not encode as an intake-context upsert: \(error)")
         } catch {
             return .failed(reason: "the revision does not encode as an intake-context upsert")
         }
@@ -685,6 +700,8 @@ public struct RelayDeliveryWorker: Sendable {
                 value: try encoder.delete(
                     intake: intake, revision: revision, tombstone: tombstones(intake, revision, deletedAt),
                     operation: operation)))
+        } catch let error as IntakeContextEncoderError {
+            return .refused(reason: "the deletion does not encode as an intake-context tombstone: \(error)")
         } catch {
             return .failed(reason: "the deletion does not encode as an intake-context tombstone")
         }
@@ -747,6 +764,8 @@ public struct RelayDeliveryWorker: Sendable {
                 value: try encoder.linkProjection(
                     intake: intake, revision: revision, product: product, sequence: projection.sequence,
                     links: projection.links, operationID: projection.operationID)))
+        } catch let error as IntakeContextEncoderError {
+            return .refused(reason: "the link projection does not encode as an intake-context operation: \(error)")
         } catch {
             return .failed(reason: "the link projection does not encode as an intake-context operation")
         }
@@ -1129,6 +1148,10 @@ public struct RelayDeliveryWorker: Sendable {
             case .failed(let reason), .unreadable(let reason):
                 deliveries.append(RelayDelivery(
                     intakeID: item.intakeID, outcome: retry(operation, reason: reason, now: now)))
+                blockedBy[item.intakeID] = item.operationID
+            case .refused(let reason):
+                deliveries.append(RelayDelivery(
+                    intakeID: item.intakeID, outcome: park(operation, reason: reason, now: now)))
                 blockedBy[item.intakeID] = item.operationID
             case .superseded(let detail):
                 deliveries.append(RelayDelivery(
