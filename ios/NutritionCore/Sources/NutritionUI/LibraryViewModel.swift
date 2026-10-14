@@ -361,7 +361,12 @@ public final class LibraryViewModel: ObservableObject {
         return try productStore?.customProducts().first { $0.localProductID == localID }
     }
     public func canCompleteProduct(_ item: LibraryItem) -> Bool {
-        item.template.productSnapshotID != nil || ["food", "supplement"].contains(item.template.category)
+        // A quick add is amounts with no product behind them, so there is no product to edit.
+        if let id = item.template.productSnapshotID,
+           (try? store.product(snapshotID: id))?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin {
+            return false
+        }
+        return item.template.productSnapshotID != nil || ["food", "supplement"].contains(item.template.category)
     }
     public func legacyDraft(_ item: LibraryItem) throws -> LegacyCustomProductDraft {
         if item.template.productSnapshotID == nil { return try CustomProductMapping.legacyDraft(from: item.template) }
