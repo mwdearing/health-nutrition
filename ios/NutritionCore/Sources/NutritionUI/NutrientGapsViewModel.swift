@@ -61,23 +61,41 @@ public struct NutrientGapRow: Equatable, Identifiable {
     public let tally: NutrientDayTally
     /// Nil when no group is chosen.
     public let reference: ReferenceIntake?
+    /// For a week, the days the amounts are a daily average over: the logged days with an entry that
+    /// states this nutrient or could have. Nil for a single day.
+    public let averagedOverDays: Int?
+    /// For a week, every logged day in it; nil for a single day.
+    public let loggedDays: Int?
+    /// For a week, the logged days on which the part of the day the upper limit counts was certainly
+    /// above it. An upper limit is a daily one, so a week is above it when any of its days is, however
+    /// the average reads.
+    public let daysAboveLimit: Int
     public let status: NutrientGapStatus
 
     public var id: String { nutrient }
 
-    public init(nutrient: String, label: String, unit: MeasureUnit, tally: NutrientDayTally, reference: ReferenceIntake?) {
+    public init(
+        nutrient: String, label: String, unit: MeasureUnit, tally: NutrientDayTally, reference: ReferenceIntake?,
+        averagedOverDays: Int? = nil, loggedDays: Int? = nil, daysAboveLimit: Int = 0
+    ) {
         self.nutrient = nutrient
         self.label = label
         self.unit = unit
         self.tally = tally
         self.reference = reference
-        self.status = Self.status(tally: tally, reference: reference)
+        self.averagedOverDays = averagedOverDays
+        self.loggedDays = loggedDays
+        self.daysAboveLimit = daysAboveLimit
+        self.status = Self.status(tally: tally, reference: reference, daysAboveLimit: daysAboveLimit)
     }
 
     /// The comparison, in a fixed order: nothing to compare first, then the limit, then the reference.
-    static func status(tally: NutrientDayTally, reference: ReferenceIntake?) -> NutrientGapStatus {
+    static func status(tally: NutrientDayTally, reference: ReferenceIntake?, daysAboveLimit: Int = 0) -> NutrientGapStatus {
         guard tally.known > 0 else { return tally.missing > 0 ? .unknown : .nothingLogged }
         guard let reference else { return .noReference }
+        if daysAboveLimit > 0 && reference.upperLimit != nil {
+            return .aboveUpperLimit
+        }
         if NutrientGaps.exceededLimit(intake: reference, total: tally.total, supplementTotal: tally.fromSupplements) {
             return .aboveUpperLimit
         }
@@ -118,6 +136,13 @@ public struct NutrientGapRow: Equatable, Identifiable {
         if tally.missing > 0 {
             lines.append("Unknown for \(tally.missing) \(tally.missing == 1 ? "entry" : "entries")")
         }
+        if tally.known > 0, let days = averagedOverDays, let logged = loggedDays, days < logged {
+            lines.append("Averaged over \(days) of \(logged) logged days. Nothing else you logged lists it.")
+        }
+        // Counted against every logged day, the same M the averaged-over line states.
+        if let logged = loggedDays, daysAboveLimit > 0, reference?.upperLimit != nil {
+            lines.append("Above the upper limit on \(daysAboveLimit) of \(logged) logged \(logged == 1 ? "day" : "days").")
+        }
         if let reference, reference.upperLimit != nil, let scope = reference.upperLimitScope {
             if let note = NutrientGaps.limitNote(scope) { lines.append(note) }
         }
@@ -143,7 +168,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
 
     /// The one sentence VoiceOver reads for the row.
     public var accessibilityText: String {
-        var parts = ["\(label), \(amountText)"]
+        // "Daily average" only where there is a figure: "Zinc, daily average Unknown" says nothing.
+        let isAverageFigure = averagedOverDays != nil && tally.known > 0
+        var parts = [isAverageFigure ? "\(label), daily average \(amountText)" : "\(label), \(amountText)"]
         if let status = statusText { parts.append(status) }
         if let referenceText { parts.append(referenceText) }
         parts.append(contentsOf: detailLines)
@@ -223,6 +250,27 @@ public enum NutrientGaps {
 
 }
 
+/// How much of the journal the screen covers: today alone, or a daily average over the last seven days.
+public enum NutrientGapsSpan: String, CaseIterable, Sendable {
+    case day, week
+
+    /// "Day" or "Week", the words the picker shows.
+    public var label: String {
+        switch self {
+        case .day: return "Day"
+        case .week: return "Week"
+        }
+    }
+
+    /// How many local days back from today the span reaches, today included.
+    var dayCount: Int {
+        switch self {
+        case .day: return 1
+        case .week: return 7
+        }
+    }
+}
+
 /// One titled group of rows on the screen.
 public struct NutrientGapSection: Equatable, Identifiable {
     public let title: String
@@ -245,6 +293,22 @@ public final class NutrientGapsViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     /// Entries left out because their stored time zone is not a valid one, so their day is unknown.
     @Published public private(set) var skippedIntakeCount = 0
+    /// Today, or the daily average over the last seven days.
+    @Published public private(set) var span: NutrientGapsSpan = .day
+    /// The dates in the span with at least one food, drink or supplement entry, which the week's header
+    /// counts. Each nutrient's average is over its own share of these days (`statedDays`): the ones with
+    /// an entry that states it or could have. A day nothing was logged on pulls no average down.
+    @Published public private(set) var loggedDays = 0
+
+    /// The line that says what the week's figures are, or nil for a single day.
+    public var spanSummary: String? {
+        guard span == .week, errorMessage == nil else { return nil }
+        switch loggedDays {
+        case 0: return "Nothing was logged in the last 7 days."
+        case 1: return "Average per day over the 1 day you logged in the last 7."
+        default: return "Average per day over the \(loggedDays) days you logged in the last 7."
+        }
+    }
 
     /// The line that says entries were left out, or nil when none were.
     public var skippedNotice: String? {
@@ -259,6 +323,8 @@ public final class NutrientGapsViewModel: ObservableObject {
     private let lookup: NutrientFactsLookup
     private let preferences: ReferenceGroupPreferences?
     private var tallies: [String: NutrientDayTally] = [:]
+    /// The week's tallies day by day, so a daily upper limit is checked against each day, not the average.
+    private var dayTallies: [[String: NutrientDayTally]] = []
 
     public init(
         store: JournalStore, lookup: NutrientFactsLookup = UnknownNutrientFacts(),
@@ -273,20 +339,56 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// The nutrients listed, in the reference table's order.
     public static var nutrients: [String] { ReferenceIntakes.nutrients }
 
-    /// Reads today's entries again and rebuilds every row.
+    /// Reads the span's entries again and rebuilds every row.
     public func load(now: Date) {
         referenceGroup = preferences?.referenceGroup
         do {
-            let day = try Self.tallies(store: store, lookup: lookup, now: now)
-            tallies = day.tallies
-            skippedIntakeCount = day.skipped
+            let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount)
+            loggedDays = read.loggedDays
+            tallies = span == .week ? Self.averaged(read.tallies, byDay: read.byDay) : read.tallies
+            dayTallies = span == .week ? read.byDay : []
+            skippedIntakeCount = read.skipped
             errorMessage = nil
         } catch {
             tallies = [:]
+            dayTallies = []
+            loggedDays = 0
             skippedIntakeCount = 0
             errorMessage = Self.readFailedMessage
         }
         rebuild()
+    }
+
+    /// Switches between today and the week, and reads the journal for it.
+    public func chooseSpan(_ span: NutrientGapsSpan, now: Date) {
+        self.span = span
+        load(now: now)
+    }
+
+    /// For each nutrient, the days in the span with at least one entry that states it or could have
+    /// (a food, or a supplement that declares it). A day logged with only supplements that do not
+    /// declare a nutrient says nothing about it, like a day nothing was logged, so it is not one of them.
+    static func statedDays(_ byDay: [[String: NutrientDayTally]]) -> [String: Int] {
+        var days: [String: Int] = [:]
+        for day in byDay {
+            for nutrient in day.keys { days[nutrient, default: 0] += 1 }
+        }
+        return days
+    }
+
+    /// The week's totals as a daily average over each nutrient's own stated days, so a day that said
+    /// nothing about a nutrient never reads as a day with none of it. Entry counts stay totals, so
+    /// "Unknown for 3 entries" still counts entries.
+    static func averaged(_ tallies: [String: NutrientDayTally], byDay: [[String: NutrientDayTally]]) -> [String: NutrientDayTally] {
+        let days = statedDays(byDay)
+        return Dictionary(uniqueKeysWithValues: tallies.map { nutrient, tally in
+            let count = days[nutrient] ?? 0
+            guard count > 1 else { return (nutrient, tally) }
+            let divisor = Decimal(count)
+            return (nutrient, NutrientDayTally(
+                fromFood: tally.fromFood / divisor, fromSupplements: tally.fromSupplements / divisor,
+                known: tally.known, missing: tally.missing))
+        })
     }
 
     /// Stores the group a person picked, or clears it, and compares the same day against it.
@@ -298,13 +400,24 @@ public final class NutrientGapsViewModel: ObservableObject {
 
     private func rebuild() {
         let group = referenceGroup
+        let isWeek = span == .week
+        let statedDays = Self.statedDays(dayTallies)
         rows = Self.nutrients.map { nutrient in
-            NutrientGapRow(
+            let reference = group.flatMap { ReferenceIntakes.intake(for: nutrient, group: $0) }
+            let daysAbove = reference.map { reference in
+                dayTallies.filter { day in
+                    guard let tally = day[nutrient] else { return false }
+                    return NutrientGaps.exceededLimit(
+                        intake: reference, total: tally.total, supplementTotal: tally.fromSupplements)
+                }.count
+            } ?? 0
+            return NutrientGapRow(
                 nutrient: nutrient, label: NutrientNames.displayName(for: nutrient),
                 unit: Self.unit(for: nutrient), tally: tallies[nutrient] ?? NutrientDayTally(),
-                reference: group.flatMap { ReferenceIntakes.intake(for: nutrient, group: $0) })
+                reference: reference, averagedOverDays: isWeek ? (statedDays[nutrient] ?? 0) : nil,
+                loggedDays: isWeek ? loggedDays : nil, daysAboveLimit: daysAbove)
         }
-        sections = errorMessage == nil ? Self.sections(rows, hasGroup: group != nil) : []
+        sections = errorMessage == nil ? Self.sections(rows, hasGroup: group != nil, span: span) : []
     }
 
     /// The unit a nutrient is counted in: the nutrient mapping's, which the reference table matches.
@@ -313,14 +426,14 @@ public final class NutrientGapsViewModel: ObservableObject {
     }
 
     /// Rows grouped for reading: what needs a look first, then what is fine, then what is not known.
-    static func sections(_ rows: [NutrientGapRow], hasGroup: Bool) -> [NutrientGapSection] {
+    static func sections(_ rows: [NutrientGapRow], hasGroup: Bool, span: NutrientGapsSpan = .day) -> [NutrientGapSection] {
         func section(_ title: String, _ statuses: Set<NutrientGapStatus>) -> NutrientGapSection? {
             let matching = rows.filter { statuses.contains($0.status) }
             return matching.isEmpty ? nil : NutrientGapSection(title: title, rows: matching)
         }
-        let notKnown = section("Not known today", [.unknown, .nothingLogged])
+        let notKnown = section(span == .day ? "Not known today" : "Not known this week", [.unknown, .nothingLogged])
         guard hasGroup else {
-            return [section("Today", [.noReference]), notKnown].compactMap { $0 }
+            return [section(span == .day ? "Today" : "Last 7 days", [.noReference]), notKnown].compactMap { $0 }
         }
         return [
             section("Above an upper limit", [.aboveUpperLimit]),
@@ -344,19 +457,24 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// its amount even when another component of the same entry does not, and the entry is then both a
     /// known contribution and an unknown one.
     static func tallies(
-        store: JournalStore, lookup: NutrientFactsLookup, now: Date
-    ) throws -> (tallies: [String: NutrientDayTally], skipped: Int) {
-        var tallies: [String: NutrientDayTally] = [:]
+        store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
+    ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]]) {
+        // Keyed by each entry's own local date, so after a change of time zone two entries on different
+        // dates never share a day, even when each is the same number of days before its own today.
+        var byDate: [Int: [String: NutrientDayTally]] = [:]
         var skipped = 0
+        var logged: Set<Int> = []
         let nutrients = Self.nutrients
         for intake in try store.activeIntakes() where intake.lifecycle == .active {
-            guard let sameDay = TodayViewModel.isSameLocalDay(intake, as: now) else {
+            guard let day = Self.localDay(now, intake) else {
                 skipped += 1
                 continue
             }
-            guard sameDay else { continue }
+            // Today is 0; a day in the future or before the span is not part of it.
+            guard (0..<max(days, 1)).contains(day.offset) else { continue }
             let revisions = try store.revisions(of: intake.id)
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
+            if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             let isSupplement = snapshot?.kind == .supplement
             let byComponent = snapshot == nil && intake.category != DailyTotalsBuilder.waterCategory
@@ -390,15 +508,51 @@ public final class NutrientGapsViewModel: ObservableObject {
                         anyMissing = true
                     }
                 }
-                var tally = tallies[nutrient] ?? NutrientDayTally()
+                var dayTally = byDate[day.date]?[nutrient] ?? NutrientDayTally()
                 if anyKnown {
-                    if isSupplement { tally.fromSupplements += amount } else { tally.fromFood += amount }
-                    tally.known += 1
+                    if isSupplement { dayTally.fromSupplements += amount } else { dayTally.fromFood += amount }
+                    dayTally.known += 1
                 }
-                if anyMissing { tally.missing += 1 }
+                if anyMissing { dayTally.missing += 1 }
+                byDate[day.date, default: [:]][nutrient] = dayTally
+            }
+        }
+        let byDay = byDate.sorted { $0.key < $1.key }.map(\.value)
+        // The span's totals are its days added together, so there is one accumulation to keep right.
+        var tallies: [String: NutrientDayTally] = [:]
+        for day in byDay {
+            for (nutrient, dayTally) in day {
+                var tally = tallies[nutrient] ?? NutrientDayTally()
+                tally.fromFood += dayTally.fromFood
+                tally.fromSupplements += dayTally.fromSupplements
+                tally.known += dayTally.known
+                tally.missing += dayTally.missing
                 tallies[nutrient] = tally
             }
         }
-        return (tallies, skipped)
+        return (tallies, skipped, logged.count, byDay)
+    }
+
+    /// How many local days before `now`'s day the entry's day is, both read in the entry's own time
+    /// zone as Today reads it: 0 for today, 1 for yesterday, negative for a later day. Nil when the
+    /// stored time zone is not a valid one.
+    static func daysBefore(_ now: Date, _ intake: Intake) -> Int? {
+        localDay(now, intake)?.offset
+    }
+
+    /// The entry's day: how many days before `now`'s day it is (`daysBefore`), and its own local date as
+    /// a number that sorts by date, such as 20261014. Both are read in the entry's own time zone. Nil
+    /// when the stored time zone is not a valid one.
+    static func localDay(_ now: Date, _ intake: Intake) -> (offset: Int, date: Int)? {
+        guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let parts = calendar.dateComponents([.year, .month, .day], from: intake.occurredAt)
+        guard let offset = calendar.dateComponents(
+                [.day], from: calendar.startOfDay(for: intake.occurredAt), to: calendar.startOfDay(for: now)
+            ).day,
+            let year = parts.year, let month = parts.month, let date = parts.day
+        else { return nil }
+        return (offset, year * 10_000 + month * 100 + date)
     }
 }

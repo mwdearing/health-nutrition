@@ -1,9 +1,37 @@
 # Vitamins and minerals: today against reference values
 
 Today has a **Vitamins and minerals** card below the day's entries. It opens a screen that lists the 25 vitamins and
-minerals the reference table covers (`docs/reference-intakes.md`) with what today's entries state for each, and, once a
-person picks a group, how that compares with the published adult values for it. The screen states comparisons only: it
+minerals the reference table covers (`docs/reference-intakes.md`) with what today's entries state for each (or, on
+**Week**, the daily average over the last 7 days), and, once a person picks a group, how that compares with the
+published adult values for it. The same screen is the Nutrients view on the Trends tab. The screen states comparisons only: it
 gives no advice and no score.
+
+## Day and week
+
+A **Day / Week** switch sits at the top. **Day** is today, as described below. **Week** shows, for each
+nutrient, the daily average over the last seven local days, today included: the amounts are summed exactly
+as for a day and divided by that nutrient's own days, the logged days that could state it (see below), so a
+day nothing was logged on does not pull any average down. A logged day is a date with at least one food or
+supplement entry (a water entry does not count). Each entry counts on its own local date, read in the time
+zone it was logged in, so after a change of time zone two entries on different dates are never one day.
+Today counts as a logged day once something is logged, so early in the day the averages read lower than
+they will end up. A line says what the figures are ("Average per day over the 3 days you logged in the last 7.", or "Nothing
+was logged in the last 7 days."), and VoiceOver reads each figure as a daily average. The "Not known"
+heading reads "Not known this week", and without a group the amounts are under "Last 7 days".
+"Unknown for 2 entries" still counts entries.
+
+Each nutrient is averaged over the logged days with an entry that states it or could have: a food (which states the
+nutrient or is unknown for it) or a supplement that declares it. A day logged with only supplements that do not declare
+a nutrient says nothing about it, like a day nothing was logged, so it is left out of that nutrient's average rather
+than read as a day with none of it; the row then says "Averaged over 1 of 2 logged days. Nothing else you logged
+lists it." A food that does not state the nutrient still counts, as an unknown entry, so the average is a floor
+there: the row reads "At least" and "Below the RDA so far".
+
+Each average is compared with the RDA or AI, so "Below the RDA" on the week means the daily average is
+below it. An upper limit is a daily limit, so it is checked day by day rather than against the average: a
+week is "Above the upper limit" when any logged day was certainly above it, and the row says on how many
+("Above the upper limit on 1 of 3 logged days."). Each entry's day is read in its own time zone, as on
+Today, and entries dated after today are left out.
 
 ## Comparing with a group
 
@@ -38,10 +66,10 @@ app can't read and is left out, so these figures may be low.").
 | Status | When | Section |
 |---|---|---|
 | Above the upper limit | The part of the day the limit counts is above it | Above an upper limit |
-| Below the RDA (or AI) | Every entry that could state it did, and the day is below | Below the reference |
+| Below the RDA (or AI) | Every entry that could state it did, and the day (or, on Week, the daily average) is below | Below the reference |
 | Below the RDA so far | What is known is below, and some entries do not state it | Below the reference |
 | Reached the RDA | The known amounts alone reach it | Reached the reference |
-| Unknown / Nothing logged | No entry states an amount / no entry could | Not known today |
+| Unknown / Nothing logged | No entry states an amount / no entry could | Not known today (Week: Not known this week) |
 
 "Above the upper limit" is only shown when the day certainly holds more than the limit counts, never as a guess. The rule
 is one public function, `NutrientGaps.exceededLimit(intake:total:supplementTotal:)`, with its row wording in
@@ -68,5 +96,4 @@ real amount is never shown as zero.
 
 ## Not yet
 
-Past days, weekly averages and the Nourish restyle's Trends tab are later work; the model takes the day as `now`, so a
-later screen can reuse it. IU conversion for vitamins A, D and E is not done: the factor depends on the form.
+Past single days and longer spans are later work. IU conversion for vitamins A, D and E is not done: the factor depends on the form.

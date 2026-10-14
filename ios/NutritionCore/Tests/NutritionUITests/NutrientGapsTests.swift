@@ -201,12 +201,13 @@ final class NutrientGapsTests: XCTestCase {
 
     private func log(
         _ store: JournalStore, _ name: String, at date: Date, category: String = "food",
-        amount: Decimal = 100, unit: MeasureUnit = .g, product: ProductDefinition? = nil
+        amount: Decimal = 100, unit: MeasureUnit = .g, product: ProductDefinition? = nil, zone: String = "UTC"
     ) throws {
         let intake = Intake(
-            id: UUID().uuidString.lowercased(), category: category, occurredAt: date, timeZoneIdentifier: "UTC")
+            id: UUID().uuidString.lowercased(), category: category, occurredAt: date, timeZoneIdentifier: zone)
         try store.create(
-            intake, components: [IntakeComponent(componentID: name.lowercased(), name: name, amount: amount, unit: unit)],
+            intake, components: [IntakeComponent(
+                componentID: Slug.make(name), name: name, amount: amount, unit: unit)],
             product: product, now: date)
     }
 
@@ -289,6 +290,169 @@ final class NutrientGapsTests: XCTestCase {
             model.skippedNotice,
             "1 entry has a time zone the app can't read and is left out, so these figures may be low.")
         XCTAssertEqual(model.rows.first { $0.nutrient == "vitaminC" }?.tally, NutrientDayTally(fromFood: 60, known: 1))
+    }
+
+    func testTheWeekAveragesOverTheDaysSomethingWasLogged() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        try log(store, "Multi", at: noon - 2 * day, product: product("multi", kind: .supplement, nutrients: [
+            "vitaminC": .known(500, .mg),
+        ]))
+        // A water-only day is not a logged day, and days outside the last seven are not in the week.
+        try log(store, "Water", at: noon - 3 * day, category: "water", amount: 250, unit: .mL)
+        try log(store, "Old orange", at: noon - 7 * day, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        try log(store, "Tomorrow's orange", at: noon + day, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: noon)
+
+        XCTAssertEqual(model.loggedDays, 2)
+        XCTAssertEqual(model.spanSummary, "Average per day over the 2 days you logged in the last 7.")
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        // (60 + 500) over 2 logged days: 30 mg from food and 250 mg from supplements a day.
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 30, fromSupplements: 250, known: 2))
+        XCTAssertEqual(vitaminC.status, .reachedReference)
+
+        model.chooseSpan(.day, now: noon)
+        XCTAssertEqual(model.loggedDays, 1)
+        XCTAssertNil(model.spanSummary)
+        XCTAssertEqual(
+            model.rows.first { $0.nutrient == "vitaminC" }?.tally, NutrientDayTally(fromFood: 60, known: 1))
+    }
+
+    func testADailyUpperLimitIsCheckedDayByDayInTheWeek() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        // 400 mg of supplement magnesium on one day is above the 350 mg limit; spread over 3 logged
+        // days the average is about 133 mg, which would hide it.
+        try log(store, "Magnesium", at: noon - day, product: product("mag", kind: .supplement, nutrients: [
+            "magnesium": .known(400, .mg),
+        ]))
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: ["vitaminC": .known(60, .mg)]))
+        try log(store, "Orange", at: noon - 2 * day, product: product("orange", kind: .food, nutrients: ["vitaminC": .known(60, .mg)]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: noon)
+
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(model.loggedDays, 3)
+        XCTAssertEqual(magnesium.daysAboveLimit, 1)
+        XCTAssertEqual(magnesium.status, .aboveUpperLimit)
+        XCTAssertTrue(magnesium.detailLines.contains("Above the upper limit on 1 of 3 logged days."))
+        XCTAssertTrue(magnesium.accessibilityText.hasPrefix("Magnesium, daily average "))
+        // A row with no figure is not read as an average of nothing.
+        let iodine = try XCTUnwrap(model.rows.first { $0.nutrient == "iodine" })
+        XCTAssertFalse(iodine.accessibilityText.contains("daily average"))
+    }
+
+    func testTheUpperLimitLineCountsEveryLoggedDay() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        try log(store, "Magnesium", at: noon - day, product: product("mag", kind: .supplement, nutrients: [
+            "magnesium": .known(400, .mg),
+        ]))
+        // Today only a vitamin C supplement was logged, which says nothing about magnesium.
+        try log(store, "Vitamin C", at: noon, product: product("c", kind: .supplement, nutrients: [
+            "vitaminC": .known(500, .mg),
+        ]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: noon)
+
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(model.loggedDays, 2)
+        XCTAssertEqual(magnesium.averagedOverDays, 1)
+        XCTAssertTrue(magnesium.detailLines.contains(
+            "Averaged over 1 of 2 logged days. Nothing else you logged lists it."))
+        XCTAssertTrue(magnesium.detailLines.contains("Above the upper limit on 1 of 2 logged days."))
+    }
+
+    func testEntriesOnDifferentDatesInDifferentTimeZonesAreNeverOneDay() throws {
+        let store = try makeStore()
+        // Now is Wednesday 15 November 2023, 20:00 in Chicago, which is Thursday 11:00 in Tokyo.
+        let now = Date(timeIntervalSince1970: 1_700_100_000)
+        let magnesium = product("mag", kind: .supplement, nutrients: ["magnesium": .known(200, .mg)])
+        // Wednesday 09:00 in Tokyo and Tuesday 20:00 in Chicago are each one day before their own today,
+        // but they are different dates, so neither day holds 400 mg.
+        try log(store, "Magnesium", at: Date(timeIntervalSince1970: 1_700_006_400), product: magnesium, zone: "Asia/Tokyo")
+        try log(store, "Magnesium", at: Date(timeIntervalSince1970: 1_700_013_600), product: magnesium, zone: "America/Chicago")
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: now)
+
+        XCTAssertEqual(model.loggedDays, 2)
+        let row = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(row.averagedOverDays, 2)
+        XCTAssertEqual(row.daysAboveLimit, 0)
+        XCTAssertNotEqual(row.status, .aboveUpperLimit)
+        XCTAssertEqual(row.tally.total, 200)
+    }
+
+    func testADayThatSaysNothingAboutANutrientDoesNotDiluteItsAverage() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: ["vitaminC": .known(60, .mg)]))
+        // Yesterday only a magnesium supplement was logged: it says nothing about vitamin C.
+        try log(store, "Magnesium", at: noon - day, product: product("mag", kind: .supplement, nutrients: [
+            "magnesium": .known(200, .mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+
+        model.chooseSpan(.week, now: noon)
+
+        XCTAssertEqual(model.loggedDays, 2)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 60, known: 1))
+        XCTAssertEqual(vitaminC.averagedOverDays, 1)
+        XCTAssertTrue(vitaminC.detailLines.contains(
+            "Averaged over 1 of 2 logged days. Nothing else you logged lists it."))
+        // Magnesium was stated only by the supplement; the orange says nothing about it either way.
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(magnesium.averagedOverDays, 2)
+    }
+
+    func testAWeekWithNothingLoggedSaysSo() throws {
+        let model = NutrientGapsViewModel(store: try makeStore(), lookup: GapsSnapshotFacts())
+        model.chooseSpan(.week, now: noon)
+        XCTAssertEqual(model.loggedDays, 0)
+        XCTAssertEqual(model.spanSummary, "Nothing was logged in the last 7 days.")
+        XCTAssertTrue(model.rows.allSatisfy { $0.status == .nothingLogged })
+        XCTAssertEqual(model.sections.map(\.title), ["Not known this week"])
+    }
+
+    func testTheWeekHasItsOwnHeadingsAndIntro() throws {
+        let rows = [try row("zinc", NutrientDayTally(fromFood: 6, known: 1), grouped: false)]
+        XCTAssertEqual(NutrientGapsViewModel.sections(rows, hasGroup: false, span: .week).map(\.title), ["Last 7 days"])
+        XCTAssertEqual(
+            NutrientGapsCopy.intro(hasGroup: true, span: .week),
+            "Your daily averages beside the published adult values for this group.")
+        XCTAssertEqual(
+            NutrientGapsCopy.intro(hasGroup: true), "Today's amounts beside the published adult values for this group.")
+        XCTAssertEqual(
+            NutrientGapsCopy.intro(hasGroup: false, span: .week),
+            "Pick a group to see your daily averages beside its published adult values.")
+    }
+
+    func testDaysBeforeCountsLocalDaysInTheEntrysOwnZone() {
+        let entry = Intake(id: "x", category: "food", occurredAt: noon - 6 * 86_400, timeZoneIdentifier: "UTC")
+        XCTAssertEqual(NutrientGapsViewModel.daysBefore(noon, entry), 6)
+        let bad = Intake(id: "y", category: "food", occurredAt: noon, timeZoneIdentifier: "Not/AZone")
+        XCTAssertNil(NutrientGapsViewModel.daysBefore(noon, bad))
     }
 
     func testClearingTheGroupShowsAmountsAloneAndForgetsTheChoice() throws {

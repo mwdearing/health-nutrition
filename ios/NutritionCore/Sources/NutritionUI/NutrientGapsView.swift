@@ -18,6 +18,15 @@ public struct NutrientGapsView: View {
     public var body: some View {
         List {
             Section {
+                Picker("Show", selection: Binding(
+                    get: { model.span },
+                    set: { model.chooseSpan($0, now: now()) })) {
+                    ForEach(NutrientGapsSpan.allCases, id: \.self) { span in
+                        Text(span.label).tag(span)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityHint("Shows today, or a daily average over the last 7 days")
                 Picker("Compare with", selection: Binding(
                     get: { model.referenceGroup },
                     set: { model.chooseReferenceGroup($0) })) {
@@ -26,10 +35,15 @@ public struct NutrientGapsView: View {
                         Text(group.label).tag(ReferenceGroup?.some(group))
                     }
                 }
-                .accessibilityHint("Chooses whose published reference values today is compared with")
-                Text(NutrientGapsCopy.intro(hasGroup: model.referenceGroup != nil))
+                .accessibilityHint("Chooses whose published reference values these figures are compared with")
+                Text(NutrientGapsCopy.intro(hasGroup: model.referenceGroup != nil, span: model.span))
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
+                if let summary = model.spanSummary {
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
             }
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
@@ -59,10 +73,13 @@ public struct NutrientGapsView: View {
 
 /// The screen's fixed sentences, in one place so a test can read them.
 public enum NutrientGapsCopy {
-    public static func intro(hasGroup: Bool) -> String {
-        hasGroup
-            ? "Today's amounts beside the published adult values for this group."
-            : "Pick a group to see today's amounts beside its published adult values."
+    public static func intro(hasGroup: Bool, span: NutrientGapsSpan = .day) -> String {
+        switch (span, hasGroup) {
+        case (.day, true): return "Today's amounts beside the published adult values for this group."
+        case (.day, false): return "Pick a group to see today's amounts beside its published adult values."
+        case (.week, true): return "Your daily averages beside the published adult values for this group."
+        case (.week, false): return "Pick a group to see your daily averages beside its published adult values."
+        }
     }
 
     public static let footer = "Reference values are the published adult RDA (Recommended Dietary Allowance) "
