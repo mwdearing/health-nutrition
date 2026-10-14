@@ -96,9 +96,13 @@ public final class SupplementStackViewModel: ObservableObject {
     }
 
     private var bases: [RowBasis] = []
-    /// Today's entries per item, as of the last full read, and the day they were counted for.
-    private var counts: [String: Int] = [:]
+    /// When today's entries of each item were logged (minutes since their local midnight), as of the last
+    /// full read, and the day they were read for.
+    private var logged: [String: [Int]] = [:]
     private var countedDay: String?
+    /// Whether the screen is showing the list. The app's reloads only reread the journal while it is: a
+    /// list nobody is looking at is read again when it next appears.
+    private var isShown = false
 
     // MARK: Reading
 
@@ -140,7 +144,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 let order = left.title.localizedCaseInsensitiveCompare(right.title)
                 return order == .orderedSame ? left.favoriteID < right.favoriteID : order == .orderedAscending
             }
-            counts = counted
+            logged = counted
             countedDay = clock.dayKey
             unreadableEntriesToday = unreadable
             rows = makeRows(clock: clock)
@@ -171,22 +175,22 @@ public final class SupplementStackViewModel: ObservableObject {
 
     private func makeRows(clock: SupplementStackClock) -> [SupplementStackRow] {
         bases.map { basis in
-            let logged = counts[basis.matchKey] ?? 0
+            let minutes = logged[basis.matchKey] ?? []
             let isDue = basis.schedule.weekdays.contains(clock.weekday)
             return SupplementStackRow(
                 id: basis.favoriteID, title: basis.title, detail: basis.detail, kind: basis.kind,
                 schedule: basis.schedule, isDueToday: isDue,
                 slots: isDue
-                    ? SupplementStackDay.slots(for: basis.schedule, takenCount: logged, minuteOfDay: clock.minuteOfDay)
+                    ? SupplementStackDay.slots(for: basis.schedule, loggedMinutes: minutes, minuteOfDay: clock.minuteOfDay)
                     : [],
-                loggedToday: logged, canLog: basis.canLog)
+                loggedToday: minutes.count, canLog: basis.canLog)
         }
     }
 
     /// Drops what the last read kept, so the next refresh reads everything again.
     private func forget() {
         bases = []
-        counts = [:]
+        logged = [:]
         countedDay = nil
         unreadableEntriesToday = 0
     }
@@ -201,11 +205,12 @@ public final class SupplementStackViewModel: ObservableObject {
         return kept
     }
 
-    /// Today's entries per item, each on the local day of its own time zone, the rule the Journal groups by,
-    /// and how many of today's entries could not be read. An unreadable entry is counted apart rather than
-    /// skipped, because skipping it would read as "not taken".
-    private func loggedCounts(on dayKey: String) throws -> (counts: [String: Int], unreadable: Int) {
-        var counts: [String: Int] = [:]
+    /// When each of today's entries of each item was logged, as minutes since the entry's own local midnight,
+    /// with each entry on the local day of its own time zone, the rule the Journal groups by; and how many of
+    /// today's entries could not be read. An unreadable entry is counted apart rather than skipped, because
+    /// skipping it would read as "not taken".
+    private func loggedCounts(on dayKey: String) throws -> (counts: [String: [Int]], unreadable: Int) {
+        var counts: [String: [Int]] = [:]
         var unreadable = 0
         let today = try store.activeIntakes().filter {
             $0.lifecycle == .active && IntakeCopier.dayKey($0.occurredAt, zoneIdentifier: $0.timeZoneIdentifier) == dayKey
@@ -219,7 +224,9 @@ public final class SupplementStackViewModel: ObservableObject {
             }
             let key = SupplementStackDay.matchKey(
                 category: intake.category, snapshotID: current.productSnapshotID, names: current.components.map(\.name))
-            counts[key, default: 0] += 1
+            // The day key above already proved the zone readable, so the minute is always there.
+            let minute = SupplementStackDay.minuteOfDay(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier) ?? 0
+            counts[key, default: []].append(minute)
         }
         return (counts, unreadable)
     }
@@ -410,6 +417,40 @@ public final class SupplementStackViewModel: ObservableObject {
     /// Drops any pending Undo offer, for when the screen goes away.
     public func clearUndo() {
         undoToken = nil
+    }
+
+    // MARK: Showing
+
+    /// The screen came into view: read everything, and follow the app's reloads until it goes away.
+    public func appeared(now: Date) {
+        isShown = true
+        load(now: now)
+    }
+
+    /// The screen went away: stop following the app's reloads and drop the Undo offer, whose toast is gone.
+    public func disappeared() {
+        isShown = false
+        clearUndo()
+    }
+
+    /// The journal may have changed somewhere in the app. Read again only while the list is on screen; a
+    /// list out of view reads everything when it next appears, so nothing is read for no one.
+    public func reloadIfShown(now: Date) {
+        if isShown { load(now: now) }
+    }
+
+    /// Erase all data or a restore replaced what the stores hold. The Undo offer refers to an entry that may
+    /// be gone, so it is dropped, and nothing read before is kept: the list is read again if it is on
+    /// screen and emptied if it is not, so no erased name waits in memory for the next appearance.
+    public func storesWereReplaced(now: Date) {
+        undoToken = nil
+        if isShown {
+            load(now: now)
+        } else {
+            forget()
+            rows = []
+            candidates = []
+        }
     }
 
     // MARK: Helpers

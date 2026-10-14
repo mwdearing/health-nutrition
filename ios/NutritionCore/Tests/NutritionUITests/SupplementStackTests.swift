@@ -210,18 +210,39 @@ final class SupplementStackTests: XCTestCase {
 
     // MARK: Today's times
 
-    func testEntriesFillTimesInOrderAndOnlyPassedTimesReadNotLogged() throws {
+    func testEachEntryTakesTheNearestOpenTimeAndOnlyPassedTimesReadNotLogged() throws {
         let schedule = try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))
-        func states(_ taken: Int, _ minute: Int) -> [SupplementSlotState] {
-            SupplementStackDay.slots(for: schedule, takenCount: taken, minuteOfDay: minute).map(\.state)
+        func states(_ logged: [Int], at minute: Int) -> [SupplementSlotState] {
+            SupplementStackDay.slots(for: schedule, loggedMinutes: logged, minuteOfDay: minute).map(\.state)
         }
-        XCTAssertEqual(states(0, 7 * 60 + 59), [.later, .later])
-        XCTAssertEqual(states(0, 8 * 60), [.notLogged, .later])
-        XCTAssertEqual(states(0, 12 * 60), [.notLogged, .later])
-        XCTAssertEqual(states(1, 12 * 60), [.taken, .later])
-        XCTAssertEqual(states(2, 12 * 60), [.taken, .taken])
-        XCTAssertEqual(states(3, 12 * 60), [.taken, .taken])
-        XCTAssertEqual(states(1, 21 * 60), [.taken, .notLogged])
+        let h = 60
+        XCTAssertEqual(states([], at: 7 * h + 59), [.later, .later])
+        XCTAssertEqual(states([], at: 8 * h), [.notLogged, .later])
+        XCTAssertEqual(states([9 * h], at: 12 * h), [.taken, .later])
+        // A little early still counts for its own time.
+        XCTAssertEqual(states([7 * h + 50], at: 12 * h), [.taken, .later])
+        // The morning was missed and the evening taken: the evening is marked, not the morning.
+        XCTAssertEqual(states([20 * h + 30], at: 21 * h), [.notLogged, .taken])
+        XCTAssertEqual(states([19 * h + 55], at: 21 * h), [.notLogged, .taken])
+        // Two in the evening fill both times, whatever order they are given in.
+        XCTAssertEqual(states([20 * h + 40, 20 * h + 30], at: 21 * h), [.taken, .taken])
+        XCTAssertEqual(states([9 * h, 10 * h, 11 * h], at: 12 * h), [.taken, .taken])
+        // Halfway between the two, the earlier time is the one taken.
+        XCTAssertEqual(states([14 * h], at: 15 * h), [.taken, .later])
+    }
+
+    func testAMissedMorningAndATakenEveningReadThatWay() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))])
+        // Wednesday 20:30 UTC, read at 21:00.
+        try log(store, at: now.addingTimeInterval(8.5 * 3_600))
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now.addingTimeInterval(9 * 3_600))
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.notLogged, .taken])
+        XCTAssertEqual(model.rows.first?.statusText, "1 of 2 taken today")
     }
 
     func testClockReadsTheWallClockOnTheDayDaylightSavingStarts() throws {
@@ -440,7 +461,7 @@ final class SupplementStackTests: XCTestCase {
         let lateEvening = now.addingTimeInterval(11.5 * 3_600)
         try log(inner, at: now.addingTimeInterval(11 * 3_600))
         model.load(now: lateEvening)
-        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.taken, .notLogged])
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.notLogged, .taken])
         let beforeMidnight = store.activeIntakesCalls
         model.refreshClock(now: lateEvening.addingTimeInterval(3_600))
         XCTAssertGreaterThan(store.activeIntakesCalls, beforeMidnight)
@@ -515,6 +536,58 @@ final class SupplementStackTests: XCTestCase {
             let date = SupplementScheduleEditor.date(for: time, calendar: calendar)
             XCTAssertEqual(SupplementScheduleEditor.time(from: date, calendar: calendar), time)
         }
+    }
+
+    func testTheAppsReloadsReadTheJournalOnlyWhileTheListIsOnScreen() throws {
+        let inner = try makeStore()
+        let store = StackReadCountingStore(inner: inner)
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": .standard])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+
+        model.reloadIfShown(now: now)
+        XCTAssertEqual(store.activeIntakesCalls, 0)
+        XCTAssertTrue(model.rows.isEmpty)
+
+        model.appeared(now: now)
+        XCTAssertEqual(model.rows.count, 1)
+        let afterAppearing = store.activeIntakesCalls
+        try log(inner, at: now.addingTimeInterval(-3_600))
+        model.reloadIfShown(now: now)
+        XCTAssertGreaterThan(store.activeIntakesCalls, afterAppearing)
+        XCTAssertEqual(model.rows.first?.loggedToday, 1)
+
+        model.disappeared()
+        let afterLeaving = store.activeIntakesCalls
+        model.reloadIfShown(now: now)
+        XCTAssertEqual(store.activeIntakesCalls, afterLeaving)
+    }
+
+    func testReplacedStoresDropTheUndoOfferAndWhatAHiddenListRead() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": .standard])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.appeared(now: now)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
+        XCTAssertNotNil(model.undoToken)
+
+        // Shown: read again, and the offer is gone.
+        model.storesWereReplaced(now: now)
+        XCTAssertNil(model.undoToken)
+        XCTAssertEqual(model.rows.count, 1)
+
+        // Hidden: nothing read before is kept for the next appearance.
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
+        model.disappeared()
+        model.storesWereReplaced(now: now)
+        XCTAssertNil(model.undoToken)
+        XCTAssertTrue(model.rows.isEmpty)
+        XCTAssertTrue(model.candidates.isEmpty)
     }
 
     func testEraseEmptiesTheList() throws {

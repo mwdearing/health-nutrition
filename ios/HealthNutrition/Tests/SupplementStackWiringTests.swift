@@ -31,7 +31,8 @@ final class SupplementStackWiringTests: XCTestCase {
         let services = try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler())
         try services.favoritesStore.add(favorite)
         let stack = services.supplementStack
-        stack.load(now: Date())
+        // As the screen does when it opens, so the list follows the app's reloads.
+        stack.appeared(now: Date())
         let candidate = try XCTUnwrap(stack.candidates.first)
         XCTAssertTrue(stack.add(candidate, schedule: .standard, now: Date()))
         XCTAssertEqual(stack.rows.map(\.title), ["Synthetic capsule"])
@@ -57,11 +58,14 @@ final class SupplementStackWiringTests: XCTestCase {
     func testEraseEmptiesAnOpenSupplementList() async throws {
         let services = try makeServicesWithOneItem()
         let stack = services.supplementStack
+        XCTAssertTrue(stack.markTaken(try XCTUnwrap(stack.rows.first), now: Date()))
+        XCTAssertNotNil(stack.undoToken)
 
         let erased = await services.connections.eraseAllData()
         XCTAssertTrue(erased)
         XCTAssertTrue(stack.rows.isEmpty)
         XCTAssertTrue(stack.candidates.isEmpty)
+        XCTAssertNil(stack.undoToken)
         XCTAssertTrue(UserDefaultsSupplementStackStore().schedules().isEmpty)
     }
 }

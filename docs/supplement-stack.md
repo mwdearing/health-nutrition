@@ -22,12 +22,16 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   logged from the Library counts too, and deleting or undoing an entry un-marks its time. An entry's day
   is the local day of its own time zone, the rule the Journal groups by. Entries match an item by its
   product snapshot, or by category and component names when there is none; the meal is ignored.
-  Entries fill today's times earliest first. A time with no entry reads "Not logged" once it has passed
-  and "Later today" before; the wording reports the journal and gives no advice.
+  Each of today's entries, in the order they were logged, marks the open time nearest to when it was
+  logged (the earlier time on a tie): an evening dose after a missed morning one marks the evening, and
+  an entry a little early still counts for its own time. A time with no entry reads "Not logged" once it
+  has passed and "Later today" before; the wording reports the journal and gives no advice.
   An entry whose record cannot be read is not counted as missing: the screen says how many of today's
   entries it could not read, since any of them may be an item on the list.
-  The screen reads the journal again when it appears, when the app returns to the foreground, and after
-  any reload of the app's screens (an add, edit or delete anywhere, in any window), an erase or a restore. While
+  The screen reads the journal again when it appears, when the app returns to the foreground, and, while
+  it is open, after any reload of the app's screens (an add, edit or delete anywhere, in any window). A
+  list out of view reads nothing until it appears again. An erase or a restore drops the Undo offer and
+  everything the list read, whether it is open or not. While
   it is open, the times move on once a minute from what was already read, so a passed time shows without
   a journal read; only a new day reads the journal again, which clears yesterday's marks.
 - **Stored** as JSON under `supplementStack.schedules` in the app's defaults domain, one schedule per

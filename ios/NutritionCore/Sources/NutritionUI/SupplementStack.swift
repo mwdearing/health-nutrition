@@ -123,21 +123,42 @@ struct SupplementStackClock: Equatable {
 
 /// How today's entries of one item map onto its times.
 enum SupplementStackDay {
-    /// Today's times for one schedule, earliest first. Entries fill the times in order: two entries by noon
-    /// on a morning-and-evening schedule mark both times taken, because the list counts what was logged
-    /// today, not the minute it was logged. A time reads "not logged" only once it has passed.
-    static func slots(for schedule: SupplementSchedule, takenCount: Int, minuteOfDay: Int) -> [SupplementSlot] {
-        schedule.times.enumerated().map { index, time in
+    /// Today's times for one schedule, earliest first, with each of today's entries on the open time
+    /// nearest to when it was logged (the earlier one on a tie), taken in the order they were logged. An
+    /// evening dose after a missed morning one marks the evening time, not the morning one, and an entry a
+    /// little before its time still counts for it. A time no entry covers reads "not logged" once it has
+    /// passed. `loggedMinutes` are minutes since each entry's own local midnight.
+    static func slots(for schedule: SupplementSchedule, loggedMinutes: [Int], minuteOfDay: Int) -> [SupplementSlot] {
+        let minutes = schedule.times.map(SupplementSchedule.minuteOfDay)
+        var taken = Array(repeating: false, count: minutes.count)
+        for logged in loggedMinutes.sorted() {
+            let open = minutes.indices.filter { !taken[$0] }
+            // `min(by:)` keeps the first of equal distances, which is the earlier time.
+            guard let nearest = open.min(by: { abs(minutes[$0] - logged) < abs(minutes[$1] - logged) }) else { break }
+            taken[nearest] = true
+        }
+        return schedule.times.indices.map { index in
             let state: SupplementSlotState
-            if index < takenCount {
+            if taken[index] {
                 state = .taken
-            } else if SupplementSchedule.minuteOfDay(time) <= minuteOfDay {
+            } else if minutes[index] <= minuteOfDay {
                 state = .notLogged
             } else {
                 state = .later
             }
-            return SupplementSlot(time: time, state: state)
+            return SupplementSlot(time: schedule.times[index], state: state)
         }
+    }
+
+    /// Minutes since local midnight in `zoneIdentifier`, read from the calendar's components so a day that
+    /// skips or repeats an hour still gives the wall-clock minute. Nil for a zone identifier that names none.
+    static func minuteOfDay(_ date: Date, zoneIdentifier: String) -> Int? {
+        guard let zone = TimeZone(identifier: zoneIdentifier) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        guard let hour = parts.hour, let minute = parts.minute else { return nil }
+        return hour * 60 + minute
     }
 
     /// What tells an entry of an item from an entry of anything else: the product snapshot when there is

@@ -28,7 +28,8 @@ public struct SupplementStackView: View {
                         + "Not logged when it was taken.",
                     tone: .waiting)
             }
-            if model.rows.isEmpty {
+            // A list that could not be read is not an empty one, so the empty state waits for a good read.
+            if model.rows.isEmpty, model.errorMessage == nil {
                 EmptyState(
                     title: "No supplements on your list",
                     message: "Add something you take and the times you take it. Each tap on Taken logs one entry.",
@@ -58,8 +59,8 @@ public struct SupplementStackView: View {
                 }
             }
         }
-        .onAppear { self.model.load(now: self.now()) }
-        .onDisappear { self.model.clearUndo() }
+        .onAppear { self.model.appeared(now: self.now()) }
+        .onDisappear { self.model.disappeared() }
         // Back from the background, anything may have been logged elsewhere, so everything is read again.
         // While on screen, the times move on once a minute from what was already read (a time that passes
         // reads "Not logged"); only a new day reads the journal again, which clears yesterday's marks.
