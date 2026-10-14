@@ -272,20 +272,21 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
         }
         isBusy = true
         defer { isBusy = false }
-        // Access that changed since the last run (counts or which types are allowed) was changed by a
-        // person in the Health app, which is
-        // as much their answer to a denial as the sheet is: without this an entry parked by "Don't
-        // Allow" stays parked after they allow it. The first run of a launch counts as a change, since
-        // nothing remembers what Health said before the app was closed.
-        let access = accessProbe()
-        if automatic && access != lastSeenAccess {
-            authorizationPending = true
-        }
-        lastSeenAccess = access
         var passTime = now
         repeat {
             rerunRequested = false
             rearmSummary = nil
+            // Access that changed since the last pass (counts or which types are allowed) was changed
+            // by a person in the Health app, which is as much their answer to a denial as the sheet is:
+            // without this an entry parked by "Don't Allow" stays parked after they allow it. Read on
+            // every pass, so a foreground trigger coalesced into a running pass still sees the change.
+            // The first pass of a launch counts as a change, since nothing remembers what Health said
+            // before the app was closed.
+            let access = accessProbe()
+            if access != lastSeenAccess {
+                authorizationPending = true
+            }
+            lastSeenAccess = access
             if authorizationPending {
                 authorizationPending = false
                 refresh()
