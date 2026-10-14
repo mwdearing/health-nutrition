@@ -27,12 +27,15 @@ public struct TodayView: View {
     /// Opens the units settings from the checklist's "Choose units" step. Nil leaves that step with no
     /// settings screen to open.
     private let onOpenUnits: (() -> Void)?
+    /// Steps, active energy and weight from Apple Health. Nil hides the card.
+    private let bodyActivity: BodyActivityViewModel?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
         onEditGoals: (() -> Void)? = nil, onSelect: ((String) -> Void)? = nil,
         onAddToMeal: ((MealLabel?) -> Void)? = nil,
-        checklist: FirstDayChecklistModel? = nil, onOpenUnits: (() -> Void)? = nil
+        checklist: FirstDayChecklistModel? = nil, onOpenUnits: (() -> Void)? = nil,
+        bodyActivity: BodyActivityViewModel? = nil
     ) {
         self.model = model
         self.now = now
@@ -42,6 +45,7 @@ public struct TodayView: View {
         self.onAddToMeal = onAddToMeal
         self.checklist = checklist
         self.onOpenUnits = onOpenUnits
+        self.bodyActivity = bodyActivity
     }
 
     public var body: some View {
@@ -58,6 +62,9 @@ public struct TodayView: View {
                 }
                 NourishTodayHeader(model: model, onEditGoals: onEditGoals)
                 waterCard
+                if let bodyActivity {
+                    BodyActivityCard(model: bodyActivity, now: now)
+                }
                 entries
                 if let summary = model.missingValuesSummary {
                     Text(summary)
