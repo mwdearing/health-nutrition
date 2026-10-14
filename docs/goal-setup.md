@@ -62,9 +62,26 @@ and the fields keep what the person typed.
 "These are estimates, not medical advice. If you are pregnant, have a medical condition or take medicines
 that affect weight or appetite, ask your doctor or dietitian."
 
+## Macros by percent
+
+The Goals screen also has a "Macros by percent" section. A person types protein, carbohydrate and fat
+as percentages of their energy goal; the three must each be above zero and total exactly 100. The
+section shows the grams that comes to (4 kcal per gram for protein and carbohydrate, 9 for fat,
+rounded to whole grams) and, on "Set gram goals from percentages", writes them as the ordinary gram
+goals for those three nutrients. All three are written or none is.
+
+The percentages themselves are not stored. The share shown back is worked out from the stored gram
+goals and the stored energy goal, so it need not total 100 after a gram goal is edited by hand or
+the energy goal changes; the grams do not follow a later change to the energy goal until the
+percentages are set again. Without an energy goal the section only says to set one first. The app
+offers no split of its own.
+
 ## Code
 
 - `NutritionDomain/GoalEstimator.swift`: the calculator and its error cases.
 - `NutritionUI/GoalSetupViewModel.swift`: the steps, the answers, the estimate and the save.
 - `NutritionUI/GoalSetupView.swift`: one screen per step, shown as a sheet from `GoalsView`.
 - Tests: `NutritionDomainTests/GoalEstimatorTests.swift` and `NutritionUITests/GoalSetupViewModelTests.swift`.
+- `NutritionDomain/MacroSplit.swift`, `NutritionUI/GoalsViewModel+MacroSplit.swift` and
+  `NutritionUI/MacroSplitSection.swift`: the percent split. Tests: `NutritionDomainTests/MacroSplitTests.swift`
+  and `NutritionUITests/MacroSplitGoalsTests.swift`.
