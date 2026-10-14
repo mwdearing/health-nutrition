@@ -892,9 +892,19 @@ public final class AddIntakeViewModel: ObservableObject {
     ) -> String {
         let base = Self.slug(name)
         if base == "water", unit.dimension == .volume { return base }
-        let statedBySnapshot = snapshotNutrientKeys.contains { IntakeContextFactCatalog.nutrientSlug(for: $0) == base }
-        guard statedBySnapshot || IntakeContextFactCatalog.isReserved(componentID: base) else { return base }
-        return String(("food-" + base).prefix(64))
+        let stated = Set(snapshotNutrientKeys.map { IntakeContextFactCatalog.nutrientSlug(for: $0) })
+        func isTaken(_ id: String) -> Bool {
+            stated.contains(id) || IntakeContextFactCatalog.isReserved(componentID: id)
+        }
+        guard isTaken(base) else { return base }
+        // The namespaced id is checked the same way, since a snapshot can state a nutrient under it too; a
+        // counter goes after the prefix until one is free, which a real label runs out of long before 100.
+        for counter in 1...100 {
+            let prefix = counter == 1 ? "food-" : "food-\(counter)-"
+            let candidate = String((prefix + base).prefix(64))
+            if !isTaken(candidate) { return candidate }
+        }
+        return String(("food-" + UUID().uuidString.lowercased()).prefix(64))
     }
 }
 

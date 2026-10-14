@@ -30,6 +30,13 @@ final class AddIntakeComponentIDTests: XCTestCase {
             "without a snapshot stating it, an ordinary name keeps its slug")
     }
 
+    func testTheNamespacedIDAvoidsASnapshotNutrientOfTheSameName() {
+        XCTAssertEqual(
+            AddIntakeViewModel.componentID(
+                forFoodNamed: "Protein", unit: .g, snapshotNutrientKeys: ["protein", "food-protein"]),
+            "food-2-protein")
+    }
+
     func testWaterPouredByVolumeKeepsTheCatalogID() {
         XCTAssertEqual(AddIntakeViewModel.componentID(forFoodNamed: "Water", unit: .mL), "water")
     }
