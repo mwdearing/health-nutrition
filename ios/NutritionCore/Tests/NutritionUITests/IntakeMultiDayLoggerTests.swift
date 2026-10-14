@@ -211,6 +211,7 @@ final class IntakeMultiDayLoggerTests: XCTestCase {
             text(1, [("2023-11-10", .entryDay), ("2023-11-15", .future), ("2023-11-16", .future)], now: now),
             "Logged on 1 day. Skipped Nov 10 (this entry's day), Nov 15 (in the future), and Nov 16 (in the future).")
         XCTAssertEqual(text(1, [("2023-11-14", .laterToday)], now: now), "Logged on 1 day. Skipped Nov 14 (later today).")
+        XCTAssertEqual(text(1, [("2023-02-31", .notADate)], now: now), "Logged on 1 day. Skipped 2023-02-31 (not a date).")
         // A day in another year carries its year.
         XCTAssertEqual(
             text(1, [("2023-12-31", .entryDay)], now: date("2024-01-02T09:00:00Z")),

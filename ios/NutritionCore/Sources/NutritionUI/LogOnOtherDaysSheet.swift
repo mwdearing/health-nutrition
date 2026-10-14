@@ -94,9 +94,15 @@ public struct LogOnOtherDaysSheet: View {
         _ result: IntakeMultiDayResult, now: Date, locale: Locale = .current, calendar: Calendar = .current
     ) -> String? {
         guard !result.skipped.isEmpty else { return nil }
-        let thisYear = calendar.component(.year, from: now)
+        // The day keys are Gregorian, so this year is read in the Gregorian calendar too.
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let thisYear = gregorian.component(.year, from: now)
         let parts = result.skipped.map { skipped -> String in
-            "\(dayText(skipped.day, thisYear: thisYear, locale: locale, calendar: calendar)) (\(reasonText(skipped.reason)))"
+            // A day that does not exist has no month and day to show, so it is shown as it was given.
+            let day = skipped.reason == .notADate
+                ? skipped.day : dayText(skipped.day, thisYear: thisYear, locale: locale, calendar: calendar)
+            return "\(day) (\(reasonText(skipped.reason)))"
         }
         let formatter = ListFormatter()
         formatter.locale = locale
@@ -145,21 +151,28 @@ struct LogOnOtherDaysButton: View {
     let now: () -> Date
     let onFinished: () -> Void
     @State private var showing = false
+    /// True once a log wrote entries: however the sheet then closes (Done, or a swipe down), the entry
+    /// closes too, so the screens behind it reload and the same days are not offered again.
+    @State private var logged = false
 
     var body: some View {
         Button { showing = true } label: {
             Text("Log on other days").font(.body)
         }
         .accessibilityHint("Adds new entries with the same amounts on days you choose")
-        .sheet(isPresented: $showing) {
+        .sheet(isPresented: $showing, onDismiss: {
+            guard logged else { return }
+            logged = false
+            onFinished()
+        }) {
             LogOnOtherDaysSheet(now: now, message: model.multiDayMessage, onLog: { days in
                 let at = now()
                 switch model.logOnDays(days, now: at) {
                 case .logged(let result):
+                    logged = true
                     // Skipped days are said before the entry closes; with none, it closes at once.
                     if let notice = LogOnOtherDaysSheet.loggedText(result, now: at) { return .loggedWithSkips(notice) }
                     showing = false
-                    onFinished()
                     return .close
                 case .leftEntries:
                     // The entry screen says what was left; the sheet closes so the days are not logged twice.
@@ -168,10 +181,7 @@ struct LogOnOtherDaysButton: View {
                 case .nothingLogged:
                     return .stay
                 }
-            }, onCancel: { showing = false }, onDone: {
-                showing = false
-                onFinished()
-            })
+            }, onCancel: { showing = false }, onDone: { showing = false })
             .onAppear { model.clearMultiDayMessage() }
         }
     }
