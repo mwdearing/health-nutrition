@@ -2245,6 +2245,83 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             recorded?.nextAttemptAt, nil, "and it is due again rather than parked")
     }
 
+    /// A 429 is answered without the body being read, so the snapshot this request recorded is released and the
+    /// retry goes out with the links current then, not the ones frozen when the limit hit (#123).
+    func testA429ReleasesTheSnapshotThisRequestRecordedSoTheRetryCarriesNewerLinks() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let operation = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        let provider = LinkProvider(snapshot: projection(sequence: 2).links)
+        transport.answer(.init(statusCode: 429, retryAfterSeconds: 60))
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current }
+        ).runOnce(now: when)
+        XCTAssertNil(try store.recordedLinks(operationID: operation), "nothing of the throttled request is kept")
+
+        let newer = [IntakeContextLink(
+            componentID: "water",
+            sampleUUID: "6f1c9d20-84ab-4e77-9a3b-5c0e2d84f611",
+            healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+            syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+            syncVersion: 7,
+            disposition: .active)]
+        provider.set(newer)
+        transport.reset()
+        transport.answerEverythingAccepted()
+        _ = await makeWorker(
+            store: store, transport: transport, links: { _, _ in provider.current }
+        ).runOnce(now: when.addingTimeInterval(3600))
+
+        let sent = try IntakeContextJSONReader.read(try XCTUnwrap(transport.sentBatches.first))
+        let links = try XCTUnwrap(sent.array("operations")).first?.array("healthkit_links")
+        XCTAssertEqual(links?.first?.string("healthkit_sample_uuid"), newer.first?.sampleUUID)
+    }
+
+    /// A 429 releases only what this request recorded: a snapshot another run put on record first may already
+    /// be at the receiver, so it stays.
+    func testA429DoesNotClearASnapshotAnotherRunRecordedFirst() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let operation = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        let links = projection(sequence: 2).links
+        transport.answer(.init(statusCode: 429))
+        let worker = makeWorker(
+            store: store, transport: transport,
+            token: {
+                _ = try? store.recordLinks(links, operationID: operation)
+                return "synthetic-test-token"
+            },
+            links: { _, _ in links })
+
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(try store.recordedLinks(operationID: operation), links)
+    }
+
+    /// A process death between recording the snapshot and sending it leaves the record behind; the next attempt
+    /// sends exactly what was recorded, whatever the links are by then, so the receiver sees one payload (#123).
+    func testARecordLeftByAStoppedRunIsWhatTheNextAttemptSends() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let operation = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        let recorded = projection(sequence: 2).links
+        _ = try store.recordLinks(recorded, operationID: operation)
+        let later = [IntakeContextLink(
+            componentID: "water",
+            sampleUUID: "6f1c9d20-84ab-4e77-9a3b-5c0e2d84f611",
+            healthKitTypeIdentifier: "HKQuantityTypeIdentifierDietaryWater",
+            syncIdentifier: HealthKitWritePlanner.syncIdentifier(intakeID: intakeID, nutrientKey: "water"),
+            syncVersion: 7,
+            disposition: .active)]
+        transport.answerEverythingAccepted()
+
+        _ = await makeWorker(store: store, transport: transport, links: { _, _ in later }).runOnce(now: when)
+
+        let sent = try IntakeContextJSONReader.read(try XCTUnwrap(transport.sentBatches.first))
+        let links = try XCTUnwrap(sent.array("operations")).first?.array("healthkit_links")
+        XCTAssertEqual(links?.first?.string("healthkit_sample_uuid"), recorded.first?.sampleUUID)
+    }
+
     /// A snapshot that was already on record when the 413 arrived is **not** cleared, even though it was this
     /// piece's to send.
     ///
