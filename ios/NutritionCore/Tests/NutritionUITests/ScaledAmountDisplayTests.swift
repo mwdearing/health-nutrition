@@ -142,6 +142,15 @@ final class ScaledAmountDisplayTests: XCTestCase {
             cannotScale: false)
         XCTAssertEqual(line.text, "30 mg")
 
+        // What an entry adds reads as Today will total it, even where the amount logged is the label's own
+        // basis: the label's own figure stays exact under All values.
+        let wholeBasis = ThisAddsLine(
+            key: "protein", displayName: "Protein", value: NutrientValue.known(Decimal(string: "1.25")!, .g)
+                .scaled(by: 1),
+            cannotScale: false)
+        XCTAssertEqual(wholeBasis.text, "1.3 g")
+        XCTAssertEqual(LookedUpProduct.shownText(.known(Decimal(string: "1.25")!, .g)), "1.25 g")
+
         let adds = EntryDetailViewModel.adds(of: bottle(), logged: components)
         XCTAssertEqual(adds.first { $0.key == "sodium" }?.amountText, "30 mg")
         XCTAssertEqual(adds.first { $0.key == LookedUpProduct.energyKcal }?.amountText, "10 kcal")
