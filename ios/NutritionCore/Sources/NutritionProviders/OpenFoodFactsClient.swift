@@ -13,7 +13,12 @@ public actor OpenFoodFactsClient {
     public static let searchMinimumScalars = 2
     public static let searchMaximumCharacters = 80
     public static let searchPageSize = 20
-    public static let searchFields = ["code", "product_name", "brands", "nutriments", "last_modified_t"]
+    /// More results are asked for than are shown, because the name filter drops rows the service matched
+    /// on category or label; at most `searchPageSize` are shown.
+    public static let searchRequestSize = 50
+    public static let searchFields = [
+        "code", "product_name", "brands", "nutriments", "last_modified_t", "product_quantity_unit", "quantity",
+    ]
     /// Characters the search service reads as query syntax (field filters, grouping, ranges, wildcards,
     /// boosts, negation, regular expressions). None of them helps find a food by name.
     private static let searchSyntax = CharacterSet(charactersIn: "+-&|!(){}[]^\"~*?:\\/<>=")
@@ -180,13 +185,19 @@ public actor OpenFoodFactsClient {
         }
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
         components?.path = "/search"
-        // Nothing but the words is sent: no language, country or sort. The service's default order is
-        // relevance to the words.
-        components?.queryItems = [
+        // Nothing but the words is sent: no country or sort, and no language unless the words themselves
+        // are Thai (below). The service's default order is relevance to the words.
+        var items = [
             URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "page_size", value: String(Self.searchPageSize)),
+            URLQueryItem(name: "page_size", value: String(Self.searchRequestSize)),
             URLQueryItem(name: "fields", value: Self.searchFields.joined(separator: ",")),
         ]
+        // Thai names are indexed only under Thai, so words typed in Thai script ask for it. This comes
+        // from the typed words, not from the device; any other query sends no language.
+        if query.unicodeScalars.contains(where: { (0x0E00...0x0E7F).contains($0.value) }) {
+            items.append(URLQueryItem(name: "langs", value: "th"))
+        }
+        components?.queryItems = items
         guard let url = components?.url else {
             return nil
         }

@@ -122,10 +122,13 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   to the limit documented for search requests: one request per explicit submit by
   the person (no search-as-you-type, no autocomplete, no background or bulk
   queries), at most 6 searches in any rolling 60 seconds against a documented
-  limit of 10 per minute, a page of 20 results, and the same User-Agent as
-  lookups. Supplements are not searched here.
+  limit of 10 per minute, one page of 50 results of which at most 20 are shown
+  after the name filter below, and the same User-Agent as lookups. Supplements are not searched here.
 - Only the typed words (2 to 80 characters) are sent, with the page size and the
-  list of fields wanted: no language, country, sort order or identifier. The
+  list of fields wanted: no country, sort order or identifier, and no language
+  except that words typed in Thai script also send `langs=th`, because Thai names
+  are indexed only under Thai (read from the typed words, never from the device;
+  French, Chinese, Japanese and Korean names were found without it). The
   service reads its query as a query language, so the client writes a single `&`
   as the word "and", replaces every other syntax character
   (`+ - && | ! ( ) { } [ ] ^ " ~ * ? : \ / < > =`) with a space, and lowercases
@@ -149,12 +152,15 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   "Cooking". Words in scripts written without spaces (Chinese, Japanese, Thai and
   similar) are matched anywhere in the name. Text with no letters or digits sends
   nothing, and a reply entry of the wrong shape is skipped without losing the
-  rest of the reply. The search index has per-100 figures but not the serving or
-  whether a product is measured in grams or millilitres, so a result is listed as
-  "per 100 g or mL" and opens with no serving filled in. Opening a result sends nothing: the
-  form is filled from the search reply. The owner decided on 2026-10-14 that a
-  picked result's barcode is not sent to Open Food Facts to read the fuller
-  record; scanning or typing a barcode remains the way to get the serving.
+  rest of the reply. The search index has per-100 figures but no serving, and in
+  practice no unit field, so whether a result is per 100 g or per 100 mL is read
+  from its pack quantity ("1 gallon", "400 g", "32 fl oz (946 ml)"): only masses
+  give per 100 g, only volumes per 100 mL, and a mix or no unit leaves it "per
+  100 g or mL", which cannot be scaled to an amount. A result opens with no
+  serving filled in. Opening a result sends nothing: the form is filled from the
+  search reply. The owner decided on 2026-10-14 that a picked result's barcode is
+  not sent to Open Food Facts to read the fuller record; scanning or typing a
+  barcode remains the way to get the serving.
 - The results screen shows the attribution text on every result with a link to
   the license and source, and states that the search words are sent to Open Food
   Facts.

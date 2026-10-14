@@ -25,6 +25,57 @@ public enum OpenFoodFactsBasis: String, Sendable, Hashable {
     }
 }
 
+extension OpenFoodFactsBasis {
+    private static let massUnits: Set<String> = [
+        "g", "gr", "grs", "gram", "grams", "gramm", "kg", "kgs", "kilo", "kilos", "mg", "oz", "ozs", "lb", "lbs",
+        "pound", "pounds",
+    ]
+    private static let volumeUnits: Set<String> = [
+        "ml", "mls", "cl", "dl", "l", "lt", "ltr", "litre", "litres", "liter", "liters", "cc", "gal", "gallon",
+        "gallons", "qt", "quart", "quarts", "pt", "pint", "pints", "fl",
+    ]
+
+    /// Reads the pack quantity ("1 gallon", "400 g", "32 fl oz (946 ml)", "6 x 125 g"). Only a unit
+    /// written right after a number counts. Masses only give per 100 g, volumes only per 100 mL, and a
+    /// mix of both, or no unit at all, stays unspecified rather than guessed. "fl oz" is a volume: "fl"
+    /// follows the number, and the "oz" after it does not.
+    static func fromPackQuantity(_ text: String?) -> OpenFoodFactsBasis {
+        guard let text else { return .per100Unspecified }
+        var tokens: [String] = []
+        var current = ""
+        var currentIsNumber = false
+        for character in text.lowercased() {
+            let isNumber = character.isNumber || ((character == "." || character == "," || character == "/") && currentIsNumber)
+            if character.isLetter || isNumber {
+                if !current.isEmpty && isNumber != currentIsNumber {
+                    tokens.append(current)
+                    current = ""
+                }
+                current.append(character)
+                currentIsNumber = isNumber
+            } else {
+                if !current.isEmpty { tokens.append(current) }
+                current = ""
+                currentIsNumber = false
+            }
+        }
+        if !current.isEmpty { tokens.append(current) }
+        var mass = false
+        var volume = false
+        var previous: String?
+        for token in tokens {
+            defer { previous = token }
+            guard let before = previous else { continue }
+            let afterNumber = before.first?.isNumber == true
+            if afterNumber && massUnits.contains(token) { mass = true }
+            if afterNumber && volumeUnits.contains(token) { volume = true }
+        }
+        if mass && !volume { return .per100g }
+        if volume && !mass { return .per100ml }
+        return .per100Unspecified
+    }
+}
+
 public struct OpenFoodFactsProduct: Sendable, Hashable {
     public static let energyKcal = "energyKcal"
     public static let protein = "protein"
@@ -174,9 +225,11 @@ struct OpenFoodFactsSearchResponse: Decodable {
         let brands: OpenFoodFactsTextList?
         let nutriments: [String: OpenFoodFactsScalar]?
         let last_modified_t: OpenFoodFactsScalar?
+        let product_quantity_unit: OpenFoodFactsScalar?
+        let quantity: OpenFoodFactsScalar?
 
         enum CodingKeys: String, CodingKey {
-            case code, product_name, brands, nutriments, last_modified_t
+            case code, product_name, brands, nutriments, last_modified_t, product_quantity_unit, quantity
         }
 
         init(from decoder: Decoder) throws {
@@ -186,6 +239,8 @@ struct OpenFoodFactsSearchResponse: Decodable {
             brands = try? container.decodeIfPresent(OpenFoodFactsTextList.self, forKey: .brands)
             nutriments = try? container.decodeIfPresent([String: OpenFoodFactsScalar].self, forKey: .nutriments)
             last_modified_t = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .last_modified_t)
+            product_quantity_unit = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .product_quantity_unit)
+            quantity = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .quantity)
         }
     }
 
@@ -240,8 +295,12 @@ extension OpenFoodFactsProduct {
         )
     }
 
-    /// A search result. The figures are per 100 with the unit unstated, and there is no serving.
+    /// A search result. The figures are per 100 and there is no serving. Whether that is 100 g or
+    /// 100 mL comes from the unit when the index has it, else from the pack quantity, else it stays
+    /// unresolved.
     init(hit: OpenFoodFactsSearchResponse.Hit, barcode: String, name: String) {
+        let stated = OpenFoodFactsBasis.decide(dataPer: nil, quantityUnit: hit.product_quantity_unit?.text)
+        let basis = stated != .per100Unspecified ? stated : OpenFoodFactsBasis.fromPackQuantity(hit.quantity?.text)
         let source = hit.nutriments ?? [:]
         var nutrients: [String: NutrientValue] = [:]
         for entry in Self.mapping {
@@ -253,7 +312,7 @@ extension OpenFoodFactsProduct {
             brands: hit.brands?.text,
             servingSize: nil,
             servingQuantity: nil,
-            basis: .per100Unspecified,
+            basis: basis,
             lastModified: hit.last_modified_t?.decimal.map {
                 Date(timeIntervalSince1970: NSDecimalNumber(decimal: $0).doubleValue)
             },

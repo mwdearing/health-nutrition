@@ -259,6 +259,67 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertNil(rows.first?.brands)
     }
 
+    /// The search index has no unit field in practice, but most hits carry the pack quantity. A result
+    /// whose quantity names only masses is per 100 g, only volumes per 100 mL; anything else stays
+    /// unresolved rather than guessed.
+    func testBasisComesFromTheUnitOrThePackQuantity() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Milk A", "quantity": "1 gallon", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Milk B", "quantity": "400 g", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Milk C", "quantity": "32 fl oz (946 ml)", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Milk D", "quantity": "1 lb (454 g)", "nutriments": {}},
+          {"code": "2000000000053", "product_name": "Milk E", "quantity": "6 x 125 g", "nutriments": {}},
+          {"code": "2000000000060", "product_name": "Milk F", "quantity": "500 g / 500 ml", "nutriments": {}},
+          {"code": "2000000000077", "product_name": "Milk G", "quantity": "12 pieces", "nutriments": {}},
+          {"code": "2000000000084", "product_name": "Milk H", "nutriments": {}},
+          {"code": "2000000000091", "product_name": "Milk I", "quantity": "1/2 gal", "nutriments": {}},
+          {"code": "2000000000107", "product_name": "Milk J", "quantity": "33cl", "nutriments": {}},
+          {"code": "2000000000114", "product_name": "Milk K", "product_quantity_unit": "ml", "quantity": "400 g", "nutriments": {}},
+          {"code": "2000000000121", "product_name": "Milk L", "quantity": "1 Quart", "nutriments": {}},
+          {"code": "2000000000138", "product_name": "Milk M", "quantity": "Pack of 2", "nutriments": {}}
+        ]}
+        """.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "milk")
+        guard case .results(let rows) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(rows.map(\.basis), [
+            .per100ml, .per100g, .per100ml, .per100g, .per100g, .per100Unspecified, .per100Unspecified,
+            .per100Unspecified, .per100ml, .per100ml, .per100ml, .per100ml, .per100Unspecified,
+        ])
+    }
+
+    /// The name filter runs on a deeper page than is shown, so matches past the first rows of a broad
+    /// query are still found; at most a page of 20 is shown.
+    func testDeeperPageIsFilteredAndAtMostTwentyAreShown() async {
+        let hits = (0..<50).map { index -> String in
+            let digits = String(format: "20000000%04d", index)
+            let check = (10 - (digits.enumerated().reduce(0) { sum, entry in
+                sum + Int(String(entry.element))! * (entry.offset % 2 == 0 ? 1 : 3) }) % 10) % 10
+            let name = index < 25 ? "Category match \(index)" : "Organic thing \(index)"
+            return #"{"code": "\#(digits)\#(check)", "product_name": "\#(name)", "nutriments": {}}"#
+        }
+        let body = Data(("{\"hits\": [" + hits.joined(separator: ",") + "]}").utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "organic")
+        guard case .results(let rows) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(rows.count, 20)
+        XCTAssertEqual(rows.first?.name, "Organic thing 25")
+    }
+
+    /// Thai product names are indexed only under Thai, so a query written in Thai script also asks for
+    /// that language. It is read from the typed words, never from the device; other queries send none.
+    func testThaiScriptQueryAsksForThai() async throws {
+        let thai = StubTransport(body: twoProducts)
+        _ = await client(thai).search(query: "นมถั่วเหลือง")
+        XCTAssertEqual(try queryItems(of: try XCTUnwrap(thai.requests.first))["langs"], "th")
+        let other = StubTransport(body: twoProducts)
+        _ = await client(other).search(query: "酸奶 milk")
+        XCTAssertNil(try queryItems(of: try XCTUnwrap(other.requests.first))["langs"])
+    }
+
     func testTextWithNoWordsSendsNothing() async {
         let transport = StubTransport(body: twoProducts)
         for query in ["..", "%%", "’’", "__ __"] {
@@ -416,8 +477,8 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         let items = try queryItems(of: request)
         XCTAssertEqual(Set(items.keys), ["q", "page_size", "fields"])
         XCTAssertEqual(items["q"], "oat honey 2%")
-        XCTAssertEqual(items["page_size"], "20")
-        XCTAssertEqual(items["fields"], "code,product_name,brands,nutriments,last_modified_t")
+        XCTAssertEqual(items["page_size"], "50")
+        XCTAssertEqual(items["fields"], "code,product_name,brands,nutriments,last_modified_t,product_quantity_unit,quantity")
         XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("HealthNutrition/1.0.0"), true)
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     }
