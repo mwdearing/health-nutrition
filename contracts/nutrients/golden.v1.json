@@ -1305,6 +1305,88 @@
         "amount": "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
         "unit": "mg"
       }
+    },
+    {
+      "id": "reject_a_negative_amount_to_convert",
+      "op": "reject",
+      "note": "An operation never takes a negative amount.",
+      "input": {
+        "amount": "-1",
+        "unit": "g",
+        "to": "mg"
+      },
+      "expect": {
+        "error": "negative_amount"
+      }
+    },
+    {
+      "id": "reject_a_negative_amount_to_convert_into_itself",
+      "op": "reject",
+      "input": {
+        "amount": "-1",
+        "unit": "g",
+        "to": "g"
+      },
+      "expect": {
+        "error": "negative_amount"
+      }
+    },
+    {
+      "id": "reject_a_negative_label_value",
+      "op": "reject",
+      "input": {
+        "basis": {
+          "amount": "100",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "40",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "-5.2",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "negative_amount"
+      }
+    },
+    {
+      "id": "reject_sum_of_a_negative_value",
+      "op": "reject",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "10",
+            "unit": "mg"
+          },
+          {
+            "state": "known",
+            "amount": "-1",
+            "unit": "mg"
+          }
+        ]
+      },
+      "expect": {
+        "error": "negative_amount"
+      }
+    },
+    {
+      "id": "reject_a_canonical_intermediate_outside_the_exponent_range",
+      "op": "reject",
+      "note": "10^127 kg and the 10^124 L it would become are both in range, but the 10^130 g between them is not.",
+      "input": {
+        "amount": "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "unit": "kg",
+        "to": "L",
+        "density": "1000"
+      },
+      "expect": {
+        "error": "amount_out_of_range"
+      }
     }
   ]
 }

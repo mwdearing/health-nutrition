@@ -627,6 +627,9 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
     for symbol in (unit, target):
         if symbol not in table:
             raise UnitError("unknown_symbol")
+    if amount < 0:
+        # Nothing an operation is given is ever less than zero.
+        raise UnitError("negative_amount")
     if unit == target:
         return amount
 
@@ -637,7 +640,8 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
         # Both factors are powers of ten, so this is exact.
         # A power of ten moves the decimal point; it never adds a significant digit, but it can
         # move the amount out of the exponent range.
-        return bounded(amount * exact(source["factor_to_canonical"]) / exact(dest["factor_to_canonical"]))
+        canonical = bounded(amount * exact(source["factor_to_canonical"]))
+        return bounded(canonical / exact(dest["factor_to_canonical"]))
     if "international_unit" in (source["dimension"], dest["dimension"]):
         raise UnitError("international_unit_not_convertible")
 
@@ -667,7 +671,7 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
             raise UnitError("invalid_density")
         # Density is grams per millilitre. The step is made in the canonical units, then the
         # result takes the target unit's power of ten: grams divide by it, millilitres multiply.
-        canonical = amount * exact(source["factor_to_canonical"])
+        canonical = bounded(amount * exact(source["factor_to_canonical"]))
         if source["dimension"] == "mass":
             canonical = quotient(canonical, density)
         else:
@@ -691,6 +695,8 @@ def scale(case_input: dict, registry) -> dict:
         exact(case_input["density"]) if "density" in case_input else None,
         case_input.get("portion"),
     )
+    if value["state"] == "known" and exact(value["amount"]) < 0:
+        raise UnitError("negative_amount")
     if value["state"] != "known":
         # Scaling passes a non-known value through unchanged, unit included.
         return {key: item for key, item in value.items() if key != "amount"}
@@ -951,7 +957,7 @@ def test_the_openapi_skeleton_is_read_only_and_needs_a_token():
 
 @pytest.mark.parametrize(
     "url",
-    ["https://fdc.nal.usda.gov/food-details/171705/nutrients", "https://world.openfoodfacts.org/product/3017620422003",
+    ["https://data.example.org/food-details/100001/nutrients", "https://catalog.example.net/product/0000000000000",
      "https://example.org", "https://example.org/", "https://a.b.example.co.uk/p/%C3%A9clair?x=1&y=%20#top",
      "https://xn--bcher-kva.example/a_b~c"],
 )
@@ -984,3 +990,19 @@ def test_the_openapi_version_prefix_is_stated_once():
     assert servers == ["https://catalog.example.invalid"], servers
     paths = re.findall(r"^  (/\S*):$", text, flags=re.M)
     assert paths == ["/v1/products/{product_id}", "/v1/barcodes/{barcode}", "/v1/search"], paths
+
+
+def test_no_operation_accepts_a_negative_amount(registry):
+    for amount in ("-1", "-0.000001"):
+        with pytest.raises(UnitError) as raised:
+            convert(exact(amount), "g", "g", registry)
+        assert raised.value.name == "negative_amount"
+    assert convert(exact("-0"), "g", "mg", registry) == 0, "minus zero is zero"
+
+
+def test_the_canonical_intermediate_of_a_conversion_is_bounded(registry):
+    """10^127 kg is in range, and so would be the 10^124 L it converts to at a density of 1000,
+    but the 10^130 g in between is not."""
+    with pytest.raises(UnitError) as raised:
+        convert(Fraction(10**127), "kg", "L", registry, Fraction(1000))
+    assert raised.value.name == "amount_out_of_range"

@@ -21,8 +21,10 @@ fraction digits, so `"1234567890123"` and `"1.1234567"` are refused.
 No amount in a published product is negative. A nutrient amount is zero or more,
 so `"-5"` and `"-0"` are refused; a serving amount is greater than zero, so `"0"`
 and `"0.0"` are refused there as well. An operation refuses a negative input:
-a consumed amount below zero is `negative_amount`, and a label basis of zero or
-less is `non_positive_amount`.
+an amount to convert, a label value, a consumed amount or a value in a sum below
+zero is `negative_amount`; a label basis of zero or less is
+`non_positive_amount`; a density of zero or less is `invalid_density`; and a
+portion of zero or less is `invalid_portion_definition`. `-0` is zero.
 
 ## Display rounding never replaces a stored amount
 
@@ -69,8 +71,9 @@ Exact arithmetic needs room, and the iOS `Decimal` has room for 38 significant
 digits. So the contract sets that as the bound for every implementation, and no
 implementation may round or cut to stay inside it:
 
-- Every input, every product, every sum and every result must be a decimal of at
-  most 38 significant digits, counted without leading and trailing zeros. A unit
+- Every input, every intermediate (including an amount expressed in its
+  dimension's canonical unit on the way to the target unit), every product,
+  every sum and every result must be a decimal of at most 38 significant digits, counted without leading and trailing zeros. A unit
   factor is a power of ten and never adds a digit.
 - The leading significant digit of every one of them must have a place value
   from 10^-127 to 10^127 (an adjusted exponent of -127 to 127, the range the app
