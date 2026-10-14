@@ -51,8 +51,13 @@ public protocol MacroSplitPreferences: AnyObject {
 /// any of the three by hand, the setup estimate, removing the energy goal or clearing all goals stops
 /// that and forgets the split. The share shown back is still worked out from the stored grams.
 extension GoalsViewModel {
-    /// The split the macro gram goals follow, or nil when they do not follow the energy goal.
-    public var followedMacroSplit: MacroSplit? { macroSplitPreferences?.macroSplit }
+    /// The split the macro gram goals follow, or nil when they do not follow the energy goal. A stored
+    /// split that no longer describes the goals (the three gram goals are not its output for the stored
+    /// energy goal) is not reported, so the screen never says goals follow when they would not.
+    public var followedMacroSplit: MacroSplit? {
+        guard let split = macroSplitPreferences?.macroSplit, macroSplitDescribesGoals(split) else { return nil }
+        return split
+    }
 
     /// The keys a split writes, in the order the screen names them.
     public static let macroSplitKeys = ["protein", "carbohydrate", "fat"]
@@ -177,7 +182,6 @@ extension GoalsViewModel {
         // A failed apply puts back the split that was followed before, when the goals it rolls back to
         // are still that split's output.
         let previousSplit = self.followedMacroSplit
-        self.macroSplitPreferences?.setMacroSplit(nil)
         var previous: [(key: String, goal: NutrientGoal?, draft: String?, unit: MeasureUnit?)] = []
         let storedEnergy: NutrientGoal?
         do {
@@ -191,6 +195,10 @@ extension GoalsViewModel {
         } catch {
             return Self.saveFailedMessage
         }
+        // Cleared only once the reads succeeded, so an apply that stops before writing anything leaves
+        // following as it was. Clearing before the energy edit is saved keeps that save from moving the
+        // grams by the old split just before they are replaced.
+        self.stopFollowingMacroSplit()
         // The grams above are shares of the energy the row shows. When that is an edit not yet saved,
         // it is saved first, so the stored energy goal is the one the grams were worked out from.
         if self.rows.contains(where: { $0.nutrient == "energy" }), let draft = self.draftText["energy"] {
@@ -198,6 +206,7 @@ extension GoalsViewModel {
             let unit = self.selectedUnits["energy"] ?? .kcal
             if typed != storedEnergy?.target || unit != storedEnergy?.unit {
                 guard self.commitTarget(for: "energy") else {
+                    self.restoreMacroSplit(previousSplit)
                     return self.rowError["energy"] ?? self.errorMessage ?? Self.saveFailedMessage
                 }
             }

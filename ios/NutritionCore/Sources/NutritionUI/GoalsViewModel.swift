@@ -454,7 +454,7 @@ public final class GoalsViewModel: ObservableObject {
 
     /// The three stored macro goals and their amounts in grams, or nil when one is missing, unreadable
     /// or not a mass.
-    private func storedMacroGoals() -> (goals: [NutrientGoal], grams: MacroSplit.Grams)? {
+    func storedMacroGoals() -> (goals: [NutrientGoal], grams: MacroSplit.Grams)? {
         var goals: [NutrientGoal] = []
         var grams: [Decimal] = []
         for key in Self.macroSplitKeys {
@@ -472,11 +472,23 @@ public final class GoalsViewModel: ObservableObject {
     /// energy goal, so the rule that a stored split describes the goals holds after any rollback.
     public func restoreMacroSplit(_ split: MacroSplit?) {
         guard let split, let splits = macroSplitPreferences, splits.macroSplit == nil,
-            let macros = storedMacroGoals(),
-            let energy = Self.kcal((try? store.goal(for: Self.energyKey)) ?? nil),
-            (try? split.grams(forEnergyKcal: energy)) == macros.grams
+            macroSplitDescribesGoals(split)
         else { return }
         splits.setMacroSplit(split)
+    }
+
+    /// Forgets the stored split, so the macro goals no longer follow the energy goal. Called when a save
+    /// could not be fully rolled back, since the goals may then be anything.
+    public func stopFollowingMacroSplit() {
+        macroSplitPreferences?.setMacroSplit(nil)
+    }
+
+    /// Whether the three stored macro goals are exactly the split's output for the stored energy goal.
+    func macroSplitDescribesGoals(_ split: MacroSplit) -> Bool {
+        guard let macros = storedMacroGoals(),
+            let energy = Self.kcal((try? store.goal(for: Self.energyKey)) ?? nil)
+        else { return false }
+        return (try? split.grams(forEnergyKcal: energy)) == macros.grams
     }
 
     /// After the energy goal changes on this screen, moves the protein, carbohydrate and fat goals to the

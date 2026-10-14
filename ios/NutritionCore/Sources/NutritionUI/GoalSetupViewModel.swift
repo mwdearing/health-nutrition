@@ -214,7 +214,9 @@ public final class GoalSetupViewModel: ObservableObject {
                 for entry in attempted.dropLast().reversed() {
                     if !goals.restoreGoal(entry.goal, for: entry.nutrient) { restored = false }
                 }
-                if restored { goals.restoreMacroSplit(followedSplit) }
+                // A full rollback puts following back; an incomplete one leaves goals that may be anything,
+                // so following stops.
+                if restored { goals.restoreMacroSplit(followedSplit) } else { goals.stopFollowingMacroSplit() }
                 resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
                 return false
             }

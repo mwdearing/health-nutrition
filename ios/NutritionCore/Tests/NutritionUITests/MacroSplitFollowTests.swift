@@ -213,6 +213,50 @@ final class MacroSplitFollowTests: XCTestCase {
             model.followedMacroSplit, try MacroSplit(proteinPercent: 30, carbohydratePercent: 40, fatPercent: 30))
     }
 
+    func testAnApplyStoppedBeforeWritingKeepsFollowing() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        // The energy edit the new split would be a share of cannot be saved, so nothing is written.
+        model.draftText["energy"] = "2500"
+        store.refused = ["energy"]
+
+        XCTAssertNotNil(model.applyMacroSplit(protein: "25", carbohydrate: "45", fat: "30"))
+
+        XCTAssertEqual(try store.goal(for: "energy"), energyGoal(2000))
+        XCTAssertEqual(try grams(store), [150, 200, 67])
+        XCTAssertEqual(
+            model.followedMacroSplit, try MacroSplit(proteinPercent: 30, carbohydratePercent: 40, fatPercent: 30))
+    }
+
+    func testASetupRollbackThatFailsStopsFollowing() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let preferences = InMemoryDisplayPreferences()
+        let model = try appliedModel(store, preferences: preferences)
+        let setup = GoalSetupViewModel(goals: model)
+        setup.aim = .maintain
+        setup.sex = .male
+        setup.ageText = "30"
+        setup.heightCentimetersText = "180"
+        setup.weightKilogramsText = "80"
+        setup.activity = .moderate
+        setup.next(); setup.next(); setup.next(); setup.next()
+        // The estimate's energy is written, protein is refused, and putting the energy back is refused too.
+        store.allowedWrites = 1
+
+        XCTAssertFalse(setup.save())
+
+        XCTAssertNil(preferences.macroSplit)
+        XCTAssertNil(model.followedMacroSplit)
+    }
+
+    func testAStoredSplitThatNoLongerDescribesTheGoalsIsNotReported() throws {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setMacroSplit(try MacroSplit(proteinPercent: 30, carbohydratePercent: 40, fatPercent: 30))
+        let model = GoalsViewModel(store: InMemoryGoalStore(goals: [energyGoal(2000)]), preferences: preferences)
+        model.load()
+        XCTAssertNil(model.followedMacroSplit)
+    }
+
     func testAFailedApplyStoresNoSplit() {
         let preferences = InMemoryDisplayPreferences()
         let model = GoalsViewModel(
