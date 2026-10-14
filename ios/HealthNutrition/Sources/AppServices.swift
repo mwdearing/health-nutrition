@@ -140,7 +140,8 @@ final class AppServices {
             totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
         )
         self.healthKitDelivery = healthKitDelivery
-        let healthKitDeliveryStatus = HealthKitDeliveryStatus(healthKitDelivery: healthKitDelivery, store: journalStore)
+        let healthKitDeliveryStatus = HealthKitDeliveryStatus(
+            healthKitDelivery: healthKitDelivery, store: journalStore, accessDefaults: .standard)
         self.healthKitDeliveryStatus = healthKitDeliveryStatus
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
         if let productSharing {

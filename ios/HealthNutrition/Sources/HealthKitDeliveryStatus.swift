@@ -108,19 +108,40 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
     private let accessProbe: () -> AppleHealthAccess
     /// The access the last run saw, or nil before this launch's first run. A change since then is a
     /// person's answer given outside the app, in the Health app's own sharing screen.
-    private var lastSeenAccess: AppleHealthAccess?
+    private var lastSeenAccess: AppleHealthAccess? {
+        didSet {
+            guard let access = lastSeenAccess else { return }
+            accessDefaults?.set(Self.encode(access), forKey: Self.lastSeenAccessKey)
+        }
+    }
+    /// Where the last-seen access survives a relaunch, so an unchanged denial is not re-armed and
+    /// retried on every launch. Nil keeps it in memory only (tests).
+    private let accessDefaults: UserDefaults?
+    private static let lastSeenAccessKey = "healthKitDelivery.lastSeenAccess"
+
+    /// A stable string for an access answer: counts plus the sorted allowed types.
+    private static func encode(_ access: AppleHealthAccess) -> String {
+        "\(access.undetermined)|\(access.authorized)|\(access.denied)|"
+            + access.authorizedTypes.sorted().joined(separator: ",")
+    }
 
     init(
         healthKitDelivery: HealthKitDeliveryWorker,
         store: any JournalDeliverySuspension,
         authorizationProbe: @escaping () -> AuthorizationState = HealthKitDeliveryStatus.readHealthKitAuthorization,
-        accessProbe: @escaping () -> AppleHealthAccess = HealthKitDeliveryStatus.readHealthKitAccess
+        accessProbe: @escaping () -> AppleHealthAccess = HealthKitDeliveryStatus.readHealthKitAccess,
+        accessDefaults: UserDefaults? = nil
     ) {
         self.healthKitDelivery = healthKitDelivery
         self.store = store
         self.authorizationProbe = authorizationProbe
         self.accessProbe = accessProbe
+        self.accessDefaults = accessDefaults
+        storedAccess = accessDefaults?.string(forKey: Self.lastSeenAccessKey)
     }
+
+    /// The access recorded by an earlier launch, compared once against the first pass of this one.
+    private var storedAccess: String?
 
     /// Write access across the mapped types, counted from Health itself. Unlike read access, HealthKit
     /// does report whether an app may write a type, so "connected" and "turned off" here are Health's
@@ -280,10 +301,17 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             // by a person in the Health app, which is as much their answer to a denial as the sheet is:
             // without this an entry parked by "Don't Allow" stays parked after they allow it. Read on
             // every pass, so a foreground trigger coalesced into a running pass still sees the change.
-            // The first pass of a launch counts as a change, since nothing remembers what Health said
-            // before the app was closed.
+            // The first pass of a launch compares with the answer the previous launch stored, so an
+            // unchanged denial is not retried on every launch.
             let access = accessProbe()
-            if access != lastSeenAccess {
+            let changed: Bool
+            if let lastSeenAccess {
+                changed = access != lastSeenAccess
+            } else {
+                // First pass of this launch: compare with what the last launch saw, when it was kept.
+                changed = storedAccess.map { $0 != Self.encode(access) } ?? true
+            }
+            if changed {
                 authorizationPending = true
             }
             lastSeenAccess = access

@@ -383,7 +383,7 @@ the refused types later re-delivers the same revision, an equal-version replacem
 already written.
 
 A change of access made in the Health app re-arms parked operations on the next automatic run: the
-first automatic run of each launch, and any run that sees different access from the one before (counts or the set of allowed types),
+first run of a launch when access differs from what the previous launch recorded (kept in user defaults), and any run that sees different access from the one before (counts or the set of allowed types),
 re-arms every suspended operation before it reads the queue. An operation that is still refused simply
 parks again with the same reason.
 
