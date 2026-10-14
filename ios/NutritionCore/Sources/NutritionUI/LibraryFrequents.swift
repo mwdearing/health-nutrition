@@ -40,19 +40,17 @@ public struct FrequentItemsProvider {
         var counts: [String: Int] = [:]
         var newest: [String: (template: RepeatTemplate, lastUsedAt: Date)] = [:]
         for intake in intakes {
+            // An entry with no amounts cannot be repeated, so it is not counted toward anything.
             guard let revisions = try? store.revisions(of: intake.id),
-                let current = revisions.first(where: { $0.number == intake.currentRevision })
+                let current = revisions.first(where: { $0.number == intake.currentRevision }),
+                !current.components.isEmpty
             else { continue }
             let key = RecentItemsProvider.key(category: intake.category, revision: current, meal: intake.meal)
             counts[key, default: 0] += 1
             // Entries come newest first, so the first one seen is the one the item repeats.
             guard newest[key] == nil else { continue }
-            let product = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             newest[key] = (
-                template: RepeatTemplate(
-                    displayName: QuickAddViewModel.rowTitle(components: current.components, product: product),
-                    category: intake.category, meal: intake.meal, components: current.components,
-                    productSnapshotID: current.productSnapshotID),
+                template: RecentItemsProvider(store: store).template(intake: intake, revision: current),
                 lastUsedAt: intake.occurredAt)
         }
         var items: [FrequentItem] = []

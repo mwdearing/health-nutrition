@@ -31,14 +31,17 @@ public struct RecentItemsProvider {
             else { continue }
             let key = Self.key(category: intake.category, revision: current, meal: intake.meal)
             guard seen.insert(key).inserted else { continue }
-            result.append(RecentItem(
-                id: key,
-                template: RepeatTemplate(
-                    displayName: displayName(of: current), category: intake.category, meal: intake.meal,
-                    components: current.components, productSnapshotID: current.productSnapshotID),
-                lastUsedAt: intake.occurredAt))
+            result.append(RecentItem(id: key, template: template(intake: intake, revision: current), lastUsedAt: intake.occurredAt))
         }
         return result
+    }
+
+    /// The template that repeats one entry's current revision, titled as its Recents row is. Often logged
+    /// items are built here too, so a Recent row and an Often logged row of one item never read apart.
+    func template(intake: Intake, revision: IntakeRevision) -> RepeatTemplate {
+        RepeatTemplate(
+            displayName: displayName(of: revision), category: intake.category, meal: intake.meal,
+            components: revision.components, productSnapshotID: revision.productSnapshotID)
     }
 
     /// The row title for one revision. A quick add is always one serving of the same name, so its typed
@@ -223,8 +226,9 @@ public final class LibraryViewModel: ObservableObject {
     /// Every logged product, including those the Products segment lists as a standalone product row
     /// instead. Find products searches these, so a typed name still finds the logged amount and meal.
     @Published public private(set) var loggedProducts: [LibraryItem] = []
-    /// What the person logs most often, most often first (see `FrequentItemsProvider`). Find products lists
-    /// these as "Often logged"; the Library screen itself does not show them.
+    /// Everything the person logs often, most often first (see `FrequentItemsProvider`), uncapped so a
+    /// typed name finds any of them. Find products lists the first few as "Often logged"; the Library
+    /// screen itself does not show them.
     @Published public private(set) var frequentItems: [LibraryItem] = []
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
@@ -274,7 +278,7 @@ public final class LibraryViewModel: ObservableObject {
             let favoriteKeys = Set(stored.map(Self.key(of:)))
             let recents = try RecentItemsProvider(store: store).recents()
             let foods = try RecentItemsProvider(store: store).foods()
-            let frequents = try FrequentItemsProvider(store: store).frequents()
+            let frequents = try FrequentItemsProvider(store: store).frequents(limit: .max)
             let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
                 RepeatTemplate(favorite: favorite) ?? RepeatTemplate(
