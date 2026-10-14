@@ -114,10 +114,13 @@ public struct JournalSnapshotTotals: Sendable {
             throw JournalError.unknownIntake("\(intakeID)@\(revision)")
         }
         // A deleted entry is no longer among the active ones, but its revisions are still read when a
-        // delete decides which denied types could hold its samples. Its category is gone with it, so
-        // recorded volume counts as water there: over-stating a type only keeps a delete waiting for a
-        // person, never drops a sample.
-        let category = intake?.category ?? Self.waterCategory
+        // delete decides which denied types could hold its samples. Its category comes from the
+        // store's tombstone; a store without tombstones counts recorded volume as water, which only
+        // over-states a type and keeps a delete waiting for a person, never drops a sample.
+        let deleted = intake == nil
+            ? try (store as? JournalTombstoneSource)?.deletedIntakes().first(where: { $0.id == intakeID })
+            : nil
+        let category = intake?.category ?? deleted?.category ?? Self.waterCategory
         var totals: [String: NutrientValue] = [:]
         if let water = Self.recordedWater(in: entry.components, category: category) {
             totals["water"] = water
