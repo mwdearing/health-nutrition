@@ -312,13 +312,13 @@ final class TodayDesignTests: XCTestCase {
     func testWaterPresetsFollowTheUnitSystemAndAddExactAmounts() throws {
         let store = try makeStore()
         let metric = model(store)
-        XCTAssertEqual(metric.waterPresets.map(\.milliliters), [250, 500, 750])
+        XCTAssertEqual(metric.waterPresets.map { $0.milliliters }, [250, 500, 750])
         XCTAssertEqual(metric.waterPresets.first?.label, "Glass 250 mL")
         let us = TodayViewModel(
-            store: store, preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary),
-            goals: InMemoryGoalStore(goals: []), lookup: SnapshotNutrientFacts(),
-            trackedNutrients: [], timeZoneIdentifier: "UTC")
-        XCTAssertEqual(us.waterPresets.map(\.label), ["Glass 8 fl oz", "Bottle 16 fl oz", "Large bottle 24 fl oz"])
+            store: store, goals: InMemoryGoalStore(goals: []), lookup: SnapshotNutrientFacts(),
+            trackedNutrients: [], timeZoneIdentifier: "UTC",
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        XCTAssertEqual(us.waterPresets.map { $0.label }, ["Glass 8 fl oz", "Bottle 16 fl oz", "Large bottle 24 fl oz"])
         metric.quickAddWater(milliliters: metric.waterPresets[1].milliliters, now: now)
         XCTAssertEqual(metric.waterTotalMilliliters, 500)
     }
@@ -328,8 +328,8 @@ final class TodayDesignTests: XCTestCase {
         let goals = InMemoryGoalStore(goals: [])
         let prefs = InMemoryDisplayPreferences()
         let today = TodayViewModel(
-            store: store, preferences: prefs, goals: goals, lookup: SnapshotNutrientFacts(),
-            trackedNutrients: [], timeZoneIdentifier: "UTC")
+            store: store, goals: goals, lookup: SnapshotNutrientFacts(),
+            trackedNutrients: [], timeZoneIdentifier: "UTC", preferences: prefs)
         today.load(now: now)
         XCTAssertEqual(try goals.goals().first { $0.nutrient == "water" }?.target, 2000)
         try goals.removeGoal(nutrient: "water")
