@@ -2,6 +2,8 @@ name: ios
 
 on:
   pull_request:
+    # Draft pull requests do not use the shared macOS runners; marking one ready runs the checks.
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "ios/**"
       - "contracts/**"
@@ -125,6 +127,7 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_dependency_workflow_locks.py
 
   swift-test:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -136,6 +139,7 @@ jobs:
         run: swift test
 
   app-build:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -155,6 +159,7 @@ jobs:
   # log (the Actions log is public), so an error that only the optimizer raises (for example a view body the
   # compiler cannot type-check in reasonable time) would otherwise be invisible. This job shows it here.
   release-build:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # The same image as signed-beta.yml, so this job sees the compiler the upload uses.
     runs-on: macos-26
     timeout-minutes: 30
@@ -182,6 +187,7 @@ jobs:
   # The app target's own unit tests. Same shape as app-build: regenerate the project, then run the
   # HealthNutritionTests bundle, which is hosted by the app so @testable import HealthNutrition works.
   app-test:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     timeout-minutes: 30
     steps:

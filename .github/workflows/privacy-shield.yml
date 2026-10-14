@@ -2,6 +2,7 @@ name: privacy-shield
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "ios/HealthNutrition/Sources/HealthNutritionApp.swift"
       - "ios/HealthNutrition/Sources/PrivacyShield.swift"
@@ -28,8 +29,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   simulator-capture:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
