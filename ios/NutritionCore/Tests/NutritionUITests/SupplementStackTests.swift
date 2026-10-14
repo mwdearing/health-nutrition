@@ -690,6 +690,33 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(model.rows.first?.loggedToday, 1)
     }
 
+    func testAMarkGoesWhenItsEntrysTimeIsCorrectedInTheJournal() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        // Wednesday 08:05: Taken for 08:00.
+        let morning = now.addingTimeInterval(-3.9 * 3_600)
+        model.load(now: morning)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), at: eight, now: morning))
+        let entry = try XCTUnwrap(model.undoToken?.intakeID)
+        XCTAssertNotNil(model.rows.first?.slots.first?.recordedEntryID)
+
+        // The entry's time is corrected in the Journal to 20:30.
+        let evening = now.addingTimeInterval(8.5 * 3_600)
+        let revision = try XCTUnwrap(store.revisions(of: entry).first)
+        try store.edit(
+            intakeID: entry, components: revision.components, product: nil, changeReason: "time", now: evening,
+            occurredAt: evening, timeZoneIdentifier: "UTC")
+        model.load(now: evening)
+        XCTAssertNil(schedules.takenMarks()[entry])
+        // The entry now fills like any unrecorded one, and offers no Undo Taken.
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.taken, .notLogged])
+        XCTAssertNil(model.rows.first?.slots.first?.recordedEntryID)
+    }
+
     func testMarksFromAnotherDayAreDropped() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
@@ -788,13 +815,14 @@ final class SupplementStackTests: XCTestCase {
     func testStoreKeepsReadableMarksAndEraseRemovesThemToo() throws {
         let defaults = try makeDefaults()
         let store = UserDefaultsSupplementStackStore(defaults: defaults)
-        let mark = SupplementTakenMark(favoriteID: "fav-a", dayKey: "2023-11-15", time: twenty)
+        let mark = SupplementTakenMark(favoriteID: "fav-a", dayKey: "2023-11-15", time: twenty, loggedAt: now)
         try store.saveTakenMarks(["entry-a": mark])
         XCTAssertEqual(store.takenMarks(), ["entry-a": mark])
 
         let stored = """
-            {"entry-good": {"favoriteID": "fav-a", "dayKey": "2023-11-15", "time": "20:00"},
-             "entry-time": {"favoriteID": "fav-a", "dayKey": "2023-11-15", "time": "25:00"},
+            {"entry-good": {"favoriteID": "fav-a", "dayKey": "2023-11-15", "time": "20:00", "loggedAt": 0},
+             "entry-time": {"favoriteID": "fav-a", "dayKey": "2023-11-15", "time": "25:00", "loggedAt": 0},
+             "entry-no-date": {"favoriteID": "fav-a", "dayKey": "2023-11-15", "time": "20:00"},
              "entry-shape": "evening"}
             """
         defaults.set(Data(stored.utf8), forKey: UserDefaultsSupplementStackStore.takenKey)

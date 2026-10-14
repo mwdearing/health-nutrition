@@ -108,11 +108,21 @@ public struct SupplementTakenMark: Codable, Equatable, Sendable {
     public let dayKey: String
     /// "08:00", the stored form of the time.
     let time: String
+    /// When the entry was logged by the tap. An entry whose time was corrected since (in the Journal) no
+    /// longer stands for the tap, so its mark is dropped and it fills an open time like any other entry.
+    public let loggedAt: Date
 
-    public init(favoriteID: String, dayKey: String, time: ReminderTime) {
+    public init(favoriteID: String, dayKey: String, time: ReminderTime, loggedAt: Date) {
         self.favoriteID = favoriteID
         self.dayKey = dayKey
         self.time = time.storedText
+        self.loggedAt = loggedAt
+    }
+
+    /// Whether the entry still has the time the tap logged it at. A second's slack covers how a stored
+    /// date is rounded; a correction in the Journal moves it by at least a minute.
+    func matches(occurredAt: Date) -> Bool {
+        abs(occurredAt.timeIntervalSince(loggedAt)) < 1
     }
 
     /// The time of day, or nil for a stored value that does not read as one.

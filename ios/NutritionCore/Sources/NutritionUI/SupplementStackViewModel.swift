@@ -133,8 +133,8 @@ public final class SupplementStackViewModel: ObservableObject {
                 readFailed = true
                 return
             }
-            let (counted, unreadable, activeIDs) = try loggedCounts(on: clock.dayKey)
-            let keptMarks = try prunedMarks(keeping: activeIDs, on: clock.dayKey)
+            let (counted, unreadable, todayTimes) = try loggedCounts(on: clock.dayKey)
+            let keptMarks = try prunedMarks(keeping: todayTimes, on: clock.dayKey)
             var kinds: [String: ProductKind] = [:]
             func kind(_ snapshotID: String?, category: String) -> ProductKind {
                 guard let snapshotID else { return category == Self.supplementCategory ? .supplement : .food }
@@ -235,11 +235,11 @@ public final class SupplementStackViewModel: ObservableObject {
     }
 
     /// Today's entries per item (their ids), each on the local day of its own time zone, the rule the
-    /// Journal groups by; how many of today's entries could not be read; and the ids of every active entry,
-    /// which say which Taken marks still have an entry. An unreadable entry is counted apart rather than
+    /// Journal groups by; how many of today's entries could not be read; and when each of today's entries
+    /// happened, which says which Taken marks still stand. An unreadable entry is counted apart rather than
     /// skipped, because skipping it would read as "not taken".
     private func loggedCounts(on dayKey: String) throws
-        -> (counts: [String: [String]], unreadable: Int, activeIDs: Set<String>)
+        -> (counts: [String: [String]], unreadable: Int, todayTimes: [String: Date])
     {
         var counts: [String: [String]] = [:]
         var unreadable = 0
@@ -258,14 +258,20 @@ public final class SupplementStackViewModel: ObservableObject {
                 category: intake.category, snapshotID: current.productSnapshotID, names: current.components.map(\.name))
             counts[key, default: []].append(intake.id)
         }
-        return (counts, unreadable, Set(active.map(\.id)))
+        return (counts, unreadable, Dictionary(today.map { ($0.id, $0.occurredAt) }, uniquingKeysWith: { first, _ in first }))
     }
 
-    /// The stored Taken marks for today whose entry is still in the journal. Any other mark is dropped from
-    /// the store, so the marks never outlive their entries or their day.
-    private func prunedMarks(keeping ids: Set<String>, on dayKey: String) throws -> [String: SupplementTakenMark] {
+    /// The stored Taken marks for today whose entry is still in today's journal at the time the tap logged
+    /// it. Any other mark (its entry deleted, moved to another day, or given another time in the Journal,
+    /// or the mark from another day) is dropped from the store when the list is read.
+    private func prunedMarks(keeping todayTimes: [String: Date], on dayKey: String) throws
+        -> [String: SupplementTakenMark]
+    {
         let stored = schedules.takenMarks()
-        let kept = stored.filter { ids.contains($0.key) && $0.value.dayKey == dayKey }
+        let kept = stored.filter { entry in
+            guard entry.value.dayKey == dayKey, let occurredAt = todayTimes[entry.key] else { return false }
+            return entry.value.matches(occurredAt: occurredAt)
+        }
         if kept.count != stored.count { try schedules.saveTakenMarks(kept) }
         return kept
     }
@@ -446,7 +452,8 @@ public final class SupplementStackViewModel: ObservableObject {
                 // The entry is written either way. A mark that cannot be saved only means this entry
                 // fills an open time the way an entry logged elsewhere does.
                 var stored = schedules.takenMarks()
-                stored[id] = SupplementTakenMark(favoriteID: favorite.id, dayKey: clock.dayKey, time: time)
+                stored[id] = SupplementTakenMark(
+                    favoriteID: favorite.id, dayKey: clock.dayKey, time: time, loggedAt: now)
                 try? schedules.saveTakenMarks(stored)
             }
             undoToken = LibraryUndoToken(intakeID: id, message: "Logged \(favorite.displayName)")

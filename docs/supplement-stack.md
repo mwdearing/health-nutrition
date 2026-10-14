@@ -50,8 +50,9 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   everything again when an erase or a restore finishes, so nothing erased stays on screen.
 - **Recorded times** are kept under `supplementStack.taken` in the app's defaults domain, one per
   journal entry (the favorite, the day and the time). Only today's marks for entries still in the journal
-  count, and each read of the list drops the others from the store (after an Undo or a delete, or on a new
-  day). They are not in the journal export. Entries
+  count, and each read of the list drops the others from the store (after an Undo or a delete, on a new
+  day, or when the entry's time is corrected in the Journal: the mark keeps the time the tap logged the
+  entry at, and an entry with another time fills an open time like any other). They are not in the journal export. Entries
   logged elsewhere still fill the open times earliest first, so a missed morning followed by an evening
   dose logged from the Library reads as the morning taken.
 - **Not in the journal export yet.** Export schema version 2 has no field for schedules, so a restore
