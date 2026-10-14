@@ -662,6 +662,32 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
     }
 
+    func testANegativeComponentAmountIsRefusedRatherThanStored() throws {
+        var root = try object(of: try exportData(favorites: false))
+        var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
+        var first = intakes[0]
+        var revisions = try XCTUnwrap(first["revisions"] as? [[String: Any]])
+        var components = try XCTUnwrap(revisions[0]["components"] as? [[String: Any]])
+        components[0]["amount"] = "-1"
+        revisions[0]["components"] = components
+        first["revisions"] = revisions
+        intakes[0] = first
+        root["intakes"] = intakes
+
+        let target = try directory()
+        let journal = try store(target)
+        do {
+            _ = try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: journal, favorites: nil)
+            XCTFail("a negative component amount must be refused")
+        } catch let error as JournalImportError {
+            guard case .corrupt = error else {
+                return XCTFail("expected a corrupt file, got \(error)")
+            }
+        }
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+    }
+
     func testARevisionWithNoAmountIsRefusedRatherThanStoredAsZero() throws {
         // "Not known" and "none" are different answers, and a store that cannot hold the first must say
         // so rather than write a 0 that would later read as a real measurement.
