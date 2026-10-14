@@ -25,6 +25,57 @@ public enum OpenFoodFactsBasis: String, Sendable, Hashable {
     }
 }
 
+extension OpenFoodFactsBasis {
+    private static let massUnits: Set<String> = [
+        "g", "gr", "grs", "gram", "grams", "gramm", "kg", "kgs", "kilo", "kilos", "mg", "oz", "ozs", "lb", "lbs",
+        "pound", "pounds",
+    ]
+    private static let volumeUnits: Set<String> = [
+        "ml", "mls", "cl", "dl", "l", "lt", "ltr", "litre", "litres", "liter", "liters", "cc", "gal", "gallon",
+        "gallons", "qt", "quart", "quarts", "pt", "pint", "pints", "fl",
+    ]
+
+    /// Reads the pack quantity ("1 gallon", "400 g", "32 fl oz (946 ml)", "6 x 125 g"). Only a unit
+    /// written right after a number counts. Masses only give per 100 g, volumes only per 100 mL, and a
+    /// mix of both, or no unit at all, stays unspecified rather than guessed. "fl oz" is a volume: "fl"
+    /// follows the number, and the "oz" after it does not.
+    static func fromPackQuantity(_ text: String?) -> OpenFoodFactsBasis {
+        guard let text else { return .per100Unspecified }
+        var tokens: [String] = []
+        var current = ""
+        var currentIsNumber = false
+        for character in text.lowercased() {
+            let isNumber = character.isNumber || ((character == "." || character == "," || character == "/") && currentIsNumber)
+            if character.isLetter || isNumber {
+                if !current.isEmpty && isNumber != currentIsNumber {
+                    tokens.append(current)
+                    current = ""
+                }
+                current.append(character)
+                currentIsNumber = isNumber
+            } else {
+                if !current.isEmpty { tokens.append(current) }
+                current = ""
+                currentIsNumber = false
+            }
+        }
+        if !current.isEmpty { tokens.append(current) }
+        var mass = false
+        var volume = false
+        var previous: String?
+        for token in tokens {
+            defer { previous = token }
+            guard let before = previous else { continue }
+            let afterNumber = before.first?.isNumber == true
+            if afterNumber && massUnits.contains(token) { mass = true }
+            if afterNumber && volumeUnits.contains(token) { volume = true }
+        }
+        if mass && !volume { return .per100g }
+        if volume && !mass { return .per100ml }
+        return .per100Unspecified
+    }
+}
+
 public struct OpenFoodFactsProduct: Sendable, Hashable {
     public static let energyKcal = "energyKcal"
     public static let protein = "protein"
@@ -145,8 +196,73 @@ struct OpenFoodFactsResponse: Decodable {
     let product: Body?
 }
 
+/// Text that may arrive as one string or as a list of strings; a list is joined with ", ".
+struct OpenFoodFactsTextList: Decodable {
+    let text: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let string = try? container.decode(String.self) {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            text = trimmed.isEmpty ? nil : trimmed
+        } else if let list = try? container.decode([OpenFoodFactsScalar].self) {
+            // Entries that are not text (null, numbers) are skipped rather than losing the whole list.
+            let parts = list.compactMap { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            text = parts.isEmpty ? nil : parts.joined(separator: ", ")
+        } else {
+            text = nil
+        }
+    }
+}
+
+/// A reply from the full-text search service. Its index holds names, brands and per-100 figures, but
+/// not the serving or whether a product is measured in grams or millilitres.
 struct OpenFoodFactsSearchResponse: Decodable {
-    let products: [OpenFoodFactsResponse.Body]?
+    /// A field of the wrong shape is read as missing, so one odd hit cannot fail the whole reply.
+    struct Hit: Decodable {
+        let code: OpenFoodFactsScalar?
+        let product_name: OpenFoodFactsScalar?
+        let brands: OpenFoodFactsTextList?
+        let nutriments: [String: OpenFoodFactsScalar]?
+        let last_modified_t: OpenFoodFactsScalar?
+        let product_quantity_unit: OpenFoodFactsScalar?
+        let quantity: OpenFoodFactsScalar?
+        /// True for a product Open Food Facts marks as discontinued or withdrawn; current products omit it.
+        let obsolete: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case code, product_name, brands, nutriments, last_modified_t, product_quantity_unit, quantity, obsolete
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            code = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .code)
+            product_name = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .product_name)
+            brands = try? container.decodeIfPresent(OpenFoodFactsTextList.self, forKey: .brands)
+            nutriments = try? container.decodeIfPresent([String: OpenFoodFactsScalar].self, forKey: .nutriments)
+            last_modified_t = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .last_modified_t)
+            product_quantity_unit = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .product_quantity_unit)
+            quantity = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .quantity)
+            if let flag = try? container.decodeIfPresent(Bool.self, forKey: .obsolete) {
+                obsolete = flag
+            } else if let text = (try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .obsolete))??.text {
+                obsolete = ["true", "on", "1", "yes"].contains(text.lowercased())
+            } else {
+                obsolete = false
+            }
+        }
+    }
+
+    /// One entry of `hits`; an entry that is not an object at all is read as no hit.
+    struct Entry: Decodable {
+        let hit: Hit?
+
+        init(from decoder: Decoder) throws {
+            hit = try? Hit(from: decoder)
+        }
+    }
+
+    let hits: [Entry]?
 }
 
 extension OpenFoodFactsProduct {
@@ -184,6 +300,31 @@ extension OpenFoodFactsProduct {
             servingQuantity: body.serving_quantity?.decimal,
             basis: basis,
             lastModified: modified,
+            nutrients: nutrients
+        )
+    }
+
+    /// A search result. The figures are per 100 and there is no serving. Whether that is 100 g or
+    /// 100 mL comes from the unit when the index has it, else from the pack quantity, else it stays
+    /// unresolved.
+    init(hit: OpenFoodFactsSearchResponse.Hit, barcode: String, name: String) {
+        let stated = OpenFoodFactsBasis.decide(dataPer: nil, quantityUnit: hit.product_quantity_unit?.text)
+        let basis = stated != .per100Unspecified ? stated : OpenFoodFactsBasis.fromPackQuantity(hit.quantity?.text)
+        let source = hit.nutriments ?? [:]
+        var nutrients: [String: NutrientValue] = [:]
+        for entry in Self.mapping {
+            nutrients[entry.key] = Self.value(amount: source[entry.source + "_100g"]?.decimal, energy: entry.energy)
+        }
+        self.init(
+            barcode: barcode,
+            name: name,
+            brands: hit.brands?.text,
+            servingSize: nil,
+            servingQuantity: nil,
+            basis: basis,
+            lastModified: hit.last_modified_t?.decimal.map {
+                Date(timeIntervalSince1970: NSDecimalNumber(decimal: $0).doubleValue)
+            },
             nutrients: nutrients
         )
     }

@@ -13,6 +13,17 @@ public actor OpenFoodFactsClient {
     public static let searchMinimumScalars = 2
     public static let searchMaximumCharacters = 80
     public static let searchPageSize = 20
+    /// More results are asked for than are shown, because the name filter drops rows the service matched
+    /// on category or label; at most `searchPageSize` are shown.
+    public static let searchRequestSize = 50
+    public static let searchFields = [
+        "code", "product_name", "brands", "nutriments", "last_modified_t", "product_quantity_unit", "quantity",
+        "obsolete",
+    ]
+    /// Characters the search service reads as query syntax (field filters, grouping, ranges, wildcards,
+    /// boosts, negation, regular expressions). None of them helps find a food by name.
+    private static let searchSyntax = CharacterSet(charactersIn: "+-&|!(){}[]^\"~*?:\\/<>=")
+    private static let searchOperators: Set<String> = ["AND", "OR", "NOT", "TO"]
 
     private let environment: OpenFoodFactsEnvironment
     private let transport: OpenFoodFactsTransport
@@ -76,17 +87,21 @@ public actor OpenFoodFactsClient {
         return Self.interpret(data, barcode: barcode)
     }
 
-    /// Name search. The query is trimmed and capped; a query shorter than two characters is answered
-    /// `.empty` without spending a rate-limit slot or sending a request.
+    /// Name search on the full-text search service, which ranks products by how well their name matches.
+    /// The query is reduced to plain words and then capped; one shorter than two characters, or with no
+    /// letters or digits, is answered `.empty` without spending a rate-limit slot or sending a request.
     ///
     /// Submitting the same query again inside the window sends nothing and spends no slot: it gets the
     /// reply already received, or waits for the request still running. Only a reply with results or
     /// none is kept; a failed or refused search is sent again when the person retries.
     public func search(query: String) async -> OpenFoodFactsSearchOutcome {
-        let trimmed = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.searchMaximumCharacters))
+        let trimmed = String(Self.plainWords(query).prefix(Self.searchMaximumCharacters))
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= Self.searchMinimumScalars else {
+        guard trimmed.count >= Self.searchMinimumScalars, !OpenFoodFactsSearchWords.words(trimmed).isEmpty else {
             return .empty
+        }
+        guard environment.searchBaseURL != nil else {
+            return .transport("no search service in this environment")
         }
         let current = monotonic()
         answeredSearches = answeredSearches.filter { current - $0.value.sentAt < Self.windowSeconds }
@@ -149,26 +164,41 @@ public actor OpenFoodFactsClient {
         guard data.count <= BoundedResponseLimits.openFoodFactsSearch else {
             return .transport("response too large")
         }
-        return Self.interpretSearch(data)
+        return Self.interpretSearch(data, query: trimmed)
+    }
+
+    /// The typed text as plain words. The service parses its query as a language, so every syntax
+    /// character becomes a space and an operator word is lowercased, which makes it an ordinary word.
+    /// What is sent can then only ever be a list of words to match.
+    static func plainWords(_ text: String) -> String {
+        // A single "&" is written out as "and" first, so the words the reply is checked against still say
+        // it; "&&" is the operator and goes with the rest of the syntax.
+        let spelled = text.replacingOccurrences(of: "&&", with: " ").replacingOccurrences(of: "&", with: " and ")
+        return String(String.UnicodeScalarView(spelled.unicodeScalars.map { searchSyntax.contains($0) ? " " : $0 }))
+            .split(whereSeparator: \.isWhitespace)
+            .map { searchOperators.contains(String($0)) ? $0.lowercased() : String($0) }
+            .joined(separator: " ")
     }
 
     private func makeSearchRequest(query: String) -> URLRequest? {
-        // Only the typed text is encoded as the search term. `+`, `&` and `=` are escaped, so the server
-        // reads them as typed rather than as separators or spaces.
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        guard let encodedTerms = query.addingPercentEncoding(withAllowedCharacters: allowed) else {
+        guard let base = environment.searchBaseURL else {
             return nil
         }
-        var components = URLComponents(url: environment.baseURL, resolvingAgainstBaseURL: false)
-        components?.path = "/cgi/search.pl"
-        components?.percentEncodedQueryItems = [
-            URLQueryItem(name: "search_terms", value: encodedTerms),
-            URLQueryItem(name: "search_simple", value: "1"),
-            URLQueryItem(name: "action", value: "process"),
-            URLQueryItem(name: "json", value: "1"),
-            URLQueryItem(name: "page_size", value: String(Self.searchPageSize)),
-            URLQueryItem(name: "fields", value: Self.requestedFields.joined(separator: ",")),
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.path = "/search"
+        // Nothing but the words is sent: no country or sort, and no language unless the words themselves
+        // are Thai (below). The service's default order is relevance to the words.
+        var items = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "page_size", value: String(Self.searchRequestSize)),
+            URLQueryItem(name: "fields", value: Self.searchFields.joined(separator: ",")),
         ]
+        // Thai names are indexed only under Thai, so words typed in Thai script ask for it. This comes
+        // from the typed words, not from the device; any other query sends no language.
+        if query.unicodeScalars.contains(where: { (0x0E00...0x0E7F).contains($0.value) }) {
+            items.append(URLQueryItem(name: "langs", value: "th"))
+        }
+        components?.queryItems = items
         guard let url = components?.url else {
             return nil
         }
@@ -177,26 +207,43 @@ public actor OpenFoodFactsClient {
         request.timeoutInterval = 15
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let auth = environment.authorizationHeader {
-            request.setValue(auth, forHTTPHeaderField: "Authorization")
-        }
         return request
     }
 
-    private static func interpretSearch(_ data: Data) -> OpenFoodFactsSearchOutcome {
+    private static func interpretSearch(_ data: Data, query: String) -> OpenFoodFactsSearchOutcome {
         guard let decoded = try? JSONDecoder().decode(OpenFoodFactsSearchResponse.self, from: data) else {
             return .transport("unreadable response")
         }
-        let products: [OpenFoodFactsProduct] = (decoded.products ?? []).compactMap { body in
+        var seen: Set<String> = []
+        // A discontinued or withdrawn product may carry stale facts, so it is never offered.
+        let products: [OpenFoodFactsProduct] = (decoded.hits ?? []).compactMap(\.hit).filter { !$0.obsolete }.compactMap { hit in
             // A reply is untrusted: only a well-formed barcode becomes a result.
             // The stored code is the one that was validated: a padded value is refused, not trimmed for the
             // check and kept as received.
-            guard let code = body.code?.text, BarcodeValidator.isValid(code) else {
+            guard let code = hit.code?.text, BarcodeValidator.isValid(code) else {
                 return nil
             }
-            return OpenFoodFactsProduct(body: body, requestedBarcode: code)
+            // A result with no name cannot be told apart in a list of names, so it is left out.
+            guard let name = hit.product_name?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                return nil
+            }
+            let product = OpenFoodFactsProduct(hit: hit, barcode: code, name: name)
+            // The same name and brand again is the same row to the reader; the better match came first.
+            let brand = product.brands?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard seen.insert(name.lowercased() + "\u{1F}" + brand.lowercased()).inserted else {
+                return nil
+            }
+            return product
         }
-        let limited = Array(products.prefix(Self.searchPageSize))
+        // Only rows that show every typed word are kept (see OpenFoodFactsSearchWords): first those with
+        // the words in the name, then those that need the brand as well, in the service's order inside
+        // each group.
+        let typed = OpenFoodFactsSearchWords.words(query)
+        func shows(_ text: String) -> Bool { OpenFoodFactsSearchWords.shows(typed, in: text) }
+        let inName = products.filter { shows($0.name ?? "") }
+        let withBrand = products.filter { !shows($0.name ?? "") && shows(($0.name ?? "") + " " + ($0.brands ?? "")) }
+        let ordered = inName + withBrand
+        let limited = Array(ordered.prefix(Self.searchPageSize))
         return limited.isEmpty ? .empty : .results(limited)
     }
 

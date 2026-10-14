@@ -35,10 +35,12 @@ authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.
 
 A name search in Find products sends only the words the person typed (2 to 80
-characters) to Open Food Facts (`/cgi/search.pl`) when they submit the field, and
-nothing else from the device. It works signed out and is limited to six searches
-a minute. The screen says so beside the results; supplements are not searched
-there.
+characters) to the Open Food Facts search service (`search.openfoodfacts.org`,
+`/search`) when they submit the field, and nothing else from the device; words
+typed in Thai script also send the language code `th`, read from the words.
+Opening one of the results sends nothing: the form is filled from the reply
+already received. It works signed out and is limited to six searches a minute.
+The screen says so beside the results; supplements are not searched there.
 
 The HealthRelay destination is unavailable in this version. Release builds do
 not enable Apple Health delivery either. In a debug build, after Health access

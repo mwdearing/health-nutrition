@@ -1,6 +1,6 @@
 # Open Food Facts: data source determination
 
-Status: Accepted for live barcode lookup and for user-submitted name search (amended 2026-10-13). Terms review date: 2027-04-02.
+Status: Accepted for live barcode lookup and for user-submitted name search (amended 2026-10-13; search moved to the Open Food Facts search service 2026-10-14). Terms review date: 2027-04-02.
 
 ## What is used
 
@@ -112,14 +112,61 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   sync account.
 - No bulk download, no mirror and no export of Open Food Facts data as a database.
 - No images.
-- Name search is limited to what Open Food Facts documents for its search
-  endpoint: one request per explicit submit by the person (no search-as-you-type,
-  no autocomplete, no background or bulk queries), at most 6 searches in any
-  rolling 60 seconds against a documented limit of 10 per minute, a page of 20
-  results, and the same User-Agent as lookups. Only the typed words (2 to 80
-  characters) are sent. The results screen shows the attribution text on every
-  result with a link to the license and source, and states that the search words
-  are sent to Open Food Facts. Supplements are not searched here.
+- Name search uses the Open Food Facts full-text search service
+  (`https://search.openfoodfacts.org/search`), which the Open Food Facts API
+  documentation names as the place for full-text search. The legacy
+  `/cgi/search.pl` endpoint is no longer used: it orders loose keyword matches by
+  worldwide scan count, so a common word returned popular products that do not
+  have the word in their name. The search service orders by how well the name
+  matches. No limit is published for the search service itself, so the app keeps
+  to the limit documented for search requests: one request per explicit submit by
+  the person (no search-as-you-type, no autocomplete, no background or bulk
+  queries), at most 6 searches in any rolling 60 seconds against a documented
+  limit of 10 per minute, one page of 50 results of which at most 20 are shown
+  after the name filter below, and the same User-Agent as lookups. Supplements are not searched here.
+- Only the typed words (2 to 80 characters) are sent, with the page size and the
+  list of fields wanted: no country, sort order or identifier, and no language
+  except that words typed in Thai script also send `langs=th`, because Thai names
+  are indexed only under Thai (read from the typed words, never from the device;
+  French, Chinese, Japanese and Korean names were found without it). The
+  service reads its query as a query language, so the client writes a single `&`
+  as the word "and", replaces every other syntax character
+  (`+ - && | ! ( ) { } [ ] ^ " ~ * ? : \ / < > =`) with a space, and lowercases
+  the operator words `AND`, `OR`, `NOT` and `TO`. The 80-character cap applies
+  after that. What is sent can only be a list of words to match; text with no
+  letters or digits sends nothing.
+- A product Open Food Facts marks obsolete (discontinued or withdrawn) is left
+  out, because its facts may be stale; the flag is requested with the results and
+  checked on the device, so nothing extra is added to the query.
+- A result with no product name is left out, and a result with the same name and
+  brand as an earlier one is left out, because neither can be told apart in a list
+  of names. The service also matches on category, label and names in other
+  languages, so a result is kept only when its name, or its name and brand
+  together, show every typed word; results with the words in the name come first.
+  Both sides are written the same way first: case and accents folded, full-width
+  letters and digits narrowed, ligatures spelled out ("Œufs" and "oeufs"),
+  apostrophes removed inside words ("Kellogg's" and "Kelloggs"), and "&" read as
+  "and" (a typed "&" is sent as "and"). A typed word is shown when it begins a
+  shown word ("choc" and "Chocolate"), or when a singular of it is a whole shown
+  word or the singular of one ("loaves" and "Loaf", "berries" and "Berry"); "-es" is
+  only taken off after s, x, z, ch, sh or o, and those singular guesses are only
+  compared as whole words, so "ham" does not match
+  "Champagne", "milk" does not match "Millet" and "cookies" does not match
+  "Cooking". Words in scripts written without spaces (Chinese, Japanese, Thai and
+  similar) are matched anywhere in the name. Text with no letters or digits sends
+  nothing, and a reply entry of the wrong shape is skipped without losing the
+  rest of the reply. The search index has per-100 figures but no serving, and in
+  practice no unit field, so whether a result is per 100 g or per 100 mL is read
+  from its pack quantity ("1 gallon", "400 g", "32 fl oz (946 ml)"): only masses
+  give per 100 g, only volumes per 100 mL, and a mix or no unit leaves it "per
+  100 g or mL", which cannot be scaled to an amount. A result opens with no
+  serving filled in. Opening a result sends nothing: the form is filled from the
+  search reply. The owner decided on 2026-10-14 that a picked result's barcode is
+  not sent to Open Food Facts to read the fuller record; scanning or typing a
+  barcode remains the way to get the serving.
+- The results screen shows the attribution text on every result with a link to
+  the license and source, and states that the search words are sent to Open Food
+  Facts.
 - Submitting the same words again within those 60 seconds sends nothing and does
   not count toward the 6: the reply already received is shown again, and a submit
   made while that request is still running waits for its reply. The reply is held
