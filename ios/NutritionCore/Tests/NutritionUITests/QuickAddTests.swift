@@ -207,6 +207,22 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(try provider.recents().count, 1)
     }
 
+    /// Two unnamed quick adds with different amounts read differently in Recents, so a tap repeats what
+    /// the row shows.
+    func testRecentQuickAddsShowTheirAmounts() throws {
+        let store = try makeStore()
+        let first = makeModel(store)
+        first.caloriesText = "250"
+        XCTAssertNotNil(first.save())
+        let second = makeModel(store)
+        second.caloriesText = "400"
+        second.proteinText = "30"
+        XCTAssertNotNil(second.save())
+
+        let titles = try RecentItemsProvider(store: store).recents().map(\.template.displayName)
+        XCTAssertEqual(Set(titles), ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+    }
+
     /// The region's own digits and separator are read, as the decimal pad types them.
     func testParsingReadsTheRegionsDigitsAndSeparator() {
         XCTAssertEqual(QuickAddViewModel.parse("2٫5", field: .protein, decimalSeparator: "٫"), .value(Decimal(string: "2.5")!))

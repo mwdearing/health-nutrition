@@ -34,11 +34,24 @@ public struct RecentItemsProvider {
             result.append(RecentItem(
                 id: key,
                 template: RepeatTemplate(
-                    displayName: AmountText.title(current.components), category: intake.category, meal: intake.meal,
+                    displayName: displayName(of: current), category: intake.category, meal: intake.meal,
                     components: current.components, productSnapshotID: current.productSnapshotID),
                 lastUsedAt: intake.occurredAt))
         }
         return result
+    }
+
+    /// The row title for one revision. A quick add is always one serving of the same name, so its typed
+    /// amounts are added to the title; without them two quick adds would read alike and a tap could repeat
+    /// amounts the row does not show.
+    private func displayName(of revision: IntakeRevision) -> String {
+        let title = AmountText.title(revision.components)
+        guard let snapshotID = revision.productSnapshotID,
+              let product = try? store.product(snapshotID: snapshotID),
+              product.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin
+        else { return title }
+        let summary = QuickAddViewModel.summary(of: product.nutrients)
+        return summary.isEmpty ? title : title + " · " + summary
     }
 
     /// Distinct products the person has logged from a lookup, a label scan or another source that stored a

@@ -116,12 +116,9 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         saveError = nil
         guard canSave else { return nil }
         var nutrients: [String: NutrientValue] = [:]
-        var parts: [String] = []
         for field in Field.allCases {
             guard case .value(let value) = Self.parse(text(for: field), field: field) else { continue }
             nutrients[field.nutrientKey] = .known(value, field.unit)
-            let amount = "\(DecimalFormatting.text(value)) \(field.unit.symbol)"
-            parts.append(field == .calories ? amount : amount + " " + field.label.lowercased())
         }
         let entryName = storedName
         let identity = Self.snapshotIdentity(name: entryName, nutrients: nutrients)
@@ -143,8 +140,18 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
             return nil
         }
         return AddUndoToken(
-            intakeID: intake.id, message: "Added \(entryName), \(parts.joined(separator: ", "))",
+            intakeID: intake.id, message: "Added \(entryName), \(Self.summary(of: nutrients))",
             expiresAt: date.addingTimeInterval(10))
+    }
+
+    /// The typed amounts in field order, such as "250 kcal, 32 g protein". Every quick add is one serving of
+    /// its own name, so this is what tells two of them apart wherever they are listed.
+    nonisolated static func summary(of nutrients: [String: NutrientValue]) -> String {
+        Field.allCases.compactMap { field -> String? in
+            guard case .known(let value, let unit) = nutrients[field.nutrientKey] else { return nil }
+            let amount = "\(DecimalFormatting.text(value)) \(unit.symbol)"
+            return field == .calories ? amount : amount + " " + field.label.lowercased()
+        }.joined(separator: ", ")
     }
 
     /// The snapshot id for one name and set of values. Everything the snapshot states is part of it, so
