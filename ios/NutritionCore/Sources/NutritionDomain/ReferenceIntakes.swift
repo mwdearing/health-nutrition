@@ -134,8 +134,10 @@ public struct ReferenceIntake: Sendable, Hashable {
 /// Values are the Food and Nutrition Board's adult RDAs, AIs and ULs as the NIH Office of Dietary
 /// Supplements health-professional fact sheets state them; `docs/reference-intakes.md` lists each
 /// source. Units are the app's own for each key: vitamin A is mcg RAE, niacin mg NE, folate mcg DFE
-/// and vitamin E mg alpha-tocopherol, which is how labels state them in those units. Copper is the
-/// one figure restated: the tables give micrograms and the app counts milligrams, so 900 mcg is 0.9 mg.
+/// and vitamin E mg alpha-tocopherol, which is how labels state them in those units. Two figures are
+/// restated: the tables give copper in micrograms and the app counts milligrams, so 900 mcg is 0.9 mg;
+/// and the folate limit is published as 1,000 mcg of folic acid, which the fact sheet states as
+/// 1,667 mcg DFE, so the row holds 1,667 and compares in the same unit as its allowance.
 ///
 /// Chloride and sodium are not here. No fact sheet was checked for chloride, and sodium's 2,300 mg is
 /// a chronic-disease risk reduction level rather than an upper limit, so it does not fit this shape.
@@ -218,8 +220,10 @@ public enum ReferenceIntakes {
         Row("riboflavin", .mg, rda, female: same("1.1"), male: same("1.3")),
         Row("niacin", .mg, rda, female: same("14"), male: same("16"),
             upperLimit: same("35"), scope: .supplementalForms),
+        // The published limit is 1,000 mcg of folic acid; the fact sheet states that as 1,667 mcg DFE,
+        // which is the unit this row and the journal count folate in.
         Row("folate", .mcg, rda, female: same("400"), male: same("400"),
-            upperLimit: same("1000"), scope: .supplementalForms),
+            upperLimit: same("1667"), scope: .supplementalForms),
         Row("biotin", .mcg, ai, female: same("30"), male: same("30")),
         Row("pantothenicAcid", .mg, ai, female: same("5"), male: same("5")),
         Row("calcium", .mg, rda, female: ["1000", "1000", "1200", "1200"], male: ["1000", "1000", "1000", "1200"],

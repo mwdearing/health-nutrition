@@ -20,9 +20,14 @@ or UL). Nothing in it is personalised beyond the published row a person picks.
 ## Units
 
 Every value is in the unit the app counts that nutrient in, so a day's total can be compared without a conversion:
-vitamin A in mcg RAE, niacin in mg NE, folate in mcg DFE, vitamin E in mg alpha-tocopherol. Copper is the one figure
-restated: the sources give 900 mcg and 10,000 mcg, and the app counts copper in milligrams, so the table holds 0.9 mg and
-10 mg. A total a label stated in IU (vitamins A, D and E on older labels) is not converted by the table; the conversion
+vitamin A in mcg RAE, niacin in mg NE, folate in mcg DFE, vitamin E in mg alpha-tocopherol. Two figures are restated:
+
+- **Copper**: the sources give 900 mcg and 10,000 mcg, and the app counts copper in milligrams, so the table holds 0.9 mg
+  and 10 mg.
+- **Folate limit**: the published UL is 1,000 mcg of folic acid, not of DFE. The folate fact sheet states that 1,000 mcg
+  of folic acid is 1,667 mcg DFE (0.6 mcg folic acid = 1 mcg DFE), so the table holds 1,667 mcg DFE and the limit is in the
+  same unit as the 400 mcg DFE allowance and the journal's folate totals. An older label that states folic acid in plain
+  mcg rather than mcg DFE is read as DFE like any other folate value, so it reads low against both figures. A total a label stated in IU (vitamins A, D and E on older labels) is not converted by the table; the conversion
 depends on the form, and a caller that cannot convert should not compare.
 
 ## Upper limits and what they count
@@ -38,7 +43,7 @@ whole day's total against them would read ordinary food as over a limit that was
 |---|---|---|
 | Magnesium (350 mg) | Supplements and medicines only, never food or water | `supplementalForms` |
 | Niacin (35 mg) | Supplemental niacin (supplements, fortified foods) | `supplementalForms` |
-| Folate (1,000 mcg) | Folic acid from supplements and fortified foods | `supplementalForms` |
+| Folate (1,000 mcg folic acid, held as 1,667 mcg DFE) | Folic acid from supplements and fortified foods | `supplementalForms` |
 | Vitamin E (1,000 mg) | Any form of supplemental alpha-tocopherol | `supplementalForms` |
 | Vitamin A (3,000 mcg) | Preformed vitamin A (retinol and its esters) only | `preformedVitaminA` |
 
@@ -62,8 +67,9 @@ Each page is `https://ods.od.nih.gov/factsheets/<Name>-HealthProfessional/`. The
 sheet's own text beside its UL table. `ReferenceIntakesTests` asserts the break points by hand (magnesium at 31; B6,
 chromium, calcium and women's iron at 51; vitamin D and the phosphorus limit at 71), so a typo fails a test.
 
-## Who uses it
+## Planned use
 
-The supplement stack's upper-limit warnings and the "gaps today" nutrients screen read this table. Wording on those
-screens follows the app's "no scores, no advice" rule: a value is labelled as a reference value with its kind, and the
-screen states a comparison, not a recommendation.
+Nothing in the app reads this table yet. It is groundwork for two planned features: a "gaps today" vitamins and minerals
+screen, and upper-limit warnings in a supplement stack. Wording on those screens is to follow the app's "no scores, no
+advice" rule: a value is labelled as a reference value with its kind, and the screen states a comparison, not a
+recommendation.

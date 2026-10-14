@@ -68,6 +68,9 @@ final class ReferenceIntakesTests: XCTestCase {
         XCTAssertEqual(try intake("vitaminA", .female, .years19To30).upperLimitScope, .preformedVitaminA)
         XCTAssertEqual(try intake("niacin", .male, .years19To30).upperLimitScope, .supplementalForms)
         XCTAssertEqual(try intake("folate", .male, .years19To30).upperLimitScope, .supplementalForms)
+        // 1,000 mcg of folic acid, restated in the mcg DFE the allowance and the journal use.
+        XCTAssertEqual(try intake("folate", .male, .years19To30).upperLimit, 1667)
+        XCTAssertEqual(try intake("folate", .male, .years19To30).amount, 400)
         XCTAssertEqual(try intake("vitaminE", .male, .years19To30).upperLimitScope, .supplementalForms)
         XCTAssertEqual(try intake("zinc", .male, .years19To30).upperLimitScope, .allSources)
     }
