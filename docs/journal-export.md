@@ -172,9 +172,13 @@ while the app is alive.
 before the journal's save the store writes a small flag beside its file holding the SHA-256 of the file being
 imported, and the import clears it once the favorites are settled, whether they were written or undone. If the
 app is stopped after the journal's save, the flag stays. Importing that same file again then finds the flag naming
-it and a journal that is no longer empty, and writes only the favorites. Any other file, or a journal with no
-flag, is refused as `notEmpty` as before, so a restore that finished is not run again over favorites deleted or
-changed since. Erasing all data removes the flag. The flag holds only the digest, no journal content.
+it and a journal that holds exactly that file's journal (the same entries field for field, the same revisions,
+the same deleted entries), and writes only the favorites; the flag stays until they are written, so a failure
+there can be retried the same way. Anything else in a journal that is not empty is refused as `notEmpty` as
+before and leaves the flag alone: another file, a journal without a flag, a flag left by a stop before the
+journal's save with entries logged since, and a restore that finished (which cleared its flag), so favorites
+deleted or changed since are never put back. Erasing all data removes the flag. The flag holds only the digest,
+no journal content.
 
 **The empty check is inside the transaction.** `SwiftDataJournalStore.restore(_:)` reads its own emptiness
 predicate inside the same `commit` closure as the inserts, under the same write lock, and throws

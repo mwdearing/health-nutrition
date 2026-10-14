@@ -539,12 +539,6 @@ public struct JournalRestoreReceipt: Sendable, Equatable {
     }
 }
 
-/// A journal store the importer can write into in one save. This is deliberately not part of
-/// `JournalStore`: a restore is not a create, an edit or a delete, and it must not change what those do.
-///
-/// An import writes no projection and no outbox operation. A restored entry is history the destinations
-/// have already been sent once, so queueing it again would deliver yesterday's breakfast a second time
-/// just because a phone was replaced.
 /// A journal store that remembers, across a relaunch, that a restore of one file wrote its journal and had not
 /// yet written that file's favorites (#118).
 ///
@@ -560,6 +554,12 @@ public protocol JournalRestoreProgress: AnyObject, Sendable {
     func clearRestoreInProgress() throws
 }
 
+/// A journal store the importer can write into in one save. This is deliberately not part of
+/// `JournalStore`: a restore is not a create, an edit or a delete, and it must not change what those do.
+///
+/// An import writes no projection and no outbox operation. A restored entry is history the destinations
+/// have already been sent once, so queueing it again would deliver yesterday's breakfast a second time
+/// just because a phone was replaced.
 public protocol JournalRestoreTarget: AnyObject, Sendable {
     /// Writes the whole plan in one save, keeping every id, timestamp and revision number, and reports what
     /// it inserted.

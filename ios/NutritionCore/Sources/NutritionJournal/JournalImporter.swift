@@ -160,21 +160,28 @@ public enum JournalImporter {
             favoritesTarget = target
         }
 
-        // **A restore of this same file that the app stopped between its two saves is finished (#118).** The
-        // journal was written and the favorites were not; the flag beside the store says which file that was.
-        // Only the favorites are written, and only for that file: any other file is refused as before, and a
-        // restore that finished cleared its flag, so running it again is refused too.
         let progress = favoritesTarget == nil ? nil : store as? JournalRestoreProgress
         let digest = fileDigest(data)
-        if let favoritesTarget, let progress, try progress.restoreInProgressDigest() == digest,
-           try journalHoldsAnything(store) {
+        if try journalHoldsAnything(store) {
+            // **A restore of this same file that the app stopped between its two saves is finished (#118).** The
+            // flag beside the store names the file whose journal was written and whose favorites were not, and
+            // the journal has to hold exactly that file's journal: a flag left by a stop before the journal's
+            // save, with entries logged since, is not taken for one. Only the favorites are written. The flag
+            // stays until they are, so a failure here can be retried the same way. Anything else in a journal
+            // that is not empty is refused as before, and the flag is left alone: it is not this run's. An
+            // import of the same file still running in parallel writes the same favorites, so the overlap
+            // writes identical rows twice at most; nothing here is read back from the other run.
+            guard let favoritesTarget, let progress, try progress.restoreInProgressDigest() == digest,
+                  try journalHolds(plan, store: store)
+            else { throw JournalImportError.notEmpty }
             try favoritesTarget.restore(plan.favorites)
             try? progress.clearRestoreInProgress()
             return summary(of: plan)
         }
 
-        // The flag goes down before the journal's save, so a stop after that save leaves it behind. A flag that
-        // cannot be written only loses the resume; the import itself goes ahead as before.
+        // The journal is empty, so any flag found is stale and this run's own replaces it. It goes down before
+        // the journal's save, so a stop after that save leaves it behind. A flag that cannot be written only
+        // loses the resume; the import itself goes ahead as before.
         try? progress?.markRestoreInProgress(fileDigest: digest)
         // The store refuses a journal that is not empty, and refuses it from inside this same transaction,
         // so the check and the inserts cannot be pulled apart by another write.
@@ -205,6 +212,21 @@ public enum JournalImporter {
             }
         }
         return summary(of: plan)
+    }
+
+    /// Whether the journal holds this plan's journal and nothing else: the same live intakes, field for field,
+    /// with the same revisions, and the same deleted ones.
+    static func journalHolds(_ plan: JournalRestorePlan, store: JournalStore) throws -> Bool {
+        let active = try store.activeIntakes()
+        let planned = Dictionary(
+            plan.entries.map { ($0.intake.id, $0.intake) }, uniquingKeysWith: { first, _ in first })
+        guard active.count == plan.entries.count, active.allSatisfy({ planned[$0.id] == $0 }) else { return false }
+        for entry in plan.entries {
+            guard try store.revisions(of: entry.intake.id).sorted(by: { $0.number < $1.number }) == entry.revisions
+            else { return false }
+        }
+        let deleted = try (store as? JournalTombstoneSource)?.deletedIntakes() ?? []
+        return Set(deleted.map(\.id)) == Set(plan.tombstones.map(\.id)) && deleted.count == plan.tombstones.count
     }
 
     private static func summary(of plan: JournalRestorePlan) -> JournalImportSummary {

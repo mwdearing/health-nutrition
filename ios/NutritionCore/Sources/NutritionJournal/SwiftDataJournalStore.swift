@@ -1588,8 +1588,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     ///
     /// The container is not closed: the store reads empty and accepts new entries afterwards.
     public func eraseAll() throws {
-        // A restore flag left behind would let the next import of that file skip straight to its favorites.
-        try? clearRestoreInProgress()
+        // A restore flag left behind would let the next import of that file skip straight to its favorites, so
+        // it goes with the journal (after the rows, so a failed erase keeps both).
+        defer { if (try? activeIntakes().isEmpty) == true { try? clearRestoreInProgress() } }
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
