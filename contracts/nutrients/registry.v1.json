@@ -37,7 +37,7 @@
     { "id": "iron", "label": "Iron", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "iron" },
     { "id": "vitamin_a", "label": "Vitamin A", "dimension": "mass", "canonical_unit": "mcg", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:vitamin_a" },
     { "id": "vitamin_c", "label": "Vitamin C", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:vitamin_c" },
-    { "id": "vitamin_d", "label": "Vitamin D", "dimension": "mass", "canonical_unit": "mcg", "units": ["g", "mg", "mcg", "kg"], "app_key": "vitaminD" },
+    { "id": "vitamin_d", "label": "Vitamin D", "dimension": "mass", "canonical_unit": "mcg", "units": ["g", "mg", "mcg", "kg"], "app_key": "vitaminD", "mcg_per_international_unit": "0.025" },
     { "id": "caffeine", "label": "Caffeine", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:caffeine" },
     { "id": "water", "label": "Water", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:water" }
   ],

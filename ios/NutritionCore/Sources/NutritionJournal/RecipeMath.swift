@@ -89,7 +89,12 @@ public enum RecipeMath {
         guard let amount = try? ingredient.quantity.converted(to: ingredient.effectiveBasisUnit, density: ingredient.density) else {
             return nil
         }
-        return Quantity(value: perUnitAmount * amount.value, unit: nutrientUnit)
+        // Vitamin D stated in IU is restated in mcg, as the day's totals do, so it adds up with an mcg
+        // ingredient instead of making the recipe's vitamin D unknown.
+        let stated = NutrientValue.known(perUnitAmount * amount.value, nutrientUnit)
+        let restated = HealthKitWritePlanner.mapping(for: nutrientID)?.restatingInternationalUnits(stated) ?? stated
+        guard case .known(let total, let unit) = restated else { return nil }
+        return Quantity(value: total, unit: unit)
     }
 
     /// Scales the totals to one portion. For `.servings` the portion is a number of servings; for `.total`

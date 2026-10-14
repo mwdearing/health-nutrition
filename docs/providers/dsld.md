@@ -86,8 +86,10 @@ Every other unit text DSLD writes, for example `NP`, `Gram(s)`, `Calorie(s)`, `{
 `mcg DFE`, has no canonical registry unit and is read as `.unknown` rather than guessed into one. A
 future release may add a unit to the table; it must never drop one silently.
 
-IU is kept as an international unit. The domain refuses to convert an international unit to a mass, and
-the adapter never does it either.
+IU is kept as an international unit; the adapter never converts it. The domain refuses to convert an
+international unit to a mass, with one exception applied where amounts are totalled rather than stored:
+vitamin D, whose IU is defined as 0.025 mcg, is restated in mcg by the nutrient mapping when a day, a
+recipe or an Apple Health sample adds it up (see `contracts/nutrients/decimal-rules.md`).
 
 ### Numbers are exact
 

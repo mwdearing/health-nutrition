@@ -171,14 +171,26 @@ count unit is refused as `invalid_portion_definition`. Two different count units
 never convert into each other: a scoop is not a tablet whatever portion you
 state.
 
-## International units are not convertible
+## International units are not convertible, except vitamin D
 
-`IU` measures biological activity. It is not a mass, and no contract in this
-repository converts one to the other. A provider that states an amount in IU
-keeps it in IU. No v1 nutrient is published in IU, because the app keeps its
-standard nutrients as masses: a label that states a vitamin only in IU is
-published with that nutrient `unknown`, never with a guessed mass. `IU` stays in
-the unit registry so that an operation can name it and refuse it.
+`IU` measures biological activity. It is not a mass, and in general no contract
+in this repository converts one to the other: an IU of vitamin A or vitamin E is
+a different mass depending on the form (retinol or beta carotene, natural or
+synthetic alpha-tocopherol), which an IU figure does not say. A provider that
+states an amount in IU keeps it in IU. No v1 nutrient is published in IU, because
+the app keeps its standard nutrients as masses: a label that states vitamin A or
+E only in IU is published with that nutrient `unknown`, never with a guessed mass.
+`IU` stays in the unit registry so that an operation can name it and refuse it.
+
+Vitamin D is the one exception (owner decision, 2026-10-14). An IU of vitamin D is
+defined as 0.025 mcg, for D2 and D3 alike, so it is a fixed mass. The registry
+states it on the nutrient (`"mcg_per_international_unit": "0.025"` on `vitamin_d`),
+and an operation that names `vitamin_d` converts IU to a mass through it: 400 IU is
+10 mcg, and 10 mcg plus 400 IU of vitamin D sums to 20 mcg. The multiplication is
+exact, so no rounding rule applies. Only IU to a mass converts; a mass is never
+converted into IU, and an operation that names no nutrient, or another nutrient,
+refuses IU as before. The stored value keeps the unit the label stated; the
+conversion happens where amounts are compared, summed or written as a mass.
 
 ## Proprietary blend splits are never inferred
 

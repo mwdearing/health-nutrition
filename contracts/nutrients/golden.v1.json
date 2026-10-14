@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere, and outside the reject cases every unit symbol is one the iOS UnitRegistry knows. Ops: convert (one unit conversion), scale (a label value scaled from its basis to a consumed amount: value times consumed, divided by the basis), sum (a total with its coverage), reject (the operation must fail with the named error). A result is exact unless a division does not terminate, in which case it is rounded to 10 fraction digits, halves away from zero, as contracts/nutrients/decimal-rules.md states. No input, product, sum or result may need more than 38 significant digits or a leading digit outside the place values 10^-127 to 10^127; one that would is refused as amount_out_of_range. The vectors follow the model of ios/NutritionCore/Sources/NutritionDomain; running them against the Swift code is the job of the Swift/Python golden verification that follows this contract. The optional `nutrient` field names the registry nutrient each case is about.",
+  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere, and outside the reject cases every unit symbol is one the iOS UnitRegistry knows. Ops: convert (one unit conversion), scale (a label value scaled from its basis to a consumed amount: value times consumed, divided by the basis), sum (a total with its coverage), reject (the operation must fail with the named error). A result is exact unless a division does not terminate, in which case it is rounded to 10 fraction digits, halves away from zero, as contracts/nutrients/decimal-rules.md states. No input, product, sum or result may need more than 38 significant digits or a leading digit outside the place values 10^-127 to 10^127; one that would is refused as amount_out_of_range. The vectors follow the model of ios/NutritionCore/Sources/NutritionDomain; running them against the Swift code is the job of the Swift/Python golden verification that follows this contract. The optional `nutrient` field names the registry nutrient each case is about; it matters for IU, which converts to a mass only for a nutrient whose registry entry states `mcg_per_international_unit` (vitamin D), and the app applies that conversion through its nutrient mapping rather than in NutritionDomain.",
   "error_names": [
     "unknown_symbol",
     "dimension_mismatch",
@@ -869,9 +869,25 @@
       }
     },
     {
+      "id": "convert_vitamin_d_international_units_to_mass",
+      "op": "convert",
+      "nutrient": "vitamin_d",
+      "note": "Vitamin D is the one exception: an IU of vitamin D is defined as 0.025 mcg.",
+      "input": {
+        "amount": "400",
+        "unit": "IU",
+        "to": "mcg"
+      },
+      "expect": {
+        "amount": "10",
+        "unit": "mcg"
+      }
+    },
+    {
       "id": "reject_international_unit_to_mass",
       "op": "reject",
-      "note": "International units are activity, not mass. No conversion exists.",
+      "nutrient": "vitamin_a",
+      "note": "International units are activity, not mass. Outside vitamin D no conversion exists.",
       "input": {
         "amount": "400",
         "unit": "IU",
@@ -1141,10 +1157,10 @@
       }
     },
     {
-      "id": "reject_sum_of_mass_and_international_units",
-      "op": "reject",
+      "id": "sum_vitamin_d_stated_in_mass_and_international_units",
+      "op": "sum",
       "nutrient": "vitamin_d",
-      "note": "Vitamin D may be stated either way, but the two never add up.",
+      "note": "Vitamin D may be stated either way; 400 IU is 10 mcg, so the two add up.",
       "input": {
         "values": [
           {
@@ -1155,6 +1171,40 @@
           {
             "state": "known",
             "amount": "400",
+            "unit": "IU"
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "state": "known",
+          "amount": "20",
+          "unit": "mcg"
+        },
+        "coverage": {
+          "known_count": 2,
+          "total_count": 2,
+          "has_unknown": false,
+          "has_below_reporting_threshold": false,
+          "is_complete": true
+        }
+      }
+    },
+    {
+      "id": "reject_sum_of_mass_and_international_units",
+      "op": "reject",
+      "nutrient": "vitamin_a",
+      "note": "Vitamin A may be stated either way, but an IU of it has no single mass, so the two never add up.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "300",
+            "unit": "mcg"
+          },
+          {
+            "state": "known",
+            "amount": "900",
             "unit": "IU"
           }
         ]

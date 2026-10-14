@@ -621,8 +621,16 @@ def valid_portion(portion: dict, table) -> tuple[str, Fraction, str]:
     return portion["count_unit"], amount, portion["unit"]
 
 
+def mcg_per_international_unit(registry, nutrient: str | None) -> Fraction | None:
+    """The fixed mass of one IU of the nutrient, or None: only vitamin D states one."""
+    for entry in registry["nutrients"]:
+        if entry["id"] == nutrient and "mcg_per_international_unit" in entry:
+            return exact(entry["mcg_per_international_unit"])
+    return None
+
+
 def convert(amount: Fraction, unit: str, target: str, registry, density: Fraction | None = None,
-            portion: dict | None = None) -> Fraction:
+            portion: dict | None = None, nutrient: str | None = None) -> Fraction:
     table = units(registry)
     for symbol in (unit, target):
         if symbol not in table:
@@ -643,7 +651,11 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
         canonical = bounded(amount * exact(source["factor_to_canonical"]))
         return bounded(canonical / exact(dest["factor_to_canonical"]))
     if "international_unit" in (source["dimension"], dest["dimension"]):
-        raise UnitError("international_unit_not_convertible")
+        # Only IU into a mass converts, and only for a nutrient whose IU is one fixed mass (vitamin D).
+        factor = mcg_per_international_unit(registry, nutrient)
+        if factor is None or source["dimension"] != "international_unit" or dest["dimension"] != "mass":
+            raise UnitError("international_unit_not_convertible")
+        return convert(bounded(amount * factor), "mcg", target, registry)
 
     measurable = ("mass", "volume")
     if source["dimension"] == "count" and dest["dimension"] in measurable:
@@ -705,7 +717,7 @@ def scale(case_input: dict, registry) -> dict:
     return {"state": "known", "amount": decimal_string(scaled), "unit": value["unit"]}
 
 
-def sum_values(case_input: dict, registry) -> dict:
+def sum_values(case_input: dict, registry, nutrient: str | None = None) -> dict:
     known, total_count = [], 0
     has_unknown = has_below = False
     for value in case_input["values"]:
@@ -743,14 +755,14 @@ def sum_values(case_input: dict, registry) -> dict:
     target = case_input.get("unit") or known[0][1]
     running = Fraction(0)
     for amount, unit in known:
-        running = bounded(running + convert(amount, unit, target, registry))
+        running = bounded(running + convert(amount, unit, target, registry, nutrient=nutrient))
     return {
         "value": {"state": "known", "amount": decimal_string(running), "unit": target},
         "coverage": coverage,
     }
 
 
-def convert_case(case_input: dict, registry) -> Fraction:
+def convert_case(case_input: dict, registry, nutrient: str | None = None) -> Fraction:
     return convert(
         exact(case_input["amount"]),
         case_input["unit"],
@@ -758,17 +770,21 @@ def convert_case(case_input: dict, registry) -> Fraction:
         registry,
         exact(case_input["density"]) if "density" in case_input else None,
         case_input.get("portion"),
+        nutrient,
     )
 
 
 def run_case(case: dict, registry) -> dict:
     case_input = case["input"]
     if case["op"] == "convert":
-        return {"amount": decimal_string(convert_case(case_input, registry)), "unit": case_input["to"]}
+        return {
+            "amount": decimal_string(convert_case(case_input, registry, case.get("nutrient"))),
+            "unit": case_input["to"],
+        }
     if case["op"] == "scale":
         return scale(case_input, registry)
     if case["op"] == "sum":
-        return sum_values(case_input, registry)
+        return sum_values(case_input, registry, case.get("nutrient"))
     raise AssertionError(f"unknown op {case['op']!r}")
 
 
@@ -803,11 +819,11 @@ def test_the_reference_evaluator_reproduces_every_golden(case, registry):
     if case["op"] == "reject":
         with pytest.raises(UnitError) as raised:
             if case["id"].startswith("reject_sum"):
-                sum_values(case["input"], registry)
+                sum_values(case["input"], registry, case.get("nutrient"))
             elif case["input"].get("basis") is not None or "basis" in case["input"]:
                 scale(case["input"], registry)
             else:
-                convert_case(case["input"], registry)
+                convert_case(case["input"], registry, case.get("nutrient"))
         assert raised.value.name == case["expect"]["error"]
         return
     assert run_case(case, registry) == case["expect"]
@@ -1006,3 +1022,22 @@ def test_the_canonical_intermediate_of_a_conversion_is_bounded(registry):
     with pytest.raises(UnitError) as raised:
         convert(Fraction(10**127), "kg", "L", registry, Fraction(1000))
     assert raised.value.name == "amount_out_of_range"
+
+
+def test_only_vitamin_d_states_a_mass_per_international_unit(registry):
+    """The vitamin D exception is the only one: an IU of vitamin A or E has no single mass."""
+    stated = {entry["id"]: entry["mcg_per_international_unit"] for entry in registry["nutrients"]
+              if "mcg_per_international_unit" in entry}
+    assert stated == {"vitamin_d": "0.025"}
+
+
+def test_vitamin_d_converts_only_from_international_units_into_a_mass(registry):
+    assert convert(Fraction(400), "IU", "mcg", registry, nutrient="vitamin_d") == Fraction(10)
+    assert convert(Fraction(400), "IU", "mg", registry, nutrient="vitamin_d") == Fraction(1, 100)
+    with pytest.raises(UnitError) as raised:
+        convert(Fraction(10), "mcg", "IU", registry, nutrient="vitamin_d")
+    assert raised.value.name == "international_unit_not_convertible"
+    with pytest.raises(UnitError) as raised:
+        convert(Fraction(400), "IU", "mcg", registry)
+    assert raised.value.name == "international_unit_not_convertible"
+

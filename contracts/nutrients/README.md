@@ -18,8 +18,8 @@ What is here for v1:
   bounds on catalog arithmetic (38 significant digits, adjusted exponent within
   127), one spelling per unit and energy in kcal, no cross-dimension arithmetic
   without a stated density, portions for count units, international units that
-  never convert, proprietary blend splits that are never inferred, and how each
-  value state behaves in a total.
+  never convert (except vitamin D, at 0.025 mcg per IU), proprietary blend
+  splits that are never inferred, and how each value state behaves in a total.
 - `golden.v1.json` - reference vectors for the ops `convert`, `scale`, `sum` and
   `reject`. Every quantity is a decimal string. `catalog/tests/test_contract_v1.py`
   reproduces every one of them with a pure-Python evaluator in rational
