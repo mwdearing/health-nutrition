@@ -42,6 +42,11 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   favorite is gone is dropped on the next load. A damaged entry is skipped, not fatal to the list.
 - **Erase all data** removes the key. Favorites are erased with their own store. An open list reads
   everything again when an erase or a restore finishes, so nothing erased stays on screen.
+- **Known limits of the time marks.** Each entry is placed on its own, in time order, so with two times
+  less than two hours apart an early-late pair can land on one time (08:00 and 09:00 taken at 08:45 and
+  09:05 reads the 09:00 time taken and the second entry as an extra; the count says "logged 2 today").
+  An entry's minute is its own local time, compared with the times in the zone the phone is in now, so
+  a dose logged in another time zone earlier the same day can mark a different time than expected.
 - **Not in the journal export yet.** Export schema version 2 has no field for schedules, so a restore
   brings the favorites back without their times. Adding them needs a new export schema version.
 - **No notifications.** Supplement reminders are separate ([custom reminders](custom-reminders.md)).

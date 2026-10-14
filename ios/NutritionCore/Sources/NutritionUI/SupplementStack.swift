@@ -152,30 +152,33 @@ enum SupplementStackDay {
     /// The index of the time an entry logged at `logged` belongs to, by the rule `slots` states. `minutes`
     /// are sorted and distinct, as a schedule's times are.
     static func owner(of logged: Int, among minutes: [Int]) -> Int? {
-        let before = minutes.lastIndex { $0 <= logged }
-        let after = minutes.firstIndex { $0 > logged }
-        let earlyBy = after.map { minutes[$0] - logged }
-        guard let previous = before else {
-            guard let next = after, let early = earlyBy, early <= earlyWindowMinutes else { return nil }
+        let previous = minutes.lastIndex { $0 <= logged }
+        if let next = minutes.firstIndex(where: { $0 > logged }), minutes[next] - logged <= earlyWindowMinutes,
+           previous.map({ minutes[next] - logged < logged - minutes[$0] }) ?? true
+        {
             return next
         }
-        guard let next = after, let early = earlyBy else { return previous }
-        return early <= earlyWindowMinutes && early < logged - minutes[previous] ? next : previous
+        return previous
     }
 
-    /// The local day key (`yyyy-MM-dd`, as the Journal groups by), weekday and minute since midnight of
-    /// `date` in `zoneIdentifier`, from the calendar's components, so a day that skips or repeats an hour
-    /// still names the wall clock the person sees. Nil for a zone identifier that names no zone.
+    /// The local day key (`yyyy-MM-dd`, the copier's, so it matches the Journal's day rule), weekday and
+    /// minute since midnight of `date` in `zoneIdentifier`. Nil for a zone identifier that names no zone.
     static func local(_ date: Date, zoneIdentifier: String) -> (dayKey: String, weekday: Int, minuteOfDay: Int)? {
-        // The day key is the copier's, the one the Journal's day rule uses, so the formats cannot drift.
-        guard let zone = TimeZone(identifier: zoneIdentifier),
-              let dayKey = IntakeCopier.dayKey(date, zoneIdentifier: zoneIdentifier)
+        guard let dayKey = IntakeCopier.dayKey(date, zoneIdentifier: zoneIdentifier),
+              let clock = wallClock(date, zoneIdentifier: zoneIdentifier)
         else { return nil }
+        return (dayKey, clock.weekday, clock.minuteOfDay)
+    }
+
+    /// The weekday and minute since midnight of `date` in `zoneIdentifier`, from the calendar's components,
+    /// so a day that skips or repeats an hour still names the wall clock the person sees.
+    static func wallClock(_ date: Date, zoneIdentifier: String) -> (weekday: Int, minuteOfDay: Int)? {
+        guard let zone = TimeZone(identifier: zoneIdentifier) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         let parts = calendar.dateComponents([.weekday, .hour, .minute], from: date)
         guard let weekday = parts.weekday, let hour = parts.hour, let minute = parts.minute else { return nil }
-        return (dayKey, weekday, hour * 60 + minute)
+        return (weekday, hour * 60 + minute)
     }
 
     /// What tells an entry of an item from an entry of anything else: the product snapshot when there is

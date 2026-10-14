@@ -63,11 +63,12 @@ public struct SupplementStackView: View {
         }
         .onAppear { self.model.appeared(self.screenID, now: self.now()) }
         .onDisappear { self.model.disappeared(self.screenID) }
-        // Back from the background, anything may have been logged elsewhere, so everything is read again.
+        // Back from the background, anything may have been logged elsewhere, so a list on screen is read
+        // again; one pushed under another screen reads when it appears.
         // While on screen, the times move on once a minute from what was already read (a time that passes
         // reads "Not logged"); only a new day reads the journal again, which clears yesterday's marks.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { self.model.load(now: self.now()) }
+            if phase == .active { self.model.reloadIfShown(now: self.now()) }
         }
         .task {
             while !Task.isCancelled {

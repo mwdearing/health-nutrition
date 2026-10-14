@@ -225,9 +225,10 @@ public final class SupplementStackViewModel: ObservableObject {
         var unreadable = 0
         for intake in try store.activeIntakes() where intake.lifecycle == .active {
             // An entry's day and minute are its own local ones. A zone that names none has no day, so
-            // the entry is on no day's list, as in the Journal.
-            guard let local = SupplementStackDay.local(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier),
-                  local.dayKey == dayKey
+            // the entry is on no day's list, as in the Journal. The day is checked first, so only today's
+            // entries pay for reading the wall clock.
+            guard IntakeCopier.dayKey(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier) == dayKey,
+                  let local = SupplementStackDay.wallClock(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier)
             else { continue }
             guard let revisions = try? store.revisions(of: intake.id),
                   let current = revisions.first(where: { $0.number == intake.currentRevision })
