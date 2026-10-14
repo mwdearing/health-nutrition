@@ -532,6 +532,8 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let (store, writer, _, worker) = try makeWorker()
 
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        writer.reset()
         try store.delete(intakeID: intakeID, now: when)
         writer.deny("HKQuantityTypeIdentifierDietaryWater")
         let outcomes = await worker.runOnce(now: when)
@@ -1193,6 +1195,18 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
     /// A type turned off that the entry never stated holds nothing for it, so deleting a water-only
     /// entry is not left waiting for a person because calcium is off.
+    /// The production totals read a deleted entry's revisions too, so the scoping above works with
+    /// them and not only with a test provider.
+    func testSnapshotTotalsStillReadADeletedEntrysRevision() async throws {
+        let store = try makeStore(try makeDirectory())
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+
+        let totals = try await JournalSnapshotTotals(store: store).totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertNotNil(totals, "a deleted entry's revision is still readable")
+    }
+
     func testADeniedTypeTheEntryNeverStatedDoesNotHoldUpTheDelete() async throws {
         let (store, writer, _, worker) = try makeWorker()
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)

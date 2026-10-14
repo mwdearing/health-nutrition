@@ -109,14 +109,17 @@ public struct JournalSnapshotTotals: Sendable {
     }
 
     private func totalsNow(intakeID: String, revision: Int) throws -> [String: NutrientValue] {
-        guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
-            throw JournalError.unknownIntake(intakeID)
-        }
+        let intake = try store.activeIntakes().first(where: { $0.id == intakeID })
         guard let entry = try store.revisions(of: intakeID).first(where: { $0.number == revision }) else {
             throw JournalError.unknownIntake("\(intakeID)@\(revision)")
         }
+        // A deleted entry is no longer among the active ones, but its revisions are still read when a
+        // delete decides which denied types could hold its samples. Its category is gone with it, so
+        // recorded volume counts as water there: over-stating a type only keeps a delete waiting for a
+        // person, never drops a sample.
+        let category = intake?.category ?? Self.waterCategory
         var totals: [String: NutrientValue] = [:]
-        if let water = Self.recordedWater(in: entry.components, category: intake.category) {
+        if let water = Self.recordedWater(in: entry.components, category: category) {
             totals["water"] = water
         }
         // The water the components record wins a contested key: it is what was actually poured, where
