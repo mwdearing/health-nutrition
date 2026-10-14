@@ -20,15 +20,19 @@ or UL). Nothing in it is personalised beyond the published row a person picks.
 ## Units
 
 Every value is in the unit the app counts that nutrient in, so a day's total can be compared without a conversion:
-vitamin A in mcg RAE, niacin in mg NE, folate in mcg DFE, vitamin E in mg alpha-tocopherol. Two figures are restated:
+vitamin A in mcg RAE, niacin in mg NE, folate in mcg DFE, vitamin E in mg alpha-tocopherol. Copper is the one figure
+restated: the sources give 900 mcg and 10,000 mcg, and the app counts copper in milligrams, so the table holds 0.9 mg and
+10 mg.
 
-- **Copper**: the sources give 900 mcg and 10,000 mcg, and the app counts copper in milligrams, so the table holds 0.9 mg
-  and 10 mg.
-- **Folate limit**: the published UL is 1,000 mcg of folic acid, not of DFE. The folate fact sheet states that 1,000 mcg
-  of folic acid is 1,667 mcg DFE (0.6 mcg folic acid = 1 mcg DFE), so the table holds 1,667 mcg DFE and the limit is in the
-  same unit as the 400 mcg DFE allowance and the journal's folate totals. An older label that states folic acid in plain
-  mcg rather than mcg DFE is read as DFE like any other folate value, so it reads low against both figures. A total a label stated in IU (vitamins A, D and E on older labels) is not converted by the table; the conversion
-depends on the form, and a caller that cannot convert should not compare.
+The folate limit is the one value on another basis. It is published as 1,000 mcg of **folic acid**, not of DFE, and the
+table keeps it that way under the `folicAcid` scope. The journal cannot tell the two apart: a current label states folate
+in mcg DFE, and an older label, or a value stored under the `folic-acid` key, states plain micrograms of folic acid, and
+both are summed as folate. Since 1 mcg of folic acid is 1.667 mcg DFE (folate fact sheet), a DFE amount always states more
+micrograms than the folic acid in it, so comparing it with the 1,000 mcg limit can only warn early. Restating the limit as
+1,667 mcg DFE instead would let 1,200 mcg of plain folic acid, which is above the limit, read as below it.
+
+A total a label stated in IU (vitamins A, D and E on older labels) is not converted by the table; the conversion depends
+on the form, and a caller that cannot convert should not compare.
 
 ## Upper limits and what they count
 
@@ -36,16 +40,17 @@ A Tolerable Upper Intake Level is nil where the Food and Nutrition Board set non
 riboflavin, biotin, pantothenic acid, potassium, chromium). Nil means no level was determined, never that any amount is
 fine.
 
-Most limits count food, water and supplements together (`allSources`). Four count only some forms, and comparing a
-whole day's total against them would read ordinary food as over a limit that was never set for food:
+Most limits count food, water and supplements together (`allSources`). Five count only some sources or forms, and
+comparing a whole day's total against them would read ordinary food as over a limit that was never set for food. Each
+source set has its own scope, so a caller can tell which entries a limit counts without a list of nutrient names:
 
 | Nutrient | What the limit counts | `UpperLimitScope` |
 |---|---|---|
-| Magnesium (350 mg) | Supplements and medicines only, never food or water | `supplementalForms` |
-| Niacin (35 mg) | Supplemental niacin (supplements, fortified foods) | `supplementalForms` |
-| Folate (1,000 mcg folic acid, held as 1,667 mcg DFE) | Folic acid from supplements and fortified foods | `supplementalForms` |
-| Vitamin E (1,000 mg) | Any form of supplemental alpha-tocopherol | `supplementalForms` |
-| Vitamin A (3,000 mcg) | Preformed vitamin A (retinol and its esters) only | `preformedVitaminA` |
+| Magnesium (350 mg) | Supplements and medicines only, never food or water | `supplementsAndMedicines` |
+| Niacin (35 mg) | Supplemental niacin, from supplements and fortified foods | `supplementsAndFortifiedFoods` |
+| Vitamin E (1,000 mg) | Any form of supplemental alpha-tocopherol, from supplements and fortified foods | `supplementsAndFortifiedFoods` |
+| Folate (1,000 mcg of folic acid) | Synthetic folic acid from supplements and fortified foods, in mcg of folic acid | `folicAcid` |
+| Vitamin A (3,000 mcg) | Preformed vitamin A (retinol and its esters) only, from animal foods and supplements | `preformedVitaminA` |
 
 So the magnesium limit sits below the men's allowance, which is coherent only because it counts supplements alone.
 

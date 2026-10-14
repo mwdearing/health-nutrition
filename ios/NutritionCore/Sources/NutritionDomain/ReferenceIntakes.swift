@@ -87,10 +87,17 @@ public enum ReferenceIntakeKind: String, Sendable, Hashable, Codable {
 public enum UpperLimitScope: String, Sendable, Hashable, Codable {
     /// Food, water and supplements together.
     case allSources
-    /// Only the forms in supplements, fortified foods and medicines: magnesium (supplements and
-    /// medicines, never food or water), niacin, folate (folic acid) and vitamin E (any supplemental
-    /// alpha-tocopherol). What food holds naturally is not counted.
-    case supplementalForms
+    /// Only supplements and medicines, never food or water: the magnesium limit.
+    case supplementsAndMedicines
+    /// Only the forms added to supplements and fortified foods, never what food holds naturally: the
+    /// niacin limit (supplemental niacin) and the vitamin E limit (any supplemental alpha-tocopherol).
+    case supplementsAndFortifiedFoods
+    /// Only synthetic folic acid from supplements and fortified foods, and in micrograms of folic acid,
+    /// not of DFE: the folate limit. The row's allowance and the journal count folate in mcg DFE, and
+    /// a microgram of folic acid is 1.667 mcg DFE, so a DFE amount states more micrograms than the folic
+    /// acid in it. Comparing a DFE amount against this limit can therefore only warn early, never late,
+    /// while a label that states plain folic acid compares exactly.
+    case folicAcid
     /// Only preformed vitamin A (retinol and its esters), from animal foods and supplements. Beta
     /// carotene and the other provitamin A carotenoids are not counted.
     case preformedVitaminA
@@ -108,7 +115,8 @@ public struct ReferenceIntake: Sendable, Hashable {
     public let amount: Decimal
     public let kind: ReferenceIntakeKind
     /// The unit `amount` and `upperLimit` are in: the unit the journal and the Apple Health writer
-    /// count this nutrient in, so a total can be compared without a conversion it cannot make.
+    /// count this nutrient in, so a total can be compared without a conversion it cannot make. The one
+    /// exception is a `.folicAcid` limit, which is micrograms of folic acid rather than of DFE.
     public let unit: MeasureUnit
     /// The Tolerable Upper Intake Level, or nil where none was determined. Nil means the tables set no
     /// level, never that any amount is fine.
@@ -134,10 +142,9 @@ public struct ReferenceIntake: Sendable, Hashable {
 /// Values are the Food and Nutrition Board's adult RDAs, AIs and ULs as the NIH Office of Dietary
 /// Supplements health-professional fact sheets state them; `docs/reference-intakes.md` lists each
 /// source. Units are the app's own for each key: vitamin A is mcg RAE, niacin mg NE, folate mcg DFE
-/// and vitamin E mg alpha-tocopherol, which is how labels state them in those units. Two figures are
-/// restated: the tables give copper in micrograms and the app counts milligrams, so 900 mcg is 0.9 mg;
-/// and the folate limit is published as 1,000 mcg of folic acid, which the fact sheet states as
-/// 1,667 mcg DFE, so the row holds 1,667 and compares in the same unit as its allowance.
+/// and vitamin E mg alpha-tocopherol, which is how labels state them in those units. Copper is the one
+/// figure restated: the tables give micrograms and the app counts milligrams, so 900 mcg is 0.9 mg. The
+/// folate limit is the one value on another basis, micrograms of folic acid, which its scope says.
 ///
 /// Chloride and sodium are not here. No fact sheet was checked for chloride, and sodium's 2,300 mg is
 /// a chronic-disease risk reduction level rather than an upper limit, so it does not fit this shape.
@@ -214,16 +221,15 @@ public enum ReferenceIntakes {
         Row("vitaminD", .mcg, rda, female: ["15", "15", "15", "20"], male: ["15", "15", "15", "20"],
             upperLimit: same("100"), scope: .allSources),
         Row("vitaminE", .mg, rda, female: same("15"), male: same("15"),
-            upperLimit: same("1000"), scope: .supplementalForms),
+            upperLimit: same("1000"), scope: .supplementsAndFortifiedFoods),
         Row("vitaminK", .mcg, ai, female: same("90"), male: same("120")),
         Row("thiamin", .mg, rda, female: same("1.1"), male: same("1.2")),
         Row("riboflavin", .mg, rda, female: same("1.1"), male: same("1.3")),
         Row("niacin", .mg, rda, female: same("14"), male: same("16"),
-            upperLimit: same("35"), scope: .supplementalForms),
-        // The published limit is 1,000 mcg of folic acid; the fact sheet states that as 1,667 mcg DFE,
-        // which is the unit this row and the journal count folate in.
+            upperLimit: same("35"), scope: .supplementsAndFortifiedFoods),
+        // The limit is 1,000 mcg of folic acid, not DFE; `.folicAcid` carries that basis.
         Row("folate", .mcg, rda, female: same("400"), male: same("400"),
-            upperLimit: same("1667"), scope: .supplementalForms),
+            upperLimit: same("1000"), scope: .folicAcid),
         Row("biotin", .mcg, ai, female: same("30"), male: same("30")),
         Row("pantothenicAcid", .mg, ai, female: same("5"), male: same("5")),
         Row("calcium", .mg, rda, female: ["1000", "1000", "1200", "1200"], male: ["1000", "1000", "1000", "1200"],
@@ -231,7 +237,7 @@ public enum ReferenceIntakes {
         Row("iron", .mg, rda, female: ["18", "18", "8", "8"], male: same("8"),
             upperLimit: same("45"), scope: .allSources),
         Row("magnesium", .mg, rda, female: ["310", "320", "320", "320"], male: ["400", "420", "420", "420"],
-            upperLimit: same("350"), scope: .supplementalForms),
+            upperLimit: same("350"), scope: .supplementsAndMedicines),
         Row("phosphorus", .mg, rda, female: same("700"), male: same("700"),
             upperLimit: ["4000", "4000", "4000", "3000"], scope: .allSources),
         Row("potassium", .mg, ai, female: same("2600"), male: same("3400")),

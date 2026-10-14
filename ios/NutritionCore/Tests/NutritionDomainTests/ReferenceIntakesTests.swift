@@ -23,7 +23,7 @@ final class ReferenceIntakesTests: XCTestCase {
         XCTAssertEqual(limit.kind, .recommendedDietaryAllowance)
         // Below the men's allowance, which is only coherent because it counts supplements alone.
         XCTAssertEqual(limit.upperLimit, 350)
-        XCTAssertEqual(limit.upperLimitScope, .supplementalForms)
+        XCTAssertEqual(limit.upperLimitScope, .supplementsAndMedicines)
     }
 
     func testVitaminDRisesAtSeventyOne() throws {
@@ -66,12 +66,13 @@ final class ReferenceIntakesTests: XCTestCase {
 
     func testFormSpecificLimitsCarryTheirScope() throws {
         XCTAssertEqual(try intake("vitaminA", .female, .years19To30).upperLimitScope, .preformedVitaminA)
-        XCTAssertEqual(try intake("niacin", .male, .years19To30).upperLimitScope, .supplementalForms)
-        XCTAssertEqual(try intake("folate", .male, .years19To30).upperLimitScope, .supplementalForms)
-        // 1,000 mcg of folic acid, restated in the mcg DFE the allowance and the journal use.
-        XCTAssertEqual(try intake("folate", .male, .years19To30).upperLimit, 1667)
+        XCTAssertEqual(try intake("niacin", .male, .years19To30).upperLimitScope, .supplementsAndFortifiedFoods)
+        XCTAssertEqual(try intake("vitaminE", .male, .years19To30).upperLimitScope, .supplementsAndFortifiedFoods)
+        // 1,000 mcg of folic acid, kept on its own basis rather than restated as DFE, so a label stating
+        // 1,200 mcg of plain folic acid is above it rather than below a DFE figure.
+        XCTAssertEqual(try intake("folate", .male, .years19To30).upperLimitScope, .folicAcid)
+        XCTAssertEqual(try intake("folate", .male, .years19To30).upperLimit, 1000)
         XCTAssertEqual(try intake("folate", .male, .years19To30).amount, 400)
-        XCTAssertEqual(try intake("vitaminE", .male, .years19To30).upperLimitScope, .supplementalForms)
         XCTAssertEqual(try intake("zinc", .male, .years19To30).upperLimitScope, .allSources)
     }
 
