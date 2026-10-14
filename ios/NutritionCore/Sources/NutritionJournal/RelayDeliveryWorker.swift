@@ -977,6 +977,13 @@ public struct RelayDeliveryWorker: Sendable {
             // the same one every other transient failure uses, indexed by that operation's own attempt
             // count. Hard-coding the first step here would hold a repeatedly throttled producer at one
             // minute forever, which is the opposite of what a receiver asking for less traffic wants.
+            //
+            // **What this request recorded is released (#123).** The receiver answers 429 without reading the
+            // body, so nothing in it was applied and there is no payload to reproduce, exactly as for a split
+            // 413. Keeping the snapshot would freeze the links current when the limit hit, and every link that
+            // arrives while the producer waits would be missing from the retry. Only records this request
+            // created are released; one from an earlier attempt or an overlapping run may be at the receiver.
+            release(prepared)
             let wait = response.retryAfterSeconds
             let reason = wait.map { "the receiver asked this producer to wait \($0) seconds" }
                 ?? "the receiver rate limited this producer without stating a wait"
