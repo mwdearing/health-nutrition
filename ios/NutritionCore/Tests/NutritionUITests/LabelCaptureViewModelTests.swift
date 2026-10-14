@@ -376,6 +376,29 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertEqual(model.primaryActionTitle, "Use these values")
     }
 
+    /// The same holds for the printed serving: an open serving field holds the values until it is saved or
+    /// cancelled, so a typed serving cannot be dropped by using the values first.
+    func testValuesCannotBeUsedWhileTheServingIsBeingCorrected() {
+        let model = makeModel()
+        model.load(lines: panelWithFlaggedRow)
+        model.confirm(.sodium)
+        XCTAssertTrue(model.servingCanBeCorrected)
+        XCTAssertTrue(model.canApply)
+
+        model.beginServingCorrection()
+        XCTAssertTrue(model.isEditingServing)
+        XCTAssertFalse(model.canApply)
+        XCTAssertNil(model.makeProduct())
+
+        model.endServingCorrection()
+        XCTAssertTrue(model.canApply)
+
+        model.beginServingCorrection()
+        XCTAssertTrue(model.correctServingSize(text: "30 g"))
+        XCTAssertFalse(model.isEditingServing, "a saved serving closes its field")
+        XCTAssertTrue(model.canApply)
+    }
+
     func testEnteringAServingSizeWantsAnAmountWithItsUnit() {
         let model = makeModel()
         model.load(lines: ["Calories 180", "Total Fat 4g"])

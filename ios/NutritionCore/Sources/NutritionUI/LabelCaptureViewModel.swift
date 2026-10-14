@@ -480,6 +480,9 @@ public final class LabelCaptureViewModel: ObservableObject {
     @Published public private(set) var editingKey: NutritionFactKey?
     /// The compound row whose correction field is open, or nil when none is.
     @Published public private(set) var editingAdditionalKey: String?
+    /// Whether the field for correcting a printed serving size is open. Kept here rather than in the view so
+    /// the values cannot be used while a typed serving has not been saved.
+    @Published public private(set) var isEditingServing = false
 
     /// What kind of product this capture is recorded as, read off the panel's own heading.
     ///
@@ -560,6 +563,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         correctionError = nil
         editingKey = nil
         editingAdditionalKey = nil
+        isEditingServing = false
     }
 
     // MARK: Merging another photo of the same panel
@@ -696,6 +700,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         correctionError = nil
         editingKey = nil
         editingAdditionalKey = nil
+        isEditingServing = false
     }
 
     /// Adds one photo's reading of a row to the readings already kept for it.
@@ -759,6 +764,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         guard canAddPhoto else { return }
         isAddingPhoto = true
         endCorrection()
+        isEditingServing = false
         correctionError = nil
     }
 
@@ -817,6 +823,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         correctionError = nil
         editingKey = nil
         editingAdditionalKey = nil
+        isEditingServing = false
     }
 
     // MARK: Reviewing
@@ -993,7 +1000,21 @@ public final class LabelCaptureViewModel: ObservableObject {
         guard applyServingSize(text) else { return false }
         // Replacing the printed serving size is an answer, not a question left standing.
         servingNeedsReview = false
+        isEditingServing = false
         return true
+    }
+
+    /// Opens the field for correcting the printed serving size.
+    public func beginServingCorrection() {
+        guard servingCanBeCorrected else { return }
+        servingSizeError = nil
+        isEditingServing = true
+    }
+
+    /// Closes the serving field without changing the serving.
+    public func endServingCorrection() {
+        isEditingServing = false
+        servingSizeError = nil
     }
 
     /// Whether the screen offers to correct the serving size, which it does whenever the panel stated one:
@@ -1132,9 +1153,9 @@ public final class LabelCaptureViewModel: ObservableObject {
         hasPanel && !isUnreadable && !rows.isEmpty && pendingCount == 0 && !isCorrecting
     }
 
-    /// Whether a nutrient or compound correction field is open.
+    /// Whether a nutrient, compound or serving correction field is open.
     public var isCorrecting: Bool {
-        editingKey != nil || editingAdditionalKey != nil
+        editingKey != nil || editingAdditionalKey != nil || isEditingServing
     }
 
     /// The title of the one button that hands the values on, counting the answers still owed.

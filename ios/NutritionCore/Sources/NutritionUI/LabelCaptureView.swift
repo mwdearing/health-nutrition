@@ -31,8 +31,6 @@ public struct LabelCaptureView: View {
     /// The unit a compound correction is stated in, chosen from the picker beside its amount field. It
     /// starts on the unit the label printed.
     @State private var additionalUnit: MeasureUnit = .g
-    /// Whether the field for correcting a printed serving size is open.
-    @State private var editingServing = false
 
     public init(
         model: LabelCaptureViewModel,
@@ -180,7 +178,7 @@ public struct LabelCaptureView: View {
                 if model.servingNeedsReview {
                     correctServingControl
                 }
-                if editingServing {
+                if model.isEditingServing {
                     servingEntry
                 }
             }
@@ -192,7 +190,7 @@ public struct LabelCaptureView: View {
     @ViewBuilder
     private var correctServingControl: some View {
         if model.servingCanBeCorrected {
-            Button("Correct") { editingServing = true }
+            Button("Correct") { model.beginServingCorrection() }
                 .font(.body)
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Correct the serving size")
@@ -233,13 +231,23 @@ public struct LabelCaptureView: View {
                     : model.correctServingSize(text: servingDraft)
                 if accepted {
                     servingDraft = ""
-                    editingServing = false
                 }
             }
             .font(.body)
             .buttonStyle(.borderless)
             .accessibilityLabel("Use this serving size")
             .accessibilityHint("Keeps the values per serving, with this serving written down")
+            if model.isEditingServing {
+                // While a printed serving is being corrected the values cannot be used, so the edit has a way
+                // out that keeps the serving as printed.
+                Button("Cancel") {
+                    servingDraft = ""
+                    model.endServingCorrection()
+                }
+                .font(.body)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Keep the printed serving size")
+            }
         }
     }
 
@@ -697,7 +705,6 @@ public struct LabelCaptureView: View {
                     // closed here, on the way out, and only what was already saved on the model is kept.
                     draft = ""
                     servingDraft = ""
-                    editingServing = false
                     model.clearCorrectionError()
                     onAddPhoto()
                 }
