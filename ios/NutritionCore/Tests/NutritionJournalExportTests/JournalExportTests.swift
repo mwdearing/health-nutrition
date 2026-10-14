@@ -554,6 +554,16 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertTrue(negativeText.contains("1969-12-31T23:59:58.750000Z"), negativeText)
     }
 
+    /// A digit with a combining mark is one character that compares between "0" and "9"; the reader refuses
+    /// the date instead of trapping on it.
+    func testDateDecoderRefusesANonASCIIDigitInTheFraction() {
+        for fraction in ["5\u{0301}", "1\u{20E3}", "\u{0665}"] {
+            let json = #"{"schema_version":1,"exported_at":"2024-01-15T09:15:00."#
+                + fraction + #"Z","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]}"#
+            XCTAssertThrowsError(try JournalExporter.decode(Data(json.utf8)), fraction)
+        }
+    }
+
     func testDateDecoderAcceptsLongValidFractionsButRejectsMalformedDigits() throws {
         for fractionLength in [309, 310, 10_000] {
             let date = "2024-01-15T09:15:00." + String(repeating: "9", count: fractionLength) + "Z"
