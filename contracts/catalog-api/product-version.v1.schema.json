@@ -61,11 +61,11 @@
       "pattern": "^prod_[a-z0-9][a-z0-9._-]{0,55}(?!\\n)$"
     },
     "shortText": {
-      "description": "Display text in any script. No control characters, no line or paragraph separators, no bidirectional override or isolate characters, and no leading or trailing space.",
+      "description": "Display text in any script, deny-listed for characters that hide or reorder what a person sees: no control characters, no line or paragraph separators, no bidirectional marks, overrides or isolates, no zero-width or other invisible format characters (soft hyphen, joiners, word joiner, byte order mark, interlinear annotation, tag characters), no unpaired surrogates or noncharacters, and no space of any kind at the start or the end.",
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069]*[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069])?(?!\\n)$"
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
     },
     "barcode": {
       "description": "Digits only, 8 to 14 of them.",
@@ -431,7 +431,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512,
-          "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069]*[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069])?(?!\\n)$"
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufffe\\uffff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
         },
         "url": {
           "description": "Public https page describing the source record.",

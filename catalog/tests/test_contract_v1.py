@@ -356,7 +356,8 @@ def test_every_wire_unit_symbol_is_one_the_ios_unit_registry_knows(product_schem
 @pytest.mark.parametrize("field", ["name", "brand", "attribution"])
 @pytest.mark.parametrize(
     "text",
-    ["Éclair drink", "明治おいしい牛乳", "Müsli & Früchte 30 %", "Сырок глазированный", "x", "Crème fraîche d'Isigny"],
+    ["Éclair drink", "明治おいしい牛乳", "Müsli & Früchte 30 %", "Сырок глазированный", "x", "Crème fraîche d'Isigny",
+     "Fromage 30\u202f% MG", "Lait\u00a0entier", "Oats \U0001f33e", "عصير برتقال"],
 )
 def test_display_text_may_be_in_any_script(product_validator, field, text):
     doc = valid_product()
@@ -369,7 +370,14 @@ def test_display_text_may_be_in_any_script(product_validator, field, text):
 @pytest.mark.parametrize(
     "text",
     ["", " ", " Oats", "Oats ", "Oats\n", "Oa\nts", "Oa\tts", "Oa\u0000ts", "Oa\u007fts", "Oa\u0085ts",
-     "\u0085Oats", "Oa\u2028ts", "Oa\u2029ts", "Oa\u202ets", "Oats\u202e", "Oa\u2066ts", "Éclair\n", "x" * 600],
+     "\u0085Oats", "Oa\u2028ts", "Oa\u2029ts", "Oa\u202ets", "Oats\u202e", "Oa\u2066ts", "Éclair\n", "x" * 600,
+     # Invisible or reordering characters: soft hyphen, Arabic letter mark, zero-width space, joiners,
+     # direction marks, word joiner, byte order mark, annotation anchors, a tag character, a lone surrogate.
+     "Oa\u00adts", "Oa\u061cts", "Oa\u180ets", "Oa\u200bts", "Oa\u200cts", "Oa\u200dts", "Oa\u200ets",
+     "Oa\u200fts", "Oats\u200f", "Oa\u2060ts", "Oa\u2064ts", "Oa\u206fts", "Oa\ufeffts", "\ufeffOats",
+     "Oa\ufff9ts", "Oa\ufffets", "Oa\uffffts", "Oa\U000e0041ts", "Oa\U000e007fts", "Oa\ud800ts",
+     # Any kind of space at an edge.
+     "\u00a0Oats", "Oats\u00a0", "\u2003Oats", "Oats\u202f", "Oats\u3000", "\u205fOats", "\u1680Oats"],
 )
 def test_display_text_refuses_control_and_direction_override_characters(product_validator, field, text):
     doc = valid_product()

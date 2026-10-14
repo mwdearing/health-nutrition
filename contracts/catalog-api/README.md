@@ -10,8 +10,9 @@ What is here for v1:
   nutrient ids of `contracts/nutrients/registry.v1.json`, each with the units the
   registry lists for it. Amounts are exact decimal strings and never negative;
   the serving is a positive amount in a mass, volume or count unit. Names, brands
-  and attribution lines may be in any script, without control characters or
-  direction overrides. The four nutrient value states (`known`, `unknown`,
+  and attribution lines may be in any script, without control characters,
+  direction marks or overrides, zero-width or other invisible format characters,
+  or a space at either end. The four nutrient value states (`known`, `unknown`,
   `not_applicable`, `below_reporting_threshold`) mirror the iOS `NutrientValue`
   cases; only `known` carries an amount.
 - `error.v1.schema.json` - the closed two-field error body (`code`, `message`)
