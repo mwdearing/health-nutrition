@@ -157,6 +157,7 @@ final class MacroSplitFollowTests: XCTestCase {
         commitEnergy(model, "1")
         XCTAssertEqual(try grams(store), [150, 200, 67])
         XCTAssertNil(model.followedMacroSplit)
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.macroSplitEnergyTooSmallMessage)
     }
 
     func testARefusedFollowWritePutsTheEarlierGoalsBackAndSaysSo() throws {
@@ -205,14 +206,13 @@ final class MacroSplitFollowTests: XCTestCase {
 
     func testAClearAllThatFailsPartwayLeavesNothingToFollow() throws {
         let store = RefusingGoalStore(goals: [energyGoal(2000)])
-        let preferences = InMemoryDisplayPreferences()
-        let model = try appliedModel(store, preferences: preferences)
+        let model = try appliedModel(store)
         // Goals are removed in key order: carbohydrate goes, then energy is refused.
         store.refusedRemovals = ["energy"]
 
         XCTAssertFalse(model.clearAllGoals())
 
-        XCTAssertNil(preferences.macroSplit)
+        // Carbohydrate is gone, so the goals left are not the split's output and do not follow it.
         XCTAssertNil(model.followedMacroSplit)
     }
 
@@ -239,6 +239,47 @@ final class MacroSplitFollowTests: XCTestCase {
             XCTAssertTrue(model.commitTarget(for: key), key)
             XCTAssertNil(try store.goal(for: key), key)
         }
+    }
+
+    func testAClearAllRefusedBeforeRemovingAnythingKeepsFollowing() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let preferences = InMemoryDisplayPreferences()
+        let model = try appliedModel(store, preferences: preferences)
+        // The first goal the clear reaches is refused, so nothing changed, whatever order the store
+        // lists them in.
+        store.refusedRemovals = [try XCTUnwrap(try store.goals().map(\.nutrient).first)]
+
+        XCTAssertFalse(model.clearAllGoals())
+
+        XCTAssertNotNil(preferences.macroSplit)
+        XCTAssertNotNil(model.followedMacroSplit)
+        commitEnergy(model, "2500")
+        XCTAssertEqual(try grams(store), [188, 250, 83])
+    }
+
+    func testAClearAllRefusedPartwayForgetsTheSplitSoItCannotResume() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let preferences = InMemoryDisplayPreferences()
+        let model = try appliedModel(store, preferences: preferences)
+        // Carbohydrate and energy go, fat is refused.
+        store.refusedRemovals = ["fat"]
+
+        XCTAssertFalse(model.clearAllGoals())
+        XCTAssertNil(preferences.macroSplit)
+
+        // Typing the same goals back in does not bring following back.
+        model.draftText["energy"] = "2000"
+        XCTAssertTrue(model.commitTarget(for: "energy"))
+        model.draftText["carbohydrate"] = "200"
+        XCTAssertTrue(model.commitTarget(for: "carbohydrate"))
+        XCTAssertNil(model.followedMacroSplit)
+    }
+
+    func testAClearAllThatSucceedsForgetsTheSplit() throws {
+        let preferences = InMemoryDisplayPreferences()
+        let model = try appliedModel(InMemoryGoalStore(goals: [energyGoal(2000)]), preferences: preferences)
+        XCTAssertTrue(model.clearAllGoals())
+        XCTAssertNil(preferences.macroSplit)
     }
 
     func testASetupSaveStopsFollowingWhenItsGramsDiffer() throws {
