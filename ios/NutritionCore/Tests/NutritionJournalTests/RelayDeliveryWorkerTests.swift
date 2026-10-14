@@ -1583,9 +1583,10 @@ final class AlternatingLinkProvider: @unchecked Sendable {
     /// Only busy or locked storage is retried; a corrupt database file from the same layer is parked.
     func testAStorageErrorIsRetriedOnlyWhenItIsBusyOrLocked() async throws {
         let busy = NSError(domain: "NSSQLiteErrorDomain", code: 5)
+        let busyTimeout = NSError(domain: "NSSQLiteErrorDomain", code: 773)
         let corrupt = NSError(domain: "NSSQLiteErrorDomain", code: 11)
         let wrappedBusy = NSError(domain: NSCocoaErrorDomain, code: 256, userInfo: [NSUnderlyingErrorKey: busy])
-        for (failure, retried) in [(busy, true), (wrappedBusy, true), (corrupt, false)] {
+        for (failure, retried) in [(busy, true), (busyTimeout, true), (wrappedBusy, true), (corrupt, false)] {
             let store = try makeStore(try makeDirectory(), enabled: [.healthKit])
             try store.create(sampleIntake(), components: components(), product: nil, now: when)
             let queue = RecordingProjectionQueue()

@@ -701,18 +701,19 @@ public struct RelayDeliveryWorker: Sendable {
         if error is DecodingError { return false }
         if let journal = error as? JournalError { return journal == .closed }
         let ns = error as NSError
-        if ns.domain == "NSSQLiteErrorDomain" { return transientSQLiteCodes.contains(ns.code) }
+        if ns.domain == "NSSQLiteErrorDomain" { return transientSQLiteCodes.contains(ns.code & 0xff) }
         if ns.domain == NSCocoaErrorDomain {
             if ns.code == persistentStoreTimeoutCode { return true }
             if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError,
                underlying.domain == "NSSQLiteErrorDomain" {
-                return transientSQLiteCodes.contains(underlying.code)
+                return transientSQLiteCodes.contains(underlying.code & 0xff)
             }
         }
         return false
     }
 
-    /// SQLITE_BUSY and SQLITE_LOCKED: another connection holds the database, which passes.
+    /// SQLITE_BUSY and SQLITE_LOCKED: another connection holds the database, which passes. They are compared
+    /// on the low eight bits, the primary result code, so extended forms such as SQLITE_BUSY_TIMEOUT (773) match.
     private static let transientSQLiteCodes: Set<Int> = [5, 6]
     /// Core Data's NSPersistentStoreTimeoutError, raised when the store could not be reached in time.
     private static let persistentStoreTimeoutCode = 134_090
