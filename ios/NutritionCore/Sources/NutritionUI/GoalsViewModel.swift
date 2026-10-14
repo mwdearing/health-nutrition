@@ -12,7 +12,7 @@ public enum NutrientGoalChoices {
     /// Keys in the order the screen lists them.
     public static let keys = [
         "energy", "protein", "carbohydrate", "fiber", "fat", "sodium", "potassium", "water",
-    ]
+    ] + HealthKitWritePlanner.micronutrientKeys.filter { $0 != "potassium" }
 
     /// The fixed list plus any key the journal's own snapshots carry that it does not name — a compound
     /// a captured supplement panel states, such as `creatine-monohydrate`. A person can then set a goal

@@ -68,6 +68,24 @@ private enum HealthKitTypeIdentifier {
     static let _HKQuantityTypeIdentifierDietaryVitaminD = "HKQuantityTypeIdentifierDietaryVitaminD"
     static let _HKQuantityTypeIdentifierDietaryVitaminB12 = "HKQuantityTypeIdentifierDietaryVitaminB12"
     static let _HKQuantityTypeIdentifierDietaryFolate = "HKQuantityTypeIdentifierDietaryFolate"
+    static let _HKQuantityTypeIdentifierDietaryVitaminA = "HKQuantityTypeIdentifierDietaryVitaminA"
+    static let _HKQuantityTypeIdentifierDietaryVitaminB6 = "HKQuantityTypeIdentifierDietaryVitaminB6"
+    static let _HKQuantityTypeIdentifierDietaryVitaminC = "HKQuantityTypeIdentifierDietaryVitaminC"
+    static let _HKQuantityTypeIdentifierDietaryVitaminE = "HKQuantityTypeIdentifierDietaryVitaminE"
+    static let _HKQuantityTypeIdentifierDietaryVitaminK = "HKQuantityTypeIdentifierDietaryVitaminK"
+    static let _HKQuantityTypeIdentifierDietaryThiamin = "HKQuantityTypeIdentifierDietaryThiamin"
+    static let _HKQuantityTypeIdentifierDietaryRiboflavin = "HKQuantityTypeIdentifierDietaryRiboflavin"
+    static let _HKQuantityTypeIdentifierDietaryNiacin = "HKQuantityTypeIdentifierDietaryNiacin"
+    static let _HKQuantityTypeIdentifierDietaryBiotin = "HKQuantityTypeIdentifierDietaryBiotin"
+    static let _HKQuantityTypeIdentifierDietaryPantothenicAcid = "HKQuantityTypeIdentifierDietaryPantothenicAcid"
+    static let _HKQuantityTypeIdentifierDietaryPhosphorus = "HKQuantityTypeIdentifierDietaryPhosphorus"
+    static let _HKQuantityTypeIdentifierDietaryChloride = "HKQuantityTypeIdentifierDietaryChloride"
+    static let _HKQuantityTypeIdentifierDietaryChromium = "HKQuantityTypeIdentifierDietaryChromium"
+    static let _HKQuantityTypeIdentifierDietaryCopper = "HKQuantityTypeIdentifierDietaryCopper"
+    static let _HKQuantityTypeIdentifierDietaryIodine = "HKQuantityTypeIdentifierDietaryIodine"
+    static let _HKQuantityTypeIdentifierDietaryManganese = "HKQuantityTypeIdentifierDietaryManganese"
+    static let _HKQuantityTypeIdentifierDietaryMolybdenum = "HKQuantityTypeIdentifierDietaryMolybdenum"
+    static let _HKQuantityTypeIdentifierDietarySelenium = "HKQuantityTypeIdentifierDietarySelenium"
 }
 
 /// One row of the nutrient mapping table: the canonical journal nutrient key, the other keys the
@@ -106,6 +124,15 @@ public enum HealthKitWritePlanner {
     /// `MeasureUnit` before a spec is built. Vitamin D, B12 and folate stay in micrograms because
     /// that is how HealthKit states them. An alias is another key the journal is known to store that
     /// same nutrient under; it resolves to this row, never to a second one.
+    /// The vitamin and mineral keys, in the order the app lists them. Every one has a row in `mappings`
+    /// (a test pins that), so each lands in its own HealthKit dietary type.
+    public static let micronutrientKeys: [String] = [
+        "vitaminA", "vitaminB6", "vitaminB12", "vitaminC", "vitaminD", "vitaminE", "vitaminK",
+        "thiamin", "riboflavin", "niacin", "folate", "biotin", "pantothenicAcid",
+        "calcium", "iron", "magnesium", "phosphorus", "potassium", "zinc", "chloride", "chromium",
+        "copper", "iodine", "manganese", "molybdenum", "selenium",
+    ]
+
     public static let mappings: [HealthKitNutrientMapping] = [
         HealthKitNutrientMapping(nutrientKey: "water", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryWater, unit: .mL),
         HealthKitNutrientMapping(nutrientKey: "energy", aliases: ["energyKcal"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryEnergyConsumed, unit: .kcal),
@@ -124,6 +151,24 @@ public enum HealthKitWritePlanner {
         HealthKitNutrientMapping(nutrientKey: "vitaminD", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminD, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "vitaminB12", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminB12, unit: .mcg),
         HealthKitNutrientMapping(nutrientKey: "folate", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFolate, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminA", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminA, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminB6", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminB6, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminC", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminC, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminE", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminE, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "vitaminK", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryVitaminK, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "thiamin", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryThiamin, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "riboflavin", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryRiboflavin, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "niacin", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryNiacin, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "biotin", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryBiotin, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "pantothenicAcid", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryPantothenicAcid, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "phosphorus", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryPhosphorus, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "chloride", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryChloride, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "chromium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryChromium, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "copper", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCopper, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "iodine", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryIodine, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "manganese", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryManganese, unit: .mg),
+        HealthKitNutrientMapping(nutrientKey: "molybdenum", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryMolybdenum, unit: .mcg),
+        HealthKitNutrientMapping(nutrientKey: "selenium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietarySelenium, unit: .mcg),
     ]
 
     /// The plan for one revision: one spec per mapped nutrient whose total is `.known`.
