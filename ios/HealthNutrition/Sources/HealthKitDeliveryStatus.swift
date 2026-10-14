@@ -277,6 +277,17 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
     /// now" button is never automatic. A run requested while another is in flight is remembered and
     /// repeated when that one ends, so a change made after the running pass read the queue is not left
     /// waiting for the next trigger.
+    /// Runs a pass, or asks the one already running to go round again, and returns once no pass is running.
+    ///
+    /// `run` returns at once when a pass is in flight (it only asks that pass to repeat), so a caller that
+    /// wants to read the outcome waits here until the running loop, including the repeat, has finished.
+    func runAndSettle(now: Date = Date()) async {
+        await run(now: now, automatic: true)
+        while isBusy {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
     func run(now: Date = Date(), automatic: Bool = false) async {
         if automatic && authorizationProbe() != .requested {
             refresh()

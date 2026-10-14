@@ -8,13 +8,14 @@ public struct EntryDetailView: View {
     @ObservedObject var model: EntryDetailViewModel
     private let now: () -> Date
     private let onFinished: () -> Void
-    /// Called after "Try again" re-armed a delivery, so the host can start a delivery pass for it.
-    private let onRetried: () -> Void
+    /// Called after "Try again" re-armed a delivery, so the host can run a delivery pass for it. The screen
+    /// reloads the entry once it returns, so the row shows what the pass decided rather than "Waiting to send".
+    private let onRetried: () async -> Void
     @State private var confirmingDelete = false
 
     public init(
         model: EntryDetailViewModel, now: @escaping () -> Date = { Date() }, onFinished: @escaping () -> Void,
-        onRetried: @escaping () -> Void = {}
+        onRetried: @escaping () async -> Void = {}
     ) {
         self.model = model
         self.now = now
@@ -208,7 +209,12 @@ public struct EntryDetailView: View {
                             if model.canRetry(row) {
                                 Button("Try again") {
                                     model.retry(row, now: now())
-                                    if model.errorMessage == nil { onRetried() }
+                                    if model.errorMessage == nil {
+                                        Task {
+                                            await onRetried()
+                                            model.load(now: now())
+                                        }
+                                    }
                                 }
                                     .font(.body)
                                     .accessibilityHint("Sends this entry again the next time the app delivers")
