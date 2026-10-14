@@ -754,11 +754,13 @@ def sum_values(case_input: dict, registry, nutrient: str | None = None) -> dict:
         return {"value": state, "coverage": coverage}
 
     # A nutrient whose IU is one fixed mass (vitamin D) is summed as that mass whichever value comes first,
-    # so IU is restated in mcg before the total's unit is chosen.
-    if mcg_per_international_unit(registry, nutrient) is not None:
+    # so IU is restated in mcg before the total's unit is chosen. A sum asked for in IU keeps IU, as it
+    # did before: a mass is never converted into IU.
+    requested = case_input.get("unit")
+    if requested != "IU" and mcg_per_international_unit(registry, nutrient) is not None:
         known = [(convert(amount, unit, "mcg", registry, nutrient=nutrient), "mcg") if unit == "IU" else (amount, unit)
                  for amount, unit in known]
-    target = case_input.get("unit") or known[0][1]
+    target = requested or known[0][1]
     running = Fraction(0)
     for amount, unit in known:
         running = bounded(running + convert(amount, unit, target, registry, nutrient=nutrient))

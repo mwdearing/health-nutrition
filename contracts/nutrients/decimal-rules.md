@@ -189,8 +189,10 @@ and an operation that names `vitamin_d` converts IU to a mass through it: 400 IU
 10 mcg, and 10 mcg plus 400 IU of vitamin D sums to 20 mcg. The multiplication is
 exact, so no rounding rule applies. Only IU to a mass converts; a mass is never
 converted into IU, and an operation that names no nutrient, or another nutrient,
-refuses IU as before. The stored value keeps the unit the label stated; the
-conversion happens where amounts are compared, summed or written as a mass.
+refuses IU as before. A sum that asks for its total in IU keeps IU: vitamin D
+amounts stated in IU add up in IU, and a mass among them is refused. The stored
+value keeps the unit the label stated; the conversion happens where amounts are
+summed or written as a mass.
 
 ## Proprietary blend splits are never inferred
 
