@@ -57,8 +57,9 @@ app can't read and is left out, so these figures may be low.").
   by component, so a component that states the nutrient keeps its amount even when another component does not; the entry
   then also counts as unknown.
 - A food or drink that could state the nutrient but does not, or states it in a unit that cannot be added (vitamins A
-  and E in IU), is counted as **unknown for that entry**. Vitamin D in IU is added as mcg (1 IU is 0.025 mcg). It adds nothing, so the figure becomes a floor ("At least 120
-  mg") rather than letting one unlabelled food hide what the others do state.
+  and E in IU), is counted as **unknown for that entry**. It adds nothing, so the figure becomes a floor ("At least 120
+  mg") rather than letting one unlabelled food hide what the others do state. Vitamin D in IU can be added: it counts
+  as mcg (1 IU is 0.025 mcg).
 - A water entry, and a supplement that does not declare the nutrient, say nothing about it and count nowhere.
 
 ## What each row says
