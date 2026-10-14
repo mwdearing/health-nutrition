@@ -62,11 +62,8 @@ public struct JournalView: View {
             }
             // Outside the scrolling rows, so the sentence stays visible after the list scrolls to the day.
             .safeAreaInset(edge: .top) {
-                if let copied = model.copyNotice {
-                    InlineNotice(copied, tone: .waiting)
-                        .padding(DesignSpacing.m)
-                        .background(TokenColors.background)
-                } else if let notice = jumpNotice {
+                // A jump made after a copy wins: the copy's own reload already cleared any earlier jump notice.
+                if let notice = jumpNotice ?? model.copyNotice {
                     InlineNotice(notice, tone: .waiting)
                         .padding(DesignSpacing.m)
                         .background(TokenColors.background)
