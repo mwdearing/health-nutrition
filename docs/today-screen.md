@@ -59,7 +59,7 @@ Where an amount comes from is decided by two rules, because those are the two th
   exactly.
 - A **product snapshot** states its nutrients for the amount its `labelBasis` names, so those values are scaled by the
   factor `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)` gives — the same factor the intake-context
-  encoder uses — and summed exactly. 40 g of a product stating 13 g of protein per 100 g contributes 5.2 g. An entry
+  encoder uses — and summed in `Decimal`. 40 g of a product stating 13 g of protein per 100 g contributes 5.2 g. An entry
   with no snapshot asks the injected `NutrientFactsLookup` about each component, so a food the catalog can still answer
   still contributes.
 
@@ -97,7 +97,7 @@ nothing but its own volume, and a food states no water unless the product itself
 contributes nothing to the water line, which is what keeps a day holding one food from reporting its water as unknown
 rather than as what was drunk.
 
-Summing runs through `NutritionDomain.NutrientTotal.sum`, which adds the known values exactly and reports the
+Summing runs through `NutritionDomain.NutrientTotal.sum`, which adds the known values in `Decimal` and reports the
 unknowns in a `Coverage`. Three cases are answered as unknown rather than as a number, because "0 g of protein" and
 "protein was never known" are different facts and only one of them is true, and because a smaller number presented as
 the day's true total under-reports it:
