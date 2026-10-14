@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:healthrelay:schema:catalog-error:v1",
+  "title": "healthrelay.catalog-error v1",
+  "description": "The error body the catalog returns for every non-2xx response. Two fields, both closed: an error carries no user, device, intake, query or internal detail.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message"],
+  "properties": {
+    "code": {
+      "description": "Stable machine-readable error code. Clients branch on this, never on the message.",
+      "type": "string",
+      "enum": [
+        "unauthorized",
+        "not_found",
+        "invalid_request",
+        "rate_limited",
+        "internal_error"
+      ]
+    },
+    "message": {
+      "description": "Short, safe, user-facing sentence. Never an email address, identifier, query, SQL or stack trace.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~](?:[ -~]*[!-~])?(?!\\n)$"
+    }
+  }
+}

@@ -1,0 +1,386 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:healthrelay:schema:catalog-product-version:v1",
+  "title": "healthrelay.catalog-product-version v1",
+  "description": "One published version of one catalog product, as the public catalog serves it. Deny by default: every object level is closed, so any field that is not listed here - and nothing that identifies a person, a device or an intake - is refused. The nutrients object accepts only the nutrient ids of contracts/nutrients/registry.v1.json, each with the units the registry lists for it. Amounts are exact decimal strings, never JSON numbers, and never negative. Value states mirror the iOS NutrientValue cases.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "product_id",
+    "version",
+    "name",
+    "serving",
+    "nutrients",
+    "source",
+    "status"
+  ],
+  "properties": {
+    "product_id": {
+      "$ref": "#/$defs/productId"
+    },
+    "version": {
+      "description": "Monotonic version of this product record, starting at 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "$ref": "#/$defs/shortText"
+    },
+    "brand": {
+      "$ref": "#/$defs/shortText"
+    },
+    "barcodes": {
+      "description": "Barcodes this product is known by. Digits only, no check-digit interpretation.",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/barcode"
+      }
+    },
+    "serving": {
+      "$ref": "#/$defs/serving"
+    },
+    "nutrients": {
+      "$ref": "#/$defs/nutrientMap"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "status": {
+      "description": "Only published records are part of v1. Draft, pending and withdrawn records are never served.",
+      "const": "published"
+    }
+  },
+  "$defs": {
+    "productId": {
+      "description": "Catalog-internal product identifier, opaque to clients.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^prod_[a-z0-9][a-z0-9._-]{0,55}(?!\\n)$"
+    },
+    "shortText": {
+      "description": "Display text in any script. Refused, anywhere in the text: every code point of Unicode general category Cc (control), Cf (format), Cs (surrogate), Co (private use), Zl and Zp (line and paragraph separators), every Default_Ignorable_Code_Point (among them the soft hyphen, the joiners, the direction marks, overrides and isolates, the variation selectors, the Hangul fillers and the tag characters), and all 66 noncharacters. Refused at the start and at the end: every space separator (Zs). The schema does not judge lookalike letters or combining marks; that is a matter for import and moderation.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u17b4-\\u17b5\\u180b-\\u180f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff]*[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff])?(?!\\n)$"
+    },
+    "barcode": {
+      "description": "Digits only, 8 to 14 of them.",
+      "type": "string",
+      "pattern": "^[0-9]{8,14}(?!\\n)$"
+    },
+    "nonNegativeDecimal": {
+      "description": "An exact decimal that is zero or more: at most 12 integer digits and at most 6 fraction digits. No sign, no exponent, no thousands comma, no NaN, no infinity, no empty string, and never a JSON number. The bound keeps every product of two amounts within the 38 significant digits the contract arithmetic allows.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 19,
+      "pattern": "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?(?!\\n)$"
+    },
+    "positiveDecimal": {
+      "description": "A nonNegativeDecimal that is greater than zero.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 19,
+      "pattern": "^(?!0+(\\.0+)?(?!\\n)$)(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?(?!\\n)$"
+    },
+    "servingUnit": {
+      "description": "A mass, volume or count unit symbol from contracts/nutrients/registry.v1.json. A serving is never stated in kcal or IU.",
+      "type": "string",
+      "enum": [
+        "g",
+        "mg",
+        "mcg",
+        "kg",
+        "mL",
+        "L",
+        "serving",
+        "scoop",
+        "tablet",
+        "capsule",
+        "piece",
+        "gummy"
+      ]
+    },
+    "energyUnit": {
+      "description": "The energy unit symbol of the registry.",
+      "type": "string",
+      "enum": [
+        "kcal"
+      ]
+    },
+    "massUnit": {
+      "description": "The mass unit symbols of the registry.",
+      "type": "string",
+      "enum": [
+        "g",
+        "mg",
+        "mcg",
+        "kg"
+      ]
+    },
+    "serving": {
+      "description": "The serving the nutrient values below are stated for: a positive amount in a mass, volume or count unit.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amount",
+        "unit"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "unit": {
+          "$ref": "#/$defs/servingUnit"
+        }
+      }
+    },
+    "nutrientMap": {
+      "description": "Nutrient values keyed by registry nutrient id. Only the ids of contracts/nutrients/registry.v1.json are accepted, each with the units the registry lists for it. Only known, unknown, not_applicable and below_reporting_threshold values may appear.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "energy": {
+          "$ref": "#/$defs/energyNutrientValue"
+        },
+        "protein": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "total_fat": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "saturated_fat": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "trans_fat": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "cholesterol": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "carbohydrate": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "fiber": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "sugars": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "added_sugars": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "sodium": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "potassium": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "calcium": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "iron": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "vitamin_a": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "vitamin_c": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "vitamin_d": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "caffeine": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "water": {
+          "$ref": "#/$defs/massNutrientValue"
+        }
+      }
+    },
+    "energyNutrientValue": {
+      "description": "The value of an energy nutrient and its state. Only the known state carries an amount; the other three never do.",
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/energyNutrientKnown"
+        },
+        {
+          "$ref": "#/$defs/nutrientUnknown"
+        },
+        {
+          "$ref": "#/$defs/nutrientNotApplicable"
+        },
+        {
+          "$ref": "#/$defs/energyNutrientBelowReportingThreshold"
+        }
+      ]
+    },
+    "energyNutrientKnown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "amount",
+        "unit"
+      ],
+      "properties": {
+        "state": {
+          "const": "known"
+        },
+        "amount": {
+          "$ref": "#/$defs/nonNegativeDecimal"
+        },
+        "unit": {
+          "$ref": "#/$defs/energyUnit"
+        }
+      }
+    },
+    "energyNutrientBelowReportingThreshold": {
+      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "below_reporting_threshold"
+        },
+        "unit": {
+          "$ref": "#/$defs/energyUnit"
+        }
+      }
+    },
+    "massNutrientValue": {
+      "description": "The value of a nutrient stated as a mass and its state. Only the known state carries an amount; the other three never do.",
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/massNutrientKnown"
+        },
+        {
+          "$ref": "#/$defs/nutrientUnknown"
+        },
+        {
+          "$ref": "#/$defs/nutrientNotApplicable"
+        },
+        {
+          "$ref": "#/$defs/massNutrientBelowReportingThreshold"
+        }
+      ]
+    },
+    "massNutrientKnown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "amount",
+        "unit"
+      ],
+      "properties": {
+        "state": {
+          "const": "known"
+        },
+        "amount": {
+          "$ref": "#/$defs/nonNegativeDecimal"
+        },
+        "unit": {
+          "$ref": "#/$defs/massUnit"
+        }
+      }
+    },
+    "massNutrientBelowReportingThreshold": {
+      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "below_reporting_threshold"
+        },
+        "unit": {
+          "$ref": "#/$defs/massUnit"
+        }
+      }
+    },
+    "nutrientUnknown": {
+      "description": "The provider does not state this nutrient for this product.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "unknown"
+        }
+      }
+    },
+    "nutrientNotApplicable": {
+      "description": "This nutrient does not apply to this product at all.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "not_applicable"
+        }
+      }
+    },
+    "source": {
+      "description": "Where the record came from and under what licence it may be reused. Every record states its licence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "licence",
+        "attribution"
+      ],
+      "properties": {
+        "name": {
+          "description": "Provider key, for example usda_fdc, dsld or open_food_facts.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]{0,63}(?!\\n)$"
+        },
+        "licence": {
+          "description": "SPDX-style licence identifier of the source data.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}(?!\\n)$"
+        },
+        "attribution": {
+          "description": "The credit line the licence requires. Safe to show to a user; never a person or an account.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u17b4-\\u17b5\\u180b-\\u180f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff]*[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff])?(?!\\n)$"
+        },
+        "url": {
+          "description": "Public https page describing the source record: scheme https, a lower-case DNS host name of at least two labels and at most 253 characters ending in a top-level label that starts with a letter, no user information, no port, no IP literal, then an optional path, query and fragment of RFC 3986 characters in which every percent sign starts a two-digit hexadecimal escape.",
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://(?=[a-z0-9.-]{4,253}(?:[/?#]|(?!\\n)$))(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?:/(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})*)*(?:\\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?(?:#(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?(?!\\n)$"
+        }
+      }
+    }
+  }
+}
