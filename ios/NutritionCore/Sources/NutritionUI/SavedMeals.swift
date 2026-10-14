@@ -7,7 +7,8 @@ import NutritionJournal
 public struct SavedMeal: Sendable, Hashable, Codable, Identifiable {
     public var id: String
     public var name: String
-    /// The meal the group is logged under unless the person picks another one; nil names none.
+    /// The meal the group was saved under, offered first when it is logged; nil names none. Logging always
+    /// takes the meal it is given (`SavedMealLogger.log(_:as:now:)`), so a screen asks for it.
     public var meal: MealLabel?
     /// One template per entry the group logs, in the order they were saved. Each keeps its amounts as exact
     /// decimal text and states no meal of its own: the group's meal applies to all of them.
@@ -158,8 +159,8 @@ public struct SavedMealBook {
         return trimmed
     }
 
-    /// The template as exact decimal text, refused when an amount could not come back as the same number:
-    /// the rule a favorite follows, so a saved meal logs exactly what was eaten.
+    /// The template as exact decimal text, refused when an amount could not come back as the same number, so
+    /// a saved meal logs exactly what was eaten. Stricter than a favorite, which only needs the text to parse.
     private static func item(from template: RepeatTemplate, id: String) throws -> FavoriteTemplate {
         guard !template.components.isEmpty else { throw SavedMealError.unsavableAmount }
         let components = try template.components.map { component -> FavoriteComponent in
