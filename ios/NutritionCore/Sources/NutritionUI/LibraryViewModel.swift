@@ -231,6 +231,8 @@ public final class LibraryViewModel: ObservableObject {
     private let productStore: (any CustomProductStore)?
     @Published public var segment: LibrarySegment = .favorites
     @Published public private(set) var undoToken: LibraryUndoToken?
+    /// The supplement list the Library links to. Set once by the app; nil leaves the link out.
+    public var supplementStack: SupplementStackViewModel?
 
     private let store: JournalStore
     private let favorites: FavoritesStore

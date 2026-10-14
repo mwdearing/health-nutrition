@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import NutritionJournal
 import NutritionProviders
@@ -23,6 +24,9 @@ final class AppServices {
     let today: TodayViewModel
     let journal: JournalViewModel
     let library: LibraryViewModel
+    /// The supplement list, linked from the Library. Its times live in the defaults domain and are erased
+    /// with everything else; the items themselves are favorites.
+    let supplementStack: SupplementStackViewModel
     /// The Connections and privacy screen. It reads the same stores and, for its "Erase all data"
     /// action, holds all four as erasers, so one action empties every file the app keeps.
     let connections: ConnectionsPrivacyViewModel
@@ -65,6 +69,10 @@ final class AppServices {
     var productNameSearch: (any ProductNameSearching)? = nil
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
+    /// Reads the supplement list again when the journal changes: after any reload of the app's screens, an
+    /// erase or a restore. The list keeps what it last read, so without this an entry logged in another
+    /// window, or an erase run from the Settings sheet above it, would not show until the next day.
+    private var supplementStackRefresh: AnyCancellable?
 
     deinit { connectivityMonitor?.cancel() }
 
@@ -109,6 +117,9 @@ final class AppServices {
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore, productStore: journalStore,
             productSharing: CustomProductSharingModel(store: journalStore, coordinator: productSharing, service: products))
+        let supplementSchedules = UserDefaultsSupplementStackStore()
+        supplementStack = SupplementStackViewModel(
+            store: journalStore, favorites: favoritesStore, schedules: supplementSchedules)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)
@@ -123,7 +134,8 @@ final class AppServices {
         }
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
-            erasers: ([journalStore, favoritesStore, recipeStore, goalStore] as [JournalErasing]) + reminderErasers,
+            erasers: ([journalStore, favoritesStore, recipeStore, goalStore] as [JournalErasing]) + reminderErasers
+                + ([supplementSchedules] as [JournalErasing]),
             preferences: displayPreferences,
             beforeErase: {
                 if let owner = productSharing?.accountContext?.ownerID {
@@ -158,6 +170,19 @@ final class AppServices {
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
         bodyActivity = BodyActivityViewModel(
             reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
+        // Set after every stored property, so the Library can link to the supplement list.
+        library.supplementStack = supplementStack
+        // The list reads the journal again whenever the rest of the app does. Every reload, from any window,
+        // reloads the Library, so an entry added, edited or deleted elsewhere shows here as soon as it is
+        // written. An erase or a restore also advances its generation once every store has its new state.
+        // `@Published` sends before the value is set, which is after the stores were written.
+        let journalChanged = Publishers.Merge3(
+            connections.$eraseGeneration.dropFirst().map { _ in () },
+            connections.$journalRestoreGeneration.dropFirst().map { _ in () },
+            library.$sections.dropFirst().map { _ in () })
+        supplementStackRefresh = journalChanged.sink { [weak stack = self.supplementStack] _ in
+            MainActor.assumeIsolated { _ = stack?.load(now: Date()) }
+        }
         if let productSharing {
             let monitor = NWPathMonitor()
             monitor.pathUpdateHandler = { [weak productSharing] path in
