@@ -1435,6 +1435,68 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertEqual(facts[1].string("amount"), "160", "40 g of 400 kcal per 100 g")
     }
 
+    /// A category that is not a contract slug would make the receiver refuse the batch forever, so the encoder
+    /// refuses it before sealing anything.
+    func testACategoryThatIsNotASlugIsRefusedBeforeSealing() throws {
+        for category in ["sports drink", "Beverage", String(repeating: "a", count: 65)] {
+            let badIntake = Intake(
+                id: intakeID,
+                category: category,
+                occurredAt: Self.occurredAt,
+                timeZoneIdentifier: "America/Chicago")
+            XCTAssertThrowsError(
+                try encoder.upsert(
+                    intake: badIntake,
+                    revision: waterAndCreatineRevision,
+                    product: product,
+                    operation: upsertOperation)
+            ) { error in
+                XCTAssertEqual(error as? IntakeContextEncoderError, .invalidCategory(category))
+            }
+        }
+        // The category the helpers use is a slug, so it still encodes.
+        _ = try encoder.upsert(
+            intake: intake,
+            revision: waterAndCreatineRevision,
+            product: product,
+            operation: upsertOperation)
+    }
+
+    /// A known value wins its pair: `energy` is unknown here, but `energyKcal` names the same nutrient with an
+    /// amount, so the one fact is the known one and not the unknown canonical key.
+    func testAKnownAliasWinsOverAnUnknownCanonicalKey() throws {
+        let value = try encoder.upsert(
+            intake: intake,
+            revision: IntakeRevision(
+                intakeID: intakeID,
+                number: 1,
+                components: [
+                    IntakeComponent(
+                        componentID: "protein-bar",
+                        name: "Protein bar",
+                        amount: try XCTUnwrap(DecimalText.decode("40")),
+                        unit: .g),
+                ],
+                productSnapshotID: "snapshot-known-alias",
+                changeReason: "Scanned from the shelf",
+                createdAt: Self.recordedAt),
+            product: ProductDefinition(
+                snapshotID: "snapshot-known-alias",
+                productID: "product-protein-bar",
+                name: "Synthetic protein bar",
+                labelBasis: "per 100 g",
+                catalogOrigin: "synthetic-catalog",
+                catalogVersion: "1",
+                nutrients: [
+                    "energy": .unknown,
+                    "energyKcal": .known(210, .kcal),
+                ]),
+            operation: outboxOperation(id: "2d7e8f9a-0b1c-4d2e-8f3a-4b5c6d7e8f90", kind: .upsert, revision: 1))
+        let energyFacts = facts(of: value).filter { $0.string("component_id") == "energy" }
+        XCTAssertEqual(energyFacts.count, 1, "one energy fact")
+        XCTAssertEqual(energyFacts.first?.string("value_state"), "known", "the known alias wins over the unknown key")
+    }
+
     /// A fact the upsert derived from a product snapshot is a fact of that revision, so a later projection may
     /// link it even though the revision's own components never named it.
     func testLinkProjectionAcceptsSnapshotDerivedFacts() throws {
