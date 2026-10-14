@@ -2245,14 +2245,6 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             recorded?.nextAttemptAt, nil, "and it is due again rather than parked")
     }
 
-    /// A snapshot that was already on record when the 413 arrived is **not** cleared, even though it was this
-    /// piece's to send.
-    ///
-    /// `recordLinks` answers with the snapshot on record, which is the offered one whether this run wrote it or
-    /// another run got there first. An overlapping run that recorded the same snapshot between this run's
-    /// encoding and its send owns that record, and clearing it on a 413 would destroy a snapshot another run
-    /// is about to send — the very thing the record exists to prevent. The token provider is asked between
-    /// encoding and the send, so it stands in for that overlapping run.
     /// A 429 is answered without the body being read, so the snapshot this request recorded is released and the
     /// retry goes out with the links current then, not the ones frozen when the limit hit (#123).
     func testA429ReleasesTheSnapshotThisRequestRecordedSoTheRetryCarriesNewerLinks() async throws {
@@ -2330,6 +2322,14 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertEqual(links?.first?.string("healthkit_sample_uuid"), recorded.first?.sampleUUID)
     }
 
+    /// A snapshot that was already on record when the 413 arrived is **not** cleared, even though it was this
+    /// piece's to send.
+    ///
+    /// `recordLinks` answers with the snapshot on record, which is the offered one whether this run wrote it or
+    /// another run got there first. An overlapping run that recorded the same snapshot between this run's
+    /// encoding and its send owns that record, and clearing it on a 413 would destroy a snapshot another run
+    /// is about to send — the very thing the record exists to prevent. The token provider is asked between
+    /// encoding and the send, so it stands in for that overlapping run.
     func testA413DoesNotClearASnapshotAnotherRunRecordedFirst() async throws {
         let store = try makeStore(try makeDirectory())
         try store.create(sampleIntake(id: intakeID), components: components(), product: nil, now: when)
