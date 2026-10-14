@@ -692,16 +692,30 @@ public struct RelayDeliveryWorker: Sendable {
 
     /// Whether a store read failed for a reason another attempt can get past.
     ///
-    /// **Only what is recognised as passing is retried.** A closed store and a failure of the storage layer
-    /// itself can clear by the next run. A stored record that does not decode cannot: it reads the same way
-    /// every time, so retrying it would reschedule the projection forever and hold back the ones behind it.
-    /// Anything not recognised here is treated as lasting and goes to a person.
+    /// **Only what is recognised as passing is retried.** A closed store, a database another connection holds
+    /// busy or locked, and a persistent-store timeout can clear by the next run. Everything else cannot be
+    /// assumed to: a stored record that does not decode, a corrupt file or a refused permission reads the same
+    /// way every time, so retrying it would reschedule the projection forever and hold back the ones behind
+    /// it. Anything not recognised here is treated as lasting and goes to a person.
     private static func isTransientRead(_ error: any Error) -> Bool {
         if error is DecodingError { return false }
         if let journal = error as? JournalError { return journal == .closed }
-        let domain = (error as NSError).domain
-        return domain == NSCocoaErrorDomain || domain == "NSSQLiteErrorDomain"
+        let ns = error as NSError
+        if ns.domain == "NSSQLiteErrorDomain" { return transientSQLiteCodes.contains(ns.code) }
+        if ns.domain == NSCocoaErrorDomain {
+            if ns.code == persistentStoreTimeoutCode { return true }
+            if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError,
+               underlying.domain == "NSSQLiteErrorDomain" {
+                return transientSQLiteCodes.contains(underlying.code)
+            }
+        }
+        return false
     }
+
+    /// SQLITE_BUSY and SQLITE_LOCKED: another connection holds the database, which passes.
+    private static let transientSQLiteCodes: Set<Int> = [5, 6]
+    /// Core Data's NSPersistentStoreTimeoutError, raised when the store could not be reached in time.
+    private static let persistentStoreTimeoutCode = 134_090
 
     /// Encodes a link-only change as the contract's `link_projection`, which takes no outbox row.
     private func encode(_ projection: RelayLinkProjection) -> RelayEncoding {

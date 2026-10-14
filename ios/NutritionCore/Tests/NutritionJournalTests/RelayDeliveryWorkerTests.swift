@@ -938,10 +938,10 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     final class FlakyReadStore: RelayDeliveryStore, @unchecked Sendable {
         private let wrapped: SwiftDataJournalStore
         private let lock = NSLock()
-        private let failure: JournalError
+        private let failure: any Error
         private var hasFailed = false
 
-        init(wrapped: SwiftDataJournalStore, failure: JournalError = .closed) {
+        init(wrapped: SwiftDataJournalStore, failure: any Error = JournalError.closed) {
             self.wrapped = wrapped
             self.failure = failure
         }
@@ -1564,7 +1564,7 @@ final class AlternatingLinkProvider: @unchecked Sendable {
     func testAProjectionIsParkedWhenTheStoredRecordIsCorrupt() async throws {
         let store = try makeStore(try makeDirectory(), enabled: [.healthKit])
         try store.create(sampleIntake(), components: components(), product: nil, now: when)
-        let flaky = FlakyReadStore(wrapped: store, failure: .corruptRecord("components"))
+        let flaky = FlakyReadStore(wrapped: store, failure: JournalError.corruptRecord("components"))
         let queue = RecordingProjectionQueue()
         queue.offer([projection(sequence: 2)])
         let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
@@ -1577,6 +1577,34 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertEqual(queue.recorded.count, 1)
         guard case .needsAttention = try XCTUnwrap(queue.recorded.first) else {
             return XCTFail("a corrupt record is parked, not retried, got \(queue.recorded)")
+        }
+    }
+
+    /// Only busy or locked storage is retried; a corrupt database file from the same layer is parked.
+    func testAStorageErrorIsRetriedOnlyWhenItIsBusyOrLocked() async throws {
+        let busy = NSError(domain: "NSSQLiteErrorDomain", code: 5)
+        let corrupt = NSError(domain: "NSSQLiteErrorDomain", code: 11)
+        let wrappedBusy = NSError(domain: NSCocoaErrorDomain, code: 256, userInfo: [NSUnderlyingErrorKey: busy])
+        for (failure, retried) in [(busy, true), (wrappedBusy, true), (corrupt, false)] {
+            let store = try makeStore(try makeDirectory(), enabled: [.healthKit])
+            try store.create(sampleIntake(), components: components(), product: nil, now: when)
+            let queue = RecordingProjectionQueue()
+            queue.offer([projection(sequence: 2)])
+            let worker = RelayDeliveryWorker(
+                store: FlakyReadStore(wrapped: store, failure: failure),
+                transport: FakeIntakeContextTransport(capabilities: Self.capabilities()), encoder: encoder,
+                token: { "synthetic-test-token" }, projections: queue)
+
+            _ = await worker.runOnce(now: when)
+
+            let resolution = try XCTUnwrap(queue.recorded.first, "\(failure)")
+            if case .retryAfter = resolution {
+                XCTAssertTrue(retried, "\(failure) must be parked, got \(resolution)")
+            } else if case .needsAttention = resolution {
+                XCTAssertFalse(retried, "\(failure) must be retried, got \(resolution)")
+            } else {
+                XCTFail("unexpected resolution \(resolution) for \(failure)")
+            }
         }
     }
 
