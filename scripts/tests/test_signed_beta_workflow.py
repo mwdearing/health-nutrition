@@ -17,6 +17,7 @@ import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/signed-beta.yml"
 XCODEGEN_INSTALLER = WORKFLOW.parents[1] / "scripts/install-xcodegen.sh"
+SIGNING_IMPORT_HELPER = WORKFLOW.parents[1] / "scripts/import_signing_identity.swift"
 SECRET_NAMES = (
     "ASC_KEY_P8",
     "ASC_KEY_ID",
@@ -258,7 +259,8 @@ def test_the_stored_certificate_is_imported_before_the_archive() -> None:
     run = str(step["run"])
     assert "umask 077" in run
     assert "security create-keychain" in run
-    assert "security import" in run
+    assert '"$RUNNER_TEMP/import-signing-identity" "$RUNNER_TEMP/signing-keychain.p12" "$KEYCHAIN"' in run
+    assert "security import" not in run
     assert "security set-key-partition-list" in run
     assert "security list-keychains -d user -s" in run
     assert "find-identity -v -p codesigning" in run
@@ -280,6 +282,57 @@ def test_the_import_never_prints_the_certificate_or_its_password() -> None:
         if stripped.startswith("security "):
             # Nothing a security command says reaches the public log.
             assert "> /dev/null" in stripped or "| grep -q" in stripped or "$(" in stripped
+
+
+def test_the_p12_passphrase_is_in_process_and_helper_argv_is_only_paths() -> None:
+    build = next(s for s in _steps() if s.get("name") == "Build signing identity import helper")
+    assert "swiftc -framework Security" in str(build["run"])
+    assert "import_signing_identity.swift" in str(build["run"])
+    assert "SIGNING_CERT_PASSWORD" not in cast("dict[str, object]", build.get("env", {}))
+
+    step = _import_step()
+    env = cast("dict[str, object]", step["env"])
+    assert env["SIGNING_CERT_PASSWORD"] == "${{ secrets.SIGNING_CERT_PASSWORD }}"
+    run = str(step["run"])
+    assert '"$RUNNER_TEMP/import-signing-identity" "$RUNNER_TEMP/signing-keychain.p12" "$KEYCHAIN"' in run
+    assert "security import" not in run
+    assert "-P \"$SIGNING_CERT_PASSWORD\"" not in run
+    assert not any(
+        line.strip().startswith('"$RUNNER_TEMP/import-signing-identity"')
+        and "SIGNING_CERT_PASSWORD" in line
+        for line in run.splitlines()
+    )
+    cleanup = str(_steps()[-1]["run"])
+    assert "import-signing-identity" in cleanup
+
+
+def test_the_import_helper_uses_secitemimport_with_cfstring_and_restricted_acl() -> None:
+    source = SIGNING_IMPORT_HELPER.read_text()
+    assert "SecItemImport(" in source
+    assert "ProcessInfo.processInfo.environment[\"SIGNING_CERT_PASSWORD\"]" in source
+    assert "parameters.passphrase = Unmanaged.passUnretained(cfPassphrase as CFTypeRef)" in source
+    assert "parameters.accessRef = Unmanaged.passUnretained(access)" in source
+    assert "SecAccessCreate(" in source
+    assert '"/usr/bin/codesign"' in source
+    assert '"/usr/bin/security"' in source
+    assert "kSecKeyNoAccessControl" not in source
+
+
+def test_synthetic_macos_import_gate_is_unsigned_and_has_no_environment_secrets() -> None:
+    ios_raw = cast("dict[object, object]", yaml.safe_load((WORKFLOW.parents[0] / "ios.yml").read_text()))
+    raw = {("on" if key is True else str(key)): value for key, value in ios_raw.items()}
+    jobs = cast("dict[str, dict[str, object]]", raw["jobs"])
+    job = jobs["signing-import-synthetic"]
+    assert str(job["runs-on"]).startswith("macos-")
+    assert "environment" not in job
+    text = str(job)
+    assert "secrets." not in text
+    assert "test_signing_identity_import_macos.sh" in text
+    triggers = cast("dict[str, object]", raw["on"])
+    for trigger in ("pull_request", "push"):
+        paths = cast("dict[str, object]", cast("dict[str, object]", triggers[trigger])["paths"])
+        assert ".github/scripts/import_signing_identity.swift" in paths
+        assert "scripts/tests/test_signing_identity_import_macos.sh" in paths
 
 
 def test_the_temporary_keychain_and_certificate_file_are_always_removed() -> None:
@@ -322,8 +375,8 @@ def test_the_stored_bundle_is_rewrapped_in_the_form_the_keychain_reads() -> None
     after = lines[lines.index(rewrap) + 1 :]
     assert 'rm -f "$RUNNER_TEMP/signing.pem"' in after[0]  # on failure
     assert after[1] == 'rm -f "$RUNNER_TEMP/signing.pem"'  # on success
-    assert run.index("pkcs12 -export") < run.index("security import")
-    imported = next(line for line in lines if line.startswith("security import"))
+    assert run.index("pkcs12 -export") < run.index("import-signing-identity")
+    imported = next(line for line in lines if "import-signing-identity" in line and "signing-keychain.p12" in line)
     assert "signing-keychain.p12" in imported
     cleanup = str(_steps()[-1]["run"])
     assert "signing-keychain.p12" in cleanup
@@ -353,3 +406,27 @@ def test_account_settings_without_the_site_key_fail_the_signed_build() -> None:
     run = str(check["run"])
     assert 'fail "the account settings need HCAPTCHA_SITE_KEY' in run
     assert not re.search(r"(echo|printf|cat)[^\n]*HCAPTCHA_SITE_KEY", run)
+
+
+def test_import_keeps_cf_bridge_and_access_alive_across_c_call() -> None:
+    source = (WORKFLOW.parents[1] / "scripts/import_signing_identity.swift").read_text()
+    assert "let cfPassphrase = passphrase as CFString" in source
+    assert "withExtendedLifetime((cfPassphrase, access))" in source
+
+
+def test_synthetic_import_removes_admin_trust_before_deleting_certificate_files() -> None:
+    harness = (WORKFLOW.parents[2] / "scripts/tests/test_signing_identity_import_macos.sh").read_text()
+    assert "umask 077" in harness
+    assert 'sudo -n security add-trusted-cert -d -r trustRoot -k "$KEYCHAIN" "$WORK/root.crt"' in harness
+    assert harness.index("umask 077") < harness.index('WORK="$(mktemp')
+
+    cleanup = harness.split("cleanup() {", maxsplit=1)[1].split("\n}", maxsplit=1)[0]
+    remove_trust = 'sudo -n security remove-trusted-cert -d "$WORK/root.crt"'
+    assert 'if [[ "$TRUST_ADDED" -eq 1 ]]' in cleanup
+    assert remove_trust in cleanup
+    assert 'echo "Could not remove the synthetic certificate from admin Trust Settings."' in cleanup
+    assert cleanup.index(remove_trust) < cleanup.index("security delete-keychain")
+    assert cleanup.index(remove_trust) < cleanup.index("rm -rf -- \"$WORK\"")
+    assert "|| true" not in cleanup
+    assert 'if [[ "$failed" -eq 0 ]]; then' in cleanup
+    assert "return 1" in cleanup

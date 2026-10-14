@@ -172,3 +172,18 @@ def test_swift_lint_triggers_on_attribution_workflow() -> None:
     attribution = ".github/workflows/attribution-check.yml"
     assert attribution in triggers["pull_request"]["paths"]
     assert attribution in triggers["push"]["paths"]
+
+
+def test_target_workflow_uses_the_event_base_commit_and_never_executes_pr_code() -> None:
+    raw = yaml.safe_load((REPO / ".github/workflows/attribution-check.yml").read_text())
+    assert raw["permissions"] == {"contents": "read"}
+    triggers = raw.get("on", raw.get(True))
+    assert set(triggers) == {"pull_request_target"}
+    (job,) = raw["jobs"].values()
+    checkout = next(step for step in job["steps"] if "actions/checkout@" in step.get("uses", ""))
+    assert checkout["with"].get("ref") == "${{ github.event.pull_request.base.sha }}"
+    assert checkout["with"]["persist-credentials"] is False
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+    assert 'git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"' in commands
+    assert "git checkout" not in commands and "git switch" not in commands
+    assert commands.endswith("python3 .github/scripts/attribution_check.py")

@@ -6,7 +6,7 @@ name: Attribution check
 # or a dependabot/ branch opened by Dependabot itself. Not a required check unless the ruleset says so.
 #
 # Runs on pull_request_target so the scanner always comes from the base branch,
-# never from the pull request under test. The job checks out the base branch,
+# never from the pull request under test. The job checks out the event base SHA,
 # only fetches the PR's commits as data and never executes anything from them.
 # A PR that edits this workflow or the script is judged by the base versions.
 on:
@@ -31,6 +31,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
           persist-credentials: false
 

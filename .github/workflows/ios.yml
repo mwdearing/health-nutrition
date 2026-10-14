@@ -19,10 +19,12 @@ on:
       - "supabase/migrations/**"
       - ".github/workflows/ios.yml"
       - ".github/workflows/signed-beta.yml"
+      - ".github/scripts/import_signing_identity.swift"
       - ".github/workflows/screenshots.yml"
       - ".github/scripts/install-xcodegen.sh"
       - ".github/workflows/privacy-shield.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
+      - "scripts/tests/test_signing_identity_import_macos.sh"
       - "scripts/tests/test_project_declarations.py"
       - "scripts/tests/test_ios_workflow.py"
       - "scripts/tests/test_add_capsule_placement.py"
@@ -48,10 +50,12 @@ on:
       - "supabase/migrations/**"
       - ".github/workflows/ios.yml"
       - ".github/workflows/signed-beta.yml"
+      - ".github/scripts/import_signing_identity.swift"
       - ".github/workflows/screenshots.yml"
       - ".github/scripts/install-xcodegen.sh"
       - ".github/workflows/privacy-shield.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
+      - "scripts/tests/test_signing_identity_import_macos.sh"
       - "scripts/tests/test_project_declarations.py"
       - "scripts/tests/test_ios_workflow.py"
       - "scripts/tests/test_add_capsule_placement.py"
@@ -125,6 +129,17 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_account_presentations.py
       - name: Check shared CI tool and image pins
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_dependency_workflow_locks.py
+
+  signing-import-synthetic:
+    name: Synthetic signing identity import
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build signing identity import helper
+        run: swiftc -framework Security -framework CoreFoundation .github/scripts/import_signing_identity.swift -o "$RUNNER_TEMP/import-signing-identity"
+      - name: Test synthetic P12 import without protected signing secrets
+        run: bash scripts/tests/test_signing_identity_import_macos.sh "$RUNNER_TEMP/import-signing-identity"
 
   swift-test:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
