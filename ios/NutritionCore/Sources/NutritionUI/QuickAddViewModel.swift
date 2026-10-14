@@ -1,0 +1,180 @@
+import Foundation
+import NutritionDomain
+import NutritionJournal
+
+/// The amounts-only way to log: calories and macros typed straight in, with no product looked up.
+///
+/// What is saved is the same shape every other entry has, so nothing downstream needs to know about
+/// it: one intake holding one serving, with a product snapshot that states the typed values per
+/// serving. Today, the journal, the export and the Apple Health plan read it like any label.
+///
+/// A field left empty is left out of the snapshot, which reads as unknown and never as zero. A typed
+/// zero is a real zero and is stored as one.
+@MainActor
+public final class QuickAddViewModel: ObservableObject, Identifiable {
+    public enum Field: String, CaseIterable, Sendable {
+        case calories, protein, carbohydrates, fat
+
+        public var label: String {
+            switch self {
+            case .calories: return "Calories"
+            case .protein: return "Protein"
+            case .carbohydrates: return "Carbs"
+            case .fat: return "Fat"
+            }
+        }
+
+        public var unit: MeasureUnit { self == .calories ? .kcal : .g }
+
+        /// The key the snapshot stores the value under, the same one a label or barcode snapshot uses.
+        var nutrientKey: String {
+            switch self {
+            case .calories: return LookedUpProduct.energyKcal
+            case .protein: return LookedUpProduct.protein
+            case .carbohydrates: return LookedUpProduct.carbohydrates
+            case .fat: return LookedUpProduct.fat
+            }
+        }
+
+        /// The most one entry may state. Far above any real meal, and small enough that a slip of the
+        /// finger cannot put a day's totals out of reach.
+        var maximum: Decimal { self == .calories ? 20_000 : 5_000 }
+    }
+
+    enum Parsed: Equatable {
+        case blank
+        case value(Decimal)
+        case invalid
+    }
+
+    public static let defaultName = "Quick add"
+    public static let nameLimit = 120
+
+    public let id = UUID()
+    @Published public var name = ""
+    @Published public var caloriesText = ""
+    @Published public var proteinText = ""
+    @Published public var carbohydratesText = ""
+    @Published public var fatText = ""
+    @Published public var meal: MealLabel?
+    @Published public private(set) var saveError: String?
+
+    private let store: JournalStore
+    private let now: () -> Date
+    private let timeZoneIdentifier: () -> String
+    private let makeID: () -> String
+
+    public init(
+        store: JournalStore, meal: MealLabel? = nil,
+        now: @escaping () -> Date = { Date() },
+        timeZoneIdentifier: @escaping () -> String = { TimeZone.current.identifier },
+        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+    ) {
+        self.store = store
+        self.meal = meal
+        self.now = now
+        self.timeZoneIdentifier = timeZoneIdentifier
+        self.makeID = makeID
+    }
+
+    public func text(for field: Field) -> String {
+        switch field {
+        case .calories: return caloriesText
+        case .protein: return proteinText
+        case .carbohydrates: return carbohydratesText
+        case .fat: return fatText
+        }
+    }
+
+    /// What is wrong with one field, or nil. An empty field is never an error.
+    public func error(for field: Field) -> String? {
+        guard Self.parse(text(for: field), field: field) == .invalid else { return nil }
+        return "Enter a number from 0 to \(DecimalFormatting.text(field.maximum))."
+    }
+
+    /// True once every filled field reads as a number and at least one of them is above zero.
+    public var canSave: Bool {
+        var hasPositive = false
+        for field in Field.allCases {
+            switch Self.parse(text(for: field), field: field) {
+            case .invalid: return false
+            case .value(let value): if value > 0 { hasPositive = true }
+            case .blank: break
+            }
+        }
+        return hasPositive
+    }
+
+    /// Writes one entry and returns the token an undo toast needs, or nil when nothing was written.
+    @discardableResult
+    public func save() -> AddUndoToken? {
+        saveError = nil
+        guard canSave else { return nil }
+        var nutrients: [String: NutrientValue] = [:]
+        var parts: [String] = []
+        for field in Field.allCases {
+            guard case .value(let value) = Self.parse(text(for: field), field: field) else { continue }
+            nutrients[field.nutrientKey] = .known(value, field.unit)
+            let amount = "\(DecimalFormatting.text(value)) \(field.unit.symbol)"
+            parts.append(field == .calories ? amount : amount + " " + field.label.lowercased())
+        }
+        let entryName = storedName
+        // The values are part of the identity: two quick adds that state different amounts are two
+        // products, and one snapshot id must never stand for two contents.
+        var signature = "quick-add|name=" + entryName
+        for key in nutrients.keys.sorted() {
+            signature += "|" + key + "=" + LookedUpProduct.describe(nutrients[key] ?? .unknown)
+        }
+        let identity = "quick-" + Slug.make(signature) + "-" + LookedUpProduct.checksum(signature)
+        let date = now()
+        let intake = Intake(
+            id: makeID(), category: ProductKind.food.rawValue, occurredAt: date,
+            timeZoneIdentifier: timeZoneIdentifier(), meal: meal?.rawValue)
+        let component = IntakeComponent(
+            componentID: Slug.make(entryName), name: entryName, amount: 1, unit: .serving)
+        let product = ProductDefinition(
+            snapshotID: identity, productID: identity, name: entryName, brand: nil,
+            labelBasis: "per serving", catalogOrigin: "manual", catalogVersion: "1", kind: .food,
+            nutrients: nutrients)
+        do {
+            try store.create(intake, components: [component], product: product, now: date)
+        } catch {
+            saveError = "Could not save the entry."
+            return nil
+        }
+        return AddUndoToken(
+            intakeID: intake.id, message: "Added \(entryName), \(parts.joined(separator: ", "))",
+            expiresAt: date.addingTimeInterval(10))
+    }
+
+    /// The typed name, trimmed and capped, or the default when none was typed.
+    var storedName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? Self.defaultName : String(trimmed.prefix(Self.nameLimit))
+    }
+
+    /// Reads one field: digits with at most one separator, zero allowed, never above the field's cap.
+    static func parse(
+        _ text: String, field: Field, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Parsed {
+        let typed = AmountParser.normalizedTyped(text, decimalSeparator: decimalSeparator)
+        guard !typed.isEmpty else { return .blank }
+        guard typed.count <= 12 else { return .invalid }
+        var dots = 0
+        var digits = 0
+        for character in typed {
+            if character == "." {
+                dots += 1
+            } else if character.isASCII, character.isNumber {
+                digits += 1
+            } else {
+                return .invalid
+            }
+        }
+        guard dots <= 1, digits > 0 else { return .invalid }
+        guard let value = Decimal(string: typed, locale: AmountParser.locale), !value.isNaN,
+              value >= 0, value <= field.maximum
+        else { return .invalid }
+        return .value(value)
+    }
+}
