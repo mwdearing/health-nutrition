@@ -21,7 +21,9 @@ struct HealthNutritionApp: App {
         }
         #endif
         do {
-            _services = State(initialValue: try AppServices.make(reminderScheduler: SystemReminderScheduler()))
+            let made = try AppServices.make(reminderScheduler: SystemReminderScheduler())
+            AppServicesRegistry.register(made)
+            _services = State(initialValue: made)
         } catch {
             _services = State(initialValue: nil)
             _startupError = State(initialValue: error.localizedDescription)
