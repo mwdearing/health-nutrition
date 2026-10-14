@@ -33,12 +33,17 @@ fields a restored history gave every revision the entry's final time, which rewr
 revisions had said (#135). A revision's time is restored as it was written, and a file whose revision has one
 of the two fields without the other is `corrupt`.
 
+Version 4 is version 3 with `saved_meals` at the root, required: each saved meal is a named group of templates
+logged together, with its `meal` (a meal name, or `null`) and its `items`, each shaped like a favorite whose own
+`meal` is `null`. A version 1, 2 or 3 file that carries `saved_meals` is `malformed`. A build that reads at most
+version 3 refuses a version 4 backup by its version, so saved meals are never restored without being noticed.
+
 Those files are the canonical ones. SwiftPM can only bundle resources that live inside a target, so copies
 sit in `ios/NutritionCore/Tests/NutritionJournalExportTests/Contracts/`; a test compares the two locations
 byte for byte, so a contract change without a fresh copy fails the build instead of passing against a stale
 contract.
 
-The document is built by `JournalExporter.makeExport(store:favorites:appVersion:exportedAt:)` and written
+The document is built by `JournalExporter.makeExport(store:favorites:savedMeals:appVersion:exportedAt:)` and written
 by `JournalExporter.encode(_:)`. The app version string is injected; the module has no build information of
 its own. The build reads the journal in one pass through `JournalSnapshotSource.readJournalSnapshot()`, which
 holds the store's write lock while it fetches active intakes, their revisions and the tombstones. Without
@@ -48,11 +53,11 @@ the backup.
 `JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
-**Versions 1, 2 and 3 are read**, so a backup taken before the kind or a revision's own time existed still
-restores; `decode(_:)` reads the version off the document and hands it to the matching `init(from:)`. New
-exports write version 3. Re-encoding a decoded older document preserves its version and omits the fields
-that version does not have (`kind` for version 1, a revision's time for versions 1 and 2), so the strict
-importer still accepts it.
+**Versions 1, 2, 3 and 4 are read**, so a backup taken before the kind, a revision's own time or saved meals
+existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
+`init(from:)`. New exports write version 4. Re-encoding a decoded older document preserves its version and omits
+the fields that version does not have (`kind` for version 1, a revision's time for versions 1 and 2, saved meals
+for versions 1 to 3), so the strict importer still accepts it.
 
 ## Importing
 
@@ -152,11 +157,16 @@ that carries favorites also needs a favorites store to restore them into: that a
 screen can be built without one, so such a file is refused rather than reported as a success that quietly
 dropped them.
 
-The journal and the favorites then live in two separate store files, so their two writes cannot be one
-transaction. **The journal is written first**, in one `save()` covering every row, and the favorites in one
-`save()` after it. When the favorites write fails, the importer tries to undo the journal rows it wrote. If
-that succeeds, the failure is reported and both stores are as they were found, so the same file can simply be
-imported again. When the journal write itself fails, it rolls itself back and nothing was written at all.
+The journal and the favorites then live in two separate store files, and saved meals in the app's defaults
+domain, so their writes cannot be one transaction. **The journal is written first**, in one `save()` covering
+every row; the saved meals and then the favorites follow, each in one write (the second phase). A file that
+carries saved meals needs a saved meals store, as one with favorites needs a favorites store, and saved meals
+are restored only into an empty list: a phone that already keeps saved meals is refused as `notEmpty` rather
+than merged into, since a merge would have to choose between two meals of one name. When a second-phase write
+fails, the importer empties the saved meals list again (it was empty before) and tries to undo the journal rows
+it wrote. If that succeeds, the failure is reported and every store is as it was found, so the same file can
+simply be imported again. Saved meals that could not be emptied again are reported as a partial restore. When
+the journal write itself fails, it rolls itself back and nothing was written at all.
 
 The compensation is narrow on purpose. `restore` returns a receipt naming, for each entry it wrote, the
 lifecycle, the current revision and the revision numbers that are its own; `undoRestore` removes exactly those
@@ -170,16 +180,20 @@ while the app is alive.
 
 **A restore the app stopped between its two saves is finished by importing the same file again (#118).** Just
 before the journal's save the store writes a small flag beside its file holding the SHA-256 of the file being
-imported, and the import clears it once its run is over: favorites written, undone, or reported as a partial
-restore. A flag that cannot be cleared after the favorites were written is reported as a failed import rather
-than left in place silently. The favorites' own save also writes a receipt naming the file (a hidden row in the
-favorites store, never listed), so a flag that outlived that save, because the app stopped before clearing it,
-is never taken for an unfinished restore. One import runs at a time; another started meanwhile is refused as
+imported, and the import clears it once its run is over: second phase written, undone, or reported as a partial
+restore. A flag that cannot be cleared after the second phase was written is reported as a failed import rather
+than left in place silently. Each part of the second phase writes a receipt naming the file with it (for
+favorites a hidden row in the favorites store, never listed; for saved meals a second key beside the list,
+written after it), so a flag that outlived those writes, because the app stopped before clearing it, is never
+taken for an unfinished restore. One import runs at a time; another started meanwhile is refused as
 `notEmpty`. If the
 app is stopped after the journal's save, the flag stays. Importing that same file again then finds the flag naming
 it, a journal that holds exactly that file's journal (the same entries field for field, the same revisions, the
-same deleted entries) and none of the file's favorites on the phone (they are one save, so a stopped restore left
-none), and writes only the favorites; the flag stays until they are written, so a failure
+same deleted entries). Each part of the second phase without its receipt must not have been written either: no
+saved meals, or exactly the file's (a stop between the list's write and its receipt's), and none of the file's
+favorites on the phone (they are one save, so a stopped restore left none). The import then writes only the parts
+without a receipt; a part with one is left as it is, edits since included. The flag stays until they are
+written, so a failure
 there can be retried the same way. Anything else in a journal that is not empty is refused as `notEmpty` as
 before and leaves the flag alone: another file, a journal without a flag, a flag left by a stop before the
 journal's save with entries logged since, and a restore that finished (which cleared its flag), so favorites
@@ -206,13 +220,14 @@ erase replaces the journal.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `3`; version 1 documents are still read. |
+| `schema_version` | Version of the schema this document follows. This build writes `4`; versions 1 to 3 are still read. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
 | `tombstones` | Deleted intakes with their last revision number, sorted by `intake_id`. A later import needs them to retract an entry instead of leaving it behind. |
 | `favorites` | Favorite templates as stored, sorted by id. A favorite is a copy, never a link to an intake. |
-| `products` | Every product snapshot a revision or a favorite refers to, sorted by `snapshot_id`. |
+| `products` | Every product snapshot a revision, a favorite or a saved meal's item refers to, sorted by `snapshot_id`. |
+| `saved_meals` | From version 4: the saved meals in the list's own order (newest first), each with `id`, `name`, `meal` (a meal name or `null`) and `items` (favorite-shaped templates in the order they are logged, each with `meal` `null`). At most 100 meals of 1 to 30 items, names of 1 to 60 characters, unique ignoring case. |
 
 Inside a revision, `components` carry `component_id`, `name`, `amount`, `unit` and `value_state`. Amounts
 are **exact decimal strings** in the POSIX format (`"37.5"`, `"250"`), never JSON numbers, because a binary

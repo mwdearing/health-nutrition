@@ -66,9 +66,16 @@ public protocol SavedMealStoring: AnyObject, Sendable {
     func update(_ change: (inout [SavedMeal]) throws -> Void) throws
 }
 
-/// Saved meals in the app's defaults domain, as one JSON list under `key`. `eraseAll()` removes the key.
-public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing, @unchecked Sendable {
+/// Saved meals in the app's defaults domain, as one JSON list under `key`. `eraseAll()` removes the key and the
+/// restore receipt.
+///
+/// It is also what the journal export reads saved meals from and what a restore writes them into
+/// (`JournalSavedMealsStore`): the same list, mapped to the journal's shape.
+public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing, JournalSavedMealsStore,
+    @unchecked Sendable {
     public static let key = "library.savedMeals.v1"
+    /// The file digest of the last restore that wrote this list, kept until the restore is marked finished.
+    public static let restoreReceiptKey = "library.savedMeals.restoreReceipt.v1"
     private let defaults: UserDefaults
     private let lock = NSLock()
 
@@ -89,7 +96,41 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     }
 
     public func eraseAll() throws {
-        lock.withLock { defaults.removeObject(forKey: Self.key) }
+        lock.withLock {
+            defaults.removeObject(forKey: Self.key)
+            defaults.removeObject(forKey: Self.restoreReceiptKey)
+        }
+    }
+
+    public func journalSavedMeals() throws -> [JournalSavedMeal] {
+        try meals().map { JournalSavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
+    }
+
+    /// The list is written before its receipt, so a stop between the two leaves the file's meals with no
+    /// receipt, which a resume recognises and writes again.
+    public func restoreJournalSavedMeals(_ meals: [JournalSavedMeal], receipt: String) throws {
+        let list = meals.map { SavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
+        let data = try JSONEncoder().encode(list)
+        lock.withLock {
+            defaults.set(data, forKey: Self.key)
+            defaults.set(receipt, forKey: Self.restoreReceiptKey)
+        }
+    }
+
+    public func hasSavedMealsRestoreReceipt(_ receipt: String) throws -> Bool {
+        lock.withLock { defaults.string(forKey: Self.restoreReceiptKey) == receipt }
+    }
+
+    public func removeSavedMealsRestoreReceipt(_ receipt: String) throws {
+        lock.withLock {
+            if defaults.string(forKey: Self.restoreReceiptKey) == receipt {
+                defaults.removeObject(forKey: Self.restoreReceiptKey)
+            }
+        }
+    }
+
+    public func clearRestoredSavedMeals() throws {
+        try eraseAll()
     }
 
     private func read() throws -> [SavedMeal] {
@@ -103,9 +144,10 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
 
 /// Adds, renames and removes saved meals, refusing anything it could not log back exactly.
 public struct SavedMealBook {
-    public static let maximumNameLength = 60
-    public static let maximumItems = 30
-    public static let maximumMeals = 100
+    // The importer restores saved meals under the same limits, so they live where it can read them.
+    public static let maximumNameLength = JournalSavedMealLimits.maximumNameLength
+    public static let maximumItems = JournalSavedMealLimits.maximumItems
+    public static let maximumMeals = JournalSavedMealLimits.maximumMeals
     private let store: any SavedMealStoring
     private let makeID: () -> String
 

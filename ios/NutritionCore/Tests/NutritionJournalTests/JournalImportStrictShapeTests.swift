@@ -83,6 +83,8 @@ final class JournalImportStrictShapeTests: XCTestCase {
     private func fieldsForSchemaVersion(_ original: [String: Any], version: Int) throws -> [String: Any] {
         var root = original
         root["schema_version"] = version
+        // Saved meals are a version 4 field, so an earlier document has no such key.
+        if version < 4 { root.removeValue(forKey: "saved_meals") }
         if version < 3 {
             // A revision's own time is a version 3 field, so an earlier document has no such keys.
             var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
@@ -286,6 +288,45 @@ final class JournalImportStrictShapeTests: XCTestCase {
         XCTAssertEqual(
             JournalImportV3Keys.revision.subtracting(JournalImportV2Keys.revision), ["occurred_at", "time_zone"],
             "version 3 adds a revision's own time and changes nothing else")
+    }
+
+    /// Version 4 is version 3 with saved meals at the root, so the sets are held to the committed version 4
+    /// schema, and the one that is new is the saved meal.
+    func testTheVersion4KeySetsAreExactlyWhatTheCommittedSchemaStates() throws {
+        let schema = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: try Data(contentsOf: try schemaURL(version: 4))) as? [String: Any])
+        let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
+        let expected: [(definition: String?, keys: Set<String>)] = [
+            (nil, JournalImportV4Keys.root),
+            ("intake", JournalImportV4Keys.intake),
+            ("revision", JournalImportV4Keys.revision),
+            ("provenance", JournalImportV4Keys.provenance),
+            ("component", JournalImportV4Keys.component),
+            ("tombstone", JournalImportV4Keys.tombstone),
+            ("favorite", JournalImportV4Keys.favorite),
+            ("saved_meal", JournalImportV4Keys.savedMeal),
+        ]
+        let minimumLengthFields: [String: Set<String>] = [
+            "root": ["app_version"], "intake": ["category", "time_zone"], "revision": ["time_zone"],
+            "provenance": ["snapshot_id", "product_id", "name", "label_basis", "catalog_origin", "catalog_version"],
+            "component": ["unit"], "tombstone": ["time_zone"],
+            "favorite": ["id", "display_name", "category"], "saved_meal": ["id", "name"],
+        ]
+        for entry in expected {
+            var shape = schema
+            if let definition = entry.definition {
+                shape = try XCTUnwrap(definitions[definition] as? [String: Any], definition)
+            }
+            let properties = try XCTUnwrap(shape["properties"] as? [String: Any], "\(entry.keys)")
+            let required = try XCTUnwrap(shape["required"] as? [String], "\(entry.keys)")
+            XCTAssertEqual(Set(properties.keys), entry.keys)
+            XCTAssertEqual(Set(required), entry.keys)
+            XCTAssertEqual(
+                minimumLengthOneFields(in: properties), minimumLengthFields[entry.definition ?? "root"] ?? [])
+        }
+        XCTAssertEqual(
+            JournalImportV4Keys.root.subtracting(JournalImportV3Keys.root), ["saved_meals"],
+            "version 4 adds saved meals and changes nothing else")
     }
 
     /// A revision's own time is required from version 3 on, written as null when the revision has none.

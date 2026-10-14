@@ -34,13 +34,16 @@ public struct JournalImportSummary: Sendable, Equatable {
     public var favorites: Int
     /// Product snapshots written, so a restored entry needs no catalog lookup.
     public var products: Int
+    /// Saved meals written.
+    public var savedMeals: Int
 
-    public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int) {
+    public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0) {
         self.intakes = intakes
         self.revisions = revisions
         self.tombstones = tombstones
         self.favorites = favorites
         self.products = products
+        self.savedMeals = savedMeals
     }
 }
 
@@ -119,6 +122,20 @@ enum JournalImportV3Keys {
     static let favorite = JournalImportV2Keys.favorite
 }
 
+/// The keys each object in a version 4 export has, taken from `contracts/journal-export/v4.schema.json`.
+///
+/// Version 4 is version 3 with `saved_meals` at the root, each a saved meal whose items have a favorite's keys.
+enum JournalImportV4Keys {
+    static let root: Set<String> = JournalImportV3Keys.root.union(["saved_meals"])
+    static let intake = JournalImportV3Keys.intake
+    static let revision = JournalImportV3Keys.revision
+    static let provenance = JournalImportV3Keys.provenance
+    static let component = JournalImportV3Keys.component
+    static let tombstone = JournalImportV3Keys.tombstone
+    static let favorite = JournalImportV3Keys.favorite
+    static let savedMeal: Set<String> = ["id", "name", "meal", "items"]
+}
+
 /// Restores a journal export into an empty journal: the entries with their whole revision history, the
 /// tombstones of deleted entries and the favorites.
 ///
@@ -127,23 +144,26 @@ enum JournalImportV3Keys {
 /// be a delivery, and this is not one. The ids, the timestamps and the revision numbers are the ones the
 /// file carries, so a restore does not renumber anything or move an entry to a new instant.
 public enum JournalImporter {
-    /// Reads `data` and writes it into `store`, and into `favorites` when the document needs them.
+    /// Reads `data` and writes it into `store`, and into `favorites` and `savedMeals` when the document needs
+    /// them.
     ///
     /// The whole document is read and checked before the first row is written, so a file that is malformed,
     /// from a version this build does not read, or internally inconsistent changes nothing.
     ///
-    /// The journal is written first, in one save that queues no delivery work, and the favorites after it.
-    /// When the favorites write fails, a narrow undo puts the journal back if its rows are untouched. If a
-    /// concurrent write means that undo would throw away somebody's work, a typed partial outcome reports
-    /// how many imported rows may remain rather than mislabeling the file as corrupt.
+    /// The journal is written first, in one save that queues no delivery work, then the saved meals and the
+    /// favorites (the second phase). When a second-phase write fails, the saved meals list is emptied again and
+    /// a narrow undo puts the journal back if its rows are untouched. If a concurrent write means that undo
+    /// would throw away somebody's work, a typed partial outcome reports how many imported rows may remain
+    /// rather than mislabeling the file as corrupt. Saved meals are restored only into an empty list.
     ///
-    /// A restore the app was stopped in between those two saves is finished by importing the same file again:
-    /// a flag beside the journal store names the file, and only the favorites are written (#118). One import
+    /// A restore the app was stopped in after the journal's save is finished by importing the same file again:
+    /// a flag beside the journal store names the file, and only the second phase's unwritten parts are written
+    /// (#118). One import
     /// runs at a time; another started meanwhile is refused as `notEmpty`, as it would be once the first one's
     /// journal is written.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
-        limits: JournalImportLimits = .default
+        savedMeals: JournalSavedMealsStore? = nil, limits: JournalImportLimits = .default
     ) throws -> JournalImportSummary {
         try limits.validate(data)
         let document = try readDocument(data)
@@ -164,6 +184,17 @@ public enum JournalImporter {
             }
             favoritesTarget = target
         }
+        // The same holds for saved meals, from version 4.
+        let savedMealsTarget: JournalSavedMealsStore?
+        if plan.savedMeals.isEmpty {
+            savedMealsTarget = nil
+        } else {
+            guard let savedMeals else {
+                throw JournalImportError.corrupt(
+                    "the export carries \(plan.savedMeals.count) saved meals and no saved meals store was given")
+            }
+            savedMealsTarget = savedMeals
+        }
 
         // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
         // alongside could resume over a journal the first is about to undo, or clear a flag the first still
@@ -173,36 +204,61 @@ public enum JournalImporter {
         guard importLock.try() else { throw JournalImportError.notEmpty }
         defer { importLock.unlock() }
 
-        let progress = favoritesTarget == nil ? nil : store as? JournalRestoreProgress
+        // The second phase is everything written after the journal: the saved meals, then the favorites. The
+        // flag below covers it whenever it has anything to write.
+        let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil
+        let progress = hasSecondPhase ? store as? JournalRestoreProgress : nil
         let digest = fileDigest(data)
         if try journalHoldsAnything(store) {
-            // **A restore of this same file that the app stopped between its two saves is finished (#118).** The
-            // flag beside the store names the file whose journal was written and whose favorites were not, and
-            // the journal has to hold exactly that file's journal: a flag left by a stop before the journal's
-            // save, with entries logged since, is not taken for one. Only the favorites are written. The flag
-            // stays until they are, so a failure here can be retried the same way. Anything else in a journal
-            // that is not empty is refused as before, and the flag is left alone: it is not this run's. An
-            // import of the same file still running in parallel writes the same favorites, so the overlap
-            // writes identical rows twice at most; nothing here is read back from the other run.
-            // The favorites are one save, so a restore stopped before it left none of the file's favorites on the
-            // phone; any of them present means that save happened, and the flag is only a leftover.
-            // The receipt the favorites save writes with them is the durable record that it happened: a flag
-            // that outlived it (a stop after that save, before the flag was cleared) is not an unfinished
-            // restore, however many of those favorites were deleted since.
-            guard let favorites, let favoritesTarget, let progress,
-                  try progress.restoreInProgressDigest() == digest, try journalHolds(plan, store: store),
-                  try !favoritesTarget.hasRestoreReceipt(digest),
-                  try Set(favorites.list().map(\.id)).isDisjoint(with: plan.favorites.map(\.id))
+            // **A restore of this same file that the app stopped after its journal's save is finished (#118).**
+            // The flag beside the store names the file whose journal was written and whose second phase was not
+            // finished, and the journal has to hold exactly that file's journal: a flag left by a stop before
+            // the journal's save, with entries logged since, is not taken for one. Only what the second phase
+            // has not yet written is written. The flag stays until it is, so a failure here can be retried the
+            // same way. Anything else in a journal that is not empty is refused as before, and the flag is left
+            // alone: it is not this run's. An import of the same file still running in parallel writes the same
+            // rows, so the overlap writes identical rows twice at most; nothing here is read back from the other.
+            guard let progress, try progress.restoreInProgressDigest() == digest,
+                  try journalHolds(plan, store: store)
             else { throw JournalImportError.notEmpty }
-            try favoritesTarget.restore(plan.favorites, receipt: digest)
-            // A flag that outlived a finished resume would let a later import of this file write favorites
-            // the person deleted since, so a failure to clear it is reported rather than swallowed.
+            // Each part of the second phase is one save that writes a receipt with it, so the receipt is the
+            // durable record that the part happened. A part with no receipt must not have happened either: the
+            // saved meals list must be empty, or hold exactly the file's meals (a stop between the list's write
+            // and its receipt's), and none of the file's favorites may be on the phone.
+            let savedMealsWritten = try savedMealsTarget.map { try $0.hasSavedMealsRestoreReceipt(digest) } ?? true
+            if let savedMealsTarget, !savedMealsWritten {
+                let present = try savedMealsTarget.journalSavedMeals()
+                guard present.isEmpty || present == plan.savedMeals else { throw JournalImportError.notEmpty }
+            }
+            let favoritesWritten = try favoritesTarget.map { try $0.hasRestoreReceipt(digest) } ?? true
+            if favoritesTarget != nil, !favoritesWritten {
+                guard let favorites,
+                      try Set(favorites.list().map(\.id)).isDisjoint(with: plan.favorites.map(\.id))
+                else { throw JournalImportError.notEmpty }
+            }
+            // A flag that outlived every part of the second phase (a stop after the last save, before the flag
+            // was cleared) is not an unfinished restore, however much of it was deleted since.
+            guard !(savedMealsWritten && favoritesWritten) else { throw JournalImportError.notEmpty }
+            if let savedMealsTarget, !savedMealsWritten {
+                try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
+            }
+            if let favoritesTarget, !favoritesWritten {
+                try favoritesTarget.restore(plan.favorites, receipt: digest)
+            }
+            // A flag that outlived a finished resume would let a later import of this file write rows the
+            // person deleted since, so a failure to clear it is reported rather than swallowed.
             try progress.clearRestoreInProgress()
-            // The flag is gone, so the receipt has nothing left to answer; one left by a stop here is harmless.
-            try? favoritesTarget.removeRestoreReceipt(digest)
+            // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
+            try? favoritesTarget?.removeRestoreReceipt(digest)
+            try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
             return summary(of: plan)
         }
 
+        // Saved meals are restored only into an empty list: merging a file's meals into the phone's would have
+        // to choose between two meals of one name, and a restore does not choose.
+        if let savedMealsTarget, try !savedMealsTarget.journalSavedMeals().isEmpty {
+            throw JournalImportError.notEmpty
+        }
         // The journal is empty, so any flag found is stale and this run's own replaces it. It goes down before
         // the journal's save, so a stop after that save leaves it behind. A flag that cannot be written only
         // loses the resume; the import itself goes ahead as before.
@@ -217,13 +273,21 @@ public enum JournalImporter {
             try? progress?.clearRestoreInProgress()
             throw error
         }
-        if let favoritesTarget {
+        if hasSecondPhase {
             do {
-                try favoritesTarget.restore(plan.favorites, receipt: digest)
-            } catch let favoritesFailure {
+                // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
+                // between the two saves only has the favorites left to write.
+                if let savedMealsTarget { try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest) }
+                if let favoritesTarget { try favoritesTarget.restore(plan.favorites, receipt: digest) }
+            } catch let secondPhaseFailure {
                 // The journal is undone or reported as partial, so there is no unfinished restore of this file
                 // to finish, and a flag left here could only be misread later.
                 defer { try? progress?.clearRestoreInProgress() }
+                // The list was empty before this restore, so putting it back is emptying it.
+                var savedMealsLeft = false
+                if let savedMealsTarget {
+                    do { try savedMealsTarget.clearRestoredSavedMeals() } catch { savedMealsLeft = true }
+                }
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
@@ -232,12 +296,17 @@ public enum JournalImporter {
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
-                throw favoritesFailure
+                // Saved meals that could not be taken back are rows of this restore that remain.
+                guard !savedMealsLeft else {
+                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
+                }
+                throw secondPhaseFailure
             }
-            // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over these
-            // favorites: a resume needs none of the file's favorites on the phone.
+            // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
+            // second phase: every part of it now has its receipt.
             try progress?.clearRestoreInProgress()
-            try? favoritesTarget.removeRestoreReceipt(digest)
+            try? favoritesTarget?.removeRestoreReceipt(digest)
+            try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
         }
         return summary(of: plan)
     }
@@ -265,7 +334,8 @@ public enum JournalImporter {
             revisions: plan.entries.reduce(0) { $0 + $1.revisions.count },
             tombstones: plan.tombstones.count,
             favorites: plan.favorites.count,
-            products: plan.products.count)
+            products: plan.products.count,
+            savedMeals: plan.savedMeals.count)
     }
 
     /// Whether the journal holds any intake, live or deleted.
@@ -335,7 +405,8 @@ public enum JournalImporter {
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
         let revisionKeys = version >= 3 ? JournalImportV3Keys.revision : JournalImportV1Keys.revision
-        try checkObject(root, keys: JournalImportV1Keys.root, path: "$", version: version)
+        let rootKeys = version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
+        try checkObject(root, keys: rootKeys, path: "$", version: version)
         try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
             let path = "$.intakes[\(index)]"
@@ -386,6 +457,22 @@ public enum JournalImporter {
             try checkMinimumLengthOne(
                 favorite, keys: ["id", "display_name", "category"], path: path, version: version)
             try checkComponents(favorite["components"], path: "\(path).components", version: version)
+        }
+        if version >= 4 {
+            for (index, item) in try objects(root["saved_meals"], path: "$.saved_meals").enumerated() {
+                let path = "$.saved_meals[\(index)]"
+                let savedMeal = try object(item, path: path)
+                try checkObject(savedMeal, keys: JournalImportV4Keys.savedMeal, path: path, version: version)
+                try checkMinimumLengthOne(savedMeal, keys: ["id", "name"], path: path, version: version)
+                for (itemIndex, mealItem) in try objects(savedMeal["items"], path: "\(path).items").enumerated() {
+                    let itemPath = "\(path).items[\(itemIndex)]"
+                    let template = try object(mealItem, path: itemPath)
+                    try checkObject(template, keys: JournalImportV4Keys.favorite, path: itemPath, version: version)
+                    try checkMinimumLengthOne(
+                        template, keys: ["id", "display_name", "category"], path: itemPath, version: version)
+                    try checkComponents(template["components"], path: "\(itemPath).components", version: version)
+                }
+            }
         }
         let productList = try objects(root["products"], path: "$.products")
         for (index, item) in productList.enumerated() {
@@ -587,60 +674,112 @@ public enum JournalImporter {
             guard favoriteIDs.insert(favorite.id).inserted else {
                 throw JournalImportError.corrupt("the export lists the favorite \(favorite.id) twice")
             }
-            var favoriteComponents: [FavoriteComponent] = []
-            var favoriteComponentIDs = Set<String>()
-            for component in favorite.components {
-                guard JournalValidation.isValidComponentID(component.componentID) else {
-                    throw JournalImportError.corrupt(
-                        "the favorite \(favorite.id) has the component id \(component.componentID)")
-                }
-                guard favoriteComponentIDs.insert(component.componentID).inserted else {
-                    throw JournalImportError.corrupt(
-                        "the favorite \(favorite.id) names \(component.componentID) twice")
-                }
-                guard component.valueState == .known, let text = component.amount,
-                      DecimalText.isValidDecimalText(text), let amount = DecimalText.decode(text)
-                else {
-                    throw JournalImportError.corrupt(
-                        "the favorite \(favorite.id) has no exact decimal amount for \(component.componentID)")
-                }
-                // A favorite is a template to repeat, so every component has to name a quantity. Zero and
-                // negative amounts are refused rather than stored: repeating one asks the person to eat
-                // nothing, or to subtract something from a meal, and neither is a template that can be shown
-                // as amounts or turned into an intake.
-                guard amount > 0 else {
-                    throw JournalImportError.corrupt(
-                        "the favorite \(favorite.id) has the amount \(text) for \(component.componentID), "
-                            + "which is not a quantity")
-                }
-                // The favorites store keeps a unit symbol as text and never parses it, so an unusable symbol
-                // would be stored happily and only fail later, when the person repeats the favorite and the
-                // amounts come back empty. A template that cannot be repeated is not worth restoring.
-                guard (try? MeasureUnit(symbol: component.unit)) != nil else {
-                    throw JournalImportError.corrupt(
-                        "the favorite \(favorite.id) uses the unit \(component.unit), "
-                            + "which this build does not know")
-                }
-                favoriteComponents.append(
-                    FavoriteComponent(
-                        componentID: component.componentID, name: component.name, amountText: text,
-                        unitSymbol: component.unit))
-            }
-            if let snapshotID = favorite.productSnapshotID, productsByID[snapshotID] == nil {
-                throw JournalImportError.corrupt(
-                    "the favorite \(favorite.id) uses the product snapshot "
-                        + "\(snapshotID), which the export does not define")
-            }
             favorites.append(
-                FavoriteTemplate(
-                    id: favorite.id, displayName: favorite.displayName, category: favorite.category,
-                    components: favoriteComponents, productSnapshotID: favorite.productSnapshotID,
-                    meal: favorite.meal))
+                try restoredTemplate(favorite, named: "the favorite \(favorite.id)", products: productsByID))
         }
 
         return JournalRestorePlan(
             entries: entries, tombstones: tombstones,
-            products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites)
+            products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites,
+            savedMeals: try restoredSavedMeals(document.savedMeals, products: productsByID))
+    }
+
+    /// The saved meals a version 4 file carries, refused as a whole when any breaks a rule the app keeps when
+    /// it saves one (`JournalSavedMealLimits`): a restore must never write a list the app would refuse to save.
+    private static func restoredSavedMeals(
+        _ exported: [JournalExportSavedMeal], products: [String: ProductDefinition]
+    ) throws -> [JournalSavedMeal] {
+        guard exported.count <= JournalSavedMealLimits.maximumMeals else {
+            throw JournalImportError.corrupt(
+                "the export lists \(exported.count) saved meals, more than \(JournalSavedMealLimits.maximumMeals)")
+        }
+        var ids = Set<String>()
+        var names: [String] = []
+        var meals: [JournalSavedMeal] = []
+        for savedMeal in exported {
+            guard ids.insert(savedMeal.id).inserted else {
+                throw JournalImportError.corrupt("the export lists the saved meal \(savedMeal.id) twice")
+            }
+            let name = JournalSavedMealLimits.trimmedName(savedMeal.name)
+            guard !name.isEmpty, name.count <= JournalSavedMealLimits.maximumNameLength else {
+                throw JournalImportError.corrupt("the saved meal \(savedMeal.id) has a name the app cannot keep")
+            }
+            guard !names.contains(where: { JournalSavedMealLimits.sameName($0, name) }) else {
+                throw JournalImportError.corrupt("the saved meal \(savedMeal.id) repeats another saved meal's name")
+            }
+            names.append(name)
+            var meal: MealLabel?
+            if let raw = savedMeal.meal {
+                guard let label = MealLabel(rawValue: raw) else {
+                    throw JournalImportError.corrupt("the saved meal \(savedMeal.id) names the meal \(raw)")
+                }
+                meal = label
+            }
+            guard (1...JournalSavedMealLimits.maximumItems).contains(savedMeal.items.count) else {
+                throw JournalImportError.corrupt(
+                    "the saved meal \(savedMeal.id) has \(savedMeal.items.count) items, not 1 to "
+                        + "\(JournalSavedMealLimits.maximumItems)")
+            }
+            var itemIDs = Set<String>()
+            var items: [FavoriteTemplate] = []
+            for item in savedMeal.items {
+                let label = "the saved meal \(savedMeal.id) item \(item.id)"
+                guard itemIDs.insert(item.id).inserted else { throw JournalImportError.corrupt("\(label) is listed twice") }
+                // The group's meal applies to every item, so an item that names one of its own is not what the
+                // app writes and is refused rather than silently changed.
+                guard item.meal == nil else { throw JournalImportError.corrupt("\(label) names a meal of its own") }
+                items.append(try restoredTemplate(item, named: label, products: products))
+            }
+            meals.append(JournalSavedMeal(id: savedMeal.id, name: name, meal: meal, items: items))
+        }
+        return meals
+    }
+
+    /// A favorite, or a saved meal's item, as the template the app keeps. `named` says which, in a refusal.
+    private static func restoredTemplate(
+        _ template: JournalExportFavorite, named label: String, products: [String: ProductDefinition]
+    ) throws -> FavoriteTemplate {
+        var restoredComponents: [FavoriteComponent] = []
+        var componentIDs = Set<String>()
+        for component in template.components {
+            guard JournalValidation.isValidComponentID(component.componentID) else {
+                throw JournalImportError.corrupt("\(label) has the component id \(component.componentID)")
+            }
+            guard componentIDs.insert(component.componentID).inserted else {
+                throw JournalImportError.corrupt("\(label) names \(component.componentID) twice")
+            }
+            guard component.valueState == .known, let text = component.amount,
+                  DecimalText.isValidDecimalText(text), let amount = DecimalText.decode(text)
+            else {
+                throw JournalImportError.corrupt("\(label) has no exact decimal amount for \(component.componentID)")
+            }
+            // A template is something to repeat, so every component has to name a quantity. Zero and
+            // negative amounts are refused rather than stored: repeating one asks the person to eat
+            // nothing, or to subtract something from a meal, and neither is a template that can be shown
+            // as amounts or turned into an intake.
+            guard amount > 0 else {
+                throw JournalImportError.corrupt(
+                    "\(label) has the amount \(text) for \(component.componentID), which is not a quantity")
+            }
+            // The stores keep a unit symbol as text and never parse it, so an unusable symbol would be stored
+            // happily and only fail later, when the person repeats the template and the amounts come back
+            // empty. A template that cannot be repeated is not worth restoring.
+            guard (try? MeasureUnit(symbol: component.unit)) != nil else {
+                throw JournalImportError.corrupt(
+                    "\(label) uses the unit \(component.unit), which this build does not know")
+            }
+            restoredComponents.append(
+                FavoriteComponent(
+                    componentID: component.componentID, name: component.name, amountText: text,
+                    unitSymbol: component.unit))
+        }
+        if let snapshotID = template.productSnapshotID, products[snapshotID] == nil {
+            throw JournalImportError.corrupt(
+                "\(label) uses the product snapshot \(snapshotID), which the export does not define")
+        }
+        return FavoriteTemplate(
+            id: template.id, displayName: template.displayName, category: template.category,
+            components: restoredComponents, productSnapshotID: template.productSnapshotID, meal: template.meal)
     }
 
     /// The time zone an entry was recorded in. It is what says when an entry happened where the person was,
