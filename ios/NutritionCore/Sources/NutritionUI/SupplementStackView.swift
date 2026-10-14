@@ -62,7 +62,12 @@ public struct SupplementStackView: View {
             }
         }
         .onAppear { self.model.appeared(self.screenID, now: self.now()) }
-        .onDisappear { self.model.disappeared(self.screenID) }
+        .onDisappear {
+            self.model.disappeared(self.screenID)
+            // The Undo toast belongs to this screen, so its offer goes with it even while Today's tile
+            // still shows the list's count.
+            self.model.clearUndo()
+        }
         // Back from the background, anything may have been logged elsewhere, so a list on screen is read
         // again; one pushed under another screen reads when it appears.
         // While on screen, the times move on once a minute from what was already read (a time that passes

@@ -30,7 +30,8 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   entries it could not read, since any of them may be an item on the list.
   The screen reads the journal again when it appears, when the app returns to the foreground, and, while
   it is open, after any reload of the app's screens (an add, edit or delete anywhere, in any window). A
-  list out of view reads nothing until it appears again. An erase or a restore drops the Undo offer and
+  list out of view reads nothing until it appears again. The Supplements tile on Today counts as showing
+  the list, so its count follows too. An erase or a restore drops the Undo offer and
   everything the list read, whether it is open or not. While
   it is open, the times move on once a minute from what was already read, so a passed time shows without
   a journal read; only a new day reads the journal again, which clears yesterday's marks.
