@@ -80,17 +80,18 @@ public struct IntakeCopier {
         try copyDay(dayKey: yesterdayKey(now: now), now: now)
     }
 
-    /// Active entries whose zone names no zone and whose UTC day is `dayKey`: they cannot be placed on a
+    /// Active entries whose zone names no zone and whose instant falls on `dayKey` in the copier's zone: they cannot be placed on a
     /// local day, so a copy of that day reports them as skipped rather than silently dropping them.
     private func unreadableZoneCount(dayKey: String, meal: MealSelector? = nil) throws -> Int {
         try store.activeIntakes()
             .filter { $0.lifecycle == .active && TimeZone(identifier: $0.timeZoneIdentifier) == nil }
-            .filter { Self.dayKey($0.occurredAt, zoneIdentifier: "UTC") == dayKey }
+            .filter { Self.dayKey($0.occurredAt, zoneIdentifier: zoneID()) == dayKey }
             .filter { meal?.matches($0.meal) ?? true }
             .count
     }
 
     private func copy(_ intakes: [Intake], now: Date, unreadableZone: Int = 0) throws -> IntakeCopyResult {
+        guard TimeZone(identifier: zoneID()) != nil else { throw IntakeCopyError.invalidDestinationZone }
         var created: [String] = []
         var skipped = unreadableZone
         for intake in intakes {
@@ -122,6 +123,8 @@ public struct IntakeCopier {
 /// A copy that stopped on a store failure: what was already written is not undone.
 public enum IntakeCopyError: Error {
     case stoppedEarly(IntakeCopyResult, underlying: Error)
+    /// The zone new entries would be written in names no zone; nothing was written.
+    case invalidDestinationZone
 }
 
 /// Which meal of a day to copy: one of the four named meals, or Other (no meal, or one the four do not name).

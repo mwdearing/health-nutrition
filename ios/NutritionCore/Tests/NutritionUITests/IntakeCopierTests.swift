@@ -134,4 +134,12 @@ final class IntakeCopierTests: XCTestCase {
             XCTAssertEqual(partial.copiedCount, 0)
         }
     }
+
+    func testInvalidDestinationZoneWritesNothing() throws {
+        let store = try makeStore()
+        try add(store, name: "A", at: yesterday)
+        let bad = IntakeCopier(store: store, timeZoneIdentifier: "Not/AZone")
+        XCTAssertThrowsError(try bad.copyDay(dayKey: "2023-11-14", now: now))
+        XCTAssertEqual(try store.activeIntakes().count, 1)
+    }
 }
