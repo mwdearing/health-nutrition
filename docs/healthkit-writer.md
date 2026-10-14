@@ -376,6 +376,13 @@ asked about). Its button asks again where Health still can; where every type was
 same call re-arms what a denial parked and runs a pass, because iOS shows the sheet only once and the
 answer is changed in the Health app.
 
+What each entry currently has in Health is kept in a ledger (`HealthKitWrittenRecord`, journal
+schema V8): every delivery records the nutrient keys it wrote plus any refused keys that may still
+hold a sample, and a retraction records what it could not remove. An edit or delete decides which
+denied types strand a sample from that ledger, not from projection states, which are not updated for
+a revision a later edit or delete superseded. An entry with no ledger row (delivered by an earlier
+build, or restored) falls back to every earlier revision's plan, which only errs toward asking.
+
 With mixed permissions an upsert writes the nutrients Health allows and parks the operation in
 `needsAttention` with the refused nutrients named, so one turned-off type never keeps the rest of an
 entry out of Health. Stale-sample deletion on an edit only touches types this app may write; an edit that drops a nutrient whose sample can still be in Health (stated by the newest fully delivered revision or a later attempted one) and whose type is no longer writable parks too, because the old sample cannot be removed. Allowing

@@ -526,6 +526,103 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
     }
 
+    /// #318: an edit that adds calcium is superseded by a delete before it is delivered, so no calcium
+    /// sample exists. A calcium denial must not hold up the delete.
+    func testADeleteIsNotHeldByATypeOnlyAnUndeliveredRevisionStated() async throws {
+        let store = try makeStore(try makeDirectory())
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings { writer.allow(mapping.quantityTypeIdentifier) }
+        let byRevision: [Int: [String: NutrientValue]] = [
+            1: ["protein": .known(dec("13"), .g)],
+            2: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)],
+        ]
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer, totals: { _, revision in byRevision[revision] ?? [:] })
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "add calcium", now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertTrue(
+            outcomes.contains { if case .retracted = $0 { return true } else { return false } },
+            "no calcium sample was ever written, got \(outcomes)")
+        XCTAssertNil(try healthKitOperation(store, kind: .delete))
+    }
+
+    /// A nutrient first stated under a denied type was never written, so deleting the entry while the
+    /// type is still denied does not wait for a person.
+    func testANutrientRefusedOnItsFirstDeliveryIsNotRecordedAsWritten() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.delete(intakeID: intakeID, now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertTrue(
+            outcomes.contains { if case .retracted = $0 { return true } else { return false } },
+            "no calcium sample was written, got \(outcomes)")
+    }
+
+    /// A retry of revision 1 after access flipped keeps the protein it wrote earlier on the ledger, so a
+    /// later delete still waits for the now-denied protein.
+    func testARetryKeepsASampleItCanNoLongerReplace() async throws {
+        let (store, writer, _, worker) = try makeWorker(
+            totals: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)])
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        writer.allow("HKQuantityTypeIdentifierDietaryCalcium")
+        writer.deny("HKQuantityTypeIdentifierDietaryProtein")
+        try store.rearmDelivery(operationID: try XCTUnwrap(healthKitOperation(store, kind: .upsert)).operationID)
+        _ = await worker.runOnce(now: when)
+        try store.delete(intakeID: intakeID, now: when)
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .partlyRetracted(_, _, let denied) = try XCTUnwrap(
+            outcomes.first { if case .partlyRetracted = $0 { return true } else { return false } }
+        ) else {
+            return XCTFail("the protein sample from the first attempt is still there, got \(outcomes)")
+        }
+        XCTAssertEqual(denied, ["HKQuantityTypeIdentifierDietaryProtein"])
+    }
+
+    /// #318: revision 1 wrote calcium, revision 2 (dropping it) is superseded by a delete before it is
+    /// delivered, so the calcium sample is still in Health. A calcium denial keeps the delete waiting.
+    func testADeleteWaitsForADeniedTypeAnEarlierDeliveryWrote() async throws {
+        let store = try makeStore(try makeDirectory())
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings { writer.allow(mapping.quantityTypeIdentifier) }
+        let byRevision: [Int: [String: NutrientValue]] = [
+            1: ["protein": .known(dec("13"), .g), "calcium": .known(dec("50"), .mg)],
+            2: ["protein": .known(dec("13"), .g)],
+        ]
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer, totals: { _, revision in byRevision[revision] ?? [:] })
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.edit(
+            intakeID: intakeID, components: [component()], product: nil, changeReason: "drop calcium", now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        writer.deny("HKQuantityTypeIdentifierDietaryCalcium")
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .partlyRetracted(_, _, let denied) = try XCTUnwrap(
+            outcomes.first { if case .partlyRetracted = $0 { return true } else { return false } }
+        ) else {
+            return XCTFail("the calcium sample from revision 1 is still there, got \(outcomes)")
+        }
+        XCTAssertEqual(denied, ["HKQuantityTypeIdentifierDietaryCalcium"])
+    }
+
     /// A retraction is per type: the 16 types still authorized are removed, and only the denied one
     /// keeps the operation queued. Aborting the whole retraction is what used to strand them.
     func testADeniedDeleteStillRemovesTheAuthorizedTypesAndIsLeftForAPerson() async throws {
