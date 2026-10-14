@@ -35,8 +35,10 @@ authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.
 
 A name search in Find products sends only the words the person typed (2 to 80
-characters) to Open Food Facts (`/cgi/search.pl`) when they submit the field, and
-nothing else from the device. It works signed out and is limited to six searches
+characters) to the Open Food Facts search service (`search.openfoodfacts.org`,
+`/search`) when they submit the field. Opening one of the results sends that
+result's barcode to Open Food Facts as an ordinary product read. Nothing else
+from the device is sent. It works signed out and is limited to six searches
 a minute. The screen says so beside the results; supplements are not searched
 there.
 

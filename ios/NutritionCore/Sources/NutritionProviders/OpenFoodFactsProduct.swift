@@ -145,8 +145,34 @@ struct OpenFoodFactsResponse: Decodable {
     let product: Body?
 }
 
+/// Text that may arrive as one string or as a list of strings; a list is joined with ", ".
+struct OpenFoodFactsTextList: Decodable {
+    let text: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let string = try? container.decode(String.self) {
+            text = string
+        } else if let list = try? container.decode([String].self) {
+            text = list.isEmpty ? nil : list.joined(separator: ", ")
+        } else {
+            text = nil
+        }
+    }
+}
+
+/// A reply from the full-text search service. Its index holds names, brands and per-100 figures, but
+/// not the serving or whether a product is measured in grams or millilitres.
 struct OpenFoodFactsSearchResponse: Decodable {
-    let products: [OpenFoodFactsResponse.Body]?
+    struct Hit: Decodable {
+        let code: OpenFoodFactsScalar?
+        let product_name: OpenFoodFactsScalar?
+        let brands: OpenFoodFactsTextList?
+        let nutriments: [String: OpenFoodFactsScalar]?
+        let last_modified_t: OpenFoodFactsScalar?
+    }
+
+    let hits: [Hit]?
 }
 
 extension OpenFoodFactsProduct {
@@ -184,6 +210,28 @@ extension OpenFoodFactsProduct {
             servingQuantity: body.serving_quantity?.decimal,
             basis: basis,
             lastModified: modified,
+            nutrients: nutrients
+        )
+    }
+
+    /// A search result. The figures are per 100 with the unit unstated, and there is no serving; the
+    /// product read by barcode has both.
+    init(hit: OpenFoodFactsSearchResponse.Hit, barcode: String, name: String) {
+        let source = hit.nutriments ?? [:]
+        var nutrients: [String: NutrientValue] = [:]
+        for entry in Self.mapping {
+            nutrients[entry.key] = Self.value(amount: source[entry.source + "_100g"]?.decimal, energy: entry.energy)
+        }
+        self.init(
+            barcode: barcode,
+            name: name,
+            brands: hit.brands?.text,
+            servingSize: nil,
+            servingQuantity: nil,
+            basis: .per100Unspecified,
+            lastModified: hit.last_modified_t?.decimal.map {
+                Date(timeIntervalSince1970: NSDecimalNumber(decimal: $0).doubleValue)
+            },
             nutrients: nutrients
         )
     }

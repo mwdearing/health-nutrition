@@ -13,6 +13,11 @@ public actor OpenFoodFactsClient {
     public static let searchMinimumScalars = 2
     public static let searchMaximumCharacters = 80
     public static let searchPageSize = 20
+    public static let searchFields = ["code", "product_name", "brands", "nutriments", "last_modified_t"]
+    /// Characters the search service reads as query syntax (field filters, grouping, ranges, wildcards,
+    /// boosts, negation, regular expressions). None of them helps find a food by name.
+    private static let searchSyntax = CharacterSet(charactersIn: "+-&|!(){}[]^\"~*?:\\/<>=")
+    private static let searchOperators: Set<String> = ["AND", "OR", "NOT", "TO"]
 
     private let environment: OpenFoodFactsEnvironment
     private let transport: OpenFoodFactsTransport
@@ -76,17 +81,21 @@ public actor OpenFoodFactsClient {
         return Self.interpret(data, barcode: barcode)
     }
 
-    /// Name search. The query is trimmed and capped; a query shorter than two characters is answered
-    /// `.empty` without spending a rate-limit slot or sending a request.
+    /// Name search on the full-text search service, which ranks products by how well their name matches.
+    /// The query is trimmed, capped and reduced to plain words; one shorter than two characters is
+    /// answered `.empty` without spending a rate-limit slot or sending a request.
     ///
     /// Submitting the same query again inside the window sends nothing and spends no slot: it gets the
     /// reply already received, or waits for the request still running. Only a reply with results or
     /// none is kept; a failed or refused search is sent again when the person retries.
     public func search(query: String) async -> OpenFoodFactsSearchOutcome {
-        let trimmed = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.searchMaximumCharacters))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = Self.plainWords(
+            String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.searchMaximumCharacters)))
         guard trimmed.count >= Self.searchMinimumScalars else {
             return .empty
+        }
+        guard environment.searchBaseURL != nil else {
+            return .transport("no search service in this environment")
         }
         let current = monotonic()
         answeredSearches = answeredSearches.filter { current - $0.value.sentAt < Self.windowSeconds }
@@ -152,22 +161,28 @@ public actor OpenFoodFactsClient {
         return Self.interpretSearch(data)
     }
 
+    /// The typed text as plain words. The service parses its query as a language, so every syntax
+    /// character becomes a space and an operator word is lowercased, which makes it an ordinary word.
+    /// What is sent can then only ever be a list of words to match.
+    static func plainWords(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.map { searchSyntax.contains($0) ? " " : $0 }))
+            .split(whereSeparator: \.isWhitespace)
+            .map { searchOperators.contains(String($0)) ? $0.lowercased() : String($0) }
+            .joined(separator: " ")
+    }
+
     private func makeSearchRequest(query: String) -> URLRequest? {
-        // Only the typed text is encoded as the search term. `+`, `&` and `=` are escaped, so the server
-        // reads them as typed rather than as separators or spaces.
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        guard let encodedTerms = query.addingPercentEncoding(withAllowedCharacters: allowed) else {
+        guard let base = environment.searchBaseURL else {
             return nil
         }
-        var components = URLComponents(url: environment.baseURL, resolvingAgainstBaseURL: false)
-        components?.path = "/cgi/search.pl"
-        components?.percentEncodedQueryItems = [
-            URLQueryItem(name: "search_terms", value: encodedTerms),
-            URLQueryItem(name: "search_simple", value: "1"),
-            URLQueryItem(name: "action", value: "process"),
-            URLQueryItem(name: "json", value: "1"),
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.path = "/search"
+        // Nothing but the words is sent: no language, country or sort. The service's default order is
+        // relevance to the words.
+        components?.queryItems = [
+            URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "page_size", value: String(Self.searchPageSize)),
-            URLQueryItem(name: "fields", value: Self.requestedFields.joined(separator: ",")),
+            URLQueryItem(name: "fields", value: Self.searchFields.joined(separator: ",")),
         ]
         guard let url = components?.url else {
             return nil
@@ -177,9 +192,6 @@ public actor OpenFoodFactsClient {
         request.timeoutInterval = 15
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let auth = environment.authorizationHeader {
-            request.setValue(auth, forHTTPHeaderField: "Authorization")
-        }
         return request
     }
 
@@ -187,14 +199,25 @@ public actor OpenFoodFactsClient {
         guard let decoded = try? JSONDecoder().decode(OpenFoodFactsSearchResponse.self, from: data) else {
             return .transport("unreadable response")
         }
-        let products: [OpenFoodFactsProduct] = (decoded.products ?? []).compactMap { body in
+        var seen: Set<String> = []
+        let products: [OpenFoodFactsProduct] = (decoded.hits ?? []).compactMap { hit in
             // A reply is untrusted: only a well-formed barcode becomes a result.
             // The stored code is the one that was validated: a padded value is refused, not trimmed for the
             // check and kept as received.
-            guard let code = body.code?.text, BarcodeValidator.isValid(code) else {
+            guard let code = hit.code?.text, BarcodeValidator.isValid(code) else {
                 return nil
             }
-            return OpenFoodFactsProduct(body: body, requestedBarcode: code)
+            // A result with no name cannot be told apart in a list of names, so it is left out.
+            guard let name = hit.product_name?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                return nil
+            }
+            let product = OpenFoodFactsProduct(hit: hit, barcode: code, name: name)
+            // The same name and brand again is the same row to the reader; the better match came first.
+            let brand = product.brands?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard seen.insert(name.lowercased() + "\u{1F}" + brand.lowercased()).inserted else {
+                return nil
+            }
+            return product
         }
         let limited = Array(products.prefix(Self.searchPageSize))
         return limited.isEmpty ? .empty : .results(limited)

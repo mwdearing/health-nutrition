@@ -1,6 +1,6 @@
 # Open Food Facts: data source determination
 
-Status: Accepted for live barcode lookup and for user-submitted name search (amended 2026-10-13). Terms review date: 2027-04-02.
+Status: Accepted for live barcode lookup and for user-submitted name search (amended 2026-10-13; search moved to the Open Food Facts search service 2026-10-14). Terms review date: 2027-04-02.
 
 ## What is used
 
@@ -112,14 +112,35 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   sync account.
 - No bulk download, no mirror and no export of Open Food Facts data as a database.
 - No images.
-- Name search is limited to what Open Food Facts documents for its search
-  endpoint: one request per explicit submit by the person (no search-as-you-type,
-  no autocomplete, no background or bulk queries), at most 6 searches in any
-  rolling 60 seconds against a documented limit of 10 per minute, a page of 20
-  results, and the same User-Agent as lookups. Only the typed words (2 to 80
-  characters) are sent. The results screen shows the attribution text on every
-  result with a link to the license and source, and states that the search words
-  are sent to Open Food Facts. Supplements are not searched here.
+- Name search uses the Open Food Facts full-text search service
+  (`https://search.openfoodfacts.org/search`), which the Open Food Facts API
+  documentation names as the place for full-text search. The legacy
+  `/cgi/search.pl` endpoint is no longer used: it orders loose keyword matches by
+  worldwide scan count, so a common word returned popular products that do not
+  have the word in their name. The search service orders by how well the name
+  matches. No limit is published for the search service itself, so the app keeps
+  to the limit documented for search requests: one request per explicit submit by
+  the person (no search-as-you-type, no autocomplete, no background or bulk
+  queries), at most 6 searches in any rolling 60 seconds against a documented
+  limit of 10 per minute, a page of 20 results, and the same User-Agent as
+  lookups. Supplements are not searched here.
+- Only the typed words (2 to 80 characters) are sent, with the page size and the
+  list of fields wanted: no language, country, sort order or identifier. The
+  service reads its query as a query language, so the client replaces every
+  syntax character (`+ - & | ! ( ) { } [ ] ^ " ~ * ? : \ / < > =`) with a space
+  and lowercases the operator words `AND`, `OR`, `NOT` and `TO`. What is sent can
+  only be a list of words to match; text that is only syntax sends nothing.
+- A result with no product name is left out, and a result with the same name and
+  brand as an earlier one is left out, because neither can be told apart in a list
+  of names. The search index has per-100 figures but not the serving or whether a
+  product is measured in grams or millilitres, so a result is listed as "per 100 g
+  or mL". When the person opens a result, the app reads that product by barcode
+  (an ordinary product read, counted against the 10 lookups per minute) and fills
+  the form from the full record; if the read fails, the form is filled from the
+  search result.
+- The results screen shows the attribution text on every result with a link to
+  the license and source, and states that the search words are sent to Open Food
+  Facts and that opening a result asks for that product by its barcode.
 - Submitting the same words again within those 60 seconds sends nothing and does
   not count toward the 6: the reply already received is shown again, and a submit
   made while that request is still running waits for its reply. The reply is held

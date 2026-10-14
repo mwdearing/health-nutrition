@@ -39,17 +39,20 @@ public struct CommunityProductSearchView: View {
                     }.accessibilityHint("Opens intake details without logging or sharing")
                 }
             }
-            if kind != .supplement { Section(header: Text("Open Food Facts"), footer: Text("The words you search for are sent to Open Food Facts, a public database. Nothing else from this phone is sent.")) {
+            if kind != .supplement { Section(header: Text("Open Food Facts"), footer: Text("The words you search for are sent to Open Food Facts, a public database. Opening a result asks Open Food Facts for that product by its barcode. Nothing else from this phone is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
-                    Button { onOpenFoodFacts(product, kind) } label: {
+                    Button { open(product) } label: {
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text(product.name ?? "Unnamed product").font(.headline)
                             if let brand = product.brand { Text(brand) }
                             Text(product.basis.label).font(.footnote)
                             if let attribution = product.attribution { Text(attribution.text).font(.footnote) }
+                            if model.openingOpenFoodFactsBarcode == product.barcode { ProgressView("Loading product details") }
                         }
-                    }.accessibilityHint("Opens intake details filled from this product. Nothing is logged until you save.")
+                    }
+                    .disabled(model.openingOpenFoodFactsBarcode != nil)
+                    .accessibilityHint("Opens intake details filled from this product. Nothing is logged until you save.")
                 }
                 if let attribution = model.openFoodFactsResults.compactMap(\.attribution).first,
                    let url = URL(string: attribution.url) {
@@ -147,6 +150,12 @@ public struct CommunityProductSearchView: View {
         // The keyboard covers the results below the form, which reads as if nothing happened.
         searchFocused = false
         Task { await model.search(query: query, kind: kind) }
+    }
+    private func open(_ product: LookedUpProduct) {
+        let kind = kind
+        Task {
+            if let full = await model.openFoodFactsDetails(for: product) { onOpenFoodFacts(full, kind) }
+        }
     }
     private func select(_ product: CommunityProduct) {
         do {

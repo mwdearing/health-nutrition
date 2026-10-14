@@ -4,12 +4,11 @@ import XCTest
 
 final class OpenFoodFactsSearchTests: XCTestCase {
     private let twoProducts = Data("""
-    {"count": 2, "page": 1, "page_size": 20, "products": [
-      {"code": "2000000000015", "product_name": "Oat Biscuit", "brands": "Example Foods",
-       "nutrition_data_per": "100g", "product_quantity_unit": "g",
+    {"count": 2, "page": 1, "page_size": 20, "hits": [
+      {"code": "2000000000015", "product_name": "Oat Biscuit", "brands": ["Example Foods", "Example Bakery"],
+       "last_modified_t": 1800000000,
        "nutriments": {"energy-kcal_100g": 450, "proteins_100g": "7.5"}},
-      {"code": "2000000000022", "product_name": "Oat Milk", "brands": "Example Dairy",
-       "nutrition_data_per": "100g", "product_quantity_unit": "ml", "nutriments": {}}
+      {"code": "2000000000022", "product_name": "Oat Milk", "brands": "Example Dairy", "nutriments": {}}
     ]}
     """.utf8)
 
@@ -37,13 +36,55 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         }
         XCTAssertEqual(products.map(\.barcode), ["2000000000015", "2000000000022"])
         XCTAssertEqual(products.first?.name, "Oat Biscuit")
-        XCTAssertEqual(products.first?.brands, "Example Foods")
-        XCTAssertEqual(products.first?.basis, .per100g)
+        XCTAssertEqual(products.first?.brands, "Example Foods, Example Bakery")
+        XCTAssertEqual(products.last?.brands, "Example Dairy")
+        // The search index does not say whether the figures are per 100 g or per 100 ml.
+        XCTAssertEqual(products.map(\.basis), [.per100Unspecified, .per100Unspecified])
+        XCTAssertEqual(products.first?.nutrients[OpenFoodFactsProduct.energyKcal], .known(450, .kcal))
+        XCTAssertEqual(products.first?.nutrients[OpenFoodFactsProduct.fat], .unknown)
+        XCTAssertEqual(products.first?.lastModified, Date(timeIntervalSince1970: 1_800_000_000))
+    }
+
+    func testSearchDropsResultsWithoutAName() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "brands": ["Example Foods"], "nutriments": {}},
+          {"code": "2000000000022", "product_name": "   ", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Oat Milk", "nutriments": {}}
+        ]}
+        """.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "oat")
+        guard case .results(let products) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(products.map(\.barcode), ["2000000000039"])
+    }
+
+    func testSearchKeepsTheFirstOfResultsWithTheSameNameAndBrand() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Oat Milk", "brands": ["Example Dairy"], "nutriments": {}},
+          {"code": "2000000000022", "product_name": "oat milk ", "brands": "example dairy", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Oat Milk", "brands": ["Other Dairy"], "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Oat Milk", "nutriments": {}}
+        ]}
+        """.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "oat")
+        guard case .results(let products) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(products.map(\.barcode), ["2000000000015", "2000000000039", "2000000000046"])
+    }
+
+    func testSearchWithOnlyUnnamedResultsIsEmpty() async {
+        let body = Data(#"{"hits": [{"code": "2000000000015", "nutriments": {}}]}"#.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "oat")
+        XCTAssertEqual(outcome, .empty)
     }
 
     func testSearchDropsProductsWithMalformedBarcodes() async throws {
         let body = Data("""
-        {"count": 3, "products": [
+        {"count": 3, "hits": [
           {"code": "not-a-code", "product_name": "Bad Code", "nutriments": {}},
           {"code": "2000000000015", "product_name": "Oat Biscuit", "nutriments": {}},
           {"code": "2000000000016", "product_name": "Wrong Check Digit", "nutriments": {}},
@@ -58,7 +99,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
     }
 
     func testSearchWithNoProductsIsEmpty() async {
-        let transport = StubTransport(body: Data(#"{"count": 0, "products": []}"#.utf8))
+        let transport = StubTransport(body: Data(#"{"count": 0, "hits": []}"#.utf8))
         let outcome = await client(transport).search(query: "zzqqxx")
         XCTAssertEqual(outcome, .empty)
     }
@@ -84,20 +125,60 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertTrue(transport.requests.isEmpty)
     }
 
-    func testRequestCarriesOnlyTheTypedQuery() async throws {
+    func testRequestGoesToTheSearchServiceWithOnlyTheTypedWords() async throws {
         let transport = StubTransport(body: twoProducts)
-        _ = await client(transport).search(query: "  c++ oat & honey  ")
+        _ = await client(transport).search(query: "  oat   honey 2%  ")
         let request = try XCTUnwrap(transport.requests.first)
         let url = try XCTUnwrap(request.url)
-        XCTAssertEqual(url.path, "/cgi/search.pl")
+        XCTAssertEqual(url.host, "search.openfoodfacts.org")
+        XCTAssertEqual(url.path, "/search")
         let items = try queryItems(of: request)
-        XCTAssertEqual(Set(items.keys), ["search_terms", "search_simple", "action", "json", "page_size", "fields"])
-        XCTAssertEqual(items["search_terms"], "c++ oat & honey")
-        XCTAssertEqual(items["search_simple"], "1")
-        XCTAssertEqual(items["action"], "process")
-        XCTAssertEqual(items["json"], "1")
+        XCTAssertEqual(Set(items.keys), ["q", "page_size", "fields"])
+        XCTAssertEqual(items["q"], "oat honey 2%")
         XCTAssertEqual(items["page_size"], "20")
+        XCTAssertEqual(items["fields"], "code,product_name,brands,nutriments,last_modified_t")
         XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("HealthNutrition/1.0.0"), true)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    /// The service reads `q` as a query language. Typed text must stay plain words: no field filters,
+    /// operators, ranges, wildcards or negation can be formed from what a person types.
+    func testQuerySyntaxCharactersAndOperatorWordsAreNeutralized() async throws {
+        let cases: [(typed: String, sent: String)] = [
+            ("c++ oat & honey", "c oat honey"),
+            ("countries_tags:\"en:france\"", "countries_tags en france"),
+            ("milk AND NOT (soy OR oat)", "milk and not soy or oat"),
+            ("-milk +oat", "milk oat"),
+            ("half-and-half", "half and half"),
+            ("code:[0 TO 9]", "code 0 to 9"),
+            ("mil* ch?ese~2 oat^5", "mil ch ese 2 oat 5"),
+            ("a\\b /regex/ {x} !y || z && w", "a b regex x y z w"),
+            ("crème fraîche 2%", "crème fraîche 2%"),
+        ]
+        for entry in cases {
+            let transport = StubTransport(body: twoProducts)
+            _ = await client(transport).search(query: entry.typed)
+            let items = try queryItems(of: try XCTUnwrap(transport.requests.first, entry.typed))
+            XCTAssertEqual(items["q"], entry.sent, entry.typed)
+        }
+    }
+
+    func testQueryThatIsOnlySyntaxIsNotSent() async {
+        let transport = StubTransport(body: twoProducts)
+        let outcome = await client(transport).search(query: "(*) && \"-\"")
+        XCTAssertEqual(outcome, .empty)
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
+    func testEnvironmentWithoutASearchServiceSendsNothing() async {
+        let transport = StubTransport(body: twoProducts)
+        let model = OpenFoodFactsClient(
+            environment: .staging(authorization: "Basic synthetic"), transport: transport, appVersion: "1.0.0")
+        let outcome = await model.search(query: "oat")
+        guard case .transport = outcome else {
+            return XCTFail("expected transport, got \(outcome)")
+        }
+        XCTAssertTrue(transport.requests.isEmpty)
     }
 
     func testQueryIsCappedAtEightyCharacters() async throws {
@@ -105,7 +186,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         let long = String(repeating: "b", count: 120)
         _ = await client(transport).search(query: long)
         let items = try queryItems(of: try XCTUnwrap(transport.requests.first))
-        XCTAssertEqual(items["search_terms"], String(repeating: "b", count: 80))
+        XCTAssertEqual(items["q"], String(repeating: "b", count: 80))
     }
 
     func testSixSearchesPerMinuteThenRateLimited() async {

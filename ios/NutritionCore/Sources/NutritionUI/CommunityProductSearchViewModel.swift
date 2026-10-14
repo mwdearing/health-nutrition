@@ -19,6 +19,8 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
     @Published public private(set) var loadingAlternatives = false
     @Published public private(set) var openFoodFactsResults: [LookedUpProduct] = []
     @Published public private(set) var openFoodFactsState: ProductNameSearchState = .idle
+    /// The barcode of the picked result whose full record is being read; nil when none is.
+    @Published public private(set) var openingOpenFoodFactsBarcode: String?
     private var openFoodFactsTask: Task<Void, Never>?
     private let openFoodFacts: (any ProductNameSearching)?
     private var alternativesCursor: String?
@@ -69,9 +71,22 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
     public func openFoodFactsSearchFinished() async {
         await openFoodFactsTask?.value
     }
+    /// Reads the full record for a picked result so the intake form gets its serving and unit. Returns
+    /// nil, and nothing should open, when another result is already being read or a new search began
+    /// while this one was read. A record that cannot be read falls back to the search result.
+    public func openFoodFactsDetails(for product: LookedUpProduct) async -> LookedUpProduct? {
+        guard let openFoodFacts, openingOpenFoodFactsBarcode == nil else { return nil }
+        let token = generation
+        openingOpenFoodFactsBarcode = product.barcode
+        let full = await openFoodFacts.details(for: product)
+        guard generation == token else { return nil }
+        openingOpenFoodFactsBarcode = nil
+        return full
+    }
     private func startOpenFoodFacts(token: UUID) {
         openFoodFactsTask?.cancel()
         openFoodFactsResults = []
+        openingOpenFoodFactsBarcode = nil
         let text = query
         // Supplements are not in Open Food Facts, so nothing is sent for that kind.
         guard let openFoodFacts, kind != .supplement else { openFoodFactsState = .idle; return }
