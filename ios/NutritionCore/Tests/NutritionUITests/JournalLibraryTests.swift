@@ -214,6 +214,54 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(model.sections.first?.title, "Jan 15, 2024")
     }
 
+    func testCopyDayToTodayAddsNewEntriesAndLeavesTheDayAlone() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let first = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"), meal: "breakfast")
+        let second = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"), meal: "dinner")
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        XCTAssertTrue(model.canCopyToToday(past, now: now))
+
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        XCTAssertEqual(result.copiedCount, 2)
+        XCTAssertEqual(model.copyNotice, "Copied 2 entries to today.")
+        let intakes = try store.activeIntakes()
+        XCTAssertEqual(intakes.count, 4)
+        XCTAssertEqual(intakes.filter { $0.occurredAt == now }.count, 2)
+        XCTAssertEqual(try store.revisions(of: first).count, 1)
+        XCTAssertEqual(try store.revisions(of: second).count, 1)
+        let today = try XCTUnwrap(model.sections.first)
+        XCTAssertFalse(model.canCopyToToday(today, now: now))
+    }
+
+    func testCopyMealToTodayCopiesOnlyThatMeal() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"), meal: "breakfast")
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"), meal: "dinner")
+        _ = try addFood(store, name: "Nuts", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first)
+
+        XCTAssertEqual(model.copyMealToToday(past.id, groupID: "Breakfast", now: now)?.copiedCount, 1)
+        XCTAssertEqual(model.copyNotice, "Copied 1 entry to today.")
+        XCTAssertEqual(model.copyMealToToday(past.id, groupID: "Other", now: now)?.copiedCount, 1)
+        let copied = try store.activeIntakes().filter { $0.occurredAt == now }
+        XCTAssertEqual(copied.count, 2)
+        XCTAssertEqual(Set(copied.map(\.meal)), Set<String?>(["breakfast", nil]))
+    }
+
+    func testCopyNoticeCountsSkippedEntries() {
+        XCTAssertEqual(JournalViewModel.copyNoticeText(IntakeCopyResult(createdIDs: [], skippedCount: 0)), "Nothing to copy.")
+        XCTAssertEqual(
+            JournalViewModel.copyNoticeText(IntakeCopyResult(createdIDs: ["a"], skippedCount: 2)),
+            "Copied 1 entry to today. 2 entries could not be copied.")
+    }
+
     func testRepeatCreatesNewIntakeWithCopiedComponentsAndLeavesOriginal() throws {
         let store = try makeStore()
         let snapshot = product("snap-1")
