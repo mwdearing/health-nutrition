@@ -463,9 +463,12 @@ public final class SupplementStackViewModel: ObservableObject {
         if isShown {
             load(now: now)
         } else {
+            // Nothing from before the replacement is kept, a message about it included.
             forget()
             rows = []
             candidates = []
+            errorMessage = nil
+            readFailed = false
         }
     }
 

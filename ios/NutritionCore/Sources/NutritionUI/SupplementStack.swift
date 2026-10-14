@@ -127,18 +127,18 @@ enum SupplementStackDay {
     /// Today's times for one schedule, earliest first, and where each stands. `loggedMinutes` are when
     /// today's entries were logged, in minutes since each entry's own local midnight.
     ///
-    /// Each entry, in time order, belongs to one time: the latest time at or before it (a dose taken on
-    /// time or late), unless the next time is at most an hour away and nearer (a dose taken early). An
-    /// entry before every time belongs to the first if it is at most six hours early; one logged just
-    /// after midnight is more likely the night before's than this morning's, so it marks nothing. An entry
-    /// whose time is
-    /// already marked is an extra one and marks nothing, so a second tap never marks a time that was
-    /// missed: a missed morning stays "Not logged" whatever is logged in the evening. A time no entry
-    /// marks reads "not logged" once it has passed and "later" before.
+    /// Each entry belongs to one time, decided by its own minute alone, so the order of entries does not
+    /// matter: the latest time at or before it (a dose taken on time or late), unless the next time is at
+    /// most an hour away and nearer (a dose taken early). An entry before every time belongs to the first if
+    /// it is at most six hours early; one logged just after midnight is more likely the night before's than
+    /// this morning's, so it marks nothing. An entry whose time is already marked is an extra and marks
+    /// nothing, so a second tap never marks a time that was missed: a missed morning stays "Not logged"
+    /// whatever is logged in the evening. A time no entry marks reads "not logged" once it has passed and
+    /// "later" before.
     static func slots(for schedule: SupplementSchedule, loggedMinutes: [Int], minuteOfDay: Int) -> [SupplementSlot] {
         let minutes = schedule.times.map(SupplementSchedule.minuteOfDay)
         var taken = Array(repeating: false, count: minutes.count)
-        for logged in loggedMinutes.sorted() {
+        for logged in loggedMinutes {
             if let index = owner(of: logged, among: minutes) { taken[index] = true }
         }
         return schedule.times.indices.map { index in

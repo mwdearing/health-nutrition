@@ -22,7 +22,7 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   logged from the Library counts too, and deleting or undoing an entry un-marks its time. An entry's day
   is the local day of its own time zone, the rule the Journal groups by. Entries match an item by its
   product snapshot, or by category and component names when there is none; the meal is ignored.
-  Each of today's entries, in time order, belongs to one time: the latest time at or before it (on
+  Each of today's entries belongs to one time, by its own minute alone: the latest time at or before it (on
   time or late), unless the next time is at most an hour away and nearer (early). An entry before every
   time belongs to the first if it is at most six hours early; one logged just after midnight belongs to
   none. It marks that time taken; an entry whose time is already marked is an extra
@@ -48,7 +48,9 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   at later entries. So an entry that is early for one time and late for the one before goes to the time it
   is nearer, even if a later entry turns out to be on time for that one: with times at 08:00 and 09:00,
   doses at 08:40 and 09:05 read the 09:00 time taken and the second entry as one that marked no time
-  ("1 of 2 taken today · logged 2 today"). An entry's minute is its own local time, compared with the
+  ("1 of 2 taken today · logged 2 today"). The six-hour reach before the first time is counted from
+  that time, so with a first time at 06:00 or earlier an entry just after midnight still counts for it.
+  An entry's minute is its own local time, compared with the
   times in the zone the phone is in now, so a dose logged in another time zone earlier the same day can
   mark a different time, or none.
 - **Not in the journal export yet.** Export schema version 2 has no field for schedules, so a restore

@@ -36,7 +36,7 @@ public struct SupplementStackView: View {
                     title: "No supplements on your list",
                     message: "Add something you take and the times you take it. Each tap on Taken logs one entry.",
                     systemImage: "pills", actionTitle: "Add a supplement", action: { self.adding = true })
-            } else {
+            } else if !model.rows.isEmpty {
                 Section {
                     ForEach(model.rows) { row in
                         self.stackRow(row)
@@ -166,7 +166,11 @@ struct SupplementStackPicker: View {
 
     var body: some View {
         List {
-            if model.candidates.isEmpty {
+            if let message = model.errorMessage {
+                InlineNotice(message, tone: .failed)
+            }
+            // A picker that could not be read is not an empty one either.
+            if model.candidates.isEmpty, !model.readFailed {
                 EmptyState(
                     title: "Nothing to add yet",
                     message: "Log a supplement, or star something in the Library, and it shows up here.",
