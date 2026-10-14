@@ -105,6 +105,73 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertEqual(summary.favorites, 2)
     }
 
+    /// The app can be stopped between the journal's save and the favorites' save, where the in-process undo never
+    /// runs. The flag beside the store names the file, so importing that same file again writes the favorites
+    /// and clears the flag instead of refusing a journal that is no longer empty (#118).
+    func testAnImportStoppedBetweenItsSavesIsFinishedByImportingTheSameFileAgain() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        // What a stop after the journal's save leaves: the flag, the journal, and no favorites.
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(data))
+        _ = try journal.restore(try JournalImporter.makePlan(try JournalImporter.readDocument(data)))
+
+        let summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+
+        XCTAssertEqual(summary.favorites, 2)
+        XCTAssertEqual(try favoritesStore.list().count, 2)
+        XCTAssertEqual(try journal.revisions(of: oatsID).map(\.number), [1, 2], "nothing was written twice")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished restore clears its flag")
+    }
+
+    /// Without the flag, or with the flag of another file, a journal that is not empty is refused as before.
+    func testOnlyTheFileTheFlagNamesIsFinished() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(Data("another file".utf8)))
+        _ = try journal.restore(try JournalImporter.makePlan(try JournalImporter.readDocument(data)))
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertTrue(try favoritesStore.list().isEmpty)
+    }
+
+    /// A restore that finished clears its flag, so running it again after the favorites were deleted is refused
+    /// and does not put them back.
+    func testAFinishedImportLeavesNoFlagAndIsRefusedWhenRunAgain() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        _ = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+        XCTAssertNil(try journal.restoreInProgressDigest())
+        for favorite in try favoritesStore.list() { try favoritesStore.remove(id: favorite.id) }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertTrue(try favoritesStore.list().isEmpty, "deleted favorites are not put back")
+    }
+
+    /// A failed favorites write that the undo cleans up leaves no flag behind either, and erasing removes one.
+    func testAFailedImportAndAnEraseLeaveNoFlag() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        favoritesStore.failNextSaveForTesting = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
+        XCTAssertNil(try journal.restoreInProgressDigest())
+
+        try journal.markRestoreInProgress(fileDigest: "left behind")
+        try journal.eraseAll()
+        XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
     func testFavoritesFailureAndConcurrentEditRefusalReportsRetainedJournal() throws {
         let data = try exportData()
         let target = try directory()

@@ -165,8 +165,16 @@ revision, a delete that hid the entry - those rows are no longer only the restor
 throw the person's work away to make the journal look empty. So the undo refuses. The import then reports a
 partial restore: journal entries may already be present, and the person should inspect the journal before
 importing that file again. The message does not include store errors or entry details. Product rows are removed
-only for the snapshots that restore created, which nothing else writes. This two-file compensation does not
-make the writes crash-atomic; that remains a separate design question.
+only for the snapshots that restore created, which nothing else writes. This two-file compensation runs only
+while the app is alive.
+
+**A restore the app stopped between its two saves is finished by importing the same file again (#118).** Just
+before the journal's save the store writes a small flag beside its file holding the SHA-256 of the file being
+imported, and the import clears it once the favorites are settled, whether they were written or undone. If the
+app is stopped after the journal's save, the flag stays. Importing that same file again then finds the flag naming
+it and a journal that is no longer empty, and writes only the favorites. Any other file, or a journal with no
+flag, is refused as `notEmpty` as before, so a restore that finished is not run again over favorites deleted or
+changed since. Erasing all data removes the flag. The flag holds only the digest, no journal content.
 
 **The empty check is inside the transaction.** `SwiftDataJournalStore.restore(_:)` reads its own emptiness
 predicate inside the same `commit` closure as the inserts, under the same write lock, and throws

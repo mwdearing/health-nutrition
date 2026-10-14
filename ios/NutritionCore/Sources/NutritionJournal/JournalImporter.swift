@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NutritionDomain
 
@@ -159,9 +160,35 @@ public enum JournalImporter {
             favoritesTarget = target
         }
 
+        // **A restore of this same file that the app stopped between its two saves is finished (#118).** The
+        // journal was written and the favorites were not; the flag beside the store says which file that was.
+        // Only the favorites are written, and only for that file: any other file is refused as before, and a
+        // restore that finished cleared its flag, so running it again is refused too.
+        let progress = favoritesTarget == nil ? nil : store as? JournalRestoreProgress
+        let digest = fileDigest(data)
+        if let favoritesTarget, let progress, try progress.restoreInProgressDigest() == digest,
+           try journalHoldsAnything(store) {
+            try favoritesTarget.restore(plan.favorites)
+            try? progress.clearRestoreInProgress()
+            return summary(of: plan)
+        }
+
+        // The flag goes down before the journal's save, so a stop after that save leaves it behind. A flag that
+        // cannot be written only loses the resume; the import itself goes ahead as before.
+        try? progress?.markRestoreInProgress(fileDigest: digest)
         // The store refuses a journal that is not empty, and refuses it from inside this same transaction,
         // so the check and the inserts cannot be pulled apart by another write.
-        let receipt = try journal.restore(plan)
+        let receipt: JournalRestoreReceipt
+        do {
+            receipt = try journal.restore(plan)
+        } catch {
+            // The journal wrote nothing, so there is nothing to resume.
+            try? progress?.clearRestoreInProgress()
+            throw error
+        }
+        // Whatever happens to the favorites below, this run settles them before it returns or throws, so the
+        // flag is not left for a later import to read as an unfinished restore.
+        defer { try? progress?.clearRestoreInProgress() }
         if let favoritesTarget {
             do {
                 try favoritesTarget.restore(plan.favorites)
@@ -177,12 +204,27 @@ public enum JournalImporter {
                 throw favoritesFailure
             }
         }
-        return JournalImportSummary(
+        return summary(of: plan)
+    }
+
+    private static func summary(of plan: JournalRestorePlan) -> JournalImportSummary {
+        JournalImportSummary(
             intakes: plan.entries.count,
             revisions: plan.entries.reduce(0) { $0 + $1.revisions.count },
             tombstones: plan.tombstones.count,
             favorites: plan.favorites.count,
             products: plan.products.count)
+    }
+
+    /// Whether the journal holds any intake, live or deleted.
+    private static func journalHoldsAnything(_ store: JournalStore) throws -> Bool {
+        if try !store.activeIntakes().isEmpty { return true }
+        return try !((store as? JournalTombstoneSource)?.deletedIntakes().isEmpty ?? true)
+    }
+
+    /// The SHA-256 of the file's bytes as lowercase hex, which is how the restore flag names the file.
+    static func fileDigest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: Reading
