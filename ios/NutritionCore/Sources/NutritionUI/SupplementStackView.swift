@@ -155,8 +155,10 @@ public struct SupplementStackView: View {
                         }
                         .disabled(!row.canLog)
                         .accessibilityLabel("Log \(row.title) as taken for \(SupplementStackText.time(slot.time))")
-                    } else if slot.recordedEntryID != nil {
-                        // A Taken on the wrong time is undone here, by deleting the entry it wrote.
+                    } else if let entryID = slot.recordedEntryID, entryID != model.undoToken?.intakeID {
+                        // A Taken on the wrong time is undone here, by deleting the entry it wrote. While the
+                        // Undo offer for that entry is up the toast does this, and the button stays away, so a
+                        // double tap on Taken cannot land on Undo Taken in the same spot.
                         QuietCapsule("Undo Taken") {
                             if self.model.undoTaken(slot, now: self.now()) { self.onLogged() }
                         }

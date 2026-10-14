@@ -482,8 +482,8 @@ public final class SupplementStackViewModel: ObservableObject {
         }
     }
 
-    /// Deletes the entry a Taken tap recorded for this time, after the Undo offer is gone: a Taken on the
-    /// wrong time is put right from the list. False, with a message, when nothing was deleted. A time an
+    /// Deletes the entry a Taken tap recorded for this time, after the Undo offer is gone (the screen shows
+    /// Undo Taken only then): a Taken on the wrong time is put right from the list. False, with a message, when nothing was deleted. A time an
     /// entry logged elsewhere filled has no recorded entry, and is corrected in the Journal instead.
     @discardableResult
     public func undoTaken(_ slot: SupplementSlot, now: Date) -> Bool {
