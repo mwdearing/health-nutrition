@@ -22,9 +22,18 @@ public struct InsightsAverages: Equatable {
     public struct Line: Equatable, Identifiable {
         public let id: String
         public let text: String
+
+        public init(id: String, text: String) {
+            self.id = id
+            self.text = text
+        }
     }
 
     public let lines: [Line]
+
+    public init(lines: [Line]) {
+        self.lines = lines
+    }
 
     /// - Parameters:
     ///   - days: the Diary's days with their totals.
