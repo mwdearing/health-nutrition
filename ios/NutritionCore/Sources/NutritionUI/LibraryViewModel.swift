@@ -42,7 +42,8 @@ public struct RecentItemsProvider {
     }
 
     /// Distinct products the person has logged from a lookup, a label scan or another source that stored a
-    /// product snapshot. Typed-in entries (origin `manual`), recipes and water are left out.
+    /// product snapshot. Typed-in entries (origin `manual`), quick adds (`quick_add`, amounts with no product
+    /// behind them), recipes and water are left out.
     ///
     /// Read from every active entry rather than from `recents(limit:)`, so the Products segment is not capped at
     /// the Recents rows. One row per product (its lineage `productID`), built from the newest entry of that
@@ -69,6 +70,7 @@ public struct RecentItemsProvider {
             }
             guard let product = loaded,
                 product.catalogOrigin != Self.manualOrigin,
+                product.catalogOrigin != IntakeContextFactCatalog.quickAddOrigin,
                 product.catalogOrigin != RecipeLogger.catalogOrigin
             else { continue }
             // Catalog products share a lineage id across versions. A label capture's lineage id is the same

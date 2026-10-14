@@ -194,6 +194,19 @@ final class QuickAddTests: XCTestCase {
         XCTAssertFalse(EntryDetailViewModel.adds(of: product, logged: revision.components).isEmpty)
     }
 
+    /// A quick add has no product behind it, so it never shows under Library > Products, while it still
+    /// appears in Recents for a one-tap repeat.
+    func testAQuickAddStaysOutOfTheProductsLibrary() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.caloriesText = "300"
+        XCTAssertNotNil(model.save())
+
+        let provider = RecentItemsProvider(store: store)
+        XCTAssertEqual(try provider.foods(), [])
+        XCTAssertEqual(try provider.recents().count, 1)
+    }
+
     /// The region's own digits and separator are read, as the decimal pad types them.
     func testParsingReadsTheRegionsDigitsAndSeparator() {
         XCTAssertEqual(QuickAddViewModel.parse("2٫5", field: .protein, decimalSeparator: "٫"), .value(Decimal(string: "2.5")!))
