@@ -19,8 +19,10 @@ public struct ReferenceGoalHint: Equatable {
 /// vitamins and minerals screen never rewrites a goal, and nothing new is stored. A row that already has
 /// a goal is never offered one, so a number a person set is never overwritten.
 extension GoalsViewModel {
-    /// Vitamins A, D and E are never offered a reference goal: labels state them in IU, which a goal in
-    /// mcg or mg cannot be compared with, so they stay on the label-capture goal path.
+    /// Vitamins A, D and E are never offered a reference goal. They are the ones the Goals screen keeps
+    /// off its fixed list because a label may state them in IU (vitamins A and D usually, vitamin E on
+    /// older labels), which a goal in mcg or mg cannot be compared with; they stay on the label-capture
+    /// goal path.
     public static let referenceGoalExcludedKeys: Set<String> = ["vitaminA", "vitaminD", "vitaminE"]
 
     /// The reference value a row may take, or nil when no group is chosen, the key is not in the
@@ -28,11 +30,24 @@ extension GoalsViewModel {
     /// `referenceGoalExcludedKeys`, the row is not offered, a goal is already set, or the person has
     /// started typing their own number in the row (Use would replace it).
     public func referenceGoalHint(for nutrient: String) -> ReferenceGoalHint? {
-        guard let group = self.referenceGroup, !Self.referenceGoalExcludedKeys.contains(nutrient),
-            let row = self.rows.first(where: { $0.nutrient == nutrient }), row.targetText == nil,
-            (self.draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        let row = self.rows.first(where: { $0.nutrient == nutrient })
+        return Self.referenceGoalHint(
+            nutrient: nutrient, group: self.referenceGroup,
+            isOfferedWithoutGoal: row != nil && row?.targetText == nil, draft: self.draftText[nutrient],
+            goalUnit: self.unit(for: nutrient))
+    }
+
+    /// The rule behind `referenceGoalHint(for:)`, with the row's state passed in so each condition can be
+    /// tested on its own. `goalUnit` is the unit the row's goal is counted in; a reference in another
+    /// dimension (a row counted in IU) is never offered.
+    static func referenceGoalHint(
+        nutrient: String, group: ReferenceGroup?, isOfferedWithoutGoal: Bool, draft: String?,
+        goalUnit: MeasureUnit
+    ) -> ReferenceGoalHint? {
+        guard let group, !referenceGoalExcludedKeys.contains(nutrient), isOfferedWithoutGoal,
+            (draft ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             let intake = ReferenceIntakes.intake(for: nutrient, group: group),
-            intake.unit.dimension == self.unit(for: nutrient).dimension
+            intake.unit.dimension == goalUnit.dimension
         else { return nil }
         // Worded and rounded exactly as the vitamins and minerals screen states the same value.
         let figure = NutrientGapRow.figure(intake.amount, intake.unit)
@@ -50,10 +65,13 @@ extension GoalsViewModel {
     @discardableResult
     public func useReferenceGoal(for nutrient: String) -> Bool {
         guard let hint = self.referenceGoalHint(for: nutrient) else { return false }
+        let earlierUnit = self.selectedUnits[nutrient]
         self.draftText[nutrient] = DecimalFormatting.text(hint.amount)
         self.selectedUnits[nutrient] = hint.unit
         guard self.commitTarget(for: nutrient) else {
+            // Nothing was saved, so the row goes back to how it was, unit included.
             self.draftText[nutrient] = ""
+            self.selectedUnits[nutrient] = earlierUnit
             return false
         }
         return true

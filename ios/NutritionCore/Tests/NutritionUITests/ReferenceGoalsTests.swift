@@ -86,6 +86,43 @@ final class ReferenceGoalsTests: XCTestCase {
         }
     }
 
+    func testEachConditionOfTheRuleStopsTheHintOnItsOwn() {
+        func hint(
+            _ nutrient: String = "iron", group: ReferenceGroup? = ReferenceGroup(sex: .male, ageBand: .years31To50),
+            offered: Bool = true, draft: String? = "", unit: MeasureUnit = .mg
+        ) -> ReferenceGoalHint? {
+            GoalsViewModel.referenceGoalHint(
+                nutrient: nutrient, group: group, isOfferedWithoutGoal: offered, draft: draft, goalUnit: unit)
+        }
+        XCTAssertEqual(hint()?.text, "RDA 8 mg for Men 31 to 50")
+        XCTAssertNil(hint(group: nil))
+        XCTAssertNil(hint(offered: false))
+        XCTAssertNil(hint(draft: "12"))
+        // A row counted in IU is never offered a mass reference.
+        XCTAssertNil(hint(unit: .iu))
+        // Even offered as a mass row, the IU-stated vitamins are excluded by name.
+        XCTAssertNil(hint("vitaminD", unit: .mcg))
+        XCTAssertNil(hint("vitaminE", unit: .mg))
+        XCTAssertNil(hint("vitaminA", unit: .mcg))
+        // Captured aliases are not table keys.
+        XCTAssertNil(hint("vitamin-a", unit: .iu))
+        XCTAssertNil(hint("vitamin-e", unit: .mg))
+    }
+
+    func testAFailedUseLeavesTheRowAsItWas() {
+        let store = InMemoryGoalStore(refusesWrites: true)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = GoalsViewModel(store: store, preferences: preferences)
+        model.load()
+        model.selectedUnits["iron"] = .g
+
+        XCTAssertFalse(model.useReferenceGoal(for: "iron"))
+
+        XCTAssertEqual(model.draftText["iron"], "")
+        XCTAssertEqual(model.selectedUnits["iron"], .g)
+    }
+
     func testANumberBeingTypedIsNotReplacedByTheReference() throws {
         let (model, store) = makeModel(group: men31)
         model.draftText["iron"] = "12"
