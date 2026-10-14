@@ -20,13 +20,15 @@ public struct SupplementStackRow: Identifiable, Equatable {
     /// False when the favorite's amounts cannot be read back, so there is nothing to log.
     public let canLog: Bool
 
-    /// "1 of 2 taken today", "Not on today's schedule", or the count when more was logged than planned.
+    /// "1 of 2 taken today", from the times marked taken, with the entries logged added when there were
+    /// more of them than marked times; or "Not on today's schedule".
     public var statusText: String {
         guard isDueToday else {
             return loggedToday > 0 ? "Not on today's schedule · logged \(loggedToday) today" : "Not on today's schedule"
         }
-        if loggedToday > slots.count { return "All taken today · logged \(loggedToday) times" }
-        return "\(loggedToday) of \(slots.count) taken today"
+        let taken = slots.filter { $0.state == .taken }.count
+        let base = "\(taken) of \(slots.count) taken today"
+        return loggedToday > taken ? "\(base) · logged \(loggedToday) today" : base
     }
 }
 
@@ -57,6 +59,9 @@ public final class SupplementStackViewModel: ObservableObject {
     @Published public private(set) var rows: [SupplementStackRow] = []
     @Published public private(set) var candidates: [SupplementStackCandidate] = []
     @Published public private(set) var errorMessage: String?
+    /// True when the last read failed, so the screen shows the error and not an empty list. Separate from
+    /// `errorMessage`, which also says why an add or a Taken was refused while the list itself is fine.
+    @Published public private(set) var readFailed = false
     @Published public private(set) var undoToken: LibraryUndoToken?
     /// Today's entries whose current revision could not be read. Each may be an item on the list, so the
     /// screen says a time may read "Not logged" when it was taken rather than showing a count it cannot back.
@@ -100,9 +105,10 @@ public final class SupplementStackViewModel: ObservableObject {
     /// full read, and the day they were read for.
     private var logged: [String: [Int]] = [:]
     private var countedDay: String?
-    /// Whether the screen is showing the list. The app's reloads only reread the journal while it is: a
-    /// list nobody is looking at is read again when it next appears.
-    private var isShown = false
+    /// How many screens are showing the list, in case more than one window shows it. The app's reloads only
+    /// reread the journal while one is: a list nobody is looking at is read again when it next appears.
+    private var shownCount = 0
+    private var isShown: Bool { shownCount > 0 }
 
     // MARK: Reading
 
@@ -117,6 +123,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 rows = []
                 candidates = []
                 errorMessage = "Your time zone could not be read, so today's list cannot be shown."
+                readFailed = true
                 return
             }
             let (counted, unreadable) = try loggedCounts(on: clock.dayKey)
@@ -150,6 +157,7 @@ public final class SupplementStackViewModel: ObservableObject {
             rows = makeRows(clock: clock)
             candidates = try makeCandidates(favorites: stored, planned: Set(planned.keys), kind: kind)
             errorMessage = nil
+            readFailed = false
         } catch {
             // Nothing read before stays on screen: it may be exactly what an erase just removed, and a
             // picker row left behind could still be added.
@@ -157,6 +165,7 @@ public final class SupplementStackViewModel: ObservableObject {
             rows = []
             candidates = []
             errorMessage = "Could not read your supplements."
+            readFailed = true
         }
     }
 
@@ -212,10 +221,12 @@ public final class SupplementStackViewModel: ObservableObject {
     private func loggedCounts(on dayKey: String) throws -> (counts: [String: [Int]], unreadable: Int) {
         var counts: [String: [Int]] = [:]
         var unreadable = 0
-        let today = try store.activeIntakes().filter {
-            $0.lifecycle == .active && IntakeCopier.dayKey($0.occurredAt, zoneIdentifier: $0.timeZoneIdentifier) == dayKey
-        }
-        for intake in today {
+        for intake in try store.activeIntakes() where intake.lifecycle == .active {
+            // An entry's day and minute are its own local ones. A zone that names none has no day, so
+            // the entry is on no day's list, as in the Journal.
+            guard let local = SupplementStackDay.local(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier),
+                  local.dayKey == dayKey
+            else { continue }
             guard let revisions = try? store.revisions(of: intake.id),
                   let current = revisions.first(where: { $0.number == intake.currentRevision })
             else {
@@ -224,9 +235,7 @@ public final class SupplementStackViewModel: ObservableObject {
             }
             let key = SupplementStackDay.matchKey(
                 category: intake.category, snapshotID: current.productSnapshotID, names: current.components.map(\.name))
-            // The day key above already proved the zone readable, so the minute is always there.
-            let minute = SupplementStackDay.minuteOfDay(intake.occurredAt, zoneIdentifier: intake.timeZoneIdentifier) ?? 0
-            counts[key, default: []].append(minute)
+            counts[key, default: []].append(local.minuteOfDay)
         }
         return (counts, unreadable)
     }
@@ -423,14 +432,14 @@ public final class SupplementStackViewModel: ObservableObject {
 
     /// The screen came into view: read everything, and follow the app's reloads until it goes away.
     public func appeared(now: Date) {
-        isShown = true
+        shownCount += 1
         load(now: now)
     }
 
     /// The screen went away: stop following the app's reloads and drop the Undo offer, whose toast is gone.
     public func disappeared() {
-        isShown = false
-        clearUndo()
+        shownCount = max(0, shownCount - 1)
+        if !isShown { clearUndo() }
     }
 
     /// The journal may have changed somewhere in the app. Read again only while the list is on screen; a

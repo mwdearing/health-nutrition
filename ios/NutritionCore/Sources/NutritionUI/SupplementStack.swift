@@ -108,34 +108,32 @@ struct SupplementStackClock: Equatable {
 
     /// Nil when `zoneIdentifier` names no time zone.
     init?(now: Date, zoneIdentifier: String) {
-        guard let zone = TimeZone(identifier: zoneIdentifier),
-              let key = IntakeCopier.dayKey(now, zoneIdentifier: zoneIdentifier)
-        else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        let parts = calendar.dateComponents([.weekday, .hour, .minute], from: now)
-        guard let weekday = parts.weekday, let hour = parts.hour, let minute = parts.minute else { return nil }
-        self.dayKey = key
-        self.weekday = weekday
-        self.minuteOfDay = hour * 60 + minute
+        guard let local = SupplementStackDay.local(now, zoneIdentifier: zoneIdentifier) else { return nil }
+        self.dayKey = local.dayKey
+        self.weekday = local.weekday
+        self.minuteOfDay = local.minuteOfDay
     }
 }
 
 /// How today's entries of one item map onto its times.
 enum SupplementStackDay {
-    /// Today's times for one schedule, earliest first, with each of today's entries on the open time
-    /// nearest to when it was logged (the earlier one on a tie), taken in the order they were logged. An
-    /// evening dose after a missed morning one marks the evening time, not the morning one, and an entry a
-    /// little before its time still counts for it. A time no entry covers reads "not logged" once it has
-    /// passed. `loggedMinutes` are minutes since each entry's own local midnight.
+    /// How long before a time an entry can be and still count for it: a dose taken a little early.
+    static let earlyWindowMinutes = 60
+
+    /// Today's times for one schedule, earliest first, and where each stands. `loggedMinutes` are when
+    /// today's entries were logged, in minutes since each entry's own local midnight.
+    ///
+    /// Each entry, in time order, belongs to one time: the latest time at or before it (a dose taken on
+    /// time or late), unless the next time is at most an hour away and nearer (a dose taken early); an
+    /// entry before every time belongs to the first. It marks that time taken. An entry whose time is
+    /// already marked is an extra one and marks nothing, so a second tap never marks a time that was
+    /// missed: a missed morning stays "Not logged" whatever is logged in the evening. A time no entry
+    /// marks reads "not logged" once it has passed and "later" before.
     static func slots(for schedule: SupplementSchedule, loggedMinutes: [Int], minuteOfDay: Int) -> [SupplementSlot] {
         let minutes = schedule.times.map(SupplementSchedule.minuteOfDay)
         var taken = Array(repeating: false, count: minutes.count)
         for logged in loggedMinutes.sorted() {
-            let open = minutes.indices.filter { !taken[$0] }
-            // `min(by:)` keeps the first of equal distances, which is the earlier time.
-            guard let nearest = open.min(by: { abs(minutes[$0] - logged) < abs(minutes[$1] - logged) }) else { break }
-            taken[nearest] = true
+            if let index = owner(of: logged, among: minutes) { taken[index] = true }
         }
         return schedule.times.indices.map { index in
             let state: SupplementSlotState
@@ -150,15 +148,29 @@ enum SupplementStackDay {
         }
     }
 
-    /// Minutes since local midnight in `zoneIdentifier`, read from the calendar's components so a day that
-    /// skips or repeats an hour still gives the wall-clock minute. Nil for a zone identifier that names none.
-    static func minuteOfDay(_ date: Date, zoneIdentifier: String) -> Int? {
+    /// The index of the time an entry logged at `logged` belongs to, by the rule `slots` states. `minutes`
+    /// are sorted and distinct, as a schedule's times are.
+    static func owner(of logged: Int, among minutes: [Int]) -> Int? {
+        let previous = minutes.lastIndex { $0 <= logged }
+        let next = minutes.firstIndex { $0 > logged }
+        guard let previous else { return next }
+        guard let next else { return previous }
+        let early = minutes[next] - logged
+        return early <= earlyWindowMinutes && early < logged - minutes[previous] ? next : previous
+    }
+
+    /// The local day key (`yyyy-MM-dd`, as the Journal groups by), weekday and minute since midnight of
+    /// `date` in `zoneIdentifier`, all from one calendar's components, so a day that skips or repeats an
+    /// hour still names the wall clock the person sees. Nil for a zone identifier that names no zone.
+    static func local(_ date: Date, zoneIdentifier: String) -> (dayKey: String, weekday: Int, minuteOfDay: Int)? {
         guard let zone = TimeZone(identifier: zoneIdentifier) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
-        let parts = calendar.dateComponents([.hour, .minute], from: date)
-        guard let hour = parts.hour, let minute = parts.minute else { return nil }
-        return hour * 60 + minute
+        let parts = calendar.dateComponents([.year, .month, .day, .weekday, .hour, .minute], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day, let weekday = parts.weekday,
+              let hour = parts.hour, let minute = parts.minute
+        else { return nil }
+        return (String(format: "%04d-%02d-%02d", year, month, day), weekday, hour * 60 + minute)
     }
 
     /// What tells an entry of an item from an entry of anything else: the product snapshot when there is

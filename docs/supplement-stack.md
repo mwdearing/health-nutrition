@@ -22,10 +22,13 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   logged from the Library counts too, and deleting or undoing an entry un-marks its time. An entry's day
   is the local day of its own time zone, the rule the Journal groups by. Entries match an item by its
   product snapshot, or by category and component names when there is none; the meal is ignored.
-  Each of today's entries, in the order they were logged, marks the open time nearest to when it was
-  logged (the earlier time on a tie): an evening dose after a missed morning one marks the evening, and
-  an entry a little early still counts for its own time. A time with no entry reads "Not logged" once it
-  has passed and "Later today" before; the wording reports the journal and gives no advice.
+  Each of today's entries, in time order, belongs to one time: the latest time at or before it (on
+  time or late), unless the next time is at most an hour away and nearer (early); an entry before every
+  time belongs to the first. It marks that time taken; an entry whose time is already marked is an extra
+  and marks nothing, so a missed morning stays "Not logged" whatever is logged in the evening. The count
+  reads "1 of 2 taken today" from the marked times, with "logged N today" added when there were extras.
+  A time with no entry reads "Not logged" once it has passed and "Later today" before; the wording
+  reports the journal and gives no advice.
   An entry whose record cannot be read is not counted as missing: the screen says how many of today's
   entries it could not read, since any of them may be an item on the list.
   The screen reads the journal again when it appears, when the app returns to the foreground, and, while

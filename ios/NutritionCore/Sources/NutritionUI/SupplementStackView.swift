@@ -29,7 +29,7 @@ public struct SupplementStackView: View {
                     tone: .waiting)
             }
             // A list that could not be read is not an empty one, so the empty state waits for a good read.
-            if model.rows.isEmpty, model.errorMessage == nil {
+            if model.rows.isEmpty, !model.readFailed {
                 EmptyState(
                     title: "No supplements on your list",
                     message: "Add something you take and the times you take it. Each tap on Taken logs one entry.",

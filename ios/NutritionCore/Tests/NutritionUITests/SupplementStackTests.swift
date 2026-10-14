@@ -210,7 +210,7 @@ final class SupplementStackTests: XCTestCase {
 
     // MARK: Today's times
 
-    func testEachEntryTakesTheNearestOpenTimeAndOnlyPassedTimesReadNotLogged() throws {
+    func testEachEntryMarksTheTimeItBelongsToAndExtrasMarkNothing() throws {
         let schedule = try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))
         func states(_ logged: [Int], at minute: Int) -> [SupplementSlotState] {
             SupplementStackDay.slots(for: schedule, loggedMinutes: logged, minuteOfDay: minute).map(\.state)
@@ -219,16 +219,36 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(states([], at: 7 * h + 59), [.later, .later])
         XCTAssertEqual(states([], at: 8 * h), [.notLogged, .later])
         XCTAssertEqual(states([9 * h], at: 12 * h), [.taken, .later])
-        // A little early still counts for its own time.
+        // Early: a little before its time, or before every time, still counts for that time.
         XCTAssertEqual(states([7 * h + 50], at: 12 * h), [.taken, .later])
-        // The morning was missed and the evening taken: the evening is marked, not the morning.
-        XCTAssertEqual(states([20 * h + 30], at: 21 * h), [.notLogged, .taken])
+        XCTAssertEqual(states([6 * h], at: 12 * h), [.taken, .later])
         XCTAssertEqual(states([19 * h + 55], at: 21 * h), [.notLogged, .taken])
-        // Two in the evening fill both times, whatever order they are given in.
-        XCTAssertEqual(states([20 * h + 40, 20 * h + 30], at: 21 * h), [.taken, .taken])
-        XCTAssertEqual(states([9 * h, 10 * h, 11 * h], at: 12 * h), [.taken, .taken])
-        // Halfway between the two, the earlier time is the one taken.
-        XCTAssertEqual(states([14 * h], at: 15 * h), [.taken, .later])
+        // Late: the morning dose taken in the afternoon is still the morning's, not the evening's.
+        XCTAssertEqual(states([14 * h + 30], at: 15 * h), [.taken, .later])
+        XCTAssertEqual(states([18 * h], at: 18 * h + 30), [.taken, .later])
+        // An hour early is still early.
+        XCTAssertEqual(states([19 * h], at: 19 * h + 30), [.notLogged, .taken])
+        // The morning was missed and the evening taken: the evening is marked, and an extra evening entry
+        // never marks the missed morning.
+        XCTAssertEqual(states([20 * h + 30], at: 21 * h), [.notLogged, .taken])
+        XCTAssertEqual(states([20 * h + 40, 20 * h + 30], at: 21 * h), [.notLogged, .taken])
+        XCTAssertEqual(states([9 * h, 10 * h, 11 * h], at: 12 * h), [.taken, .later])
+        XCTAssertEqual(states([9 * h, 20 * h + 5], at: 21 * h), [.taken, .taken])
+    }
+
+    func testTheCountFollowsTheMarkedTimesAndSaysWhenMoreWasLogged() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight, twenty]))])
+        // Two entries in the evening, the morning missed; read at 21:00.
+        try log(store, at: now.addingTimeInterval(8.5 * 3_600))
+        try log(store, at: now.addingTimeInterval(8.6 * 3_600))
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now.addingTimeInterval(9 * 3_600))
+        XCTAssertEqual(model.rows.first?.slots.map(\.state), [.notLogged, .taken])
+        XCTAssertEqual(model.rows.first?.statusText, "1 of 2 taken today · logged 2 today")
     }
 
     func testAMissedMorningAndATakenEveningReadThatWay() throws {
@@ -436,6 +456,8 @@ final class SupplementStackTests: XCTestCase {
             source: .favorite(dinner.id))
         XCTAssertFalse(model.add(stale, schedule: .standard, now: now))
         XCTAssertEqual(model.errorMessage, "This is already on your supplements.")
+        // A refused add is not a failed read: the list is still shown as it is.
+        XCTAssertFalse(model.readFailed)
         XCTAssertEqual(Set(schedules.schedules().keys), ["fav-magnesium"])
     }
 
@@ -510,6 +532,7 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertTrue(model.rows.isEmpty)
         XCTAssertTrue(model.candidates.isEmpty)
         XCTAssertEqual(model.errorMessage, "Could not read your supplements.")
+        XCTAssertTrue(model.readFailed)
     }
 
     func testARecentStarredSinceThePickerOpenedIsAddedNotCopied() throws {
@@ -535,6 +558,9 @@ final class SupplementStackTests: XCTestCase {
             let time = ReminderTime(hour: minute / 60, minute: minute % 60)
             let date = SupplementScheduleEditor.date(for: time, calendar: calendar)
             XCTAssertEqual(SupplementScheduleEditor.time(from: date, calendar: calendar), time)
+            // Always on the same fixed day, never today, which may be a day the clocks change.
+            let day = calendar.dateComponents([.year, .month, .day], from: date)
+            XCTAssertEqual([day.year, day.month, day.day], [2001, 1, 15])
         }
     }
 
@@ -558,6 +584,13 @@ final class SupplementStackTests: XCTestCase {
         model.reloadIfShown(now: now)
         XCTAssertGreaterThan(store.activeIntakesCalls, afterAppearing)
         XCTAssertEqual(model.rows.first?.loggedToday, 1)
+
+        // Shown twice (two windows), then closed in one: still followed.
+        model.appeared(now: now)
+        model.disappeared()
+        let stillShown = store.activeIntakesCalls
+        model.reloadIfShown(now: now)
+        XCTAssertGreaterThan(store.activeIntakesCalls, stillShown)
 
         model.disappeared()
         let afterLeaving = store.activeIntakesCalls
