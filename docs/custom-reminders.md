@@ -14,6 +14,6 @@ Beside the one daily log reminder, a person can keep several reminders for water
   from the daily reminder's identifier.
 - Erase all data removes the list and cancels every request. Refused or withdrawn permission switches
   the reminders off and says so.
-- Code: `CustomReminders.swift`, `CustomRemindersView.swift` (NutritionUI),
+- Code: `CustomReminders.swift`, `AppSettingsView.swift` (rows),
   `SystemCustomReminderScheduler.swift` (app). Tests: `CustomReminderControllerTests`.
 - Shown inline in Settings under "Units and logging": one water and one supplement switch, each with a time while on.
