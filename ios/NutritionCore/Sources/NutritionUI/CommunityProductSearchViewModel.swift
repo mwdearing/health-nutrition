@@ -25,6 +25,8 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
     private var inspectionGeneration = UUID()
     public var canLoadAlternatives: Bool { alternativesCursor != nil && !loadingAlternatives && !inspectionNeedsRefresh }
     private let store: any CustomProductStore
+    /// Every product on this phone, as the latest `search` read them; `filterLocal` narrows this list.
+    private var localProducts: [CustomProductRevision] = []
     private let service: (any CommunityProductServicing)?
     private let isSignedIn: @MainActor () -> Bool
     private var query = ""
@@ -42,11 +44,10 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
         self.query = query.trimmingCharacters(in: .whitespacesAndNewlines); self.kind = kind
         cursor = nil; sharedResults = []; pageError = false; loadingNextPage = false
         do {
-            localResults = try store.customProducts().filter {
-                (kind == nil || $0.content.kind == kind) && (self.query.isEmpty || ($0.content.name + " " + ($0.content.brand ?? "")).localizedCaseInsensitiveContains(self.query))
-            }.sorted { $0.content.name.localizedStandardCompare($1.content.name) == .orderedAscending }
+            localProducts = try store.customProducts()
+            localResults = Self.localMatches(localProducts, query: self.query, kind: kind)
             localError = false
-        } catch { localResults = []; localError = true }
+        } catch { localProducts = []; localResults = []; localError = true }
         // Open Food Facts needs no account, so it runs whether or not the person is signed in.
         startOpenFoodFacts(token: token)
         guard isSignedIn() else { state = .signInRequired; return }
@@ -64,6 +65,19 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
             guard generation == token else { return }
             state = !isSignedIn() ? .signInRequired : error as? ProductAPIError == .unsupportedBackend ? .unsupported : .unavailable
         }
+    }
+    /// Filters the products on this phone while the person types, from the list the latest `search` read.
+    /// It reads no store and sends nothing anywhere: Open Food Facts and shared products are searched only
+    /// when a search is submitted, never as the person types. Shared results, paging and the query that
+    /// `retry` and `loadNextPage` use stay as the last submitted search left them.
+    public func filterLocal(query: String, kind: ProductKind?) {
+        guard !localError else { return }
+        localResults = Self.localMatches(localProducts, query: query.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind)
+    }
+    private static func localMatches(_ products: [CustomProductRevision], query: String, kind: ProductKind?) -> [CustomProductRevision] {
+        products.filter {
+            (kind == nil || $0.content.kind == kind) && (query.isEmpty || ($0.content.name + " " + ($0.content.brand ?? "")).localizedCaseInsensitiveContains(query))
+        }.sorted { $0.content.name.localizedStandardCompare($1.content.name) == .orderedAscending }
     }
     /// Waits for the open product source search started by the latest `search` call.
     public func openFoodFactsSearchFinished() async {

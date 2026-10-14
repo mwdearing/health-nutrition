@@ -8,25 +8,35 @@ public struct CommunityProductSearchView: View {
     private let onLegacy: (LegacyCustomProductDraft) -> Void
     private let onSignIn: () -> Void
     private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
+    /// The person's own favorites and recents, listed above the products. Both must be given, or the
+    /// screen shows products only.
+    private let library: LibraryViewModel?
+    /// Opens the details form prefilled from a favorite or recent. Nothing is logged until Save.
+    private let onPick: ((RepeatTemplate) -> Void)?
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
     @FocusState private var searchFocused: Bool
-    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in }) {
+    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
+                library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil) {
         self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
+        self.library = library; self.onPick = onPick
     }
     public var body: some View {
         List {
             Section {
-                LabeledField("Search products", focus: $searchFocused) { focus in
-                    TextField("Search products", text: $query).focused(focus)
+                LabeledField("Search foods and products", focus: $searchFocused) { focus in
+                    TextField("Search foods and products", text: $query).focused(focus)
                 }.onSubmit { search() }
                 Picker("Kind", selection: $kind) {
                     Text("All kinds").tag(ProductKind?.none)
                     ForEach(ProductKind.allCases, id: \.self) { Text($0.displayName).tag(Optional($0)) }
                 }
                 Button("Search", action: search)
+            } footer: {
+                Text("Your foods and products on this phone narrow as you type. Open Food Facts and shared products are searched only when you tap Search or press Return.")
             }
+            if let library, let onPick { LibrarySearchSections(library: library, query: query, onPick: onPick) }
             Section("On this phone") {
                 if model.localError { Text("Could not read local products.") }
                 else if model.localResults.isEmpty { Text("No matching local products.") }
@@ -114,6 +124,10 @@ public struct CommunityProductSearchView: View {
         }
         .navigationTitle("Find products")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
+        .onAppear { if onPick != nil { library?.load() } }
+        // Typing narrows what is already on this phone. It never starts a search that leaves the phone.
+        .onChange(of: query) { _, text in model.filterLocal(query: text, kind: kind) }
+        .onChange(of: kind) { _, selected in model.filterLocal(query: query, kind: selected) }
     }
     @ViewBuilder private var openFoodFactsStatus: some View {
         switch model.openFoodFactsState {
@@ -156,6 +170,36 @@ public struct CommunityProductSearchView: View {
             }
             selectionError = nil
         } catch { selectionError = "Could not open this product. Search again to refresh the results." }
+    }
+}
+
+/// The person's own favorites and recents on Find products, narrowed as they type. Built from the Library's
+/// last load: nothing here reads the network or sends the query anywhere, and a tap opens details only.
+struct LibrarySearchSections: View {
+    @ObservedObject var library: LibraryViewModel
+    let query: String
+    let onPick: (RepeatTemplate) -> Void
+    var body: some View {
+        ForEach(library.searchGroups(matching: query)) { group in
+            Section(group.title) {
+                if group.items.isEmpty { Text("Nothing you have logged or saved matches.").foregroundStyle(TokenColors.textSecondary) }
+                ForEach(group.items) { item in
+                    Button { onPick(item.template) } label: {
+                        VStack(alignment: .leading) {
+                            Text(item.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
+                            Text(item.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                            // Marked for the reason the Library marks it: its amounts read like food.
+                            if item.kind == .supplement {
+                                Label(ProductKind.supplement.displayName, systemImage: "pills")
+                                    .font(.footnote).foregroundStyle(TokenColors.accent)
+                            }
+                        }
+                    }
+                    .accessibilityLabel(item.accessibilityLabel(forPick: true))
+                    .accessibilityHint("Opens details without adding an entry")
+                }
+            }
+        }
     }
 }
 
