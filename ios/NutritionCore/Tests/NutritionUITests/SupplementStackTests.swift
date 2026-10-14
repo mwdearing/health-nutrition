@@ -221,7 +221,9 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(states([9 * h], at: 12 * h), [.taken, .later])
         // Early: a little before its time, or before every time, still counts for that time.
         XCTAssertEqual(states([7 * h + 50], at: 12 * h), [.taken, .later])
-        XCTAssertEqual(states([6 * h], at: 12 * h), [.taken, .later])
+        // More than an hour before every time: likely last night's, so it marks nothing.
+        XCTAssertEqual(states([6 * h], at: 12 * h), [.notLogged, .later])
+        XCTAssertEqual(states([0 * h + 30], at: 12 * h), [.notLogged, .later])
         XCTAssertEqual(states([19 * h + 55], at: 21 * h), [.notLogged, .taken])
         // Late: the morning dose taken in the afternoon is still the morning's, not the evening's.
         XCTAssertEqual(states([14 * h + 30], at: 15 * h), [.taken, .later])
@@ -577,7 +579,9 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(store.activeIntakesCalls, 0)
         XCTAssertTrue(model.rows.isEmpty)
 
-        model.appeared(now: now)
+        let window = UUID()
+        let other = UUID()
+        model.appeared(window, now: now)
         XCTAssertEqual(model.rows.count, 1)
         let afterAppearing = store.activeIntakesCalls
         try log(inner, at: now.addingTimeInterval(-3_600))
@@ -585,14 +589,16 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertGreaterThan(store.activeIntakesCalls, afterAppearing)
         XCTAssertEqual(model.rows.first?.loggedToday, 1)
 
-        // Shown twice (two windows), then closed in one: still followed.
-        model.appeared(now: now)
-        model.disappeared()
+        // Shown in a second window, then closed there: still followed. The first window's appearance
+        // reported again is still one screen.
+        model.appeared(other, now: now)
+        model.appeared(window, now: now)
+        model.disappeared(other)
         let stillShown = store.activeIntakesCalls
         model.reloadIfShown(now: now)
         XCTAssertGreaterThan(store.activeIntakesCalls, stillShown)
 
-        model.disappeared()
+        model.disappeared(window)
         let afterLeaving = store.activeIntakesCalls
         model.reloadIfShown(now: now)
         XCTAssertEqual(store.activeIntakesCalls, afterLeaving)
@@ -605,7 +611,8 @@ final class SupplementStackTests: XCTestCase {
         try saveFavorite(favorites, snapshot: nil)
         try schedules.save(["fav-magnesium": .standard])
         let model = makeModel(store: store, favorites: favorites, schedules: schedules)
-        model.appeared(now: now)
+        let screen = UUID()
+        model.appeared(screen, now: now)
         XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
         XCTAssertNotNil(model.undoToken)
 
@@ -616,7 +623,7 @@ final class SupplementStackTests: XCTestCase {
 
         // Hidden: nothing read before is kept for the next appearance.
         XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
-        model.disappeared()
+        model.disappeared(screen)
         model.storesWereReplaced(now: now)
         XCTAssertNil(model.undoToken)
         XCTAssertTrue(model.rows.isEmpty)

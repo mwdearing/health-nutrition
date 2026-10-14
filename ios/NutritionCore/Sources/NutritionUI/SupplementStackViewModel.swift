@@ -105,10 +105,12 @@ public final class SupplementStackViewModel: ObservableObject {
     /// full read, and the day they were read for.
     private var logged: [String: [Int]] = [:]
     private var countedDay: String?
-    /// How many screens are showing the list, in case more than one window shows it. The app's reloads only
-    /// reread the journal while one is: a list nobody is looking at is read again when it next appears.
-    private var shownCount = 0
-    private var isShown: Bool { shownCount > 0 }
+    /// The screens showing the list, one id each, in case more than one window shows it. A set rather than
+    /// a count, so an appearance reported twice without a disappearance in between is still one screen.
+    /// The app's reloads only reread the journal while one is shown: a list nobody is looking at is read
+    /// again when it next appears.
+    private var shownBy: Set<UUID> = []
+    private var isShown: Bool { !shownBy.isEmpty }
 
     // MARK: Reading
 
@@ -159,8 +161,8 @@ public final class SupplementStackViewModel: ObservableObject {
             errorMessage = nil
             readFailed = false
         } catch {
-            // Nothing read before stays on screen: it may be exactly what an erase just removed, and a
-            // picker row left behind could still be added.
+            // Clear everything read before rather than keep it on screen: it may be exactly what an erase
+            // just removed, and a picker row left behind could still be added.
             forget()
             rows = []
             candidates = []
@@ -430,15 +432,17 @@ public final class SupplementStackViewModel: ObservableObject {
 
     // MARK: Showing
 
-    /// The screen came into view: read everything, and follow the app's reloads until it goes away.
-    public func appeared(now: Date) {
-        shownCount += 1
+    /// A screen with this id came into view: read everything, and follow the app's reloads until every
+    /// screen showing the list has gone away.
+    public func appeared(_ screen: UUID, now: Date) {
+        shownBy.insert(screen)
         load(now: now)
     }
 
-    /// The screen went away: stop following the app's reloads and drop the Undo offer, whose toast is gone.
-    public func disappeared() {
-        shownCount = max(0, shownCount - 1)
+    /// The screen with this id went away. When no screen shows the list any more, stop following the app's
+    /// reloads and drop the Undo offer, whose toast is gone.
+    public func disappeared(_ screen: UUID) {
+        shownBy.remove(screen)
         if !isShown { clearUndo() }
     }
 

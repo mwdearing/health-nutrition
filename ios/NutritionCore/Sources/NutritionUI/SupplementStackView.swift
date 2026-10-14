@@ -11,6 +11,8 @@ public struct SupplementStackView: View {
     @State private var adding = false
     @State private var editing: SupplementStackRow?
     @Environment(\.scenePhase) private var scenePhase
+    /// This screen's id, so the model can tell two windows showing the list apart.
+    @State private var screenID = UUID()
 
     public init(
         model: SupplementStackViewModel, now: @escaping () -> Date = { Date() }, onLogged: @escaping () -> Void = {}
@@ -59,8 +61,8 @@ public struct SupplementStackView: View {
                 }
             }
         }
-        .onAppear { self.model.appeared(now: self.now()) }
-        .onDisappear { self.model.disappeared() }
+        .onAppear { self.model.appeared(self.screenID, now: self.now()) }
+        .onDisappear { self.model.disappeared(self.screenID) }
         // Back from the background, anything may have been logged elsewhere, so everything is read again.
         // While on screen, the times move on once a minute from what was already read (a time that passes
         // reads "Not logged"); only a new day reads the journal again, which clears yesterday's marks.

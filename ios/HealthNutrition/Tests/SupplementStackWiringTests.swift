@@ -32,7 +32,7 @@ final class SupplementStackWiringTests: XCTestCase {
         try services.favoritesStore.add(favorite)
         let stack = services.supplementStack
         // As the screen does when it opens, so the list follows the app's reloads.
-        stack.appeared(now: Date())
+        stack.appeared(UUID(), now: Date())
         let candidate = try XCTUnwrap(stack.candidates.first)
         XCTAssertTrue(stack.add(candidate, schedule: .standard, now: Date()))
         XCTAssertEqual(stack.rows.map(\.title), ["Synthetic capsule"])

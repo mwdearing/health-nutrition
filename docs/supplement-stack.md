@@ -23,8 +23,8 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   is the local day of its own time zone, the rule the Journal groups by. Entries match an item by its
   product snapshot, or by category and component names when there is none; the meal is ignored.
   Each of today's entries, in time order, belongs to one time: the latest time at or before it (on
-  time or late), unless the next time is at most an hour away and nearer (early); an entry before every
-  time belongs to the first. It marks that time taken; an entry whose time is already marked is an extra
+  time or late), unless the next time is at most an hour away and nearer (early). An entry more than an
+  hour before every time (one logged just after midnight, say) belongs to none. It marks that time taken; an entry whose time is already marked is an extra
   and marks nothing, so a missed morning stays "Not logged" whatever is logged in the evening. The count
   reads "1 of 2 taken today" from the marked times, with "logged N today" added when there were extras.
   A time with no entry reads "Not logged" once it has passed and "Later today" before; the wording
