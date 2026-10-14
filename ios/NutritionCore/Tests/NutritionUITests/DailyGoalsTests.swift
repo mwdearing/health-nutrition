@@ -822,6 +822,21 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.draftText["iron"], "12")
     }
 
+    func testAGoalRemovedBehindTheScreenTakesItsRowErrorWithIt() throws {
+        let goals = InMemoryGoalStore(goals: [NutrientGoal(nutrient: "zinc", target: 15, unit: .mg)])
+        let model = GoalsViewModel(store: goals)
+        model.load()
+        model.draftText["zinc"] = "0"
+        XCTAssertFalse(model.commitTarget(for: "zinc"))
+        XCTAssertNotNil(model.rowError["zinc"])
+
+        try goals.removeGoal(nutrient: "zinc")
+        model.load()
+
+        XCTAssertEqual(model.draftText["zinc"], "")
+        XCTAssertNil(model.rowError["zinc"])
+    }
+
     func testInlineStoreFailuresStayNoticesAndKeepTheDraft() {
         let model = GoalsViewModel(store: InMemoryGoalStore(refusesWrites: true))
         model.load()

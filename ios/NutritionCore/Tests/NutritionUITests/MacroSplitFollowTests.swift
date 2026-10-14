@@ -216,6 +216,26 @@ final class MacroSplitFollowTests: XCTestCase {
         XCTAssertNil(model.followedMacroSplit)
     }
 
+    func testAClearAllRefusedPartwayLeavesNoTextToSaveBackForTheGoalsItRemoved() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        // Carbohydrate and energy go, fat is refused.
+        store.refusedRemovals = ["fat"]
+
+        XCTAssertFalse(model.clearAllGoals())
+
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.removeFailedMessage)
+        XCTAssertNil(model.rows.first { $0.nutrient == "carbohydrate" }?.targetText)
+        XCTAssertEqual(model.draftText["carbohydrate"], "")
+        XCTAssertEqual(model.draftText["energy"], "")
+        XCTAssertEqual(model.draftText["fat"], "67")
+        // Focus leaving the emptied fields must not write the removed goals back.
+        XCTAssertTrue(model.commitTarget(for: "carbohydrate"))
+        XCTAssertTrue(model.commitTarget(for: "energy"))
+        XCTAssertNil(try store.goal(for: "carbohydrate"))
+        XCTAssertNil(try store.goal(for: "energy"))
+    }
+
     func testASetupSaveStopsFollowingWhenItsGramsDiffer() throws {
         let store = InMemoryGoalStore(goals: [energyGoal(2000)])
         let model = try appliedModel(store)

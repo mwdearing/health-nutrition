@@ -252,7 +252,7 @@ public final class GoalsViewModel: ObservableObject {
             // so the old text is not saved back as a goal when the field next loses focus.
             for key in loadedGoalKeys where byNutrient[key] == nil {
                 draftText[key] = nil
-                selectedUnits[key] = nil
+                rowError[key] = nil
             }
             loadedGoalKeys = Set(byNutrient.keys)
             for key in offeredKeys {
@@ -572,7 +572,9 @@ public final class GoalsViewModel: ObservableObject {
             load()
             return errorMessage == nil
         } catch {
-            refreshFollowedMacroSplit()
+            // The screen shows what the store still holds after a partial clear, and the reload refills
+            // the fields of the goals it did remove, so their old text is not saved back.
+            load()
             errorMessage = Self.removeFailedMessage
             return false
         }
