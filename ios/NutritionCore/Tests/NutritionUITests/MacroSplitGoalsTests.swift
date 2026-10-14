@@ -54,6 +54,10 @@ final class MacroSplitGoalsTests: XCTestCase {
         let model = loadedModel(store)
         model.draftText["energy"] = "2500"
 
+        // The preview is worked out from the same 2500 kcal the save then stores.
+        XCTAssertEqual(
+            model.macroSplitGrams(protein: "30", carbohydrate: "40", fat: "30"),
+            .success(MacroSplit.Grams(protein: 188, carbohydrate: 250, fat: 83)))
         XCTAssertNil(model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"))
 
         // 750 / 4 = 187.5 -> 188, 1000 / 4 = 250, 750 / 9 = 83.33 -> 83
@@ -69,8 +73,10 @@ final class MacroSplitGoalsTests: XCTestCase {
         let model = loadedModel(store)
         model.draftText["energy"] = "-1"
 
+        XCTAssertEqual(model.macroSplitUnavailable(), .energyNotValid)
         XCTAssertEqual(
-            model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"), "Enter a number above zero.")
+            model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"),
+            MacroSplitProblem.energyNotValid.message)
         XCTAssertEqual(try store.goal(for: "energy"), energyGoal(2000))
         XCTAssertNil(try store.goal(for: "protein"))
     }
@@ -159,5 +165,6 @@ final class MacroSplitGoalsTests: XCTestCase {
         XCTAssertEqual(
             model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"),
             GoalsViewModel.saveFailedMessage)
+        XCTAssertEqual(model.draftText["protein"], "")
     }
 }

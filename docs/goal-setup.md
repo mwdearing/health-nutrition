@@ -73,7 +73,7 @@ goals for those three nutrients. All three are written or none is.
 The percentages themselves are not stored. The share shown back is worked out from the stored gram
 goals and the stored energy goal, so it need not total 100 after a gram goal is edited by hand or
 the energy goal changes; the grams do not follow a later change to the energy goal until the
-percentages are set again. Without an energy goal the section only says to set one first. The app
+percentages are set again. The energy used is what the energy row shows: an edit typed there and not yet saved is used for the preview and saved before the gram goals. Without an energy goal the section only says to set one first. The app
 offers no split of its own.
 
 ## Code
