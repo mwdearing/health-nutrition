@@ -96,10 +96,11 @@ extension LookedUpProduct {
     }
 
     /// The words a person sees for a value. `describe` keeps the stored words, which are hashed into
-    /// snapshot ids and must never change; this is for text on screen only.
+    /// snapshot ids and must never change; this is for text on screen only, so a figure longer than a label
+    /// prints is read as `AmountDisplay.stated` reads it.
     static func shownText(_ value: NutrientValue) -> String {
         switch value {
-        case .known: return describe(value)
+        case .known(let amount, let unit): return AmountDisplay.stated(amount, unit: unit).text
         case .unknown: return "Not on the label"
         case .notApplicable: return "Does not apply"
         case .belowReportingThreshold(let unit):

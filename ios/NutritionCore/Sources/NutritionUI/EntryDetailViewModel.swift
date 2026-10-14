@@ -25,7 +25,8 @@ public struct EntryNutrientRow: Equatable, Identifiable {
     public let key: String
     public let name: String
     /// The amount with its unit, or a word for a value that states no amount. An adds row is what the entry
-    /// added, rounded as Today rounds a total; a row of all values is the label's own figure, exactly.
+    /// added, rounded as Today rounds a total; a row of all values is the label's own figure, exactly, unless
+    /// it is longer than a label prints (`AmountDisplay.stated`).
     public let amountText: String
 
     public var id: String { key }

@@ -165,6 +165,12 @@ total scaled from a label keeps every digit its division leaves (24 fl oz of a d
 710 mL serving is 0.9996686049295774... of that serving), so without this a 1 g label value read as a
 38-digit figure. A real amount that rounds to nothing reads `< 0.01 mg` or `< 1 kcal`.
 
+All values, on the Add screen and on an entry, lists a product's own figures as the label stated them. A
+figure with more than six fraction digits (more than the catalog lets a label state) was worked out rather
+than printed, and reads through the same rule: repeating a multi-food entry stores its values already scaled
+to what it logged, and Open Food Facts can state sodium worked out from salt with every digit of a binary
+float. The stored figure, and the words its snapshot id is hashed from, keep every digit.
+
 **Other amount** opens a field in the preferred volume unit, labeled "Water amount in mL" or "Water amount in fl oz".
 Add logs one water entry through the same path as the quick button, so it gets the same 10-second Undo. A typed comma is
 read where the region uses one. Under US the amount converts at the exact 29.5735295625 mL per fl oz and is stored in mL.
