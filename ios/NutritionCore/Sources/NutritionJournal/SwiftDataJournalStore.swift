@@ -2249,7 +2249,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             guard seen.insert(component.componentID).inserted else {
                 throw JournalError.duplicateComponentID(component.componentID)
             }
-            guard !component.amount.isNaN else { throw JournalError.invalidAmount(component.componentID) }
+            guard !component.amount.isNaN, component.amount >= 0 else {
+                throw JournalError.invalidAmount(component.componentID)
+            }
             stored.append(StoredComponent(
                 componentID: component.componentID, name: component.name,
                 amountText: DecimalText.encode(component.amount), unitSymbol: component.unit.symbol))

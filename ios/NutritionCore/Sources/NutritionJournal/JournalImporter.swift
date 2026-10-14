@@ -584,6 +584,14 @@ public enum JournalImporter {
                         "revision \(revision.number) of \(intakeID) has an amount for "
                             + "\(component.componentID) that is not exact decimal text")
                 }
+                // A component amount is a measured quantity, so zero is allowed but a negative one is not. The
+                // journal would store it, and every later delivery of the intake would then fail, so the file is
+                // refused before anything is written.
+                guard amount >= 0 else {
+                    throw JournalImportError.corrupt(
+                        "revision \(revision.number) of \(intakeID) has the amount \(text) for "
+                            + "\(component.componentID), which is negative and not a quantity")
+                }
                 components.append(
                     IntakeComponent(
                         componentID: component.componentID, name: component.name, amount: amount, unit: unit))

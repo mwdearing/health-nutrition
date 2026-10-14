@@ -358,6 +358,16 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertTrue(try store.pendingOutbox().isEmpty)
     }
 
+    func testStoreRefusesANegativeComponentAmountWithoutWriting() throws {
+        let store = try makeStore(try makeDirectory())
+        let negative = IntakeComponent(componentID: "oats", name: "Rolled oats", amount: -1, unit: .g)
+        XCTAssertThrowsError(try store.create(sampleIntake(), components: [negative], product: nil, now: when)) {
+            XCTAssertEqual($0 as? JournalError, .invalidAmount("oats"))
+        }
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+        XCTAssertTrue(try store.pendingOutbox().isEmpty)
+    }
+
     func testDecimalAmountsRoundTripExactlyThroughReopen() throws {
         let directory = try makeDirectory()
         let amounts: [Decimal] = [
