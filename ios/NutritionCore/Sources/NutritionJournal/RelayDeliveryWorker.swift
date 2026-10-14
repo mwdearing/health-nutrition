@@ -690,6 +690,19 @@ public struct RelayDeliveryWorker: Sendable {
         }
     }
 
+    /// Whether a store read failed for a reason another attempt can get past.
+    ///
+    /// **Only what is recognised as passing is retried.** A closed store and a failure of the storage layer
+    /// itself can clear by the next run. A stored record that does not decode cannot: it reads the same way
+    /// every time, so retrying it would reschedule the projection forever and hold back the ones behind it.
+    /// Anything not recognised here is treated as lasting and goes to a person.
+    private static func isTransientRead(_ error: any Error) -> Bool {
+        if error is DecodingError { return false }
+        if let journal = error as? JournalError { return journal == .closed }
+        let domain = (error as NSError).domain
+        return domain == NSCocoaErrorDomain || domain == "NSSQLiteErrorDomain"
+    }
+
     /// Encodes a link-only change as the contract's `link_projection`, which takes no outbox row.
     private func encode(_ projection: RelayLinkProjection) -> RelayEncoding {
         let intake: Intake?
@@ -698,7 +711,9 @@ public struct RelayDeliveryWorker: Sendable {
             intake = try store.activeIntakes().first { $0.id == projection.intakeID }
             revisions = try store.revisions(of: projection.intakeID)
         } catch {
-            return .unreadable(reason: "the intake could not be read")
+            return Self.isTransientRead(error)
+                ? .unreadable(reason: "the intake could not be read")
+                : .failed(reason: "the intake could not be read")
         }
         guard let intake, let revision = revisions.first(where: { $0.number == projection.revision })
         else { return .superseded(detail: nil) }
@@ -706,7 +721,9 @@ public struct RelayDeliveryWorker: Sendable {
         do {
             product = try revision.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
         } catch {
-            return .unreadable(reason: "the product snapshot could not be read")
+            return Self.isTransientRead(error)
+                ? .unreadable(reason: "the product snapshot could not be read")
+                : .failed(reason: "the product snapshot could not be read")
         }
         do {
             return .encoded(RelayEncodedOperation(

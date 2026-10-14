@@ -938,10 +938,12 @@ final class RelayDeliveryWorkerTests: XCTestCase {
     final class FlakyReadStore: RelayDeliveryStore, @unchecked Sendable {
         private let wrapped: SwiftDataJournalStore
         private let lock = NSLock()
+        private let failure: JournalError
         private var hasFailed = false
 
-        init(wrapped: SwiftDataJournalStore) {
+        init(wrapped: SwiftDataJournalStore, failure: JournalError = .closed) {
             self.wrapped = wrapped
+            self.failure = failure
         }
 
         var failNextSaveForTesting: Bool {
@@ -976,7 +978,7 @@ final class RelayDeliveryWorkerTests: XCTestCase {
                 hasFailed = true
                 return true
             }
-            if shouldFail { throw JournalError.closed }
+            if shouldFail { throw failure }
             return try wrapped.activeIntakes()
         }
 
@@ -1555,6 +1557,27 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             return false
         }
         XCTAssertTrue(retried, "the run reports the projection as retry scheduled, got \(outcomes)")
+    }
+
+    /// A stored record that does not decode reads the same way on every run, so the projection is parked
+    /// for a person rather than rescheduled forever.
+    func testAProjectionIsParkedWhenTheStoredRecordIsCorrupt() async throws {
+        let store = try makeStore(try makeDirectory(), enabled: [.healthKit])
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let flaky = FlakyReadStore(wrapped: store, failure: .corruptRecord("components"))
+        let queue = RecordingProjectionQueue()
+        queue.offer([projection(sequence: 2)])
+        let transport = FakeIntakeContextTransport(capabilities: Self.capabilities())
+        let worker = RelayDeliveryWorker(
+            store: flaky, transport: transport, encoder: encoder, token: { "synthetic-test-token" },
+            projections: queue)
+
+        _ = await worker.runOnce(now: when)
+
+        XCTAssertEqual(queue.recorded.count, 1)
+        guard case .needsAttention = try XCTUnwrap(queue.recorded.first) else {
+            return XCTFail("a corrupt record is parked, not retried, got \(queue.recorded)")
+        }
     }
 
     /// A 429's stated `Retry-After` reaches the projection queue too, so the wait the receiver asked for is
