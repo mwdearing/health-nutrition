@@ -8,14 +8,14 @@ final class InsightsAveragesTests: XCTestCase {
     // Wednesday 2023-11-15 12:00 UTC.
     private let now = Date(timeIntervalSince1970: 1_700_049_600)
 
-    private func day(_ key: String, protein: Decimal?) -> InsightsAverages.Day {
+    private func day(_ key: String, protein: Decimal?, isLogged: Bool = true) -> InsightsAverages.Day {
         let value: NutrientValue = protein.map { .known($0, .g) } ?? .unknown
         let total = NutrientTotal(
             value: value,
             coverage: Coverage(
                 knownCount: protein == nil ? 0 : 1, totalCount: 1, hasBelowReportingThreshold: false,
                 hasUnknown: protein == nil))
-        return InsightsAverages.Day(key: key, totals: DailyTotals(totals: ["protein": total]))
+        return InsightsAverages.Day(key: key, totals: DailyTotals(totals: ["protein": total]), isLogged: isLogged)
     }
 
     private func make(_ days: [InsightsAverages.Day]) -> InsightsAverages {
@@ -40,5 +40,12 @@ final class InsightsAveragesTests: XCTestCase {
     func testNothingKnownGivesNoLineRatherThanAZero() {
         XCTAssertTrue(make([day("2023-11-15", protein: nil)]).lines.isEmpty)
         XCTAssertTrue(make([]).lines.isEmpty)
+    }
+
+    func testADayWithOnlyWaterOrSupplementsDoesNotPullTheAverageDown() {
+        let result = make([
+            day("2023-11-15", protein: 60), day("2023-11-14", protein: 0, isLogged: false),
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
     }
 }

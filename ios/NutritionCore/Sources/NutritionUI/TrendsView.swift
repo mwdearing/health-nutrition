@@ -22,7 +22,8 @@ public struct InsightsHost: View {
             entries: journal.sections.flatMap(\.rows).map {
                 InsightsWeek.Entry(occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier)
             },
-            days: journal.sections.map { InsightsAverages.Day(key: $0.id, totals: $0.totals) },
+            days: journal.sections.map { InsightsAverages.Day(
+                    key: $0.id, totals: $0.totals, isLogged: JournalViewModel.hasFoodEntries($0.rows)) },
             averageNutrients: Self.averagedNutrients, now: now(), zone: zone())
     }
 

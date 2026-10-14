@@ -12,10 +12,14 @@ public struct InsightsAverages: Equatable {
         /// The local day as the Diary keys it: "yyyy-MM-dd".
         public let key: String
         public let totals: DailyTotals
+        /// Whether the day holds a food or drink entry. A day with only water or supplements is not a logged
+        /// day, the same rule as the day header and the week summary, so it cannot pull an average down.
+        public let isLogged: Bool
 
-        public init(key: String, totals: DailyTotals) {
+        public init(key: String, totals: DailyTotals, isLogged: Bool = true) {
             self.key = key
             self.totals = totals
+            self.isLogged = isLogged
         }
     }
 
@@ -44,7 +48,7 @@ public struct InsightsAverages: Equatable {
         calendar.timeZone = zone
         let today = calendar.startOfDay(for: now)
         let inWindow = days.filter { day in
-            guard let age = ageInDays(of: day.key, from: today, calendar: calendar) else { return false }
+            guard day.isLogged, let age = ageInDays(of: day.key, from: today, calendar: calendar) else { return false }
             return age >= 0 && age < windowDays
         }
         var lines: [Line] = []
