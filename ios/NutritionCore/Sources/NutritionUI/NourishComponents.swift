@@ -33,7 +33,7 @@ public struct CalorieRing: View {
                 .rotationEffect(.degrees(-90))
             VStack(spacing: DesignSpacing.xs) {
                 Text(figure)
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                     .minimumScaleFactor(0.6)
                     .foregroundStyle(TokenColors.textPrimary)
                 Text(caption)
