@@ -20,7 +20,11 @@ public enum NutrientGoalChoices {
     /// come after the fixed list, in the order the caller gives them.
     public static func keys(including extraKeys: [String]) -> [String] {
         var offered = keys
-        for key in extraKeys where !offered.contains(key) { offered.append(key) }
+        for key in extraKeys {
+            let canonical = HealthKitWritePlanner.canonicalKey(for: key)
+            guard !offered.contains(key), !offered.contains(canonical) else { continue }
+            offered.append(key)
+        }
         return offered
     }
 

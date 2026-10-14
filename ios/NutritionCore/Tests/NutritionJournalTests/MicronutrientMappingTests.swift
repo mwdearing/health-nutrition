@@ -50,3 +50,15 @@ final class MicronutrientAliasTests: XCTestCase {
         XCTAssertEqual(specs.map(\.quantityTypeIdentifier), ["HKQuantityTypeIdentifierDietaryVitaminB6"])
     }
 }
+
+final class MicronutrientRelayCodeTests: XCTestCase {
+    func testCodesRoundTripToTheirHealthKitType() {
+        for key in HealthKitWritePlanner.micronutrientKeys {
+            guard let mapping = HealthKitWritePlanner.mapping(for: key) else { return XCTFail(key) }
+            let code = IntakeContextFactCatalog.code(forNutrientKey: key)
+            XCTAssertEqual(
+                IntakeContextFactCatalog.healthKitTypeIdentifier(forCode: code),
+                mapping.quantityTypeIdentifier, key)
+        }
+    }
+}
