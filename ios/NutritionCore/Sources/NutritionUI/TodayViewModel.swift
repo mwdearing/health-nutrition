@@ -257,10 +257,14 @@ public final class TodayViewModel: ObservableObject {
                 if let goals, let seeding = preferences as? WaterGoalDefaultPreferences,
                    !seeding.hasSeededWaterGoal {
                     if !storedGoals.contains(where: { $0.nutrient == DailyTotalsBuilder.waterKey }) {
-                        try goals.setGoal(Self.defaultWaterGoal)
-                        storedGoals.append(Self.defaultWaterGoal)
+                        // A failed write keeps the goals just read and is retried on the next load.
+                        if (try? goals.setGoal(Self.defaultWaterGoal)) != nil {
+                            storedGoals.append(Self.defaultWaterGoal)
+                            seeding.markWaterGoalSeeded()
+                        }
+                    } else {
+                        seeding.markWaterGoalSeeded()
                     }
-                    seeding.markWaterGoalSeeded()
                 }
             } catch {
                 storedGoals = []
@@ -339,7 +343,7 @@ public final class TodayViewModel: ObservableObject {
     /// One-tap container sizes, in milliliters, shown in the unit the reader chose. US sizes are
     /// whole fluid ounces (8, 16, 24) so the labels read as the containers do.
     public var waterPresets: [WaterPreset] {
-        let flOz = Decimal(string: "29.5735295625")!
+        let flOz = Decimal(string: "29.5735295625", locale: AmountParser.locale)!
         if AmountDisplay.volumeUnit(for: unitSystem) == .flOz {
             return [("Glass", 8), ("Bottle", 16), ("Large bottle", 24)].map {
                 WaterPreset(name: $0.0, milliliters: Decimal($0.1) * flOz, label: "\($0.0) \($0.1) fl oz")
