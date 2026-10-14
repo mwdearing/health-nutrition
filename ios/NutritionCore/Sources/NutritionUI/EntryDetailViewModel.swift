@@ -24,7 +24,8 @@ public struct EntryComponentRow: Equatable, Identifiable {
 public struct EntryNutrientRow: Equatable, Identifiable {
     public let key: String
     public let name: String
-    /// Exact decimal text with its unit, or a word for a value that states no amount.
+    /// The amount with its unit, or a word for a value that states no amount. An adds row is what the entry
+    /// added, rounded as Today rounds a total; a row of all values is the label's own figure, exactly.
     public let amountText: String
 
     public var id: String { key }
@@ -659,7 +660,7 @@ public final class EntryDetailViewModel: ObservableObject {
             guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { continue }
             var amountText = "Not on the label"
             if value != .unknown, let factor {
-                amountText = LookedUpProduct.shownText(value.scaled(by: factor))
+                amountText = LookedUpProduct.shownScaledText(value.scaled(by: factor))
             } else if LookedUpProduct.statesAmount(value) {
                 amountText = LookedUpProduct.cannotScaleText
             } else if value == .notApplicable {

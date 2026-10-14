@@ -54,9 +54,9 @@ public struct NutrientProgressLine: Equatable, Identifiable {
         switch amount {
         case .known(let value, let unit):
             let figure = "\(label) "
-                + "\(DecimalFormatting.text(value)) \(unit.symbol)"
+                + AmountDisplay.nutrient(value, unit: unit).text
             guard let goal else { return figure }
-            return "\(figure) of \(DecimalFormatting.text(goal.target)) \(goal.unit.symbol)"
+            return "\(figure) of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text)"
         case .unknown, .notApplicable, .belowReportingThreshold:
             return "\(label) unknown"
         }

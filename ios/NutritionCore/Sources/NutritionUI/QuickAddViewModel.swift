@@ -145,11 +145,13 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     }
 
     /// The typed amounts in field order, such as "250 kcal, 32 g protein". Every quick add is one serving of
-    /// its own name, so this is what tells two of them apart wherever they are listed.
-    nonisolated static func summary(of nutrients: [String: NutrientValue]) -> String {
+    /// its own name, so this is what tells two of them apart wherever they are listed. `rounded` is for
+    /// amounts scaled from what was typed, which are read the way Today reads a total.
+    nonisolated static func summary(of nutrients: [String: NutrientValue], rounded: Bool = false) -> String {
         Field.allCases.compactMap { field -> String? in
             guard case .known(let value, let unit) = nutrients[field.nutrientKey] else { return nil }
-            let amount = "\(DecimalFormatting.text(value)) \(unit.symbol)"
+            let amount = rounded
+                ? AmountDisplay.nutrient(value, unit: unit).text : "\(DecimalFormatting.text(value)) \(unit.symbol)"
             return field == .calories ? amount : amount + " " + field.label.lowercased()
         }.joined(separator: ", ")
     }
@@ -162,7 +164,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         // An edited entry may log more or less than the one serving the snapshot states.
         guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: product.labelBasis, logged: components)
         else { return title }
-        let amounts = Self.summary(of: product.nutrients.mapValues { $0.scaled(by: factor) })
+        let amounts = Self.summary(of: product.nutrients.mapValues { $0.scaled(by: factor) }, rounded: factor != 1)
         return amounts.isEmpty ? title : title + " · " + amounts
     }
 

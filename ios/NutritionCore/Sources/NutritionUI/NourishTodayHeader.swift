@@ -1,4 +1,5 @@
 import NutritionDomain
+import NutritionJournal
 import SwiftUI
 
 /// The top of Today in the Nourish look: the calorie ring, the three macro columns, and a bar for every
@@ -26,10 +27,19 @@ public struct NourishTodayHeader: View {
     }
 
     private func figure(_ key: String) -> String {
-        guard let line = model.progress.first(where: { $0.nutrient == key }),
-            case .known(let value, let unit) = line.amount
-        else { return "—" }
-        return "\(DecimalFormatting.text(value)) \(unit.symbol)"
+        Self.figure(for: model.progress.first(where: { $0.nutrient == key }))
+    }
+
+    /// The figure under a macro column or inside the ring: the day's total, rounded for reading, or a dash
+    /// where the day has no known total.
+    static func figure(for line: NutrientProgressLine?) -> String {
+        guard let line, case .known(let value, let unit) = line.amount else { return "—" }
+        return AmountDisplay.nutrient(value, unit: unit).text
+    }
+
+    static func ringFootnote(for goal: NutrientGoal?) -> String? {
+        guard let goal else { return nil }
+        return "of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text) goal"
     }
 
     private func fraction(_ bar: GoalBarModel?) -> Double {
@@ -38,8 +48,7 @@ public struct NourishTodayHeader: View {
     }
 
     private var ringFootnote: String? {
-        guard let goal = model.progress.first(where: { $0.nutrient == Self.ringKey })?.goal else { return nil }
-        return "of \(DecimalFormatting.text(goal.target)) \(goal.unit.symbol) goal"
+        Self.ringFootnote(for: model.progress.first(where: { $0.nutrient == Self.ringKey })?.goal)
     }
 
     private var otherBars: [GoalBarModel] {
