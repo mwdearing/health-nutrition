@@ -7,10 +7,14 @@ import SwiftUI
 public struct InsightsView: View {
     private let week: InsightsWeek
     private let skippedCount: Int
+    private let averages: InsightsAverages
 
-    public init(week: InsightsWeek, skippedCount: Int = 0) {
+    public init(
+        week: InsightsWeek, skippedCount: Int = 0, averages: InsightsAverages = InsightsAverages(lines: [])
+    ) {
         self.week = week
         self.skippedCount = skippedCount
+        self.averages = averages
     }
 
     public var body: some View {
@@ -49,6 +53,19 @@ public struct InsightsView: View {
                                 .accessibilityElement(children: .ignore)
                                 .accessibilityLabel(
                                     "\(day.label), \(day.entryCount == 1 ? "1 entry" : "\(day.entryCount) entries")")
+                            }
+                        }
+                    }
+                }
+                if !averages.lines.isEmpty {
+                    Card {
+                        VStack(alignment: .leading, spacing: DesignSpacing.s) {
+                            Text("Last 30 days")
+                                .font(.headline)
+                                .foregroundStyle(TokenColors.textPrimary)
+                                .accessibilityAddTraits(.isHeader)
+                            ForEach(averages.lines) { line in
+                                Text(line.text).foregroundStyle(TokenColors.textPrimary)
                             }
                         }
                     }

@@ -74,14 +74,14 @@ final class InsightsWeekTests: XCTestCase {
     func testAFinishedReadWithNoEntriesIsAnEmptyWeek() {
         let state = InsightsLoadState.resolve(
             errorMessage: nil, loadCount: 1, entries: [], now: now, zone: utc, locale: locale)
-        guard case .ready(let week, _) = state else { return XCTFail("expected ready") }
+        guard case .ready(let week, _, _) = state else { return XCTFail("expected ready") }
         XCTAssertFalse(week.hasAnyEntry)
     }
 
     func testSkippedEntriesAreCarriedSoTheWeekIsNotShownAsComplete() {
         let state = InsightsLoadState.resolve(
             errorMessage: nil, loadCount: 1, skippedCount: 2, entries: [], now: now, zone: utc, locale: locale)
-        guard case .ready(_, let skipped) = state else { return XCTFail("expected ready") }
+        guard case .ready(_, let skipped, _) = state else { return XCTFail("expected ready") }
         XCTAssertEqual(skipped, 2)
     }
 }

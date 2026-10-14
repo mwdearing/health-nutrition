@@ -22,14 +22,18 @@ public struct InsightsHost: View {
             entries: journal.sections.flatMap(\.rows).map {
                 InsightsWeek.Entry(occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier)
             },
-            now: now(), zone: zone())
+            days: journal.sections.map { InsightsAverages.Day(key: $0.id, totals: $0.totals) },
+            averageNutrients: Self.averagedNutrients, now: now(), zone: zone())
     }
+
+    /// The energy and the three macros: the figures the Today ring and columns show.
+    private static let averagedNutrients = ["energy", "protein", "carbohydrate", "fat"]
 
     public var body: some View {
         Group {
             switch state {
-            case .ready(let week, let skipped):
-                InsightsView(week: week, skippedCount: skipped)
+            case .ready(let week, let skipped, let averages):
+                InsightsView(week: week, skippedCount: skipped, averages: averages)
             case .failed(let message):
                 ScrollView {
                     InlineNotice(message, tone: .failed)
