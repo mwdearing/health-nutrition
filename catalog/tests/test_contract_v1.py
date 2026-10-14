@@ -2,13 +2,15 @@
 
 These run offline: no network, no database. They check the contract files as
 published, with a small pure-Python reference evaluator that reproduces every
-golden vector exactly using `decimal.Decimal`.
+golden vector exactly, in rational arithmetic, with the one rounding rule the contract states.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path
 
 import jsonschema
@@ -22,6 +24,7 @@ ERROR_SCHEMA_PATH = CONTRACTS / "catalog-api" / "error.v1.schema.json"
 OPENAPI_PATH = CONTRACTS / "catalog-api" / "openapi.v1.yaml"
 REGISTRY_PATH = CONTRACTS / "nutrients" / "registry.v1.json"
 GOLDEN_PATH = CONTRACTS / "nutrients" / "golden.v1.json"
+SWIFT_UNITS_PATH = ROOT / "ios" / "NutritionCore" / "Sources" / "NutritionDomain" / "Units.swift"
 
 
 def load(path: Path):
@@ -69,7 +72,7 @@ def valid_product() -> dict:
         "nutrients": {
             "energy": {"state": "known", "amount": "150", "unit": "kcal"},
             "protein": {"state": "known", "amount": "5.2", "unit": "g"},
-            "vitamin_d": {"state": "below_reporting_threshold", "unit": "ug"},
+            "vitamin_d": {"state": "below_reporting_threshold", "unit": "mcg"},
             "sodium": {"state": "unknown"},
             "caffeine": {"state": "not_applicable"},
         },
@@ -199,22 +202,180 @@ def test_amount_states_follow_the_value_states(product_validator):
     product_rejected(product_validator, doc)
 
 
+@pytest.mark.parametrize("amount", ["-5", "-0", "-0.0", "-0.5"])
+def test_a_known_amount_is_never_negative(product_validator, amount):
+    doc = valid_product()
+    doc["nutrients"]["protein"]["amount"] = amount
+    product_rejected(product_validator, doc)
+
+
+@pytest.mark.parametrize("amount", ["0", "0.0", "0.25", "12", "1500.000001"])
+def test_zero_and_positive_amounts_are_accepted(product_validator, amount):
+    doc = valid_product()
+    doc["nutrients"]["protein"]["amount"] = amount
+    product(product_validator, doc)
+
+
+@pytest.mark.parametrize("amount", ["0", "0.0", "0.000", "-1", "-0.5", "00", "", 40, "1e2"])
+def test_a_serving_amount_is_a_positive_decimal(product_validator, amount):
+    doc = valid_product()
+    doc["serving"]["amount"] = amount
+    product_rejected(product_validator, doc)
+
+
+@pytest.mark.parametrize(
+    ("amount", "unit"),
+    [("40", "g"), ("0.5", "kg"), ("0.05", "L"), ("250", "mL"), ("1", "serving"), ("2", "gummy"), ("10.0", "mg")],
+)
+def test_a_serving_is_a_mass_a_volume_or_a_count(product_validator, amount, unit):
+    doc = valid_product()
+    doc["serving"] = {"amount": amount, "unit": unit}
+    product(product_validator, doc)
+
+
+@pytest.mark.parametrize("unit", ["kcal", "IU", "kJ", "furlong", "ml", ""])
+def test_a_serving_is_never_stated_in_energy_or_international_units(product_validator, unit):
+    doc = valid_product()
+    doc["serving"]["unit"] = unit
+    product_rejected(product_validator, doc)
+
+
 def test_unknown_unit_symbols_are_refused(product_validator, registry):
     symbols = {unit["symbol"] for unit in registry["units"]}
     assert "g" in symbols and "kcal" in symbols
-    for unit in ("furlong", "G", "mcG", ""):
+    for unit in ("furlong", "G", "mcG", "", "ug", "ml", "l", "iu", "kJ"):
         doc = valid_product()
         doc["nutrients"]["protein"]["unit"] = unit
         product_rejected(product_validator, doc)
 
 
-def test_schema_units_and_registry_units_agree(product_validator, registry):
-    declared = product_schema_unit_symbols(load(PRODUCT_SCHEMA_PATH))
-    assert declared == {unit["symbol"] for unit in registry["units"]}
+@pytest.mark.parametrize("nutrient", ["totally_fake", "vitamin_k", "Protein", "protein_", ""])
+def test_only_registered_nutrient_ids_are_accepted(product_validator, nutrient):
+    doc = valid_product()
+    doc["nutrients"][nutrient] = {"state": "unknown"}
+    product_rejected(product_validator, doc)
+
+
+@pytest.mark.parametrize(
+    ("nutrient", "unit"),
+    [("protein", "kcal"), ("protein", "IU"), ("protein", "mL"), ("protein", "serving"), ("energy", "g"),
+     ("energy", "IU"), ("sodium", "L"), ("vitamin_c", "IU"), ("vitamin_d", "kcal"), ("vitamin_a", "mL")],
+)
+def test_a_nutrient_is_only_stated_in_its_own_units(product_validator, nutrient, unit):
+    doc = valid_product()
+    doc["nutrients"][nutrient] = {"state": "known", "amount": "1", "unit": unit}
+    product_rejected(product_validator, doc)
+
+    doc = valid_product()
+    doc["nutrients"][nutrient] = {"state": "below_reporting_threshold", "unit": unit}
+    product_rejected(product_validator, doc)
+
+
+def test_every_registered_nutrient_is_accepted_in_each_of_its_units(product_validator, registry):
+    for nutrient in registry["nutrients"]:
+        for unit in nutrient["units"]:
+            doc = valid_product()
+            doc["nutrients"] = {nutrient["id"]: {"state": "known", "amount": "1", "unit": unit}}
+            product(product_validator, doc)
+            doc["nutrients"] = {nutrient["id"]: {"state": "below_reporting_threshold", "unit": unit}}
+            product(product_validator, doc)
+
+
+def resolve(schema, node):
+    while "$ref" in node:
+        node = schema["$defs"][node["$ref"].removeprefix("#/$defs/")]
+    return node
+
+
+def schema_units_by_nutrient(schema) -> dict[str, dict[str, list[str]]]:
+    """For each nutrient id the schema accepts: the unit enum of its known and below-threshold states."""
+    found = {}
+    for nutrient, ref in schema["$defs"]["nutrientMap"]["properties"].items():
+        states = {}
+        for branch in resolve(schema, ref)["oneOf"]:
+            branch = resolve(schema, branch)
+            state = branch["properties"]["state"]["const"]
+            if "unit" in branch["properties"]:
+                states[state] = resolve(schema, branch["properties"]["unit"])["enum"]
+            else:
+                states[state] = None
+        assert set(states) == {"known", "unknown", "not_applicable", "below_reporting_threshold"}, nutrient
+        found[nutrient] = states
+    return found
+
+
+def test_the_schema_accepts_exactly_the_registry_nutrients_and_their_units(product_schema, registry):
+    nutrient_map = product_schema["$defs"]["nutrientMap"]
+    assert nutrient_map["additionalProperties"] is False
+    assert "patternProperties" not in nutrient_map
+    by_nutrient = schema_units_by_nutrient(product_schema)
+    assert set(by_nutrient) == {nutrient["id"] for nutrient in registry["nutrients"]}
+    for nutrient in registry["nutrients"]:
+        states = by_nutrient[nutrient["id"]]
+        assert states["known"] == nutrient["units"], nutrient
+        assert states["below_reporting_threshold"] == nutrient["units"], nutrient
+        assert states["unknown"] is None and states["not_applicable"] is None, nutrient
+
+
+def test_the_schema_serving_units_are_the_registry_mass_volume_and_count_units(product_schema, registry):
+    assert registry["serving_dimensions"] == ["mass", "volume", "count"]
+    expected = [unit["symbol"] for unit in registry["units"] if unit["dimension"] in registry["serving_dimensions"]]
+    serving = product_schema["$defs"]["serving"]["properties"]
+    assert resolve(product_schema, serving["unit"])["enum"] == expected
+    assert resolve(product_schema, serving["amount"]) is product_schema["$defs"]["positiveDecimal"]
 
 
 def product_schema_unit_symbols(schema) -> set[str]:
-    return set(schema["$defs"]["unitSymbol"]["enum"])
+    """Every unit symbol any enum of the schema lets through."""
+    symbols = set()
+    for name, definition in schema["$defs"].items():
+        if name.endswith("Unit"):
+            symbols |= set(definition["enum"])
+    return symbols
+
+
+def test_schema_units_and_registry_units_agree(product_schema, registry):
+    assert product_schema_unit_symbols(product_schema) == {unit["symbol"] for unit in registry["units"]}
+
+
+def test_every_wire_unit_symbol_is_one_the_ios_unit_registry_knows(product_schema, registry, golden):
+    """A contract-valid document must decode in the app, so the wire set is a subset of the Swift set."""
+    swift = set(re.findall(r'symbol: "([^"]+)"', SWIFT_UNITS_PATH.read_text()))
+    assert {"g", "mcg", "kcal", "IU"} <= swift, "the Swift unit registry was not read"
+    wire = {unit["symbol"] for unit in registry["units"]} | product_schema_unit_symbols(product_schema)
+    assert wire <= swift, wire - swift
+    for nutrient in registry["nutrients"]:
+        assert set(nutrient["units"]) <= swift, nutrient
+    for case in golden["cases"]:
+        if case["op"] == "reject":
+            continue
+        used = set(re.findall(r'"(?:unit|to|count_unit)": "([^"]*)"', json.dumps(case)))
+        assert used <= swift, (case["id"], used - swift)
+
+
+@pytest.mark.parametrize("field", ["name", "brand", "attribution"])
+@pytest.mark.parametrize(
+    "text",
+    ["Éclair drink", "明治おいしい牛乳", "Müsli & Früchte 30 %", "Сырок глазированный", "x", "Crème fraîche d'Isigny"],
+)
+def test_display_text_may_be_in_any_script(product_validator, field, text):
+    doc = valid_product()
+    target = doc["source"] if field == "attribution" else doc
+    target[field] = text
+    product(product_validator, doc)
+
+
+@pytest.mark.parametrize("field", ["name", "brand", "attribution"])
+@pytest.mark.parametrize(
+    "text",
+    ["", " ", " Oats", "Oats ", "Oats\n", "Oa\nts", "Oa\tts", "Oa\u0000ts", "Oa\u007fts", "Oa\u0085ts",
+     "\u0085Oats", "Oa\u2028ts", "Oa\u2029ts", "Oa\u202ets", "Oats\u202e", "Oa\u2066ts", "Éclair\n", "x" * 600],
+)
+def test_display_text_refuses_control_and_direction_override_characters(product_validator, field, text):
+    doc = valid_product()
+    target = doc["source"] if field == "attribution" else doc
+    target[field] = text
+    product_rejected(product_validator, doc)
 
 
 # --------------------------------------------------------------------------- registry
@@ -238,6 +399,20 @@ def test_every_nutrient_declares_a_dimension_and_a_usable_canonical_unit(registr
         canonical = nutrient["canonical_unit"]
         assert canonical in units, nutrient
         assert units[canonical]["dimension"] == nutrient["dimension"], nutrient
+        assert canonical in nutrient["units"], nutrient
+
+
+def test_every_nutrient_lists_the_units_of_its_dimension(registry):
+    """A nutrient's units are its dimension's units; only vitamin A and D may also be stated in IU."""
+    stated_in_international_units = set()
+    for nutrient in registry["nutrients"]:
+        own = [unit["symbol"] for unit in registry["units"] if unit["dimension"] == nutrient["dimension"]]
+        listed = list(nutrient["units"])
+        if "IU" in listed:
+            stated_in_international_units.add(nutrient["id"])
+            listed.remove("IU")
+        assert listed == own, nutrient
+    assert stated_in_international_units == {"vitamin_a", "vitamin_d"}
 
 
 def test_every_unit_declares_its_dimension_and_an_exact_factor(registry):
@@ -250,10 +425,11 @@ def test_every_unit_declares_its_dimension_and_an_exact_factor(registry):
         if factor is not None:
             assert isinstance(factor, str), "factors are decimal strings, not numbers"
             assert Decimal(factor) > 0, unit
-    # The two energy units differ by the exact thermochemical factor 1 kcal = 4.184 kJ,
-    # so the energy dimension is canonical in kJ and the kcal factor is exact.
-    assert Decimal(by_symbol["kcal"]["factor_to_canonical"]) == Decimal("4.184")
-    assert Decimal(by_symbol["kJ"]["factor_to_canonical"]) == Decimal("1")
+            # A power of ten, so applying it or undoing it is exact and never needs rounding.
+            assert set(factor.replace(".", "")) <= {"0", "1"} and factor.count("1") == 1, unit
+    # Energy has one unit, kcal, as in the app. kJ is not a v1 unit.
+    assert by_symbol["kcal"]["factor_to_canonical"] == "1"
+    assert "kJ" not in by_symbol
 
 
 def test_the_registry_holds_no_json_numbers(registry):
@@ -289,12 +465,68 @@ class UnitError(Exception):
         self.name = name
 
 
+FRACTION_DIGITS = 10
+
+
 def units(registry):
     return {unit["symbol"]: unit for unit in registry["units"]}
 
 
-def convert(amount: Decimal, unit: str, target: str, registry, density: Decimal | None = None,
-            portion: dict | None = None) -> Decimal:
+def exact(text: str) -> Fraction:
+    return Fraction(Decimal(text))
+
+
+def terminates(value: Fraction) -> bool:
+    denominator = value.denominator
+    for prime in (2, 5):
+        while denominator % prime == 0:
+            denominator //= prime
+    return denominator == 1
+
+
+def quotient(numerator: Fraction, denominator: Fraction) -> Fraction:
+    """The one place a result may be rounded.
+
+    A quotient with a finite decimal form is kept exactly. One without is rounded to
+    FRACTION_DIGITS fraction digits, halves away from zero.
+    """
+    value = numerator / denominator
+    if terminates(value):
+        return value
+    scale_by = 10**FRACTION_DIGITS
+    shifted = abs(value) * scale_by
+    whole = (2 * shifted.numerator + shifted.denominator) // (2 * shifted.denominator)
+    rounded = Fraction(whole, scale_by)
+    return -rounded if value < 0 else rounded
+
+
+def decimal_string(value: Fraction) -> str:
+    """The plain form the contract uses: no exponent, no trailing zeros. Only for a finite decimal."""
+    assert terminates(value), value
+    digits = 0
+    while value.denominator != 1:
+        value *= 10
+        digits += 1
+    text = str(abs(value.numerator)).rjust(digits + 1, "0")
+    if digits:
+        text = f"{text[:-digits]}.{text[-digits:]}"
+    return f"-{text}" if value < 0 else text
+
+
+def valid_portion(portion: dict, table) -> tuple[str, Fraction, str]:
+    """Mirrors PortionDefinition.init: a count unit, a positive amount, in a mass or a volume."""
+    for symbol in (portion["count_unit"], portion["unit"]):
+        if symbol not in table:
+            raise UnitError("unknown_symbol")
+    amount = exact(portion["amount"])
+    measurable = table[portion["unit"]]["dimension"] in ("mass", "volume")
+    if table[portion["count_unit"]]["dimension"] != "count" or not measurable or amount <= 0:
+        raise UnitError("invalid_portion_definition")
+    return portion["count_unit"], amount, portion["unit"]
+
+
+def convert(amount: Fraction, unit: str, target: str, registry, density: Fraction | None = None,
+            portion: dict | None = None) -> Fraction:
     table = units(registry)
     for symbol in (unit, target):
         if symbol not in table:
@@ -306,49 +538,67 @@ def convert(amount: Decimal, unit: str, target: str, registry, density: Decimal 
     if source["dimension"] == dest["dimension"]:
         if source["dimension"] == "count":
             raise UnitError("incompatible_count_units")
-        return amount * Decimal(source["factor_to_canonical"]) / Decimal(dest["factor_to_canonical"])
+        # Both factors are powers of ten, so this is exact.
+        return amount * exact(source["factor_to_canonical"]) / exact(dest["factor_to_canonical"])
     if "international_unit" in (source["dimension"], dest["dimension"]):
         raise UnitError("international_unit_not_convertible")
 
-    if source["dimension"] == "count" or dest["dimension"] == "count":
-        # A count unit needs a stated portion, and the portion must name this count unit.
-        if portion is None or portion["count_unit"] not in (unit, target):
+    measurable = ("mass", "volume")
+    if source["dimension"] == "count" and dest["dimension"] in measurable:
+        # The portion must define the count unit being converted from.
+        if portion is None:
             raise UnitError("missing_portion_definition")
-        if source["dimension"] == "count" and dest["dimension"] == "count":
-            raise UnitError("incompatible_count_units")
-        portion_amount = Decimal(portion["amount"]) * amount
-        return convert(portion_amount, portion["unit"], target, registry, density)
+        count_unit, portion_amount, portion_unit = valid_portion(portion, table)
+        if count_unit != unit:
+            raise UnitError("missing_portion_definition")
+        return convert(amount * portion_amount, portion_unit, target, registry, density)
+    if source["dimension"] in measurable and dest["dimension"] == "count":
+        # The portion must define the count unit being converted into: the amount goes into the
+        # portion's unit and is then divided by the portion.
+        if portion is None:
+            raise UnitError("missing_portion_definition")
+        count_unit, portion_amount, portion_unit = valid_portion(portion, table)
+        if count_unit != target:
+            raise UnitError("missing_portion_definition")
+        return quotient(convert(amount, unit, portion_unit, registry, density), portion_amount)
 
     if {source["dimension"], dest["dimension"]} == {"mass", "volume"}:
         if density is None:
             raise UnitError("missing_density")
         if density <= 0:
             raise UnitError("invalid_density")
-        # Density is grams per millilitre: mass divides by it, volume multiplies by it.
-        in_grams = amount * Decimal(source["factor_to_canonical"])
+        # Density is grams per millilitre. The step is made in the canonical units, then the
+        # result takes the target unit's power of ten: grams divide by it, millilitres multiply.
+        canonical = amount * exact(source["factor_to_canonical"])
         if source["dimension"] == "mass":
-            in_grams = in_grams / density
+            canonical = quotient(canonical, density)
         else:
-            in_grams = in_grams * density
-        return in_grams / Decimal(dest["factor_to_canonical"])
+            canonical = canonical * density
+        return canonical / exact(dest["factor_to_canonical"])
     raise UnitError("dimension_mismatch")
 
 
 def scale(case_input: dict, registry) -> dict:
     basis, consumed = case_input["basis"], case_input["consumed"]
     value = case_input["value"]
-    if Decimal(basis["amount"]) <= 0:
+    if exact(basis["amount"]) <= 0:
         raise UnitError("non_positive_amount")
-    if Decimal(consumed["amount"]) < 0:
+    if exact(consumed["amount"]) < 0:
         raise UnitError("negative_amount")
     consumed_in_basis = convert(
-        Decimal(consumed["amount"]), consumed["unit"], basis["unit"], registry
+        exact(consumed["amount"]),
+        consumed["unit"],
+        basis["unit"],
+        registry,
+        exact(case_input["density"]) if "density" in case_input else None,
+        case_input.get("portion"),
     )
     if value["state"] != "known":
         # Scaling passes a non-known value through unchanged, unit included.
         return {key: item for key, item in value.items() if key != "amount"}
-    factor = consumed_in_basis / Decimal(basis["amount"])
-    return {"state": "known", "amount": str(Decimal(value["amount"]) * factor), "unit": value["unit"]}
+    # Multiply first, divide once, last: value x consumed / basis.
+    scaled = quotient(exact(value["amount"]) * consumed_in_basis, exact(basis["amount"]))
+    return {"state": "known", "amount": decimal_string(scaled), "unit": value["unit"]}
 
 
 def sum_values(case_input: dict, registry) -> dict:
@@ -356,7 +606,7 @@ def sum_values(case_input: dict, registry) -> dict:
     has_unknown = has_below = False
     for value in case_input["values"]:
         if value["state"] == "known":
-            known.append((Decimal(value["amount"]), value["unit"]))
+            known.append((exact(value["amount"]), value["unit"]))
             total_count += 1
         elif value["state"] == "unknown":
             has_unknown = True
@@ -387,7 +637,7 @@ def sum_values(case_input: dict, registry) -> dict:
         return {"value": state, "coverage": coverage}
 
     target = case_input.get("unit") or known[0][1]
-    running = Decimal(0)
+    running = Fraction(0)
     for amount, unit in known:
         running += convert(amount, unit, target, registry)
     return {
@@ -396,30 +646,23 @@ def sum_values(case_input: dict, registry) -> dict:
     }
 
 
-def decimal_string(value: Decimal) -> str:
-    """Normalise a Decimal to the plain form the contract uses: no exponent, no trailing zeros."""
-    normalised = value.normalize()
-    text = format(normalised, "f")
-    return text
+def convert_case(case_input: dict, registry) -> Fraction:
+    return convert(
+        exact(case_input["amount"]),
+        case_input["unit"],
+        case_input["to"],
+        registry,
+        exact(case_input["density"]) if "density" in case_input else None,
+        case_input.get("portion"),
+    )
 
 
 def run_case(case: dict, registry) -> dict:
     case_input = case["input"]
     if case["op"] == "convert":
-        converted = convert(
-            Decimal(case_input["amount"]),
-            case_input["unit"],
-            case_input["to"],
-            registry,
-            Decimal(case_input["density"]) if "density" in case_input else None,
-            case_input.get("portion"),
-        )
-        return {"amount": decimal_string(converted), "unit": case_input["to"]}
+        return {"amount": decimal_string(convert_case(case_input, registry)), "unit": case_input["to"]}
     if case["op"] == "scale":
-        scaled = scale(case_input, registry)
-        if scaled.get("state") == "known":
-            scaled["amount"] = decimal_string(Decimal(scaled["amount"]))
-        return scaled
+        return scale(case_input, registry)
     if case["op"] == "sum":
         return sum_values(case_input, registry)
     raise AssertionError(f"unknown op {case['op']!r}")
@@ -460,17 +703,57 @@ def test_the_reference_evaluator_reproduces_every_golden(case, registry):
             elif case["input"].get("basis") is not None or "basis" in case["input"]:
                 scale(case["input"], registry)
             else:
-                convert(
-                    Decimal(case["input"]["amount"]),
-                    case["input"]["unit"],
-                    case["input"]["to"],
-                    registry,
-                    Decimal(case["input"]["density"]) if "density" in case["input"] else None,
-                    case["input"].get("portion"),
-                )
+                convert_case(case["input"], registry)
         assert raised.value.name == case["expect"]["error"]
         return
     assert run_case(case, registry) == case["expect"]
+
+
+def test_every_error_the_goldens_name_is_declared_and_every_declared_error_is_exercised(golden):
+    used = {case["expect"]["error"] for case in golden["cases"] if case["op"] == "reject"}
+    assert used == set(golden["error_names"])
+
+
+def test_every_golden_result_is_a_valid_wire_amount(golden, product_schema):
+    """No golden result is negative, uses an exponent, or carries more than the stated fraction digits
+    unless it is exact."""
+    pattern = re.compile(product_schema["$defs"]["nonNegativeDecimal"]["pattern"])
+    for case in golden["cases"]:
+        expect = case["expect"]
+        amount = expect.get("amount") or expect.get("value", {}).get("amount")
+        if amount is not None:
+            assert pattern.search(amount), (case["id"], amount)
+            assert not amount.endswith("0") or "." not in amount, (case["id"], amount)
+
+
+def test_a_repeating_quotient_is_rounded_to_ten_fraction_digits_halves_away_from_zero():
+    assert decimal_string(quotient(Fraction(1), Fraction(3))) == "0.3333333333"
+    assert decimal_string(quotient(Fraction(2), Fraction(3))) == "0.6666666667"
+    assert decimal_string(quotient(Fraction(-2), Fraction(3))) == "-0.6666666667"
+    assert decimal_string(quotient(Fraction(1), Fraction(6))) == "0.1666666667"
+    assert decimal_string(quotient(Fraction(1000), Fraction(7))) == "142.8571428571"
+    # Just under and just over a half in the eleventh digit.
+    assert decimal_string(quotient(Fraction(1), Fraction(3 * 10**10))) == "0"
+    assert decimal_string(quotient(Fraction(2), Fraction(3 * 10**10))) == "0.0000000001"
+
+
+def test_a_terminating_quotient_is_never_rounded():
+    assert decimal_string(quotient(Fraction(1), Fraction(8192))) == "0.0001220703125"
+    assert decimal_string(quotient(exact("5.2") * 40, Fraction(100))) == "2.08"
+    assert decimal_string(quotient(Fraction(1), exact("0.000000000001"))) == "1000000000000"
+    assert decimal_string(Fraction(0)) == "0"
+
+
+def test_a_measure_converts_into_counts_without_recursing(registry):
+    portion = {"count_unit": "scoop", "amount": "5", "unit": "g"}
+    assert convert(Fraction(10), "g", "scoop", registry, portion=portion) == 2
+    assert convert(Fraction(2), "scoop", "mg", registry, portion=portion) == 10000
+    # A portion stated as a volume needs the density to reach a mass.
+    by_volume = {"count_unit": "scoop", "amount": "10", "unit": "mL"}
+    assert convert(Fraction(16), "g", "scoop", registry, exact("0.8"), by_volume) == 2
+    with pytest.raises(UnitError) as raised:
+        convert(Fraction(16), "g", "scoop", registry, portion=by_volume)
+    assert raised.value.name == "missing_density"
 
 
 def test_scaling_never_rounds_a_stored_amount(golden):
@@ -482,6 +765,11 @@ def test_scaling_never_rounds_a_stored_amount(golden):
 def test_an_unknown_total_is_never_zero(golden, registry):
     case = next(c for c in golden["cases"] if c["id"] == "sum_of_only_unknown_values_is_unknown")
     assert run_case(case, registry)["value"] == {"state": "unknown"}
+
+
+def test_scaling_multiplies_before_it_divides(golden, registry):
+    case = next(c for c in golden["cases"] if c["id"] == "scale_multiplies_before_it_divides")
+    assert run_case(case, registry)["amount"] == "1"
 
 
 def test_ten_tenths_are_exactly_one_gram(golden, registry):
@@ -499,3 +787,12 @@ def test_the_openapi_skeleton_is_read_only_and_needs_a_token():
     assert text.count("bearerAuth: []") >= 4, "every operation needs bearer auth"
     for forbidden in ("user_id", "userId", "email", "device_id", "intake_id", "taken_at", "healthkit"):
         assert forbidden not in text, f"{forbidden} must not appear in the catalog API"
+
+
+def test_the_openapi_version_prefix_is_stated_once():
+    """The version lives in the paths, so the server URL must not repeat it."""
+    text = OPENAPI_PATH.read_text()
+    servers = re.findall(r"^  - url: (\S+)$", text, flags=re.M)
+    assert servers == ["https://catalog.example.invalid"], servers
+    paths = re.findall(r"^  (/\S*):$", text, flags=re.M)
+    assert paths == ["/v1/products/{product_id}", "/v1/barcodes/{barcode}", "/v1/search"], paths

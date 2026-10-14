@@ -20,7 +20,7 @@ info:
     name: Proprietary
     identifier: LicenseRef-Proprietary
 servers:
-  - url: https://catalog.example.invalid/v1
+  - url: https://catalog.example.invalid
     description: Placeholder host. The real host is not part of the public contract.
 
 security:

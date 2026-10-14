@@ -5,6 +5,7 @@ on:
     paths:
       - "catalog/**"
       - "contracts/**"
+      - "ios/NutritionCore/Sources/NutritionDomain/Units.swift"
       - "docs/python-ci.md"
       - "docs/README.md"
       - "scripts/ci-requirements.in"
@@ -17,6 +18,7 @@ on:
     paths:
       - "catalog/**"
       - "contracts/**"
+      - "ios/NutritionCore/Sources/NutritionDomain/Units.swift"
       - "docs/python-ci.md"
       - "docs/README.md"
       - "scripts/ci-requirements.in"

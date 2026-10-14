@@ -1,12 +1,13 @@
 {
   "version": 1,
-  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere. Ops: convert (one exact unit conversion), scale (a label value scaled from its basis to a consumed amount, as ServingCalculation.scale does), sum (NutrientTotal.sum with its coverage), reject (the operation must fail with the named error). These mirror the Swift NutritionDomain behaviour of ios/NutritionCore/Sources/NutritionDomain. The optional `nutrient` field names the registry nutrient each case is about.",
+  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere, and outside the reject cases every unit symbol is one the iOS UnitRegistry knows. Ops: convert (one unit conversion), scale (a label value scaled from its basis to a consumed amount: value times consumed, divided by the basis), sum (a total with its coverage), reject (the operation must fail with the named error). A result is exact unless a division does not terminate, in which case it is rounded to 10 fraction digits, halves away from zero, as contracts/nutrients/decimal-rules.md states. The vectors follow the model of ios/NutritionCore/Sources/NutritionDomain; running them against the Swift code is the job of the Swift/Python golden verification that follows this contract. The optional `nutrient` field names the registry nutrient each case is about.",
   "error_names": [
     "unknown_symbol",
     "dimension_mismatch",
     "missing_density",
     "invalid_density",
     "missing_portion_definition",
+    "invalid_portion_definition",
     "incompatible_count_units",
     "international_unit_not_convertible",
     "non_positive_amount",
@@ -49,11 +50,11 @@
       "input": {
         "amount": "0.25",
         "unit": "mg",
-        "to": "ug"
+        "to": "mcg"
       },
       "expect": {
         "amount": "250",
-        "unit": "ug"
+        "unit": "mcg"
       }
     },
     {
@@ -63,7 +64,7 @@
       "note": "1 ug is 0.000001 g exactly; no drift, no rounding.",
       "input": {
         "amount": "1",
-        "unit": "ug",
+        "unit": "mcg",
         "to": "g"
       },
       "expect": {
@@ -83,36 +84,6 @@
       "expect": {
         "amount": "1.25",
         "unit": "L"
-      }
-    },
-    {
-      "id": "convert_kilocalories_to_kilojoules",
-      "op": "convert",
-      "nutrient": "energy",
-      "note": "Thermochemical factor, exact: 1 kcal = 4.184 kJ.",
-      "input": {
-        "amount": "150",
-        "unit": "kcal",
-        "to": "kJ"
-      },
-      "expect": {
-        "amount": "627.6",
-        "unit": "kJ"
-      }
-    },
-    {
-      "id": "convert_kilojoules_to_kilocalories",
-      "op": "convert",
-      "nutrient": "energy",
-      "note": "The reverse uses the same factor and comes back exact.",
-      "input": {
-        "amount": "627.6",
-        "unit": "kJ",
-        "to": "kcal"
-      },
-      "expect": {
-        "amount": "150",
-        "unit": "kcal"
       }
     },
     {
@@ -179,6 +150,82 @@
       "expect": {
         "amount": "15",
         "unit": "g"
+      }
+    },
+    {
+      "id": "convert_mass_to_count_with_portion",
+      "op": "convert",
+      "nutrient": "protein",
+      "note": "The reverse direction divides: 1 scoop = 5 g, so 10 g = 2 scoop.",
+      "input": {
+        "amount": "10",
+        "unit": "g",
+        "to": "scoop",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "5",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "amount": "2",
+        "unit": "scoop"
+      }
+    },
+    {
+      "id": "convert_mass_in_another_scale_to_count_with_portion",
+      "op": "convert",
+      "nutrient": "protein",
+      "note": "The amount is converted into the portion's unit first: 0.01 kg = 10 g = 2 scoop.",
+      "input": {
+        "amount": "0.01",
+        "unit": "kg",
+        "to": "scoop",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "5",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "amount": "2",
+        "unit": "scoop"
+      }
+    },
+    {
+      "id": "convert_mass_to_count_rounds_a_repeating_quotient",
+      "op": "convert",
+      "nutrient": "protein",
+      "note": "10 g of 3 g scoops is 3.333..., which has no finite decimal form: 10 fraction digits, halves away from zero.",
+      "input": {
+        "amount": "10",
+        "unit": "g",
+        "to": "scoop",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "3",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "amount": "3.3333333333",
+        "unit": "scoop"
+      }
+    },
+    {
+      "id": "convert_mass_to_volume_rounds_a_repeating_quotient",
+      "op": "convert",
+      "nutrient": "water",
+      "note": "2 g at 3 g per mL is 0.666... mL; the eleventh digit is 6, so the tenth rounds up.",
+      "input": {
+        "amount": "2",
+        "unit": "g",
+        "to": "mL",
+        "density": "3"
+      },
+      "expect": {
+        "amount": "0.6666666667",
+        "unit": "mL"
       }
     },
     {
@@ -274,6 +321,110 @@
       }
     },
     {
+      "id": "scale_by_a_third_rounds_a_repeating_quotient",
+      "op": "scale",
+      "nutrient": "protein",
+      "note": "1 g of a 3 g basis: 1 x 1 / 3 does not terminate, so it is rounded to 10 fraction digits.",
+      "input": {
+        "basis": {
+          "amount": "3",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "1",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "1",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "0.3333333333",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "scale_multiplies_before_it_divides",
+      "op": "scale",
+      "nutrient": "protein",
+      "note": "3 x 1 / 3 is exactly 1. Dividing first would give 0.3333333333 x 3 = 0.9999999999.",
+      "input": {
+        "basis": {
+          "amount": "3",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "1",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "3",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "1",
+        "unit": "g"
+      }
+    },
+    {
+      "id": "scale_rounds_a_half_away_from_zero",
+      "op": "scale",
+      "nutrient": "sodium",
+      "note": "1 x 1 / 6 = 0.1666...: the tenth digit rounds up to 7.",
+      "input": {
+        "basis": {
+          "amount": "6",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "1",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "1",
+          "unit": "mg"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "0.1666666667",
+        "unit": "mg"
+      }
+    },
+    {
+      "id": "scale_keeps_a_terminating_quotient_exact",
+      "op": "scale",
+      "nutrient": "sodium",
+      "note": "1 / 8192 terminates after 13 fraction digits, so nothing is rounded.",
+      "input": {
+        "basis": {
+          "amount": "8192",
+          "unit": "g"
+        },
+        "consumed": {
+          "amount": "1",
+          "unit": "g"
+        },
+        "value": {
+          "state": "known",
+          "amount": "1",
+          "unit": "mg"
+        }
+      },
+      "expect": {
+        "state": "known",
+        "amount": "0.0001220703125",
+        "unit": "mg"
+      }
+    },
+    {
       "id": "scale_known_zero_stays_known_zero",
       "op": "scale",
       "nutrient": "sodium",
@@ -358,12 +509,12 @@
         },
         "value": {
           "state": "below_reporting_threshold",
-          "unit": "ug"
+          "unit": "mcg"
         }
       },
       "expect": {
         "state": "below_reporting_threshold",
-        "unit": "ug"
+        "unit": "mcg"
       }
     },
     {
@@ -512,7 +663,7 @@
           {
             "state": "known",
             "amount": "250000",
-            "unit": "ug"
+            "unit": "mcg"
           }
         ]
       },
@@ -550,7 +701,7 @@
           {
             "state": "known",
             "amount": "250000",
-            "unit": "ug"
+            "unit": "mcg"
           }
         ],
         "unit": "mg"
@@ -704,13 +855,26 @@
       }
     },
     {
+      "id": "reject_negative_density",
+      "op": "reject",
+      "input": {
+        "amount": "1",
+        "unit": "g",
+        "to": "mL",
+        "density": "-1"
+      },
+      "expect": {
+        "error": "invalid_density"
+      }
+    },
+    {
       "id": "reject_international_unit_to_mass",
       "op": "reject",
       "note": "International units are activity, not mass. No conversion exists.",
       "input": {
         "amount": "400",
         "unit": "IU",
-        "to": "ug"
+        "to": "mcg"
       },
       "expect": {
         "error": "international_unit_not_convertible"
@@ -753,6 +917,106 @@
       }
     },
     {
+      "id": "reject_mass_to_count_without_portion",
+      "op": "reject",
+      "input": {
+        "amount": "10",
+        "unit": "g",
+        "to": "scoop"
+      },
+      "expect": {
+        "error": "missing_portion_definition"
+      }
+    },
+    {
+      "id": "reject_mass_to_count_with_another_units_portion",
+      "op": "reject",
+      "note": "The portion must define the count unit being converted into.",
+      "input": {
+        "amount": "10",
+        "unit": "g",
+        "to": "scoop",
+        "portion": {
+          "count_unit": "tablet",
+          "amount": "5",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "missing_portion_definition"
+      }
+    },
+    {
+      "id": "reject_count_to_mass_with_another_units_portion",
+      "op": "reject",
+      "input": {
+        "amount": "2",
+        "unit": "scoop",
+        "to": "g",
+        "portion": {
+          "count_unit": "tablet",
+          "amount": "5",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "missing_portion_definition"
+      }
+    },
+    {
+      "id": "reject_zero_portion",
+      "op": "reject",
+      "note": "A portion of nothing defines nothing, and would divide by zero.",
+      "input": {
+        "amount": "10",
+        "unit": "g",
+        "to": "scoop",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "0",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "invalid_portion_definition"
+      }
+    },
+    {
+      "id": "reject_portion_stated_in_energy",
+      "op": "reject",
+      "note": "A portion is a mass or a volume.",
+      "input": {
+        "amount": "2",
+        "unit": "scoop",
+        "to": "g",
+        "portion": {
+          "count_unit": "scoop",
+          "amount": "5",
+          "unit": "kcal"
+        }
+      },
+      "expect": {
+        "error": "invalid_portion_definition"
+      }
+    },
+    {
+      "id": "reject_portion_of_a_non_count_unit",
+      "op": "reject",
+      "input": {
+        "amount": "2",
+        "unit": "scoop",
+        "to": "g",
+        "portion": {
+          "count_unit": "mg",
+          "amount": "5",
+          "unit": "g"
+        }
+      },
+      "expect": {
+        "error": "invalid_portion_definition"
+      }
+    },
+    {
       "id": "reject_between_two_count_units",
       "op": "reject",
       "note": "A scoop is not a tablet, whatever portion is stated.",
@@ -777,6 +1041,32 @@
         "amount": "1",
         "unit": "furlong",
         "to": "m"
+      },
+      "expect": {
+        "error": "unknown_symbol"
+      }
+    },
+    {
+      "id": "reject_kilojoules",
+      "op": "reject",
+      "note": "kJ is not a v1 unit symbol.",
+      "input": {
+        "amount": "627.6",
+        "unit": "kJ",
+        "to": "kcal"
+      },
+      "expect": {
+        "error": "unknown_symbol"
+      }
+    },
+    {
+      "id": "reject_alias_spelling_of_micrograms",
+      "op": "reject",
+      "note": "One spelling per unit: mcg, not ug.",
+      "input": {
+        "amount": "1",
+        "unit": "ug",
+        "to": "mcg"
       },
       "expect": {
         "error": "unknown_symbol"
@@ -847,6 +1137,29 @@
       },
       "expect": {
         "error": "dimension_mismatch"
+      }
+    },
+    {
+      "id": "reject_sum_of_mass_and_international_units",
+      "op": "reject",
+      "nutrient": "vitamin_d",
+      "note": "Vitamin D may be stated either way, but the two never add up.",
+      "input": {
+        "values": [
+          {
+            "state": "known",
+            "amount": "10",
+            "unit": "mcg"
+          },
+          {
+            "state": "known",
+            "amount": "400",
+            "unit": "IU"
+          }
+        ]
+      },
+      "expect": {
+        "error": "international_unit_not_convertible"
       }
     },
     {

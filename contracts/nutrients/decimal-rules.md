@@ -10,25 +10,71 @@ builds against these files.
 Binary floating point cannot hold `0.1` exactly, so a number that looks right
 would not be right.
 
-A decimal string is plain: an optional minus, digits, then optional fractional
-digits. There is no exponent (`1e3` is refused), no thousands comma (`5,2` is
-refused), no `NaN`, no infinity, and no empty string. A leading zero is refused
-except for the single `0` itself, so `"05.2"` is not a spelling of `5.2`.
+A decimal string is plain: digits, then optional fractional digits. There is no
+exponent (`1e3` is refused), no thousands comma (`5,2` is refused), no `NaN`, no
+infinity, and no empty string. A leading zero is refused except for the single
+`0` itself, so `"05.2"` is not a spelling of `5.2`.
 
-## Rounding and scaling are for display
+No amount in a published product is negative. A nutrient amount is zero or more,
+so `"-5"` and `"-0"` are refused; a serving amount is greater than zero, so `"0"`
+and `"0.0"` are refused there as well. An operation refuses a negative input:
+a consumed amount below zero is `negative_amount`, and a label basis of zero or
+less is `non_positive_amount`.
 
-A stored amount is never rounded. Scaling a label value to a consumed amount
-multiplies and divides exactly, and the result is stored as it comes out:
-40 g of a 100 g basis is a factor of `0.4`, and `5.2 g` scales to `2.08 g`, not
-to `2.1 g`. Rounding happens once, at the moment a number is shown to a person,
-and the rounded copy never replaces the stored one.
+## Display rounding never replaces a stored amount
 
-## Energy: 1 kcal = 4.184 kJ exactly
+A stated amount is stored as stated. Scaling a label value to a consumed amount
+keeps every digit an exact result has: 40 g of a 100 g basis scales `5.2 g` to
+`2.08 g`, not to `2.1 g`. Rounding for display happens at the moment a number is
+shown to a person, and the rounded copy never replaces the stored one.
 
-Thermochemical kilocalorie. The factor is exact, so `627.6 kJ` converts back to
-`150 kcal` and neither side accumulates error. Note that this is not the same
-factor as the International Table of Calorie the food industry uses for labels;
-labels state kcal, so kcal is the canonical energy unit.
+## One rounding rule, for a division that does not terminate
+
+Multiplying two decimals is always exact, and so is applying a unit factor,
+because every factor in the registry is a power of ten. A division is the only
+step whose exact result may have no finite decimal form: 1 g consumed of a 3 g
+basis is `0.333...` of it. There are exactly three divisions in this contract:
+
+- scaling divides by the label basis: `value x consumed / basis`, multiplied
+  first and divided once, last;
+- a mass to volume conversion divides by the density, in the canonical units
+  (grams by grams per millilitre, giving millilitres), before the target unit's
+  power of ten is applied;
+- a mass or volume to count conversion divides by the portion amount, after the
+  amount has been converted into the portion's unit.
+
+Each of them follows the same rule, in every language:
+
+1. If the exact quotient has a finite decimal form, that is the result, with
+   every digit: `1 / 8192` is `0.0001220703125`.
+2. Otherwise the exact quotient is rounded to 10 fraction digits, halves away
+   from zero: `1 / 3` is `0.3333333333`, `2 / 3` is `0.6666666667`.
+
+"Exact quotient" means the rational number, not a value already cut to some
+working precision: an implementation must not let a 28 or 38 digit intermediate
+decide the tenth digit. Ten fraction digits is the precision the iOS
+`UnitRegistry.reciprocalFractionDigits` already uses, and halves away from zero
+is its `.plain` rounding mode. Because the multiplication comes first,
+`3 x 1 / 3` is exactly `1`, never `0.9999999999`. `golden.v1.json` carries
+vectors for a repeating quotient in each of the three divisions, for the
+multiply-first order, and for a long quotient that terminates.
+
+## Units: one spelling each, and energy in kcal
+
+The wire carries the unit symbols of `registry.v1.json` and no others: `g`,
+`mg`, `mcg`, `kg`, `mL`, `L`, `kcal`, `IU`, `serving`, `scoop`, `tablet`,
+`capsule`, `piece` and `gummy`. Each is a symbol the iOS `UnitRegistry` knows,
+spelled the same way, so a document that passes the schema always decodes in the
+app. A provider's `ug`, `ml`, `l` or `iu` is normalised by the importer before a
+record is published.
+
+Energy is stated in kcal. `kJ` is not a v1 unit: the app does not know it, and
+`1 kJ` in kcal has no finite decimal form. An importer that only has a kJ figure
+converts it before publishing.
+
+A nutrient is stated only in the units the registry lists for it: energy in
+kcal, every other nutrient in a mass unit, and vitamin A and vitamin D in a mass
+unit or in IU. A serving is a mass, a volume or a count.
 
 ## No cross-dimension arithmetic without a stated density
 
@@ -39,16 +85,24 @@ Mass to volume, and volume to mass, need a density stated in grams per
 millilitre for that product. Without one the conversion is refused. A density of
 zero or less is refused as well.
 
-Count units (serving, scoop, tablet, capsule) need a stated portion, for example
-1 scoop = 5 g, and a mass or volume conversion on top of that still needs the
-density. Two different count units never convert into each other: a scoop is not
-a tablet whatever portion you state.
+Count units (serving, scoop, tablet, capsule, piece, gummy) need a stated
+portion, for example 1 scoop = 5 g. The portion has to define the count unit in
+the conversion: from scoops to grams, and from grams to scoops, it must be a
+portion of one scoop, or the conversion is refused as
+`missing_portion_definition`. Count to measure multiplies by the portion (3 scoop
+= 15 g); measure to count converts into the portion's unit and divides by it
+(10 g = 2 scoop). When the portion is stated in the other of mass and volume, the
+density is needed on top. A portion that is not a positive mass or volume of a
+count unit is refused as `invalid_portion_definition`. Two different count units
+never convert into each other: a scoop is not a tablet whatever portion you
+state.
 
 ## International units are not convertible
 
 `IU` measures biological activity. It is not a mass, and no contract in this
 repository converts one to the other. A provider that states an amount in IU
-keeps it in IU.
+keeps it in IU. Vitamin A and vitamin D are the two nutrients a product may state
+in IU; an IU value and a mass value of the same nutrient never add up.
 
 ## Proprietary blend splits are never inferred
 

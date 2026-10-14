@@ -2,29 +2,51 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:healthrelay:schema:catalog-product-version:v1",
   "title": "healthrelay.catalog-product-version v1",
-  "description": "One published version of one catalog product, as the public catalog serves it. Deny by default: every object level is closed, so any field that is not listed here - and nothing that identifies a person, a device or an intake - is refused. Amounts are exact decimal strings, never JSON numbers. Value states mirror the iOS NutrientValue cases.",
+  "description": "One published version of one catalog product, as the public catalog serves it. Deny by default: every object level is closed, so any field that is not listed here - and nothing that identifies a person, a device or an intake - is refused. The nutrients object accepts only the nutrient ids of contracts/nutrients/registry.v1.json, each with the units the registry lists for it. Amounts are exact decimal strings, never JSON numbers, and never negative. Value states mirror the iOS NutrientValue cases.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["product_id", "version", "name", "serving", "nutrients", "source", "status"],
+  "required": [
+    "product_id",
+    "version",
+    "name",
+    "serving",
+    "nutrients",
+    "source",
+    "status"
+  ],
   "properties": {
-    "product_id": { "$ref": "#/$defs/productId" },
+    "product_id": {
+      "$ref": "#/$defs/productId"
+    },
     "version": {
       "description": "Monotonic version of this product record, starting at 1.",
       "type": "integer",
       "minimum": 1
     },
-    "name": { "$ref": "#/$defs/shortText" },
-    "brand": { "$ref": "#/$defs/shortText" },
+    "name": {
+      "$ref": "#/$defs/shortText"
+    },
+    "brand": {
+      "$ref": "#/$defs/shortText"
+    },
     "barcodes": {
       "description": "Barcodes this product is known by. Digits only, no check-digit interpretation.",
       "type": "array",
       "maxItems": 16,
       "uniqueItems": true,
-      "items": { "$ref": "#/$defs/barcode" }
+      "items": {
+        "$ref": "#/$defs/barcode"
+      }
     },
-    "serving": { "$ref": "#/$defs/serving" },
-    "nutrients": { "$ref": "#/$defs/nutrientMap" },
-    "source": { "$ref": "#/$defs/source" },
+    "serving": {
+      "$ref": "#/$defs/serving"
+    },
+    "nutrients": {
+      "$ref": "#/$defs/nutrientMap"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
     "status": {
       "description": "Only published records are part of v1. Draft, pending and withdrawn records are never served.",
       "const": "published"
@@ -39,116 +61,356 @@
       "pattern": "^prod_[a-z0-9][a-z0-9._-]{0,55}(?!\\n)$"
     },
     "shortText": {
+      "description": "Display text in any script. No control characters, no line or paragraph separators, no bidirectional override or isolate characters, and no leading or trailing space.",
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[!-~](?:[ -~]*[!-~])?(?!\\n)$"
+      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069]*[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069])?(?!\\n)$"
     },
     "barcode": {
       "description": "Digits only, 8 to 14 of them.",
       "type": "string",
       "pattern": "^[0-9]{8,14}(?!\\n)$"
     },
-    "decimalString": {
-      "description": "An exact decimal: an optional minus, digits, optional fractional digits. No exponent, no thousands comma, no NaN, no infinity, no empty string, and never a JSON number.",
+    "nonNegativeDecimal": {
+      "description": "An exact decimal that is zero or more: digits, optional fractional digits. No sign, no exponent, no thousands comma, no NaN, no infinity, no empty string, and never a JSON number.",
       "type": "string",
       "minLength": 1,
       "maxLength": 40,
-      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?(?!\\n)$"
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?(?!\\n)$"
     },
-    "unitSymbol": {
-      "description": "A unit symbol from contracts/nutrients/registry.v1.json. Anything else is an unknown unit symbol.",
+    "positiveDecimal": {
+      "description": "A nonNegativeDecimal that is greater than zero.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^(?!0+(\\.0+)?(?!\\n)$)(0|[1-9][0-9]*)(\\.[0-9]+)?(?!\\n)$"
+    },
+    "servingUnit": {
+      "description": "A mass, volume or count unit symbol from contracts/nutrients/registry.v1.json. A serving is never stated in kcal or IU.",
       "type": "string",
       "enum": [
         "g",
         "mg",
-        "ug",
         "mcg",
         "kg",
         "mL",
-        "ml",
         "L",
-        "l",
-        "kcal",
-        "kJ",
-        "iu",
-        "IU",
         "serving",
         "scoop",
         "tablet",
-        "capsule"
+        "capsule",
+        "piece",
+        "gummy"
+      ]
+    },
+    "energyUnit": {
+      "description": "The energy unit symbol of the registry.",
+      "type": "string",
+      "enum": [
+        "kcal"
+      ]
+    },
+    "massUnit": {
+      "description": "The mass unit symbols of the registry.",
+      "type": "string",
+      "enum": [
+        "g",
+        "mg",
+        "mcg",
+        "kg"
+      ]
+    },
+    "massOrInternationalUnit": {
+      "description": "The mass unit symbols of the registry, or IU for the nutrients labels state that way.",
+      "type": "string",
+      "enum": [
+        "g",
+        "mg",
+        "mcg",
+        "kg",
+        "IU"
       ]
     },
     "serving": {
-      "description": "The serving the nutrient values below are stated for.",
+      "description": "The serving the nutrient values below are stated for: a positive amount in a mass, volume or count unit.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["amount", "unit"],
+      "required": [
+        "amount",
+        "unit"
+      ],
       "properties": {
-        "amount": { "$ref": "#/$defs/decimalString" },
-        "unit": { "$ref": "#/$defs/unitSymbol" }
+        "amount": {
+          "$ref": "#/$defs/positiveDecimal"
+        },
+        "unit": {
+          "$ref": "#/$defs/servingUnit"
+        }
       }
     },
     "nutrientMap": {
-      "description": "Nutrient values keyed by registry nutrient id. Only known, unknown, not_applicable and below_reporting_threshold values may appear.",
+      "description": "Nutrient values keyed by registry nutrient id. Only the ids of contracts/nutrients/registry.v1.json are accepted, each with the units the registry lists for it. Only known, unknown, not_applicable and below_reporting_threshold values may appear.",
       "type": "object",
       "minProperties": 1,
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,63}$" },
-      "patternProperties": {
-        "^[a-z][a-z0-9_]{0,63}$": { "$ref": "#/$defs/nutrientValue" }
-      },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "properties": {
+        "energy": {
+          "$ref": "#/$defs/energyNutrientValue"
+        },
+        "protein": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "total_fat": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "saturated_fat": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "carbohydrate": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "fiber": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "sugars": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "sodium": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "potassium": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "calcium": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "iron": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "vitamin_a": {
+          "$ref": "#/$defs/massOrIUNutrientValue"
+        },
+        "vitamin_c": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "vitamin_d": {
+          "$ref": "#/$defs/massOrIUNutrientValue"
+        },
+        "caffeine": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "water": {
+          "$ref": "#/$defs/massNutrientValue"
+        }
+      }
     },
-    "nutrientValue": {
-      "description": "A nutrient amount and its state. Only the known state carries an amount; the other three never do.",
+    "energyNutrientValue": {
+      "description": "The value of an energy nutrient and its state. Only the known state carries an amount; the other three never do.",
       "type": "object",
-      "required": ["state"],
+      "required": [
+        "state"
+      ],
       "oneOf": [
-        { "$ref": "#/$defs/nutrientKnown" },
-        { "$ref": "#/$defs/nutrientUnknown" },
-        { "$ref": "#/$defs/nutrientNotApplicable" },
-        { "$ref": "#/$defs/nutrientBelowReportingThreshold" }
+        {
+          "$ref": "#/$defs/energyNutrientKnown"
+        },
+        {
+          "$ref": "#/$defs/nutrientUnknown"
+        },
+        {
+          "$ref": "#/$defs/nutrientNotApplicable"
+        },
+        {
+          "$ref": "#/$defs/energyNutrientBelowReportingThreshold"
+        }
       ]
     },
-    "nutrientKnown": {
+    "energyNutrientKnown": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["state", "amount", "unit"],
+      "required": [
+        "state",
+        "amount",
+        "unit"
+      ],
       "properties": {
-        "state": { "const": "known" },
-        "amount": { "$ref": "#/$defs/decimalString" },
-        "unit": { "$ref": "#/$defs/unitSymbol" }
+        "state": {
+          "const": "known"
+        },
+        "amount": {
+          "$ref": "#/$defs/nonNegativeDecimal"
+        },
+        "unit": {
+          "$ref": "#/$defs/energyUnit"
+        }
+      }
+    },
+    "energyNutrientBelowReportingThreshold": {
+      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "below_reporting_threshold"
+        },
+        "unit": {
+          "$ref": "#/$defs/energyUnit"
+        }
+      }
+    },
+    "massNutrientValue": {
+      "description": "The value of a nutrient stated as a mass and its state. Only the known state carries an amount; the other three never do.",
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/massNutrientKnown"
+        },
+        {
+          "$ref": "#/$defs/nutrientUnknown"
+        },
+        {
+          "$ref": "#/$defs/nutrientNotApplicable"
+        },
+        {
+          "$ref": "#/$defs/massNutrientBelowReportingThreshold"
+        }
+      ]
+    },
+    "massNutrientKnown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "amount",
+        "unit"
+      ],
+      "properties": {
+        "state": {
+          "const": "known"
+        },
+        "amount": {
+          "$ref": "#/$defs/nonNegativeDecimal"
+        },
+        "unit": {
+          "$ref": "#/$defs/massUnit"
+        }
+      }
+    },
+    "massNutrientBelowReportingThreshold": {
+      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "below_reporting_threshold"
+        },
+        "unit": {
+          "$ref": "#/$defs/massUnit"
+        }
+      }
+    },
+    "massOrIUNutrientValue": {
+      "description": "The value of a nutrient stated as a mass or in IU and its state. Only the known state carries an amount; the other three never do.",
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "oneOf": [
+        {
+          "$ref": "#/$defs/massOrIUNutrientKnown"
+        },
+        {
+          "$ref": "#/$defs/nutrientUnknown"
+        },
+        {
+          "$ref": "#/$defs/nutrientNotApplicable"
+        },
+        {
+          "$ref": "#/$defs/massOrIUNutrientBelowReportingThreshold"
+        }
+      ]
+    },
+    "massOrIUNutrientKnown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "amount",
+        "unit"
+      ],
+      "properties": {
+        "state": {
+          "const": "known"
+        },
+        "amount": {
+          "$ref": "#/$defs/nonNegativeDecimal"
+        },
+        "unit": {
+          "$ref": "#/$defs/massOrInternationalUnit"
+        }
+      }
+    },
+    "massOrIUNutrientBelowReportingThreshold": {
+      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "below_reporting_threshold"
+        },
+        "unit": {
+          "$ref": "#/$defs/massOrInternationalUnit"
+        }
       }
     },
     "nutrientUnknown": {
       "description": "The provider does not state this nutrient for this product.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["state"],
-      "properties": { "state": { "const": "unknown" } }
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "const": "unknown"
+        }
+      }
     },
     "nutrientNotApplicable": {
       "description": "This nutrient does not apply to this product at all.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["state"],
-      "properties": { "state": { "const": "not_applicable" } }
-    },
-    "nutrientBelowReportingThreshold": {
-      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["state"],
+      "required": [
+        "state"
+      ],
       "properties": {
-        "state": { "const": "below_reporting_threshold" },
-        "unit": { "$ref": "#/$defs/unitSymbol" }
+        "state": {
+          "const": "not_applicable"
+        }
       }
     },
     "source": {
       "description": "Where the record came from and under what licence it may be reused. Every record states its licence.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "licence", "attribution"],
+      "required": [
+        "name",
+        "licence",
+        "attribution"
+      ],
       "properties": {
         "name": {
           "description": "Provider key, for example usda_fdc, dsld or open_food_facts.",
@@ -169,7 +431,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512,
-          "pattern": "^[!-~](?:[ -~]*[!-~])?(?!\\n)$"
+          "pattern": "^[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069]*[^\\u0000-\\u0020\\u007f-\\u009f\\u2028-\\u202e\\u2066-\\u2069])?(?!\\n)$"
         },
         "url": {
           "description": "Public https page describing the source record.",
