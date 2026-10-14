@@ -144,6 +144,48 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertEqual(milkRows.map(\.barcode), ["2000000000046"])
     }
 
+    /// One plural rule per word, so no shortened stem is produced that starts unrelated words.
+    func testPluralFormsAreOnlyTheSingular() {
+        XCTAssertEqual(OpenFoodFactsClient.forms("cookies"), ["cookies", "cooky", "cookie"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("berries"), ["berries", "berry", "berrie"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("apples"), ["apples", "apple"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("spices"), ["spices", "spice"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("tomatoes"), ["tomatoes", "tomato"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("peaches"), ["peaches", "peach"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("boxes"), ["boxes", "box"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("eggs"), ["eggs", "egg"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("glass"), ["glass"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("gas"), ["gas"])
+        XCTAssertEqual(OpenFoodFactsClient.forms("milk"), ["milk"])
+    }
+
+    func testPluralSearchDoesNotKeepWordsSharingOnlyAStem() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Cooking Chocolate", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Butter Cookie", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Spicy Chicken", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Mixed Spice", "nutriments": {}},
+          {"code": "2000000000053", "product_name": "Applesauce", "nutriments": {}},
+          {"code": "2000000000060", "product_name": "Canned Peach Halves", "nutriments": {}}
+        ]}
+        """.utf8)
+        let cases: [(query: String, barcodes: [String])] = [
+            ("cookies", ["2000000000022"]),
+            ("spices", ["2000000000046"]),
+            ("apples", ["2000000000053"]),
+            ("peaches", ["2000000000060"]),
+        ]
+        for entry in cases {
+            let outcome = await client(StubTransport(body: body)).search(query: entry.query)
+            guard case .results(let rows) = outcome else {
+                XCTFail("expected results for \(entry.query), got \(outcome)")
+                continue
+            }
+            XCTAssertEqual(rows.map(\.barcode), entry.barcodes, entry.query)
+        }
+    }
+
     /// A plural and its singular match in either direction.
     func testPluralEndingsAreRemovedOnBothSides() async {
         let body = Data("""

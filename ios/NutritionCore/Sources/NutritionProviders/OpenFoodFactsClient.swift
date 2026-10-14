@@ -205,15 +205,29 @@ public actor OpenFoodFactsClient {
         folded(text).split { !($0.isLetter || $0.isNumber) }.map(String.init)
     }
 
-    /// A word and the forms it would have without an English plural ending ("cookies" also gives
-    /// "cookie", "berries" "berry", "tomatoes" "tomato"). The service matches word forms, so an exact
-    /// comparison would discard rows it rightly returned.
-    private static func forms(_ word: String) -> [String] {
-        var forms = [word]
-        if word.count > 3, word.hasSuffix("s") { forms.append(String(word.dropLast())) }
-        if word.count > 4, word.hasSuffix("es") { forms.append(String(word.dropLast(2))) }
-        if word.count > 4, word.hasSuffix("ies") { forms.append(String(word.dropLast(3)) + "y") }
-        return forms
+    /// A word and its singular when it ends in an English plural ending. The service matches word
+    /// forms, so an exact comparison would discard rows it rightly returned. Only one rule applies to a
+    /// word, so no shortened stem is made that would start unrelated words ("cookies" never gives
+    /// "cooki", which starts "Cooking"):
+    /// - "-ies" gives both "-y" and "-ie" ("berries" to "berry", "cookies" to "cookie"), since English
+    ///   uses both and each is longer than any stem;
+    /// - "-es" after s, x, z, ch, sh or o drops "es" ("peaches" to "peach", "tomatoes" to "tomato");
+    /// - any other "-s", except "-ss", drops the "s" ("apples" to "apple", "spices" to "spice").
+    static func forms(_ word: String) -> [String] {
+        guard word.count > 3, word.hasSuffix("s"), !word.hasSuffix("ss") else {
+            return [word]
+        }
+        if word.count > 4, word.hasSuffix("ies") {
+            let base = word.dropLast(3)
+            return [word, base + "y", base + "ie"]
+        }
+        if word.hasSuffix("es") {
+            let base = String(word.dropLast(2))
+            if ["s", "x", "z", "ch", "sh", "o"].contains(where: { base.hasSuffix($0) }) {
+                return [word, base]
+            }
+        }
+        return [word, String(word.dropLast())]
     }
 
     private static func interpretSearch(_ data: Data, query: String) -> OpenFoodFactsSearchOutcome {
