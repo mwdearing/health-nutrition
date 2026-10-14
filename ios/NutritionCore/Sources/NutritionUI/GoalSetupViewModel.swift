@@ -223,6 +223,8 @@ public final class GoalSetupViewModel: ObservableObject {
             // nor saves the number again in a unit the picker held before (150 g as 150 mg).
             goals.draftText[key] = text.isEmpty ? "" : DecimalFormatting.text(AmountParser.parseTyped(text) ?? 0)
             if !text.isEmpty { goals.selectedUnits[key] = goals.unit(for: key) }
+            // An error the row showed for earlier text no longer describes what is stored.
+            goals.clearRowError(for: key)
         }
         return true
     }

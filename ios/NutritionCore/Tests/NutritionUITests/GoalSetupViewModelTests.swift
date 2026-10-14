@@ -325,6 +325,19 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertEqual(try store.goal(for: "protein"), stored)
     }
 
+    func testASaveClearsAnErrorTheRowShowedForEarlierText() {
+        let (model, _, goalsModel) = makeModel()
+        goalsModel.draftText["protein"] = "0"
+        XCTAssertFalse(goalsModel.commitTarget(for: "protein"))
+        XCTAssertNotNil(goalsModel.rowError["protein"])
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+
+        XCTAssertTrue(model.save())
+
+        XCTAssertNil(goalsModel.rowError["protein"])
+    }
+
     func testAFailedSaveShowsTheSentenceAndKeepsTheResults() {
         let goalsModel = GoalsViewModel(
             store: InMemoryGoalStore(refusesWrites: true),

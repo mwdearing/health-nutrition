@@ -557,6 +557,12 @@ public final class GoalsViewModel: ObservableObject {
         load()
     }
 
+    /// Clears the error a row showed for earlier text, once something outside the field (guided setup)
+    /// has saved or removed that row's goal.
+    func clearRowError(for key: String) {
+        rowError[key] = nil
+    }
+
     /// Reads the goals again after Erase all data. An erase is an explicit wipe, so text a person was
     /// typing and the errors under it go too, not only the fields that follow the store.
     public func reloadAfterErase() {
