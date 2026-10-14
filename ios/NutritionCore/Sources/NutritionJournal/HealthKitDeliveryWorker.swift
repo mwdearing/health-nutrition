@@ -54,6 +54,16 @@ public protocol JournalDeliverySuspension: JournalOutboxDelivery {
     func suspensionReason(operationID: String) throws -> String?
 }
 
+/// The HealthKit worker's ledger of what it left in Health, per intake. Optional for a store: one that
+/// cannot keep it answers nil, and the worker then assumes every revision may have written.
+public protocol HealthKitWrittenLedger: AnyObject {
+    /// The nutrient keys whose samples this app last left in Health for the intake, or nil when
+    /// nothing was ever recorded for it.
+    func writtenHealthKitKeys(intakeID: String) throws -> Set<String>?
+    /// Replaces the recorded keys for the intake.
+    func setWrittenHealthKitKeys(intakeID: String, keys: Set<String>) throws
+}
+
 /// Supplies the nutrient totals one revision contributes, keyed by intake id and revision number.
 ///
 /// The worker does not compute totals: how much protein an entry carries is the journal's business,
@@ -445,27 +455,22 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // An edit that drops a nutrient an earlier revision wrote has to remove that sample, which needs
         // write access to its type. Where the type is no longer writable the sample cannot be removed,
         // so the edit waits for a person rather than being acknowledged over a stale value in Health.
-        // Only the revisions that can still have samples in Health are read, and only when such a type
-        // exists, which is never the case while every type is allowed.
+        // What is in Health for this entry comes from the store's ledger of what earlier deliveries
+        // left there. Without a ledger row (an entry delivered by an earlier build, or restored), every
+        // earlier revision is assumed to have written, which only ever errs toward asking a person.
+        let planned = Set(plan.map { Self.nutrientKey(of: $0.syncIdentifier) })
         if operation.revision > 1 {
-            let planned = Set(plan.map { Self.nutrientKey(of: $0.syncIdentifier) })
             let unwritableOmitted = Set(HealthKitWritePlanner.mappings
                 .filter { allowed[$0.quantityTypeIdentifier] != true && !planned.contains($0.nutrientKey) }
                 .map(\.nutrientKey))
             if !unwritableOmitted.isEmpty {
                 do {
-                    var earlier = Set<String>()
-                    for number in try Self.revisionsThatMayHaveWritten(
-                        before: operation.revision, of: operation.intakeID, in: store) {
-                        let earlierPlan = HealthKitWritePlanner.plan(
-                            intakeID: operation.intakeID, revision: number, occurredAt: occurredAt,
-                            totals: try await totals(operation.intakeID, number))
-                        earlier.formUnion(earlierPlan.map { Self.nutrientKey(of: $0.syncIdentifier) })
-                    }
-                    refusedKeys.formUnion(unwritableOmitted.intersection(earlier))
+                    let inHealth = try await keysPossiblyInHealth(
+                        intakeID: operation.intakeID, before: operation.revision, occurredAt: occurredAt)
+                    refusedKeys.formUnion(unwritableOmitted.intersection(inHealth))
                 } catch {
                     return transient(
-                        operation, now: now, reason: "the totals of an earlier revision could not be read")
+                        operation, now: now, reason: "the samples already in Health could not be read")
                 }
             }
         }
@@ -482,6 +487,17 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             // An error the writer did not type is still a delivery failure. Treating it as transient
             // is the safe direction: it retries, and a typed denial arrives as the typed error.
             return transient(operation, now: now, reason: "the samples could not be written")
+        }
+        // Health now holds what this pass wrote, plus whatever a refused type may still hold: a stale
+        // sample it could not remove, or an earlier revision's sample it could not replace. Recorded
+        // before the outcome, so a later edit or delete reads what is actually there; a failure to
+        // record retries the delivery, which rewrites the same samples at the same version.
+        do {
+            try ledger?.setWrittenHealthKitKeys(
+                intakeID: operation.intakeID,
+                keys: Set(writable.map { Self.nutrientKey(of: $0.syncIdentifier) }).union(refusedKeys))
+        } catch {
+            return transient(operation, now: now, reason: "the samples written could not be recorded")
         }
         guard refusedKeys.isEmpty else {
             // Only a person can grant Health access, so this needs a person rather than a retry. The
@@ -541,18 +557,29 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         let identifiers = HealthKitWritePlanner.deletion(intakeID: operation.intakeID, keys: Self.mappedKeys)
         let allowed = await writer.canWrite(identifiers: Self.mappedTypeIdentifiers)
         var denied = await writer.deniedWriteTypes(identifiers: Self.mappedTypeIdentifiers)
-        // A denied type only strands a sample when this entry could have written one. The revisions that
-        // may have reached Health say which nutrients that is; a type none of them stated holds nothing
-        // for this entry, so it does not keep the delete waiting for a person. When those revisions
-        // cannot be read, every denied type is kept, which errs toward asking.
-        if !denied.isEmpty, let stated = await statedTypes(of: operation) {
-            denied.formIntersection(stated)
+        // A denied type only strands a sample when this entry has one in Health. The ledger says which
+        // nutrients that is; a type it does not name holds nothing for this entry, so it does not keep the
+        // delete waiting for a person. Without a ledger row every revision is assumed to have written,
+        // and when even those cannot be read every denied type is kept, which errs toward asking.
+        if !denied.isEmpty {
+            if let inHealth = try? await keysPossiblyInHealth(
+                intakeID: operation.intakeID, before: Int.max, occurredAt: Date(timeIntervalSince1970: 0)) {
+                let types = Set(HealthKitWritePlanner.mappings
+                    .filter { inHealth.contains($0.nutrientKey) }.map(\.quantityTypeIdentifier))
+                denied.formIntersection(types)
+            }
         }
         // A type that is neither writable nor denied was never asked (`.notDetermined`), so nothing
         // can exist for it and it is silently skipped: no delete is attempted for it.
         let removable = identifiers.filter { allowed[Self.typeIdentifier(for: $0)] == true }
         do {
             let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
+            // What stays in Health is exactly the denied types' samples. A failure to record it leaves the
+            // ledger naming more than is there, which only errs toward asking.
+            try? ledger?.setWrittenHealthKitKeys(
+                intakeID: operation.intakeID,
+                keys: Set(HealthKitWritePlanner.mappings
+                    .filter { denied.contains($0.quantityTypeIdentifier) }.map(\.nutrientKey)))
             if denied.isEmpty {
                 return acknowledge(
                     operation, now: now, outcome: .retracted(operationID: operation.operationID, samples: deleted))
@@ -576,24 +603,24 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         }
     }
 
-    /// The quantity types any revision of the entry stated, or nil when they cannot be read.
-    private func statedTypes(of operation: OutboxOperation) async -> Set<String>? {
-        do {
-            var types = Set<String>()
-            // Every revision, not only those back to the newest one marked delivered: an upsert
-            // acknowledged as superseded by this delete is also marked delivered without having removed
-            // anything, so stopping there could miss a sample an older revision wrote. Over-stating only
-            // keeps the delete waiting for a person.
-            for number in try store.revisions(of: operation.intakeID).map(\.number) {
-                let plan = HealthKitWritePlanner.plan(
-                    intakeID: operation.intakeID, revision: number, occurredAt: Date(timeIntervalSince1970: 0),
-                    totals: try await totals(operation.intakeID, number))
-                types.formUnion(plan.map(\.quantityTypeIdentifier))
-            }
-            return types
-        } catch {
-            return nil
+    /// The store's ledger, when it keeps one.
+    private var ledger: (any HealthKitWrittenLedger)? { store as? any HealthKitWrittenLedger }
+
+    /// The nutrient keys whose samples may be in Health for the intake: the ledger's when it has a row,
+    /// otherwise every key any revision before `revision` stated (an over-statement, which only errs
+    /// toward asking a person). Throws when neither can be read.
+    private func keysPossiblyInHealth(intakeID: String, before revision: Int, occurredAt: Date) async throws -> Set<String> {
+        if let recorded = try ledger?.writtenHealthKitKeys(intakeID: intakeID) {
+            return recorded
         }
+        var keys = Set<String>()
+        for number in try store.revisions(of: intakeID).map(\.number) where number < revision {
+            let plan = HealthKitWritePlanner.plan(
+                intakeID: intakeID, revision: number, occurredAt: occurredAt,
+                totals: try await totals(intakeID, number))
+            keys.formUnion(plan.map { Self.nutrientKey(of: $0.syncIdentifier) })
+        }
+        return keys
     }
 
     /// The quantity type a sync identifier belongs to, through the planner's own mapping.
@@ -609,28 +636,6 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
     /// Every key the mapping table names, so a delete covers every sample this app could have written
     /// for the intake, not only the ones the current revision happens to state.
     private static let mappedKeys: [String] = HealthKitWritePlanner.mappings.map(\.nutrientKey)
-
-    /// The earlier revisions whose samples can still be in Health, newest first: back to and including
-    /// the newest one delivered in full. A fully delivered revision wrote its whole plan and removed
-    /// everything it no longer stated, so nothing older can still be there; revisions after it that
-    /// were attempted but parked may have written part of their plan. Revisions never attempted wrote
-    /// nothing.
-    private static func revisionsThatMayHaveWritten(
-        before revision: Int, of intakeID: String, in store: any JournalDeliverySuspension
-    ) throws -> [Int] {
-        let attempted = try store.projections(of: intakeID)
-            .filter {
-                $0.destination == .healthKit && $0.desiredAction == .upsert && $0.revision < revision
-                    && ($0.state == .succeeded || $0.state == .needsAttention || $0.state == .inProgress)
-            }
-            .sorted { $0.revision > $1.revision }
-        var revisions: [Int] = []
-        for projection in attempted where !revisions.contains(projection.revision) {
-            revisions.append(projection.revision)
-            if projection.state == .succeeded { break }
-        }
-        return revisions
-    }
 
     /// The nutrient key a sync identifier ends with (`intake:<id>:<key>`).
     private static func nutrientKey(of syncIdentifier: String) -> String {

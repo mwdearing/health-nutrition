@@ -952,7 +952,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self,
-            JournalSchemaV5.self, JournalSchemaV6.self, JournalSchemaV7.self,
+            JournalSchemaV5.self, JournalSchemaV6.self, JournalSchemaV7.self, JournalSchemaV8.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -975,6 +975,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
                 }),
             .lightweight(fromVersion: JournalSchemaV5.self, toVersion: JournalSchemaV6.self),
             .lightweight(fromVersion: JournalSchemaV6.self, toVersion: JournalSchemaV7.self),
+            .lightweight(fromVersion: JournalSchemaV7.self, toVersion: JournalSchemaV8.self),
         ]
     }
 
@@ -1071,7 +1072,7 @@ private struct StoredNutrient: Codable {
 /// already met by the two conformances above. Declaring the refinement says so at the type, so a caller
 /// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
 /// initializer.
-public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnapshotSource,
+public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWrittenLedger, JournalSnapshotSource,
     JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalErasing, JournalMealEditing,
     @unchecked Sendable
 {
@@ -1091,7 +1092,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
-        let schema = Schema(versionedSchema: JournalSchemaV7.self)
+        let schema = Schema(versionedSchema: JournalSchemaV8.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -1579,6 +1580,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
     /// The container is not closed: the store reads empty and accepts new entries afterwards.
     public func eraseAll() throws {
         _ = try commit { context in
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.CustomRevisionRecord>()) { context.delete(row) }
@@ -1695,6 +1697,30 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalSnap
             return nil
         }
         return row.suspensionReason
+    }
+
+    public func writtenHealthKitKeys(intakeID: String) throws -> Set<String>? {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.writtenRecord(intakeID, in: context) else { return nil }
+        return Set(row.keysCSV.split(separator: ",").map(String.init))
+    }
+
+    public func setWrittenHealthKitKeys(intakeID: String, keys: Set<String>) throws {
+        try commit { context in
+            let csv = keys.sorted().joined(separator: ",")
+            if let row = try Self.writtenRecord(intakeID, in: context) {
+                row.keysCSV = csv
+            } else {
+                context.insert(JournalSchemaV8.HealthKitWrittenRecord(intakeID: intakeID, keysCSV: csv))
+            }
+        }
+    }
+
+    private static func writtenRecord(
+        _ intakeID: String, in context: ModelContext
+    ) throws -> JournalSchemaV8.HealthKitWrittenRecord? {
+        try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>(
+            predicate: #Predicate<JournalSchemaV8.HealthKitWrittenRecord> { $0.intakeID == intakeID })).first
     }
 
     private static func outboxRecord(_ operationID: String, in context: ModelContext) throws -> OutboxRecord? {

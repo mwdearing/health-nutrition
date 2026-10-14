@@ -27,6 +27,27 @@ public extension CustomProductStore {
     }
 }
 
+/// V8 adds one standalone entity and changes nothing else, so V7 files migrate lightweight.
+///
+/// `HealthKitWrittenRecord` is the HealthKit worker's ledger: for one intake, the nutrient keys whose
+/// samples this app last left in Health. A delivery reads it to tell which stale samples an edit or a
+/// delete still has to remove, instead of inferring that from projection states, which are not updated
+/// for a revision a later edit or delete has already superseded. No row means "never recorded" (an
+/// entry delivered by an earlier build, or restored from an export), and the worker then falls back to
+/// assuming every revision may have written.
+enum JournalSchemaV8: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(8, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        JournalSchemaV7.models + [HealthKitWrittenRecord.self]
+    }
+    @Model final class HealthKitWrittenRecord {
+        var intakeID: String
+        /// Sorted canonical nutrient keys, comma separated. Keys never contain a comma.
+        var keysCSV: String
+        init(intakeID: String, keysCSV: String) { self.intakeID = intakeID; self.keysCSV = keysCSV }
+    }
+}
+
 /// Existing journal entities retain their V6 model identities. V7 adds only standalone entities.
 enum JournalSchemaV7: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(7, 0, 0) }
