@@ -54,4 +54,41 @@ final class CustomProductMigrationTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: id).first?.occurredAt, when)
         XCTAssertTrue(try store.customProducts().isEmpty)
     }
+    /// The schema 0.1.21 shipped (V7) opens under V8 with every entry, revision, projection and outbox
+    /// row intact, and the migrated store still takes new entries.
+    func testV7StoreFromTheLastBuildMigratesToV8AndKeepsLogging() throws {
+        let path = try url(), id = "00000000-0000-4000-8000-000000000003"
+        let schema = Schema(versionedSchema: JournalSchemaV7.self)
+        // A custom product saved under 0.1.21: the V7-only tables must survive the V8 stage too.
+        let saved = CustomProductRevision(
+            localProductID: UUID(), revisionID: UUID(),
+            content: CustomProductContent(name: "Synthetic custom", kind: .food, basis: .per100g))
+        do {
+            let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: path, cloudKitDatabase: .none))
+            let context = ModelContext(container)
+            context.autosaveEnabled = false
+            context.insert(JournalSchemaV6.IntakeRecord(intakeID: id, category: "food", occurredAt: when, timeZoneIdentifier: "UTC", meal: "lunch", note: nil, lifecycleRaw: "active", currentRevision: 1))
+            context.insert(JournalSchemaV6.RevisionRecord(intakeID: id, number: 1, componentsJSON: "[]", productSnapshotID: "v7-snapshot", changeReason: "created", createdAt: when, occurredAt: when, timeZoneIdentifier: "UTC"))
+            context.insert(JournalSchemaV6.ProductRecord(snapshotID: "v7-snapshot", productID: "v7-product", name: "Synthetic V7", brand: nil, barcode: nil, labelBasis: "per100g", catalogOrigin: "synthetic", catalogVersion: "1", nutrientsJSON: "[{\"id\":\"protein\",\"state\":\"known\",\"valueText\":\"2\",\"unitSymbol\":\"g\"}]", kindRaw: "food"))
+            context.insert(JournalSchemaV6.ProjectionRecord(intakeID: id, revision: 1, destinationRaw: "healthKit", actionRaw: "upsert", stateRaw: "succeeded", isCurrent: true))
+            context.insert(JournalSchemaV6.OutboxRecord(operationID: UUID().uuidString, kindRaw: "upsert", intakeID: id, revision: 1, destinationRaw: "relay", payloadHash: "synthetic"))
+            context.insert(JournalSchemaV7.CustomProductRecord(saved))
+            context.insert(JournalSchemaV7.CustomRevisionRecord(saved, payload: try JSONEncoder().encode(saved), now: when))
+            try context.save()
+        }
+        let store = try SwiftDataJournalStore(url: path)
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [id])
+        XCTAssertEqual(try store.activeIntakes().first?.meal, "lunch")
+        XCTAssertEqual(try store.revisions(of: id).count, 1)
+        XCTAssertEqual(try store.projections(of: id).count, 1)
+        XCTAssertEqual(try store.pendingOutbox().count, 1)
+        XCTAssertEqual(try store.product(snapshotID: "v7-snapshot")?.nutrients["protein"], .known(2, .g))
+        XCTAssertEqual(try store.customProducts(), [saved])
+        let next = Intake(id: "00000000-0000-4000-8000-000000000004", category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(next, components: [IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)], product: nil, now: when)
+        store.close()
+        let reopened = try SwiftDataJournalStore(url: path)
+        XCTAssertEqual(Set(try reopened.activeIntakes().map(\.id)), [id, next.id])
+        XCTAssertEqual(try reopened.customProducts(), [saved])
+    }
 }
