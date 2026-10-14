@@ -781,7 +781,9 @@ public enum JournalExporter {
             guard let zoneStart else { return nil }
             let fractionEnd = zoneStart
             let fraction = text[text.index(after: dot)..<fractionEnd]
-            guard !fraction.isEmpty, fraction.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
+            // ASCII digits only. A digit followed by a combining mark is one `Character` that still sorts
+            // between "0" and "9", and the fraction reader below would trap on it.
+            guard !fraction.isEmpty, fraction.allSatisfy({ $0.isASCII && $0 >= "0" && $0 <= "9" }) else { return nil }
             digits = fraction
             let zone = String(text[zoneStart...])
             guard isValidRFC3339Zone(zone) else { return nil }
