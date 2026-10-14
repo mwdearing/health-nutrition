@@ -226,7 +226,9 @@ public final class TodayViewModel: ObservableObject {
                 newRows.append(
                     TodayRow(
                         id: intake.id,
-                        title: components.map(\.name).joined(separator: ", "),
+                        title: snapshot?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin
+                            ? QuickAddViewModel.rowTitle(components: components, product: snapshot)
+                            : components.map(\.name).joined(separator: ", "),
                         detail: components.map { AmountText.describe($0, unitSystem: unitSystem) }
                             .joined(separator: ", "),
                         occurredAt: intake.occurredAt,

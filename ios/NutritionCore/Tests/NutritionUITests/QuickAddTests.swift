@@ -227,6 +227,11 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(
             Set(journal.sections.flatMap(\.rows).map(\.title)),
             ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+
+        let today = TodayViewModel(store: store, lookup: SnapshotNutrientFacts(), timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        XCTAssertEqual(
+            Set(today.rows.map(\.title)), ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
     }
 
     /// The region's own digits and separator are read, as the decimal pad types them.
