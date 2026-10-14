@@ -286,6 +286,15 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, 0)
     }
 
+    /// A quick add edited to two servings shows the doubled amounts in its row title.
+    func testRowTitleScalesWithTheLoggedServings() {
+        let product = ProductDefinition(
+            snapshotID: "quick-x", productID: "quick-x", name: "Quick add", labelBasis: "per serving",
+            catalogOrigin: "quick_add", catalogVersion: "1", nutrients: ["energyKcal": .known(250, .kcal)])
+        let two = [IntakeComponent(componentID: "quick-add", name: "Quick add", amount: 2, unit: .serving)]
+        XCTAssertEqual(QuickAddViewModel.rowTitle(components: two, product: product), "Quick add · 500 kcal")
+    }
+
     /// A store that fails leaves no entry and says so.
     func testAFailedSaveReportsAndWritesNothing() throws {
         let store = try makeStore()

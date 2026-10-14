@@ -159,7 +159,10 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     nonisolated static func rowTitle(components: [IntakeComponent], product: ProductDefinition?) -> String {
         let title = AmountText.title(components)
         guard let product, product.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin else { return title }
-        let amounts = Self.summary(of: product.nutrients)
+        // An edited entry may log more or less than the one serving the snapshot states.
+        guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: product.labelBasis, logged: components)
+        else { return title }
+        let amounts = Self.summary(of: product.nutrients.mapValues { $0.scaled(by: factor) })
         return amounts.isEmpty ? title : title + " · " + amounts
     }
 
