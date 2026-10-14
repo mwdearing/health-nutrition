@@ -61,11 +61,11 @@
       "pattern": "^prod_[a-z0-9][a-z0-9._-]{0,55}(?!\\n)$"
     },
     "shortText": {
-      "description": "Display text in any script, deny-listed for characters that hide or reorder what a person sees: no control characters, no line or paragraph separators, no bidirectional marks, overrides or isolates, no zero-width or other invisible format characters (soft hyphen, joiners, word joiner, byte order mark, interlinear annotation, tag characters), no unpaired surrogates, none of the 66 Unicode noncharacters (U+FDD0 to U+FDEF and the last two code points of every plane), and no space of any kind at the start or the end.",
+      "description": "Display text in any script. Refused, anywhere in the text: every code point of Unicode general category Cc (control), Cf (format), Cs (surrogate), Co (private use), Zl and Zp (line and paragraph separators), every Default_Ignorable_Code_Point (among them the soft hyphen, the joiners, the direction marks, overrides and isolates, the variation selectors, the Hangul fillers and the tag characters), and all 66 noncharacters. Refused at the start and at the end: every space separator (Zs). The schema does not judge lookalike letters or combining marks; that is a matter for import and moderation.",
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
+      "pattern": "^[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u17b4-\\u17b5\\u180b-\\u180f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff]*[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff])?(?!\\n)$"
     },
     "barcode": {
       "description": "Digits only, 8 to 14 of them.",
@@ -121,17 +121,6 @@
         "kg"
       ]
     },
-    "massOrInternationalUnit": {
-      "description": "The mass unit symbols of the registry, or IU for the nutrients labels state that way.",
-      "type": "string",
-      "enum": [
-        "g",
-        "mg",
-        "mcg",
-        "kg",
-        "IU"
-      ]
-    },
     "serving": {
       "description": "The serving the nutrient values below are stated for: a positive amount in a mass, volume or count unit.",
       "type": "object",
@@ -167,6 +156,12 @@
         "saturated_fat": {
           "$ref": "#/$defs/massNutrientValue"
         },
+        "trans_fat": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "cholesterol": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
         "carbohydrate": {
           "$ref": "#/$defs/massNutrientValue"
         },
@@ -174,6 +169,9 @@
           "$ref": "#/$defs/massNutrientValue"
         },
         "sugars": {
+          "$ref": "#/$defs/massNutrientValue"
+        },
+        "added_sugars": {
           "$ref": "#/$defs/massNutrientValue"
         },
         "sodium": {
@@ -189,13 +187,13 @@
           "$ref": "#/$defs/massNutrientValue"
         },
         "vitamin_a": {
-          "$ref": "#/$defs/massOrIUNutrientValue"
+          "$ref": "#/$defs/massNutrientValue"
         },
         "vitamin_c": {
           "$ref": "#/$defs/massNutrientValue"
         },
         "vitamin_d": {
-          "$ref": "#/$defs/massOrIUNutrientValue"
+          "$ref": "#/$defs/massNutrientValue"
         },
         "caffeine": {
           "$ref": "#/$defs/massNutrientValue"
@@ -319,63 +317,6 @@
         }
       }
     },
-    "massOrIUNutrientValue": {
-      "description": "The value of a nutrient stated as a mass or in IU and its state. Only the known state carries an amount; the other three never do.",
-      "type": "object",
-      "required": [
-        "state"
-      ],
-      "oneOf": [
-        {
-          "$ref": "#/$defs/massOrIUNutrientKnown"
-        },
-        {
-          "$ref": "#/$defs/nutrientUnknown"
-        },
-        {
-          "$ref": "#/$defs/nutrientNotApplicable"
-        },
-        {
-          "$ref": "#/$defs/massOrIUNutrientBelowReportingThreshold"
-        }
-      ]
-    },
-    "massOrIUNutrientKnown": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "state",
-        "amount",
-        "unit"
-      ],
-      "properties": {
-        "state": {
-          "const": "known"
-        },
-        "amount": {
-          "$ref": "#/$defs/nonNegativeDecimal"
-        },
-        "unit": {
-          "$ref": "#/$defs/massOrInternationalUnit"
-        }
-      }
-    },
-    "massOrIUNutrientBelowReportingThreshold": {
-      "description": "Present but under the provider's reporting threshold. The unit is optional, because a provider may report the state without one.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "state"
-      ],
-      "properties": {
-        "state": {
-          "const": "below_reporting_threshold"
-        },
-        "unit": {
-          "$ref": "#/$defs/massOrInternationalUnit"
-        }
-      }
-    },
     "nutrientUnknown": {
       "description": "The provider does not state this nutrient for this product.",
       "type": "object",
@@ -431,13 +372,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512,
-          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f]*[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ud800-\\udfff\\ufeff\\ufff9-\\ufffb\\ufdd0-\\ufdef\\ufffe\\uffff\ud83f\udffe\ud83f\udfff\ud87f\udffe\ud87f\udfff\ud8bf\udffe\ud8bf\udfff\ud8ff\udffe\ud8ff\udfff\ud93f\udffe\ud93f\udfff\ud97f\udffe\ud97f\udfff\ud9bf\udffe\ud9bf\udfff\ud9ff\udffe\ud9ff\udfff\uda3f\udffe\uda3f\udfff\uda7f\udffe\uda7f\udfff\udabf\udffe\udabf\udfff\udaff\udffe\udaff\udfff\udb3f\udffe\udb3f\udfff\udb7f\udffe\udb7f\udfff\udbbf\udffe\udbbf\udfff\udbff\udffe\udbff\udfff\udb40\udc00-\udb40\udc7f\\u0020\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000])?(?!\\n)$"
+          "pattern": "^[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff](?:[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u17b4-\\u17b5\\u180b-\\u180f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff]*[^\\u0000-\\u0020\\u007f-\\u00a0\\u00ad\\u034f\\u0600-\\u0605\\u061c\\u06dd\\u070f\\u0890-\\u0891\\u08e2\\u115f-\\u1160\\u1680\\u17b4-\\u17b5\\u180b-\\u180f\\u2000-\\u200f\\u2028-\\u202f\\u205f-\\u206f\\u3000\\u3164\\ud800-\\uf8ff\\ufdd0-\\ufdef\\ufe00-\\ufe0f\\ufeff\\uffa0\\ufff0-\\ufffb\\ufffe-\\uffff\ud804\udcbd\ud804\udccd\ud80d\udc30-\ud80d\udc3f\ud82f\udca0-\ud82f\udca3\ud834\udd73-\ud834\udd7a\ud83f\udffe-\ud83f\udfff\ud87f\udffe-\ud87f\udfff\ud8bf\udffe-\ud8bf\udfff\ud8ff\udffe-\ud8ff\udfff\ud93f\udffe-\ud93f\udfff\ud97f\udffe-\ud97f\udfff\ud9bf\udffe-\ud9bf\udfff\ud9ff\udffe-\ud9ff\udfff\uda3f\udffe-\uda3f\udfff\uda7f\udffe-\uda7f\udfff\udabf\udffe-\udabf\udfff\udaff\udffe-\udaff\udfff\udb3f\udffe-\udb43\udfff\udb7f\udffe-\udbff\udfff])?(?!\\n)$"
         },
         "url": {
-          "description": "Public https page describing the source record.",
+          "description": "Public https page describing the source record: scheme https, a lower-case DNS host name of at least two labels and at most 253 characters ending in a top-level label that starts with a letter, no user information, no port, no IP literal, then an optional path, query and fragment of RFC 3986 characters in which every percent sign starts a two-digit hexadecimal escape.",
           "type": "string",
           "maxLength": 2048,
-          "pattern": "^https://[!-~]+(?!\\n)$"
+          "pattern": "^https://(?=[a-z0-9.-]{4,253}(?:[/?#]|(?!\\n)$))(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?:/(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9A-Fa-f]{2})*)*(?:\\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?(?:#(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*)?(?!\\n)$"
         }
       }
     }

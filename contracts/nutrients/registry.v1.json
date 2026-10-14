@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Nutrient and unit registry for catalog contract v1. Nutrient ids are the only keys a product version's nutrients object may carry, and a value's unit must be one of the units listed for that nutrient. Every unit symbol here is a symbol the iOS UnitRegistry knows, spelled the same way, so a contract-valid document always decodes in the app. Factors are exact decimal strings to the canonical unit of the unit's own dimension and are powers of ten, so a conversion within a dimension is exact. Mass to volume and volume to mass need a stated density; international units never convert; count units need a stated portion.",
+  "description": "Nutrient and unit registry for catalog contract v1. Nutrient ids are the only keys a product version's nutrients object may carry, and a value's unit must be one of the units listed for that nutrient. Each nutrient names the key the iOS app files it under (app_key). Every unit symbol here is a symbol the iOS UnitRegistry knows, spelled the same way, so a contract-valid document always decodes in the app. Factors are exact decimal strings to the canonical unit of the unit's own dimension and are powers of ten, so a conversion within a dimension is exact. Mass to volume and volume to mass need a stated density; international units never convert; count units need a stated portion.",
   "canonical_units_by_dimension": {
     "mass": "g",
     "volume": "mL",
@@ -21,22 +21,25 @@
     "count"
   ],
   "nutrients": [
-    { "id": "energy", "label": "Energy", "dimension": "energy", "canonical_unit": "kcal", "units": ["kcal"] },
-    { "id": "protein", "label": "Protein", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "total_fat", "label": "Total fat", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "saturated_fat", "label": "Saturated fat", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "carbohydrate", "label": "Carbohydrate", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "fiber", "label": "Fibre", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "sugars", "label": "Sugars", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "sodium", "label": "Sodium", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "potassium", "label": "Potassium", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "calcium", "label": "Calcium", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "iron", "label": "Iron", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "vitamin_a", "label": "Vitamin A", "dimension": "mass", "canonical_unit": "mcg", "units": ["g", "mg", "mcg", "kg", "IU"] },
-    { "id": "vitamin_c", "label": "Vitamin C", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "vitamin_d", "label": "Vitamin D", "dimension": "mass", "canonical_unit": "mcg", "units": ["g", "mg", "mcg", "kg", "IU"] },
-    { "id": "caffeine", "label": "Caffeine", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"] },
-    { "id": "water", "label": "Water", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"] }
+    { "id": "energy", "label": "Energy", "dimension": "energy", "canonical_unit": "kcal", "units": ["kcal"], "app_key": "energyKcal" },
+    { "id": "protein", "label": "Protein", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "protein" },
+    { "id": "total_fat", "label": "Total fat", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "fat" },
+    { "id": "saturated_fat", "label": "Saturated fat", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "saturatedFat" },
+    { "id": "trans_fat", "label": "Trans fat", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "transFat" },
+    { "id": "cholesterol", "label": "Cholesterol", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "cholesterol" },
+    { "id": "carbohydrate", "label": "Carbohydrate", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "carbohydrates" },
+    { "id": "fiber", "label": "Fibre", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "fiber" },
+    { "id": "sugars", "label": "Sugars", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "sugars" },
+    { "id": "added_sugars", "label": "Added sugars", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "addedSugars" },
+    { "id": "sodium", "label": "Sodium", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "sodium" },
+    { "id": "potassium", "label": "Potassium", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "potassium" },
+    { "id": "calcium", "label": "Calcium", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "calcium" },
+    { "id": "iron", "label": "Iron", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "iron" },
+    { "id": "vitamin_a", "label": "Vitamin A", "dimension": "mass", "canonical_unit": "mcg", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:vitamin_a" },
+    { "id": "vitamin_c", "label": "Vitamin C", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:vitamin_c" },
+    { "id": "vitamin_d", "label": "Vitamin D", "dimension": "mass", "canonical_unit": "mcg", "units": ["g", "mg", "mcg", "kg"], "app_key": "vitaminD" },
+    { "id": "caffeine", "label": "Caffeine", "dimension": "mass", "canonical_unit": "mg", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:caffeine" },
+    { "id": "water", "label": "Water", "dimension": "mass", "canonical_unit": "g", "units": ["g", "mg", "mcg", "kg"], "app_key": "ingredient:water" }
   ],
   "units": [
     { "symbol": "g", "dimension": "mass", "factor_to_canonical": "1" },
@@ -61,7 +64,8 @@
   "notes": [
     "Each symbol has exactly one spelling, the one the iOS UnitRegistry uses. A provider's ug, ml, l or iu is normalised to mcg, mL, L or IU by the importer before a record is published; the aliases are not part of the wire contract.",
     "Energy is stated in kcal only. kJ is not a v1 unit: the app does not know it, and 1 kJ in kcal has no finite decimal form. An importer converts a kJ-only label before publishing.",
-    "A nutrient's units are the units of its dimension. Vitamin A and vitamin D also accept IU, because labels state them that way; an IU amount stays in IU and never converts to a mass.",
+    "A nutrient's units are the units of its dimension: kcal for energy, a mass unit for every other nutrient. No v1 nutrient is stated in IU, because the app keeps its standard nutrients as masses and an IU amount never converts to one; a label that states a vitamin only in IU is published with that nutrient unknown. IU stays in the unit registry so that an operation can name it and refuse it.",
+    "app_key is the key the iOS app files the nutrient under: one of its standard panel keys (CustomProductValidation.standardDimensions), or an ingredient: key for a nutrient the app has no standard key for. Every standard panel key of the app has exactly one nutrient here, so a client translates by this table and drops nothing.",
     "A serving is stated in a mass, volume or count unit, never in kcal or IU.",
     "Count units other than the canonical serving have no factor: converting between count units is refused, and converting between a count unit and a mass or volume unit needs a portion definition, plus a density when the portion is stated in the other of mass and volume."
   ]

@@ -4,8 +4,9 @@ Nutrient identifiers, units and conversion rules shared by every component.
 
 What is here for v1:
 
-- `registry.v1.json` - the nutrient vocabulary: sixteen nutrient ids with their
-  dimension, canonical unit and the units each may be stated in, and every unit
+- `registry.v1.json` - the nutrient vocabulary: nineteen nutrient ids with their
+  dimension, canonical unit, the units each may be stated in and the key the iOS
+  app files each under (`app_key`), and every unit
   symbol with its dimension and its exact power-of-ten factor to the canonical
   unit of that dimension. Dimensions are mass, volume, energy, count and
   international_unit. The product schema accepts exactly these nutrient ids and,
@@ -13,7 +14,8 @@ What is here for v1:
 - `decimal-rules.md` - the numeric rules: exact decimals as strings, no negative
   amounts, display rounding that never replaces a stored amount, the one rounding
   rule for a division that does not terminate (10 fraction digits, halves away
-  from zero), the 38 significant digit bound on all arithmetic, one spelling per unit and energy in kcal, no cross-dimension
+  from zero), the bounds on all arithmetic (38 significant digits, adjusted exponent
+  within 127), one spelling per unit and energy in kcal, no cross-dimension
   arithmetic without a stated density, portions for count units, international
   units that never convert, proprietary blend splits that are never inferred, and
   how each value state behaves in a total.

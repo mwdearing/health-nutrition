@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
@@ -25,6 +26,7 @@ OPENAPI_PATH = CONTRACTS / "catalog-api" / "openapi.v1.yaml"
 REGISTRY_PATH = CONTRACTS / "nutrients" / "registry.v1.json"
 GOLDEN_PATH = CONTRACTS / "nutrients" / "golden.v1.json"
 SWIFT_UNITS_PATH = ROOT / "ios" / "NutritionCore" / "Sources" / "NutritionDomain" / "Units.swift"
+SWIFT_STANDARD_KEYS_PATH = ROOT / "ios" / "NutritionCore" / "Sources" / "NutritionDomain" / "CustomProductValidation.swift"
 
 
 def load(path: Path):
@@ -279,7 +281,8 @@ def test_only_registered_nutrient_ids_are_accepted(product_validator, nutrient):
 @pytest.mark.parametrize(
     ("nutrient", "unit"),
     [("protein", "kcal"), ("protein", "IU"), ("protein", "mL"), ("protein", "serving"), ("energy", "g"),
-     ("energy", "IU"), ("sodium", "L"), ("vitamin_c", "IU"), ("vitamin_d", "kcal"), ("vitamin_a", "mL")],
+     ("energy", "IU"), ("sodium", "L"), ("vitamin_c", "IU"), ("vitamin_d", "kcal"), ("vitamin_a", "mL"),
+     ("vitamin_d", "IU"), ("vitamin_a", "IU"), ("cholesterol", "kcal")],
 )
 def test_a_nutrient_is_only_stated_in_its_own_units(product_validator, nutrient, unit):
     doc = valid_product()
@@ -355,7 +358,37 @@ def product_schema_unit_symbols(schema) -> set[str]:
 
 
 def test_schema_units_and_registry_units_agree(product_schema, registry):
-    assert product_schema_unit_symbols(product_schema) == {unit["symbol"] for unit in registry["units"]}
+    """Every registry unit a product can carry is in the schema, and nothing else is. IU is the one
+    registry unit no v1 nutrient and no serving is stated in."""
+    publishable = {unit["symbol"] for unit in registry["units"] if unit["dimension"] != "international_unit"}
+    assert product_schema_unit_symbols(product_schema) == publishable
+    assert "IU" not in json.dumps(product_schema["$defs"]["nutrientMap"]) and "IU" not in publishable
+
+
+def swift_standard_dimensions() -> dict[str, str]:
+    """The app's standard panel keys and their dimensions, read from CustomProductValidation.swift."""
+    text = SWIFT_STANDARD_KEYS_PATH.read_text()
+    block = text[text.index("standardDimensions: [String: UnitDimension] = [") :]
+    block = block[block.index("= [") : block.index("\n    ]")]
+    return dict(re.findall(r'"([A-Za-z]+)": \.([a-z]+)', block))
+
+
+def test_every_nutrient_maps_to_the_key_the_app_files_it_under(registry):
+    """A client translates a catalog nutrient id through app_key, so no contract-valid nutrient is
+    dropped: every standard key of the app has exactly one nutrient, with the same dimension."""
+    swift = swift_standard_dimensions()
+    assert {"energyKcal", "fat", "vitaminD"} <= set(swift), "the Swift standard keys were not read"
+    keys = [nutrient["app_key"] for nutrient in registry["nutrients"]]
+    assert len(set(keys)) == len(keys)
+    standard = {}
+    for nutrient in registry["nutrients"]:
+        key = nutrient["app_key"]
+        if key.startswith("ingredient:"):
+            assert key == f"ingredient:{nutrient['id']}", nutrient
+            assert nutrient["id"] not in swift, nutrient
+        else:
+            standard[key] = nutrient["dimension"]
+    assert standard == swift
 
 
 def test_every_wire_unit_symbol_is_one_the_ios_unit_registry_knows(product_schema, registry, golden):
@@ -377,7 +410,7 @@ def test_every_wire_unit_symbol_is_one_the_ios_unit_registry_knows(product_schem
 @pytest.mark.parametrize(
     "text",
     ["Éclair drink", "明治おいしい牛乳", "Müsli & Früchte 30 %", "Сырок глазированный", "x", "Crème fraîche d'Isigny",
-     "Fromage 30\u202f% MG", "Lait\u00a0entier", "Oats \U0001f33e", "عصير برتقال",
+     "Fromage 30\u202f% MG", "Lait\u00a0entier", "Oats \U0001f33e", "عصير برتقال", "Jalapen\u0303o", "한국 우유",
      # The neighbours of the noncharacters are ordinary characters.
      "Oa\ufdcfts", "Oa\ufdf0ts", "Oa\U0001fffdts", "Oa\U00020000ts"],
 )
@@ -399,6 +432,9 @@ def test_display_text_may_be_in_any_script(product_validator, field, text):
      "Oa\u200fts", "Oats\u200f", "Oa\u2060ts", "Oa\u2064ts", "Oa\u206fts", "Oa\ufeffts", "\ufeffOats",
      "Oa\ufff9ts", "Oa\ufffets", "Oa\uffffts", "Oa\ufdd0ts", "Oa\ufdefts", "Oa\U0001fffets",
      "Oa\U0001ffffts", "Oa\U0008fffets", "Oa\U0010fffets", "Oa\U0010ffffts", "Oa\U000e0041ts", "Oa\U000e007fts", "Oa\ud800ts",
+     # Variation selectors, a Hangul filler, private use, and format controls outside the basic plane.
+     "Oa\ufe0fts", "Oa\ufe00ts", "Oa\u3164ts", "Oa\u115fts", "Oa\ue000ts", "Oa\U000f0000ts", "Oa\U0001bca0ts",
+     "Oa\U0001d173ts", "Oa\U000e0100ts", "Oa\u034fts", "Oa\ufff0ts", "Oa\u0600ts", "Oa\U000110bdts",
      # Any kind of space at an edge.
      "\u00a0Oats", "Oats\u00a0", "\u2003Oats", "Oats\u202f", "Oats\u3000", "\u205fOats", "\u1680Oats"],
 )
@@ -417,9 +453,9 @@ def test_the_registry_covers_the_required_nutrients(registry):
     required = {
         "energy", "protein", "total_fat", "saturated_fat", "carbohydrate", "fiber",
         "sugars", "sodium", "potassium", "calcium", "iron", "vitamin_a", "vitamin_c",
-        "vitamin_d", "caffeine", "water",
+        "vitamin_d", "caffeine", "water", "trans_fat", "cholesterol", "added_sugars",
     }
-    assert required <= ids
+    assert required == ids
 
 
 def test_every_nutrient_declares_a_dimension_and_a_usable_canonical_unit(registry):
@@ -434,16 +470,11 @@ def test_every_nutrient_declares_a_dimension_and_a_usable_canonical_unit(registr
 
 
 def test_every_nutrient_lists_the_units_of_its_dimension(registry):
-    """A nutrient's units are its dimension's units; only vitamin A and D may also be stated in IU."""
-    stated_in_international_units = set()
+    """A nutrient's units are exactly its dimension's units, and no v1 nutrient is stated in IU."""
     for nutrient in registry["nutrients"]:
+        assert nutrient["dimension"] in ("energy", "mass"), nutrient
         own = [unit["symbol"] for unit in registry["units"] if unit["dimension"] == nutrient["dimension"]]
-        listed = list(nutrient["units"])
-        if "IU" in listed:
-            stated_in_international_units.add(nutrient["id"])
-            listed.remove("IU")
-        assert listed == own, nutrient
-    assert stated_in_international_units == {"vitamin_a", "vitamin_d"}
+        assert nutrient["units"] == own, nutrient
 
 
 def test_every_unit_declares_its_dimension_and_an_exact_factor(registry):
@@ -498,6 +529,7 @@ class UnitError(Exception):
 
 FRACTION_DIGITS = 10
 SIGNIFICANT_DIGITS = 38
+ADJUSTED_EXPONENT = 127
 
 
 def units(registry):
@@ -512,10 +544,26 @@ def significant_digits(value: Fraction) -> int:
     return len(str(abs(value.numerator)).rstrip("0"))
 
 
+def adjusted_exponent(value: Fraction) -> int:
+    """The place value of the leading significant digit of a finite, non-zero decimal: 0 for 5,
+    2 for 500, -3 for 0.005."""
+    assert terminates(value) and value != 0, value
+    magnitude, exponent = abs(value), 0
+    while magnitude >= 10:
+        magnitude /= 10
+        exponent += 1
+    while magnitude < 1:
+        magnitude *= 10
+        exponent -= 1
+    return exponent
+
+
 def bounded(value: Fraction) -> Fraction:
     """Every input, product, sum and result is checked here: it is refused, never cut, when it
-    needs more significant digits than an amount may have."""
+    needs more significant digits than an amount may have, or lies outside the exponent range."""
     if significant_digits(value) > SIGNIFICANT_DIGITS:
+        raise UnitError("amount_out_of_range")
+    if value != 0 and abs(adjusted_exponent(value)) > ADJUSTED_EXPONENT:
         raise UnitError("amount_out_of_range")
     return value
 
@@ -587,8 +635,9 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
         if source["dimension"] == "count":
             raise UnitError("incompatible_count_units")
         # Both factors are powers of ten, so this is exact.
-        # A power of ten moves the decimal point; it never adds a significant digit.
-        return amount * exact(source["factor_to_canonical"]) / exact(dest["factor_to_canonical"])
+        # A power of ten moves the decimal point; it never adds a significant digit, but it can
+        # move the amount out of the exponent range.
+        return bounded(amount * exact(source["factor_to_canonical"]) / exact(dest["factor_to_canonical"]))
     if "international_unit" in (source["dimension"], dest["dimension"]):
         raise UnitError("international_unit_not_convertible")
 
@@ -623,7 +672,7 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
             canonical = quotient(canonical, density)
         else:
             canonical = bounded(canonical * density)
-        return canonical / exact(dest["factor_to_canonical"])
+        return bounded(canonical / exact(dest["factor_to_canonical"]))
     raise UnitError("dimension_mismatch")
 
 
@@ -787,6 +836,38 @@ def test_a_repeating_quotient_is_rounded_to_ten_fraction_digits_halves_away_from
     assert decimal_string(quotient(Fraction(2), Fraction(3 * 10**10))) == "0.0000000001"
 
 
+DEFAULT_IGNORABLE = [
+    (0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F),
+    (0x200B, 0x200F), (0x202A, 0x202E), (0x2060, 0x206F), (0x3164, 0x3164), (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+]
+
+
+def test_display_text_refuses_every_invisible_code_point_of_unicode(product_schema):
+    """Walks all of Unicode: whatever this Python's Unicode data calls a control, format, surrogate,
+    private-use or line/paragraph separator character, and every default-ignorable code point, is
+    refused anywhere in the text; every space separator is refused at an edge and allowed inside;
+    every letter, mark, number, punctuation and symbol that is not default-ignorable is accepted."""
+    pattern = re.compile(product_schema["$defs"]["shortText"]["pattern"])
+    ignorable = {cp for low, high in DEFAULT_IGNORABLE for cp in range(low, high + 1)}
+    noncharacters = set(range(0xFDD0, 0xFDF0)) | {p * 0x10000 + low for p in range(17) for low in (0xFFFE, 0xFFFF)}
+    refused = accepted = 0
+    for code_point in range(0x110000):
+        character = chr(code_point)
+        category = unicodedata.category(character)
+        inside = pattern.search(f"a{character}b") is not None
+        at_edges = pattern.search(f"{character}b") is not None or pattern.search(f"a{character}") is not None
+        if category in ("Cc", "Cf", "Cs", "Co", "Zl", "Zp") or code_point in ignorable or code_point in noncharacters:
+            assert not inside and not at_edges, hex(code_point)
+            refused += 1
+        elif category == "Zs":
+            assert inside and not at_edges, hex(code_point)
+        elif category[0] in "LMNPS":
+            assert inside and at_edges, hex(code_point)
+            accepted += 1
+    assert refused > 140000 and accepted > 140000
+
+
 def test_display_text_refuses_every_unicode_noncharacter(product_schema):
     pattern = re.compile(product_schema["$defs"]["shortText"]["pattern"])
     noncharacters = list(range(0xFDD0, 0xFDF0))
@@ -801,6 +882,13 @@ def test_display_text_refuses_every_unicode_noncharacter(product_schema):
 def test_a_result_beyond_thirty_eight_significant_digits_is_refused_not_cut(registry):
     assert bounded(Fraction(10**38 - 1)) == 10**38 - 1
     assert bounded(Fraction(10**60)) == 10**60, "trailing zeros are not significant"
+    assert bounded(Fraction(10**127)) == 10**127 and bounded(Fraction(1, 10**127)) == Fraction(1, 10**127)
+    assert bounded(Fraction(0)) == 0
+    assert [adjusted_exponent(Fraction(Decimal(text))) for text in ("5", "500", "0.005", "9.99", "10")] == [0, 2, -3, 0, 1]
+    for outside in (Fraction(10**128), Fraction(1, 10**128), Fraction(-(10**128))):
+        with pytest.raises(UnitError) as raised:
+            bounded(outside)
+        assert raised.value.name == "amount_out_of_range"
     with pytest.raises(UnitError) as raised:
         bounded(Fraction(10**38 + 1))
     assert raised.value.name == "amount_out_of_range"
@@ -859,6 +947,34 @@ def test_the_openapi_skeleton_is_read_only_and_needs_a_token():
     assert text.count("bearerAuth: []") >= 4, "every operation needs bearer auth"
     for forbidden in ("user_id", "userId", "email", "device_id", "intake_id", "taken_at", "healthkit"):
         assert forbidden not in text, f"{forbidden} must not appear in the catalog API"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://fdc.nal.usda.gov/food-details/171705/nutrients", "https://world.openfoodfacts.org/product/3017620422003",
+     "https://example.org", "https://example.org/", "https://a.b.example.co.uk/p/%C3%A9clair?x=1&y=%20#top",
+     "https://xn--bcher-kva.example/a_b~c"],
+)
+def test_a_source_url_is_a_real_https_url(product_validator, url):
+    doc = valid_product()
+    doc["source"]["url"] = url
+    product(product_validator, doc)
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://", "https://?", "https://#x", "https:///path", "https://%ZZ", "https://example.org/%ZZ",
+     "https://example.org/%2", "https://example.org/a b", "https://example.org/a%", "http://example.org",
+     "https://localhost", "https://example", "https://.example.org", "https://example..org", "https://-a.example.org",
+     "https://a-.example.org", "https://user@example.org", "https://user:pw@example.org/", "https://example.org:8443/",
+     "https://127.0.0.1/", "https://[::1]/", "https://EXAMPLE.org/", "https://example.org/\n", "https://example.org\n",
+     "https://example.org/<x>", "https://example.org/a\\b", "https://exa_mple.org", "https://example.org/é",
+     "javascript:alert(1)", "https://" + "a" * 64 + ".org", "https://" + ".".join(["a" * 60] * 5) + ".org"],
+)
+def test_a_source_url_that_is_not_a_usable_https_url_is_refused(product_validator, url):
+    doc = valid_product()
+    doc["source"]["url"] = url
+    product_rejected(product_validator, doc)
 
 
 def test_the_openapi_version_prefix_is_stated_once():

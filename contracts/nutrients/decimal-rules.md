@@ -60,10 +60,10 @@ decide the tenth digit. Ten fraction digits is the precision the iOS
 is its `.plain` rounding mode. Because the multiplication comes first,
 `3 x 1 / 3` is exactly `1`, never `0.9999999999`. `golden.v1.json` carries
 vectors for a repeating quotient in each of the three divisions, for the
-multiply-first order, for a long quotient that terminates, and for the 38 digit
-bound described next.
+multiply-first order, for a long quotient that terminates, and for the bounds
+described next.
 
-## Arithmetic is bounded to 38 significant digits
+## Arithmetic is bounded: 38 significant digits, exponents within 127
 
 Exact arithmetic needs room, and the iOS `Decimal` has room for 38 significant
 digits. So the contract sets that as the bound for every implementation, and no
@@ -72,9 +72,14 @@ implementation may round or cut to stay inside it:
 - Every input, every product, every sum and every result must be a decimal of at
   most 38 significant digits, counted without leading and trailing zeros. A unit
   factor is a power of ten and never adds a digit.
-- An operation that would need more fails with `amount_out_of_range`. It never
-  returns a shortened number. This includes a quotient that does terminate, but
-  only after more than 38 digits.
+- The leading significant digit of every one of them must have a place value
+  from 10^-127 to 10^127 (an adjusted exponent of -127 to 127, the range the app
+  already enforces when it reads numbers). `0.005` has the adjusted exponent -3
+  and `500` has 2. Zero has none and is always in range. A unit factor can move
+  an amount out of this range even though it adds no digit.
+- An operation that would break either bound fails with `amount_out_of_range`.
+  It never returns a shortened number. This includes a quotient that does
+  terminate, but only after more than 38 digits.
 
 Two amounts within the wire bound (12 integer and 6 fraction digits, 18
 significant digits) always multiply within the bound: 18 + 18 = 36. So scaling
@@ -97,8 +102,18 @@ Energy is stated in kcal. `kJ` is not a v1 unit: the app does not know it, and
 converts it before publishing.
 
 A nutrient is stated only in the units the registry lists for it: energy in
-kcal, every other nutrient in a mass unit, and vitamin A and vitamin D in a mass
-unit or in IU. A serving is a mass, a volume or a count.
+kcal, every other nutrient in a mass unit. A serving is a mass, a volume or a
+count.
+
+## Nutrient ids and the app's keys
+
+The registry's nutrient ids are the wire names. The app files its nutrients
+under its own keys (`fat`, `vitaminD`, `energyKcal`), so every registry nutrient
+states its `app_key`, and a client translates by that table. Every standard
+panel key of the app has exactly one registry nutrient with the same dimension,
+and a test reads the Swift source to keep it that way. A nutrient the app has no
+standard key for carries an `ingredient:` key, the namespace the app already
+uses for additional compounds.
 
 ## No cross-dimension arithmetic without a stated density
 
@@ -125,8 +140,10 @@ state.
 
 `IU` measures biological activity. It is not a mass, and no contract in this
 repository converts one to the other. A provider that states an amount in IU
-keeps it in IU. Vitamin A and vitamin D are the two nutrients a product may state
-in IU; an IU value and a mass value of the same nutrient never add up.
+keeps it in IU. No v1 nutrient is published in IU, because the app keeps its
+standard nutrients as masses: a label that states a vitamin only in IU is
+published with that nutrient `unknown`, never with a guessed mass. `IU` stays in
+the unit registry so that an operation can name it and refuse it.
 
 ## Proprietary blend splits are never inferred
 

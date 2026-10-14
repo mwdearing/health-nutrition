@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere, and outside the reject cases every unit symbol is one the iOS UnitRegistry knows. Ops: convert (one unit conversion), scale (a label value scaled from its basis to a consumed amount: value times consumed, divided by the basis), sum (a total with its coverage), reject (the operation must fail with the named error). A result is exact unless a division does not terminate, in which case it is rounded to 10 fraction digits, halves away from zero, as contracts/nutrients/decimal-rules.md states. No input, product, sum or result may need more than 38 significant digits; one that would is refused as amount_out_of_range. The vectors follow the model of ios/NutritionCore/Sources/NutritionDomain; running them against the Swift code is the job of the Swift/Python golden verification that follows this contract. The optional `nutrient` field names the registry nutrient each case is about.",
+  "description": "Exact reference vectors for the nutrient semantics of catalog contract v1. Every quantity is a decimal string; no JSON number appears anywhere, and outside the reject cases every unit symbol is one the iOS UnitRegistry knows. Ops: convert (one unit conversion), scale (a label value scaled from its basis to a consumed amount: value times consumed, divided by the basis), sum (a total with its coverage), reject (the operation must fail with the named error). A result is exact unless a division does not terminate, in which case it is rounded to 10 fraction digits, halves away from zero, as contracts/nutrients/decimal-rules.md states. No input, product, sum or result may need more than 38 significant digits or a leading digit outside the place values 10^-127 to 10^127; one that would is refused as amount_out_of_range. The vectors follow the model of ios/NutritionCore/Sources/NutritionDomain; running them against the Swift code is the job of the Swift/Python golden verification that follows this contract. The optional `nutrient` field names the registry nutrient each case is about.",
   "error_names": [
     "unknown_symbol",
     "dimension_mismatch",
@@ -1263,6 +1263,47 @@
       },
       "expect": {
         "error": "amount_out_of_range"
+      }
+    },
+    {
+      "id": "reject_an_input_too_small_for_the_exponent_range",
+      "op": "reject",
+      "note": "One significant digit, but its place value is 10^-129: outside the adjusted exponent range of -127 to 127.",
+      "input": {
+        "amount": "0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        "unit": "g",
+        "to": "mg"
+      },
+      "expect": {
+        "error": "amount_out_of_range"
+      }
+    },
+    {
+      "id": "reject_a_result_too_large_for_the_exponent_range",
+      "op": "reject",
+      "note": "10^125 kg is in range, but in micrograms it is 10^134.",
+      "input": {
+        "amount": "100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "unit": "kg",
+        "to": "mcg"
+      },
+      "expect": {
+        "error": "amount_out_of_range"
+      }
+    },
+    {
+      "id": "convert_at_the_edge_of_the_exponent_range",
+      "op": "convert",
+      "nutrient": "water",
+      "note": "10^124 g is 10^127 mg, the largest place value an amount may have.",
+      "input": {
+        "amount": "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "unit": "g",
+        "to": "mg"
+      },
+      "expect": {
+        "amount": "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "unit": "mg"
       }
     }
   ]

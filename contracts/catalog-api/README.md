@@ -11,9 +11,10 @@ What is here for v1:
   registry lists for it. Amounts are exact decimal strings of at most 12 integer and 6 fraction
   digits, and never negative;
   the serving is a positive amount in a mass, volume or count unit. Names, brands
-  and attribution lines may be in any script, without control characters,
-  direction marks or overrides, zero-width or other invisible format characters,
-  or a space at either end. The four nutrient value states (`known`, `unknown`,
+  and attribution lines may be in any script, without control, format,
+  private-use or default-ignorable code points, noncharacters, or a space at
+  either end. A source URL is an https URL with a lower-case DNS host name, no
+  user information and no port. The four nutrient value states (`known`, `unknown`,
   `not_applicable`, `below_reporting_threshold`) mirror the iOS `NutrientValue`
   cases; only `known` carries an amount.
 - `error.v1.schema.json` - the closed two-field error body (`code`, `message`)
