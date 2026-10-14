@@ -108,12 +108,7 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
     private let accessProbe: () -> AppleHealthAccess
     /// The access the last run saw, or nil before this launch's first run. A change since then is a
     /// person's answer given outside the app, in the Health app's own sharing screen.
-    private var lastSeenAccess: AppleHealthAccess? {
-        didSet {
-            guard let access = lastSeenAccess else { return }
-            accessDefaults?.set(Self.encode(access), forKey: Self.lastSeenAccessKey)
-        }
-    }
+    private var lastSeenAccess: AppleHealthAccess?
     /// Where the last-seen access survives a relaunch, so an unchanged denial is not re-armed and
     /// retried on every launch. Nil keeps it in memory only (tests).
     private let accessDefaults: UserDefaults?
@@ -315,10 +310,19 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
                 authorizationPending = true
             }
             lastSeenAccess = access
+            var rearmed = true
             if authorizationPending {
                 authorizationPending = false
                 refresh()
-                rearmSuspendedNow()
+                rearmed = rearmSuspendedNow()
+            }
+            // Recorded only once the re-arm it calls for has succeeded, so a launch that ended (or a
+            // re-arm that failed) between the two compares against the old answer and tries again.
+            if rearmed {
+                accessDefaults?.set(Self.encode(access), forKey: Self.lastSeenAccessKey)
+            } else {
+                storedAccess = nil
+                lastSeenAccess = nil
             }
             let outcomes = await healthKitDelivery.runOnce(now: passTime)
             lastRunAt = passTime
@@ -356,8 +360,9 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
 
     /// The re-arm itself, without the busy check: the delivery pass calls it while it holds `isBusy`,
     /// before it reads the queue, so there is no second pass for it to race.
-    private func rearmSuspendedNow() {
-        guard !suspendedIDs.isEmpty else { return }
+    @discardableResult
+    private func rearmSuspendedNow() -> Bool {
+        guard !suspendedIDs.isEmpty else { return true }
         let targets = suspendedIDs.sorted()
         var failures: [String] = []
         for operationID in targets {
@@ -374,6 +379,7 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
                 + failures.joined(separator: "; ")
         }
         refresh()
+        return failures.isEmpty
     }
 
     /// Re-read the queue, so the counts are correct after a change made anywhere in the app.
