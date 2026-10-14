@@ -72,9 +72,9 @@ Each page is `https://ods.od.nih.gov/factsheets/<Name>-HealthProfessional/`. The
 sheet's own text beside its UL table. `ReferenceIntakesTests` asserts the break points by hand (magnesium at 31; B6,
 chromium, calcium and women's iron at 51; vitamin D and the phosphorus limit at 71), so a typo fails a test.
 
-## Planned use
+## Who uses it
 
-Nothing in the app reads this table yet. It is groundwork for two planned features: a "gaps today" vitamins and minerals
-screen, and upper-limit warnings in a supplement stack. Wording on those screens is to follow the app's "no scores, no
-advice" rule: a value is labelled as a reference value with its kind, and the screen states a comparison, not a
-recommendation.
+The vitamins and minerals screen reached from Today compares the day with this table
+([vitamins-and-minerals.md](vitamins-and-minerals.md)). Upper-limit warnings in a supplement stack are planned. Wording
+follows the app's "no scores, no advice" rule: a value is labelled as a reference value with its kind, and the screen
+states a comparison, not a recommendation.
