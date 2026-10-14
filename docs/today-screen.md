@@ -4,8 +4,8 @@ These screens live in the SwiftPM library target `NutritionUI` (package `ios/Nut
 read live in `NutritionJournal`. The app target wires them together. Tests cover the view models only.
 
 ## Screens
-- **Today** (`TodayView`, `TodayViewModel`): the date, a **Daily goals** card with one goal bar per tracked
-  nutrient (see "Goal bars" below) and an "Edit goals" link, a **Water** card with the total, the quick-add water
+- **Today** (`TodayView`, `TodayViewModel`): the date, a calorie ring for energy, protein, carbohydrate and fat columns, a card of goal bars for any other tracked
+  nutrient (see "Goal bars" below) and an "Edit goals" link (`NourishTodayHeader`), a **Water** card with the total, the quick-add water
   capsule and its undo, an **Other amount** capsule that opens a typed field with an Add button, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then
   Other), and one footer line when entries state no nutrition values. Each entry row opens that entry in the entry
   screen, so a row logged late on the wrong day is corrected where it is noticed. Add is the "Add food, drink, or supplement"

@@ -56,7 +56,7 @@ public struct TodayView: View {
                         model: checklist, onLog: onAddIntake,
                         onGoals: { onEditGoals?() }, onUnits: { onOpenUnits?() })
                 }
-                goalsCard
+                NourishTodayHeader(model: model, onEditGoals: onEditGoals)
                 waterCard
                 entries
                 if let summary = model.missingValuesSummary {
