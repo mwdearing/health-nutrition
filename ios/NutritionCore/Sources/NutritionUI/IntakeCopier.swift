@@ -63,15 +63,13 @@ public struct IntakeCopier {
     /// Copies every entry of `dayKey` to `now`. A day with no entries copies nothing.
     @discardableResult
     public func copyDay(dayKey: String, now: Date) throws -> IntakeCopyResult {
-        try copy(try sources(dayKey: dayKey), now: now, unreadableZone: try unreadableZoneCount(dayKey: dayKey))
+        try run(dayKey: dayKey, meal: nil, now: now)
     }
 
     /// Copies the entries of one meal of `dayKey` to `now`.
     @discardableResult
     public func copyMeal(_ meal: MealSelector, dayKey: String, now: Date) throws -> IntakeCopyResult {
-        try copy(
-            try sources(dayKey: dayKey, meal: meal), now: now,
-            unreadableZone: try unreadableZoneCount(dayKey: dayKey, meal: meal))
+        try run(dayKey: dayKey, meal: meal, now: now)
     }
 
     /// Copies yesterday's whole log to `now`.
@@ -82,18 +80,26 @@ public struct IntakeCopier {
 
     /// Active entries whose zone names no zone and whose instant falls on `dayKey` in the copier's zone: they cannot be placed on a
     /// local day, so a copy of that day reports them as skipped rather than silently dropping them.
-    private func unreadableZoneCount(dayKey: String, meal: MealSelector? = nil) throws -> Int {
+    private func unreadableZoneCount(dayKey: String, meal: MealSelector?, destination: String) throws -> Int {
         try store.activeIntakes()
             .filter { $0.lifecycle == .active && TimeZone(identifier: $0.timeZoneIdentifier) == nil }
-            .filter { Self.dayKey($0.occurredAt, zoneIdentifier: zoneID()) == dayKey }
+            .filter { Self.dayKey($0.occurredAt, zoneIdentifier: destination) == dayKey }
             .filter { meal?.matches($0.meal) ?? true }
             .count
     }
 
-    private func copy(_ intakes: [Intake], now: Date, unreadableZone: Int = 0) throws -> IntakeCopyResult {
+    private func run(dayKey: String, meal: MealSelector?, now: Date) throws -> IntakeCopyResult {
         // One zone for the whole batch: the provider is asked once, validated, then fixed.
         let destination = zoneID()
         guard TimeZone(identifier: destination) != nil else { throw IntakeCopyError.invalidDestinationZone }
+        return try copy(
+            try sources(dayKey: dayKey, meal: meal), now: now, destination: destination,
+            unreadableZone: try unreadableZoneCount(dayKey: dayKey, meal: meal, destination: destination))
+    }
+
+    private func copy(_ intakes: [Intake], now: Date, destination: String, unreadableZone: Int) throws
+        -> IntakeCopyResult
+    {
         let repeater = IntakeRepeater(store: store, timeZoneProvider: { destination }, makeID: makeID)
         var created: [String] = []
         var skipped = unreadableZone
