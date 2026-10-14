@@ -62,7 +62,11 @@ public struct JournalView: View {
             }
             // Outside the scrolling rows, so the sentence stays visible after the list scrolls to the day.
             .safeAreaInset(edge: .top) {
-                if let notice = jumpNotice {
+                if let copied = model.copyNotice {
+                    InlineNotice(copied, tone: .waiting)
+                        .padding(DesignSpacing.m)
+                        .background(TokenColors.background)
+                } else if let notice = jumpNotice {
                     InlineNotice(notice, tone: .waiting)
                         .padding(DesignSpacing.m)
                         .background(TokenColors.background)
@@ -182,10 +186,7 @@ public struct JournalView: View {
             }
             if model.isExpanded(section) {
                 ForEach(section.mealGroups) { group in
-                    Text(group.title)
-                        .font(.subheadline)
-                        .foregroundStyle(TokenColors.textSecondary)
-                        .accessibilityAddTraits(.isHeader)
+                    mealHeader(group, in: section)
                     ForEach(group.rows) { row in
                         entryButton(row)
                     }
@@ -210,6 +211,15 @@ public struct JournalView: View {
             ForEach(section.headerBars) { bar in
                 GoalBar(bar)
             }
+            if model.canCopyToToday(section, now: now()) {
+                Button {
+                    model.copyDayToToday(section.id, now: now())
+                } label: {
+                    Label("Copy this day to today", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityHint("Adds every entry of this day to today as new entries")
+            }
             HStack(spacing: DesignSpacing.s) {
                 Label("Add to this day", systemImage: "plus")
                     .foregroundStyle(TokenColors.textPrimary)
@@ -219,6 +229,27 @@ public struct JournalView: View {
             .accessibilityElement(children: .combine)
             .disabled(true)
             .accessibilityValue("Not available yet")
+        }
+    }
+
+    /// A meal's title and, on a past day, a button that copies just that meal to today.
+    private func mealHeader(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {
+        HStack(spacing: DesignSpacing.s) {
+            Text(group.title)
+                .font(.subheadline)
+                .foregroundStyle(TokenColors.textSecondary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: DesignSpacing.s)
+            if model.canCopyToToday(section, now: now()) {
+                Button {
+                    model.copyMealToToday(section.id, groupID: group.id, now: now())
+                } label: {
+                    Label("Copy to today", systemImage: "doc.on.doc")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Copy \(group.title) to today")
+            }
         }
     }
 

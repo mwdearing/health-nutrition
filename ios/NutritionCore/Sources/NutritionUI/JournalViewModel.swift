@@ -148,6 +148,8 @@ public final class JournalViewModel: ObservableObject {
     /// gets the per-day totals.
     private let goals: GoalStore?
     private let repeater: IntakeRepeater
+    /// Copies a past day, or one meal of it, into the present.
+    private let copier: IntakeCopier
     /// The zone a picked day is read in, and the zone "today" is read in for a future date. The same
     /// resolved zone the repeater uses, so the device zone in production and "UTC" in tests.
     private let journalZoneID: () -> String
@@ -172,11 +174,13 @@ public final class JournalViewModel: ObservableObject {
         let zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
         self.journalZoneID = zoneID
         self.repeater = IntakeRepeater(store: store, timeZoneProvider: zoneID, makeID: makeID)
+        self.copier = IntakeCopier(store: store, timeZoneProvider: zoneID, makeID: makeID)
     }
 
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
     public func load(now: Date) {
         defer { loadCount += 1 }
+        copyNotice = nil
         do {
             var skipped = 0
             var groups: [String: [JournalRow]] = [:]
@@ -347,6 +351,63 @@ public final class JournalViewModel: ObservableObject {
     /// A day shows its entries unless it is collapsed by default and has not been opened.
     public func isExpanded(_ section: JournalDaySection) -> Bool {
         !section.isCollapsedByDefault || expandedDays.contains(section.id)
+    }
+
+    /// The sentence for the last copy, such as "Copied 3 entries to today."; nil until a copy runs.
+    @Published public private(set) var copyNotice: String?
+
+    /// True for a day the person can copy into today: any loaded day before today in the journal's zone.
+    public func canCopyToToday(_ section: JournalDaySection, now: Date) -> Bool {
+        let zone = TimeZone(identifier: journalZoneID()) ?? .current
+        return section.id < Self.dayKey(now, zone: zone)
+    }
+
+    /// Copies every entry of a past day to now, as new entries. The day's own entries are untouched.
+    @discardableResult
+    public func copyDayToToday(_ sectionID: String, now: Date) -> IntakeCopyResult? {
+        runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
+    }
+
+    /// Copies one meal group of a past day to now. "Other" copies the entries with no named meal.
+    @discardableResult
+    public func copyMealToToday(_ sectionID: String, groupID: String, now: Date) -> IntakeCopyResult? {
+        let selector = MealLabel.allCases.first { $0.displayName == groupID }.map(MealSelector.named) ?? .other
+        return runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+    }
+
+    private func runCopy(now: Date, _ body: () throws -> IntakeCopyResult) -> IntakeCopyResult? {
+        do {
+            let result = try body()
+            load(now: now)
+            copyNotice = Self.copyNoticeText(result)
+            return result
+        } catch IntakeCopyError.stoppedEarly(let partial, _) {
+            load(now: now)
+            copyNotice = nil
+            errorMessage = partial.copiedCount == 0
+                ? "Could not copy the entries."
+                : "Copied \(Self.entriesText(partial.copiedCount)), then the copy stopped. The rest were not copied."
+            return partial
+        } catch {
+            copyNotice = nil
+            errorMessage = "Could not copy the entries."
+            return nil
+        }
+    }
+
+    static func copyNoticeText(_ result: IntakeCopyResult) -> String {
+        if result.copiedCount == 0 {
+            return result.skippedCount == 0
+                ? "Nothing to copy."
+                : "Nothing copied: \(Self.entriesText(result.skippedCount)) could not be copied."
+        }
+        let copied = "Copied \(Self.entriesText(result.copiedCount)) to today."
+        guard result.skippedCount > 0 else { return copied }
+        return copied + " \(Self.entriesText(result.skippedCount)) could not be copied."
+    }
+
+    private static func entriesText(_ count: Int) -> String {
+        count == 1 ? "1 entry" : "\(count) entries"
     }
 
     /// Creates a new intake from an existing one (one `create`); the original is untouched.
