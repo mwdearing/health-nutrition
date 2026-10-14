@@ -16,14 +16,35 @@ public struct InsightsHost: View {
         self.zone = zone
     }
 
-    private var week: InsightsWeek {
-        InsightsWeek.make(
-            occurredAt: journal.sections.flatMap(\.rows).map(\.occurredAt), now: now(), zone: zone())
+    private var state: InsightsLoadState {
+        InsightsLoadState.resolve(
+            errorMessage: journal.errorMessage, loadCount: journal.loadCount,
+            entries: journal.sections.flatMap(\.rows).map {
+                InsightsWeek.Entry(occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier)
+            },
+            now: now(), zone: zone())
     }
 
     public var body: some View {
-        InsightsView(week: week)
-            .onAppear { journal.load(now: now()) }
+        Group {
+            switch state {
+            case .ready(let week):
+                InsightsView(week: week)
+            case .failed(let message):
+                ScrollView {
+                    InlineNotice(message, tone: .failed)
+                        .padding(DesignSpacing.m)
+                }
+                .background(TokenColors.background)
+                .navigationTitle("Insights")
+            case .loading:
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(TokenColors.background)
+                    .navigationTitle("Insights")
+            }
+        }
+        .onAppear { journal.load(now: now()) }
     }
 }
 

@@ -12,13 +12,13 @@ from pathlib import Path
 
 ROOT_VIEW = Path(__file__).resolve().parents[2] / "ios/HealthNutrition/Sources/RootView.swift"
 INSET = re.compile(r"\.safeAreaInset\(edge: \.bottom\) \{\s*addCapsule\s*\}")
-TABS = ("AppTab.today", "AppTab.journal", "AppTab.library")
+TABS = ("AppTab.today", "AppTab.journal", "AppTab.library", "AppTab.trends")
 
 
 def _tab_view_body() -> str:
     text = ROOT_VIEW.read_text()
     start = text.index("TabView(selection: $selection) {")
-    end = text.index(".tag(AppTab.library)", start)
+    end = text.index(f".tag({TABS[-1]})", start)
     return text[start:end]
 
 
@@ -38,7 +38,7 @@ def test_each_content_tab_carries_the_add_capsule_inside_its_navigation_stack() 
 
 def test_the_tab_view_itself_carries_no_add_capsule_inset() -> None:
     text = ROOT_VIEW.read_text()
-    after_tabs = text[text.index(".tag(AppTab.library)") :]
+    after_tabs = text[text.index(f".tag({TABS[-1]})") :]
     assert not INSET.search(after_tabs)
     assert len(INSET.findall(text)) == len(TABS)
 
@@ -61,3 +61,12 @@ def test_add_actions_include_supplements_in_visible_and_accessible_labels() -> N
     checklist = (ui / "FirstDayChecklist.swift").read_text()
     assert '"Log your first food, drink, or supplement"' in checklist
     assert '"Log your first food or drink"' not in checklist
+
+
+def test_the_trends_tab_hosts_the_trends_screen_and_the_settings_tab_only_redirects() -> None:
+    text = ROOT_VIEW.read_text()
+    body = _tab_view_body()
+    assert "TrendsView(today: services.today, journal: services.journal)" in body
+    assert 'Label("Trends"' in body
+    # The Settings tab shows no screen of its own: the redirect rule is the tested SettingsTabRedirect.
+    assert "SettingsTabRedirect.resolve(" in text
