@@ -180,6 +180,24 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertEqual(try favoritesStore.list().count, 2)
     }
 
+    /// A flag that outlived a finished restore (its removal failed) does not start a resume while any of the file's
+    /// favorites are on the phone, so a favorite deleted since is not put back.
+    func testALeftoverFlagDoesNotResumeOverTheFilesFavorites() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        _ = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(data))
+        let deleted = try XCTUnwrap(try favoritesStore.list().first)
+        try favoritesStore.remove(id: deleted.id)
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertFalse(try favoritesStore.contains(id: deleted.id), "the deleted favorite stays deleted")
+    }
+
     /// A restore that finished clears its flag, so running it again after the favorites were deleted is refused
     /// and does not put them back.
     func testAFinishedImportLeavesNoFlagAndIsRefusedWhenRunAgain() throws {

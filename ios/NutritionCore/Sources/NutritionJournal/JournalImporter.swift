@@ -184,8 +184,11 @@ public enum JournalImporter {
             // that is not empty is refused as before, and the flag is left alone: it is not this run's. An
             // import of the same file still running in parallel writes the same favorites, so the overlap
             // writes identical rows twice at most; nothing here is read back from the other run.
-            guard let favoritesTarget, let progress, try progress.restoreInProgressDigest() == digest,
-                  try journalHolds(plan, store: store)
+            // The favorites are one save, so a restore stopped before it left none of the file's favorites on the
+            // phone; any of them present means that save happened, and the flag is only a leftover.
+            guard let favorites, let favoritesTarget, let progress,
+                  try progress.restoreInProgressDigest() == digest, try journalHolds(plan, store: store),
+                  try Set(favorites.list().map(\.id)).isDisjoint(with: plan.favorites.map(\.id))
             else { throw JournalImportError.notEmpty }
             try favoritesTarget.restore(plan.favorites)
             // A flag that outlived a finished resume would let a later import of this file write favorites
@@ -225,9 +228,8 @@ public enum JournalImporter {
                 }
                 throw favoritesFailure
             }
-            // A flag that outlived a finished restore would let a later import of this file write favorites the
-            // person deleted since, so a failure to clear it is reported rather than swallowed. Importing the
-            // file again then finds its own journal and favorites, writes the same favorites and clears it.
+            // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over these
+            // favorites: a resume needs none of the file's favorites on the phone.
             try progress?.clearRestoreInProgress()
         }
         return summary(of: plan)
