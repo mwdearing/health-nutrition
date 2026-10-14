@@ -35,7 +35,7 @@ public struct NutrientGapsView: View {
                         Text(group.label).tag(ReferenceGroup?.some(group))
                     }
                 }
-                .accessibilityHint("Chooses whose published reference values today is compared with")
+                .accessibilityHint("Chooses whose published reference values these figures are compared with")
                 Text(NutrientGapsCopy.intro(hasGroup: model.referenceGroup != nil, span: model.span))
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)

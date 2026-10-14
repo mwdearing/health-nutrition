@@ -328,6 +328,30 @@ final class NutrientGapsTests: XCTestCase {
             model.rows.first { $0.nutrient == "vitaminC" }?.tally, NutrientDayTally(fromFood: 60, known: 1))
     }
 
+    func testADailyUpperLimitIsCheckedDayByDayInTheWeek() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        // 400 mg of supplement magnesium on one day is above the 350 mg limit; spread over 3 logged
+        // days the average is about 133 mg, which would hide it.
+        try log(store, "Magnesium", at: noon - day, product: product("mag", kind: .supplement, nutrients: [
+            "magnesium": .known(400, .mg),
+        ]))
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: ["vitaminC": .known(60, .mg)]))
+        try log(store, "Orange", at: noon - 2 * day, product: product("orange", kind: .food, nutrients: ["vitaminC": .known(60, .mg)]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: noon)
+
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(model.loggedDays, 3)
+        XCTAssertEqual(magnesium.daysAboveLimit, 1)
+        XCTAssertEqual(magnesium.status, .aboveUpperLimit)
+        XCTAssertTrue(magnesium.detailLines.contains("Above the upper limit on 1 of 3 logged days."))
+        XCTAssertTrue(magnesium.accessibilityText.hasPrefix("Magnesium, daily average "))
+    }
+
     func testAWeekWithNothingLoggedSaysSo() throws {
         let model = NutrientGapsViewModel(store: try makeStore(), lookup: GapsSnapshotFacts())
         model.chooseSpan(.week, now: noon)

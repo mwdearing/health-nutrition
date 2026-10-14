@@ -9,12 +9,18 @@ gives no advice and no score.
 
 A **Day / Week** switch sits at the top. **Day** is today, as described below. **Week** shows, for each
 nutrient, the daily average over the last seven local days, today included: the amounts are summed exactly
-as for a day and divided by the number of those days with at least one food, drink or supplement entry, so
-a day nothing was logged on does not pull every average down. A line says what the figures are ("Average
-per day over the 3 days you logged in the last 7.", or "Nothing was logged in the last 7 days."), the
-headings read "Last 7 days" and "Not known this week", and "Unknown for 2 entries" still counts entries.
-Each row is then compared with the reference and upper limit exactly as a day's total is, so "Below the
-RDA" on the week means the daily average is below it. Each entry's day is read in its own time zone, as on
+as for a day and divided by the number of those days with at least one food or supplement entry (a water
+entry does not count), so a day nothing was logged on does not pull every average down. Today counts as a
+logged day once something is logged, so early in the day the averages read lower than they will end up. A
+line says what the figures are ("Average per day over the 3 days you logged in the last 7.", or "Nothing
+was logged in the last 7 days."), and VoiceOver reads each figure as a daily average. The "Not known"
+heading reads "Not known this week", and without a group the amounts are under "Last 7 days".
+"Unknown for 2 entries" still counts entries.
+
+Each average is compared with the RDA or AI, so "Below the RDA" on the week means the daily average is
+below it. An upper limit is a daily limit, so it is checked day by day rather than against the average: a
+week is "Above the upper limit" when any logged day was certainly above it, and the row says on how many
+("Above the upper limit on 1 of 3 logged days."). Each entry's day is read in its own time zone, as on
 Today, and entries dated after today are left out.
 
 ## Comparing with a group

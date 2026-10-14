@@ -61,23 +61,37 @@ public struct NutrientGapRow: Equatable, Identifiable {
     public let tally: NutrientDayTally
     /// Nil when no group is chosen.
     public let reference: ReferenceIntake?
+    /// For a week, the logged days the amounts are a daily average over; nil for a single day.
+    public let averagedOverDays: Int?
+    /// For a week, the logged days on which the part of the day the upper limit counts was certainly
+    /// above it. An upper limit is a daily one, so a week is above it when any of its days is, however
+    /// the average reads.
+    public let daysAboveLimit: Int
     public let status: NutrientGapStatus
 
     public var id: String { nutrient }
 
-    public init(nutrient: String, label: String, unit: MeasureUnit, tally: NutrientDayTally, reference: ReferenceIntake?) {
+    public init(
+        nutrient: String, label: String, unit: MeasureUnit, tally: NutrientDayTally, reference: ReferenceIntake?,
+        averagedOverDays: Int? = nil, daysAboveLimit: Int = 0
+    ) {
         self.nutrient = nutrient
         self.label = label
         self.unit = unit
         self.tally = tally
         self.reference = reference
-        self.status = Self.status(tally: tally, reference: reference)
+        self.averagedOverDays = averagedOverDays
+        self.daysAboveLimit = daysAboveLimit
+        self.status = Self.status(tally: tally, reference: reference, daysAboveLimit: daysAboveLimit)
     }
 
     /// The comparison, in a fixed order: nothing to compare first, then the limit, then the reference.
-    static func status(tally: NutrientDayTally, reference: ReferenceIntake?) -> NutrientGapStatus {
+    static func status(tally: NutrientDayTally, reference: ReferenceIntake?, daysAboveLimit: Int = 0) -> NutrientGapStatus {
         guard tally.known > 0 else { return tally.missing > 0 ? .unknown : .nothingLogged }
         guard let reference else { return .noReference }
+        if daysAboveLimit > 0 && reference.upperLimit != nil {
+            return .aboveUpperLimit
+        }
         if NutrientGaps.exceededLimit(intake: reference, total: tally.total, supplementTotal: tally.fromSupplements) {
             return .aboveUpperLimit
         }
@@ -118,6 +132,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
         if tally.missing > 0 {
             lines.append("Unknown for \(tally.missing) \(tally.missing == 1 ? "entry" : "entries")")
         }
+        if let days = averagedOverDays, daysAboveLimit > 0, reference?.upperLimit != nil {
+            lines.append("Above the upper limit on \(daysAboveLimit) of \(days) logged \(days == 1 ? "day" : "days").")
+        }
         if let reference, reference.upperLimit != nil, let scope = reference.upperLimitScope {
             if let note = NutrientGaps.limitNote(scope) { lines.append(note) }
         }
@@ -143,7 +160,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
 
     /// The one sentence VoiceOver reads for the row.
     public var accessibilityText: String {
-        var parts = ["\(label), \(amountText)"]
+        var parts = [averagedOverDays == nil ? "\(label), \(amountText)" : "\(label), daily average \(amountText)"]
         if let status = statusText { parts.append(status) }
         if let referenceText { parts.append(referenceText) }
         parts.append(contentsOf: detailLines)
@@ -274,7 +291,7 @@ public final class NutrientGapsViewModel: ObservableObject {
 
     /// The line that says what the week's figures are, or nil for a single day.
     public var spanSummary: String? {
-        guard span == .week else { return nil }
+        guard span == .week, errorMessage == nil else { return nil }
         switch loggedDays {
         case 0: return "Nothing was logged in the last 7 days."
         case 1: return "Average per day over the 1 day you logged in the last 7."
@@ -295,6 +312,8 @@ public final class NutrientGapsViewModel: ObservableObject {
     private let lookup: NutrientFactsLookup
     private let preferences: ReferenceGroupPreferences?
     private var tallies: [String: NutrientDayTally] = [:]
+    /// The week's tallies day by day, so a daily upper limit is checked against each day, not the average.
+    private var dayTallies: [[String: NutrientDayTally]] = []
 
     public init(
         store: JournalStore, lookup: NutrientFactsLookup = UnknownNutrientFacts(),
@@ -316,10 +335,12 @@ public final class NutrientGapsViewModel: ObservableObject {
             let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount)
             loggedDays = read.loggedDays
             tallies = span == .week ? Self.averaged(read.tallies, over: read.loggedDays) : read.tallies
+            dayTallies = span == .week ? read.byDay : []
             skippedIntakeCount = read.skipped
             errorMessage = nil
         } catch {
             tallies = [:]
+            dayTallies = []
             loggedDays = 0
             skippedIntakeCount = 0
             errorMessage = Self.readFailedMessage
@@ -354,11 +375,20 @@ public final class NutrientGapsViewModel: ObservableObject {
 
     private func rebuild() {
         let group = referenceGroup
+        let isWeek = span == .week
         rows = Self.nutrients.map { nutrient in
-            NutrientGapRow(
+            let reference = group.flatMap { ReferenceIntakes.intake(for: nutrient, group: $0) }
+            let daysAbove = reference.map { reference in
+                dayTallies.filter { day in
+                    guard let tally = day[nutrient] else { return false }
+                    return NutrientGaps.exceededLimit(
+                        intake: reference, total: tally.total, supplementTotal: tally.fromSupplements)
+                }.count
+            } ?? 0
+            return NutrientGapRow(
                 nutrient: nutrient, label: NutrientNames.displayName(for: nutrient),
                 unit: Self.unit(for: nutrient), tally: tallies[nutrient] ?? NutrientDayTally(),
-                reference: group.flatMap { ReferenceIntakes.intake(for: nutrient, group: $0) })
+                reference: reference, averagedOverDays: isWeek ? loggedDays : nil, daysAboveLimit: daysAbove)
         }
         sections = errorMessage == nil ? Self.sections(rows, hasGroup: group != nil, span: span) : []
     }
@@ -401,8 +431,9 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// known contribution and an unknown one.
     static func tallies(
         store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
-    ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int) {
+    ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]]) {
         var tallies: [String: NutrientDayTally] = [:]
+        var byDay: [[String: NutrientDayTally]] = Array(repeating: [:], count: max(days, 1))
         var skipped = 0
         var logged: Set<Int> = []
         let nutrients = Self.nutrients
@@ -450,15 +481,27 @@ public final class NutrientGapsViewModel: ObservableObject {
                     }
                 }
                 var tally = tallies[nutrient] ?? NutrientDayTally()
+                var dayTally = byDay[offset][nutrient] ?? NutrientDayTally()
                 if anyKnown {
-                    if isSupplement { tally.fromSupplements += amount } else { tally.fromFood += amount }
+                    if isSupplement {
+                        tally.fromSupplements += amount
+                        dayTally.fromSupplements += amount
+                    } else {
+                        tally.fromFood += amount
+                        dayTally.fromFood += amount
+                    }
                     tally.known += 1
+                    dayTally.known += 1
                 }
-                if anyMissing { tally.missing += 1 }
+                if anyMissing {
+                    tally.missing += 1
+                    dayTally.missing += 1
+                }
                 tallies[nutrient] = tally
+                byDay[offset][nutrient] = dayTally
             }
         }
-        return (tallies, skipped, logged.count)
+        return (tallies, skipped, logged.count, byDay)
     }
 
     /// How many local days before `now`'s day the entry's day is, both read in the entry's own time
