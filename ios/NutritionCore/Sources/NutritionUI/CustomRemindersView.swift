@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The list of water and supplement reminders: each has a switch and a time of day, and can be deleted.
-public struct CustomRemindersView: View {
+/// One water reminder and one supplement reminder, as inline settings rows: a switch each, and a time of
+/// day while it is on. Shown in the Settings list, so there is no extra screen.
+public struct CustomRemindersRows: View {
     @ObservedObject private var controller: CustomReminderController
 
     public init(controller: CustomReminderController) {
@@ -9,43 +10,33 @@ public struct CustomRemindersView: View {
     }
 
     public var body: some View {
-        List {
-            Section {
-                ForEach(controller.reminders) { reminder in
-                    VStack(alignment: .leading) {
-                        Toggle(reminder.kind.title, isOn: Binding(
-                            get: { reminder.isOn },
-                            set: { on in Task { await controller.setOn(on, id: reminder.id) } }
-                        ))
-                        DatePicker("Time", selection: Binding(
-                            get: { Self.date(for: reminder.time) },
-                            set: { date in
-                                let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-                                let time = ReminderTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
-                                Task { await controller.setTime(time, id: reminder.id) }
-                            }
-                        ), displayedComponents: .hourAndMinute)
+        ForEach(CustomReminderKind.allCases, id: \.self) { kind in
+            let reminder = controller.reminders.first { $0.kind == kind }
+            Toggle("\(kind.title) reminder", isOn: Binding(
+                get: { reminder?.isOn ?? false },
+                set: { on in
+                    Task {
+                        if let reminder { await controller.setOn(on, id: reminder.id) }
+                        else if on { await controller.add(kind) }
                     }
-                    .accessibilityElement(children: .contain)
                 }
-                .onDelete { offsets in
-                    let ids = offsets.map { controller.reminders[$0].id }
-                    Task { for id in ids { await controller.remove(id: id) } }
-                }
-            }
-            Section {
-                Button("Add a water reminder") { Task { await controller.add(.water) } }
-                    .disabled(!controller.canAdd)
-                Button("Add a supplement reminder") { Task { await controller.add(.supplement) } }
-                    .disabled(!controller.canAdd)
-                Text("Reminders are on this phone only. Nothing is sent anywhere.")
-                    .font(.footnote).foregroundStyle(TokenColors.textSecondary)
-                if let message = controller.message {
-                    InlineNotice(message, tone: .failed)
-                }
+            ))
+            if let reminder, reminder.isOn {
+                DatePicker("\(kind.title) time", selection: Binding(
+                    get: { Self.date(for: reminder.time) },
+                    set: { date in
+                        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                        let time = ReminderTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
+                        Task { await controller.setTime(time, id: reminder.id) }
+                    }
+                ), displayedComponents: .hourAndMinute)
             }
         }
-        .navigationTitle("Reminders")
+        Text("Reminders on this phone at the times you choose. Nothing is sent anywhere.")
+            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
+        if let message = controller.message {
+            InlineNotice(message, tone: .failed)
+        }
     }
 
     private static func date(for time: ReminderTime) -> Date {

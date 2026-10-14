@@ -4,7 +4,7 @@ Status: Current. Reviewed with [daily reminder](reminders.md) whenever the notif
 
 Beside the one daily log reminder, a person can keep several reminders for water and for supplements.
 
-- Each has a kind (water or supplement), a time of day and a switch. Up to 10 exist at once.
+- Each has a kind (water or supplement), a time of day and a switch. The settings rows show one of each kind (the controller allows up to 10).
 - Off by default: a fresh install has none. The system permission prompt appears the first time a
   reminder is added or switched on and the app has not been asked; launch never asks.
 - Local notifications only. No remote push, entitlement or background mode. Nothing is sent anywhere.
@@ -16,4 +16,4 @@ Beside the one daily log reminder, a person can keep several reminders for water
   the reminders off and says so.
 - Code: `CustomReminders.swift`, `CustomRemindersView.swift` (NutritionUI),
   `SystemCustomReminderScheduler.swift` (app). Tests: `CustomReminderControllerTests`.
-- Reached from Settings under "Units and logging" > "Water and supplement reminders".
+- Shown inline in Settings under "Units and logging": one water and one supplement switch, each with a time while on.

@@ -263,9 +263,7 @@ private struct SettingsContent: View {
                 InlineNotice(message, tone: .failed)
             }
             if let custom = reminders.customReminders {
-                NavigationLink("Water and supplement reminders") {
-                    CustomRemindersView(controller: custom)
-                }
+                CustomRemindersRows(controller: custom)
             }
         }
     }
