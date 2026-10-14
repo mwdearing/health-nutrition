@@ -69,10 +69,10 @@ final class AppServices {
     var productNameSearch: (any ProductNameSearching)? = nil
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
-    /// Reads the supplement list again when the journal changes: after any reload of the app's screens, an
-    /// erase or a restore. The list keeps what it last read, so without this an entry logged in another
-    /// window, or an erase run from the Settings sheet above it, would not show until the next day.
-    private var supplementStackRefresh: AnyCancellable?
+    /// Keeps the supplement list in step with the journal: the app's reloads reread it while the list is on
+    /// screen, and an erase or a restore drops what it read whether or not it is. A list out of view reads
+    /// everything when it next appears.
+    private var supplementStackRefresh: [AnyCancellable] = []
 
     deinit { connectivityMonitor?.cancel() }
 
@@ -172,17 +172,21 @@ final class AppServices {
             reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack
-        // The list reads the journal again whenever the rest of the app does. Every reload, from any window,
-        // reloads the Library, so an entry added, edited or deleted elsewhere shows here as soon as it is
-        // written. An erase or a restore also advances its generation once every store has its new state.
-        // `@Published` sends before the value is set, which is after the stores were written.
-        let journalChanged = Publishers.Merge3(
-            connections.$eraseGeneration.dropFirst().map { _ in () },
-            connections.$journalRestoreGeneration.dropFirst().map { _ in () },
-            library.$sections.dropFirst().map { _ in () })
-        supplementStackRefresh = journalChanged.sink { [weak stack = self.supplementStack] _ in
-            MainActor.assumeIsolated { _ = stack?.load(now: Date()) }
-        }
+        // The list follows the journal. Every reload of the app's screens, from any window, reloads the
+        // Library, so an entry added, edited or deleted elsewhere shows on the list while it is open (a list
+        // out of view reads everything when it appears). An erase or a restore replaces what the stores hold,
+        // so the list drops what it read whether or not it is open. `@Published` sends before the value is
+        // set, which is after the stores were written.
+        let storesReplaced = connections.$eraseGeneration.dropFirst().map { _ in () }
+            .merge(with: connections.$journalRestoreGeneration.dropFirst().map { _ in () })
+        supplementStackRefresh = [
+            storesReplaced.sink { [weak stack = self.supplementStack] _ in
+                MainActor.assumeIsolated { _ = stack?.storesWereReplaced(now: Date()) }
+            },
+            library.$sections.dropFirst().sink { [weak stack = self.supplementStack] _ in
+                MainActor.assumeIsolated { _ = stack?.reloadIfShown(now: Date()) }
+            },
+        ]
         // Today counts the active energy toward the calorie goal when the person switched that on;
         // it reloads only when the figure changed, so a foreground does not load Today twice for nothing.
         bodyActivity.onRead = { [today] readings in

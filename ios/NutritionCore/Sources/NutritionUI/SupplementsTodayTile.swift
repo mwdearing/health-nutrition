@@ -5,6 +5,9 @@ import SwiftUI
 struct SupplementsTodayTile: View {
     @ObservedObject var model: SupplementStackViewModel
     let now: () -> Date
+    /// The tile shows what the list's model reads, so it registers as a screen showing the list: the app's
+    /// reloads then keep its count current while Today is on screen.
+    @State private var screenID = UUID()
 
     private var loggedToday: Int {
         model.rows.reduce(0) { $0 + $1.loggedToday }
@@ -42,6 +45,7 @@ struct SupplementsTodayTile: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint("Opens your supplement list")
-        .onAppear { model.load(now: now()) }
+        .onAppear { model.appeared(screenID, now: now()) }
+        .onDisappear { model.disappeared(screenID) }
     }
 }

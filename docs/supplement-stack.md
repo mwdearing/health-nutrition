@@ -15,7 +15,9 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   the Library's star makes.
   Nothing is offered or added that matches the same entries as an item already on the list (for
   example the same product saved once with breakfast and once with dinner), since both would count
-  every entry of it.
+  every entry of it. A recently logged supplement that is no longer in the journal when Save is tapped
+  (erased or deleted in another window) is not saved, and an erase or a restore closes an open picker or
+  editor.
 - **Schedule.** One to six distinct times a day and at least one day of the week; a new item starts at
   08:00 every day. Removing an item from the list keeps the favorite and every entry.
 - **Taken is read, not stored.** Each load counts today's entries of each item in the journal: an entry
@@ -26,8 +28,11 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   and "Later today" before; the wording reports the journal and gives no advice.
   An entry whose record cannot be read is not counted as missing: the screen says how many of today's
   entries it could not read, since any of them may be an item on the list.
-  The screen reads the journal again when it appears, when the app returns to the foreground, and after
-  any reload of the app's screens (an add, edit or delete anywhere, in any window), an erase or a restore. While
+  The screen reads the journal again when it appears, when the app returns to the foreground, and, while
+  it is open, after any reload of the app's screens (an add, edit or delete anywhere, in any window). A
+  list out of view reads nothing until it appears again. The Supplements tile on Today counts as showing
+  the list, so its count follows too. An erase or a restore drops the Undo offer and
+  everything the list read, whether it is open or not. While
   it is open, the times move on once a minute from what was already read, so a passed time shows without
   a journal read; only a new day reads the journal again, which clears yesterday's marks.
 - **Stored** as JSON under `supplementStack.schedules` in the app's defaults domain, one schedule per
@@ -35,6 +40,10 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   favorite is gone is dropped on the next load. A damaged entry is skipped, not fatal to the list.
 - **Erase all data** removes the key. Favorites are erased with their own store. An open list reads
   everything again when an erase or a restore finishes, so nothing erased stays on screen.
+- **Known limit of the time marks.** Entries fill the times by count, earliest first, whenever they were
+  logged: with a missed morning and an evening dose taken, the list reads the morning time as taken and the
+  evening one as not logged. The count ("1 of 2 taken today") is right. A later change records which time
+  each Taken was tapped for.
 - **Not in the journal export yet.** Export schema version 2 has no field for schedules, so a restore
   brings the favorites back without their times. Adding them needs a new export schema version.
 - **No notifications.** Supplement reminders are separate ([custom reminders](custom-reminders.md)).

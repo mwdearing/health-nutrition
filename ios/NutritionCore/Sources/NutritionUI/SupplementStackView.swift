@@ -11,6 +11,8 @@ public struct SupplementStackView: View {
     @State private var adding = false
     @State private var editing: SupplementStackRow?
     @Environment(\.scenePhase) private var scenePhase
+    /// This screen's id, so the model can tell two windows showing the list apart.
+    @State private var screenID = UUID()
 
     public init(
         model: SupplementStackViewModel, now: @escaping () -> Date = { Date() }, onLogged: @escaping () -> Void = {}
@@ -28,12 +30,13 @@ public struct SupplementStackView: View {
                         + "Not logged when it was taken.",
                     tone: .waiting)
             }
-            if model.rows.isEmpty {
+            // A list that could not be read is not an empty one, so the empty state waits for a good read.
+            if model.rows.isEmpty, !model.readFailed {
                 EmptyState(
                     title: "No supplements on your list",
                     message: "Add something you take and the times you take it. Each tap on Taken logs one entry.",
                     systemImage: "pills", actionTitle: "Add a supplement", action: { self.adding = true })
-            } else {
+            } else if !model.rows.isEmpty {
                 Section {
                     ForEach(model.rows) { row in
                         self.stackRow(row)
@@ -58,13 +61,25 @@ public struct SupplementStackView: View {
                 }
             }
         }
-        .onAppear { self.model.load(now: self.now()) }
-        .onDisappear { self.model.clearUndo() }
-        // Back from the background, anything may have been logged elsewhere, so everything is read again.
+        .onAppear { self.model.appeared(self.screenID, now: self.now()) }
+        .onDisappear {
+            self.model.disappeared(self.screenID)
+            // The Undo toast belongs to this screen, so its offer goes with it even while Today's tile
+            // still shows the list's count.
+            self.model.clearUndo()
+        }
+        // Back from the background, anything may have been logged elsewhere, so a list on screen is read
+        // again; one pushed under another screen reads when it appears.
         // While on screen, the times move on once a minute from what was already read (a time that passes
         // reads "Not logged"); only a new day reads the journal again, which clears yesterday's marks.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { self.model.load(now: self.now()) }
+            if phase == .active { self.model.reloadIfShown(now: self.now()) }
+        }
+        // An erase or a restore replaced the stores: a picker or an editor still open shows what was there
+        // before, so both close.
+        .onChange(of: model.replacements) { _, _ in
+            self.adding = false
+            self.editing = nil
         }
         .task {
             while !Task.isCancelled {
@@ -162,7 +177,11 @@ struct SupplementStackPicker: View {
 
     var body: some View {
         List {
-            if model.candidates.isEmpty {
+            if let message = model.errorMessage {
+                InlineNotice(message, tone: .failed)
+            }
+            // A picker that could not be read is not an empty one either.
+            if model.candidates.isEmpty, !model.readFailed {
                 EmptyState(
                     title: "Nothing to add yet",
                     message: "Log a supplement, or star something in the Library, and it shows up here.",
@@ -307,12 +326,17 @@ struct SupplementScheduleEditor: View {
         return usual.first { !taken.contains(SupplementSchedule.minuteOfDay($0)) } ?? ReminderTime(hour: 12, minute: 0)
     }
 
-    private static func date(for time: ReminderTime) -> Date {
-        Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+    /// The picker's date for a stored time: that time on a fixed day with no clock change (15 January
+    /// 2001), as the reminder picker does. Today may be the day clocks spring forward, when 02:30 does not
+    /// exist and would read, and save, as 03:30.
+    static func date(for time: ReminderTime, calendar: Calendar = .current) -> Date {
+        var parts = DateComponents(year: 2001, month: 1, day: 15, hour: time.hour, minute: time.minute)
+        parts.calendar = calendar
+        return parts.date ?? Date()
     }
 
-    private static func time(from date: Date) -> ReminderTime {
-        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+    static func time(from date: Date, calendar: Calendar = .current) -> ReminderTime {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
         return ReminderTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
     }
 }

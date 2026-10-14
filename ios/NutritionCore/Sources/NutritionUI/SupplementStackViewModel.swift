@@ -57,10 +57,16 @@ public final class SupplementStackViewModel: ObservableObject {
     @Published public private(set) var rows: [SupplementStackRow] = []
     @Published public private(set) var candidates: [SupplementStackCandidate] = []
     @Published public private(set) var errorMessage: String?
+    /// True when the last read failed, so the screen shows the error and not an empty list. Separate from
+    /// `errorMessage`, which also says why an add or a Taken was refused while the list itself is fine.
+    @Published public private(set) var readFailed = false
     @Published public private(set) var undoToken: LibraryUndoToken?
     /// Today's entries whose current revision could not be read. Each may be an item on the list, so the
     /// screen says a time may read "Not logged" when it was taken rather than showing a count it cannot back.
     @Published public private(set) var unreadableEntriesToday = 0
+    /// Advances each time an erase or a restore replaced the stores, so a screen can close a picker or an
+    /// editor that still shows what was there before.
+    @Published public private(set) var replacements = 0
 
     private let store: JournalStore
     private let favorites: FavoritesStore
@@ -99,6 +105,12 @@ public final class SupplementStackViewModel: ObservableObject {
     /// Today's entries per item, as of the last full read, and the day they were counted for.
     private var counts: [String: Int] = [:]
     private var countedDay: String?
+    /// The screens showing the list, one id each, in case more than one window shows it. A set rather than
+    /// a count, so an appearance reported twice without a disappearance in between is still one screen.
+    /// The app's reloads only reread the journal while one is shown: a list nobody is looking at is read
+    /// again when it next appears.
+    private var shownBy: Set<UUID> = []
+    private var isShown: Bool { !shownBy.isEmpty }
 
     // MARK: Reading
 
@@ -113,6 +125,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 rows = []
                 candidates = []
                 errorMessage = "Your time zone could not be read, so today's list cannot be shown."
+                readFailed = true
                 return
             }
             let (counted, unreadable) = try loggedCounts(on: clock.dayKey)
@@ -146,13 +159,15 @@ public final class SupplementStackViewModel: ObservableObject {
             rows = makeRows(clock: clock)
             candidates = try makeCandidates(favorites: stored, planned: Set(planned.keys), kind: kind)
             errorMessage = nil
+            readFailed = false
         } catch {
-            // Nothing read before stays on screen: it may be exactly what an erase just removed, and a
-            // picker row left behind could still be added.
+            // Clear everything read before rather than keep it on screen: it may be exactly what an erase
+            // just removed, and a picker row left behind could still be added.
             forget()
             rows = []
             candidates = []
             errorMessage = "Could not read your supplements."
+            readFailed = true
         }
     }
 
@@ -282,13 +297,31 @@ public final class SupplementStackViewModel: ObservableObject {
                 favoriteID = id
                 key = Self.matchKey(favorite)
             case .recent(let template):
-                guard let favorite = makeFavorite(from: template, title: candidate.title) else {
-                    errorMessage = "This supplement has an amount that cannot be saved."
-                    return false
+                // The picker can be older than the journal: an erase, a restore or a delete in another
+                // window may have removed the entry it showed. Only a supplement the journal still holds is
+                // saved, so nothing erased comes back as a favorite.
+                guard try RecentItemsProvider(store: store).recents(limit: .max)
+                    .contains(where: { "recent:\($0.id)" == candidate.id })
+                else {
+                    return refuse("Could not add it to your supplements.", now: now)
                 }
-                newFavorite = favorite
-                favoriteID = favorite.id
-                key = Self.matchKey(favorite)
+                // Starred since the picker was built, here or in another window, with the same amounts: that
+                // favorite goes on the list rather than a second copy of it. A favorite of the same product
+                // with other amounts is not what the picker showed, so a new one is saved instead.
+                if let starred = stored.first(where: { RepeatTemplate(favorite: $0)?.components == template.components
+                    && Self.matchKey($0) == Self.matchKey(template) })
+                {
+                    favoriteID = starred.id
+                    key = Self.matchKey(template)
+                } else {
+                    guard let favorite = makeFavorite(from: template, title: candidate.title) else {
+                        errorMessage = "This supplement has an amount that cannot be saved."
+                        return false
+                    }
+                    newFavorite = favorite
+                    favoriteID = favorite.id
+                    key = Self.matchKey(favorite)
+                }
             }
             guard !stored.contains(where: { current[$0.id] != nil && Self.matchKey($0) == key }) else {
                 return refuse("This is already on your supplements.", now: now)
@@ -402,6 +435,46 @@ public final class SupplementStackViewModel: ObservableObject {
     /// Drops any pending Undo offer, for when the screen goes away.
     public func clearUndo() {
         undoToken = nil
+    }
+
+    // MARK: Showing
+
+    /// A screen with this id came into view: read everything, and follow the app's reloads until every
+    /// screen showing the list has gone away.
+    public func appeared(_ screen: UUID, now: Date) {
+        shownBy.insert(screen)
+        load(now: now)
+    }
+
+    /// The screen with this id went away. When no screen shows the list any more, stop following the app's
+    /// reloads and drop the Undo offer, whose toast is gone.
+    public func disappeared(_ screen: UUID) {
+        shownBy.remove(screen)
+        if !isShown { clearUndo() }
+    }
+
+    /// The journal may have changed somewhere in the app. Read again only while the list is on screen; a
+    /// list out of view reads everything when it next appears, so nothing is read for no one.
+    public func reloadIfShown(now: Date) {
+        if isShown { load(now: now) }
+    }
+
+    /// Erase all data or a restore replaced what the stores hold. The Undo offer refers to an entry that may
+    /// be gone, so it is dropped, and nothing read before is kept: the list is read again if it is on
+    /// screen and emptied if it is not, so no erased name waits in memory for the next appearance.
+    public func storesWereReplaced(now: Date) {
+        undoToken = nil
+        replacements += 1
+        if isShown {
+            load(now: now)
+        } else {
+            // Nothing from before the replacement is kept, a message about it included.
+            forget()
+            rows = []
+            candidates = []
+            errorMessage = nil
+            readFailed = false
+        }
     }
 
     // MARK: Helpers

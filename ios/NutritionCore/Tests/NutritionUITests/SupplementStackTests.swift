@@ -415,6 +415,8 @@ final class SupplementStackTests: XCTestCase {
             source: .favorite(dinner.id))
         XCTAssertFalse(model.add(stale, schedule: .standard, now: now))
         XCTAssertEqual(model.errorMessage, "This is already on your supplements.")
+        // A refused add is not a failed read: the list is still shown as it is.
+        XCTAssertFalse(model.readFailed)
         XCTAssertEqual(Set(schedules.schedules().keys), ["fav-magnesium"])
     }
 
@@ -489,6 +491,138 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertTrue(model.rows.isEmpty)
         XCTAssertTrue(model.candidates.isEmpty)
         XCTAssertEqual(model.errorMessage, "Could not read your supplements.")
+        XCTAssertTrue(model.readFailed)
+    }
+
+    func testARecentStarredSinceThePickerOpenedIsAddedNotCopied() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try log(store, at: now.addingTimeInterval(-3_600), product: supplement())
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
+
+        // Starred in another window while this picker was open.
+        try saveFavorite(favorites, id: "fav-starred-elsewhere")
+        XCTAssertTrue(model.add(candidate, schedule: .standard, now: now))
+        XCTAssertEqual(try favorites.list().map(\.id), ["fav-starred-elsewhere"])
+        XCTAssertEqual(Set(schedules.schedules().keys), ["fav-starred-elsewhere"])
+    }
+
+    func testARecentErasedSinceThePickerOpenedIsNotSavedBack() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try log(store, at: now.addingTimeInterval(-3_600), product: supplement())
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
+
+        // Erased in another window while this picker's editor was open.
+        try store.eraseAll()
+        let replacementsBefore = model.replacements
+        model.storesWereReplaced(now: now)
+        XCTAssertEqual(model.replacements, replacementsBefore + 1)
+        XCTAssertFalse(model.add(candidate, schedule: .standard, now: now))
+        XCTAssertEqual(model.errorMessage, "Could not add it to your supplements.")
+        XCTAssertTrue(try favorites.list().isEmpty)
+        XCTAssertTrue(schedules.schedules().isEmpty)
+    }
+
+    func testARecentWithOtherAmountsThanTheStarredFavoriteIsSavedAsItsOwn() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 2, product: supplement())
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
+
+        // One capsule starred elsewhere; the picker showed two.
+        try saveFavorite(favorites, id: "fav-one-capsule")
+        XCTAssertTrue(model.add(candidate, schedule: .standard, now: now))
+        let planned = try XCTUnwrap(schedules.schedules().keys.first)
+        XCTAssertNotEqual(planned, "fav-one-capsule")
+        XCTAssertEqual(try favorites.list().first { $0.id == planned }?.components.map(\.amountText), ["2"])
+    }
+
+    func testPickerTimesRoundTripEveryMinuteInAZoneWithDaylightSaving() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
+        for minute in 0..<(24 * 60) {
+            let time = ReminderTime(hour: minute / 60, minute: minute % 60)
+            let date = SupplementScheduleEditor.date(for: time, calendar: calendar)
+            XCTAssertEqual(SupplementScheduleEditor.time(from: date, calendar: calendar), time)
+            // Always on the same fixed day, never today, which may be a day the clocks change.
+            let day = calendar.dateComponents([.year, .month, .day], from: date)
+            XCTAssertEqual([day.year, day.month, day.day], [2001, 1, 15])
+        }
+    }
+
+    func testTheAppsReloadsReadTheJournalOnlyWhileTheListIsOnScreen() throws {
+        let inner = try makeStore()
+        let store = StackReadCountingStore(inner: inner)
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": .standard])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+
+        model.reloadIfShown(now: now)
+        XCTAssertEqual(store.activeIntakesCalls, 0)
+        XCTAssertTrue(model.rows.isEmpty)
+
+        let window = UUID()
+        let other = UUID()
+        model.appeared(window, now: now)
+        XCTAssertEqual(model.rows.count, 1)
+        let afterAppearing = store.activeIntakesCalls
+        try log(inner, at: now.addingTimeInterval(-3_600))
+        model.reloadIfShown(now: now)
+        XCTAssertGreaterThan(store.activeIntakesCalls, afterAppearing)
+        XCTAssertEqual(model.rows.first?.loggedToday, 1)
+
+        // Shown in a second window, then closed there: still followed. The first window's appearance
+        // reported again is still one screen.
+        model.appeared(other, now: now)
+        model.appeared(window, now: now)
+        model.disappeared(other)
+        let stillShown = store.activeIntakesCalls
+        model.reloadIfShown(now: now)
+        XCTAssertGreaterThan(store.activeIntakesCalls, stillShown)
+
+        model.disappeared(window)
+        let afterLeaving = store.activeIntakesCalls
+        model.reloadIfShown(now: now)
+        XCTAssertEqual(store.activeIntakesCalls, afterLeaving)
+    }
+
+    func testReplacedStoresDropTheUndoOfferAndWhatAHiddenListRead() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": .standard])
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        let screen = UUID()
+        model.appeared(screen, now: now)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
+        XCTAssertNotNil(model.undoToken)
+
+        // Shown: read again, and the offer is gone.
+        model.storesWereReplaced(now: now)
+        XCTAssertNil(model.undoToken)
+        XCTAssertEqual(model.rows.count, 1)
+
+        // Hidden: nothing read before is kept for the next appearance, and an offer made while hidden goes.
+        model.disappeared(screen)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), now: now))
+        XCTAssertNotNil(model.undoToken)
+        model.storesWereReplaced(now: now)
+        XCTAssertNil(model.undoToken)
+        XCTAssertTrue(model.rows.isEmpty)
+        XCTAssertTrue(model.candidates.isEmpty)
     }
 
     func testEraseEmptiesTheList() throws {
