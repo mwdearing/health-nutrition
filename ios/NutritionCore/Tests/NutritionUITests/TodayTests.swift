@@ -325,6 +325,7 @@ final class TodayTests: XCTestCase {
                     id: "oat-flour", name: "Oat flour", quantity: Quantity(value: 200, unit: .g),
                     perUnit: [
                         "energy": .known(Decimal(360), .kcal), "protein": .known(Decimal(13), .g),
+                        "carbohydrate": .known(Decimal(60), .g), "fat": .known(Decimal(7), .g),
                         "sodium": .known(Decimal(2), .mg), "potassium": .known(Decimal(300), .mg),
                         "fiber": .known(Decimal(10), .g),
                     ])
