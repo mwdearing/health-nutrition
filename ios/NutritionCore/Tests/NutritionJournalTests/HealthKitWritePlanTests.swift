@@ -272,7 +272,7 @@ final class HealthKitWritePlanTests: XCTestCase {
     func testEveryMappedIdentifierIsADietaryTypeIdentifier() {
         let identifiers = HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier)
 
-        XCTAssertEqual(identifiers.count, 17)
+        XCTAssertEqual(identifiers.count, 35)
         XCTAssertEqual(Set(identifiers).count, identifiers.count, "no two nutrients share a HealthKit type")
         for identifier in identifiers {
             XCTAssertTrue(
