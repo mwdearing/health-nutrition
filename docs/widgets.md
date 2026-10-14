@@ -11,8 +11,12 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   It is replaced whenever Today's figures change and when the app starts.
 - **Lock Screen.** The figures are marked privacy sensitive, so the system redacts them while the device is
   locked, according to the person's Lock Screen widget settings.
-- **Erase all data.** Removes the summary file with the stores and preferences; the widget then shows
-  "Nothing logged today".
+- **Erase all data.** Removes the summary file with the stores and preferences. Today then reloads empty and
+  the app writes an empty summary (no entries, no figures), so the widget shows "Nothing logged today".
+- **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
+  shows dashes rather than claiming nothing was logged.
+- **Backups and accounts.** The App Group container is part of device backups like the rest of the app's
+  files, and the summary is per device: signing out of an account does not change it.
 - **Nothing is sent anywhere.** The widget has no network access and links no package.
 - **Signing.** The extension's identifier is the app's plus `.widgets`; both carry the App Groups capability.
   The workflows set `APP_BUNDLE_ID`, never `PRODUCT_BUNDLE_IDENTIFIER`, so the extension and the group follow

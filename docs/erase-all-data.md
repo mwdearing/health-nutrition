@@ -49,7 +49,8 @@ Removing the keys restores defaults; it does not write replacement values, with 
 ## The widgets' summary
 
 The Today widgets read a small summary file in the App Group container (see [Widgets](widgets.md)). Erase all
-data removes that file and asks the widgets to refresh, so they show "Nothing logged today".
+data removes that file and asks the widgets to refresh; Today then reloads empty and the app writes an empty
+summary, so they show "Nothing logged today".
 
 ## What remains
 
