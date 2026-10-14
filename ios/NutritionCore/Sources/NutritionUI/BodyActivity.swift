@@ -11,16 +11,18 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var latestWeightDate: Date?
     /// The newest weight at least 30 days older than `latestWeightDate`, for the trend line.
     public var earlierWeightKg: Decimal?
+    public var earlierWeightDate: Date?
 
     public init(
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
-        latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil
+        latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil
     ) {
         self.steps = steps
         self.activeEnergyKcal = activeEnergyKcal
         self.latestWeightKg = latestWeightKg
         self.latestWeightDate = latestWeightDate
         self.earlierWeightKg = earlierWeightKg
+        self.earlierWeightDate = earlierWeightDate
     }
 
     public static let empty = BodyActivityReadings()
@@ -98,13 +100,28 @@ public final class BodyActivityViewModel: ObservableObject {
         readings.latestWeightKg.map { weight($0) }
     }
 
-    /// "Down 2.1 lb over 30 days", "Up …", or "No change over 30 days"; nil without an earlier weight.
+    /// "Down 2.1 lb over 34 days", "Up …", or "No change over 34 days", naming the actual interval
+    /// between the two samples; nil without both weights and dates.
     public var weightTrendText: String? {
-        guard let latest = readings.latestWeightKg, let earlier = readings.earlierWeightKg else { return nil }
+        guard let latest = readings.latestWeightKg, let earlier = readings.earlierWeightKg,
+              let latestDate = readings.latestWeightDate, let earlierDate = readings.earlierWeightDate
+        else { return nil }
+        let days = Calendar.current.dateComponents(
+            [.day], from: Calendar.current.startOfDay(for: earlierDate),
+            to: Calendar.current.startOfDay(for: latestDate)).day ?? 0
+        let interval = " over \(days) days"
         let change = latest - earlier
-        let shown = weight(abs(change))
-        if Self.oneDecimal(converted(abs(change))) == "0" { return "No change over 30 days" }
-        return (change < 0 ? "Down " : "Up ") + shown + " over 30 days"
+        if Self.roundedToTenth(converted(abs(change))) == 0 { return "No change" + interval }
+        return (change < 0 ? "Down " : "Up ") + weight(abs(change)) + interval
+    }
+
+    /// Rounded to one decimal place, compared as a number so the test does not depend on the locale's
+    /// digits.
+    static func roundedToTenth(_ value: Decimal) -> Decimal {
+        var input = value
+        var result = Decimal()
+        NSDecimalRound(&result, &input, 1, .plain)
+        return result
     }
 
     private func converted(_ kilograms: Decimal) -> Decimal {

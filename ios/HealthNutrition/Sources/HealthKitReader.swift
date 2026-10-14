@@ -46,7 +46,9 @@ final class HealthKitReader: BodyActivityReading {
             readings.latestWeightKg = latest.kilograms
             readings.latestWeightDate = latest.date
             let thirtyDaysEarlier = Calendar.current.date(byAdding: .day, value: -30, to: latest.date) ?? latest.date
-            readings.earlierWeightKg = await latestWeight(before: thirtyDaysEarlier)?.kilograms
+            let earlier = await latestWeight(before: thirtyDaysEarlier)
+            readings.earlierWeightKg = earlier?.kilograms
+            readings.earlierWeightDate = earlier?.date
         }
         return readings
     }
