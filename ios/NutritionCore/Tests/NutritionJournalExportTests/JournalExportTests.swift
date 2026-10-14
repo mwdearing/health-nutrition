@@ -816,19 +816,17 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         }
     }
 
-    func testSwiftDataActiveIntakeWithEmptyRevisionCannotBeExported() throws {
+    /// The real store no longer writes an empty revision at all (#290), so the export never meets one from it.
+    func testSwiftDataStoreRefusesAnEmptyRevisionSoTheExportNeverMeetsOne() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         let entry = intake(firstID)
-        _ = try store.create(entry, components: [], product: nil, now: now)
-
-        XCTAssertThrowsError(
-            try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now)
-        ) { error in
-            XCTAssertEqual(error as? JournalExportError, .emptyRevisionComponents(firstID, 1))
+        XCTAssertThrowsError(try store.create(entry, components: [], product: nil, now: now)) { error in
+            XCTAssertEqual(error as? JournalError, .noComponents(firstID))
         }
+        XCTAssertNoThrow(try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now))
     }
 
     func testExporterRefusesAnActiveIntakeWithoutRevisionHistory() {

@@ -39,6 +39,12 @@ public enum JournalError: Error, Sendable, Equatable {
     case snapshotConflict(String)
     case unknownOperation(String)
     case corruptRecord(String)
+    /// A revision with no components: it states nothing, cannot be delivered and is refused by the export
+    /// contract. Carries the intake id.
+    case noComponents(String)
+    /// An intake with an empty category, which the export contract requires to be at least one character.
+    /// Carries the intake id.
+    case emptyCategory(String)
 }
 
 /// Validation of the identifiers used in the intake-context contract.
