@@ -31,6 +31,9 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         private var saveCallCount = 0
         private var order: [String] = []
         private var attemptedVersions: [Int] = []
+        private var saveDelay: UInt64 = 0
+        private var savesInFlight = 0
+        private var mostSavesInFlight = 0
 
         /// The samples written so far, in the order they were passed in.
         var saved: [HealthKitSampleSpec] {
@@ -50,6 +53,16 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
         var saveCalls: Int {
             lock.withLock { saveCallCount }
+        }
+        /// The most saves that were ever in progress at the same time.
+        var maxConcurrentSaves: Int {
+            lock.withLock { mostSavesInFlight }
+        }
+
+        /// Makes every save wait this long before it records anything, so a test can hold one run's write open
+        /// while another run starts.
+        func delaySaves(byNanoseconds delay: UInt64) {
+            lock.withLock { saveDelay = delay }
         }
         /// The write calls in the order they arrived, as "delete" and "save".
         var callOrder: [String] {
@@ -111,6 +124,13 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         }
 
         func save(_ specs: [HealthKitSampleSpec]) async throws {
+            let delay = lock.withLock { () -> UInt64 in
+                savesInFlight += 1
+                mostSavesInFlight = max(mostSavesInFlight, savesInFlight)
+                return saveDelay
+            }
+            defer { lock.withLock { savesInFlight -= 1 } }
+            if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
             let error = lock.withLock { () -> (any Error)? in
                 saveCallCount += 1
                 order.append("save")
@@ -265,6 +285,26 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(outcomes, [.delivered(operationID: operationID, samples: 1)])
         XCTAssertNil(try healthKitOperation(store, kind: .upsert), "an acknowledged operation leaves the queue")
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    /// Two runs started together never write at the same time, and the revision is written once.
+    ///
+    /// A run reads the queue once and acts on what it read, so without a single-flight gate the second run
+    /// reads the same pending upsert while the first one's save is still in progress and writes it again
+    /// (#120); with a delete queued behind it, the late save would put retracted samples back.
+    func testOverlappingRunsAreSerializedAndWriteTheRevisionOnce() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+        writer.delaySaves(byNanoseconds: 300_000_000)
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+
+        async let first = worker.runOnce(now: when)
+        async let second = worker.runOnce(now: when)
+        let outcomes = await [first, second]
+
+        XCTAssertEqual(writer.maxConcurrentSaves, 1, "the second run waited for the first")
+        XCTAssertEqual(writer.saveCalls, 1, "the revision is written once: the second run found it acknowledged")
+        XCTAssertEqual(outcomes.flatMap { $0 }.count, 1, "only one run had anything to deliver")
+        XCTAssertNil(try healthKitOperation(store, kind: .upsert))
     }
 
     /// A queued revision 1 is stamped with the instant **its own** revision recorded, not the entry's

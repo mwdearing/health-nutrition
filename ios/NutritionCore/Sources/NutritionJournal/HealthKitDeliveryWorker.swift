@@ -289,6 +289,8 @@ public struct HealthKitDeliveryWorker: Sendable {
     private let store: any JournalDeliverySuspension
     private let writer: any HealthSampleWriter
     private let totals: NutrientTotalsProvider
+    /// Shared by every copy of this worker, so two calls to `runOnce` never overlap.
+    private let gate = DeliveryRunGate()
 
     public init(
         store: any JournalDeliverySuspension, writer: any HealthSampleWriter,
@@ -306,6 +308,15 @@ public struct HealthKitDeliveryWorker: Sendable {
     /// restart, both see the same decision.
     @discardableResult
     public func runOnce(now: Date) async -> [HealthKitDeliveryOutcome] {
+        // One run at a time: a run acts on the queue it read, so an overlapping one would act on the same
+        // operations (#120). A run that arrives while another is in flight waits for it, then reads afresh.
+        await gate.enter()
+        let outcomes = await runPass(now: now)
+        await gate.leave()
+        return outcomes
+    }
+
+    private func runPass(now: Date) async -> [HealthKitDeliveryOutcome] {
         let operations: [OutboxOperation]
         let suspended: Set<String>
         do {
