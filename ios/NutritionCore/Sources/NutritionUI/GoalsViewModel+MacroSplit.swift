@@ -76,15 +76,15 @@ extension GoalsViewModel {
     public func macroSplitEnergyKcal() throws -> Decimal? {
         let stored: NutrientGoal?
         do {
-            stored = try self.storedGoal(for: "energy")
+            stored = try self.storedGoal(for: Self.energyKey)
         } catch {
             throw MacroSplitProblem.readFailed
         }
-        if self.rows.contains(where: { $0.nutrient == "energy" }), let draft = self.draftText["energy"] {
+        if self.rows.contains(where: { $0.nutrient == Self.energyKey }), let draft = self.draftText[Self.energyKey] {
             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
             if text.isEmpty { return nil }
             guard let typed = AmountParser.parseTyped(text), !typed.isNaN, typed > 0,
-                  let kcal = try? Quantity(value: typed, unit: self.selectedUnits["energy"] ?? .kcal)
+                  let kcal = try? Quantity(value: typed, unit: self.selectedUnits[Self.energyKey] ?? .kcal)
                       .converted(to: .kcal).value
             else { throw MacroSplitProblem.energyNotValid }
             return kcal
@@ -107,6 +107,14 @@ extension GoalsViewModel {
     public func macroSplitGrams(
         protein: String, carbohydrate: String, fat: String
     ) -> Result<MacroSplit.Grams, MacroSplitProblem> {
+        self.macroSplitWorked(protein: protein, carbohydrate: carbohydrate, fat: fat).map { $0.grams }
+    }
+
+    /// The split the typed percentages state and the grams it comes to for the energy goal, or why not:
+    /// the one place they are parsed, so the preview, the save and the stored split agree.
+    func macroSplitWorked(
+        protein: String, carbohydrate: String, fat: String
+    ) -> Result<(split: MacroSplit, grams: MacroSplit.Grams), MacroSplitProblem> {
         let energy: Decimal
         do {
             guard let shown = try self.macroSplitEnergyKcal() else { return .failure(.needsEnergyGoal) }
@@ -122,7 +130,7 @@ extension GoalsViewModel {
         do {
             let split = try MacroSplit(
                 proteinPercent: proteinShare, carbohydratePercent: carbohydrateShare, fatPercent: fatShare)
-            return .success(try split.grams(forEnergyKcal: energy))
+            return .success((split, try split.grams(forEnergyKcal: energy)))
         } catch MacroSplit.SplitError.doesNotTotalHundred(let total) {
             return .failure(.notHundred(total: total))
         } catch MacroSplit.SplitError.roundsToNothing {
@@ -142,12 +150,6 @@ extension GoalsViewModel {
         return (proteinShare, carbohydrateShare, fatShare)
     }
 
-    /// The split the typed percentages state, or nil when they do not make one.
-    static func typedMacroSplit(protein: String, carbohydrate: String, fat: String) -> MacroSplit? {
-        guard let shares = typedShares(protein: protein, carbohydrate: carbohydrate, fat: fat) else { return nil }
-        return try? MacroSplit(proteinPercent: shares.0, carbohydratePercent: shares.1, fatPercent: shares.2)
-    }
-
     /// The share of the energy goal each stored macro goal supplies, as whole percents, or nil unless
     /// there is an energy goal and all three macro goals are stored, readable and in mass units.
     public func currentMacroPercents() -> MacroSplit.Grams? {
@@ -164,16 +166,18 @@ extension GoalsViewModel {
     public func applyMacroSplit(protein: String, carbohydrate: String, fat: String) -> String? {
         // Worked out before anything is written, so a split that cannot be made writes nothing.
         let grams: MacroSplit.Grams
-        switch self.macroSplitGrams(protein: protein, carbohydrate: carbohydrate, fat: fat) {
-        case .success(let worked): grams = worked
+        let split: MacroSplit
+        switch self.macroSplitWorked(protein: protein, carbohydrate: carbohydrate, fat: fat) {
+        case .success(let worked):
+            split = worked.split
+            grams = worked.grams
         case .failure(let problem): return problem.message
         }
         let targets: [(key: String, grams: Decimal)] = [
             ("protein", grams.protein), ("carbohydrate", grams.carbohydrate), ("fat", grams.fat),
         ]
-        // The split the grams came from, stored only once all three are written. A failed apply leaves
-        // the earlier split stored, and whether the goals still follow it is decided from the goals.
-        let split = Self.typedMacroSplit(protein: protein, carbohydrate: carbohydrate, fat: fat)
+        // The split is stored only once all three are written. A failed apply leaves the earlier split
+        // stored, and whether the goals still follow it is decided from the goals.
         var energySaved = false
         var previous: [(key: String, goal: NutrientGoal?, draft: String?, unit: MeasureUnit?)] = []
         let storedEnergy: NutrientGoal?
@@ -184,23 +188,23 @@ extension GoalsViewModel {
                     key: target.key, goal: stored, draft: self.draftText[target.key],
                     unit: self.selectedUnits[target.key]))
             }
-            storedEnergy = try self.storedGoal(for: "energy")
+            storedEnergy = try self.storedGoal(for: Self.energyKey)
         } catch {
             return Self.saveFailedMessage
         }
         // The grams above are shares of the energy the row shows. When that is an edit not yet saved,
         // it is saved first, so the stored energy goal is the one the grams were worked out from.
-        if self.rows.contains(where: { $0.nutrient == "energy" }), let draft = self.draftText["energy"] {
+        if self.rows.contains(where: { $0.nutrient == Self.energyKey }), let draft = self.draftText[Self.energyKey] {
             let typed = AmountParser.parseTyped(draft.trimmingCharacters(in: .whitespacesAndNewlines))
-            let unit = self.selectedUnits["energy"] ?? .kcal
+            let unit = self.selectedUnits[Self.energyKey] ?? .kcal
             if typed != storedEnergy?.target || unit != storedEnergy?.unit {
                 // Saved without following: the old split must not move the grams just before the new
                 // ones replace them.
                 self.isApplyingMacroSplit = true
-                let committed = self.commitTarget(for: "energy")
+                let committed = self.commitTarget(for: Self.energyKey)
                 self.isApplyingMacroSplit = false
                 guard committed else {
-                    return self.rowError["energy"] ?? self.errorMessage ?? Self.saveFailedMessage
+                    return self.rowError[Self.energyKey] ?? self.errorMessage ?? Self.saveFailedMessage
                 }
                 energySaved = true
             }

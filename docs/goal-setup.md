@@ -94,9 +94,12 @@ section says the gram goals follow at those percentages. 30/40/30 of 2,000 kcal 
 changing energy to 2,500 kcal makes it 188/250/83 g.
 
 So a gram goal changed by hand or by the setup estimate stops following (typing exactly the split's
-grams back in resumes it), and so do removing the energy goal, an energy goal too small to share out,
-and goals changed behind the screen; none of those rescales anything. Clearing all goals and erase forget
-the split. If a gram write is refused after the energy goal saved, the earlier gram goals are put back
+grams back in resumes it), and so do removing the energy goal, an energy goal too small to share out
+(the screen says so: "Your energy goal is saved, but it is too small to share out by your percentages, so
+protein, carbohydrate and fat were left as they are and no longer follow it."), and goals changed behind
+the screen; none of those rescales anything. Clearing all goals and erase forget the split, a clear that is
+refused partway included, so it cannot resume when matching goals are typed again; a clear refused before
+it removed anything changed nothing and keeps it. If a gram write is refused after the energy goal saved, the earlier gram goals are put back
 and the screen says the macros could not follow, or, when putting them back fails too, that the three
 may be a mix of old and new, with the fields refilled from what is stored. A percentage apply that saved
 a changed energy goal before a gram write failed keeps that energy goal and says so ("Your energy goal is
