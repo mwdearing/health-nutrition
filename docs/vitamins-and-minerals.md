@@ -5,6 +5,18 @@ minerals the reference table covers (`docs/reference-intakes.md`) with what toda
 person picks a group, how that compares with the published adult values for it. The screen states comparisons only: it
 gives no advice and no score.
 
+## Day and week
+
+A **Day / Week** switch sits at the top. **Day** is today, as described below. **Week** shows, for each
+nutrient, the daily average over the last seven local days, today included: the amounts are summed exactly
+as for a day and divided by the number of those days with at least one food, drink or supplement entry, so
+a day nothing was logged on does not pull every average down. A line says what the figures are ("Average
+per day over the 3 days you logged in the last 7.", or "Nothing was logged in the last 7 days."), the
+headings read "Last 7 days" and "Not known this week", and "Unknown for 2 entries" still counts entries.
+Each row is then compared with the reference and upper limit exactly as a day's total is, so "Below the
+RDA" on the week means the daily average is below it. Each entry's day is read in its own time zone, as on
+Today, and entries dated after today are left out.
+
 ## Comparing with a group
 
 **Compare with** offers the eight published adult rows ("Women 19 to 30" to "Men 71 and over") and **Nothing**. Until a
@@ -66,5 +78,4 @@ real amount is never shown as zero.
 
 ## Not yet
 
-Past days, weekly averages and the Nourish restyle's Trends tab are later work; the model takes the day as `now`, so a
-later screen can reuse it. IU conversion for vitamins A, D and E is not done: the factor depends on the form.
+Past single days and longer spans are later work. IU conversion for vitamins A, D and E is not done: the factor depends on the form.

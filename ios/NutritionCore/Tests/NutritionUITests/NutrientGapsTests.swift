@@ -291,6 +291,72 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(model.rows.first { $0.nutrient == "vitaminC" }?.tally, NutrientDayTally(fromFood: 60, known: 1))
     }
 
+    func testTheWeekAveragesOverTheDaysSomethingWasLogged() throws {
+        let store = try makeStore()
+        let day: TimeInterval = 86_400
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        try log(store, "Multi", at: noon - 2 * day, product: product("multi", kind: .supplement, nutrients: [
+            "vitaminC": .known(500, .mg),
+        ]))
+        // A water-only day is not a logged day, and days outside the last seven are not in the week.
+        try log(store, "Water", at: noon - 3 * day, category: "water", amount: 250, unit: .mL)
+        try log(store, "Old orange", at: noon - 7 * day, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        try log(store, "Tomorrow's orange", at: noon + day, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: noon)
+
+        XCTAssertEqual(model.loggedDays, 2)
+        XCTAssertEqual(model.spanSummary, "Average per day over the 2 days you logged in the last 7.")
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        // (60 + 500) over 2 logged days: 30 mg from food and 250 mg from supplements a day.
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 30, fromSupplements: 250, known: 2))
+        XCTAssertEqual(vitaminC.status, .reachedReference)
+
+        model.chooseSpan(.day, now: noon)
+        XCTAssertEqual(model.loggedDays, 1)
+        XCTAssertNil(model.spanSummary)
+        XCTAssertEqual(
+            model.rows.first { $0.nutrient == "vitaminC" }?.tally, NutrientDayTally(fromFood: 60, known: 1))
+    }
+
+    func testAWeekWithNothingLoggedSaysSo() throws {
+        let model = NutrientGapsViewModel(store: try makeStore(), lookup: GapsSnapshotFacts())
+        model.chooseSpan(.week, now: noon)
+        XCTAssertEqual(model.loggedDays, 0)
+        XCTAssertEqual(model.spanSummary, "Nothing was logged in the last 7 days.")
+        XCTAssertTrue(model.rows.allSatisfy { $0.status == .nothingLogged })
+        XCTAssertEqual(model.sections.map(\.title), ["Not known this week"])
+    }
+
+    func testTheWeekHasItsOwnHeadingsAndIntro() throws {
+        let rows = [try row("zinc", NutrientDayTally(fromFood: 6, known: 1), grouped: false)]
+        XCTAssertEqual(NutrientGapsViewModel.sections(rows, hasGroup: false, span: .week).map(\.title), ["Last 7 days"])
+        XCTAssertEqual(
+            NutrientGapsCopy.intro(hasGroup: true, span: .week),
+            "Your daily averages beside the published adult values for this group.")
+        XCTAssertEqual(
+            NutrientGapsCopy.intro(hasGroup: true), "Today's amounts beside the published adult values for this group.")
+        XCTAssertEqual(
+            NutrientGapsCopy.intro(hasGroup: false, span: .week),
+            "Pick a group to see your daily averages beside its published adult values.")
+    }
+
+    func testDaysBeforeCountsLocalDaysInTheEntrysOwnZone() {
+        let entry = Intake(id: "x", category: "food", occurredAt: noon - 6 * 86_400, timeZoneIdentifier: "UTC")
+        XCTAssertEqual(NutrientGapsViewModel.daysBefore(noon, entry), 6)
+        let bad = Intake(id: "y", category: "food", occurredAt: noon, timeZoneIdentifier: "Not/AZone")
+        XCTAssertNil(NutrientGapsViewModel.daysBefore(noon, bad))
+    }
+
     func testClearingTheGroupShowsAmountsAloneAndForgetsTheChoice() throws {
         let store = try makeStore()
         try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
