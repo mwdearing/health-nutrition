@@ -883,10 +883,10 @@ public final class AddIntakeViewModel: ObservableObject {
     /// which case it is namespaced so the food keeps its own meaning. Water poured by volume is the one
     /// food that is what the catalog row says it is, so it keeps the catalog id.
     nonisolated static func componentID(forFoodNamed name: String, unit: MeasureUnit) -> String {
-        let slug = slug(name)
-        if slug == "water", unit.dimension == .volume { return slug }
-        guard IntakeContextFactCatalog.isReserved(componentID: slug) else { return slug }
-        return String(("food-" + slug).prefix(64))
+        let base = Self.slug(name)
+        if base == "water", unit.dimension == .volume { return base }
+        guard IntakeContextFactCatalog.isReserved(componentID: base) else { return base }
+        return String(("food-" + base).prefix(64))
     }
 }
 
