@@ -660,7 +660,7 @@ public struct RelayDeliveryWorker: Sendable {
             value = try encoder.upsert(
                 intake: intake, revision: revision, product: product, operation: operation,
                 links: snapshot)
-        } catch let error as IntakeContextEncoderError {
+        } catch let error as IntakeContextEncoderError where Self.isRevisionIntrinsic(error) {
             return .refused(reason: "the revision does not encode as an intake-context upsert: \(error)")
         } catch {
             return .failed(reason: "the revision does not encode as an intake-context upsert")
@@ -700,7 +700,7 @@ public struct RelayDeliveryWorker: Sendable {
                 value: try encoder.delete(
                     intake: intake, revision: revision, tombstone: tombstones(intake, revision, deletedAt),
                     operation: operation)))
-        } catch let error as IntakeContextEncoderError {
+        } catch let error as IntakeContextEncoderError where Self.isRevisionIntrinsic(error) {
             return .refused(reason: "the deletion does not encode as an intake-context tombstone: \(error)")
         } catch {
             return .failed(reason: "the deletion does not encode as an intake-context tombstone")
@@ -734,6 +734,22 @@ public struct RelayDeliveryWorker: Sendable {
     private static let transientSQLiteCodes: Set<Int> = [5, 6]
     /// Core Data's NSPersistentStoreTimeoutError, raised when the store could not be reached in time.
     private static let persistentStoreTimeoutCode = 134_090
+
+    /// Whether an encoder refusal is about the revision's own stored data, which never changes.
+    ///
+    /// **Only these park an outbox row.** Everything else the encoder can refuse comes from something that can
+    /// change before the next run: a link snapshot is read from the mutable link provider until it is recorded,
+    /// and the producer scope is configuration. Parking those would hold back a payload a later run could send
+    /// without a person re-arming it, so they keep the retry path. A case not listed here is treated the same.
+    private static func isRevisionIntrinsic(_ error: IntakeContextEncoderError) -> Bool {
+        switch error {
+        case .productSnapshotMismatch, .noComponents, .unknownTimeZone, .invalidComponentID, .invalidCategory,
+             .duplicateComponent, .negativeAmount, .blendWithoutMembers:
+            return true
+        default:
+            return false
+        }
+    }
 
     /// Encodes a link-only change as the contract's `link_projection`, which takes no outbox row.
     private func encode(_ projection: RelayLinkProjection) -> RelayEncoding {
