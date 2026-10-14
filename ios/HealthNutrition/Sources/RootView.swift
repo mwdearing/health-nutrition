@@ -5,7 +5,7 @@ import NutritionJournal
 import NutritionDomain
 import NutritionUI
 
-/// The tab shell: Today, Journal and Library, all reading the same store.
+/// The tab shell: Today, Diary (the journal), Library and Settings, all reading the same store.
 @MainActor
 struct RootView: View {
     let services: AppServices
@@ -78,6 +78,8 @@ struct RootView: View {
         case today
         case journal
         case library
+        /// Not a screen: choosing it opens the settings sheet and returns to the tab the person was on.
+        case settings
         #if DEBUG
         case spike
         #endif
@@ -123,7 +125,7 @@ struct RootView: View {
                     .toolbar { settingsToolbar }
             }
                 .safeAreaInset(edge: .bottom) { addCapsule }
-                .tabItem { Label("Journal", systemImage: "list.bullet") }
+                .tabItem { Label("Diary", systemImage: "book.closed") }
                 .tag(AppTab.journal)
 
             // In a navigation stack like the other two tabs. Settings, goals and the privacy screen are
@@ -148,6 +150,12 @@ struct RootView: View {
                     recipesSheet
                 }
 
+            // The mockup's fourth tab. The settings sheet keeps every existing entry point (goals, the
+            // welcome, erase), so this tab only opens it and puts the selection back.
+            Color.clear
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(AppTab.settings)
+
             #if DEBUG
             // Debug builds only: the real HealthKit delivery driver, then the spike that measured how
             // HealthKit resolves a repeated sync identifier. Not in the screenshots.
@@ -163,6 +171,11 @@ struct RootView: View {
                 .tag(AppTab.spike)
             }
             #endif
+        }
+        .onChange(of: selection) { previous, current in
+            guard current == .settings else { return }
+            selection = previous == .settings ? .today : previous
+            openSettings(goals: false)
         }
         .background {
             PrivacyShieldWindowAttachment(controller: privacyShield, phase: scenePhase)
