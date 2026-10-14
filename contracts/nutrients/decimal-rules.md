@@ -1,7 +1,7 @@
 # Nutrient numbers
 
 Every amount in this contract is an exact decimal carried as a JSON string. The
-rules govern catalog and wire operations: published products, the reference
+rules govern the catalog and its wire format: published products, the reference
 vectors in `golden.v1.json` and any service that builds against these files. The
 iOS app (which stores `Decimal`) follows them for catalog data; how its journal
 scales a logged entry is set out under "The journal keeps full precision" below.
@@ -67,23 +67,6 @@ vectors for a repeating quotient in each of the three divisions, for the
 multiply-first order, for a long quotient that terminates, and for the bounds
 described next.
 
-## The journal keeps full precision
-
-The iOS journal scales a logged entry by one factor, `consumed / basis`, divided
-first and kept with every digit a `Decimal` holds, and then multiplies each
-stated value by it. A quotient that does not terminate is not rounded to 10
-fraction digits there: 24 fl oz (709.7647095 mL) of a 710 mL serving is a factor
-of `0.99966860492957746478873239436619718309`. Today's totals, the amounts the
-intake-context encoder sends to the relay and the Apple Health samples all use
-that one factor (`IntakeContextSnapshotBasis.scalingFactor`).
-
-That is deliberate. A relay payload is hashed exactly as written, and the
-receiver reads a revision sent again with different bytes as a conflict rather
-than a retry (`docs/intake-context.md`). Moving the journal to the rule above
-would change the bytes of any revision encoded before the change and sent again
-after it. So the journal's scaling stays as it is, and a screen rounds its
-figures only when it shows them, as the previous sections require.
-
 ## Arithmetic is bounded: 38 significant digits, exponents within 127
 
 Exact arithmetic needs room, and the iOS `Decimal` has room for 38 significant
@@ -109,6 +92,33 @@ one published value by one consumed amount and one basis never fails on the
 multiplication; only a longer chain, such as a count converted through a portion
 and then scaled, can reach the limit, and then it is refused rather than
 rounded.
+
+## The journal keeps full precision
+
+The iOS journal does not follow the two sections above when it scales a logged
+entry. It divides first, `consumed / basis`, keeps the quotient at the 38
+significant digits a Foundation `Decimal` holds (cut there, not rounded and not
+refused), and then multiplies each stated value by that factor, cutting the
+product the same way. A quotient that does not terminate is not rounded to 10
+fraction digits: 24 fl oz (709.7647095 mL) of a 710 mL serving is the factor
+`0.99966860492957746478873239436619718309`, where the exact quotient rounds to
+`...310` at that length. Because the division comes first, the multiply-first
+promise does not hold either: 1 g logged of a 3 g serving that states 3 g comes
+to `0.99999999999999999999999999999999999999 g`, not `1 g`.
+
+The relay encoder and the Apple Health samples scale by
+`IntakeContextSnapshotBasis.scalingFactor`; the day's totals use the same factor
+and answer one more basis shape the same way (a count other than a serving that
+states its weight or volume, logged as an amount).
+
+That is deliberate. A relay payload is hashed exactly as written, and the same
+operation sent again with different bytes is a conflict, not a duplicate
+(`contracts/intake-context/README.md`, under `client_payload_hash` and
+`projection_hash`). Moving the journal to the rules above would change the bytes
+of any revision whose factor does not terminate, once it is encoded again after
+the change. So the journal's scaling stays as it is, and a screen rounds its
+figures only when it shows them, as "Display rounding never replaces a stored
+amount" requires. Every other rule here still holds for the catalog.
 
 ## Units: one spelling each, and energy in kcal
 
