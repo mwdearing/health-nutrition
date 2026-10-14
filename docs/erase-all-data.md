@@ -24,7 +24,7 @@ Each store saves its own row deletion. If a store fails, erase reports a partial
 
 ### Display preferences
 
-Erase removes all ten keys owned by `UserDefaultsDisplayPreferences` from the app's defaults domain:
+Erase removes all eleven keys owned by `UserDefaultsDisplayPreferences` from the app's defaults domain:
 
 | Category | Keys removed |
 | --- | --- |
@@ -33,6 +33,7 @@ Erase removes all ten keys owned by `UserDefaultsDisplayPreferences` from the ap
 | Daily reminder (2) | `display.reminder.on`, `display.reminder.time` |
 | Today goals (2) | `display.goals.hiddenOnToday`, `display.goals.waterDefaultSeeded` |
 | Sharing disclosure, separately acknowledged per account (1) | `display.community.disclosureSeen` |
+| Vitamins and minerals comparison group (1) | `display.reference.group` |
 
 Removing the keys restores defaults; it does not write replacement values, with one exception: `display.goals.waterDefaultSeeded` is set to true again right after the erase, so the default water goal is not written back into the just-erased goal store. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this phone.
 

@@ -93,6 +93,9 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
     /// The account IDs that have read the sharing disclosure: a string array under one key. The earlier single
     /// flag stored under this key is a bool, which is not an array, so it reads as no account at all.
     private let communityDisclosureKey = "display.community.disclosureSeen"
+    /// The reference group the vitamins and minerals screen compares with, stored as
+    /// "<sex>.<age band>" (for example "female.years31To50"), absent until a person picks one.
+    private let referenceGroupKey = "display.reference.group"
 
     /// `defaults` is a parameter so a test can pass a suite of its own rather than touching the
     /// standard domain.
@@ -248,6 +251,7 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.removeObject(forKey: hiddenTodayGoalsKey)
         defaults.removeObject(forKey: waterGoalSeededKey)
         defaults.removeObject(forKey: communityDisclosureKey)
+        defaults.removeObject(forKey: referenceGroupKey)
     }
 }
 
@@ -263,6 +267,7 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
     public private(set) var hiddenTodayGoals: Set<String> = []
     public private(set) var hasSeededWaterGoal = false
     public func markWaterGoalSeeded() { hasSeededWaterGoal = true }
+    public private(set) var referenceGroup: ReferenceGroup?
     private var productSharingPauses: [UUID: ProductSharePauseReason] = [:]
     public func productSharingPause(for userID: String) -> ProductSharePauseReason? {
         guard let owner = UUID(uuidString: userID) else { return nil }
@@ -335,5 +340,34 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         hiddenTodayGoals = []
         hasSeededWaterGoal = false
         acknowledgedAccountIDs = []
+        referenceGroup = nil
+    }
+}
+
+extension UserDefaultsDisplayPreferences: ReferenceGroupPreferences {
+    /// Absent, or anything that does not read back as one published row, is no group: the screen
+    /// then shows amounts alone rather than guessing a row.
+    public var referenceGroup: ReferenceGroup? {
+        guard let text = defaults.string(forKey: referenceGroupKey) else { return nil }
+        let parts = text.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let sex = ReferenceSex(rawValue: String(parts[0])),
+              let band = ReferenceAgeBand(rawValue: String(parts[1]))
+        else { return nil }
+        return ReferenceGroup(sex: sex, ageBand: band)
+    }
+
+    public func setReferenceGroup(_ group: ReferenceGroup?) {
+        guard let group else {
+            defaults.removeObject(forKey: referenceGroupKey)
+            return
+        }
+        defaults.set("\(group.sex.rawValue).\(group.ageBand.rawValue)", forKey: referenceGroupKey)
+    }
+}
+
+extension InMemoryDisplayPreferences: ReferenceGroupPreferences {
+    public func setReferenceGroup(_ group: ReferenceGroup?) {
+        referenceGroup = group
     }
 }

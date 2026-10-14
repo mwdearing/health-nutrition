@@ -336,6 +336,13 @@ public final class TodayViewModel: ObservableObject {
         }
     }
 
+    /// The vitamins and minerals screen, reading the same journal and nutrient facts as Today and the
+    /// reference group kept with the display preferences.
+    public func makeNutrientGaps() -> NutrientGapsViewModel {
+        NutrientGapsViewModel(
+            store: store, lookup: lookup, preferences: preferences as? ReferenceGroupPreferences)
+    }
+
     /// The daily water goal used until the person sets one: 2,000 mL (about 68 fl oz).
     static let defaultWaterGoal = NutrientGoal(
         nutrient: DailyTotalsBuilder.waterKey, target: 2000, unit: .mL)

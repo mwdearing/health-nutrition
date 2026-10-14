@@ -64,6 +64,7 @@ public struct TodayView: View {
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
                 }
+                nutrientGapsLink
             }
             .padding(.horizontal, DesignSpacing.m)
             .padding(.vertical, DesignSpacing.s)
@@ -71,6 +72,28 @@ public struct TodayView: View {
         .background(TokenColors.background)
         .navigationTitle("Today")
         .onAppear { model.load(now: now()) }
+    }
+
+    /// Opens today's vitamins and minerals against published reference values. It pushes onto the
+    /// navigation stack Today is shown in, so it needs nothing from the host.
+    private var nutrientGapsLink: some View {
+        NavigationLink {
+            NutrientGapsView(makeModel: { model.makeNutrientGaps() }, now: now)
+        } label: {
+            Card {
+                HStack {
+                    Text("Vitamins and minerals")
+                        .font(.headline)
+                        .foregroundStyle(TokenColors.textPrimary)
+                    Spacer(minLength: DesignSpacing.s)
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(TokenColors.textSecondary)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows today's vitamins and minerals beside published reference values")
     }
 
     @ViewBuilder
