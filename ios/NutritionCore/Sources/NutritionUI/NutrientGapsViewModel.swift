@@ -160,7 +160,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
 
     /// The one sentence VoiceOver reads for the row.
     public var accessibilityText: String {
-        var parts = [averagedOverDays == nil ? "\(label), \(amountText)" : "\(label), daily average \(amountText)"]
+        // "Daily average" only where there is a figure: "Zinc, daily average Unknown" says nothing.
+        let isAverageFigure = averagedOverDays != nil && tally.known > 0
+        var parts = [isAverageFigure ? "\(label), daily average \(amountText)" : "\(label), \(amountText)"]
         if let status = statusText { parts.append(status) }
         if let referenceText { parts.append(referenceText) }
         parts.append(contentsOf: detailLines)
@@ -432,7 +434,6 @@ public final class NutrientGapsViewModel: ObservableObject {
     static func tallies(
         store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
     ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]]) {
-        var tallies: [String: NutrientDayTally] = [:]
         var byDay: [[String: NutrientDayTally]] = Array(repeating: [:], count: max(days, 1))
         var skipped = 0
         var logged: Set<Int> = []
@@ -480,25 +481,25 @@ public final class NutrientGapsViewModel: ObservableObject {
                         anyMissing = true
                     }
                 }
-                var tally = tallies[nutrient] ?? NutrientDayTally()
                 var dayTally = byDay[offset][nutrient] ?? NutrientDayTally()
                 if anyKnown {
-                    if isSupplement {
-                        tally.fromSupplements += amount
-                        dayTally.fromSupplements += amount
-                    } else {
-                        tally.fromFood += amount
-                        dayTally.fromFood += amount
-                    }
-                    tally.known += 1
+                    if isSupplement { dayTally.fromSupplements += amount } else { dayTally.fromFood += amount }
                     dayTally.known += 1
                 }
-                if anyMissing {
-                    tally.missing += 1
-                    dayTally.missing += 1
-                }
-                tallies[nutrient] = tally
+                if anyMissing { dayTally.missing += 1 }
                 byDay[offset][nutrient] = dayTally
+            }
+        }
+        // The span's totals are its days added together, so there is one accumulation to keep right.
+        var tallies: [String: NutrientDayTally] = [:]
+        for day in byDay {
+            for (nutrient, dayTally) in day {
+                var tally = tallies[nutrient] ?? NutrientDayTally()
+                tally.fromFood += dayTally.fromFood
+                tally.fromSupplements += dayTally.fromSupplements
+                tally.known += dayTally.known
+                tally.missing += dayTally.missing
+                tallies[nutrient] = tally
             }
         }
         return (tallies, skipped, logged.count, byDay)

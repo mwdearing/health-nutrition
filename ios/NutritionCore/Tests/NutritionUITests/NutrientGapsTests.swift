@@ -350,6 +350,9 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(magnesium.status, .aboveUpperLimit)
         XCTAssertTrue(magnesium.detailLines.contains("Above the upper limit on 1 of 3 logged days."))
         XCTAssertTrue(magnesium.accessibilityText.hasPrefix("Magnesium, daily average "))
+        // A row with no figure is not read as an average of nothing.
+        let iodine = try XCTUnwrap(model.rows.first { $0.nutrient == "iodine" })
+        XCTAssertFalse(iodine.accessibilityText.contains("daily average"))
     }
 
     func testAWeekWithNothingLoggedSaysSo() throws {

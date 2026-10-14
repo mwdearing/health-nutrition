@@ -1,8 +1,9 @@
 # Vitamins and minerals: today against reference values
 
 Today has a **Vitamins and minerals** card below the day's entries. It opens a screen that lists the 25 vitamins and
-minerals the reference table covers (`docs/reference-intakes.md`) with what today's entries state for each, and, once a
-person picks a group, how that compares with the published adult values for it. The screen states comparisons only: it
+minerals the reference table covers (`docs/reference-intakes.md`) with what today's entries state for each (or, on
+**Week**, the daily average over the last 7 days), and, once a person picks a group, how that compares with the
+published adult values for it. The same screen is the Nutrients view on the Trends tab. The screen states comparisons only: it
 gives no advice and no score.
 
 ## Day and week
@@ -15,7 +16,9 @@ logged day once something is logged, so early in the day the averages read lower
 line says what the figures are ("Average per day over the 3 days you logged in the last 7.", or "Nothing
 was logged in the last 7 days."), and VoiceOver reads each figure as a daily average. The "Not known"
 heading reads "Not known this week", and without a group the amounts are under "Last 7 days".
-"Unknown for 2 entries" still counts entries.
+"Unknown for 2 entries" still counts entries. A logged day whose entries do not state a nutrient still counts in that
+nutrient's average, so the average is a floor there too: the row reads "At least" and "Below the RDA so far" rather
+than as a complete figure.
 
 Each average is compared with the RDA or AI, so "Below the RDA" on the week means the daily average is
 below it. An upper limit is a daily limit, so it is checked day by day rather than against the average: a
@@ -57,7 +60,7 @@ app can't read and is left out, so these figures may be low.").
 | Below the RDA (or AI) | Every entry that could state it did, and the day is below | Below the reference |
 | Below the RDA so far | What is known is below, and some entries do not state it | Below the reference |
 | Reached the RDA | The known amounts alone reach it | Reached the reference |
-| Unknown / Nothing logged | No entry states an amount / no entry could | Not known today |
+| Unknown / Nothing logged | No entry states an amount / no entry could | Not known today (Week: Not known this week) |
 
 "Above the upper limit" is only shown when the day certainly holds more than the limit counts, never as a guess. The rule
 is one public function, `NutrientGaps.exceededLimit(intake:total:supplementTotal:)`, with its row wording in

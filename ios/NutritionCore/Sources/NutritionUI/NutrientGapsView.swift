@@ -74,10 +74,12 @@ public struct NutrientGapsView: View {
 /// The screen's fixed sentences, in one place so a test can read them.
 public enum NutrientGapsCopy {
     public static func intro(hasGroup: Bool, span: NutrientGapsSpan = .day) -> String {
-        let amounts = span == .day ? "today's amounts" : "your daily averages"
-        return hasGroup
-            ? "\(amounts.prefix(1).uppercased() + amounts.dropFirst()) beside the published adult values for this group."
-            : "Pick a group to see \(amounts) beside its published adult values."
+        switch (span, hasGroup) {
+        case (.day, true): return "Today's amounts beside the published adult values for this group."
+        case (.day, false): return "Pick a group to see today's amounts beside its published adult values."
+        case (.week, true): return "Your daily averages beside the published adult values for this group."
+        case (.week, false): return "Pick a group to see your daily averages beside its published adult values."
+        }
     }
 
     public static let footer = "Reference values are the published adult RDA (Recommended Dietary Allowance) "
