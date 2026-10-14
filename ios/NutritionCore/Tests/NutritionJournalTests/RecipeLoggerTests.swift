@@ -31,7 +31,7 @@ final class RecipeLoggerTests: XCTestCase {
         XCTAssertEqual(try journal.activeIntakes().count, 1)
         let revisions = try journal.revisions(of: intakeID)
         XCTAssertEqual(revisions.count, 1)
-        XCTAssertEqual(revisions[0].productSnapshotID?.hasPrefix("recipe:recipe-1:v1:"), true)
+        XCTAssertEqual(revisions[0].productSnapshotID, "recipe:recipe-1:v1")
         XCTAssertEqual(revisions[0].components.count, 1)
         XCTAssertEqual(revisions[0].components[0].name, "Oat bake")
         XCTAssertEqual(revisions[0].components[0].amount, 1)
@@ -174,16 +174,28 @@ final class RecipeLoggerTests: XCTestCase {
         XCTAssertEqual(try loggedProduct(journal, intakeID: againID).snapshotID, try loggedProduct(journal).snapshotID)
     }
 
-    func testTheSnapshotIDChangesOnlyWithWhatTheSnapshotHolds() {
+    func testAnUnchangedVersionLoggedAgainKeepsItsPlainSnapshotID() throws {
+        let journal = try makeJournal()
+        let againID = "7e3a4f5b-2c6d-4e8f-a0b1-c2d3e4f5a6b7"
+        try RecipeLogger.logPortion(
+            store: journal, version: sampleVersion(), portion: 1, now: when, id: intakeID, timeZoneIdentifier: "UTC")
+        try RecipeLogger.logPortion(
+            store: journal, version: sampleVersion(), portion: 2, now: when, id: againID, timeZoneIdentifier: "UTC")
+        XCTAssertEqual(try loggedProduct(journal).snapshotID, "recipe:recipe-1:v1")
+        XCTAssertEqual(try loggedProduct(journal, intakeID: againID).snapshotID, "recipe:recipe-1:v1")
+    }
+
+    func testTheDigestIDChangesOnlyWithWhatTheSnapshotHolds() {
         let basis = "Per serving; yield 4 servings"
         let values: [String: NutrientValue] = ["vitaminD": .known(dec("2.5"), .mcg), "energy": .unknown]
-        let id = RecipeLogger.snapshotID(recipeID: "recipe-1", number: 1, labelBasis: basis, nutrients: values)
+        let id = RecipeLogger.digestSnapshotID(recipeID: "recipe-1", number: 1, labelBasis: basis, nutrients: values)
         XCTAssertTrue(id.hasPrefix("recipe:recipe-1:v1:"))
-        XCTAssertEqual(id, RecipeLogger.snapshotID(recipeID: "recipe-1", number: 1, labelBasis: basis, nutrients: values))
-        XCTAssertNotEqual(id, RecipeLogger.snapshotID(
+        XCTAssertEqual(
+            id, RecipeLogger.digestSnapshotID(recipeID: "recipe-1", number: 1, labelBasis: basis, nutrients: values))
+        XCTAssertNotEqual(id, RecipeLogger.digestSnapshotID(
             recipeID: "recipe-1", number: 1, labelBasis: basis,
             nutrients: ["vitaminD": .known(dec("100"), .iu), "energy": .unknown]))
-        XCTAssertNotEqual(id, RecipeLogger.snapshotID(
+        XCTAssertNotEqual(id, RecipeLogger.digestSnapshotID(
             recipeID: "recipe-1", number: 1, labelBasis: "Per serving; yield 2 servings", nutrients: values))
     }
 
@@ -208,7 +220,7 @@ final class RecipeLoggerTests: XCTestCase {
             ingredients: [sampleIngredient("oat-flour", amount: "400", perUnit: energyPerUnit("3.6"))])
         try recipes.saveNewVersion(v2)
         let revision = try journal.revisions(of: intakeID)[0]
-        XCTAssertEqual(revision.productSnapshotID?.hasPrefix("recipe:recipe-1:v1:"), true)
+        XCTAssertEqual(revision.productSnapshotID, "recipe:recipe-1:v1")
         let product = try loggedProduct(journal)
         XCTAssertEqual(product.catalogVersion, "1")
         // 200 g of oat flour plus 20 g of olive oil over 4 servings.

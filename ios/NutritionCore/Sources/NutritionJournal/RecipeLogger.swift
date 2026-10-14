@@ -14,8 +14,8 @@ public enum RecipeLogger {
     ///
     /// A nutrient that is unknown for this version is stored as `.unknown` in the snapshot, never as
     /// a zero-valued component. Throws `RecipeError.nothingToLog` when no nutrient is known at all.
-    /// The product snapshot id names the exact version and what its snapshot holds, and the frozen
-    /// version itself stays in the recipe store.
+    /// The product snapshot names the exact version (see `snapshot(for:perServing:in:)`), and the
+    /// frozen version itself stays in the recipe store.
     @discardableResult
     public static func logPortion(
         store: JournalStore,
@@ -41,14 +41,7 @@ public enum RecipeLogger {
         let component = IntakeComponent(
             componentID: componentID(for: version.recipeID), name: version.title,
             amount: quantity.value, unit: quantity.unit)
-        let product = ProductDefinition(
-            snapshotID: snapshotID(
-                recipeID: version.recipeID, number: version.number, labelBasis: basisText(version.yield),
-                nutrients: perServing),
-            productID: version.recipeID, name: version.title,
-            labelBasis: basisText(version.yield),
-            catalogOrigin: catalogOrigin, catalogVersion: String(version.number),
-            nutrients: perServing)
+        let product = try snapshot(for: version, perServing: perServing, in: store)
         let intake = Intake(
             id: id, category: category, occurredAt: now, timeZoneIdentifier: timeZoneIdentifier, meal: meal)
         try store.create(intake, components: [component], product: product, now: now)
@@ -75,13 +68,40 @@ public enum RecipeLogger {
         }
     }
 
-    /// The version, then a short digest of the label basis and values the snapshot holds:
-    /// `recipe:<recipeID>:v<N>:<digest>`. A stored snapshot never changes, but the values worked out for
-    /// a version can, when the app's arithmetic does (vitamin D stated in IU is now restated in mcg). The
-    /// digest gives new values their own snapshot, so logging the version again never collides with the
-    /// one an earlier entry was logged with, and that entry keeps it. The digest only keeps two
-    /// snapshots apart; it is not a security measure.
-    public static func snapshotID(
+    /// The snapshot one portion of `version` is logged with, built here for the recipe screen and the
+    /// Add path alike. It keeps the version's plain id, `recipe:<recipeID>:v<N>`, when nothing is stored
+    /// under that id or the stored snapshot is this one, so Recents, Favorites and Often logged go on
+    /// seeing one recipe version. Only when the stored snapshot holds other values, because the app's
+    /// arithmetic changed since (vitamin D stated in IU is now restated in mcg), does it take
+    /// `digestSnapshotID`, so logging the version again never collides with the snapshot earlier
+    /// entries keep. A row stored before nutrient values were recorded is the same product with less
+    /// recorded, which the store fills in, so it keeps the plain id too.
+    public static func snapshot(
+        for version: RecipeVersion, perServing: [String: NutrientValue], in store: JournalStore
+    ) throws -> ProductDefinition {
+        let labelBasis = basisText(version.yield)
+        func product(_ snapshotID: String) -> ProductDefinition {
+            ProductDefinition(
+                snapshotID: snapshotID, productID: version.recipeID, name: version.title, labelBasis: labelBasis,
+                catalogOrigin: catalogOrigin, catalogVersion: String(version.number), nutrients: perServing)
+        }
+        let plain = product(plainSnapshotID(recipeID: version.recipeID, number: version.number))
+        guard let stored = try store.product(snapshotID: plain.snapshotID), stored != plain,
+            !(stored.nutrients.isEmpty && stored.identity == plain.identity)
+        else { return plain }
+        return product(digestSnapshotID(
+            recipeID: version.recipeID, number: version.number, labelBasis: labelBasis, nutrients: perServing))
+    }
+
+    /// The id a recipe version's snapshot has always had.
+    public static func plainSnapshotID(recipeID: String, number: Int) -> String {
+        "recipe:\(recipeID):v\(number)"
+    }
+
+    /// The plain id, then a short digest of the label basis and values the snapshot holds:
+    /// `recipe:<recipeID>:v<N>:<digest>`. Used only when the plain id already names other values. The
+    /// digest only keeps two snapshots apart; it is not a security measure.
+    public static func digestSnapshotID(
         recipeID: String, number: Int, labelBasis: String, nutrients: [String: NutrientValue]
     ) -> String {
         var signature = "basis=" + labelBasis
@@ -89,7 +109,7 @@ public enum RecipeLogger {
             signature += "|" + key + "=" + describe(nutrients[key] ?? .unknown)
         }
         let digest = SHA256.hash(data: Data(signature.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
-        return "recipe:\(recipeID):v\(number):\(digest)"
+        return plainSnapshotID(recipeID: recipeID, number: number) + ":" + digest
     }
 
     /// One value as the digest reads it, exact and independent of the device locale.
