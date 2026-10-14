@@ -132,7 +132,11 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   only be a list of words to match; text that is only syntax sends nothing.
 - A result with no product name is left out, and a result with the same name and
   brand as an earlier one is left out, because neither can be told apart in a list
-  of names. The search index has per-100 figures but not the serving or whether a
+  of names. The service also matches on category, label and names in other
+  languages, so a result is kept only when its name, or its name and brand
+  together, show every typed word; results with the words in the name come first.
+  A word is compared by its start, so "apples" still matches "Apple juice". The
+  search index has per-100 figures but not the serving or whether a
   product is measured in grams or millilitres, so a result is listed as "per 100 g
   or mL" and opens with no serving filled in. Opening a result sends nothing: the
   form is filled from the search reply. The owner decided on 2026-10-14 that a

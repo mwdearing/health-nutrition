@@ -200,6 +200,12 @@ public actor OpenFoodFactsClient {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
 
+    /// The start of a word that its plural and singular share ("apples" and "apple" both hold "appl"),
+    /// because the service matches word forms and an exact comparison would discard those rows.
+    private static func stem(_ word: String) -> String {
+        word.count > 3 ? String(word.prefix(max(3, word.count - 2))) : word
+    }
+
     private static func interpretSearch(_ data: Data, query: String) -> OpenFoodFactsSearchOutcome {
         guard let decoded = try? JSONDecoder().decode(OpenFoodFactsSearchResponse.self, from: data) else {
             return .transport("unreadable response")
@@ -224,15 +230,18 @@ public actor OpenFoodFactsClient {
             }
             return product
         }
-        // The service also matches on brand, category and names in other languages, so a row can rank
-        // high without the words in the name shown. Rows whose name has every word go first; the
-        // service's order is kept inside each group and nothing is dropped.
-        let words = folded(query).split(separator: " ").map(String.init)
-        func named(_ product: OpenFoodFactsProduct) -> Bool {
-            let name = folded(product.name ?? "")
-            return words.allSatisfy { name.contains($0) }
+        // The service also matches on category, label and names in other languages, so a row can come
+        // back without the typed words anywhere in what the list shows. Only rows that show every word
+        // are kept: first those with the words in the name, then those that need the brand as well, in
+        // the service's order inside each group.
+        let stems = folded(query).split(separator: " ").map { stem(String($0)) }
+        func shows(_ text: String) -> Bool {
+            let shown = folded(text)
+            return stems.allSatisfy { shown.contains($0) }
         }
-        let ordered = products.filter(named) + products.filter { !named($0) }
+        let inName = products.filter { shows($0.name ?? "") }
+        let withBrand = products.filter { !shows($0.name ?? "") && shows(($0.name ?? "") + " " + ($0.brands ?? "")) }
+        let ordered = inName + withBrand
         let limited = Array(ordered.prefix(Self.searchPageSize))
         return limited.isEmpty ? .empty : .results(limited)
     }

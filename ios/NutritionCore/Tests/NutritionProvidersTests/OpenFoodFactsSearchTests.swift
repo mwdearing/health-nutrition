@@ -5,12 +5,15 @@ import XCTest
 final class OpenFoodFactsSearchTests: XCTestCase {
     private let twoProducts = Data("""
     {"count": 2, "page": 1, "page_size": 20, "hits": [
-      {"code": "2000000000015", "product_name": "Oat Biscuit", "brands": ["Example Foods", "Example Bakery"],
+      {"code": "2000000000015", "product_name": "Oat Biscuit", "brands": ["Example Foods", " Example Bakery", " "],
        "last_modified_t": 1800000000,
        "nutriments": {"energy-kcal_100g": 450, "proteins_100g": "7.5"}},
       {"code": "2000000000022", "product_name": "Oat Milk", "brands": "Example Dairy", "nutriments": {}}
     ]}
     """.utf8)
+
+    /// Seven queries the client treats as different searches that all match the fixture's names.
+    private static let distinctOatQueries = ["oat", "Oat", "OAT", "oAt", "oaT", "OAt", "oAT"]
 
     private func client(_ transport: any OpenFoodFactsTransport, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
         OpenFoodFactsClient(
@@ -76,22 +79,49 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertEqual(products.map(\.barcode), ["2000000000015", "2000000000039", "2000000000046"])
     }
 
-    /// The service can rank a row high on its brand or a name in another language. Rows whose shown
-    /// name has every typed word come first, in the service's order; the rest follow, none dropped.
-    func testResultsWithEveryWordInTheNameComeFirst() async {
+    /// The service also matches on category, label and names in other languages. Only rows that show
+    /// every typed word are kept: the name first, then name and brand together, in the service's order.
+    func testOnlyResultsShowingEveryWordAreKeptNameMatchesFirst() async {
         let body = Data("""
         {"hits": [
           {"code": "2000000000015", "product_name": "Leche Entera", "brands": ["Oat Milk Co"], "nutriments": {}},
           {"code": "2000000000022", "product_name": "Organic OAT Drink, Mílk style", "nutriments": {}},
           {"code": "2000000000039", "product_name": "Milk", "nutriments": {}},
-          {"code": "2000000000046", "product_name": "Oatmilk Barista", "nutriments": {}}
+          {"code": "2000000000046", "product_name": "Oatmilk Barista", "nutriments": {}},
+          {"code": "2000000000053", "product_name": "Barista Blend", "brands": "Example Oat", "nutriments": {}}
         ]}
         """.utf8)
         let outcome = await client(StubTransport(body: body)).search(query: "Oat milk")
         guard case .results(let products) = outcome else {
             return XCTFail("expected results, got \(outcome)")
         }
-        XCTAssertEqual(products.map(\.barcode), ["2000000000022", "2000000000046", "2000000000015", "2000000000039"])
+        XCTAssertEqual(products.map(\.barcode), ["2000000000022", "2000000000046", "2000000000015"])
+    }
+
+    func testPluralAndSingularFormsOfAWordStillMatch() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Apple Juice", "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Large Egg", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Dried apples", "nutriments": {}}
+        ]}
+        """.utf8)
+        let apples = await client(StubTransport(body: body)).search(query: "apples")
+        guard case .results(let appleRows) = apples else {
+            return XCTFail("expected results, got \(apples)")
+        }
+        XCTAssertEqual(appleRows.map(\.barcode), ["2000000000015", "2000000000039"])
+        let eggs = await client(StubTransport(body: body)).search(query: "eggs")
+        guard case .results(let eggRows) = eggs else {
+            return XCTFail("expected results, got \(eggs)")
+        }
+        XCTAssertEqual(eggRows.map(\.barcode), ["2000000000022"])
+    }
+
+    func testSearchWhereNoResultShowsTheWordsIsEmpty() async {
+        let body = Data(#"{"hits": [{"code": "2000000000015", "product_name": "Perly", "brands": ["Example Dairy"], "nutriments": {}}]}"#.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "milk")
+        XCTAssertEqual(outcome, .empty)
     }
 
     func testSearchWithOnlyUnnamedResultsIsEmpty() async {
@@ -211,11 +241,11 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         let transport = StubTransport(body: twoProducts)
         let model = client(transport)
         for index in 0..<6 {
-            guard case .results = await model.search(query: "oat \(index)") else {
+            guard case .results = await model.search(query: Self.distinctOatQueries[index]) else {
                 return XCTFail("expected results inside the limit")
             }
         }
-        let outcome = await model.search(query: "oat 6")
+        let outcome = await model.search(query: Self.distinctOatQueries[6])
         guard case .rateLimited(let retryAfter) = outcome else {
             return XCTFail("expected rate limit, got \(outcome)")
         }
@@ -233,8 +263,8 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         }
         XCTAssertEqual(transport.requests.count, 1)
         // The repeats spent nothing: five more different searches still fit in the same minute.
-        for index in 0..<5 {
-            guard case .results = await model.search(query: "oat \(index)") else {
+        for index in 1...5 {
+            guard case .results = await model.search(query: Self.distinctOatQueries[index]) else {
                 return XCTFail("a repeated search spent a rate-limit slot")
             }
         }

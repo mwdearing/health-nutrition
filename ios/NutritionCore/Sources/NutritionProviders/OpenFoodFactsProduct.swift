@@ -154,7 +154,8 @@ struct OpenFoodFactsTextList: Decodable {
         if let string = try? container.decode(String.self) {
             text = string
         } else if let list = try? container.decode([String].self) {
-            text = list.isEmpty ? nil : list.joined(separator: ", ")
+            let parts = list.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            text = parts.isEmpty ? nil : parts.joined(separator: ", ")
         } else {
             text = nil
         }
