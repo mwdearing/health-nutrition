@@ -525,6 +525,8 @@ struct RootView: View {
                     .overlay(alignment: .bottom) {
                         if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                     }
+                    // An item the picker could not open must not read as a failure on this screen.
+                    .onAppear { self.addFlowError = nil }
             }
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {

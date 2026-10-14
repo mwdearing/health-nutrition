@@ -180,6 +180,17 @@ struct LibrarySearchSections: View {
     let query: String
     let onPick: (RepeatTemplate) -> Void
     var body: some View {
+        // The screen loads the Library as it appears, and only a failed load leaves a message after it:
+        // the groups would otherwise show whatever an earlier load left as if it were current.
+        if library.errorMessage != nil {
+            Section("Your foods") {
+                Text("Could not read your recent and favorite items.").foregroundStyle(TokenColors.error)
+            }
+        } else {
+            groups
+        }
+    }
+    @ViewBuilder private var groups: some View {
         ForEach(library.searchGroups(matching: query)) { group in
             Section(group.title) {
                 if group.items.isEmpty { Text("Nothing you have logged or saved matches.").foregroundStyle(TokenColors.textSecondary) }
