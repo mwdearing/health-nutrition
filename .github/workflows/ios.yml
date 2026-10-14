@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "ios/**"
+      - "contracts/**"
       - "scripts/check_privacy_manifest.py"
       - "scripts/tests/test_check_privacy_manifest.py"
       - "PRIVACY.md"
@@ -32,6 +33,7 @@ on:
     branches: [main]
     paths:
       - "ios/**"
+      - "contracts/**"
       - "scripts/check_privacy_manifest.py"
       - "scripts/tests/test_check_privacy_manifest.py"
       - "PRIVACY.md"

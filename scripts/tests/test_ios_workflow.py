@@ -127,3 +127,15 @@ def test_privacy_shield_capture_uses_only_resolved_package_versions() -> None:
     for trigger in ("pull_request", "push"):
         ios_paths = cast("list[str]", cast("dict[str, object]", ios_triggers[trigger])["paths"])
         assert ".github/workflows/privacy-shield.yml" in ios_paths
+
+
+def test_contract_changes_run_the_swift_tests_that_read_them() -> None:
+    # The Swift fixture, digest, provider and bundled-schema tests read `contracts/` through `#filePath`,
+    # so a pull request or push that changes only a contract has to start the workflow that runs
+    # `swift test`; the contracts workflow by itself only lists the files.
+    raw = cast("dict[object, object]", yaml.safe_load((WORKFLOWS / "ios.yml").read_text()))
+    triggers = cast("dict[str, dict[str, object]]", raw.get(True, raw.get("on")))
+    for event in ("pull_request", "push"):
+        assert "contracts/**" in cast("list[str]", triggers[event]["paths"]), event
+    steps = cast("list[dict[str, object]]", _jobs("ios.yml")["swift-test"]["steps"])
+    assert any(str(step.get("run", "")).strip() == "swift test" for step in steps)
