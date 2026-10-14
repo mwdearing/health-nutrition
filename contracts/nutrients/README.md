@@ -15,7 +15,7 @@ What is here for v1:
   amounts, display rounding that never replaces a stored amount, the one rounding
   rule for a division that does not terminate (10 fraction digits, halves away
   from zero) and why the app's journal keeps its own arithmetic instead, the
-  bounds on all arithmetic (38 significant digits, adjusted exponent within
+  bounds on catalog arithmetic (38 significant digits, adjusted exponent within
   127), one spelling per unit and energy in kcal, no cross-dimension arithmetic
   without a stated density, portions for count units, international units that
   never convert, proprietary blend splits that are never inferred, and how each

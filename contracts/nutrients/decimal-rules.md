@@ -73,8 +73,8 @@ described next.
 ## Arithmetic is bounded: 38 significant digits, exponents within 127
 
 Exact arithmetic needs room, and the iOS `Decimal` has room for 38 significant
-digits. So the contract sets that as the bound for every implementation, and no
-implementation may round or cut to stay inside it:
+digits. So the contract sets that as the bound for every implementation of the
+catalog, and no such implementation may round or cut to stay inside it:
 
 - Every input, every intermediate (including an amount expressed in its
   dimension's canonical unit on the way to the target unit), every product,
@@ -98,22 +98,18 @@ rounded.
 
 ## The journal keeps the digits its arithmetic gives
 
-The iOS journal does not follow the two sections above when it scales a logged
-entry. It converts the logged amount into the basis unit, divides first,
-`consumed / basis`, and multiplies each stated value by that factor, keeping
-whatever Foundation's `Decimal` arithmetic returns. A quotient that does not
-terminate is cut at 38 significant digits rather than rounded to 10 fraction
-digits or refused: 24 fl oz (709.7647095 mL) of a 710 mL serving gives the
-factor `0.99966860492957746478873239436619718309`, where the exact quotient
-rounds to `...310` at that length. Because the division comes first, 1 g logged
-of a 3 g serving that states 3 g comes to
-`0.99999999999999999999999999999999999999 g`, not `1 g`. The one rounding it
-does is a conversion into an input unit (`oz`, `fl oz`, `cup`, `tbsp`, `tsp`),
-which `UnitRegistry` rounds to 10 fraction digits.
-
-The relay encoder and the Apple Health samples scale by
-`IntakeContextSnapshotBasis.scalingFactor`. The day's totals use the same
-factor, and also scale a few count bases that the other two leave unknown.
+The iOS journal's own scaling of a logged entry is outside the two sections
+above. It works out how much of the label's basis was logged and multiplies each
+stated value by that factor in Foundation `Decimal` arithmetic, keeping whatever
+that arithmetic returns. It does not round a quotient that does not terminate to
+10 fraction digits, and it does not refuse a result past 38 significant digits:
+`Decimal` cuts it there instead. For example, 24 fl oz (709.7647095 mL) of a
+710 mL serving gives the factor `0.99966860492957746478873239436619718309`, where
+the exact quotient rounds to `...310` at that length. For a basis that states its
+serving, the division comes before the multiplication, so 1 g logged of a 3 g
+serving that states 3 g comes to `0.99999999999999999999999999999999999999 g`
+rather than `1 g`. The relay encoder, the Apple Health samples and the day's
+totals all scale this way.
 
 That is deliberate. Every amount the encoder sends is covered by the payload's
 digests (`domain_facts_hash` and `client_payload_hash` in
