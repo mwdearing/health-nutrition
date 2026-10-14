@@ -12,8 +12,8 @@ struct MacroSplitSection: View {
 
     var body: some View {
         Section("Macros by percent") {
-            if self.model.macroSplitEnergyKcal() == nil {
-                Text(MacroSplitProblem.needsEnergyGoal.message)
+            if let unavailable = self.model.macroSplitUnavailable() {
+                Text(unavailable.message)
                     .font(.body)
                     .foregroundStyle(TokenColors.textSecondary)
             } else {

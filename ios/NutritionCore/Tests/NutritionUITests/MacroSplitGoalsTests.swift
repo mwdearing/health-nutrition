@@ -53,7 +53,8 @@ final class MacroSplitGoalsTests: XCTestCase {
         let store = InMemoryGoalStore()
         let model = loadedModel(store)
 
-        XCTAssertNil(model.macroSplitEnergyKcal())
+        XCTAssertNil(try model.macroSplitEnergyKcal())
+        XCTAssertEqual(model.macroSplitUnavailable(), .needsEnergyGoal)
         XCTAssertEqual(
             model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"),
             MacroSplitProblem.needsEnergyGoal.message)
@@ -97,6 +98,32 @@ final class MacroSplitGoalsTests: XCTestCase {
         // 400 / 2000 = 20%, 1000 / 2000 = 50%, 450 / 2000 = 22.5% -> 23
         XCTAssertEqual(
             model.currentMacroPercents(), MacroSplit.Grams(protein: 20, carbohydrate: 50, fat: 23))
+    }
+
+    func testAnUnreadableStoreIsReportedAsAReadFailureNotAsAMissingEnergyGoal() {
+        let model = GoalsViewModel(store: InMemoryGoalStore(goals: [energyGoal(2000)], failNextRead: true))
+
+        XCTAssertThrowsError(try model.macroSplitEnergyKcal()) {
+            XCTAssertEqual($0 as? MacroSplitProblem, .readFailed)
+        }
+        XCTAssertEqual(model.macroSplitUnavailable(), .readFailed)
+        XCTAssertEqual(MacroSplitProblem.readFailed.message, GoalsViewModel.readFailedMessage)
+        XCTAssertEqual(
+            model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"),
+            GoalsViewModel.readFailedMessage)
+        XCTAssertNil(model.currentMacroPercents())
+    }
+
+    func testApplyingASplitClearsAnErrorARowShowedForEarlierText() {
+        let model = loadedModel(InMemoryGoalStore(goals: [energyGoal(2000)]))
+        model.draftText["fat"] = "-5"
+        XCTAssertFalse(model.commitTarget(for: "fat"))
+        XCTAssertNotNil(model.rowError["fat"])
+
+        XCTAssertNil(model.applyMacroSplit(protein: "30", carbohydrate: "40", fat: "30"))
+
+        XCTAssertNil(model.rowError["fat"])
+        XCTAssertEqual(model.draftText["fat"], "67")
     }
 
     func testAStoreThatRefusesWritesReportsTheSaveFailure() {
