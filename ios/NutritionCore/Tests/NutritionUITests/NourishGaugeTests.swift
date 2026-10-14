@@ -14,3 +14,12 @@ final class NourishGaugeTests: XCTestCase {
         XCTAssertEqual(NourishGauge.fraction(value: .infinity, goal: 100), 0)
     }
 }
+
+final class NourishClampTests: XCTestCase {
+    func testNonFiniteFractionsDrawNothing() {
+        XCTAssertEqual(NourishGauge.clamped(.nan), 0)
+        XCTAssertEqual(NourishGauge.clamped(.infinity), 0)
+        XCTAssertEqual(NourishGauge.clamped(1.5), 1)
+        XCTAssertEqual(NourishGauge.clamped(-1), 0)
+    }
+}

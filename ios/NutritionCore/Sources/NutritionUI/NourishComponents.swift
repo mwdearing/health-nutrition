@@ -6,7 +6,13 @@ public enum NourishGauge {
     /// usable goal. A day over goal draws a full ring; the figure beside it still says the real amount.
     public static func fraction(value: Double, goal: Double?) -> Double {
         guard let goal, goal > 0, value > 0, value.isFinite, goal.isFinite else { return 0 }
-        return min(value / goal, 1)
+        return clamped(value / goal)
+    }
+
+    /// A drawing fraction forced into 0 through 1; NaN and infinities draw nothing.
+    public static func clamped(_ fraction: Double) -> Double {
+        guard fraction.isFinite else { return 0 }
+        return min(max(fraction, 0), 1)
     }
 }
 
@@ -16,9 +22,13 @@ public struct CalorieRing: View {
     private let figure: String
     private let caption: String
     private let footnote: String?
+    private let spoken: String?
 
-    public init(fraction: Double, figure: String, caption: String, footnote: String? = nil) {
-        self.fraction = min(max(fraction, 0), 1)
+    public init(
+        fraction: Double, figure: String, caption: String, footnote: String? = nil, spoken: String? = nil
+    ) {
+        self.spoken = spoken
+        self.fraction = NourishGauge.clamped(fraction)
         self.figure = figure
         self.caption = caption
         self.footnote = footnote
@@ -51,8 +61,7 @@ public struct CalorieRing: View {
         .aspectRatio(1, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(figure) \(caption)")
-        .accessibilityValue(footnote ?? "")
+        .accessibilityLabel(spoken ?? "\(figure) \(caption)")
     }
 }
 
@@ -61,11 +70,13 @@ public struct MacroColumn: View {
     private let label: String
     private let figure: String
     private let fraction: Double
+    private let spoken: String?
 
-    public init(label: String, figure: String, fraction: Double) {
+    public init(label: String, figure: String, fraction: Double, spoken: String? = nil) {
+        self.spoken = spoken
         self.label = label
         self.figure = figure
-        self.fraction = min(max(fraction, 0), 1)
+        self.fraction = NourishGauge.clamped(fraction)
     }
 
     public var body: some View {
@@ -75,7 +86,8 @@ public struct MacroColumn: View {
             ThinBar(fraction: fraction)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken ?? "\(label) \(figure)")
     }
 }
 
@@ -84,7 +96,7 @@ public struct ThinBar: View {
     private let fraction: Double
 
     public init(fraction: Double) {
-        self.fraction = min(max(fraction, 0), 1)
+        self.fraction = NourishGauge.clamped(fraction)
     }
 
     public var body: some View {

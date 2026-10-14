@@ -18,31 +18,27 @@ public struct NourishTodayHeader: View {
         self.onEditGoals = onEditGoals
     }
 
-    private func line(_ key: String) -> NutrientProgressLine? {
-        model.progress.first { $0.nutrient == key }
+    /// The bar Today already publishes for a nutrient. Reading it, not the raw progress line, keeps a goal
+    /// switched off on the Goals screen hidden, and its fraction already accounts for a goal stored in a
+    /// different unit from the day's total.
+    private func bar(_ key: String) -> GoalBarModel? {
+        model.goalBars.first { $0.id == key }
     }
 
-    private static func total(of line: NutrientProgressLine?) -> Decimal? {
-        guard let line, case .known(let value, _) = line.amount else { return nil }
-        return value
-    }
-
-    private static func fraction(of line: NutrientProgressLine?) -> Double {
-        guard let value = total(of: line), let goal = line?.goal else { return 0 }
-        return NourishGauge.fraction(
-            value: NSDecimalNumber(decimal: value).doubleValue,
-            goal: NSDecimalNumber(decimal: goal.target).doubleValue)
-    }
-
-    private static func figure(of line: NutrientProgressLine?) -> String {
-        guard let value = total(of: line), case .known(_, let unit)? = line?.amount else { return "—" }
+    private func figure(_ key: String) -> String {
+        guard let line = model.progress.first(where: { $0.nutrient == key }),
+            case .known(let value, let unit) = line.amount
+        else { return "—" }
         return "\(DecimalFormatting.text(value)) \(unit.symbol)"
     }
 
-    private var ringLine: NutrientProgressLine? { line(Self.ringKey) }
+    private func fraction(_ bar: GoalBarModel?) -> Double {
+        guard let value = bar?.fraction else { return 0 }
+        return NourishGauge.clamped(NSDecimalNumber(decimal: value).doubleValue)
+    }
 
     private var ringFootnote: String? {
-        guard let goal = ringLine?.goal else { return nil }
+        guard let goal = model.progress.first(where: { $0.nutrient == Self.ringKey })?.goal else { return nil }
         return "of \(DecimalFormatting.text(goal.target)) \(goal.unit.symbol) goal"
     }
 
@@ -53,15 +49,19 @@ public struct NourishTodayHeader: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.l) {
-            CalorieRing(
-                fraction: Self.fraction(of: ringLine),
-                figure: Self.total(of: ringLine).map { DecimalFormatting.text($0) } ?? "—",
-                caption: "kcal logged", footnote: ringFootnote)
-            HStack(alignment: .top, spacing: DesignSpacing.m) {
-                ForEach(Self.macroKeys, id: \.self) { key in
-                    MacroColumn(
-                        label: NutrientNames.displayName(for: key), figure: Self.figure(of: line(key)),
-                        fraction: Self.fraction(of: line(key)))
+            if let ring = bar(Self.ringKey) {
+                CalorieRing(
+                    fraction: fraction(ring), figure: figure(Self.ringKey), caption: "logged",
+                    footnote: ringFootnote, spoken: ring.accessibilityText)
+            }
+            let macros = Self.macroKeys.compactMap { key in bar(key).map { (key, $0) } }
+            if !macros.isEmpty {
+                HStack(alignment: .top, spacing: DesignSpacing.m) {
+                    ForEach(macros, id: \.0) { key, macro in
+                        MacroColumn(
+                            label: macro.label, figure: figure(key), fraction: fraction(macro),
+                            spoken: macro.accessibilityText)
+                    }
                 }
             }
             if !otherBars.isEmpty {
