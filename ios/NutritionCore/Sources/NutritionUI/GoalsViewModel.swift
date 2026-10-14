@@ -185,6 +185,9 @@ public final class GoalsViewModel: ObservableObject {
     private var loadedUnitSystem: UnitSystem?
     private var storedWaterDraft: String?
     private var storedWaterUnit: MeasureUnit?
+    /// The text each field was last filled with from the store, so a read can tell a field the person
+    /// has not typed in since from one they have.
+    private var loadedDraftText: [String: String] = [:]
 
     public init(
         store: GoalStore, journal: (any JournalStore)? = nil,
@@ -211,6 +214,9 @@ public final class GoalsViewModel: ObservableObject {
 
     /// The unit system the screen shows amounts in, read from the same preferences as the rest of the app.
     public var unitSystem: UnitSystem { preferences.unitSystem }
+
+    /// The reference group chosen on the vitamins and minerals screen, or nil when none is.
+    var referenceGroup: ReferenceGroup? { (preferences as? ReferenceGroupPreferences)?.referenceGroup }
 
     /// Every offered nutrient, with a target's text where one is stored.
     public func load() {
@@ -245,9 +251,15 @@ public final class GoalsViewModel: ObservableObject {
             for key in offeredKeys {
                 let waterUnitChanged = key == DailyTotalsBuilder.waterKey
                     && self.loadedUnitSystem != self.preferences.unitSystem
-                if draftText[key] == nil || waterUnitChanged {
-                    draftText[key] = byNutrient[key].map { DecimalFormatting.text(self.displayGoal($0).amount) } ?? ""
+                // A field the person has not typed in since the last read always shows what is stored,
+                // so a goal removed, put back or changed behind this screen (a clear that stopped
+                // partway, a setup save rolled back) is never saved back over the store from old text
+                // when the field next loses focus. Text the person typed is theirs and is kept.
+                let storedText = byNutrient[key].map { DecimalFormatting.text(self.displayGoal($0).amount) } ?? ""
+                if draftText[key] == nil || draftText[key] == loadedDraftText[key] || waterUnitChanged {
+                    draftText[key] = storedText
                 }
+                loadedDraftText[key] = storedText
                 if selectedUnits[key] == nil || waterUnitChanged {
                     selectedUnits[key] = byNutrient[key].map { self.displayGoal($0).unit } ?? self.unit(for: key)
                 }
@@ -545,6 +557,20 @@ public final class GoalsViewModel: ObservableObject {
         load()
     }
 
+    /// Clears the error a row showed for earlier text, once something outside the field (guided setup)
+    /// has saved or removed that row's goal.
+    func clearRowError(for key: String) {
+        rowError[key] = nil
+    }
+
+    /// Reads the goals again after Erase all data. An erase is an explicit wipe, so text a person was
+    /// typing and the errors under it go too, not only the fields that follow the store.
+    public func reloadAfterErase() {
+        draftText = [:]
+        rowError = [:]
+        load()
+    }
+
     @discardableResult
     public func clearAllGoals() -> Bool {
         // Forgotten first, so a removal that fails partway cannot leave a split to follow.
@@ -559,7 +585,9 @@ public final class GoalsViewModel: ObservableObject {
             load()
             return errorMessage == nil
         } catch {
-            refreshFollowedMacroSplit()
+            // The screen shows what the store still holds after a partial clear, and the reload refills
+            // the fields of the goals it did remove, so their old text is not saved back.
+            load()
             errorMessage = Self.removeFailedMessage
             return false
         }

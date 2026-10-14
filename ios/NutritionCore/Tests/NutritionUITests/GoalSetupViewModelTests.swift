@@ -284,6 +284,60 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertEqual(goalsModel.draftText["energy"], "2000")
     }
 
+    func testAGoalASaveRemovedAndPutBackKeepsItsFieldText() throws {
+        // Setup blanks protein, which had a goal, so its removal is the second write; the third
+        // (carbohydrate) fails and protein is put back. Its field must show the goal again, or leaving
+        // it would remove the goal that was just restored.
+        let energy = NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)
+        let protein = NutrientGoal(nutrient: "protein", target: 60, unit: .g)
+        let store = ThirdWriteFailingGoalStore(goals: [energy, protein])
+        let goalsModel = GoalsViewModel(
+            store: store, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goalsModel.load()
+        let model = GoalSetupViewModel(goals: goalsModel)
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        model.draftTargets["protein"] = ""
+
+        XCTAssertFalse(model.save())
+
+        XCTAssertEqual(try store.goals(), [energy, protein])
+        XCTAssertEqual(goalsModel.draftText["protein"], "60")
+        XCTAssertTrue(goalsModel.commitTarget(for: "protein"))
+        XCTAssertEqual(try store.goal(for: "protein"), protein)
+    }
+
+    func testASaveSetsTheFieldsUnitSoLeavingItKeepsTheSavedGoal() throws {
+        // The protein picker was on mg; setup saves in grams, so the field must say grams too.
+        let (model, store, goalsModel) = makeModel(goals: [NutrientGoal(nutrient: "protein", target: 60, unit: .mg)])
+        XCTAssertEqual(goalsModel.selectedUnits["protein"], .mg)
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+        let saved = try XCTUnwrap(model.draftTargets["protein"])
+
+        XCTAssertTrue(model.save())
+
+        XCTAssertEqual(goalsModel.selectedUnits["protein"], .g)
+        let stored = try XCTUnwrap(try store.goal(for: "protein"))
+        XCTAssertEqual(stored.unit, .g)
+        XCTAssertEqual(stored.target, AmountParser.parseTyped(saved))
+        XCTAssertTrue(goalsModel.commitTarget(for: "protein"))
+        XCTAssertEqual(try store.goal(for: "protein"), stored)
+    }
+
+    func testASaveClearsAnErrorTheRowShowedForEarlierText() {
+        let (model, _, goalsModel) = makeModel()
+        goalsModel.draftText["protein"] = "0"
+        XCTAssertFalse(goalsModel.commitTarget(for: "protein"))
+        XCTAssertNotNil(goalsModel.rowError["protein"])
+        answerForAMaintainingMan(model)
+        model.next(); model.next(); model.next(); model.next()
+
+        XCTAssertTrue(model.save())
+
+        XCTAssertNil(goalsModel.rowError["protein"])
+    }
+
     func testAFailedSaveShowsTheSentenceAndKeepsTheResults() {
         let goalsModel = GoalsViewModel(
             store: InMemoryGoalStore(refusesWrites: true),

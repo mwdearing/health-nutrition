@@ -86,6 +86,7 @@ public struct GoalsView: View {
                 Text(detail).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
             Text(row.targetText).font(.subheadline).foregroundStyle(TokenColors.textPrimary)
+            ReferenceGoalHintLine(model: model, nutrient: row.nutrient)
             HStack {
                 TextField("None", text: Binding(
                     get: { self.model.draftText[row.nutrient] ?? "" },
