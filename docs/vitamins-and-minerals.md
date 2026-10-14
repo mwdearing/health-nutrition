@@ -10,10 +10,12 @@ gives no advice and no score.
 
 A **Day / Week** switch sits at the top. **Day** is today, as described below. **Week** shows, for each
 nutrient, the daily average over the last seven local days, today included: the amounts are summed exactly
-as for a day and divided by the number of those days with at least one food or supplement entry (a water
-entry does not count), so a day nothing was logged on does not pull every average down. Today counts as a
-logged day once something is logged, so early in the day the averages read lower than they will end up. A
-line says what the figures are ("Average per day over the 3 days you logged in the last 7.", or "Nothing
+as for a day and divided by that nutrient's own days, the logged days that could state it (see below), so a
+day nothing was logged on does not pull any average down. A logged day is a date with at least one food or
+supplement entry (a water entry does not count). Each entry counts on its own local date, read in the time
+zone it was logged in, so after a change of time zone two entries on different dates are never one day.
+Today counts as a logged day once something is logged, so early in the day the averages read lower than
+they will end up. A line says what the figures are ("Average per day over the 3 days you logged in the last 7.", or "Nothing
 was logged in the last 7 days."), and VoiceOver reads each figure as a daily average. The "Not known"
 heading reads "Not known this week", and without a group the amounts are under "Last 7 days".
 "Unknown for 2 entries" still counts entries.

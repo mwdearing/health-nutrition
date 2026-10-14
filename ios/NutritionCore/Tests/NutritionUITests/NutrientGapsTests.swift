@@ -201,10 +201,10 @@ final class NutrientGapsTests: XCTestCase {
 
     private func log(
         _ store: JournalStore, _ name: String, at date: Date, category: String = "food",
-        amount: Decimal = 100, unit: MeasureUnit = .g, product: ProductDefinition? = nil
+        amount: Decimal = 100, unit: MeasureUnit = .g, product: ProductDefinition? = nil, zone: String = "UTC"
     ) throws {
         let intake = Intake(
-            id: UUID().uuidString.lowercased(), category: category, occurredAt: date, timeZoneIdentifier: "UTC")
+            id: UUID().uuidString.lowercased(), category: category, occurredAt: date, timeZoneIdentifier: zone)
         try store.create(
             intake, components: [IntakeComponent(componentID: name.lowercased(), name: name, amount: amount, unit: unit)],
             product: product, now: date)
@@ -377,6 +377,29 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertTrue(magnesium.detailLines.contains(
             "Averaged over 1 of 2 logged days. Nothing else you logged lists it."))
         XCTAssertTrue(magnesium.detailLines.contains("Above the upper limit on 1 of 2 logged days."))
+    }
+
+    func testEntriesOnDifferentDatesInDifferentTimeZonesAreNeverOneDay() throws {
+        let store = try makeStore()
+        // Now is Wednesday 15 November 2023, 20:00 in Chicago, which is Thursday 11:00 in Tokyo.
+        let now = Date(timeIntervalSince1970: 1_700_100_000)
+        let magnesium = product("mag", kind: .supplement, nutrients: ["magnesium": .known(200, .mg)])
+        // Wednesday 09:00 in Tokyo and Tuesday 20:00 in Chicago are each one day before their own today,
+        // but they are different dates, so neither day holds 400 mg.
+        try log(store, "Magnesium", at: Date(timeIntervalSince1970: 1_700_006_400), product: magnesium, zone: "Asia/Tokyo")
+        try log(store, "Magnesium", at: Date(timeIntervalSince1970: 1_700_013_600), product: magnesium, zone: "America/Chicago")
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+
+        model.chooseSpan(.week, now: now)
+
+        XCTAssertEqual(model.loggedDays, 2)
+        let row = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        XCTAssertEqual(row.averagedOverDays, 2)
+        XCTAssertEqual(row.daysAboveLimit, 0)
+        XCTAssertNotEqual(row.status, .aboveUpperLimit)
+        XCTAssertEqual(row.tally.total, 200)
     }
 
     func testADayThatSaysNothingAboutANutrientDoesNotDiluteItsAverage() throws {

@@ -295,8 +295,9 @@ public final class NutrientGapsViewModel: ObservableObject {
     @Published public private(set) var skippedIntakeCount = 0
     /// Today, or the daily average over the last seven days.
     @Published public private(set) var span: NutrientGapsSpan = .day
-    /// The days in the span with at least one food, drink or supplement entry. The week's figures are
-    /// averages over these days, so a day nothing was logged on does not pull every average down.
+    /// The dates in the span with at least one food, drink or supplement entry, which the week's header
+    /// counts. Each nutrient's average is over its own share of these days (`statedDays`): the ones with
+    /// an entry that states it or could have. A day nothing was logged on pulls no average down.
     @Published public private(set) var loggedDays = 0
 
     /// The line that says what the week's figures are, or nil for a single day.
@@ -458,20 +459,22 @@ public final class NutrientGapsViewModel: ObservableObject {
     static func tallies(
         store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
     ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]]) {
-        var byDay: [[String: NutrientDayTally]] = Array(repeating: [:], count: max(days, 1))
+        // Keyed by each entry's own local date, so after a change of time zone two entries on different
+        // dates never share a day, even when each is the same number of days before its own today.
+        var byDate: [Int: [String: NutrientDayTally]] = [:]
         var skipped = 0
         var logged: Set<Int> = []
         let nutrients = Self.nutrients
         for intake in try store.activeIntakes() where intake.lifecycle == .active {
-            guard let offset = Self.daysBefore(now, intake) else {
+            guard let day = Self.localDay(now, intake) else {
                 skipped += 1
                 continue
             }
             // Today is 0; a day in the future or before the span is not part of it.
-            guard (0..<max(days, 1)).contains(offset) else { continue }
+            guard (0..<max(days, 1)).contains(day.offset) else { continue }
             let revisions = try store.revisions(of: intake.id)
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
-            if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(offset) }
+            if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             let isSupplement = snapshot?.kind == .supplement
             let byComponent = snapshot == nil && intake.category != DailyTotalsBuilder.waterCategory
@@ -505,15 +508,16 @@ public final class NutrientGapsViewModel: ObservableObject {
                         anyMissing = true
                     }
                 }
-                var dayTally = byDay[offset][nutrient] ?? NutrientDayTally()
+                var dayTally = byDate[day.date]?[nutrient] ?? NutrientDayTally()
                 if anyKnown {
                     if isSupplement { dayTally.fromSupplements += amount } else { dayTally.fromFood += amount }
                     dayTally.known += 1
                 }
                 if anyMissing { dayTally.missing += 1 }
-                byDay[offset][nutrient] = dayTally
+                byDate[day.date, default: [:]][nutrient] = dayTally
             }
         }
+        let byDay = byDate.sorted { $0.key < $1.key }.map(\.value)
         // The span's totals are its days added together, so there is one accumulation to keep right.
         var tallies: [String: NutrientDayTally] = [:]
         for day in byDay {
@@ -533,11 +537,22 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// zone as Today reads it: 0 for today, 1 for yesterday, negative for a later day. Nil when the
     /// stored time zone is not a valid one.
     static func daysBefore(_ now: Date, _ intake: Intake) -> Int? {
+        localDay(now, intake)?.offset
+    }
+
+    /// The entry's day: how many days before `now`'s day it is (`daysBefore`), and its own local date as
+    /// a number that sorts by date, such as 20261014. Both are read in the entry's own time zone. Nil
+    /// when the stored time zone is not a valid one.
+    static func localDay(_ now: Date, _ intake: Intake) -> (offset: Int, date: Int)? {
         guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
-        return calendar.dateComponents(
-            [.day], from: calendar.startOfDay(for: intake.occurredAt), to: calendar.startOfDay(for: now)
-        ).day
+        let parts = calendar.dateComponents([.year, .month, .day], from: intake.occurredAt)
+        guard let offset = calendar.dateComponents(
+                [.day], from: calendar.startOfDay(for: intake.occurredAt), to: calendar.startOfDay(for: now)
+            ).day,
+            let year = parts.year, let month = parts.month, let date = parts.day
+        else { return nil }
+        return (offset, year * 10_000 + month * 100 + date)
     }
 }
