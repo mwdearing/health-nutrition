@@ -48,10 +48,11 @@ public struct SupplementStackCandidate: Identifiable, Equatable {
 /// The supplement list: favorites with the times of day they are taken, a one-tap "Taken" that logs an
 /// entry, and where each of today's times stands.
 ///
-/// Nothing about "taken" is stored. Each load counts today's entries of each item in the journal, so an
-/// entry logged from the Library counts, and deleting or undoing an entry un-marks its time. The times
-/// live in `SupplementStackStoring`; the amounts and the product snapshot live in the favorite, so a
-/// "Taken" logs exactly what the favorite copied, label snapshot included.
+/// Each load counts today's entries of each item in the journal, so an entry logged from the Library
+/// counts, and deleting or undoing an entry un-marks its time. All that is stored about a Taken is which
+/// time it was for, per entry. The schedules and those marks live in `SupplementStackStoring`; the amounts
+/// and the product snapshot live in the favorite, so a "Taken" logs exactly what the favorite copied,
+/// label snapshot included.
 @MainActor
 public final class SupplementStackViewModel: ObservableObject {
     @Published public private(set) var rows: [SupplementStackRow] = []
@@ -341,16 +342,17 @@ public final class SupplementStackViewModel: ObservableObject {
                 }
                 let recentKey = Self.matchKey(fresh.template)
                 let sameItem = stored.filter { Self.matchKey($0) == recentKey }
-                if let starred = sameItem.first(where: { RepeatTemplate(favorite: $0)?.components == fresh.template.components }) {
+                let sameAmounts = sameItem.filter { RepeatTemplate(favorite: $0)?.components == fresh.template.components }
+                if sameAmounts.count != sameItem.count {
+                    // Starred since the picker was built with other amounts. A second favorite of the same
+                    // item would share its Library identity, and removing either star would remove both, so
+                    // nothing is saved; the reloaded picker offers that favorite instead.
+                    return refuse("Could not add it to your supplements.", now: now)
+                } else if let starred = sameAmounts.first {
                     // Starred since the picker was built, with the same amounts: that favorite goes on the
                     // list rather than a second copy of it.
                     favoriteID = starred.id
                     key = recentKey
-                } else if !sameItem.isEmpty {
-                    // Starred with other amounts. A second favorite of the same item would share its Library
-                    // identity, and removing either star would remove both, so nothing is saved; the reloaded
-                    // picker offers that favorite instead.
-                    return refuse("Could not add it to your supplements.", now: now)
                 } else {
                     guard let favorite = makeFavorite(from: fresh.template, title: candidate.title) else {
                         errorMessage = "This supplement has an amount that cannot be saved."
@@ -436,7 +438,11 @@ public final class SupplementStackViewModel: ObservableObject {
             }
             let repeater = IntakeRepeater(store: store, timeZoneProvider: zoneID, makeID: makeID)
             let id = try repeater.create(from: template, now: now)
-            if let time, let clock = SupplementStackClock(now: now, zoneIdentifier: zoneID()) {
+            // A time the item's schedule no longer has (a row older than an edit of its times) is not
+            // recorded: the entry fills an open time like any other.
+            if let time, let clock = SupplementStackClock(now: now, zoneIdentifier: zoneID()),
+               schedules.schedules()[favorite.id]?.times.contains(time) == true
+            {
                 // The entry is written either way. A mark that cannot be saved only means this entry
                 // fills an open time the way an entry logged elsewhere does.
                 var stored = schedules.takenMarks()

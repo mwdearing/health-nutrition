@@ -27,6 +27,7 @@ final class SupplementStackWiringTests: XCTestCase {
         addTeardownBlock {
             try? FileManager.default.removeItem(at: directory)
             UserDefaults.standard.removeObject(forKey: UserDefaultsSupplementStackStore.key)
+            UserDefaults.standard.removeObject(forKey: UserDefaultsSupplementStackStore.takenKey)
         }
         let services = try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler())
         try services.favoritesStore.add(favorite)
@@ -58,8 +59,10 @@ final class SupplementStackWiringTests: XCTestCase {
     func testEraseEmptiesAnOpenSupplementList() async throws {
         let services = try makeServicesWithOneItem()
         let stack = services.supplementStack
-        XCTAssertTrue(stack.markTaken(try XCTUnwrap(stack.rows.first), now: Date()))
+        let row = try XCTUnwrap(stack.rows.first)
+        XCTAssertTrue(stack.markTaken(row, at: try XCTUnwrap(row.schedule.times.first), now: Date()))
         XCTAssertNotNil(stack.undoToken)
+        XCTAssertFalse(UserDefaultsSupplementStackStore().takenMarks().isEmpty)
 
         let erased = await services.connections.eraseAllData()
         XCTAssertTrue(erased)
@@ -67,5 +70,6 @@ final class SupplementStackWiringTests: XCTestCase {
         XCTAssertTrue(stack.candidates.isEmpty)
         XCTAssertNil(stack.undoToken)
         XCTAssertTrue(UserDefaultsSupplementStackStore().schedules().isEmpty)
+        XCTAssertTrue(UserDefaultsSupplementStackStore().takenMarks().isEmpty)
     }
 }

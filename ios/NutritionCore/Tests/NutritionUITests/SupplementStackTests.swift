@@ -572,6 +572,34 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(model.candidates.map(\.id), ["favorite:fav-one-capsule"])
     }
 
+    func testARecentIsRefusedWhenAnyFavoriteOfItHasOtherAmounts() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 2, product: supplement())
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id.hasPrefix("recent:") })
+
+        // Starred twice elsewhere, with different meals: once with the picker's two capsules, once with one.
+        func favorite(_ id: String, _ amount: String, meal: String) -> FavoriteTemplate {
+            FavoriteTemplate(
+                id: id, displayName: "Example magnesium", category: "supplement",
+                components: [
+                    FavoriteComponent(
+                        componentID: "example-magnesium", name: "Example magnesium", amountText: amount,
+                        unitSymbol: "capsule"),
+                ],
+                productSnapshotID: "s-magnesium", meal: meal)
+        }
+        try favorites.add(favorite("fav-two", "2", meal: "breakfast"))
+        try favorites.add(favorite("fav-one", "1", meal: "lunch"))
+        XCTAssertFalse(model.add(candidate, schedule: .standard, now: now))
+        XCTAssertEqual(model.errorMessage, "Could not add it to your supplements.")
+        XCTAssertTrue(schedules.schedules().isEmpty)
+        XCTAssertEqual(Set(model.candidates.map(\.id)), ["favorite:fav-two", "favorite:fav-one"])
+    }
+
     func testARecentWhoseAmountsChangedSinceThePickerOpenedIsNotSaved() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
@@ -624,6 +652,11 @@ final class SupplementStackTests: XCTestCase {
         try store.delete(intakeID: marked, now: evening)
         model.load(now: evening)
         XCTAssertNil(schedules.takenMarks()[marked])
+
+        // A time the schedule does not have is not recorded.
+        let noon = ReminderTime(hour: 12, minute: 0)
+        XCTAssertTrue(model.markTaken(try XCTUnwrap(model.rows.first), at: noon, now: evening))
+        XCTAssertTrue(schedules.takenMarks().isEmpty)
     }
 
     func testMarksFromAnotherDayAreDropped() throws {

@@ -21,7 +21,7 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   restore closes an open picker or editor.
 - **Schedule.** One to six distinct times a day and at least one day of the week; a new item starts at
   08:00 every day. Removing an item from the list keeps the favorite and every entry.
-- **Taken is read, not stored.** Each load counts today's entries of each item in the journal: an entry
+- **Taken is read from the journal.** Each load counts today's entries of each item in the journal: an entry
   logged from the Library counts too, and deleting or undoing an entry un-marks its time. An entry's day
   is the local day of its own time zone, the rule the Journal groups by. Entries match an item by its
   product snapshot, or by category and component names when there is none; the meal is ignored.
@@ -43,11 +43,12 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
 - **Stored** as JSON under `supplementStack.schedules` in the app's defaults domain, one schedule per
   favorite id. Not in `favorites.store`, whose SwiftData schema is unversioned. A schedule whose
   favorite is gone is dropped on the next load. A damaged entry is skipped, not fatal to the list.
-- **Erase all data** removes the key. Favorites are erased with their own store. An open list reads
+- **Erase all data** removes both keys (schedules and recorded times). Favorites are erased with their own store. An open list reads
   everything again when an erase or a restore finishes, so nothing erased stays on screen.
 - **Recorded times** are kept under `supplementStack.taken` in the app's defaults domain, one per
   journal entry (the favorite, the day and the time). Only today's marks for entries still in the journal
-  are kept; Undo or a delete drops the mark with its entry. They are not in the journal export. Entries
+  count, and each read of the list drops the others from the store (after an Undo or a delete, or on a new
+  day). They are not in the journal export. Entries
   logged elsewhere still fill the open times earliest first, so a missed morning followed by an evening
   dose logged from the Library reads as the morning taken.
 - **Not in the journal export yet.** Export schema version 2 has no field for schedules, so a restore
