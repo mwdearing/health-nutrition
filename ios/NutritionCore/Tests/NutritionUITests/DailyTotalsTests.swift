@@ -754,8 +754,9 @@ final class DailyTotalsTests: XCTestCase {
         // pulled to the front by its goal. Zinc is outside the fallback, so it is appended, and the
         // goals are sorted so the store's order cannot decide where it lands.
         XCTAssertEqual(tracked, TodayViewModel.defaultTrackedNutrients + ["zinc"])
-        XCTAssertEqual(Array(tracked.prefix(4)), TodayViewModel.defaultTrackedNutrients)
-        XCTAssertEqual(Set(tracked), Set(["protein", "zinc", "potassium", "sodium", "fiber"]))
+        XCTAssertEqual(Array(tracked.prefix(TodayViewModel.defaultTrackedNutrients.count)), TodayViewModel.defaultTrackedNutrients)
+        XCTAssertEqual(
+            Set(tracked), Set(["energy", "protein", "carbohydrate", "fat", "zinc", "potassium", "sodium", "fiber"]))
     }
 
     /// Two goal-only keys land in alphabetical order however the store returned them, because a

@@ -13,6 +13,8 @@ public struct RecipeNutrientField: Equatable, Identifiable {
     public static let all: [RecipeNutrientField] = [
         RecipeNutrientField(id: "energy", label: "Energy", unit: .kcal),
         RecipeNutrientField(id: "protein", label: "Protein", unit: .g),
+        RecipeNutrientField(id: "carbohydrate", label: "Carbohydrate", unit: .g),
+        RecipeNutrientField(id: "fat", label: "Fat", unit: .g),
         RecipeNutrientField(id: "sodium", label: "Sodium", unit: .mg),
         RecipeNutrientField(id: "potassium", label: "Potassium", unit: .mg),
         RecipeNutrientField(id: "fiber", label: "Fiber", unit: .g),

@@ -193,8 +193,11 @@ shorter list that looked complete, so a corrupt row read as "no goal set for thi
 that needs attention, and a caller had no way to tell the two apart. Repairing the row, or an erase, makes the store
 read again: the failure was the row, not the store.
 
-**Tracked nutrients** are the existing `defaultTrackedNutrients` in their own fixed order, whether or not those
-nutrients have goals, followed by the goals' keys that are outside it, alphabetically — the constant is a fallback
+Energy, carbohydrate and fat are tracked by default so the calorie ring and the macro columns show for everyone from
+the first day, with a plain total until a goal is set; before, they appeared only once those nutrients had a goal.
+
+**Tracked nutrients** are the existing `defaultTrackedNutrients` (energy, protein, carbohydrate, fat, fiber, sodium,
+potassium, in label order) in their own fixed order, whether or not those nutrients have goals, followed by the goals' keys that are outside it, alphabetically — the constant is a fallback
 for the nutrients without a target, not the only way a nutrient is tracked. So a goal for a nutrient outside the
 defaults is shown, and a fallback nutrient nobody set a target for is still tracked. The order is stated in one place
 and is not the store's: `GoalStore.goals()` sorts by nutrient key while the fallback has an order of its own, so asking

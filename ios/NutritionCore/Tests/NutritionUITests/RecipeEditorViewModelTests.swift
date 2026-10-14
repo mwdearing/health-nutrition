@@ -266,6 +266,8 @@ final class RecipeEditorViewModelTests: XCTestCase {
         }
         XCTAssertEqual(RecipeNutrientField.all.first { $0.id == "potassium" }?.unit, .mg)
         XCTAssertEqual(RecipeNutrientField.all.first { $0.id == "fiber" }?.unit, .g)
+        XCTAssertEqual(RecipeNutrientField.all.first { $0.id == "carbohydrate" }?.unit, .g)
+        XCTAssertEqual(RecipeNutrientField.all.first { $0.id == "fat" }?.unit, .g)
 
         let store = try makeStore()
         let model = filledModel(store)

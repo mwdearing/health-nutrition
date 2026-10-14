@@ -71,7 +71,9 @@ public struct TodayMealSection: Equatable, Identifiable {
 
 @MainActor
 public final class TodayViewModel: ObservableObject {
-    public static let defaultTrackedNutrients = ["potassium", "sodium", "protein", "fiber"]
+    /// What Today totals for everyone, goal or not, in label order. Energy, carbohydrate and fat are here so
+    /// the calorie ring and the macro columns show from the first day rather than only once a goal is set.
+    public static let defaultTrackedNutrients = ["energy", "protein", "carbohydrate", "fat", "fiber", "sodium", "potassium"]
     public static let undoWindow: TimeInterval = 10
     /// Shown when a water amount is zero, negative or not a number.
     public static let waterAmountInvalidMessage = "Enter a water amount above zero."
