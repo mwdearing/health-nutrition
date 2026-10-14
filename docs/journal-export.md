@@ -183,8 +183,8 @@ none), and writes only the favorites; the flag stays until they are written, so 
 there can be retried the same way. Anything else in a journal that is not empty is refused as `notEmpty` as
 before and leaves the flag alone: another file, a journal without a flag, a flag left by a stop before the
 journal's save with entries logged since, and a restore that finished (which cleared its flag), so favorites
-deleted or changed since are never put back. Erasing all data removes the flag first, so an erase that fails partway never lets a re-import bring erased
-favorites back. The flag holds only the digest,
+deleted or changed since are never put back. Erasing all data removes the flag first; if it cannot be removed, the journal's erase fails before deleting
+anything and the screen reports the failed erase. The flag holds only the digest,
 no journal content.
 
 **The empty check is inside the transaction.** `SwiftDataJournalStore.restore(_:)` reads its own emptiness

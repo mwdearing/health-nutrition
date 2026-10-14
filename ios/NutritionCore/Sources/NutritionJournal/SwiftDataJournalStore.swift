@@ -1590,8 +1590,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     public func eraseAll() throws {
         // A restore flag left behind would let the next import of that file put back favorites the person is
         // erasing, so it goes first: an erase that fails partway (this store or another) can then leave journal
-        // rows, but never a way for a re-import to bring erased favorites back.
-        try? clearRestoreInProgress()
+        // rows, but never a way for a re-import to bring erased favorites back. A flag that cannot be removed
+        // fails the erase before anything is deleted, so the screen reports it.
+        try clearRestoreInProgress()
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
