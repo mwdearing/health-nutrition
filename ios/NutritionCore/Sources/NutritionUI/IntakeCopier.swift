@@ -42,7 +42,11 @@ public struct IntakeCopier {
 
     /// The `yyyy-MM-dd` key of the day before `now`, in the copier's zone. What "copy yesterday" reads.
     public func yesterdayKey(now: Date) -> String {
-        let zone = TimeZone(identifier: zoneID()) ?? .current
+        Self.yesterdayKey(now: now, zoneIdentifier: zoneID())
+    }
+
+    private static func yesterdayKey(now: Date, zoneIdentifier: String) -> String {
+        let zone = TimeZone(identifier: zoneIdentifier) ?? .current
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         let earlier = calendar.date(byAdding: .day, value: -1, to: now) ?? now.addingTimeInterval(-86_400)
@@ -63,19 +67,19 @@ public struct IntakeCopier {
     /// Copies every entry of `dayKey` to `now`. A day with no entries copies nothing.
     @discardableResult
     public func copyDay(dayKey: String, now: Date) throws -> IntakeCopyResult {
-        try run(dayKey: dayKey, meal: nil, now: now)
+        try run(dayKey: { _ in dayKey }, meal: nil, now: now)
     }
 
     /// Copies the entries of one meal of `dayKey` to `now`.
     @discardableResult
     public func copyMeal(_ meal: MealSelector, dayKey: String, now: Date) throws -> IntakeCopyResult {
-        try run(dayKey: dayKey, meal: meal, now: now)
+        try run(dayKey: { _ in dayKey }, meal: meal, now: now)
     }
 
     /// Copies yesterday's whole log to `now`.
     @discardableResult
     public func copyYesterday(now: Date) throws -> IntakeCopyResult {
-        try copyDay(dayKey: yesterdayKey(now: now), now: now)
+        try run(dayKey: { Self.yesterdayKey(now: now, zoneIdentifier: $0) }, meal: nil, now: now)
     }
 
     /// Active entries whose zone names no zone and whose instant falls on `dayKey` in the copier's zone: they cannot be placed on a
@@ -88,10 +92,15 @@ public struct IntakeCopier {
             .count
     }
 
-    private func run(dayKey: String, meal: MealSelector?, now: Date) throws -> IntakeCopyResult {
+    /// `dayKey` is given the one destination zone the batch uses, so "yesterday" and the zone the copies are
+    /// written in always come from the same answer of the provider.
+    private func run(dayKey keyForZone: (String) -> String, meal: MealSelector?, now: Date) throws
+        -> IntakeCopyResult
+    {
         // One zone for the whole batch: the provider is asked once, validated, then fixed.
         let destination = zoneID()
         guard TimeZone(identifier: destination) != nil else { throw IntakeCopyError.invalidDestinationZone }
+        let dayKey = keyForZone(destination)
         return try copy(
             try sources(dayKey: dayKey, meal: meal), now: now, destination: destination,
             unreadableZone: try unreadableZoneCount(dayKey: dayKey, meal: meal, destination: destination))
