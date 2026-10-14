@@ -13,6 +13,7 @@ Public architecture decisions and design notes for this project live here.
 - [Erase all data: what the erase removes, and what it cannot reach](erase-all-data.md)
 - [Daily reminder: one optional local notification, off by default](reminders.md)
 - [Goal setup: estimated daily targets from a few answers](goal-setup.md)
+- [Reference intakes: adult RDAs, AIs and upper limits for vitamins and minerals](reference-intakes.md)
 - [Accounts: sign-in, what is shared, what stays on the phone, deleting an account](accounts.md)
 - [Community client: configuration, endpoints and error mapping](community-client.md)
 - [Community catalog in the app: barcode fallback, sharing a saved label, what is sent](community-catalog-app.md)
