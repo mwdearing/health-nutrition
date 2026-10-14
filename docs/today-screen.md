@@ -157,6 +157,14 @@ The US bound uses `AmountDisplay.smallestShown`, matching quick-water strings.
 The same bound is spoken for accessibility; an actual zero still displays as zero.
 Settings' quick-water equivalence and entry detail's converted line use `AmountDisplay` as well.
 
+Every other nutrient figure on Today (the calorie ring, the macro columns and the goal bars), the Journal's
+day line and day energy, "This adds" while logging, an entry's adds and a scaled quick-add title use
+`AmountDisplay.nutrient`: energy in whole kcal, and every other nutrient as the vitamins and minerals screen
+shows it, one fraction digit or two below one, in the unit it is totaled in under either unit system. A
+total scaled from a label keeps every digit its division leaves (24 fl oz of a drink whose label states a
+710 mL serving is 0.9996686049295774... of that serving), so without this a 1 g label value read as a
+38-digit figure. A real amount that rounds to nothing reads `< 0.01 mg` or `< 1 kcal`.
+
 **Other amount** opens a field in the preferred volume unit, labeled "Water amount in mL" or "Water amount in fl oz".
 Add logs one water entry through the same path as the quick button, so it gets the same 10-second Undo. A typed comma is
 read where the region uses one. Under US the amount converts at the exact 29.5735295625 mL per fl oz and is stored in mL.

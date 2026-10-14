@@ -79,7 +79,7 @@ public struct ThisAddsLine: Equatable {
     /// The product states this nutrient, but the logged amount cannot be scaled to its basis.
     public let cannotScale: Bool
     public var text: String {
-        cannotScale ? LookedUpProduct.cannotScaleText : LookedUpProduct.shownText(value ?? .unknown)
+        cannotScale ? LookedUpProduct.cannotScaleText : LookedUpProduct.shownScaledText(value ?? .unknown)
     }
 }
 
@@ -105,6 +105,13 @@ extension LookedUpProduct {
         case .belowReportingThreshold(let unit):
             return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
         }
+    }
+
+    /// A label value scaled to the amount logged, in words. Scaling can leave every digit a `Decimal`
+    /// holds, so an amount is rounded the way Today rounds a total; anything else reads as `shownText`.
+    static func shownScaledText(_ value: NutrientValue) -> String {
+        guard case .known(let amount, let unit) = value else { return shownText(value) }
+        return AmountDisplay.nutrient(amount, unit: unit).text
     }
 }
 

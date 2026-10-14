@@ -659,7 +659,7 @@ public final class EntryDetailViewModel: ObservableObject {
             guard value != .unknown || LookedUpProduct.standardKeys.contains(key) else { continue }
             var amountText = "Not on the label"
             if value != .unknown, let factor {
-                amountText = LookedUpProduct.shownText(value.scaled(by: factor))
+                amountText = LookedUpProduct.shownScaledText(value.scaled(by: factor))
             } else if LookedUpProduct.statesAmount(value) {
                 amountText = LookedUpProduct.cannotScaleText
             } else if value == .notApplicable {

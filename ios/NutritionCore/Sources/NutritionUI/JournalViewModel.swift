@@ -639,7 +639,7 @@ public final class JournalViewModel: ObservableObject {
     static func energyText(totals: DailyTotals) -> String? {
         let line = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
         guard case .known(let value, let unit) = line.amount else { return nil }
-        return "\(DecimalFormatting.text(value)) \(unit.symbol)"
+        return AmountDisplay.nutrient(value, unit: unit).text
     }
 
     /// "1 entry" or "9 entries".

@@ -58,9 +58,10 @@ public struct GoalBarModel: Equatable, Identifiable {
     ) -> GoalBarModel {
         let label = line.label
         let isWater = line.nutrient == DailyTotalsBuilder.waterKey
+        // Words only: the state, the fraction and the goal marker below are decided on the exact total.
         func shown(_ amount: Decimal, _ unit: MeasureUnit) -> DisplayAmount {
             isWater ? AmountDisplay.water(amount, unit: unit, system: unitSystem)
-                : DisplayAmount(amount: amount, unit: unit)
+                : AmountDisplay.nutrient(amount, unit: unit)
         }
         func spokenDisplay(_ amount: DisplayAmount) -> String {
             "\(amount.spokenAmount) \(AmountDisplay.spokenName(for: amount.unit))"

@@ -155,6 +155,23 @@ public enum AmountDisplay {
         return DisplayAmount(amount: rounded, unit: target, isBelowSmallest: tooSmall)
     }
 
+    /// A nutrient amount as a person reads it, in the unit it is stated in: energy in whole kilocalories,
+    /// and every other nutrient as the vitamins and minerals screen shows it (`NutrientGapRow.figure`), to
+    /// one fraction digit, or two below one.
+    ///
+    /// A day's total or a scaled label value keeps every digit its arithmetic left, so 24 fl oz of a drink
+    /// whose label states a 710 mL serving carries 1 g of carbohydrate as 0.99966860492957746... g. That
+    /// stays the stored figure; this is the one a screen shows. A real amount that rounds to none of it
+    /// reads as less than the smallest figure, never as a zero.
+    public static func nutrient(_ amount: Decimal, unit: MeasureUnit) -> DisplayAmount {
+        guard !amount.isNaN else { return DisplayAmount(amount: amount, unit: unit) }
+        let digits = unit == .kcal ? 0 : (amount < 1 ? 2 : 1)
+        let smallest = unit == .kcal ? Decimal(1) : Decimal(string: "0.01", locale: AmountParser.locale)!
+        let rounded = DisplayRounding.rounded(amount, fractionDigits: digits)
+        return DisplayAmount(
+            amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0, smallestAmount: smallest)
+    }
+
     /// Water cards and goals show whole, grouped mL or the existing rounded fl oz.
     public static func water(
         _ amount: Decimal, unit: MeasureUnit = .mL, system: UnitSystem
