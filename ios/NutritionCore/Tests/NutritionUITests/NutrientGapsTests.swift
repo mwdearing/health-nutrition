@@ -206,7 +206,8 @@ final class NutrientGapsTests: XCTestCase {
         let intake = Intake(
             id: UUID().uuidString.lowercased(), category: category, occurredAt: date, timeZoneIdentifier: zone)
         try store.create(
-            intake, components: [IntakeComponent(componentID: name.lowercased(), name: name, amount: amount, unit: unit)],
+            intake, components: [IntakeComponent(
+                componentID: Slug.make(name), name: name, amount: amount, unit: unit)],
             product: product, now: date)
     }
 
