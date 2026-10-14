@@ -115,4 +115,11 @@ final class IntakeCopierTests: XCTestCase {
         XCTAssertEqual(result.copiedCount, 2)
         XCTAssertEqual(result.skippedCount, 0)
     }
+
+    func testEntryWithInvalidZoneIsNeverCopied() throws {
+        let store = try makeStore()
+        try add(store, name: "Odd", at: yesterday, zone: "Not/AZone")
+        XCTAssertEqual(try copier(store).sources(dayKey: "2023-11-14").count, 0)
+        XCTAssertEqual(try copier(store).copyYesterday(now: now).copiedCount, 0)
+    }
 }

@@ -22,6 +22,7 @@ public struct IntakeCopyResult: Equatable, Sendable {
 /// Each copy is a NEW intake built by the same repeater a single "repeat" uses: new id, the time of
 /// the copy, the current time zone, the source's amounts and product snapshot. The source entries are
 /// never touched. A source that cannot be copied is skipped and counted, and the rest are still copied.
+/// An entry whose time zone names no zone has no day and is never copied.
 public struct IntakeCopier {
     private let store: JournalStore
     private let repeater: IntakeRepeater
@@ -45,7 +46,7 @@ public struct IntakeCopier {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         let earlier = calendar.date(byAdding: .day, value: -1, to: now) ?? now.addingTimeInterval(-86_400)
-        return Self.dayKey(earlier, zoneIdentifier: zone.identifier)
+        return Self.dayKey(earlier, zoneIdentifier: zone.identifier) ?? ""
     }
 
     /// The entries of one day, oldest first, that a copy would read.
@@ -83,18 +84,19 @@ public struct IntakeCopier {
         for intake in intakes {
             do {
                 created.append(try repeater.create(repeating: intake, now: now))
-            } catch IntakeRepeatError.productUnavailable {
-                skipped += 1
-            } catch JournalError.corruptRecord {
+            } catch {
+                // Any one source failing never aborts the batch or hides what was already written.
                 skipped += 1
             }
         }
         return IntakeCopyResult(createdIDs: created, skippedCount: skipped)
     }
 
-    static func dayKey(_ date: Date, zoneIdentifier: String) -> String {
+    /// Nil for a zone identifier that names no zone: such an entry has no day, so it matches none.
+    static func dayKey(_ date: Date, zoneIdentifier: String) -> String? {
+        guard let zone = TimeZone(identifier: zoneIdentifier) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: zoneIdentifier) ?? TimeZone(secondsFromGMT: 0) ?? .current
+        calendar.timeZone = zone
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
