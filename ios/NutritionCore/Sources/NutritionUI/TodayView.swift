@@ -106,6 +106,16 @@ public struct TodayView: View {
         }
     }
 
+    @ViewBuilder
+    private var waterPresetButtons: some View {
+        ForEach(model.waterPresets) { preset in
+            QuietCapsule(preset.label) {
+                model.quickAddWater(milliliters: preset.milliliters, now: now())
+            }
+            .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
+        }
+    }
+
     private var waterCard: some View {
         Card {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
@@ -146,13 +156,9 @@ public struct TodayView: View {
                     }
                     Spacer(minLength: DesignSpacing.s)
                 }
-                HStack(spacing: DesignSpacing.s) {
-                    ForEach(model.waterPresets) { preset in
-                        QuietCapsule(preset.label) {
-                            model.quickAddWater(milliliters: preset.milliliters, now: now())
-                        }
-                        .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
-                    }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: DesignSpacing.s) { waterPresetButtons }
+                    VStack(alignment: .leading, spacing: DesignSpacing.s) { waterPresetButtons }
                 }
                 HStack(spacing: DesignSpacing.m) {
                     QuietCapsule("Other amount") {
