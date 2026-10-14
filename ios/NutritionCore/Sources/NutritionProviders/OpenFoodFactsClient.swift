@@ -18,6 +18,7 @@ public actor OpenFoodFactsClient {
     public static let searchRequestSize = 50
     public static let searchFields = [
         "code", "product_name", "brands", "nutriments", "last_modified_t", "product_quantity_unit", "quantity",
+        "obsolete",
     ]
     /// Characters the search service reads as query syntax (field filters, grouping, ranges, wildcards,
     /// boosts, negation, regular expressions). None of them helps find a food by name.
@@ -214,7 +215,8 @@ public actor OpenFoodFactsClient {
             return .transport("unreadable response")
         }
         var seen: Set<String> = []
-        let products: [OpenFoodFactsProduct] = (decoded.hits ?? []).compactMap(\.hit).compactMap { hit in
+        // A discontinued or withdrawn product may carry stale facts, so it is never offered.
+        let products: [OpenFoodFactsProduct] = (decoded.hits ?? []).compactMap(\.hit).filter { !$0.obsolete }.compactMap { hit in
             // A reply is untrusted: only a well-formed barcode becomes a result.
             // The stored code is the one that was validated: a padded value is refused, not trimmed for the
             // check and kept as received.

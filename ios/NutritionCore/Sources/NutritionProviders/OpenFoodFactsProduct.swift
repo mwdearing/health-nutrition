@@ -227,9 +227,11 @@ struct OpenFoodFactsSearchResponse: Decodable {
         let last_modified_t: OpenFoodFactsScalar?
         let product_quantity_unit: OpenFoodFactsScalar?
         let quantity: OpenFoodFactsScalar?
+        /// True for a product Open Food Facts marks as discontinued or withdrawn; current products omit it.
+        let obsolete: Bool
 
         enum CodingKeys: String, CodingKey {
-            case code, product_name, brands, nutriments, last_modified_t, product_quantity_unit, quantity
+            case code, product_name, brands, nutriments, last_modified_t, product_quantity_unit, quantity, obsolete
         }
 
         init(from decoder: Decoder) throws {
@@ -241,6 +243,13 @@ struct OpenFoodFactsSearchResponse: Decodable {
             last_modified_t = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .last_modified_t)
             product_quantity_unit = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .product_quantity_unit)
             quantity = try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .quantity)
+            if let flag = try? container.decodeIfPresent(Bool.self, forKey: .obsolete) {
+                obsolete = flag
+            } else if let text = (try? container.decodeIfPresent(OpenFoodFactsScalar.self, forKey: .obsolete))??.text {
+                obsolete = ["true", "on", "1", "yes"].contains(text.lowercased())
+            } else {
+                obsolete = false
+            }
         }
     }
 

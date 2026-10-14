@@ -135,6 +135,9 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   the operator words `AND`, `OR`, `NOT` and `TO`. The 80-character cap applies
   after that. What is sent can only be a list of words to match; text with no
   letters or digits sends nothing.
+- A product Open Food Facts marks obsolete (discontinued or withdrawn) is left
+  out, because its facts may be stale; the flag is requested with the results and
+  checked on the device, so nothing extra is added to the query.
 - A result with no product name is left out, and a result with the same name and
   brand as an earlier one is left out, because neither can be told apart in a list
   of names. The service also matches on category, label and names in other

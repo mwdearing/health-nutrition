@@ -320,6 +320,22 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertNil(try queryItems(of: try XCTUnwrap(other.requests.first))["langs"])
     }
 
+    func testObsoleteProductsAreNotOffered() async {
+        let body = Data("""
+        {"hits": [
+          {"code": "2000000000015", "product_name": "Milk Old", "obsolete": true, "nutriments": {}},
+          {"code": "2000000000022", "product_name": "Milk Current", "nutriments": {}},
+          {"code": "2000000000039", "product_name": "Milk Flagged", "obsolete": "on", "nutriments": {}},
+          {"code": "2000000000046", "product_name": "Milk Kept", "obsolete": false, "nutriments": {}}
+        ]}
+        """.utf8)
+        let outcome = await client(StubTransport(body: body)).search(query: "milk")
+        guard case .results(let rows) = outcome else {
+            return XCTFail("expected results, got \(outcome)")
+        }
+        XCTAssertEqual(rows.map(\.barcode), ["2000000000022", "2000000000046"])
+    }
+
     func testTextWithNoWordsSendsNothing() async {
         let transport = StubTransport(body: twoProducts)
         for query in ["..", "%%", "’’", "__ __"] {
@@ -478,7 +494,7 @@ final class OpenFoodFactsSearchTests: XCTestCase {
         XCTAssertEqual(Set(items.keys), ["q", "page_size", "fields"])
         XCTAssertEqual(items["q"], "oat honey 2%")
         XCTAssertEqual(items["page_size"], "50")
-        XCTAssertEqual(items["fields"], "code,product_name,brands,nutriments,last_modified_t,product_quantity_unit,quantity")
+        XCTAssertEqual(items["fields"], "code,product_name,brands,nutriments,last_modified_t,product_quantity_unit,quantity,obsolete")
         XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("HealthNutrition/1.0.0"), true)
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     }
