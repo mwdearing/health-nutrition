@@ -249,9 +249,23 @@ public final class TodayViewModel: ObservableObject {
             // store holds but this load cannot see would otherwise be shown as a nutrient with no
             // goal set, which is a statement about the person rather than about the store.
             var goalsUnreadable = false
-            let storedGoals: [NutrientGoal]
+            var storedGoals: [NutrientGoal]
             do {
                 storedGoals = try goals?.goals() ?? []
+                // First run: store the default water goal once so there is a bar to see. After that
+                // the person owns it; removing it or clearing all goals is not undone.
+                if let goals, let seeding = preferences as? WaterGoalDefaultPreferences,
+                   !seeding.hasSeededWaterGoal {
+                    if !storedGoals.contains(where: { $0.nutrient == DailyTotalsBuilder.waterKey }) {
+                        // A failed write keeps the goals just read and is retried on the next load.
+                        if (try? goals.setGoal(Self.defaultWaterGoal)) != nil {
+                            storedGoals.append(Self.defaultWaterGoal)
+                            seeding.markWaterGoalSeeded()
+                        }
+                    } else {
+                        seeding.markWaterGoalSeeded()
+                    }
+                }
             } catch {
                 storedGoals = []
                 goalsUnreadable = true
@@ -319,6 +333,24 @@ public final class TodayViewModel: ObservableObject {
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
         } catch {
             errorMessage = "Could not read the journal."
+        }
+    }
+
+    /// The daily water goal used until the person sets one: 2,000 mL (about 68 fl oz).
+    static let defaultWaterGoal = NutrientGoal(
+        nutrient: DailyTotalsBuilder.waterKey, target: 2000, unit: .mL)
+
+    /// One-tap container sizes, in milliliters, shown in the unit the reader chose. US sizes are
+    /// whole fluid ounces (8, 16, 24) so the labels read as the containers do.
+    public var waterPresets: [WaterPreset] {
+        let flOz = Decimal(string: "29.5735295625", locale: AmountParser.locale)!
+        if AmountDisplay.volumeUnit(for: unitSystem) == .flOz {
+            return [("Glass", 8), ("Bottle", 16), ("Large bottle", 24)].map {
+                WaterPreset(name: $0.0, milliliters: Decimal($0.1) * flOz, label: "\($0.0) \($0.1) fl oz")
+            }
+        }
+        return [("Glass", 250), ("Bottle", 500), ("Large bottle", 750)].map {
+            WaterPreset(name: $0.0, milliliters: Decimal($0.1), label: "\($0.0) \($0.1) mL")
         }
     }
 
@@ -553,4 +585,13 @@ enum DecimalFormatting {
     static func text(_ value: Decimal) -> String {
         NSDecimalNumber(decimal: value).description(withLocale: Locale(identifier: "en_US_POSIX"))
     }
+}
+
+
+/// A one-tap water container: a name, the exact amount in milliliters and its on-screen label.
+public struct WaterPreset: Hashable, Sendable, Identifiable {
+    public let name: String
+    public let milliliters: Decimal
+    public let label: String
+    public var id: String { name }
 }

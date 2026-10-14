@@ -16,3 +16,10 @@ public protocol GoalVisibilityPreferences: AnyObject {
 func hiddenTodayGoals(in preferences: DisplayPreferences) -> Set<String> {
     (preferences as? GoalVisibilityPreferences)?.hiddenTodayGoals ?? []
 }
+
+/// Whether the default water goal has been written once. It is written a single time, so a person
+/// who later removes it, or clears all goals, is not given it back.
+public protocol WaterGoalDefaultPreferences: AnyObject {
+    var hasSeededWaterGoal: Bool { get }
+    func markWaterGoalSeeded()
+}
