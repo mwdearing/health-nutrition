@@ -87,8 +87,7 @@ of folic acid" because it is not in DFE.
 Each row also says where the amount came from ("Food 60 mg, supplements 500 mg", or "All from supplements"), how many
 entries do not state it, and the reference figures ("RDA 90 mg, upper limit 2000 mg", or "AI 120 mcg, no upper limit
 set"). The bar shows food and supplements side by side against the reference; past it, the bar is full and a mark shows
-where the reference sits. The row is read by VoiceOver as one sentence. An entry counts as a supplement when its
-product is one, or, for an entry with no product (typed by hand), when it was logged as a supplement.
+where the reference sits. The row is read by VoiceOver as one sentence.
 
 Figures are rounded for reading only: one decimal place, two below 1, and "< 0.01" for an amount too small to show, so a
 real amount is never shown as zero.

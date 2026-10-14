@@ -476,10 +476,7 @@ public final class NutrientGapsViewModel: ObservableObject {
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
-            // The snapshot's kind when the entry has one; an entry without one (typed by hand, or a
-            // repeat with no product) is a supplement when its category says so, as on the stack.
-            let isSupplement = snapshot.map { $0.kind == .supplement }
-                ?? (intake.category == SupplementStackViewModel.supplementCategory)
+            let isSupplement = snapshot?.kind == .supplement
             let byComponent = snapshot == nil && intake.category != DailyTotalsBuilder.waterCategory
             var totals: DailyTotals?
             if !byComponent {
