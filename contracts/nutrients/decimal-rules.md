@@ -82,8 +82,8 @@ catalog, and no such implementation may round or cut to stay inside it:
   dimension's canonical unit on the way to the target unit), every product,
   every sum and every result must be a decimal of at most 38 significant digits, counted without leading and trailing zeros. A unit
   factor is a power of ten and never adds a digit; the vitamin D factor (0.025
-  mcg per IU) can add up to two, so a restated vitamin D amount is held to the
-  bound like any other product.
+  mcg per IU) can add up to two, so a vitamin D amount converted from IU in the
+  catalog is held to the bound like any other product.
 - The leading significant digit of every one of them must have a place value
   from 10^-127 to 10^127 (an adjusted exponent of -127 to 127, the range the app
   already enforces when it reads numbers). `0.005` has the adjusted exponent -3
@@ -186,8 +186,9 @@ in this repository converts one to the other: an IU of vitamin A or vitamin E is
 a different mass depending on the form (retinol or beta carotene, natural or
 synthetic alpha-tocopherol), which an IU figure does not say. A provider that
 states an amount in IU keeps it in IU. No v1 nutrient is published in IU, because
-the app keeps its standard nutrients as masses: a label that states vitamin A or
-E only in IU is published with that nutrient `unknown`, never with a guessed mass.
+the app keeps its standard nutrients as masses: a label that states vitamin A only
+in IU is published with `vitamin_a` `unknown`, never with a guessed mass (vitamin E
+has no v1 nutrient, so it is not published at all).
 `IU` stays in the unit registry so that an operation can name it and refuse it.
 
 Vitamin D is the one exception (owner decision, 2026-10-14). An IU of vitamin D is
