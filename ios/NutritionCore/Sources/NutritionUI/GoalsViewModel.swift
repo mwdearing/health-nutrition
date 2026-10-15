@@ -191,6 +191,9 @@ public final class GoalsViewModel: ObservableObject {
     private var loadedUnitSystem: UnitSystem?
     private var storedWaterDraft: String?
     private var storedWaterUnit: MeasureUnit?
+    /// The water goal as the last read found it (nil when none), so an unchanged field can tell the
+    /// store has moved since without a full reload.
+    private var storedWaterGoal: NutrientGoal?
     /// The water field as this screen last committed it: the text and unit the person typed and the
     /// goal that write stored. The display may not reproduce that text (8 fl oz is stored as
     /// about 236.59 mL and shown as 237), so the field is compared against this, in stored units, to tell
@@ -273,6 +276,7 @@ public final class GoalsViewModel: ObservableObject {
                 DecimalFormatting.text(self.displayGoal($0).amount)
             }
             self.storedWaterUnit = byNutrient[DailyTotalsBuilder.waterKey].map { self.displayGoal($0).unit }
+            self.storedWaterGoal = byNutrient[DailyTotalsBuilder.waterKey]
             for key in offeredKeys {
                 var waterUnitChanged = key == DailyTotalsBuilder.waterKey
                     && self.loadedUnitSystem != self.preferences.unitSystem
@@ -465,23 +469,30 @@ public final class GoalsViewModel: ObservableObject {
     public func commitTarget(for nutrient: String) -> Bool {
         let text = (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         rowError[nutrient] = nil
-        if nutrient == DailyTotalsBuilder.waterKey,
-           text == self.storedWaterDraft, selectedUnits[nutrient] == self.storedWaterUnit {
-            return true
-        }
-        if nutrient == DailyTotalsBuilder.waterKey, let committed = committedWater,
-           text == committed.text, selectedUnits[nutrient] == committed.unit {
-            // The field still holds what this screen committed. If the goal is as it wrote it, nothing
-            // changed; if it moved behind the screen, the field follows the store and writes nothing.
-            switch Result(catching: { try store.goal(for: nutrient) }) {
-            case .success(let current):
-                if current != committed.goal { load() }
-            case .failure:
-                // Neither followed nor written: said, so the field is not taken for the stored goal.
-                errorMessage = Self.readFailedMessage
-                return false
+        if nutrient == DailyTotalsBuilder.waterKey {
+            // A field that still holds what was last read or committed writes nothing. If the store has
+            // moved behind the screen since, the field follows it; a read that fails is said, so the
+            // field is not taken for the stored goal.
+            let heldRead = text == self.storedWaterDraft && selectedUnits[nutrient] == self.storedWaterUnit
+            var held: NutrientGoal?
+            var holds = false
+            if let committed = committedWater, text == committed.text, selectedUnits[nutrient] == committed.unit {
+                held = committed.goal
+                holds = true
+            } else if heldRead {
+                held = storedWaterGoal
+                holds = true
             }
-            return true
+            if holds {
+                switch Result(catching: { try store.goal(for: nutrient) }) {
+                case .success(let current):
+                    if current != held { load() }
+                case .failure:
+                    errorMessage = Self.readFailedMessage
+                    return false
+                }
+                return true
+            }
         }
         if text.isEmpty {
             guard removeTarget(for: nutrient) else { return false }
@@ -496,8 +507,8 @@ public final class GoalsViewModel: ObservableObject {
         // out from. A read that fails leaves nothing to check, and the split is then not followed.
         var previousEnergy: NutrientGoal?
         if nutrient == Self.energyKey { previousEnergy = (try? store.goal(for: Self.energyKey)) ?? nil }
-        // The unit the write uses, taken before setTarget: its load() can move selectedUnits to a new
-        // display unit, and the record must pair the text with the unit it was written in.
+        // The unit the write uses. Restored below, because setTarget's load() can move selectedUnits to
+        // a new display unit, and the record must pair the text with the unit it was written in.
         let writtenUnit = selectedUnits[nutrient]
         // The record is built from the goal this write stores, not a second read, which can fail.
         var written: NutrientGoal?

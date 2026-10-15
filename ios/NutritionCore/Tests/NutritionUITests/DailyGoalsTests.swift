@@ -320,6 +320,48 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.draftText["water"], "")
     }
 
+    /// Metric, water typed in mL: the display reproduces the text, so the field equals what was read.
+    /// An outside change and then an outside removal must still be followed on blur.
+    func testAWaterFieldTypedInMillilitersFollowsAnOutsideChangeThenRemoval() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "3000"
+        model.selectedUnits["water"] = .mL
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(2500), unit: .mL))
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(model.draftText["water"], "2500")
+
+        try goals.removeGoal(nutrient: "water")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 1)
+        XCTAssertNil(try goals.goal(for: "water"))
+        XCTAssertEqual(model.draftText["water"], "")
+    }
+
+    /// Changing the unit picker is the person's input: the picker's commit writes the text in the
+    /// unit they chose, even over a goal that moved behind the screen.
+    func testChangingTheWaterUnitAfterACommitIsTheirInput() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+
+        model.selectedUnits["water"] = .mL
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 2)
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(8))
+    }
+
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideRemoval() throws {
         let goals = InMemoryGoalStore(goals: [])
         let model = GoalsViewModel(
