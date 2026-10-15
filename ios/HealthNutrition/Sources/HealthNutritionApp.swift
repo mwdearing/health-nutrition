@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 
 /// The HealthNutrition app.
@@ -28,6 +29,10 @@ struct HealthNutritionApp: App {
             _services = State(initialValue: nil)
             _startupError = State(initialValue: error.localizedDescription)
         }
+        // Hands the app's shortcuts to the system at every launch, so Siri and Spotlight offer the current set,
+        // a shortcut added in an update included. No phrase names a saved meal, so a changed list needs no
+        // refresh: the shortcut reads the list each time it runs.
+        HealthNutritionShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
