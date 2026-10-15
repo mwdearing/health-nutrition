@@ -411,6 +411,28 @@ extension ProductShareCoordinatorTests {
         account.requestDisclosureReview()
         XCTAssertEqual(account.disclosureReviewRequests, 1)
     }
+    @MainActor func testSettingsAppearingFreesASignInSheetThatNeverReportedItsDismissal() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        // Signed in, but the sheet's dismissal was never reported (the form was torn down with it up).
+        XCTAssertEqual(account.phase, .signedIn)
+        XCTAssertTrue(account.presentingSignIn)
+        XCTAssertFalse(account.disclosureDue)
+        account.settingsDidAppear()
+        XCTAssertFalse(account.presentingSignIn)
+        XCTAssertFalse(account.signInSheetActive)
+        XCTAssertTrue(account.disclosureDue)
+    }
+    @MainActor func testSettingsAppearingKeepsARequestedSignInSheetWhileSignedOut() async throws {
+        let service = FakeAccountService(session: nil), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        account.settingsDidAppear()
+        XCTAssertTrue(account.presentingSignIn)
+        XCTAssertTrue(account.signInSheetActive)
+    }
     @MainActor func testSignInSheetFlagCannotStayStuckAfterAMissedDismissal() async throws {
         // A request whose dismissal was never reported, signed out: Settings opening (load) frees it.
         let signedOut = FakeAccountService(session: AccountTestSupport.session)

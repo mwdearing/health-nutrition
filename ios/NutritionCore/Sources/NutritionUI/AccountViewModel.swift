@@ -334,6 +334,14 @@ public final class AccountViewModel: ObservableObject {
         disclosureReady && needsDisclosure && !signInSheetActive
     }
 
+    /// Called when the Settings form appears fresh, which cannot happen while a sheet is up over it. A sign-in
+    /// that completed but whose dismissal was never reported (the form was torn down with the sheet) would
+    /// otherwise keep the sheet requested and the disclosure held for good.
+    public func settingsDidAppear() {
+        if phase == .signedIn && presentingSignIn { presentingSignIn = false }
+        if !presentingSignIn { signInSheetActive = false }
+    }
+
     /// Called by the view from the sign-in sheet's `onDismiss`, after its dismissal animation has finished.
     public func signInSheetDidDismiss() {
         if !presentingSignIn { signInSheetActive = false }

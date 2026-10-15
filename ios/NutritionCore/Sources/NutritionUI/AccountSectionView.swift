@@ -114,6 +114,7 @@ struct AccountPresentations: ViewModifier {
                 if model.disclosureReady && model.needsDisclosure && !model.signInSheetActive { showingDisclosure = true }
             }
             .onAppear {
+                model.settingsDidAppear()
                 showingDisclosure = model.disclosureDue
             }
             // Brings the stored sign-in back when Settings opens, if the launch restore could not.
