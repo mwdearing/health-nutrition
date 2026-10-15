@@ -211,7 +211,10 @@ struct RootView: View {
                         onFinished: {
                             selectedIntakeID = nil
                             reload()
-                        }
+                        },
+                        // A re-armed delivery is sent by the next pass, so one is run now; the open entry
+                        // reloads its own model when it settles, so it shows what the pass decided.
+                        onRetried: { await healthKitDeliveryStatus.runAndSettle() }
                     )
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {

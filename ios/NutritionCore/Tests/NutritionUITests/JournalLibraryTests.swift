@@ -297,6 +297,34 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(model.destinations.first?.stateText, "Pending")
     }
 
+    /// A delivery parked for a person shows the reason it recorded, and "Try again" re-arms it (#103).
+    func testANeedsAttentionDeliveryShowsItsReasonAndCanBeTriedAgain() throws {
+        // The real store, not the counting wrapper: re-arming needs the store's delivery bookkeeping.
+        let store = try SwiftDataJournalStore(url: try makeDirectory().appendingPathComponent("journal.store"))
+        let id = try addFood(store, at: now)
+        let operation = try XCTUnwrap(
+            try store.pendingOutbox().first { $0.intakeID == id && $0.destination == .healthKit })
+        try store.recordFailure(
+            operationID: operation.operationID, retryAt: nil, needsAttention: true,
+            reason: "Apple Health access for protein is off")
+        let model = EntryDetailViewModel(store: store, intakeID: id)
+        model.load(now: now)
+
+        let row = try XCTUnwrap(model.destinations.first { $0.destination == .healthKit })
+        XCTAssertEqual(row.state, .needsAttention)
+        XCTAssertEqual(row.attentionReason, "Apple Health access for protein is off")
+        XCTAssertTrue(model.canRetry(row))
+
+        model.retry(row, now: now)
+
+        XCTAssertFalse(try store.suspendedOperationIDs().contains(operation.operationID))
+        let after = try XCTUnwrap(model.destinations.first { $0.destination == .healthKit })
+        XCTAssertNotEqual(after.state, .needsAttention)
+        XCTAssertNil(after.attentionReason)
+        XCTAssertFalse(model.canRetry(after))
+        XCTAssertNil(model.errorMessage)
+    }
+
     func testDestinationStateTextCoversEveryState() {
         let texts = DestinationState.allCases.map { EntryDetailViewModel.stateText($0) }
         XCTAssertEqual(Set(texts).count, DestinationState.allCases.count)
