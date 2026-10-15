@@ -22,44 +22,29 @@ final class WidgetSnapshotPublisher {
     func start(today: TodayViewModel, isErasing: @escaping () -> Bool = { false }) {
         guard store != nil else { return }
         self.isErasing = isErasing
-        subscription = Self.emissionTimes(of: today.objectWillChange)
-            .sink { [weak self, weak today] changedAt in
+        // Every change to the totals goes through a load, and a successful load sets `lastLoadedAt`: the summary
+        // is written when that moment changes and stamped with it. Nothing else (an undo expiring, a failed
+        // reload, a notification after midnight) can make retained totals look fresh.
+        subscription = today.$lastLoadedAt
+            .compactMap { $0 }
+            .removeDuplicates()
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .sink { [weak self, weak today] loadedAt in
                 guard let self, let today else { return }
-                // objectWillChange fires before the values change; by the time the debounce delivers, the new ones are in.
-                self.publish(from: today, at: changedAt)
+                self.publish(from: today, loadedAt: loadedAt)
             }
-        publish(from: today, at: Date())
+        if let loadedAt = today.lastLoadedAt { publish(from: today, loadedAt: loadedAt) }
     }
 
-    /// The time of each change, taken when the change was announced and delivered after the debounce. The snapshot is
-    /// stamped with that time and not the time of the write, so a load that finished at 23:59:59 and is written just
-    /// after midnight still carries yesterday's time and goes stale at midnight instead of being shown as today's.
-    nonisolated static func emissionTimes<P: Publisher>(
-        of publisher: P, debounce: DispatchQueue.SchedulerTimeType.Stride = .milliseconds(300),
-        on scheduler: DispatchQueue = .main, now: @escaping () -> Date = { Date() }
-    ) -> AnyPublisher<Date, Never> where P.Failure == Never {
-        publisher.map { _ in now() }.debounce(for: debounce, scheduler: scheduler).eraseToAnyPublisher()
-    }
-
-    func publish(from today: TodayViewModel, at time: Date = Date()) {
-        guard let store, !isErasing(),
-            Self.shouldPublish(errorMessage: today.errorMessage, hasLoaded: !today.dateSubtitle.isEmpty)
-        else { return }
-        let snapshot = Self.snapshot(from: today, now: time)
+    func publish(from today: TodayViewModel, loadedAt: Date) {
+        guard let store, !isErasing() else { return }
+        let snapshot = Self.snapshot(from: today, now: loadedAt)
         do {
             try store.write(snapshot)
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             // The widgets keep showing the last snapshot; the app does not depend on this write.
         }
-    }
-
-    /// Nothing is written until Today has loaded successfully once, and not while it reports an error. Before the
-    /// first load Today holds only its initializer defaults, and after a failed reload it keeps the rows and totals
-    /// it had, so stamping either with a fresh time would replace valid totals or make yesterday's look current and
-    /// defeat the widget's stale-day check. The file keeps its old time, and a later successful load publishes.
-    nonisolated static func shouldPublish(errorMessage: String?, hasLoaded: Bool) -> Bool {
-        hasLoaded && errorMessage == nil
     }
 
     static func snapshot(from today: TodayViewModel, now: Date) -> WidgetSnapshot {

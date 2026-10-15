@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import NutritionDomain
 import XCTest
@@ -107,17 +106,6 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNil(WidgetSnapshotUnits.value(Quantity(value: 10, unit: .mL), in: .g))
     }
 
-    func testNothingIsPublishedWhileTodayReportsAnError() {
-        XCTAssertTrue(WidgetSnapshotPublisher.shouldPublish(errorMessage: nil, hasLoaded: true))
-        XCTAssertFalse(
-            WidgetSnapshotPublisher.shouldPublish(errorMessage: "Could not read the journal.", hasLoaded: true))
-    }
-
-    func testNothingIsPublishedBeforeTheFirstSuccessfulLoad() {
-        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(errorMessage: nil, hasLoaded: false))
-        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(errorMessage: "Could not read the journal.", hasLoaded: false))
-    }
-
     func testFiguresAreWholeNumbersAndHugeOrBrokenValuesAreLeftOut() {
         XCTAssertEqual(WidgetFigure.wholeNumber(1_849.6), "1850")
         XCTAssertEqual(WidgetFigure.wholeNumber(0), "0")
@@ -126,24 +114,5 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNil(WidgetFigure.wholeNumber(.infinity))
         // Larger than Int.max as a Double: would trap in Int(...) without the bound.
         XCTAssertNil(WidgetFigure.wholeNumber(1e30))
-    }
-
-    func testASnapshotIsStampedWithTheTimeOfTheChangeNotTheTimeItIsDelivered() {
-        let subject = PassthroughSubject<Void, Never>()
-        var clock = Date(timeIntervalSince1970: 1_700_006_399)  // 2023-11-14 23:59:59 UTC
-        var received: [Date] = []
-        let done = expectation(description: "delivered after the debounce")
-        let cancellable = WidgetSnapshotPublisher
-            .emissionTimes(of: subject, debounce: .milliseconds(20), now: { clock })
-            .sink { time in
-                received.append(time)
-                done.fulfill()
-            }
-        subject.send()
-        // The debounce delivers after midnight: the clock has moved on, the stamp must not.
-        clock = Date(timeIntervalSince1970: 1_700_006_401)  // 00:00:01 UTC
-        wait(for: [done], timeout: 2)
-        cancellable.cancel()
-        XCTAssertEqual(received, [Date(timeIntervalSince1970: 1_700_006_399)])
     }
 }

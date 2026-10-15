@@ -15,9 +15,11 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   the app writes an empty summary (no entries, no figures), so the widget shows "Nothing logged today".
 - **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
   shows dashes rather than claiming nothing was logged.
-- **Before the first load, and after a failed one.** The app writes the summary only after Today has loaded
-  successfully once, and not while Today reports an error, so a failed read never replaces valid totals or
-  renews yesterday's. Figures too large to be a daily total (above one billion) show as dashes.
+- **When the summary is written.** The app writes it each time Today has read the journal successfully, and
+  stamps it with that moment (`TodayViewModel.lastLoadedAt`). Before the first successful load, after a failed
+  reload, or when something merely notifies without reading, nothing is written, so a failed read never replaces
+  valid totals and retained totals never look fresh. Figures too large to be a daily total (above one billion)
+  show as dashes.
 - **A new day.** A summary written on an earlier day is not shown as today's: with the app closed after
   midnight the widget shows dashes (the same state as unreadable) until the app writes today's summary. The
   widget asks to be refreshed shortly after local midnight for this.

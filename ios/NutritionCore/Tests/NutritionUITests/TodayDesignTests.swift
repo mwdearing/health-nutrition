@@ -69,6 +69,17 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(journal.sections.first).totalsText.contains("Protein 13 g of 80 g"))
     }
 
+    func testLastLoadedAtIsNilUntilALoadSucceedsAndThenNamesTheLoad() throws {
+        let store = try makeStore()
+        let today = model(store)
+        XCTAssertNil(today.lastLoadedAt)
+        today.load(now: now)
+        XCTAssertEqual(today.lastLoadedAt, now)
+        let later = now.addingTimeInterval(3_600)
+        today.load(now: later)
+        XCTAssertEqual(today.lastLoadedAt, later)
+    }
+
     func testDateSubtitleFollowsTheCurrentTimeZoneOnReload() throws {
         let store = try makeStore()
         let currentSubtitle = TodayViewModel.makeDateSubtitle(

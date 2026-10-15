@@ -110,6 +110,10 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var missingValuesSummary: String?
     /// The date under the title, "Tuesday, November 14", in the current device time zone.
     @Published public private(set) var dateSubtitle: String = ""
+    /// The `now` of the last load that read the journal successfully, or nil before the first one. A failed load
+    /// leaves it alone, so it names the moment the totals on screen were read; the widgets' summary is stamped
+    /// with it rather than with the time of some later notification.
+    @Published public private(set) var lastLoadedAt: Date?
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
 
@@ -354,6 +358,7 @@ public final class TodayViewModel: ObservableObject {
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
+            lastLoadedAt = now
         } catch {
             // Clear what the last good read showed, so a failed reload never shows old rows as today's.
             rows = []
