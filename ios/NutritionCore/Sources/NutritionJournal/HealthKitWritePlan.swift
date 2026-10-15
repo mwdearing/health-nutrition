@@ -124,7 +124,8 @@ public struct HealthKitNutrientMapping: Sendable {
 
     /// The value with an international-unit amount restated in `unit` where this nutrient's IU has one
     /// fixed amount; every other value, and an IU for a nutrient without one, is returned unchanged.
-    /// The multiplication is exact: 400 IU of vitamin D is 10 mcg.
+    /// 400 IU of vitamin D is 10 mcg. The product is Foundation `Decimal` arithmetic, like the journal's
+    /// own scaling (contracts/nutrients/decimal-rules.md, "The journal keeps the digits its arithmetic gives").
     public func restatingInternationalUnits(_ value: NutrientValue) -> NutrientValue {
         guard let factor = amountPerInternationalUnit else { return value }
         switch value {
