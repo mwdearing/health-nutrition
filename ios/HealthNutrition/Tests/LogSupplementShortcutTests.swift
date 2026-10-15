@@ -123,21 +123,30 @@ final class LogSupplementShortcutTests: XCTestCase {
         ShortcutSupplement(id: "b", title: "Zinc", openTimes: []),
     ]
 
-    func testALockedDeviceGetsNoListButASavedShortcutsIdStillResolves() {
-        XCTAssertTrue(
-            SupplementPickerPolicy.visible(items, identifiers: nil, isUnlocked: false, isBusy: false).isEmpty)
-        XCTAssertEqual(
-            SupplementPickerPolicy.visible(items, identifiers: ["b"], isUnlocked: false, isBusy: false).map(\.id),
-            ["b"])
+    func testALockedDeviceGetsNoListAndASavedShortcutsIdResolvesWithAStandInTitle() {
+        XCTAssertTrue(SupplementPickerPolicy.enumerated(items, isUnlocked: false, isBusy: false).isEmpty)
+        let resolved = SupplementPickerPolicy.resolved(items, identifiers: ["b"], isUnlocked: false, isBusy: false)
+        XCTAssertEqual(resolved.map(\.id), ["b"])
+        XCTAssertEqual(resolved.map(\.title), [SupplementPickerPolicy.standInTitle])
+        XCTAssertFalse(resolved.map(\.title).contains("Zinc"))
     }
 
-    func testAnUnlockedDeviceGetsTheListAndNothingIsOfferedWhileBusy() {
+    func testAnUnlockedDeviceGetsTheListAndRealTitles() {
         XCTAssertEqual(
-            SupplementPickerPolicy.visible(items, identifiers: nil, isUnlocked: true, isBusy: false).map(\.id),
-            ["a", "b"])
-        XCTAssertTrue(
-            SupplementPickerPolicy.visible(items, identifiers: ["a"], isUnlocked: true, isBusy: true).isEmpty)
-        XCTAssertTrue(
-            SupplementPickerPolicy.visible(items, identifiers: nil, isUnlocked: true, isBusy: true).isEmpty)
+            SupplementPickerPolicy.enumerated(items, isUnlocked: true, isBusy: false).map(\.id), ["a", "b"])
+        let resolved = SupplementPickerPolicy.resolved(items, identifiers: ["b"], isUnlocked: true, isBusy: false)
+        XCTAssertEqual(resolved.map(\.title), ["Zinc"])
+    }
+
+    func testADeletedItemStillResolvesSoTheIntentCanSayItIsGone() {
+        let resolved = SupplementPickerPolicy.resolved(items, identifiers: ["gone"], isUnlocked: true, isBusy: false)
+        XCTAssertEqual(resolved.map(\.id), ["gone"])
+        XCTAssertEqual(resolved.map(\.title), [SupplementPickerPolicy.standInTitle])
+    }
+
+    func testNothingIsOfferedWhileBusyAndIdsStillResolveWithTheStandIn() {
+        XCTAssertTrue(SupplementPickerPolicy.enumerated(items, isUnlocked: true, isBusy: true).isEmpty)
+        let resolved = SupplementPickerPolicy.resolved(items, identifiers: ["a"], isUnlocked: true, isBusy: true)
+        XCTAssertEqual(resolved.map(\.title), [SupplementPickerPolicy.standInTitle])
     }
 }

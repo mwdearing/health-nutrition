@@ -112,20 +112,29 @@ struct SupplementEntity: AppEntity {
 
 /// Which items of the supplement list the picker and Siri may be told about.
 enum SupplementPickerPolicy {
-    /// - Parameters:
-    ///   - identifiers: the ids a saved shortcut stores, or nil for an enumeration (the picker, Siri's prompts).
-    ///   - isUnlocked: false while the device is locked.
-    ///   - isBusy: true while Erase all data or an import runs.
-    ///
-    /// Nothing is offered while busy. An enumeration is offered only unlocked, so a list of supplement names is not
-    /// read out or shown before unlocking. A lookup by id is allowed locked: a saved shortcut holds an opaque id,
-    /// returns no list, and then reaches the action's own unlock requirement.
-    static func visible(
-        _ items: [ShortcutSupplement], identifiers: [String]?, isUnlocked: Bool, isBusy: Bool
-    ) -> [ShortcutSupplement] {
-        guard !isBusy else { return [] }
-        if let identifiers { return items.filter { identifiers.contains($0.id) } }
-        return isUnlocked ? items : []
+    /// The title a saved shortcut gets while locked or for an item no longer on the list: the existing word, with
+    /// no name in it.
+    static let standInTitle = "Supplement"
+
+    /// The entity list for an enumeration (the picker, Siri's prompts): the items while the device is unlocked,
+    /// nothing while it is locked or busy (Erase all data or an import running).
+    static func enumerated(_ items: [ShortcutSupplement], isUnlocked: Bool, isBusy: Bool) -> [ShortcutSupplement] {
+        guard !isBusy, isUnlocked else { return [] }
+        return items
+    }
+
+    /// The entities for the ids a saved shortcut stores: one per requested id, so the saved shortcut always
+    /// resolves and then reaches the unlock requirement and the action's own messages. The real title only
+    /// while unlocked and the item is on the list; otherwise the stand-in title.
+    static func resolved(
+        _ items: [ShortcutSupplement], identifiers: [String], isUnlocked: Bool, isBusy: Bool
+    ) -> [(id: String, title: String)] {
+        identifiers.map { id in
+            guard !isBusy, isUnlocked, let item = items.first(where: { $0.id == id }) else {
+                return (id, standInTitle)
+            }
+            return (id, item.title)
+        }
     }
 }
 
@@ -134,27 +143,27 @@ struct SupplementEntityQuery: EntityQuery {
     static var isDeviceUnlocked: () -> Bool = { UIApplication.shared.isProtectedDataAvailable }
 
     @MainActor
-    private func entities(identifiers: [String]?) -> [SupplementEntity] {
-        var items: [ShortcutSupplement] = []
-        if let services = AppServicesRegistry.current, !AppServicesRegistry.isBusy {
-            let stack = services.supplementStack
-            stack.load(now: Date())
-            items = stack.items
-        }
-        return SupplementPickerPolicy
-            .visible(
-                items, identifiers: identifiers, isUnlocked: Self.isDeviceUnlocked(), isBusy: AppServicesRegistry.isBusy)
-            .map { SupplementEntity(id: $0.id, title: $0.title) }
+    private func loadedItems() -> [ShortcutSupplement] {
+        guard let services = AppServicesRegistry.current, !AppServicesRegistry.isBusy else { return [] }
+        let stack = services.supplementStack
+        stack.load(now: Date())
+        return stack.items
     }
 
     @MainActor
     func entities(for identifiers: [String]) async throws -> [SupplementEntity] {
-        entities(identifiers: identifiers)
+        SupplementPickerPolicy
+            .resolved(
+                loadedItems(), identifiers: identifiers, isUnlocked: Self.isDeviceUnlocked(),
+                isBusy: AppServicesRegistry.isBusy)
+            .map { SupplementEntity(id: $0.id, title: $0.title) }
     }
 
     @MainActor
     func suggestedEntities() async throws -> [SupplementEntity] {
-        entities(identifiers: nil)
+        SupplementPickerPolicy
+            .enumerated(loadedItems(), isUnlocked: Self.isDeviceUnlocked(), isBusy: AppServicesRegistry.isBusy)
+            .map { SupplementEntity(id: $0.id, title: $0.title) }
     }
 }
 
@@ -168,8 +177,8 @@ struct LogSupplementTakenIntent: AppIntent {
     static let description = IntentDescription("Marks a supplement from your list as taken.")
     static let openAppWhenRun = true
     /// Running the action, and so "Logged <supplement>", needs an unlocked device. Choosing an item happens
-    /// before this applies, so no list of names is offered while the device is locked (SupplementPickerPolicy);
-    /// a saved shortcut's stored id still resolves and then reaches this requirement.
+    /// before this applies, so no list and no name is offered while the device is locked (SupplementPickerPolicy);
+    /// a saved shortcut's stored id still resolves, with a stand-in title, and then reaches this requirement.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @Parameter(title: "Supplement", requestValueDialog: "Which supplement?")
