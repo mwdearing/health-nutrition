@@ -1,7 +1,7 @@
 import NutritionDomain
 import NutritionJournal
 import NutritionProviders
-import NutritionUI
+@testable import NutritionUI
 import SwiftUI
 import UIKit
 import XCTest
@@ -569,6 +569,108 @@ private struct ScreenshotProductService: CommunityProductServicing {
             }.safeAreaInset(edge: .bottom) {
                 PrimaryCapsule(AddIntakeAction.title, systemImage: "plus") {}.padding(.horizontal, DesignSpacing.m)
             }
+        }
+    }
+
+    // MARK: Screens added in the 0.1.21 to 0.1.23 builds. Same throwaway store, invented entries only.
+
+    func testTrendsView() throws {
+        let services = try makeSeededServices()
+        try capture("TrendsView") {
+            NavigationStack { TrendsView(today: services.today, journal: services.journal) }
+        }
+    }
+
+    func testInsightsHost() throws {
+        let services = try makeSeededServices()
+        services.journal.load(now: Date())
+        try capture("InsightsHost") {
+            NavigationStack { InsightsHost(journal: services.journal) }
+        }
+    }
+
+    func testInsightsView() throws {
+        let zone = TimeZone.current
+        let start = Calendar.current.startOfDay(for: Date())
+        let entries = (0..<5).map { day in
+            InsightsWeek.Entry(occurredAt: start.addingTimeInterval(Double(-86_400 * day) + 3_600), timeZoneIdentifier: zone.identifier)
+        }
+        let week = InsightsWeek.make(entries: entries, now: Date(), zone: zone)
+        let averages = InsightsAverages(lines: [
+            InsightsAverages.Line(id: "energy", text: "Energy: 1,850 kcal a day on average"),
+            InsightsAverages.Line(id: "protein", text: "Protein: 82 g a day on average"),
+        ])
+        try capture("InsightsView") {
+            NavigationStack { InsightsView(week: week, averages: averages) }
+        }
+    }
+
+    func testNutrientGapsView() throws {
+        let services = try makeSeededServices()
+        try capture("NutrientGapsView") {
+            NavigationStack { NutrientGapsView(makeModel: { NutrientGapsViewModel(store: services.journalStore) }) }
+        }
+    }
+
+    func testMacroSplitSection() throws {
+        let services = try makeSeededServices()
+        try capture("MacroSplitSection") {
+            NavigationStack { Form { MacroSplitSection(model: services.goals) } }
+        }
+    }
+
+    func testLogOnOtherDaysSheet() throws {
+        try capture("LogOnOtherDaysSheet") {
+            NavigationStack {
+                LogOnOtherDaysSheet(message: "Rolled oats, 40 g", onLog: { _ in .close }, onCancel: {}, onDone: {})
+            }
+        }
+    }
+
+    func testLibrarySearchSections() throws {
+        let services = try makeSeededServices()
+        services.library.load()
+        try capture("LibrarySearchSections") {
+            NavigationStack { List { LibrarySearchSections(library: services.library, query: "", kind: nil, onPick: { _ in }) } }
+        }
+    }
+
+    func testSavedMealSections() throws {
+        let services = try makeSeededServices()
+        try capture("SavedMealSections") {
+            NavigationStack { List { SavedMealSections(model: services.savedMeals, query: "", showsMeals: true, onLog: { _ in }) } }
+        }
+    }
+
+    func testSupplementStackView() throws {
+        let services = try makeSeededServices()
+        try capture("SupplementStackView") {
+            NavigationStack { SupplementStackView(model: services.supplementStack) }
+        }
+    }
+
+    func testSupplementStackPicker() throws {
+        let services = try makeSeededServices()
+        try capture("SupplementStackPicker") {
+            NavigationStack { SupplementStackPicker(model: services.supplementStack, now: { Date() }, onDone: {}) }
+        }
+    }
+
+    func testSupplementScheduleEditor() throws {
+        let services = try makeSeededServices()
+        try capture("SupplementScheduleEditor") {
+            NavigationStack {
+                SupplementScheduleEditor(
+                    model: services.supplementStack, title: "Vitamin D", initial: .standard,
+                    onSave: { _ in }, onRemove: nil, onCancel: {})
+            }
+        }
+    }
+
+    func testSupplementsTodayTile() throws {
+        let services = try makeSeededServices()
+        try capture("SupplementsTodayTile") {
+            NavigationStack { List { SupplementsTodayTile(model: services.supplementStack, now: { Date() }) } }
         }
     }
 }
