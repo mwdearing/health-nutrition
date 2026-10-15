@@ -104,6 +104,9 @@ struct LogSavedMealIntent: AppIntent {
     static let title: LocalizedStringResource = "Log a saved meal"
     static let description = IntentDescription("Adds every item of one of your saved meals to today's diary, as new entries.")
     static let openAppWhenRun = true
+    /// Running the action, and so logging the meal, needs an unlocked device. Choosing the saved meal (the picker
+    /// and Siri's prompts) happens before this applies, so the saved meal names can still be listed while locked.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @Parameter(title: "Saved meal")
     var savedMeal: SavedMealEntity
