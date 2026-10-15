@@ -177,6 +177,23 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The fields edited so far, and the fields focus has left since. An error shows under a field once
     /// both are true, so a person is not told a field is wrong while they are still typing in it.
     private var editedFields: Set<AddIntakeField> = []
+    /// What a prefilled amount stands for: the figure shown in the reader's unit, and the exact stored amount
+    /// behind it. Saving the form untouched writes the stored amount, so a rounded reading never restates it.
+    private var prefillBacking: (shownAmount: Decimal, shownUnit: MeasureUnit, storedAmount: Decimal, storedUnit: MeasureUnit)?
+
+    /// Shows a stored amount in the reader's unit while keeping the exact stored quantity behind it.
+    func prefillAmount(_ component: IntakeComponent, system: UnitSystem) {
+        let shown = AmountDisplay.display(component, system: system, roundsStoredUnit: true)
+        guard !shown.isBelowSmallest, !component.amount.isNaN else {
+            amountText = DecimalFormatting.text(component.amount)
+            unit = component.unit
+            prefillBacking = nil
+            return
+        }
+        amountText = DecimalFormatting.text(shown.amount)
+        unit = shown.unit
+        prefillBacking = (shown.amount, shown.unit, component.amount, component.unit)
+    }
     private var leftFields: Set<AddIntakeField> = []
     @Published public private(set) var lookupState: BarcodeLookupState = .idle
     /// Nutrients prefilled from the last successful lookup; a nutrient the source did not give
@@ -391,6 +408,10 @@ public final class AddIntakeViewModel: ObservableObject {
     private func storedQuantity(
         amount: Decimal, unit: MeasureUnit, name: String
     ) -> (amount: Decimal, unit: MeasureUnit) {
+        // An amount shown rounded in the reader's unit and left alone is saved as the exact stored quantity.
+        if let backing = prefillBacking, backing.shownAmount == amount, backing.shownUnit == unit {
+            return (backing.storedAmount, backing.storedUnit)
+        }
         if let conversion = densityConversion(amount: amount, unit: unit, name: name) {
             return (conversion.grams, .g)
         }

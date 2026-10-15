@@ -119,8 +119,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         }
         model.name = prefill.displayName
         model.category = prefill.category
-        model.amountText = DecimalFormatting.text(component.amount)
-        model.unit = component.unit
+        model.prefillAmount(component, system: preferences.unitSystem)
         return model
     }
 

@@ -139,13 +139,16 @@ public enum AmountDisplay {
 
     /// The stored amount, converted and rounded for showing. A value that is not a number, or an
     /// amount that cannot be converted, is shown as stored rather than as a wrong figure.
-    public static func display(_ amount: Decimal, unit: MeasureUnit, system: UnitSystem) -> DisplayAmount {
+    public static func display(
+        _ amount: Decimal, unit: MeasureUnit, system: UnitSystem, roundsStoredUnit: Bool = false
+    ) -> DisplayAmount {
         guard !amount.isNaN else { return DisplayAmount(amount: amount, unit: unit) }
         let target = displayUnit(for: unit, system: system)
         guard target != unit else {
-            // Weights and volumes are rounded the same way whether they were converted or not, so a
-            // scaled 354.88235475 mL reads 354.9 mL. Every other unit is shown as stored.
-            guard roundedWhenShownAsStored.contains(unit) else { return DisplayAmount(amount: amount, unit: unit) }
+            // Reading text rounds weights and volumes the same way whether they were converted or not, so a
+            // scaled 354.88235475 mL reads 354.9 mL. A field someone edits keeps the stored figure
+            // (`roundsStoredUnit` false), and every other unit is shown as stored.
+            guard roundsStoredUnit, roundedWhenShownAsStored.contains(unit) else { return DisplayAmount(amount: amount, unit: unit) }
             let rounded = DisplayRounding.rounded(amount, fractionDigits: fractionDigits(for: amount))
             return DisplayAmount(
                 amount: rounded, unit: unit, isBelowSmallest: amount != 0 && abs(rounded) < smallestShown)
@@ -212,8 +215,10 @@ public enum AmountDisplay {
     }
 
     /// The stored component's amount, shown under `system`.
-    public static func display(_ component: IntakeComponent, system: UnitSystem) -> DisplayAmount {
-        display(component.amount, unit: component.unit, system: system)
+    public static func display(
+        _ component: IntakeComponent, system: UnitSystem, roundsStoredUnit: Bool = false
+    ) -> DisplayAmount {
+        display(component.amount, unit: component.unit, system: system, roundsStoredUnit: roundsStoredUnit)
     }
 
     /// How a unit is read aloud. Spelled out rather than spoken as a symbol, because a VoiceOver user

@@ -233,9 +233,14 @@ final class AmountDisplayPreferenceTests: XCTestCase {
     /// A long scaled volume reads as a kitchen figure in both systems: 12 fl oz is 354.88235475 mL.
     func testALongScaledVolumeIsRoundedInBothSystems() {
         let stored = Decimal(string: "354.88235475")!
-        XCTAssertEqual(text(stored, .mL, .metric), "354.9 mL")
-        XCTAssertEqual(text(stored, .mL, .usCustomary), "12 fl oz")
-        XCTAssertEqual(text(Decimal(250), .mL, .metric), "250 mL")
+        func reading(_ amount: Decimal, _ system: UnitSystem) -> String {
+            AmountDisplay.display(amount, unit: .mL, system: system, roundsStoredUnit: true).text
+        }
+        XCTAssertEqual(reading(stored, .metric), "354.9 mL")
+        XCTAssertEqual(reading(stored, .usCustomary), "12 fl oz")
+        XCTAssertEqual(reading(Decimal(250), .metric), "250 mL")
+        // The unrounded display, used by fields someone edits, keeps the stored figure.
+        XCTAssertEqual(text(stored, .mL, .metric), "354.88235475 mL")
         XCTAssertEqual(text(Decimal(10), .mg, .metric), "10 mg")
     }
 

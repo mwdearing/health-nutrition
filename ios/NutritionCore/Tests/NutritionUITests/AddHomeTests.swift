@@ -45,6 +45,27 @@ final class AddHomeTests: XCTestCase {
         XCTAssertEqual(library.name, "Oats")
     }
 
+    /// A single-item prefill reads in the chosen unit, and saving it untouched writes the exact stored amount.
+    func testUnchangedSingleItemPrefillSavesTheStoredAmountUnderUS() throws {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setUnitSystem(.usCustomary)
+        for stored in ["354.88235475", "250", "400.55"] {
+            let store = try makeStore()
+            let home = AddHomeViewModel(store: store, preferences: preferences, now: { self.now })
+            let amount = Decimal(string: stored)!
+            let template = RepeatTemplate(displayName: "Drink", category: "food", meal: nil,
+                components: [IntakeComponent(componentID: "drink", name: "Drink", amount: amount, unit: .mL)])
+            let details = try home.makeDetails(prefill: template, now: now)
+            XCTAssertEqual(details.unit, .flOz)
+            if stored == "354.88235475" { XCTAssertEqual(details.amountText, "12") }
+            XCTAssertTrue(details.save(now: now))
+            let intake = try XCTUnwrap(store.activeIntakes().first)
+            let component = try XCTUnwrap(store.revisions(of: intake.id).first?.components.first)
+            XCTAssertEqual(component.unit, .mL, stored)
+            XCTAssertEqual(component.amount, amount, stored)
+        }
+    }
+
     func testQuickAddFromRecentCanBeUndone() throws {
         let store = try makeStore()
         let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
