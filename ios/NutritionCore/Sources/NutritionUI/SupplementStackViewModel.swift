@@ -19,6 +19,10 @@ public struct SupplementStackRow: Identifiable, Equatable {
     public let loggedToday: Int
     /// False when the favorite's amounts cannot be read back, so there is nothing to log.
     public let canLog: Bool
+    /// The names of the nutrients this item's label states that are above an upper limit today, where the
+    /// limit counts what this item is (any product for an all-sources limit, a supplement for the
+    /// supplement-only ones). Empty without a reference group.
+    public let aboveUpperLimit: [String]
 
     /// "1 of 2 taken today", "Not on today's schedule", or the count when more was logged than planned.
     public var statusText: String {
@@ -65,6 +69,14 @@ public final class SupplementStackViewModel: ObservableObject {
     /// Today's entries whose current revision could not be read. Each may be an item on the list, so the
     /// screen says a time may read "Not logged" when it was taken rather than showing a count it cannot back.
     @Published public private(set) var unreadableEntriesToday = 0
+    /// Today's vitamins and minerals that are above an upper limit, as rows of the vitamins and minerals
+    /// screen. They are built the way that screen builds them (`NutrientGapsViewModel.tallies` and
+    /// `NutrientGapRow`), so the two screens never disagree. Empty without a reference group.
+    @Published public private(set) var limitRows: [NutrientGapRow] = []
+    /// Whether a reference group is chosen, without which there is no limit to compare with.
+    @Published public private(set) var hasReferenceGroup = false
+    /// True when today's amounts could not be read for the limit check.
+    @Published public private(set) var limitCheckFailed = false
     /// Advances each time an erase or a restore replaced the stores, so a screen can close a picker or an
     /// editor that still shows what was there before.
     @Published public private(set) var replacements = 0
@@ -74,11 +86,15 @@ public final class SupplementStackViewModel: ObservableObject {
     private let schedules: SupplementStackStoring
     private let zoneID: () -> String
     private let makeID: () -> String
+    private let lookup: NutrientFactsLookup
+    private let referencePreferences: ReferenceGroupPreferences?
 
     public init(
         store: JournalStore,
         favorites: FavoritesStore,
         schedules: SupplementStackStoring,
+        lookup: NutrientFactsLookup = UnknownNutrientFacts(),
+        referencePreferences: ReferenceGroupPreferences? = nil,
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
@@ -86,6 +102,8 @@ public final class SupplementStackViewModel: ObservableObject {
         self.store = store
         self.favorites = favorites
         self.schedules = schedules
+        self.lookup = lookup
+        self.referencePreferences = referencePreferences
         self.zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
         self.makeID = makeID
     }
@@ -100,6 +118,7 @@ public final class SupplementStackViewModel: ObservableObject {
         let schedule: SupplementSchedule
         let matchKey: String
         let canLog: Bool
+        let aboveUpperLimit: [String]
     }
 
     private var bases: [RowBasis] = []
@@ -135,14 +154,19 @@ public final class SupplementStackViewModel: ObservableObject {
             }
             let (counted, unreadable, todayTimes) = try loggedCounts(on: clock.dayKey)
             let keptMarks = try prunedMarks(keeping: todayTimes, on: clock.dayKey)
-            var kinds: [String: ProductKind] = [:]
-            func kind(_ snapshotID: String?, category: String) -> ProductKind {
-                guard let snapshotID else { return category == Self.supplementCategory ? .supplement : .food }
-                if let known = kinds[snapshotID] { return known }
-                let found = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
-                kinds[snapshotID] = found
+            var products: [String: ProductDefinition?] = [:]
+            func product(_ snapshotID: String?) -> ProductDefinition? {
+                guard let snapshotID else { return nil }
+                if let known = products[snapshotID] { return known }
+                let found = try? store.product(snapshotID: snapshotID)
+                products[snapshotID] = found
                 return found
             }
+            func kind(_ snapshotID: String?, category: String) -> ProductKind {
+                guard snapshotID != nil else { return category == Self.supplementCategory ? .supplement : .food }
+                return product(snapshotID)?.kind ?? .food
+            }
+            let limits = upperLimitRows(now: now)
             bases = planned.compactMap { entry -> RowBasis? in
                 guard let favorite = byID[entry.key] else { return nil }
                 let template = RepeatTemplate(favorite: favorite)
@@ -150,7 +174,8 @@ public final class SupplementStackViewModel: ObservableObject {
                     favoriteID: favorite.id, title: favorite.displayName,
                     detail: template.map { AmountText.summary($0.components) } ?? "unknown",
                     kind: kind(favorite.productSnapshotID, category: favorite.category), schedule: entry.value,
-                    matchKey: Self.matchKey(favorite), canLog: template.map { !$0.components.isEmpty } ?? false)
+                    matchKey: Self.matchKey(favorite), canLog: template.map { !$0.components.isEmpty } ?? false,
+                    aboveUpperLimit: Self.limitsCounting(product(favorite.productSnapshotID), among: limits.rows))
             }
             .sorted { left, right in
                 let leftFirst = left.schedule.times.first.map(SupplementSchedule.minuteOfDay) ?? 0
@@ -163,6 +188,9 @@ public final class SupplementStackViewModel: ObservableObject {
             marks = keptMarks
             countedDay = clock.dayKey
             unreadableEntriesToday = unreadable
+            limitRows = limits.rows
+            hasReferenceGroup = limits.hasGroup
+            limitCheckFailed = limits.failed
             rows = makeRows(clock: clock)
             candidates = try makeCandidates(favorites: stored, planned: Set(planned.keys), kind: kind)
             errorMessage = nil
@@ -211,8 +239,41 @@ public final class SupplementStackViewModel: ObservableObject {
                         for: basis.schedule, recorded: recorded, unrecordedCount: logged - recorded.count,
                         minuteOfDay: clock.minuteOfDay)
                     : [],
-                loggedToday: logged, canLog: basis.canLog)
+                loggedToday: logged, canLog: basis.canLog, aboveUpperLimit: basis.aboveUpperLimit)
         }
+    }
+
+    /// Today's rows that are above an upper limit, built exactly as the vitamins and minerals screen builds
+    /// its rows. A read failure is reported rather than read as "nothing above a limit".
+    private func upperLimitRows(now: Date) -> (rows: [NutrientGapRow], hasGroup: Bool, failed: Bool) {
+        guard let group = referencePreferences?.referenceGroup else { return ([], false, false) }
+        do {
+            let day = try NutrientGapsViewModel.tallies(store: store, lookup: lookup, now: now)
+            let rows = NutrientGapsViewModel.nutrients.map { nutrient in
+                NutrientGapRow(
+                    nutrient: nutrient, label: NutrientNames.displayName(for: nutrient),
+                    unit: NutrientGapsViewModel.unit(for: nutrient), tally: day.tallies[nutrient] ?? NutrientDayTally(),
+                    reference: ReferenceIntakes.intake(for: nutrient, group: group))
+            }
+            return (rows.filter { $0.status == .aboveUpperLimit }, true, false)
+        } catch {
+            return ([], true, true)
+        }
+    }
+
+    /// The names of the over-limit nutrients this product's label states and the limit counts: every
+    /// product for an all-sources limit, only a supplement for a limit on supplements. Nothing for an item
+    /// with no product snapshot, whose label the app never saw.
+    static func limitsCounting(_ product: ProductDefinition?, among rows: [NutrientGapRow]) -> [String] {
+        guard let product else { return [] }
+        return rows.filter { row in
+            guard case .known(let amount, _) = product.value(for: row.nutrient), amount > 0 else { return false }
+            switch row.reference?.upperLimitScope {
+            case .allSources: return true
+            case .supplementsAndMedicines, .supplementsAndFortifiedFoods: return product.kind == .supplement
+            case .folicAcid, .preformedVitaminA, nil: return false
+            }
+        }.map(\.label)
     }
 
     /// Drops what the last read kept, so the next refresh reads everything again.
@@ -222,6 +283,8 @@ public final class SupplementStackViewModel: ObservableObject {
         marks = [:]
         countedDay = nil
         unreadableEntriesToday = 0
+        limitRows = []
+        limitCheckFailed = false
     }
 
     /// The schedules whose favorite still exists. A favorite removed in the Library takes its schedule
