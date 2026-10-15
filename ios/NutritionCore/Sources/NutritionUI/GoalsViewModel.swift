@@ -470,10 +470,16 @@ public final class GoalsViewModel: ObservableObject {
         var previousEnergy: NutrientGoal?
         if nutrient == Self.energyKey { previousEnergy = (try? store.goal(for: Self.energyKey)) ?? nil }
         if nutrient == DailyTotalsBuilder.waterKey { committedWater = nil }
-        guard setTarget(text, for: nutrient, unit: selectedUnits[nutrient]) else { return false }
+        // The unit the write uses, taken before setTarget: its load() can move selectedUnits to a new
+        // display unit, and the record must pair the text with the unit it was written in.
+        let writtenUnit = selectedUnits[nutrient]
+        guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
         draftText[nutrient] = DecimalFormatting.text(target)
-        if nutrient == DailyTotalsBuilder.waterKey, let written = try? store.goal(for: nutrient) {
-            committedWater = (draftText[nutrient] ?? text, selectedUnits[nutrient], written)
+        if nutrient == DailyTotalsBuilder.waterKey {
+            selectedUnits[nutrient] = writtenUnit
+            if let written = try? store.goal(for: nutrient) {
+                committedWater = (draftText[nutrient] ?? text, writtenUnit, written)
+            }
         }
         if nutrient == Self.energyKey { followEnergyGoal(from: previousEnergy) }
         return true

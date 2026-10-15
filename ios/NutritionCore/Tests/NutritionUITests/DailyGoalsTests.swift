@@ -180,6 +180,26 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.selectedUnits["water"], .mL)
     }
 
+    /// The display preference moves (another scene) between the last read and the commit: the commit's
+    /// own reload must not re-pair the typed text with the new display unit.
+    func testAWaterCommitKeepsTheUnitItWasWrittenInWhenThePreferenceMovesFirst() throws {
+        let goals = InMemoryGoalStore(goals: [])
+        let preferences = InMemoryDisplayPreferences(unitSystem: .metric)
+        let model = GoalsViewModel(store: goals, preferences: preferences)
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .mL
+        preferences.unitSystem = .usCustomary
+
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(8))
+        XCTAssertEqual(model.draftText["water"], "8")
+        XCTAssertEqual(model.selectedUnits["water"], .mL)
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(8))
+    }
+
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideRemoval() throws {
         let goals = InMemoryGoalStore(goals: [])
         let model = GoalsViewModel(
