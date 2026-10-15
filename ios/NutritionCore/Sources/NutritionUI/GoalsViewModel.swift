@@ -197,6 +197,14 @@ public final class GoalsViewModel: ObservableObject {
     /// "still what I committed" from "typed since". Cleared once the field follows the store.
     private var committedWater: (text: String, unit: MeasureUnit?, goal: NutrientGoal?)?
 
+    /// A person's edit of a field, from the view's binding. For water it drops the commit record even
+    /// when the new text equals the committed text, because a value comparison cannot tell a retyped
+    /// "8" from an untouched one; only the binding's setter runs for a real edit, not for focus alone.
+    public func userEditedDraft(_ text: String, for nutrient: String) {
+        if nutrient == DailyTotalsBuilder.waterKey { committedWater = nil }
+        draftText[nutrient] = text
+    }
+
     private func dropCommittedWaterIfEdited() {
         guard let committed = committedWater else { return }
         let key = DailyTotalsBuilder.waterKey

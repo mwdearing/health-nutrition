@@ -283,6 +283,43 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertNotEqual(try goals.goal(for: "water")?.target, Decimal(3000))
     }
 
+    /// One replacing edit that leaves the text identical still arrives through the view's setter, and
+    /// it is the person's input.
+    func testAnIdenticalReplacingEditOfTheCommittedWaterTextIsTheirInput() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+
+        model.userEditedDraft("8", for: "water")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 2)
+        XCTAssertEqual(model.draftText["water"], "8")
+    }
+
+    /// Focus and blur without an edit still follow the store and write nothing.
+    func testBlurWithoutAnEditAfterAnOutsideRemovalFollowsTheStore() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.removeGoal(nutrient: "water")
+
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 1)
+        XCTAssertNil(try goals.goal(for: "water"))
+        XCTAssertEqual(model.draftText["water"], "")
+    }
+
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideRemoval() throws {
         let goals = InMemoryGoalStore(goals: [])
         let model = GoalsViewModel(
@@ -298,7 +335,6 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertTrue(model.commitTarget(for: "water"))
         XCTAssertNil(try goals.goal(for: "water"))
     }
-
 
     /// Water has a target too, in mL, and its own line compares the day's water against it.
     func testAWaterGoalComparesTheDaysWaterInMilliliters() throws {

@@ -90,7 +90,7 @@ public struct GoalsView: View {
             HStack {
                 TextField("None", text: Binding(
                     get: { self.model.draftText[row.nutrient] ?? "" },
-                    set: { self.model.draftText[row.nutrient] = $0 }))
+                    set: { self.model.userEditedDraft($0, for: row.nutrient) }))
                     .font(.body)
                     .foregroundStyle(TokenColors.textPrimary)
                     .decimalKeyboard()
