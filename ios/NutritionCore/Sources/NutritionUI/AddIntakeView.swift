@@ -295,11 +295,12 @@ public struct AddIntakeView: View {
             .joined(separator: " ")
     }
 
-    /// A nutrient the source did not give reads as "Not on the label", never as zero.
+    /// A nutrient the source did not give reads as "Not on the label", never as zero. A figure reads as the
+    /// label stated it, unless it is longer than a label prints (`AmountDisplay.stated`).
     static func text(for value: NutrientValue?) -> String {
         switch value {
         case .known(let amount, let unit):
-            return "\(amount) \(unit.symbol)"
+            return AmountDisplay.stated(amount, unit: unit).text
         case .unknown:
             return "Not on the label"
         case .notApplicable:

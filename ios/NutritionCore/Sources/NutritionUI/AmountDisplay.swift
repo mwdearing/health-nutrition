@@ -172,6 +172,20 @@ public enum AmountDisplay {
             amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0, smallestAmount: smallest)
     }
 
+    /// The most fraction digits a figure printed on a label carries: the catalog states none with more
+    /// (`contracts/nutrients/decimal-rules.md`).
+    public static let statedFractionDigits = 6
+
+    /// A product's own figure for one nutrient, as All values lists it: exactly as stated when it has no more
+    /// fraction digits than a label prints, and otherwise as `nutrient(_:unit:)` reads it. A longer figure was
+    /// worked out rather than printed: repeating a multi-food entry stores values already scaled to what it
+    /// logged, and a source can state a figure it computed itself, such as sodium from salt.
+    public static func stated(_ amount: Decimal, unit: MeasureUnit) -> DisplayAmount {
+        guard !amount.isNaN, DisplayRounding.rounded(amount, fractionDigits: statedFractionDigits) != amount
+        else { return DisplayAmount(amount: amount, unit: unit) }
+        return nutrient(amount, unit: unit)
+    }
+
     /// Water cards and goals show whole, grouped mL or the existing rounded fl oz.
     public static func water(
         _ amount: Decimal, unit: MeasureUnit = .mL, system: UnitSystem
