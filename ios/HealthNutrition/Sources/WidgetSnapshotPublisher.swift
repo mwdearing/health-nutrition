@@ -22,21 +22,30 @@ final class WidgetSnapshotPublisher {
     func start(today: TodayViewModel, isErasing: @escaping () -> Bool = { false }) {
         guard store != nil else { return }
         self.isErasing = isErasing
-        subscription = today.objectWillChange
-            // objectWillChange fires before the values change; the next run loop turn sees the new ones.
-            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self, weak today] _ in
+        subscription = Self.emissionTimes(of: today.objectWillChange)
+            .sink { [weak self, weak today] changedAt in
                 guard let self, let today else { return }
-                self.publish(from: today)
+                // objectWillChange fires before the values change; by the time the debounce delivers, the new ones are in.
+                self.publish(from: today, at: changedAt)
             }
-        publish(from: today)
+        publish(from: today, at: Date())
     }
 
-    func publish(from today: TodayViewModel) {
+    /// The time of each change, taken when the change was announced and delivered after the debounce. The snapshot is
+    /// stamped with that time and not the time of the write, so a load that finished at 23:59:59 and is written just
+    /// after midnight still carries yesterday's time and goes stale at midnight instead of being shown as today's.
+    nonisolated static func emissionTimes<P: Publisher>(
+        of publisher: P, debounce: DispatchQueue.SchedulerTimeType.Stride = .milliseconds(300),
+        on scheduler: DispatchQueue = .main, now: @escaping () -> Date = { Date() }
+    ) -> AnyPublisher<Date, Never> where P.Failure == Never {
+        publisher.map { _ in now() }.debounce(for: debounce, scheduler: scheduler).eraseToAnyPublisher()
+    }
+
+    func publish(from today: TodayViewModel, at time: Date = Date()) {
         guard let store, !isErasing(),
             Self.shouldPublish(errorMessage: today.errorMessage, hasLoaded: !today.dateSubtitle.isEmpty)
         else { return }
-        let snapshot = Self.snapshot(from: today, now: Date())
+        let snapshot = Self.snapshot(from: today, now: time)
         do {
             try store.write(snapshot)
             WidgetCenter.shared.reloadAllTimelines()
