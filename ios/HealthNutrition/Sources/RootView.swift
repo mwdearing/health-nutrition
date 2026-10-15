@@ -272,6 +272,10 @@ struct RootView: View {
             await self.services.account?.load()
             await self.services.productSharing?.runDueOperations(now: Date())
         }
+        // A shortcut wrote an entry in this process: reload and deliver as after an add made in the app.
+        .onReceive(NotificationCenter.default.publisher(for: AppServicesRegistry.journalWrittenByShortcut)) { _ in
+            reload()
+        }
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
