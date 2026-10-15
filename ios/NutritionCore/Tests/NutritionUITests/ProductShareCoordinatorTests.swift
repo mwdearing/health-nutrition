@@ -277,6 +277,22 @@ extension ProductShareCoordinatorTests {
         let owners = await products.consentCalls
         XCTAssertEqual(owners, [UUID(uuidString: session.userID)!])
     }
+    @MainActor func testRefusedAcknowledgmentSaysSoInsteadOfDoingNothing() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        // The server never reports the caller's acknowledgment back, so Continue cannot complete.
+        await products.setCapabilities(ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
+            limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
+            callerAcknowledgment: nil, consentGeneration: "1", sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1))
+        let preferences = InMemoryDisplayPreferences()
+        let account = AccountViewModel(service: service, preferences: preferences, productService: products)
+        await account.load()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertNil(account.message)
+        await account.acknowledgeProductDisclosure()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertEqual(account.message, AccountViewModel.genericMessage)
+        XCTAssertFalse(account.isBusy)
+    }
     @MainActor func testConsentReplyAfterSignOutCannotAcknowledgeOldOwner() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
         let preferences = InMemoryDisplayPreferences()

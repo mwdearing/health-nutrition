@@ -326,21 +326,32 @@ public final class AccountViewModel: ObservableObject {
     /// Version-two consent is an owner-bound server acknowledgment, independent of sharing permission.
     public func acknowledgeProductDisclosure() async {
         guard let productService else { acknowledgeDisclosure(); return }
-        guard !isBusy, profileReady, let userID = currentUserID, let owner = UUID(uuidString: userID) else { return }
+        guard !isBusy, let userID = currentUserID, let owner = UUID(uuidString: userID) else { return }
+        // Every refusal below says so: the disclosure sheet has no other way to show why Continue did nothing.
+        guard profileReady else { message = Self.profileNotReadyMessage; return }
         let identity = accountIdentity
         busyCount += 1
         defer { busyCount -= 1 }
         do {
             let capability = try await productService.capabilities()
-            guard currentUserID == userID, accountIdentity == identity, capability.supportedVersion == 2 else { return }
+            guard currentUserID == userID, accountIdentity == identity, capability.supportedVersion == 2 else {
+                if currentUserID == userID, accountIdentity == identity { message = Self.genericMessage }
+                return
+            }
             let consent = try await productService.acknowledgeConsent(version: 2, expectedOwnerID: owner)
             guard currentUserID == userID, accountIdentity == identity, consent.version == 2,
-                  consent.acknowledged, consent.generation == capability.consentGeneration else { return }
+                  consent.acknowledged, consent.generation == capability.consentGeneration else {
+                if currentUserID == userID, accountIdentity == identity { message = Self.genericMessage }
+                return
+            }
             let refreshed = try await productService.capabilities()
             guard currentUserID == userID, accountIdentity == identity,
                   refreshed.consentGeneration == consent.generation,
                   refreshed.callerAcknowledgment?.version == 2,
-                  refreshed.callerAcknowledgment?.generation == consent.generation else { return }
+                  refreshed.callerAcknowledgment?.generation == consent.generation else {
+                if currentUserID == userID, accountIdentity == identity { message = Self.genericMessage }
+                return
+            }
             productCapabilities = refreshed
             preferences.setHasSeenCommunityDisclosure(true, for: userID)
             needsDisclosure = false

@@ -31,6 +31,13 @@ public struct SharingDisclosureSheet: View {
                     ))
                     .disabled(!model.profileReady || model.isBusy)
                 }
+                if let message = model.message {
+                    Section {
+                        Text(message)
+                            .font(.callout)
+                            .foregroundStyle(TokenColors.textPrimary)
+                    }
+                }
                 Section {
                     Button("Continue") {
                         Task {
