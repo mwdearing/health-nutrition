@@ -76,6 +76,8 @@ final class AppServices {
     /// screen, and an erase or a restore drops what it read whether or not it is. A list out of view reads
     /// everything when it next appears.
     private var supplementStackRefresh: [AnyCancellable] = []
+    /// Reads the saved meals again after a journal restore, which can now write them.
+    private var savedMealsRestoreRefresh: AnyCancellable?
 
     deinit { connectivityMonitor?.cancel() }
 
@@ -139,7 +141,7 @@ final class AppServices {
             reminderErasers.append(CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures))
         }
         connections = ConnectionsPrivacyViewModel(
-            store: journalStore, favorites: favoritesStore, appVersion: Self.appVersion,
+            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
             erasers: ([journalStore, favoritesStore, recipeStore, goalStore, savedMealStore] as [JournalErasing])
                 + reminderErasers + ([supplementSchedules] as [JournalErasing]),
             preferences: displayPreferences,
@@ -216,6 +218,11 @@ final class AppServices {
         // Set once every stored property is, so the Journal and Find products can reach saved meals.
         library.savedMeals = savedMeals
         journal.savedMeals = savedMeals
+        // A restore writes the saved meals list as well as the journal, so the list is read again once its
+        // generation advances, which is after every store has its new state.
+        savedMealsRestoreRefresh = connections.$journalRestoreGeneration.dropFirst().sink { [weak savedMeals] _ in
+            MainActor.assumeIsolated { savedMeals?.load() }
+        }
     }
 
     /// The community client, or nil when the build carries no project settings. The client reads them from the

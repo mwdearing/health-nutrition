@@ -381,23 +381,66 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
     }
 }
 
-/// The exported document, schema version 3. See `contracts/journal-export/v3.schema.json`.
+/// A saved meal, exported as the named group of templates it is. Each item has the shape of a favorite and
+/// states no meal of its own (`meal` is `null`); the group's `meal` applies to all of them.
+public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
+    public var id: String
+    public var name: String
+    /// A `MealLabel` raw value, or `null` for none.
+    public var meal: String?
+    /// In the order the meal was saved, which is the order its items are logged.
+    public var items: [JournalExportFavorite]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case meal
+        case items
+    }
+
+    public init(id: String, name: String, meal: String?, items: [JournalExportFavorite]) {
+        self.id = id
+        self.name = name
+        self.meal = meal
+        self.items = items
+    }
+
+    /// An item's amounts are written as a favorite's are, so an inexact one is refused here, not on restore.
+    public init(savedMeal: JournalSavedMeal) throws {
+        self.init(
+            id: savedMeal.id, name: savedMeal.name, meal: savedMeal.meal?.rawValue,
+            items: try savedMeal.items.map { try JournalExportFavorite(favorite: $0) })
+    }
+
+    /// `meal` is required-but-nullable in the schema and is always written.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try encodeNullable(meal, forKey: .meal, in: &container)
+        try container.encode(items, forKey: .items)
+    }
+}
+
+/// The exported document, schema version 4. See `contracts/journal-export/v4.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
-/// written against version 1 keeps working. This build writes only version 3 and reads all three, so a backup
-/// taken before the product kind or a revision's own time existed still restores. Version 3 is also what
-/// tells an older build to stop: a build that reads only versions 1 and 2 refuses the file by its version,
-/// instead of refusing a newer unit symbol (`gummy`, `piece`) partway through as a corrupt amount.
+/// written against version 1 keeps working. This build writes only version 4 and reads all four, so a backup
+/// taken before the product kind, a revision's own time or saved meals existed still restores. Version 3 is
+/// also what tells an older build to stop: a build that reads only versions 1 and 2 refuses the file by its
+/// version, instead of refusing a newer unit symbol (`gummy`, `piece`) partway through as a corrupt amount.
+/// Version 4 adds `saved_meals`, so a build that reads at most version 3 refuses a backup holding them rather
+/// than restore it without them.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 3
+    public static let currentSchemaVersion = 4
 
     /// Every version this build reads, in the order they were written.
     ///
     /// Version 1 is here because its documents are still backups people hold: it has no product kind and
     /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
     /// backup. Anything outside this set is refused by value rather than by shape.
-    public static let readableSchemaVersions: Set<Int> = [1, 2, currentSchemaVersion]
+    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
@@ -409,6 +452,9 @@ public struct JournalExport: Sendable, Hashable, Codable {
     /// in `provenance`; this list is what lets a favorite outlive the intakes it came from, so a later import
     /// can repeat it without the catalog.
     public var products: [JournalExportProvenance]
+    /// The saved meals, from version 4, in the list's own order. Empty for a document of an earlier version,
+    /// which has no such field.
+    public var savedMeals: [JournalExportSavedMeal]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -418,12 +464,13 @@ public struct JournalExport: Sendable, Hashable, Codable {
         case tombstones
         case favorites
         case products
+        case savedMeals = "saved_meals"
     }
 
     public init(
         schemaVersion: Int = JournalExport.currentSchemaVersion, exportedAt: Date, appVersion: String,
         intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite],
-        products: [JournalExportProvenance] = []
+        products: [JournalExportProvenance] = [], savedMeals: [JournalExportSavedMeal] = []
     ) {
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
@@ -432,6 +479,36 @@ public struct JournalExport: Sendable, Hashable, Codable {
         self.tombstones = tombstones
         self.favorites = favorites
         self.products = products
+        self.savedMeals = savedMeals
+    }
+
+    /// `saved_meals` is read only from version 4. The importer's shape check has already refused it in an
+    /// earlier version, and requires it in version 4.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        exportedAt = try container.decode(Date.self, forKey: .exportedAt)
+        appVersion = try container.decode(String.self, forKey: .appVersion)
+        intakes = try container.decode([JournalExportIntake].self, forKey: .intakes)
+        tombstones = try container.decode([JournalExportTombstone].self, forKey: .tombstones)
+        favorites = try container.decode([JournalExportFavorite].self, forKey: .favorites)
+        products = try container.decode([JournalExportProvenance].self, forKey: .products)
+        savedMeals = schemaVersion >= 4
+            ? try container.decode([JournalExportSavedMeal].self, forKey: .savedMeals) : []
+    }
+
+    /// `saved_meals` is written only for version 4 and later, so a document of an earlier version keeps the
+    /// shape its schema allows.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(exportedAt, forKey: .exportedAt)
+        try container.encode(appVersion, forKey: .appVersion)
+        try container.encode(intakes, forKey: .intakes)
+        try container.encode(tombstones, forKey: .tombstones)
+        try container.encode(favorites, forKey: .favorites)
+        try container.encode(products, forKey: .products)
+        if schemaVersion >= 4 { try container.encode(savedMeals, forKey: .savedMeals) }
     }
 }
 
@@ -465,6 +542,29 @@ public enum JournalExportError: Error, Sendable, Equatable {
     /// A revision has its own instant without its time zone, or a zone without an instant, so it cannot say
     /// when the intake happened where the person was and the importer would refuse the file.
     case unpairedRevisionTime(String)
+    /// A saved meal breaks a rule the importer enforces (its name, its item count, its meal, the list's size);
+    /// the field path is safe to show in diagnostics.
+    case invalidSavedMeal(String)
+}
+
+/// A favorite, or a saved meal's item, which has a favorite's shape: every amount known and exact, and every
+/// unit one the importer can restore.
+private func validateExportTemplate(_ template: JournalExportFavorite, path: String) throws {
+    try requireExportText(template.id, field: "\(path).id")
+    try requireExportText(template.displayName, field: "\(path).display_name")
+    try requireExportText(template.category, field: "\(path).category")
+    for (componentIndex, component) in template.components.enumerated() {
+        let componentPath = "\(path).components[\(componentIndex)]"
+        guard component.valueState == .known else {
+            throw JournalExportError.unknownFavoriteAmount("\(componentPath).value_state")
+        }
+        try validateKnownExportAmount(component, path: "\(componentPath).amount")
+        let field = "\(componentPath).unit"
+        try requireExportText(component.unit, field: field)
+        guard (try? MeasureUnit(symbol: component.unit)) != nil else {
+            throw JournalExportError.unknownFavoriteUnit(field)
+        }
+    }
 }
 
 private func requireExportText(_ text: String, field: String) throws {
@@ -528,21 +628,30 @@ private func validateExportRequiredFields(_ document: JournalExport) throws {
         try requireExportText(tombstone.timeZoneIdentifier, field: "tombstones[\(index)].time_zone")
     }
     for (index, favorite) in document.favorites.enumerated() {
-        let path = "favorites[\(index)]"
-        try requireExportText(favorite.id, field: "\(path).id")
-        try requireExportText(favorite.displayName, field: "\(path).display_name")
-        try requireExportText(favorite.category, field: "\(path).category")
-        for (componentIndex, component) in favorite.components.enumerated() {
-            let componentPath = "\(path).components[\(componentIndex)]"
-            guard component.valueState == .known else {
-                throw JournalExportError.unknownFavoriteAmount("\(componentPath).value_state")
-            }
-            try validateKnownExportAmount(component, path: "\(componentPath).amount")
-            let field = "\(componentPath).unit"
-            try requireExportText(component.unit, field: field)
-            guard (try? MeasureUnit(symbol: component.unit)) != nil else {
-                throw JournalExportError.unknownFavoriteUnit(field)
-            }
+        try validateExportTemplate(favorite, path: "favorites[\(index)]")
+    }
+    // A saved meal is written only from version 4; an earlier document must not carry one.
+    guard document.schemaVersion >= 4 || document.savedMeals.isEmpty else {
+        throw JournalExportError.invalidSavedMeal("saved_meals")
+    }
+    guard document.savedMeals.count <= JournalSavedMealLimits.maximumMeals else {
+        throw JournalExportError.invalidSavedMeal("saved_meals")
+    }
+    for (index, savedMeal) in document.savedMeals.enumerated() {
+        let path = "saved_meals[\(index)]"
+        try requireExportText(savedMeal.id, field: "\(path).id")
+        let name = JournalSavedMealLimits.trimmedName(savedMeal.name)
+        guard !name.isEmpty, name.count <= JournalSavedMealLimits.maximumNameLength else {
+            throw JournalExportError.invalidSavedMeal("\(path).name")
+        }
+        if let meal = savedMeal.meal, MealLabel(rawValue: meal) == nil {
+            throw JournalExportError.invalidSavedMeal("\(path).meal")
+        }
+        guard (1...JournalSavedMealLimits.maximumItems).contains(savedMeal.items.count) else {
+            throw JournalExportError.invalidSavedMeal("\(path).items")
+        }
+        for (itemIndex, item) in savedMeal.items.enumerated() {
+            try validateExportTemplate(item, path: "\(path).items[\(itemIndex)]")
         }
     }
     for (index, product) in document.products.enumerated() {
@@ -594,13 +703,15 @@ public enum JournalExporter {
     /// Date stamp of the file name, in UTC so the name does not depend on where the export was made.
     public static let fileNameDateFormat = "yyyy-MM-dd-HHmmss"
 
-    /// Reads the whole journal, its tombstones and the favorites, and builds the document.
-    /// Collections are sorted by id so two runs over the same data produce the same document.
+    /// Reads the whole journal, its tombstones, the favorites and the saved meals, and builds the document.
+    /// Collections are sorted by id so two runs over the same data produce the same document; saved meals keep
+    /// the list's own order, which is the only order they have, and their items the order they are logged in.
     ///
     /// A store that offers `readJournalSnapshot()` is read in one pass, so a deletion or an edit that lands
     /// mid-export cannot leave an entry in neither the intakes nor the tombstones.
     public static func makeExport(
-        store: JournalStore, favorites: FavoritesStore? = nil, appVersion: String, exportedAt: Date
+        store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
+        appVersion: String, exportedAt: Date
     ) throws -> JournalExport {
         let snapshot: JournalSnapshot?
         if let source = store as? JournalSnapshotSource {
@@ -672,6 +783,18 @@ public enum JournalExporter {
                 productsByID[snapshotID] = JournalExportProvenance(product: product)
             }
         }
+        var savedMealList: [JournalExportSavedMeal] = []
+        if let savedMeals {
+            savedMealList = try savedMeals.journalSavedMeals().map { try JournalExportSavedMeal(savedMeal: $0) }
+            // An item keeps its product for the reason a favorite does: logging the meal again needs the snapshot.
+            for item in savedMealList.flatMap(\.items) {
+                guard let snapshotID = item.productSnapshotID, productsByID[snapshotID] == nil else { continue }
+                guard let product = try store.product(snapshotID: snapshotID) else {
+                    throw JournalExportError.missingProductSnapshot(snapshotID)
+                }
+                productsByID[snapshotID] = JournalExportProvenance(product: product)
+            }
+        }
         let document = JournalExport(
             exportedAt: exportedAt, appVersion: appVersion,
             intakes: intakes.sorted { $0.id < $1.id },
@@ -679,7 +802,8 @@ public enum JournalExporter {
             // Favorites are sorted by id so two runs over the same favorites produce the same bytes: the favorites
             // store lists newest first, which would otherwise make the order depend on when things were added.
             favorites: favoriteList.sorted { $0.id < $1.id },
-            products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID })
+            products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID },
+            savedMeals: savedMealList)
         try validateExportRequiredFields(document)
         return document
     }
@@ -847,10 +971,11 @@ public enum JournalExporter {
         }
 
         let seconds: Date
-        let usesLegacyUTCCalendar = (1...3).contains(schemaVersion)
+        // Every version this build reads, the one it writes included: the writer still uses that calendar.
+        let usesLegacyUTCCalendar = JournalExport.readableSchemaVersions.contains(schemaVersion)
             && (secondsText.hasSuffix("Z") || secondsText.hasSuffix("z"))
         if hasCanonicalISOWholeSecondShape(secondsText) {
-            // V1-v3 backups are written and read with Foundation's historical Julian/Gregorian calendar (the
+            // V1-v4 backups are written and read with Foundation's historical Julian/Gregorian calendar (the
             // writer still uses it, so the version this build writes has to read it the same way).
             // Keep that meaning for the schemas people already hold, while requiring a formatter round-trip
             // so invalid or normalized calendar dates are still refused.

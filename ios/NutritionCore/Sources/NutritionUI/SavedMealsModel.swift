@@ -11,9 +11,9 @@ public struct SavedMealUndoToken: Equatable {
 
 /// The saved meals screens share: the list, saving a Journal meal, logging one and undoing it.
 ///
-/// It keeps what it last read. The app reads it again after Erase all data, and each screen that lists saved
-/// meals reads it again as it appears, so a list another window changed is not shown stale. A journal
-/// restore does not carry saved meals, so it leaves the list as it is.
+/// It keeps what it last read. The app reads it again after Erase all data and after a journal restore (which
+/// can write saved meals from export version 4), and each screen that lists saved meals reads it again as it
+/// appears, so a list another window changed is not shown stale.
 @MainActor
 public final class SavedMealsModel: ObservableObject {
     /// Newest first.

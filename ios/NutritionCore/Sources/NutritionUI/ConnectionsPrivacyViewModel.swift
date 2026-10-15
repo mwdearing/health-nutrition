@@ -124,12 +124,15 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "That file was made by a newer version of the app, so this one cannot read it."
     public static let importNotEmptyMessage =
         "This phone already has journal entries. An import only works on a journal that is empty."
+    /// A version 4 backup carries the whole saved meals list, so it is not restored over saved meals the phone keeps.
+    public static let importSavedMealsNotEmptyMessage =
+        "This phone already has saved meals. An import that includes saved meals only works when there are none."
     /// An import asked for while an erase was running. It is refused rather than queued, because a restore
     /// that landed afterwards would put back what the person had just deleted.
     public static let importDuringEraseMessage =
         "Data was being erased, so nothing was imported. Try again once that is finished."
     public static let partialRestoreWarningMessage =
-        "The journal restore was incomplete; entries may already be present. Check your journal before importing this file again."
+        "The restore was incomplete; journal entries or saved meals may already be present. Check your journal and saved meals before importing this file again."
     /// An erase that found a restore still running and would not wait any longer.
     public static let eraseWaitTimedOutMessage =
         "An import was still running, so nothing was erased. Try again in a moment."
@@ -137,7 +140,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
     public static let eraseConfirmationMessage =
-        "Every entry, favorite, recipe and daily goal this app stores on this device is deleted, and the daily reminder "
+        "Every entry, favorite, saved meal, recipe, supplement and daily goal this app stores on this device is deleted, and the daily reminder "
         + "is switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
         + "it there yourself. Erasing also signs you out on this phone; your community account and any "
@@ -146,7 +149,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
     /// only in the dialog that follows.
     public static let eraseFooterMessage =
-        "Erases the journal, favorites, recipes and daily goals this app stores on this device and switches off the daily "
+        "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily "
         + "reminder, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
         + "or in another app — is not erased: delete it there yourself. Erasing signs you out on this phone; "
         + "your community account and any shared labels remain on the server."
@@ -254,6 +257,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let preferences: DisplayPreferencesWriting
     private let store: JournalStore
     private let favorites: FavoritesStore?
+    /// Where an export reads saved meals and an import writes them; nil leaves them out of both.
+    private let savedMeals: JournalSavedMealsStore?
     private let appVersion: String
     private let writer: ConnectionsPrivacyExportWriter
     private let remover: ConnectionsPrivacyExportRemover
@@ -313,7 +318,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ///   is the default, so a host that does not persist anything still gets a working screen and a
     ///   test needs no defaults domain.
     public init(
-        store: JournalStore, favorites: FavoritesStore? = nil,
+        store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
         erasers: [JournalErasing] = [],
@@ -325,6 +330,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ) {
         self.store = store
         self.favorites = favorites
+        self.savedMeals = savedMeals
         self.appVersion = appVersion
         self.writer = writer
         self.erasers = erasers
@@ -511,7 +517,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
-                store: store, favorites: favorites, appVersion: appVersion, exportedAt: now)
+                store: store, favorites: favorites, savedMeals: savedMeals, appVersion: appVersion, exportedAt: now)
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
@@ -737,6 +743,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // Read out of the main actor's own state first, so the background task touches nothing here.
         let store = store
         let favorites = favorites
+        let savedMeals = savedMeals
         // Counted first, then read: this import's token is the number *after* its own increment, which is
         // what `apply` compares against. Reading before incrementing hands out the previous import's number,
         // so every outcome looks stale and none is ever published.
@@ -758,7 +765,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             // the main actor, so it has to be signalled by the work it is waiting for.
             defer { gate.end() }
             do {
-                return .imported(try JournalImporter.importExport(data, into: store, favorites: favorites))
+                return .imported(
+                    try JournalImporter.importExport(data, into: store, favorites: favorites, savedMeals: savedMeals))
             } catch let error as JournalImportError {
                 return .failed(.refused(error))
             } catch {
@@ -924,7 +932,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let entries = summary.intakes == 1 ? "1 entry" : "\(summary.intakes) entries"
         let deleted = summary.tombstones == 0 ? "" : " and \(summary.tombstones) deleted"
         let favorites = summary.favorites == 0 ? "" : ", \(summary.favorites) favorites"
-        return "Imported \(entries)\(deleted)\(favorites)."
+        let savedMeals = summary.savedMeals == 0 ? ""
+            : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(summary.savedMeals) saved meals"
+        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)."
     }
 
     public static func importFailureText(for error: JournalImportError) -> String {
@@ -933,6 +943,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importUnsupportedVersionMessage
         case .notEmpty:
             return importNotEmptyMessage
+        case .savedMealsNotEmpty:
+            return importSavedMealsNotEmptyMessage
         case .tooLarge:
             return "This journal export is too large to import."
         case .malformed, .corrupt:
