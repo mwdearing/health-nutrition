@@ -128,7 +128,7 @@ final class AppServices {
         // upper-limit notes say what that screen says.
         supplementStack = SupplementStackViewModel(
             store: journalStore, favorites: favoritesStore, schedules: supplementSchedules,
-            lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences),
+            lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
             preferences: displayPreferences)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
