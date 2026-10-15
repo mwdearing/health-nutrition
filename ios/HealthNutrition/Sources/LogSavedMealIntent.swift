@@ -77,16 +77,26 @@ struct SavedMealEntity: AppEntity {
 
 /// Reads the saved meals straight from their store, so the list is there even before the app has opened.
 struct SavedMealQuery: EntityQuery {
+    /// The title a shortcut shows for a saved meal deleted since it was set up; running it says the same.
+    static let deletedTitle = SavedMealShortcut.unavailableMessage
+
     func entities(for identifiers: [SavedMealEntity.ID]) async throws -> [SavedMealEntity] {
-        Self.all().filter { identifiers.contains($0.id) }
+        Self.entities(for: identifiers, in: try? UserDefaultsSavedMealStore().meals())
     }
 
     func suggestedEntities() async throws -> [SavedMealEntity] {
-        Self.all()
+        ((try? UserDefaultsSavedMealStore().meals()) ?? []).map { SavedMealEntity(id: $0.id, name: $0.name) }
     }
 
-    private static func all() -> [SavedMealEntity] {
-        ((try? UserDefaultsSavedMealStore().meals()) ?? []).map { SavedMealEntity(id: $0.id, name: $0.name) }
+    /// Every id a shortcut names gets an entity, so the action runs and answers for itself: a saved meal deleted
+    /// since (or a list that cannot be read) stands in under `deletedTitle` rather than being dropped, which would
+    /// leave the shortcut asking for another meal. Only ids a shortcut already holds come here; the picker
+    /// offers saved meals as they are.
+    static func entities(for identifiers: [String], in meals: [SavedMeal]?) -> [SavedMealEntity] {
+        identifiers.map { id in
+            meals?.first { $0.id == id }.map { SavedMealEntity(id: $0.id, name: $0.name) }
+                ?? SavedMealEntity(id: id, name: deletedTitle)
+        }
     }
 }
 

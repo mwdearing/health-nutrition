@@ -82,6 +82,21 @@ final class LogSavedMealShortcutTests: XCTestCase {
         XCTAssertFalse(wrote)
     }
 
+    func testAShortcutsDeletedSavedMealStillRunsAndSaysSo() {
+        let entities = SavedMealQuery.entities(for: ["meal-1", "gone"], in: [saved()])
+        XCTAssertEqual(entities.map(\.id), ["meal-1", "gone"])
+        XCTAssertEqual(entities.map(\.name), ["Usual breakfast", SavedMealShortcut.unavailableMessage])
+        // A list that cannot be read keeps the id too, so the action reports that rather than asking again.
+        XCTAssertEqual(SavedMealQuery.entities(for: ["meal-1"], in: nil).map(\.id), ["meal-1"])
+        // The deleted meal's id reaches the action, which answers instead of asking for another meal.
+        XCTAssertFalse(SavedMealShortcut.needsSavedMeal(id: "gone", meals: [saved()]))
+        XCTAssertEqual(
+            SavedMealShortcut.log(id: "gone", meal: nil, now: now, meals: [saved()]) { _, _, _ in
+                SavedMealLogResult(createdIDs: ["a"], skippedCount: 0)
+            }.message,
+            "This saved meal is no longer available.")
+    }
+
     func testAFailedWriteSaysSoAndReportsLeftovers() {
         let failed = SavedMealShortcut.log(id: "meal-1", meal: nil, now: now, meals: [saved()]) { _, _, _ in
             throw WriteFailed()
