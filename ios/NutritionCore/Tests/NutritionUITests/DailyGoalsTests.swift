@@ -19,6 +19,31 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
     }
 }
 
+/// A goal store that counts writes, can be written behind a screen's back without counting, and can
+/// refuse single-goal reads or writes, so a test can see what a commit did and survive a failed read.
+private final class SpyGoalStore: GoalStore, @unchecked Sendable {
+    private let inner = InMemoryGoalStore(goals: [])
+    private(set) var writes = 0
+    var failsGoalReads = false
+    var failsWrites = false
+    private struct Refused: Error {}
+
+    func goals() throws -> [NutrientGoal] { try inner.goals() }
+    func goal(for nutrient: String) throws -> NutrientGoal? {
+        if failsGoalReads { throw Refused() }
+        return try inner.goal(for: nutrient)
+    }
+    func setGoal(_ goal: NutrientGoal) throws {
+        if failsWrites { throw Refused() }
+        writes += 1
+        try inner.setGoal(goal)
+    }
+    func removeGoal(nutrient: String) throws { try inner.removeGoal(nutrient: nutrient) }
+    func close() { inner.close() }
+    /// A change from another writer: not counted, and never refused.
+    func writeBehind(_ goal: NutrientGoal) throws { try inner.setGoal(goal) }
+}
+
 /// The daily goals as Today shows them: what the day has reached against a target, or as a plain
 /// total where no target is set.
 @MainActor
@@ -198,6 +223,64 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.selectedUnits["water"], .mL)
         XCTAssertTrue(model.commitTarget(for: "water"))
         XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(8))
+    }
+
+    /// The record is built from what the write stored: a later single-goal read that fails must not
+    /// leave the field free to write its text over an outside change.
+    func testAWaterCommitSurvivesAFailedReadAfterItsWrite() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        goals.failsGoalReads = true
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(goals.writes, 1)
+
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 1)
+        goals.failsGoalReads = false
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(3000))
+    }
+
+    /// A commit the store refuses must not forget the earlier commit, or putting the old text back
+    /// would write it over what changed behind the screen.
+    func testARefusedWaterCommitKeepsTheEarlierRecord() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+
+        model.draftText["water"] = "9"
+        goals.failsWrites = true
+        XCTAssertFalse(model.commitTarget(for: "water"))
+        goals.failsWrites = false
+        model.draftText["water"] = "8"
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 1)
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(3000))
+        XCTAssertEqual(model.draftText["water"], "3000")
+    }
+
+    /// Committing again with nothing moved writes nothing.
+    func testAnUnchangedCommittedWaterFieldWritesNothingOnBlur() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(goals.writes, 1)
     }
 
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideRemoval() throws {

@@ -453,7 +453,8 @@ public final class GoalsViewModel: ObservableObject {
            text == committed.text, selectedUnits[nutrient] == committed.unit {
             // The field still holds what this screen committed. If the goal is as it wrote it, nothing
             // changed; if it moved behind the screen, the field follows the store and writes nothing.
-            if let current = storedWaterGoalIfReadable(), current.goal != committed.goal { load() }
+            if case .success(let current) = Result(catching: { try store.goal(for: nutrient) }),
+               current != committed.goal { load() }
             return true
         }
         if text.isEmpty {
@@ -469,26 +470,30 @@ public final class GoalsViewModel: ObservableObject {
         // out from. A read that fails leaves nothing to check, and the split is then not followed.
         var previousEnergy: NutrientGoal?
         if nutrient == Self.energyKey { previousEnergy = (try? store.goal(for: Self.energyKey)) ?? nil }
-        if nutrient == DailyTotalsBuilder.waterKey { committedWater = nil }
         // The unit the write uses, taken before setTarget: its load() can move selectedUnits to a new
         // display unit, and the record must pair the text with the unit it was written in.
         let writtenUnit = selectedUnits[nutrient]
-        guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
+        // The record is built from the goal this write stores (not a second read, which can fail), and
+        // the previous record comes back if the write is refused, so a refused commit loses nothing.
+        let previousCommit = committedWater
+        var written: NutrientGoal?
+        if nutrient == DailyTotalsBuilder.waterKey {
+            committedWater = nil
+            let chosen = writtenUnit ?? self.unit(for: nutrient)
+            written = (try? Quantity(value: target, unit: chosen).converted(to: .mL))
+                .map { NutrientGoal(nutrient: nutrient, target: $0.value, unit: $0.unit) }
+        }
+        guard setTarget(text, for: nutrient, unit: writtenUnit) else {
+            if nutrient == DailyTotalsBuilder.waterKey, committedWater == nil { committedWater = previousCommit }
+            return false
+        }
         draftText[nutrient] = DecimalFormatting.text(target)
         if nutrient == DailyTotalsBuilder.waterKey {
             selectedUnits[nutrient] = writtenUnit
-            if let written = try? store.goal(for: nutrient) {
-                committedWater = (draftText[nutrient] ?? text, writtenUnit, written)
-            }
+            if let written { committedWater = (draftText[nutrient] ?? text, writtenUnit, written) }
         }
         if nutrient == Self.energyKey { followEnergyGoal(from: previousEnergy) }
         return true
-    }
-
-    /// The stored water goal (itself nil when none is set), or nil when the read fails, so a failed
-    /// read is never taken for a removed goal.
-    private func storedWaterGoalIfReadable() -> (goal: NutrientGoal?, Void)? {
-        do { return (try store.goal(for: DailyTotalsBuilder.waterKey), ()) } catch { return nil }
     }
 
     /// The energy goal's key, which a macro split is a share of.
