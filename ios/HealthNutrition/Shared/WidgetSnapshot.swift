@@ -13,6 +13,13 @@ struct WidgetSnapshot: Codable, Equatable {
     var fatGrams: Double?
     var waterMilliliters: Double?
 
+    /// A summary with nothing in it: no entries and no figures, as after Erase all data.
+    static func empty(at time: Date) -> WidgetSnapshot {
+        WidgetSnapshot(
+            generatedAt: time, hasEntries: false, energyKcal: nil, energyGoalKcal: nil, proteinGrams: nil,
+            carbohydrateGrams: nil, fatGrams: nil, waterMilliliters: nil)
+    }
+
     /// Whether this summary was written on the same local day as `now`. After midnight, with the app closed, the
     /// file still holds yesterday's totals; the widget must not present them as today's.
     func isCurrent(on now: Date, calendar: Calendar = .current) -> Bool {
@@ -98,6 +105,11 @@ struct WidgetSnapshotStore {
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(snapshot)
         try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        // Rewritten at every load, so it is left out of device backups.
+        var url = fileURL
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
     }
 
     func erase() throws {

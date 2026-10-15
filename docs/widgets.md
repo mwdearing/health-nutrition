@@ -8,11 +8,12 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   totals as numbers and whether any entry exists. No entry, product name, time or note is in it.
 - **Where it lives.** In the App Group container shared by the app and the widget extension, named
   `group.<the app's bundle identifier>`, with file protection "complete until first user authentication".
-  It is replaced whenever Today's figures change and when the app starts.
+  It is rewritten each time Today's figures are read successfully (see "When the summary is written").
 - **Lock Screen.** The figures are marked privacy sensitive, so the system redacts them while the device is
   locked, according to the person's Lock Screen widget settings.
-- **Erase all data.** Removes the summary file with the stores and preferences. Today then reloads empty and
-  the app writes an empty summary (no entries, no figures), so the widget shows "Nothing logged today".
+- **Erase all data.** Replaces the summary with an empty one (no entries, no figures) at once, so the widget shows
+  "Nothing logged today", and drops any write that was already pending from before the erase; Today then reloads
+  and writes the real empty day.
 - **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
   shows dashes rather than claiming nothing was logged.
 - **When the summary is written.** The app writes it each time Today has read the journal successfully, and
@@ -23,12 +24,20 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
 - **A new day.** A summary written on an earlier day is not shown as today's: with the app closed after
   midnight the widget shows dashes (the same state as unreadable) until the app writes today's summary. The
   widget asks to be refreshed shortly after local midnight for this.
-- **Backups and accounts.** The App Group container is part of device backups like the rest of the app's
-  files, and the summary is per device: signing out of an account does not change it.
+- **Backups and accounts.** The summary file is excluded from device backups (it is rewritten at every load),
+  and it is per device: signing out of an account does not change it.
 - **Nothing is sent anywhere.** The widget has no network access and links no package.
 - **Signing.** The extension's identifier is the app's plus `.widgets`; both carry the App Groups capability.
   The workflows set `APP_BUNDLE_ID`, never `PRODUCT_BUNDLE_IDENTIFIER`, so the extension and the group follow
-  whichever identifier is signed.
+  whichever identifier is signed. The App ID `<bundle>.widgets`, the group `group.<bundle>` and the App Groups
+  capability on the app's App ID must exist in the developer account before a signed build; the first signed run
+  creates the extension's profile through automatic signing, and its log is the check that it worked.
+- **Privacy manifest.** The extension has its own, matching the app's declaration for this data.
+
+Device check for the first signed build: with the device locked, confirm the Lock Screen widget hides the
+calorie figure and the gauge value (not only the Home Screen figures); after Erase all data confirm the widget
+reads "Nothing logged today"; and after midnight with the app closed confirm it shows dashes, not yesterday's
+figures.
 
 Not built yet: a water button on the widget or Lock Screen (it needs the Log water intent split from the app's
 services so it can run from the extension), and configuration options.

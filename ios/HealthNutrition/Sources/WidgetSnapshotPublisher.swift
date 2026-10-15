@@ -11,15 +11,20 @@ import WidgetKit
 final class WidgetSnapshotPublisher {
     private var subscription: AnyCancellable?
     private let store: WidgetSnapshotStore?
-    private var isErasing: () -> Bool = { false }
+    private let erasure: WidgetSnapshotErasure
+    private var isErasing: @MainActor () -> Bool = { false }
 
-    init(store: WidgetSnapshotStore? = WidgetSnapshotStore.appGroup()) {
+    init(
+        store: WidgetSnapshotStore? = WidgetSnapshotStore.appGroup(),
+        erasure: WidgetSnapshotErasure = .shared
+    ) {
         self.store = store
+        self.erasure = erasure
     }
 
     /// - Parameter isErasing: true while Erase all data runs. A write then would put figures back that the
     ///   eraser just removed; the reload Today does once the erase finishes publishes the empty day.
-    func start(today: TodayViewModel, isErasing: @escaping () -> Bool = { false }) {
+    func start(today: TodayViewModel, isErasing: @escaping @MainActor () -> Bool = { false }) {
         guard store != nil else { return }
         self.isErasing = isErasing
         // Every change to the totals goes through a load, and a successful load sets `lastLoadedAt`: the summary
@@ -30,14 +35,17 @@ final class WidgetSnapshotPublisher {
             .removeDuplicates()
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
             .sink { [weak self, weak today] loadedAt in
-                guard let self, let today else { return }
-                self.publish(from: today, loadedAt: loadedAt)
+                // Delivered on the main queue by the debounce scheduler above, so this is the main actor.
+                MainActor.assumeIsolated {
+                    guard let self, let today else { return }
+                    self.publish(from: today, loadedAt: loadedAt)
+                }
             }
         if let loadedAt = today.lastLoadedAt { publish(from: today, loadedAt: loadedAt) }
     }
 
     func publish(from today: TodayViewModel, loadedAt: Date) {
-        guard let store, !isErasing() else { return }
+        guard let store, !isErasing(), erasure.accepts(loadedAt: loadedAt) else { return }
         let snapshot = Self.snapshot(from: today, now: loadedAt)
         do {
             try store.write(snapshot)
@@ -75,17 +83,50 @@ enum WidgetSnapshotUnits {
     }
 }
 
-/// Removes the widgets' snapshot with the rest of the person's data, so "Erase all data" leaves no figures in
-/// the App Group.
+/// When Erase all data last ran, so a summary write that was already pending (a load stamped before the erase)
+/// can be recognised and dropped instead of putting the erased figures back.
+final class WidgetSnapshotErasure: @unchecked Sendable {
+    static let shared = WidgetSnapshotErasure()
+
+    private let lock = NSLock()
+    private var erasedAt: Date?
+
+    func markErased(at time: Date) {
+        lock.lock()
+        erasedAt = time
+        lock.unlock()
+    }
+
+    /// A load stamped at or before the last erase is stale: it read the journal before the erase.
+    func accepts(loadedAt: Date) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let erasedAt else { return true }
+        return loadedAt > erasedAt
+    }
+}
+
+/// Replaces the widgets' summary with an empty one when the person's data is erased, so "Erase all data" leaves no
+/// figures in the App Group and the widget reads "Nothing logged today" at once. A summary write already pending
+/// at that moment is recognised by its load time and dropped.
 final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
     private let store: WidgetSnapshotStore?
+    private let erasure: WidgetSnapshotErasure
+    private let now: () -> Date
 
-    init(store: WidgetSnapshotStore? = WidgetSnapshotStore.appGroup()) {
+    init(
+        store: WidgetSnapshotStore? = WidgetSnapshotStore.appGroup(),
+        erasure: WidgetSnapshotErasure = .shared, now: @escaping () -> Date = { Date() }
+    ) {
         self.store = store
+        self.erasure = erasure
+        self.now = now
     }
 
     func eraseAll() throws {
-        try store?.erase()
+        let time = now()
+        erasure.markErased(at: time)
+        try store?.write(WidgetSnapshot.empty(at: time))
         WidgetCenter.shared.reloadAllTimelines()
     }
 }

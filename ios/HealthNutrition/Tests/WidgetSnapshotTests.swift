@@ -53,11 +53,37 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNil(store.read())
     }
 
-    func testTheEraserRemovesTheSnapshotWithTheRestOfTheData() throws {
+    func testTheEraserLeavesAnEmptyCurrentSummaryWithNoFigures() throws {
         let store = WidgetSnapshotStore(directory: directory)
         try store.write(sample())
-        try WidgetSnapshotEraser(store: store).eraseAll()
-        XCTAssertNil(store.read())
+        let erasedAt = Date(timeIntervalSince1970: 1_700_000_100)
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure(), now: { erasedAt }).eraseAll()
+        let after = try XCTUnwrap(store.read())
+        // The widget reads "Nothing logged today": no entries, no figures, and it is today's summary.
+        XCTAssertFalse(after.hasEntries)
+        XCTAssertNil(after.energyKcal)
+        XCTAssertNil(after.proteinGrams)
+        XCTAssertNil(after.waterMilliliters)
+        XCTAssertTrue(after.isCurrent(on: erasedAt))
+    }
+
+    func testAWritePendingAtEraseTimeNeverLands() {
+        let erasure = WidgetSnapshotErasure()
+        let before = Date(timeIntervalSince1970: 1_700_000_000)
+        let erasedAt = Date(timeIntervalSince1970: 1_700_000_100)
+        XCTAssertTrue(erasure.accepts(loadedAt: before), "no erase yet")
+        erasure.markErased(at: erasedAt)
+        XCTAssertFalse(erasure.accepts(loadedAt: before), "a load that read the journal before the erase is dropped")
+        XCTAssertFalse(erasure.accepts(loadedAt: erasedAt))
+        XCTAssertTrue(erasure.accepts(loadedAt: erasedAt.addingTimeInterval(1)), "the reload after the erase publishes")
+    }
+
+    func testTheSummaryFileIsExcludedFromBackup() throws {
+        let store = WidgetSnapshotStore(directory: directory)
+        try store.write(sample())
+        let url = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
+        let values = try url.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
     }
 
     func testEnergyFractionNeedsAKnownTotalAndAGoalAndNeverExceedsOne() {
