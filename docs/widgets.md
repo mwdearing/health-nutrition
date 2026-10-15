@@ -23,7 +23,8 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   left out of device backups, so everything in it (a temporary included) is excluded from the moment it exists.
   A new summary is written to a fixed temporary name in the folder and moved over the file. If the folder cannot
   be left out of backups nothing is written and the folder is removed. A temporary left by a crash is removed at
-  launch and by erase.
+  launch and by erase. The folder is created with the same file protection as the file, and the files in it are
+  flagged as excluded too, so each reads back as excluded.
 - **When the summary is written.** The app writes it each time Today has read the journal successfully, and
   stamps it with that moment (`TodayViewModel.lastLoadedAt`). Before the first successful load, after a failed
   reload, or when something merely notifies without reading, nothing is written, so a failed read never replaces

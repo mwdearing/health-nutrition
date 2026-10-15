@@ -32,6 +32,7 @@ final class WidgetSnapshotPublisher {
         // Every change to the totals goes through a load, and a successful load sets `lastLoadedAt`: the summary
         // is written when that moment changes and stamped with it. Nothing else (an undo expiring, a failed
         // reload, a notification after midnight) can make retained totals look fresh.
+        // @Published delivers the current value on subscription, so a load that already happened is published too.
         subscription = today.$lastLoadedAt
             .compactMap { $0 }
             // Stamped with the erase generation when the load is announced, before the debounce, so a write that
@@ -47,9 +48,6 @@ final class WidgetSnapshotPublisher {
                     self.publish(from: today, loadedAt: load.loadedAt, generation: load.generation)
                 }
             }
-        if let loadedAt = today.lastLoadedAt {
-            publish(from: today, loadedAt: loadedAt, generation: erasure.generation)
-        }
     }
 
     func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
@@ -64,7 +62,7 @@ final class WidgetSnapshotPublisher {
             try store.write(snapshot)
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
-            // The previous summary is as it was; the app does not depend on this write.
+            // The summary on disk is the previous one or none; the app does not depend on this write.
             WidgetCenter.shared.reloadAllTimelines()
         }
     }

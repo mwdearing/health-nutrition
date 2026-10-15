@@ -25,7 +25,9 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         let services = try AppServices.make(
             directory: directory.appendingPathComponent("app", isDirectory: true),
             displayPreferences: UserDefaultsDisplayPreferences(defaults: suite),
-            reminderScheduler: RecordingReminderScheduler())
+            reminderScheduler: RecordingReminderScheduler(),
+            // Never the real App Group: this test only exercises the publisher against its own store.
+            widgetSnapshotEraser: WidgetSnapshotEraser(store: nil))
         return services.today
     }
 

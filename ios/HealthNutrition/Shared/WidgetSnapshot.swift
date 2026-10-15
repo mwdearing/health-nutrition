@@ -122,12 +122,15 @@ struct WidgetSnapshotStore {
     /// take it.
     private func prepareFolder() throws {
         if !fileManager.fileExists(atPath: folderURL.path) {
-            try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+            try fileManager.createDirectory(
+                at: folderURL, withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         }
         do {
             try excludeFromBackup(folderURL)
         } catch {
-            try? fileManager.removeItem(at: folderURL)
+            // Not left behind where a backup could take it. If even the removal fails that is the failure reported.
+            try fileManager.removeItem(at: folderURL)
             throw error
         }
     }
@@ -142,11 +145,14 @@ struct WidgetSnapshotStore {
         let temporary = temporaryURL
         do {
             try writeData(data, temporary)
+            // The folder is what is excluded; the files are flagged as well, so each one reads back as excluded.
+            try? excludeFromBackup(temporary)
             if fileManager.fileExists(atPath: fileURL.path) {
                 _ = try fileManager.replaceItemAt(fileURL, withItemAt: temporary)
             } else {
                 try fileManager.moveItem(at: temporary, to: fileURL)
             }
+            try? excludeFromBackup(fileURL)
         } catch {
             // Whatever the failure, no half-written temporary stays; the previous summary is as it was.
             try? fileManager.removeItem(at: temporary)
@@ -160,6 +166,9 @@ struct WidgetSnapshotStore {
     /// Removes the whole folder: the summary and any temporary an interrupted write left. Throws if it is still
     /// there afterwards, so an erase never reports success with a figure on disk.
     func erase() throws {
+        // A summary an earlier build kept directly in the container, if there is one, goes too.
+        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName))
+        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName + ".tmp"))
         guard fileManager.fileExists(atPath: folderURL.path) else { return }
         try fileManager.removeItem(at: folderURL)
         if fileManager.fileExists(atPath: folderURL.path) { throw CocoaError(.fileWriteUnknown) }
@@ -171,10 +180,11 @@ struct WidgetSnapshotStore {
         try? fileManager.removeItem(at: temporaryURL)
     }
 
-    /// Last resort when the folder cannot be removed: empties the summary file in place and removes the temporary, so
-    /// no figure is left on disk. The widget treats a file it cannot decode as "no summary" and shows dashes.
+    /// Last resort when the folder cannot be removed: empties the summary file in place (and removes the temporary
+    /// if it can), so no figure is left in the summary. The widget treats a file it cannot decode as "no summary" and shows dashes.
     func truncate() throws {
-        if fileManager.fileExists(atPath: temporaryURL.path) { try fileManager.removeItem(at: temporaryURL) }
+        // The temporary is removed if it can be; emptying the summary does not wait on it.
+        try? fileManager.removeItem(at: temporaryURL)
         try Data().write(to: fileURL)
     }
 }

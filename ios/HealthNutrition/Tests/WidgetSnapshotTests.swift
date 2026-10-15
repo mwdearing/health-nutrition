@@ -118,6 +118,22 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(values.isExcludedFromBackup, true)
     }
 
+    func testTheSummaryFileReadsBackAsExcludedToo() throws {
+        let store = WidgetSnapshotStore(directory: directory)
+        try store.write(sample())
+        try store.write(sample())  // the replace path as well as the first move
+        let file = folder.appendingPathComponent(WidgetSnapshotStore.fileName)
+        XCTAssertEqual(try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+    }
+
+    func testEraseAlsoRemovesASummaryAnEarlierBuildKeptInTheContainerRoot() throws {
+        let store = WidgetSnapshotStore(directory: directory)
+        let legacy = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
+        try Data("figures".utf8).write(to: legacy)
+        try store.erase()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+    }
+
     func testAFolderThatCannotBeLeftOutOfBackupsIsNotLeftOnDisk() throws {
         var store = WidgetSnapshotStore(directory: directory)
         struct Refused: Error {}
