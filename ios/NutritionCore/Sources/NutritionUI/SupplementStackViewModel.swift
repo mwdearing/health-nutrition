@@ -84,6 +84,7 @@ public final class SupplementStackViewModel: ObservableObject {
     private let store: JournalStore
     private let favorites: FavoritesStore
     private let schedules: SupplementStackStoring
+    private let preferences: DisplayPreferences
     private let zoneID: () -> String
     private let makeID: () -> String
     private let lookup: NutrientFactsLookup
@@ -95,6 +96,7 @@ public final class SupplementStackViewModel: ObservableObject {
         schedules: SupplementStackStoring,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         referencePreferences: ReferenceGroupPreferences? = nil,
+        preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
@@ -104,6 +106,7 @@ public final class SupplementStackViewModel: ObservableObject {
         self.schedules = schedules
         self.lookup = lookup
         self.referencePreferences = referencePreferences
+        self.preferences = preferences
         self.zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
         self.makeID = makeID
     }
@@ -174,7 +177,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 let template = RepeatTemplate(favorite: favorite)
                 return RowBasis(
                     favoriteID: favorite.id, title: favorite.displayName,
-                    detail: template.map { AmountText.summary($0.components) } ?? "unknown",
+                    detail: template.map { AmountText.summary($0.components, unitSystem: preferences.unitSystem) } ?? "unknown",
                     kind: kind(favorite.productSnapshotID, category: favorite.category), schedule: entry.value,
                     matchKey: Self.matchKey(favorite), canLog: template.map { !$0.components.isEmpty } ?? false,
                     aboveUpperLimit: Self.limitsCounting(product(favorite.productSnapshotID), among: limits.rows))
@@ -365,7 +368,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 let template = RepeatTemplate(favorite: favorite)
                 return SupplementStackCandidate(
                     id: "favorite:\(favorite.id)", title: favorite.displayName,
-                    detail: template.map { AmountText.summary($0.components) } ?? "unknown",
+                    detail: template.map { AmountText.summary($0.components, unitSystem: preferences.unitSystem) } ?? "unknown",
                     kind: kind(favorite.productSnapshotID, favorite.category), source: .favorite(favorite.id))
             }
         let supplementsFirst = favoriteCandidates.filter { $0.kind == .supplement }
@@ -383,7 +386,7 @@ public final class SupplementStackViewModel: ObservableObject {
             guard seen.insert(key).inserted else { continue }
             recentCandidates.append(SupplementStackCandidate(
                 id: "recent:\(recent.id)", title: template.displayName,
-                detail: LibraryViewModel.detail(template), kind: .supplement, source: .recent(template)))
+                detail: LibraryViewModel.detail(template, unitSystem: preferences.unitSystem), kind: .supplement, source: .recent(template)))
         }
         return supplementsFirst + recentCandidates
     }

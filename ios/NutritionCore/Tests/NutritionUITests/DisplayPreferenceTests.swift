@@ -230,6 +230,23 @@ final class AmountDisplayPreferenceTests: XCTestCase {
         XCTAssertEqual(AmountDisplay.water(1, system: .metric).text, "1 mL")
     }
 
+    /// A long scaled volume reads as a kitchen figure in both systems: 12 fl oz is 354.88235475 mL.
+    func testALongScaledVolumeIsRoundedInBothSystems() {
+        let stored = Decimal(string: "354.88235475")!
+        XCTAssertEqual(text(stored, .mL, .metric), "354.9 mL")
+        XCTAssertEqual(text(stored, .mL, .usCustomary), "12 fl oz")
+        XCTAssertEqual(text(Decimal(250), .mL, .metric), "250 mL")
+        XCTAssertEqual(text(Decimal(10), .mg, .metric), "10 mg")
+    }
+
+    /// A Recent row's amounts follow the unit system rather than always reading metric.
+    func testAmountSummaryFollowsTheUnitSystem() {
+        let drink = IntakeComponent(
+            componentID: "d", name: "Drink", amount: Decimal(string: "354.88235475")!, unit: .mL)
+        XCTAssertEqual(AmountText.summary([drink], unitSystem: .usCustomary), "12 fl oz")
+        XCTAssertEqual(AmountText.summary([drink], unitSystem: .metric), "354.9 mL")
+    }
+
     /// An amount that is not a number is shown as stored, never as a converted figure.
     func testAnUnknownAmountIsShownAsStoredAndNeverConverted() {
         XCTAssertEqual(text(Decimal.nan, .g, .usCustomary), "NaN g")

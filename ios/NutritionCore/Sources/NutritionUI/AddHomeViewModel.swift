@@ -68,6 +68,11 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         return model
     }
 
+    /// A template's amounts as the reader's unit system shows them.
+    public func amountSummary(of template: RepeatTemplate) -> String {
+        AmountText.summary(template.components, unitSystem: preferences.unitSystem)
+    }
+
     public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {
         let model = makeDetails(now: now)
         try model.applyCustomProduct(product)
@@ -81,7 +86,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
             // The current Details form has one amount. Present the whole recorded combination as
             // one serving, spelling out all original amounts rather than silently dropping any.
             model.name = prefill.components.map {
-                "\($0.name) (\(AmountText.describe($0)))"
+                "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem)))"
             }.joined(separator: ", ")
             model.category = prefill.category
             model.amountText = "1"
@@ -153,7 +158,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
                 makeID: { UUID().uuidString.lowercased() })
             let id = try repeater.create(from: template, now: date)
             let token = AddUndoToken(intakeID: id,
-                message: "Added \(template.displayName), \(AmountText.summary(template.components))",
+                message: "Added \(template.displayName), \(amountSummary(of: template))",
                 expiresAt: date.addingTimeInterval(10))
             undoToken = token
             load()

@@ -92,6 +92,8 @@ public enum AmountDisplay {
     /// The most fraction digits a converted amount carries below one, so a small ounce still says
     /// something the reader can act on.
     public static let smallFractionDigits = 4
+    /// The weight and volume units a serving or portion is stated in, rounded even when shown as stored.
+    private static let roundedWhenShownAsStored: Set<MeasureUnit> = [.g, .kg, .mL, .L, .oz, .flOz]
     /// The smallest converted amount shown as a number rather than as "less than".
     public static let smallestShown = Decimal(string: "0.0001", locale: AmountParser.locale)!
 
@@ -140,7 +142,14 @@ public enum AmountDisplay {
     public static func display(_ amount: Decimal, unit: MeasureUnit, system: UnitSystem) -> DisplayAmount {
         guard !amount.isNaN else { return DisplayAmount(amount: amount, unit: unit) }
         let target = displayUnit(for: unit, system: system)
-        guard target != unit else { return DisplayAmount(amount: amount, unit: unit) }
+        guard target != unit else {
+            // Weights and volumes are rounded the same way whether they were converted or not, so a
+            // scaled 354.88235475 mL reads 354.9 mL. Every other unit is shown as stored.
+            guard roundedWhenShownAsStored.contains(unit) else { return DisplayAmount(amount: amount, unit: unit) }
+            let rounded = DisplayRounding.rounded(amount, fractionDigits: fractionDigits(for: amount))
+            return DisplayAmount(
+                amount: rounded, unit: unit, isBelowSmallest: amount != 0 && abs(rounded) < smallestShown)
+        }
         guard let converted = try? Quantity(value: amount, unit: unit).converted(to: target),
               !converted.value.isNaN
         else {

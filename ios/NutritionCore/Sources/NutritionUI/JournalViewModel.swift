@@ -207,7 +207,7 @@ public final class JournalViewModel: ObservableObject {
                     id: intake.id, title: QuickAddViewModel.rowTitle(components: current.components, product: snapshot),
                     detail: current.components.isEmpty ? "unknown" : current.components.map { component in
                         guard intake.category == "water", !component.amount.isNaN else {
-                            return AmountText.describe(component)
+                            return AmountText.describe(component, unitSystem: self.preferences.unitSystem)
                         }
                         return AmountDisplay.water(
                             component.amount, unit: component.unit, system: self.preferences.unitSystem).text

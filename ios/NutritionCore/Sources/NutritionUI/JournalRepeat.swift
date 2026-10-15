@@ -101,8 +101,8 @@ enum AmountText {
         return trimmed.isEmpty ? "unknown" : trimmed
     }
 
-    static func summary(_ components: [IntakeComponent]) -> String {
-        components.isEmpty ? "unknown" : components.map { describe($0) }.joined(separator: ", ")
+    static func summary(_ components: [IntakeComponent], unitSystem: UnitSystem = .metric) -> String {
+        components.isEmpty ? "unknown" : components.map { describe($0, unitSystem: unitSystem) }.joined(separator: ", ")
     }
 
     static func title(_ components: [IntakeComponent]) -> String {
