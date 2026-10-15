@@ -14,7 +14,9 @@ enum WaterShortcut {
 
     /// - Parameter add: writes one water entry of the person's usual amount at the given time. Returns nil
     ///   when the app's services are not available, false when the write failed.
-    static func log(now: Date, add: (Date) -> Bool?) -> Outcome {
+    ///   `isErasing` is true while Erase all data or a restore runs; nothing is written then.
+    static func log(now: Date, isErasing: Bool = false, add: (Date) -> Bool?) -> Outcome {
+        guard !isErasing else { return Outcome(logged: false, message: failedMessage) }
         switch add(now) {
         case .some(true): return Outcome(logged: true, message: loggedMessage)
         case .some(false): return Outcome(logged: false, message: failedMessage)
@@ -34,10 +36,13 @@ struct LogWaterIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let outcome = WaterShortcut.log(now: Date()) { now in
+        let outcome = WaterShortcut.log(
+            now: Date(), isErasing: AppServicesRegistry.isBusy
+        ) { now in
             guard let services = AppServicesRegistry.current else { return nil }
             return services.today.quickAddWater(now: now) != nil
         }
+        if outcome.logged { AppServicesRegistry.announceJournalWrite() }
         return .result(dialog: IntentDialog(stringLiteral: outcome.message))
     }
 }
@@ -54,5 +59,13 @@ struct HealthNutritionShortcuts: AppShortcutsProvider {
             phrases: ["Log a saved meal in \(.applicationName)", "Add a saved meal in \(.applicationName)"],
             shortTitle: "Log saved meal",
             systemImageName: "fork.knife")
+        AppShortcut(
+            intent: LogSupplementTakenIntent(),
+            phrases: [
+                "Log \(\.$supplement) in \(.applicationName)",
+                "I took \(\.$supplement) in \(.applicationName)",
+            ],
+            shortTitle: "Log supplement taken",
+            systemImageName: "pills")
     }
 }

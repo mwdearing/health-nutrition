@@ -28,4 +28,20 @@ final class LogWaterShortcutTests: XCTestCase {
         XCTAssertFalse(wrote)
         XCTAssertEqual(outcome.message, WaterShortcut.notReadyMessage)
     }
+
+    func testNothingIsWrittenWhileAnEraseRuns() {
+        var wrote = false
+        let outcome = WaterShortcut.log(now: now, isErasing: true) { _ in
+            wrote = true
+            return true
+        }
+        XCTAssertFalse(wrote)
+        XCTAssertEqual(outcome, .init(logged: false, message: WaterShortcut.failedMessage))
+    }
+
+    @MainActor
+    func testTheShortcutsAreNotBusyAtRest() {
+        // At rest, with the host app's own services or none, no erase or restore is running.
+        XCTAssertFalse(AppServicesRegistry.isBusy)
+    }
 }
