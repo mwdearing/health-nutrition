@@ -117,6 +117,7 @@ struct AccountPresentations: ViewModifier {
                 model.settingsDidAppear()
                 showingDisclosure = model.disclosureDue
             }
+            .onDisappear { model.settingsDidDisappear() }
             // Brings the stored sign-in back when Settings opens, if the launch restore could not.
             .task {
                 await model.load()

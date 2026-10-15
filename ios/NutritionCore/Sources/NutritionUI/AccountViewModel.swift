@@ -334,10 +334,18 @@ public final class AccountViewModel: ObservableObject {
         disclosureReady && needsDisclosure && !signInSheetActive
     }
 
-    /// Called when the Settings form appears fresh, which cannot happen while a sheet is up over it. A sign-in
-    /// that completed but whose dismissal was never reported (the form was torn down with the sheet) would
-    /// otherwise keep the sheet requested and the disclosure held for good.
+    private var settingsDisappeared = false
+
+    /// Called when the Settings form goes away. A sheet over it does not count: the form stays on screen then.
+    public func settingsDidDisappear() { settingsDisappeared = true }
+
+    /// Called when the Settings form appears again after it had gone away. A sign-in that completed but whose
+    /// dismissal was never reported (the form was torn down with the sheet up) would otherwise keep the sheet
+    /// requested and the disclosure held for good. Does nothing unless the form really went away first, so an
+    /// appearance during the sheet's own dismissal cannot free the flag early.
     public func settingsDidAppear() {
+        guard settingsDisappeared else { return }
+        settingsDisappeared = false
         if phase == .signedIn && presentingSignIn { presentingSignIn = false }
         if !presentingSignIn { signInSheetActive = false }
     }

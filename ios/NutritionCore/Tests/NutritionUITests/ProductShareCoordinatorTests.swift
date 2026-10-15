@@ -420,6 +420,7 @@ extension ProductShareCoordinatorTests {
         XCTAssertEqual(account.phase, .signedIn)
         XCTAssertTrue(account.presentingSignIn)
         XCTAssertFalse(account.disclosureDue)
+        account.settingsDidDisappear()
         account.settingsDidAppear()
         XCTAssertFalse(account.presentingSignIn)
         XCTAssertFalse(account.signInSheetActive)
@@ -429,9 +430,23 @@ extension ProductShareCoordinatorTests {
         let service = FakeAccountService(session: nil), products = SuspendedProductService()
         let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
         account.presentingSignIn = true
+        account.settingsDidDisappear()
         account.settingsDidAppear()
         XCTAssertTrue(account.presentingSignIn)
         XCTAssertTrue(account.signInSheetActive)
+    }
+    @MainActor func testSettingsAppearingDuringTheSignInSheetsOwnDismissalDoesNotFreeIt() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        // The binding has turned false and the dismissal is animating; the form never went away.
+        account.presentingSignIn = false
+        account.settingsDidAppear()
+        XCTAssertTrue(account.signInSheetActive)
+        XCTAssertFalse(account.disclosureDue)
+        account.signInSheetDidDismiss()
+        XCTAssertTrue(account.disclosureDue)
     }
     @MainActor func testSignInSheetFlagCannotStayStuckAfterAMissedDismissal() async throws {
         // A request whose dismissal was never reported, signed out: Settings opening (load) frees it.
