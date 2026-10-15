@@ -58,7 +58,17 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
 - **Not in the journal export yet.** Export schema version 2 has no field for schedules, so a restore
   brings the favorites back without their times. Adding them needs a new export schema version.
 - **No notifications.** Supplement reminders are separate ([custom reminders](custom-reminders.md)).
-- Not yet: Supplement Facts search to add a product directly, and upper-limit notes from the reference
-  intakes table.
+- **Upper limits.** With a reference group chosen on Vitamins and minerals, the list shows the day's
+  nutrients that are above an upper limit, as the same rows, words and footer that screen shows: they are
+  built by the same code (`NutrientGapsViewModel.tallies`, `NutrientGapRow`, `NutrientGaps.exceededLimit`),
+  so the two screens never disagree. A limit is reported only when it is certainly exceeded: the whole
+  day for an all-sources limit, the supplement amount for the magnesium, niacin and vitamin E limits, and
+  never for folate or vitamin A, whose forms the journal cannot tell apart ([reference intakes](reference-intakes.md)).
+  An item is marked "Above the upper limit today" for each of those nutrients its label states and the
+  limit counts (any product for an all-sources limit, a supplement for the supplement limits). An item
+  with no label is never marked. Without a group, nothing is checked, and once the list has items its
+  footer says where to choose one. The check reuses the entries the list has just read, so it adds no
+  read of the whole journal; it reads only today's entries again.
+- Not yet: Supplement Facts search to add a product directly.
 - Code: `NutritionUI/SupplementStack.swift` (schedule, today's times, stored schedules),
   `SupplementStackViewModel.swift`, `SupplementStackView.swift`. Tests: `SupplementStackTests`.

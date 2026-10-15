@@ -834,6 +834,197 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: UserDefaultsSupplementStackStore.takenKey))
     }
 
+    // MARK: Upper limits
+
+    private let men31 = ReferenceGroup(sex: .male, ageBand: .years31To50)
+
+    /// A product whose label states `nutrients` per 100 g, logged as 100 g so the day holds exactly those.
+    private func labelled(
+        _ snapshot: String, name: String, kind: ProductKind, nutrients: [String: NutrientValue]
+    ) -> ProductDefinition {
+        ProductDefinition(
+            snapshotID: snapshot, productID: "p-\(snapshot)", name: name, labelBasis: "per 100 g",
+            catalogOrigin: "test", catalogVersion: "1", kind: kind, nutrients: nutrients)
+    }
+
+    private func makeLimitModel(
+        store: JournalStore, favorites: FavoritesStore, schedules: SupplementStackStoring,
+        group: ReferenceGroup?
+    ) -> (SupplementStackViewModel, InMemoryDisplayPreferences) {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(group)
+        let model = SupplementStackViewModel(
+            store: store, favorites: favorites, schedules: schedules, lookup: SnapshotNutrientFacts(),
+            referencePreferences: preferences, timeZoneIdentifier: "UTC")
+        return (model, preferences)
+    }
+
+    func testASupplementAboveASupplementOnlyLimitIsListedAndMarkedLikeTheVitaminsScreen() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, preferences) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        model.load(now: now)
+
+        XCTAssertTrue(model.hasReferenceGroup)
+        XCTAssertFalse(model.limitCheckFailed)
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["magnesium"])
+        XCTAssertEqual(model.rows.first?.aboveUpperLimit, [NutrientNames.displayName(for: "magnesium")])
+
+        // The vitamins and minerals screen reads the same day and reports the same rows.
+        let gaps = NutrientGapsViewModel(store: store, lookup: SnapshotNutrientFacts(), preferences: preferences)
+        gaps.load(now: now)
+        XCTAssertEqual(model.limitRows, gaps.rows.filter { $0.status == .aboveUpperLimit })
+    }
+
+    func testFoodCountsOnlyTowardAnAllSourcesLimit() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        // The supplement on the list was logged two days ago, so only its label is in the journal today.
+        let multi = labelled(
+            "s-multi", name: "Example magnesium", kind: .supplement,
+            nutrients: ["magnesium": .known(50, .mg), "vitaminC": .known(100, .mg)])
+        try log(store, at: now.addingTimeInterval(-2 * 86_400), amount: 100, unit: .g, product: multi)
+        // Today's food states more magnesium than the supplement limit and more vitamin C than the limit
+        // on everything eaten and taken.
+        let food = labelled(
+            "s-food", name: "Example fortified cereal", kind: .food,
+            nutrients: ["magnesium": .known(600, .mg), "vitaminC": .known(2_500, .mg)])
+        try log(
+            store, name: "Example fortified cereal", at: now.addingTimeInterval(-3_600), category: "food",
+            amount: 100, unit: .g, product: food)
+        try saveFavorite(favorites, snapshot: "s-multi")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        model.load(now: now)
+
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["vitaminC"])
+        XCTAssertEqual(model.rows.first?.aboveUpperLimit, [NutrientNames.displayName(for: "vitaminC")])
+    }
+
+    func testWithoutAGroupOrALabelThereIsNothingToMark() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": .standard])
+
+        let (noGroup, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: nil)
+        noGroup.load(now: now)
+        XCTAssertFalse(noGroup.hasReferenceGroup)
+        XCTAssertTrue(noGroup.limitRows.isEmpty)
+        XCTAssertEqual(noGroup.rows.first?.aboveUpperLimit, [])
+
+        // With a group the day is above the limit, but an item with no label states nothing to mark.
+        let (grouped, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        grouped.load(now: now)
+        XCTAssertEqual(grouped.limitRows.map(\.nutrient), ["magnesium"])
+        XCTAssertEqual(grouped.rows.first?.aboveUpperLimit, [])
+    }
+
+    func testTheLimitCheckReadsTheJournalNoMoreThanTheListDoes() throws {
+        let inner = try makeStore()
+        let store = StackReadCountingStore(inner: inner)
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(inner, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+
+        let (noGroup, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: nil)
+        let before = store.activeIntakesCalls
+        noGroup.load(now: now)
+        let withoutGroup = store.activeIntakesCalls - before
+
+        let (grouped, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        let start = store.activeIntakesCalls
+        grouped.load(now: now)
+        XCTAssertEqual(grouped.limitRows.map(\.nutrient), ["magnesium"])
+        XCTAssertEqual(store.activeIntakesCalls - start, withoutGroup)
+    }
+
+    func testAFailedLimitCheckIsSaidAndTheListStillShows() throws {
+        let inner = try makeStore()
+        let store = StackReadCountingStore(inner: inner)
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let entry = try log(inner, at: now.addingTimeInterval(-3_600))
+        store.unreadableIntakeIDs = [entry]
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        model.load(now: now)
+        XCTAssertTrue(model.limitCheckFailed)
+        XCTAssertTrue(model.limitRows.isEmpty)
+        XCTAssertEqual(model.rows.count, 1)
+        XCTAssertFalse(model.readFailed)
+    }
+
+    func testReplacedStoresClearTheLimitNotesOfAHiddenList() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        let screen = UUID()
+        model.appeared(screen, now: now)
+        XCTAssertFalse(model.limitRows.isEmpty)
+        model.disappeared(screen)
+        model.storesWereReplaced(now: now)
+        XCTAssertTrue(model.limitRows.isEmpty)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    func testAnItemWhoseLabelUsesAnAliasIsMarkedLikeTheDaysTally() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let vitaminC = labelled(
+            "s-vitamin-c", name: "Example magnesium", kind: .supplement, nutrients: ["vitamin-c": .known(2_500, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: vitaminC)
+        try saveFavorite(favorites, snapshot: "s-vitamin-c")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        model.load(now: now)
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["vitaminC"])
+        XCTAssertEqual(model.rows.first?.aboveUpperLimit, [NutrientNames.displayName(for: "vitaminC")])
+    }
+
+    func testAGroupChosenElsewhereIsPickedUpByTheMinuteRefresh() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, preferences) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: nil)
+        model.load(now: now)
+        XCTAssertFalse(model.hasReferenceGroup)
+
+        // Chosen on Vitamins and minerals in another window.
+        preferences.setReferenceGroup(men31)
+        model.refreshClock(now: now.addingTimeInterval(60))
+        XCTAssertTrue(model.hasReferenceGroup)
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["magnesium"])
+    }
+
     func testEraseEmptiesTheList() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()

@@ -31,6 +31,21 @@ public struct SupplementStackView: View {
                     tone: .waiting)
             }
             // A list that could not be read is not an empty one, so the empty state waits for a good read.
+            if model.limitCheckFailed {
+                InlineNotice("Upper limits couldn't be checked, because today's entries couldn't be read.", tone: .failed)
+            }
+            if !model.limitRows.isEmpty {
+                // The same rows, words and footer as the vitamins and minerals screen, so the two agree.
+                Section {
+                    ForEach(model.limitRows) { row in
+                        NutrientGapRowView(row: row)
+                    }
+                } header: {
+                    Text("Above an upper limit")
+                } footer: {
+                    Text(NutrientGapsCopy.footer)
+                }
+            }
             if model.rows.isEmpty, !model.readFailed {
                 EmptyState(
                     title: "No supplements on your list",
@@ -42,9 +57,14 @@ public struct SupplementStackView: View {
                         self.stackRow(row)
                     }
                 } footer: {
-                    Text(
-                        "Taken counts today's entries of each item, including ones logged from the Library. "
-                            + "Each Taken is an ordinary entry, written to Apple Health like any other once you connect it.")
+                    VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                        Text(
+                            "Taken counts today's entries of each item, including ones logged from the Library. "
+                                + "Each Taken is an ordinary entry, written to Apple Health like any other once you connect it.")
+                        if !model.hasReferenceGroup {
+                            Text("Choose a group on Vitamins and minerals to check upper limits here.")
+                        }
+                    }
                 }
             }
             if let message = model.errorMessage {
@@ -167,6 +187,13 @@ public struct SupplementStackView: View {
                 }
             }
             Text(row.statusText).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            if !row.aboveUpperLimit.isEmpty {
+                Label(
+                    "Above the upper limit today: \(row.aboveUpperLimit.joined(separator: ", "))",
+                    systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.warning)
+            }
         }
     }
 }
