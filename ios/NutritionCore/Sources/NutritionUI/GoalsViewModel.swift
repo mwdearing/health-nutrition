@@ -134,8 +134,14 @@ public final class GoalsViewModel: ObservableObject {
     /// journal's current snapshots carry.
     @Published public private(set) var offeredKeys: [String] = NutrientGoalChoices.keys
     @Published public private(set) var errorMessage: String?
-    @Published public var draftText: [String: String] = [:]
-    @Published public var selectedUnits: [String: MeasureUnit] = [:]
+    @Published public var draftText: [String: String] = [:] {
+        // Any change to the water text after a commit is the person's input, even when they type the
+        // committed text back, so the record of the commit is dropped.
+        didSet { dropCommittedWaterIfEdited() }
+    }
+    @Published public var selectedUnits: [String: MeasureUnit] = [:] {
+        didSet { dropCommittedWaterIfEdited() }
+    }
     @Published public private(set) var rowError: [String: String] = [:]
     /// The split the macro gram goals follow, or nil when they do not follow the energy goal. Worked out
     /// when the goals load and whenever the stored split changes, never per render: a stored split that
@@ -187,9 +193,15 @@ public final class GoalsViewModel: ObservableObject {
     private var storedWaterUnit: MeasureUnit?
     /// The water field as this screen last committed it: the text and unit the person typed and the
     /// goal that write stored. The display may not reproduce that text (8 fl oz is stored as
-    /// 236.588 mL and shown as 237), so the field is compared against this, in stored units, to tell
+    /// about 236.59 mL and shown as 237), so the field is compared against this, in stored units, to tell
     /// "still what I committed" from "typed since". Cleared once the field follows the store.
     private var committedWater: (text: String, unit: MeasureUnit?, goal: NutrientGoal?)?
+
+    private func dropCommittedWaterIfEdited() {
+        guard let committed = committedWater else { return }
+        let key = DailyTotalsBuilder.waterKey
+        if draftText[key] != committed.text || selectedUnits[key] != committed.unit { committedWater = nil }
+    }
     /// The text each field was last filled with from the store, so a read can tell a field the person
     /// has not typed in since from one they have.
     private var loadedDraftText: [String: String] = [:]
@@ -453,8 +465,14 @@ public final class GoalsViewModel: ObservableObject {
            text == committed.text, selectedUnits[nutrient] == committed.unit {
             // The field still holds what this screen committed. If the goal is as it wrote it, nothing
             // changed; if it moved behind the screen, the field follows the store and writes nothing.
-            if case .success(let current) = Result(catching: { try store.goal(for: nutrient) }),
-               current != committed.goal { load() }
+            switch Result(catching: { try store.goal(for: nutrient) }) {
+            case .success(let current):
+                if current != committed.goal { load() }
+            case .failure:
+                // Neither followed nor written: said, so the field is not taken for the stored goal.
+                errorMessage = Self.readFailedMessage
+                return false
+            }
             return true
         }
         if text.isEmpty {
@@ -473,9 +491,7 @@ public final class GoalsViewModel: ObservableObject {
         // The unit the write uses, taken before setTarget: its load() can move selectedUnits to a new
         // display unit, and the record must pair the text with the unit it was written in.
         let writtenUnit = selectedUnits[nutrient]
-        // The record is built from the goal this write stores (not a second read, which can fail), and
-        // the previous record comes back if the write is refused, so a refused commit loses nothing.
-        let previousCommit = committedWater
+        // The record is built from the goal this write stores, not a second read, which can fail.
         var written: NutrientGoal?
         if nutrient == DailyTotalsBuilder.waterKey {
             committedWater = nil
@@ -483,10 +499,7 @@ public final class GoalsViewModel: ObservableObject {
             written = (try? Quantity(value: target, unit: chosen).converted(to: .mL))
                 .map { NutrientGoal(nutrient: nutrient, target: $0.value, unit: $0.unit) }
         }
-        guard setTarget(text, for: nutrient, unit: writtenUnit) else {
-            if nutrient == DailyTotalsBuilder.waterKey, committedWater == nil { committedWater = previousCommit }
-            return false
-        }
+        guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
         draftText[nutrient] = DecimalFormatting.text(target)
         if nutrient == DailyTotalsBuilder.waterKey {
             selectedUnits[nutrient] = writtenUnit

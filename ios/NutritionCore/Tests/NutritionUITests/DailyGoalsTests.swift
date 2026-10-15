@@ -239,35 +239,13 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(goals.writes, 1)
 
         try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
-        XCTAssertTrue(model.commitTarget(for: "water"))
+        // The goal cannot be read, so the field is neither followed nor written, and it says so.
+        XCTAssertFalse(model.commitTarget(for: "water"))
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
 
         XCTAssertEqual(goals.writes, 1)
         goals.failsGoalReads = false
         XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(3000))
-    }
-
-    /// A commit the store refuses must not forget the earlier commit, or putting the old text back
-    /// would write it over what changed behind the screen.
-    func testARefusedWaterCommitKeepsTheEarlierRecord() throws {
-        let goals = SpyGoalStore()
-        let model = GoalsViewModel(
-            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
-        model.load()
-        model.draftText["water"] = "8"
-        model.selectedUnits["water"] = .flOz
-        XCTAssertTrue(model.commitTarget(for: "water"))
-        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
-
-        model.draftText["water"] = "9"
-        goals.failsWrites = true
-        XCTAssertFalse(model.commitTarget(for: "water"))
-        goals.failsWrites = false
-        model.draftText["water"] = "8"
-        XCTAssertTrue(model.commitTarget(for: "water"))
-
-        XCTAssertEqual(goals.writes, 1)
-        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(3000))
-        XCTAssertEqual(model.draftText["water"], "3000")
     }
 
     /// Committing again with nothing moved writes nothing.
@@ -281,6 +259,28 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertTrue(model.commitTarget(for: "water"))
         XCTAssertTrue(model.commitTarget(for: "water"))
         XCTAssertEqual(goals.writes, 1)
+    }
+
+    /// Typing the committed text back after an outside change is the person's input, not the old
+    /// commit: it is written, not replaced by the stored goal.
+    func testRetypingTheCommittedWaterTextAfterAnOutsideChangeIsTheirInput() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+
+        model.draftText["water"] = ""
+        model.draftText["water"] = "8"
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 2)
+        XCTAssertEqual(model.draftText["water"], "8")
+        XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
+        XCTAssertNotEqual(try goals.goal(for: "water")?.target, Decimal(3000))
     }
 
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideRemoval() throws {
@@ -299,20 +299,6 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertNil(try goals.goal(for: "water"))
     }
 
-    func testAWaterGoalCommittedInAnotherUnitIsNotRewrittenWhenNothingMoved() throws {
-        let goals = InMemoryGoalStore(goals: [])
-        let model = GoalsViewModel(
-            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
-        model.load()
-        model.draftText["water"] = "8"
-        model.selectedUnits["water"] = .flOz
-        XCTAssertTrue(model.commitTarget(for: "water"))
-        let first = try goals.goal(for: "water")
-        XCTAssertTrue(model.commitTarget(for: "water"))
-        XCTAssertEqual(try goals.goal(for: "water"), first)
-        XCTAssertEqual(model.draftText["water"], "8")
-        XCTAssertEqual(model.selectedUnits["water"], .flOz)
-    }
 
     /// Water has a target too, in mL, and its own line compares the day's water against it.
     func testAWaterGoalComparesTheDaysWaterInMilliliters() throws {
