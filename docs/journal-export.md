@@ -82,7 +82,7 @@ journal before trying that file again. The importer throws `JournalImportError` 
 | `tooLarge` | The file is over the import ceiling of 20 MiB or its collections contain over 100,000 aggregate elements. The app refuses the whole file; it never truncates it. |
 | `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
 | `corrupt` | The file is an export that cannot be restored as it stands. |
-| `partialRestore` | A second-phase write (saved meals or favorites) failed after the journal was restored, and undo refused to remove rows that may include concurrent edits, or saved meals could not be emptied again. Journal entries may remain; inspect the journal before importing the file again. |
+| `partialRestore` | A second-phase write (saved meals or favorites) failed after the journal was restored, and undo refused to remove rows that may include concurrent edits, or saved meals could not be emptied again. Journal entries or saved meals may remain; inspect both before importing the file again. |
 
 The file picker checks available file-size metadata first, then reads in bounded chunks and stops at the first byte over 20 MiB. The importer separately checks the byte and aggregate-element ceilings before constructing restore objects. A missing or inaccurate file-size value cannot bypass the read ceiling, and canceling a read closes the file and releases any security-scoped access. These are import limits only: exports are still complete and are not capped or shortened. A journal whose backup exceeds either restore limit remains exportable, but this app cannot restore that file; keep a copy and use a reader that supports the full file rather than editing or truncating the backup.
 
@@ -216,7 +216,7 @@ another write creates an entry and the restore joins it, which is the merge this
 
 The **Restore from an export** action under **Settings > Your data** is a file picker (`fileImporter`, JSON only) that reads the
 bytes and hands them to the model, which shows the summary line, the reason the file was refused, or a warning
-that journal entries may already be present after a protected undo refusal. A picker
+that journal entries or saved meals may already be present after a partial restore. A picker
 that was canceled returns the screen to its empty import state, while a file that cannot be read at all is
 reported as a failed import: the person asked for it and nothing happened. A successful or partial restore
 also removes the exported file this screen was holding, because that copy was made from the journal as it was

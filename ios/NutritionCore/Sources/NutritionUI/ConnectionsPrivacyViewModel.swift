@@ -132,7 +132,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let importDuringEraseMessage =
         "Data was being erased, so nothing was imported. Try again once that is finished."
     public static let partialRestoreWarningMessage =
-        "The journal restore was incomplete; entries may already be present. Check your journal before importing this file again."
+        "The restore was incomplete; journal entries or saved meals may already be present. Check your journal and saved meals before importing this file again."
     /// An erase that found a restore still running and would not wait any longer.
     public static let eraseWaitTimedOutMessage =
         "An import was still running, so nothing was erased. Try again in a moment."

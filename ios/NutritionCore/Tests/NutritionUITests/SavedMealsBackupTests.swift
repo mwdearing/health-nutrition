@@ -89,6 +89,11 @@ final class SavedMealsBackupTests: XCTestCase {
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .notEmpty),
             "This phone already has journal entries. An import only works on a journal that is empty.")
+        // Saved meals that could not be emptied again are reported as a partial restore, so its warning names them.
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .partialRestore(retainedIntakes: 0, retainedTombstones: 0)),
+            "The restore was incomplete; journal entries or saved meals may already be present. "
+                + "Check your journal and saved meals before importing this file again.")
     }
 
     func testTheImportSummaryCountsSavedMeals() {
