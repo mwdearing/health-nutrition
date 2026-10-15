@@ -990,6 +990,41 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertTrue(model.rows.isEmpty)
     }
 
+    func testAnItemWhoseLabelUsesAnAliasIsMarkedLikeTheDaysTally() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let vitaminC = labelled(
+            "s-vitamin-c", name: "Example magnesium", kind: .supplement, nutrients: ["vitamin-c": .known(2_500, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: vitaminC)
+        try saveFavorite(favorites, snapshot: "s-vitamin-c")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        model.load(now: now)
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["vitaminC"])
+        XCTAssertEqual(model.rows.first?.aboveUpperLimit, [NutrientNames.displayName(for: "vitaminC")])
+    }
+
+    func testAGroupChosenElsewhereIsPickedUpByTheMinuteRefresh() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, preferences) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: nil)
+        model.load(now: now)
+        XCTAssertFalse(model.hasReferenceGroup)
+
+        // Chosen on Vitamins and minerals in another window.
+        preferences.setReferenceGroup(men31)
+        model.refreshClock(now: now.addingTimeInterval(60))
+        XCTAssertTrue(model.hasReferenceGroup)
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["magnesium"])
+    }
+
     func testEraseEmptiesTheList() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()

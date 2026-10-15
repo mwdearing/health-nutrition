@@ -126,6 +126,8 @@ public final class SupplementStackViewModel: ObservableObject {
     /// counted for.
     private var counts: [String: [String]] = [:]
     private var countedDay: String?
+    /// The reference group the last full read compared with.
+    private var loadedGroup: ReferenceGroup?
     /// The time each Taken tap was for, by entry id, as of the last full read. Only today's marks for
     /// entries still in the journal are kept.
     private var marks: [String: SupplementTakenMark] = [:]
@@ -189,6 +191,7 @@ public final class SupplementStackViewModel: ObservableObject {
             countedDay = clock.dayKey
             unreadableEntriesToday = unreadable
             limitRows = limits.rows
+            loadedGroup = referencePreferences?.referenceGroup
             hasReferenceGroup = limits.hasGroup
             limitCheckFailed = limits.failed
             rows = makeRows(clock: clock)
@@ -210,8 +213,10 @@ public final class SupplementStackViewModel: ObservableObject {
     /// passes turns "Not logged". On another day, or in a zone where it is another day, it reads everything
     /// again instead, because the entries counted belong to the day they were counted for.
     public func refreshClock(now: Date) {
+        // A reference group changed elsewhere (Vitamins and minerals in another window) changes what the
+        // limits are, so the list reads everything again rather than keep the old group's notes.
         guard let day = countedDay, let clock = SupplementStackClock(now: now, zoneIdentifier: zoneID()),
-              clock.dayKey == day
+              clock.dayKey == day, referencePreferences?.referenceGroup == loadedGroup
         else {
             load(now: now)
             return
@@ -268,7 +273,12 @@ public final class SupplementStackViewModel: ObservableObject {
     static func limitsCounting(_ product: ProductDefinition?, among rows: [NutrientGapRow]) -> [String] {
         guard let product else { return [] }
         return rows.filter { row in
-            guard case .known(let amount, _) = product.value(for: row.nutrient), amount > 0 else { return false }
+            // The label may state the nutrient under an accepted alias (`vitamin-c`); the day's tally reads
+            // the same keys in the same order, so an item is marked for exactly what the tally counted.
+            let stated = HealthKitWritePlanner.acceptedKeys(for: row.nutrient).lazy
+                .map { product.value(for: $0) }
+                .first { if case .unknown = $0 { return false } else { return true } }
+            guard case .known(let amount, _)? = stated, amount > 0 else { return false }
             switch row.reference?.upperLimitScope {
             case .allSources: return true
             case .supplementsAndMedicines, .supplementsAndFortifiedFoods: return product.kind == .supplement
