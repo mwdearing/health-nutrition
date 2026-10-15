@@ -196,9 +196,11 @@ defined as 0.025 mcg, for D2 and D3 alike, so it is a fixed mass. The registry
 states it on the nutrient (`"mcg_per_international_unit": "0.025"` on `vitamin_d`),
 and an operation that names `vitamin_d` converts IU to a mass through it: 400 IU is
 10 mcg, and 10 mcg plus 400 IU of vitamin D sums to 20 mcg. In the catalog the
-multiplication is exact, so no rounding rule applies. The iOS journal restates a
-vitamin D amount after its own scaling, with the `Decimal` arithmetic described
-under "The journal keeps the digits its arithmetic gives". Only IU to a mass converts; a mass is never
+multiplication is exact, so no rounding rule applies. The iOS journal restates
+vitamin D with the `Decimal` arithmetic described under "The journal keeps the
+digits its arithmetic gives": a logged entry's total after the entry is scaled,
+and a recipe ingredient's amount before the recipe is divided into portions.
+Only IU to a mass converts; a mass is never
 converted into IU, and an operation that names no nutrient, or another nutrient,
 refuses IU as before. A sum that asks for its total in IU keeps IU: vitamin D
 amounts stated in IU add up in IU, and a mass among them is refused. The stored
