@@ -129,12 +129,24 @@ struct LogSavedMealIntent: AppIntent {
             id: savedMeal.id, meal: meal?.label, now: Date(), meals: meals,
             log: { saved, meal, now in
                 guard let services else { throw SavedMealError.notFound }
-                let result = try SavedMealLogger(store: services.journalStore).log(saved, as: meal, now: now)
-                services.today.load(now: now)
-                services.journal.load(now: now)
-                return result
+                return try SavedMealLogger(store: services.journalStore).log(saved, as: meal, now: now)
             },
             leftovers: { ids in services?.savedMeals.recordLeftovers(ids) })
+        // Whatever was written (all of it, part of it, or entries a failed write left), the app reloads as it
+        // does after an add from its own screens, so Today and the Diary show it and Apple Health gets it
+        // now rather than at the next foreground.
+        if let services { Self.reload(services, now: Date()) }
         return .result(dialog: IntentDialog(stringLiteral: outcome.message))
+    }
+
+    /// What `RootView.reload()` does after an add: every screen that lists entries reads again, and one
+    /// Apple Health delivery pass runs (it does nothing until Apple Health is connected).
+    @MainActor
+    private static func reload(_ services: AppServices, now: Date) {
+        services.today.load(now: now)
+        services.journal.load(now: now)
+        services.library.load()
+        services.firstDayChecklist.load()
+        Task { await services.healthKitDeliveryStatus.run(now: now, automatic: true) }
     }
 }
