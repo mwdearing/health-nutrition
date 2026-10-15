@@ -119,12 +119,18 @@ struct WidgetSnapshotStore {
             try url.setResourceValues(values)
         } catch {
             Logger(subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "widget-summary")
-                .error("Could not leave the summary out of backups: \(error.localizedDescription, privacy: .public)")
+                .error("Could not leave the summary out of backups: \(error.localizedDescription, privacy: .private)")
         }
     }
 
     func erase() throws {
         guard fileManager.fileExists(atPath: fileURL.path) else { return }
         try fileManager.removeItem(at: fileURL)
+    }
+
+    /// Last resort when neither replacing nor removing the file works: empties it in place, so no figure is left
+    /// on disk. The widget treats a file it cannot decode as "no summary" and shows dashes.
+    func truncate() throws {
+        try Data().write(to: fileURL)
     }
 }

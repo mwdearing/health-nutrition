@@ -53,6 +53,8 @@ final class WidgetSnapshotPublisher {
 
     func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
         guard let store, !isErasing(), erasure.accepts(generation: generation) else { return }
+        // `lastLoadedAt` and the totals move together inside TodayViewModel.load(now:), which is synchronous on the
+        // main actor, so reading the totals here, on the main actor, is reading what that load produced.
         let snapshot = Self.snapshot(from: today, now: loadedAt)
         do {
             try store.write(snapshot)
@@ -144,7 +146,14 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
         do {
             try store.write(WidgetSnapshot.empty(at: now()))
         } catch {
-            try store.erase()
+            do {
+                try store.erase()
+            } catch {
+                // Neither replacing nor removing worked: empty the file in place so no figure is left, then try
+                // the removal once more. If even that cannot be done the erase reports the failure.
+                try store.truncate()
+                try? store.erase()
+            }
         }
     }
 }

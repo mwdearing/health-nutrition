@@ -13,7 +13,8 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   locked, according to the person's Lock Screen widget settings.
 - **Erase all data.** Clears the summary: it is replaced by an empty one (no entries, no figures) at once, so the
   widget shows "Nothing logged today"; if that write fails the file is removed instead, and the widgets are
-  refreshed either way. A write that was already pending from before the erase is dropped by an erase counter
+  refreshed either way. If the file cannot be removed either, it is emptied in place; the widget cannot decode an
+  empty file and shows dashes. A write that was already pending from before the erase is dropped by an erase counter
   (not the clock); Today then reloads and writes the real empty day.
 - **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
   shows dashes rather than claiming nothing was logged.

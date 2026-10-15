@@ -77,6 +77,23 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNil(store.read())
     }
 
+    func testIfBothTheEmptyWriteAndTheRemovalFailTheFileIsEmptiedInPlace() throws {
+        final class FailingRemoval: FileManager {
+            struct Failed: Error {}
+            override func removeItem(at URL: URL) throws { throw Failed() }
+        }
+        var store = WidgetSnapshotStore(directory: directory)
+        try store.write(sample())
+        struct WriteFailed: Error {}
+        store.writeData = { _, _ in throw WriteFailed() }
+        store.fileManager = FailingRemoval()
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll()
+        // No figure is left: the widget cannot decode an empty file and shows dashes.
+        XCTAssertNil(store.read())
+        let url = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
+        XCTAssertEqual(try Data(contentsOf: url).count, 0)
+    }
+
     func testAWritePendingAtEraseTimeNeverLandsWhateverTheClockDoes() {
         let erasure = WidgetSnapshotErasure()
         let pending = erasure.generation

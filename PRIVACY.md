@@ -20,6 +20,6 @@ Questions or concerns: open an issue at https://github.com/mwdearing/health-nutr
 
 The Today widget on the Home Screen and Lock Screen shows the day's calories, macros and water. The app writes
 them as plain totals into a file in an App Group container on this device, the only place the widget reads. The
-widget has no network access, the file is cleared when you use Erase all data, it is left out of
-device backups, and the figures are hidden by the system while the device is locked, according to your Lock
-Screen widget settings.
+widget has no network access, the file is cleared when you use Erase all data, it is left out of device
+backups, and the figures are marked private so the system hides them while the device is locked, according to
+your Lock Screen widget settings.
