@@ -57,7 +57,7 @@ public final class RecipeDetailViewModel: ObservableObject {
     static func valueText(_ value: NutrientValue) -> String {
         switch value {
         case .known(let amount, let unit):
-            return "\(DecimalFormatting.text(DisplayRounding.rounded(amount, fractionDigits: 1))) \(unit.symbol)"
+            return NutrientGapRow.figure(amount, unit)
         case .unknown, .notApplicable, .belowReportingThreshold:
             return "unknown"
         }

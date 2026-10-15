@@ -96,4 +96,10 @@ final class RecipeDetailViewModelTests: XCTestCase {
         let line = RecipeCoverage(nutrientID: "protein", lacking: 1, total: 3)
         XCTAssertEqual(line.text(nutrientName: "protein"), "1 of 3 ingredients lack protein")
     }
+
+    func testSmallAmountsNeverReadAsZero() {
+        XCTAssertEqual(RecipeDetailViewModel.valueText(.known(uiDec("0.04"), .mg)), "0.04 mg")
+        XCTAssertEqual(RecipeDetailViewModel.valueText(.known(uiDec("0.004"), .mg)), "< 0.01 mg")
+        XCTAssertEqual(RecipeDetailViewModel.valueText(.known(0, .mg)), "0 mg")
+    }
 }
