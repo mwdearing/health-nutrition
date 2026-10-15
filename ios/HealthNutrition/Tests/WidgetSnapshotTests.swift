@@ -96,4 +96,9 @@ final class WidgetSnapshotTests: XCTestCase {
         // Volume to mass needs a density the snapshot does not have.
         XCTAssertNil(WidgetSnapshotUnits.value(Quantity(value: 10, unit: .mL), in: .g))
     }
+
+    func testNothingIsPublishedWhileTodayReportsAnError() {
+        XCTAssertTrue(WidgetSnapshotPublisher.shouldPublish(errorMessage: nil))
+        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(errorMessage: "Could not read the journal."))
+    }
 }

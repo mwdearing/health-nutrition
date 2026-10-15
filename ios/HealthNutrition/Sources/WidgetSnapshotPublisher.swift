@@ -33,7 +33,7 @@ final class WidgetSnapshotPublisher {
     }
 
     func publish(from today: TodayViewModel) {
-        guard let store, !isErasing() else { return }
+        guard let store, !isErasing(), Self.shouldPublish(errorMessage: today.errorMessage) else { return }
         let snapshot = Self.snapshot(from: today, now: Date())
         do {
             try store.write(snapshot)
@@ -41,6 +41,13 @@ final class WidgetSnapshotPublisher {
         } catch {
             // The widgets keep showing the last snapshot; the app does not depend on this write.
         }
+    }
+
+    /// Nothing is written while Today reports an error. After a failed reload Today keeps the rows and totals it
+    /// had before, so stamping them with a fresh time would make yesterday's figures look current and defeat the
+    /// widget's stale-day check; the file keeps its old time instead, and a later successful load publishes.
+    nonisolated static func shouldPublish(errorMessage: String?) -> Bool {
+        errorMessage == nil
     }
 
     static func snapshot(from today: TodayViewModel, now: Date) -> WidgetSnapshot {
