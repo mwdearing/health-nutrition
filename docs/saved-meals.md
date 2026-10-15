@@ -41,3 +41,7 @@ The list is kept on this phone only, as JSON in the app's defaults domain under 
 - **Undo** (`undo(_:now:)`) deletes exactly the entries the result lists. An entry already deleted counts as undone. When another delete fails, every remaining entry is still tried, and the ones left are reported as `SavedMealUndoError.incomplete(remainingIDs:)`.
 
 Tests: `ios/NutritionCore/Tests/NutritionUITests/SavedMealsTests.swift` (the store, book and logger) and `SavedMealsModelTests.swift` (the screens' model and Save as meal from the Journal).
+
+## Shortcut
+
+**Log a saved meal** is a Siri, Spotlight and Shortcuts action (`LogSavedMealIntent`, next to Log water). It asks for a saved meal and, optionally, a meal; with none it uses the meal the saved meal was saved with. It opens the app and logs every item through the app's own journal store, as the screen does, then says what it did: "Added Usual breakfast to today's diary.", how many items were skipped, that nothing could be added, or "You have no saved meals yet. Save one from a meal in the Diary." It offers no Undo; the entries can be deleted in the Diary like any other. Entries left by a failed write that could not be removed are reported to the app's saved meals warning. The list of saved meals it offers is read straight from the store.

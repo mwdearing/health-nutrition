@@ -1,0 +1,75 @@
+import NutritionJournal
+import NutritionUI
+import XCTest
+
+@testable import HealthNutrition
+
+/// What "Log a saved meal" logs and says back. Synthetic names and ids only.
+final class LogSavedMealShortcutTests: XCTestCase {
+    private struct WriteFailed: Error {}
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func saved(_ id: String = "meal-1", meal: MealLabel? = .breakfast) -> SavedMeal {
+        SavedMeal(
+            id: id, name: "Usual breakfast", meal: meal,
+            items: [FavoriteTemplate(
+                id: "item-1", displayName: "Sample oats", category: "food",
+                components: [FavoriteComponent(componentID: "oats", name: "Sample oats", amountText: "40", unitSymbol: "g")])])
+    }
+
+    func testLogsUnderTheMealItWasSavedWithUnlessOneIsNamed() {
+        var loggedUnder: [MealLabel?] = []
+        let log: (SavedMeal, MealLabel?, Date) throws -> SavedMealLogResult = { _, meal, _ in
+            loggedUnder.append(meal)
+            return SavedMealLogResult(createdIDs: ["a"], skippedCount: 0)
+        }
+        let first = SavedMealShortcut.log(id: "meal-1", meal: nil, now: now, meals: [saved()], log: log)
+        let second = SavedMealShortcut.log(id: "meal-1", meal: .dinner, now: now, meals: [saved()], log: log)
+        XCTAssertEqual(loggedUnder, [.breakfast, .dinner])
+        XCTAssertEqual(first, .init(logged: true, message: "Added Usual breakfast to today's diary."))
+        XCTAssertTrue(second.logged)
+    }
+
+    func testSaysWhatWasSkipped() {
+        XCTAssertEqual(
+            SavedMealShortcut.message(for: SavedMealLogResult(createdIDs: ["a", "b"], skippedCount: 1), name: "Usual breakfast"),
+            "Added 2 of 3 items of Usual breakfast to today's diary. 1 item can no longer be logged.")
+        let nothing = SavedMealShortcut.log(id: "meal-1", meal: nil, now: now, meals: [saved()]) { _, _, _ in
+            SavedMealLogResult(createdIDs: [], skippedCount: 1)
+        }
+        XCTAssertEqual(nothing, .init(logged: false, message: "Nothing was added: 1 item can no longer be logged."))
+    }
+
+    func testRefusalsWriteNothing() {
+        var wrote = false
+        let log: (SavedMeal, MealLabel?, Date) throws -> SavedMealLogResult = { _, _, _ in
+            wrote = true
+            return SavedMealLogResult(createdIDs: ["a"], skippedCount: 0)
+        }
+        XCTAssertEqual(
+            SavedMealShortcut.log(id: "meal-1", meal: nil, now: now, meals: nil, log: log).message,
+            SavedMealShortcut.notReadyMessage)
+        XCTAssertEqual(
+            SavedMealShortcut.log(id: "meal-1", meal: nil, now: now, meals: [], log: log).message,
+            "You have no saved meals yet. Save one from a meal in the Diary.")
+        XCTAssertEqual(
+            SavedMealShortcut.log(id: "gone", meal: nil, now: now, meals: [saved()], log: log).message,
+            SavedMealError.notFound.message)
+        XCTAssertFalse(wrote)
+    }
+
+    func testAFailedWriteSaysSoAndReportsLeftovers() {
+        let failed = SavedMealShortcut.log(id: "meal-1", meal: nil, now: now, meals: [saved()]) { _, _, _ in
+            throw WriteFailed()
+        }
+        XCTAssertEqual(failed, .init(logged: false, message: "Could not add Usual breakfast. Nothing was logged."))
+
+        var reported: [String] = []
+        let partial = SavedMealShortcut.log(
+            id: "meal-1", meal: nil, now: now, meals: [saved()],
+            log: { _, _, _ in throw SavedMealPartialLogError(remainingIDs: ["left-1"], underlying: WriteFailed()) },
+            leftovers: { reported = $0 })
+        XCTAssertEqual(partial, .init(logged: false, message: "Could not add Usual breakfast."))
+        XCTAssertEqual(reported, ["left-1"])
+    }
+}

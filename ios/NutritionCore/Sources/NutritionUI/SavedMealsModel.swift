@@ -179,6 +179,11 @@ public final class SavedMealsModel: ObservableObject {
         return [Optional(first)] + others + [nil]
     }
 
+    /// Warns about entries a failed log elsewhere (a shortcut) could not remove again, as a failed log here does.
+    public func recordLeftovers(_ ids: [String]) {
+        addLeftovers(ids)
+    }
+
     private func addLeftovers(_ ids: [String]) {
         leftoverIDs += ids.filter { !leftoverIDs.contains($0) }
         refreshLeftovers()
