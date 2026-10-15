@@ -78,10 +78,11 @@ journal before trying that file again. The importer throws `JournalImportError` 
 |---|---|
 | `unsupportedVersion` | The document declares a `schema_version` this build does not read. The version is read from the raw JSON before anything else, so a file from a newer build is refused as such even when its other fields would not decode. A file that spells a read version as `"1"` or `"2"` rather than `1` or `2` is accepted. |
 | `notEmpty` | The store already holds intakes, active or deleted. There is no merge in this version: one journal is restored into an empty one. A tombstone is an intake row too, so a journal that already has one is not empty either. |
+| `savedMealsNotEmpty` | A version 4 file states the whole saved meals list, and the phone already keeps saved meals. They are not merged into. A version 1 to 3 file carries no saved meals and is not refused for them. |
 | `tooLarge` | The file is over the import ceiling of 20 MiB or its collections contain over 100,000 aggregate elements. The app refuses the whole file; it never truncates it. |
 | `malformed` | The bytes are not a journal export: not JSON, or not the shape the schema describes. |
 | `corrupt` | The file is an export that cannot be restored as it stands. |
-| `partialRestore` | The favorites write failed after the journal was restored, and undo refused to remove rows that may include concurrent edits. Journal entries may remain; inspect the journal before importing the file again. |
+| `partialRestore` | A second-phase write (saved meals or favorites) failed after the journal was restored, and undo refused to remove rows that may include concurrent edits, or saved meals could not be emptied again. Journal entries may remain; inspect the journal before importing the file again. |
 
 The file picker checks available file-size metadata first, then reads in bounded chunks and stops at the first byte over 20 MiB. The importer separately checks the byte and aggregate-element ceilings before constructing restore objects. A missing or inaccurate file-size value cannot bypass the read ceiling, and canceling a read closes the file and releases any security-scoped access. These are import limits only: exports are still complete and are not capped or shortened. A journal whose backup exceeds either restore limit remains exportable, but this app cannot restore that file; keep a copy and use a reader that supports the full file rather than editing or truncating the backup.
 
@@ -161,15 +162,16 @@ The journal and the favorites then live in two separate store files, and saved m
 domain, so their writes cannot be one transaction. **The journal is written first**, in one `save()` covering
 every row; the saved meals and then the favorites follow, each in one write (the second phase). A file that
 carries saved meals needs a saved meals store, as one with favorites needs a favorites store, and saved meals
-are restored only into an empty list: a phone that already keeps saved meals is refused as `notEmpty` rather
-than merged into, since a merge would have to choose between two meals of one name. That holds for a version 4
+are restored only into an empty list: a phone that already keeps saved meals is refused as `savedMealsNotEmpty`
+rather than merged into, since a merge would have to choose between two meals of one name. That holds for a version 4
 file with no saved meals too, since it states the whole list. The saved meals store checks the list again in the
 same step as it writes, so a meal saved in another window during the import is never overwritten; the import is
 refused instead. When a second-phase write fails, the importer empties the saved meals list again (it was empty
 before), but only while it still holds exactly what the restore wrote, and tries to undo the journal rows it
 wrote. If that succeeds, the failure is reported and every store is as it was found, so the same file can simply
 be imported again. Saved meals that could not be emptied again, or that changed meanwhile and were left alone,
-are reported as a partial restore. When the journal write itself fails, it rolls itself back and nothing was
+are reported as a partial restore, and the journal is left in place with them, since those meals still name
+product snapshots the journal restore wrote. When the journal write itself fails, it rolls itself back and nothing was
 written at all. A file with no entries and no deleted ones writes nothing to the journal, so a stop after its
 saved meals leaves an empty journal; the flag naming that file is then what lets importing it again finish.
 
@@ -195,8 +197,9 @@ taken for an unfinished restore. One import runs at a time; another started mean
 app is stopped after the journal's save, the flag stays. Importing that same file again then finds the flag naming
 it, a journal that holds exactly that file's journal (the same entries field for field, the same revisions, the
 same deleted entries). Each part of the second phase without its receipt must not have been written either: no
-saved meals, or exactly the file's (a stop between the list's write and its receipt's), and none of the file's
-favorites on the phone (they are one save, so a stopped restore left none). The import then writes only the parts
+saved meals, or exactly the file's (a stop between the list's write and its receipt's; any other list is refused as
+`savedMealsNotEmpty`), and none of the file's favorites on the phone (they are one save, so a stopped restore
+left none). The import then writes only the parts
 without a receipt; a part with one is left as it is, edits since included. The flag stays until they are
 written, so a failure
 there can be retried the same way. Anything else in a journal that is not empty is refused as `notEmpty` as

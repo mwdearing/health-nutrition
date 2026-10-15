@@ -12,6 +12,9 @@ public enum JournalImportError: Error, Sendable, Equatable {
     /// The store already holds intakes, active or deleted. This version restores into an empty journal
     /// only; it does not merge one journal into another.
     case notEmpty
+    /// A version 4 file states the whole saved meals list, and the phone already keeps saved meals. It is not
+    /// merged into them.
+    case savedMealsNotEmpty
     /// The bytes are not a journal export at all: not JSON, or not the shape the schema describes.
     case malformed(String)
     /// The file is a version 1 export that cannot be restored as it stands: a snapshot nothing defines,
@@ -233,7 +236,7 @@ public enum JournalImporter {
             let savedMealsWritten = try savedMealsTarget.map { try $0.hasSavedMealsRestoreReceipt(digest) } ?? true
             if let savedMealsTarget, !savedMealsWritten {
                 let present = try savedMealsTarget.journalSavedMeals()
-                guard present.isEmpty || present == plan.savedMeals else { throw JournalImportError.notEmpty }
+                guard present.isEmpty || present == plan.savedMeals else { throw JournalImportError.savedMealsNotEmpty }
             }
             let favoritesWritten = try favoritesTarget.map { try $0.hasRestoreReceipt(digest) } ?? true
             if favoritesTarget != nil, !favoritesWritten {
@@ -264,7 +267,7 @@ public enum JournalImporter {
         // whole list, an empty one included, so it is refused over a phone that keeps any. The store checks again
         // as it writes, so a meal saved in another window meanwhile is not overwritten.
         if document.schemaVersion >= 4, let savedMeals, try !savedMeals.journalSavedMeals().isEmpty {
-            throw JournalImportError.notEmpty
+            throw JournalImportError.savedMealsNotEmpty
         }
         // The journal is empty, so any flag found is stale and this run's own replaces it. It goes down before
         // the journal's save, so a stop after that save leaves it behind. A flag that cannot be written only
@@ -300,17 +303,20 @@ public enum JournalImporter {
                 if let savedMealsTarget, savedMealsWritten {
                     do { try savedMealsTarget.clearRestoredSavedMeals(plan.savedMeals) } catch { savedMealsLeft = true }
                 }
-                do {
-                    try journal.undoRestore(receipt)
-                } catch {
-                    let retainedIntakes = receipt.intakes.filter { $0.lifecycle == .active }.count
-                    let retainedTombstones = receipt.intakes.filter { $0.lifecycle == .deleted }.count
+                let retainedIntakes = receipt.intakes.filter { $0.lifecycle == .active }.count
+                let retainedTombstones = receipt.intakes.filter { $0.lifecycle == .deleted }.count
+                // Saved meals that could not be taken back still name the product snapshots this restore wrote,
+                // which the journal's undo would remove. So the journal stays as well, and the restore is reported
+                // as partial: both are there, and the person can check them before importing again.
+                guard !savedMealsLeft else {
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
-                // Saved meals that could not be taken back are rows of this restore that remain.
-                guard !savedMealsLeft else {
-                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
+                do {
+                    try journal.undoRestore(receipt)
+                } catch {
+                    throw JournalImportError.partialRestore(
+                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
                 throw secondPhaseFailure
             }

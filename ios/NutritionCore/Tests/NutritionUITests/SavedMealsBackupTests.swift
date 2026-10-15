@@ -48,7 +48,7 @@ final class SavedMealsBackupTests: XCTestCase {
         try store.restoreJournalSavedMeals([meal("meal-1", "Usual lunch")], receipt: "digest-1")
         // A list changed since the restore is left alone.
         XCTAssertThrowsError(try store.clearRestoredSavedMeals([meal("meal-9", "Something else")])) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .savedMealsNotEmpty)
         }
         XCTAssertEqual(try store.journalSavedMeals().map(\.id), ["meal-1"])
         try store.clearRestoredSavedMeals([meal("meal-1", "Usual lunch")])
@@ -70,7 +70,7 @@ final class SavedMealsBackupTests: XCTestCase {
                 productSnapshotID: nil),
         ])
         XCTAssertThrowsError(try store.restoreJournalSavedMeals([meal("meal-1", "Usual lunch")], receipt: "digest-1")) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .savedMealsNotEmpty)
         }
         XCTAssertEqual(try store.meals().map(\.name), ["Mine"])
         XCTAssertFalse(try store.hasSavedMealsRestoreReceipt("digest-1"))
@@ -80,6 +80,15 @@ final class SavedMealsBackupTests: XCTestCase {
         XCTAssertEqual(SavedMealBook.maximumNameLength, JournalSavedMealLimits.maximumNameLength)
         XCTAssertEqual(SavedMealBook.maximumItems, JournalSavedMealLimits.maximumItems)
         XCTAssertEqual(SavedMealBook.maximumMeals, JournalSavedMealLimits.maximumMeals)
+    }
+
+    func testTheSavedMealsRefusalSaysSavedMeals() {
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
+            "This phone already has saved meals. An import that includes saved meals only works when there are none.")
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .notEmpty),
+            "This phone already has journal entries. An import only works on a journal that is empty.")
     }
 
     func testTheImportSummaryCountsSavedMeals() {

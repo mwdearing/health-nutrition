@@ -113,7 +113,7 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
         let data = try JSONEncoder().encode(list)
         try lock.withLock {
             let current = try read()
-            guard current.isEmpty || current == list else { throw JournalImportError.notEmpty }
+            guard current.isEmpty || current == list else { throw JournalImportError.savedMealsNotEmpty }
             defaults.set(data, forKey: Self.key)
             defaults.set(receipt, forKey: Self.restoreReceiptKey)
         }
@@ -134,7 +134,7 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     public func clearRestoredSavedMeals(_ meals: [JournalSavedMeal]) throws {
         let list = meals.map { SavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
         try lock.withLock {
-            guard try read() == list else { throw JournalImportError.notEmpty }
+            guard try read() == list else { throw JournalImportError.savedMealsNotEmpty }
             defaults.removeObject(forKey: Self.key)
             defaults.removeObject(forKey: Self.restoreReceiptKey)
         }

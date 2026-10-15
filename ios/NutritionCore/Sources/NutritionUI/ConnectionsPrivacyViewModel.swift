@@ -124,6 +124,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "That file was made by a newer version of the app, so this one cannot read it."
     public static let importNotEmptyMessage =
         "This phone already has journal entries. An import only works on a journal that is empty."
+    /// A version 4 backup carries the whole saved meals list, so it is not restored over saved meals the phone keeps.
+    public static let importSavedMealsNotEmptyMessage =
+        "This phone already has saved meals. An import that includes saved meals only works when there are none."
     /// An import asked for while an erase was running. It is refused rather than queued, because a restore
     /// that landed afterwards would put back what the person had just deleted.
     public static let importDuringEraseMessage =
@@ -940,6 +943,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importUnsupportedVersionMessage
         case .notEmpty:
             return importNotEmptyMessage
+        case .savedMealsNotEmpty:
+            return importSavedMealsNotEmptyMessage
         case .tooLarge:
             return "This journal export is too large to import."
         case .malformed, .corrupt:

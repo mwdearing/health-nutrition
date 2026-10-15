@@ -18,14 +18,14 @@ private final class MemorySavedMeals: JournalSavedMealsStore, @unchecked Sendabl
     func restoreJournalSavedMeals(_ meals: [JournalSavedMeal], receipt: String) throws {
         beforeRestore(self)
         if failRestore { throw Failure() }
-        guard self.meals.isEmpty || self.meals == meals else { throw JournalImportError.notEmpty }
+        guard self.meals.isEmpty || self.meals == meals else { throw JournalImportError.savedMealsNotEmpty }
         self.meals = meals
         self.receipt = receipt
     }
     func hasSavedMealsRestoreReceipt(_ receipt: String) throws -> Bool { self.receipt == receipt }
     func removeSavedMealsRestoreReceipt(_ receipt: String) throws { if self.receipt == receipt { self.receipt = nil } }
     func clearRestoredSavedMeals(_ meals: [JournalSavedMeal]) throws {
-        guard self.meals == meals else { throw JournalImportError.notEmpty }
+        guard self.meals == meals else { throw JournalImportError.savedMealsNotEmpty }
         self.meals = []
         receipt = nil
     }
@@ -207,7 +207,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let savedMeals = MemorySavedMeals([JournalSavedMeal(id: "mine", name: "Mine", meal: nil, items: [template("x", name: "X")])])
         XCTAssertThrowsError(try JournalImporter.importExport(
             try savedMealsExport(), into: journal, favorites: try favorites(target), savedMeals: savedMeals)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .savedMealsNotEmpty)
         }
         XCTAssertEqual(try journal.activeIntakes(), [])
         XCTAssertEqual(savedMeals.meals.map(\.id), ["mine"])
@@ -225,7 +225,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let journal = try store(target)
         let savedMeals = MemorySavedMeals([JournalSavedMeal(id: "mine", name: "Mine", meal: nil, items: [template("x", name: "X")])])
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, savedMeals: savedMeals)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .savedMealsNotEmpty)
         }
         XCTAssertEqual(try journal.activeIntakes(), [])
         XCTAssertEqual(savedMeals.meals.map(\.id), ["mine"])
@@ -241,14 +241,14 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         savedMeals.beforeRestore = { store in if store.meals.isEmpty { store.meals = [mine] } }
         XCTAssertThrowsError(try JournalImporter.importExport(
             try savedMealsExport(), into: journal, favorites: try favorites(target), savedMeals: savedMeals)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .savedMealsNotEmpty)
         }
         XCTAssertEqual(savedMeals.meals, [mine])
         XCTAssertEqual(try journal.activeIntakes(), [])
     }
 
-    /// Undoing the saved meals after a failed favorites write leaves a list someone changed meanwhile alone,
-    /// and says the restore was partial.
+    /// Undoing the saved meals after a failed favorites write leaves a list someone changed meanwhile alone.
+    /// The journal stays too, since those meals still name its products, and the restore is reported as partial.
     func testUndoLeavesAListChangedMeanwhile() throws {
         let target = try directory()
         let journal = try store(target)
@@ -257,10 +257,11 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         favorites.beforeFailing = { savedMeals.meals.removeLast() }
         XCTAssertThrowsError(try JournalImporter.importExport(
             try savedMealsExport(), into: journal, favorites: favorites, savedMeals: savedMeals)) {
-            XCTAssertEqual($0 as? JournalImportError, .partialRestore(retainedIntakes: 0, retainedTombstones: 0))
+            XCTAssertEqual($0 as? JournalImportError, .partialRestore(retainedIntakes: 2, retainedTombstones: 1))
         }
         XCTAssertEqual(savedMeals.meals.map(\.id), ["meal-2"], "the changed list is left as it is")
-        XCTAssertEqual(try journal.activeIntakes(), [])
+        XCTAssertEqual(try journal.activeIntakes().count, 2, "the journal keeps the products the meals name")
+        XCTAssertNotNil(try journal.product(snapshotID: "snap-oats-1"))
     }
 
     /// A file with no entries at all writes nothing to the journal, so a stop after its saved meals leaves an

@@ -492,7 +492,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/component"
-          }
+          },
+          "minItems": 1
         }
       }
     }
