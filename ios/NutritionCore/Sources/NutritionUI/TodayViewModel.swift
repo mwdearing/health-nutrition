@@ -469,7 +469,7 @@ public final class TodayViewModel: ObservableObject {
 
     /// The quick-water amount in the unit the reader chose.
     public var quickWaterDisplay: DisplayAmount {
-        AmountDisplay.display(quickWaterMilliliters, unit: .mL, system: unitSystem)
+        AmountDisplay.display(quickWaterMilliliters, unit: .mL, system: unitSystem, roundsStoredUnit: true)
     }
 
     /// One line for the quick-add button, naming the amount it adds and in the unit shown.

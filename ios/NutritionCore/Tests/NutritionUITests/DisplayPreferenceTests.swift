@@ -230,6 +230,28 @@ final class AmountDisplayPreferenceTests: XCTestCase {
         XCTAssertEqual(AmountDisplay.water(1, system: .metric).text, "1 mL")
     }
 
+    /// A long scaled volume reads as a kitchen figure in both systems: 12 fl oz is 354.88235475 mL.
+    func testALongScaledVolumeIsRoundedInBothSystems() {
+        let stored = Decimal(string: "354.88235475")!
+        func reading(_ amount: Decimal, _ system: UnitSystem) -> String {
+            AmountDisplay.display(amount, unit: .mL, system: system, roundsStoredUnit: true).text
+        }
+        XCTAssertEqual(reading(stored, .metric), "354.9 mL")
+        XCTAssertEqual(reading(stored, .usCustomary), "12 fl oz")
+        XCTAssertEqual(reading(Decimal(250), .metric), "250 mL")
+        // The unrounded display, used by fields someone edits, keeps the stored figure.
+        XCTAssertEqual(text(stored, .mL, .metric), "354.88235475 mL")
+        XCTAssertEqual(text(Decimal(10), .mg, .metric), "10 mg")
+    }
+
+    /// A Recent row's amounts follow the unit system rather than always reading metric.
+    func testAmountSummaryFollowsTheUnitSystem() {
+        let drink = IntakeComponent(
+            componentID: "d", name: "Drink", amount: Decimal(string: "354.88235475")!, unit: .mL)
+        XCTAssertEqual(AmountText.summary([drink], unitSystem: .usCustomary), "12 fl oz")
+        XCTAssertEqual(AmountText.summary([drink], unitSystem: .metric), "354.9 mL")
+    }
+
     /// An amount that is not a number is shown as stored, never as a converted figure.
     func testAnUnknownAmountIsShownAsStoredAndNeverConverted() {
         XCTAssertEqual(text(Decimal.nan, .g, .usCustomary), "NaN g")
@@ -348,6 +370,15 @@ final class QuickWaterPreferenceTests: XCTestCase {
         XCTAssertEqual(component.amount, Decimal(300))
         XCTAssertEqual(component.unit, .mL)
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(300))
+    }
+
+    /// Metric reads a stored 400.55 mL at the digits a reading carries, as the button always did.
+    func testQuickWaterLabelRoundsAStoredAmountUnderMetric() throws {
+        let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(string: "400.55")!)
+        let model = TodayViewModel(
+            store: RecordingStore(makeID: { "unused" }), timeZoneIdentifier: "UTC", makeID: { "w" },
+            preferences: preferences)
+        XCTAssertEqual(model.quickWaterLabel, "Add 400.6 mL water")
     }
 
     /// Under US customary the stored amount is still milliliters and the label follows the preference.

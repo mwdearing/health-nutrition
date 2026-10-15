@@ -58,7 +58,7 @@ public struct AddHomeView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(recent.template.displayName).font(.headline)
-                                Text(AmountText.summary(recent.template.components))
+                                Text(model.amountSummary(of: recent.template))
                                     .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
                             }
                             Spacer()

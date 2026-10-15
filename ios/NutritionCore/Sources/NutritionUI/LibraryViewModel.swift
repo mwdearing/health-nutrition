@@ -246,12 +246,14 @@ public final class LibraryViewModel: ObservableObject {
     private let store: JournalStore
     private let favorites: FavoritesStore
     private let repeater: IntakeRepeater
+    private let preferences: DisplayPreferences
 
     public init(
         store: JournalStore,
         favorites: FavoritesStore,
         productStore: (any CustomProductStore)? = nil,
         productSharing: CustomProductSharingModel? = nil,
+        preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
@@ -260,6 +262,7 @@ public final class LibraryViewModel: ObservableObject {
         self.favorites = favorites
         self.productStore = productStore
         self.productSharing = productSharing
+        self.preferences = preferences
         self.repeater = IntakeRepeater(
             store: store, timeZoneProvider: IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider),
             makeID: makeID)
@@ -267,8 +270,8 @@ public final class LibraryViewModel: ObservableObject {
 
     /// The amounts, then the meal when the template states one: two rows that differ only by meal
     /// (a Breakfast and a Dinner of the same food) have to be told apart on the row itself.
-    static func detail(_ template: RepeatTemplate) -> String {
-        let amounts = AmountText.summary(template.components)
+    static func detail(_ template: RepeatTemplate, unitSystem: UnitSystem = .metric) -> String {
+        let amounts = AmountText.summary(template.components, unitSystem: unitSystem)
         guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
         return "\(amounts) · \(meal)"
     }
@@ -305,13 +308,13 @@ public final class LibraryViewModel: ObservableObject {
                 let template = favoriteTemplates[index]
                 return LibraryItem(
                     id: "favorite:\(favorite.id)", title: favorite.displayName,
-                    detail: Self.detail(template), isFavorite: true, template: template,
+                    detail: Self.detail(template, unitSystem: preferences.unitSystem), isFavorite: true, template: template,
                     kind: kind(of: template))
             }
             let recentItems = recents.map { recent -> LibraryItem in
                 LibraryItem(
                     id: "recent:\(recent.id)", title: recent.template.displayName,
-                    detail: Self.detail(recent.template),
+                    detail: Self.detail(recent.template, unitSystem: preferences.unitSystem),
                     isFavorite: favoriteKeys.contains(recent.id), template: recent.template,
                     kind: kind(of: recent.template))
             }
@@ -325,7 +328,7 @@ public final class LibraryViewModel: ObservableObject {
             func foodItem(_ food: RecentItem) -> LibraryItem {
                 LibraryItem(
                     id: "food:\(food.id)", title: food.template.displayName,
-                    detail: Self.detail(food.template),
+                    detail: Self.detail(food.template, unitSystem: preferences.unitSystem),
                     isFavorite: favoriteKeys.contains(food.id), template: food.template,
                     kind: kind(of: food.template))
             }
@@ -334,7 +337,7 @@ public final class LibraryViewModel: ObservableObject {
             frequentItems = frequents.map { frequent -> LibraryItem in
                 LibraryItem(
                     id: "frequent:\(frequent.id)", title: frequent.template.displayName,
-                    detail: Self.detail(frequent.template),
+                    detail: Self.detail(frequent.template, unitSystem: preferences.unitSystem),
                     isFavorite: favoriteKeys.contains(frequent.id), template: frequent.template,
                     kind: kind(of: frequent.template))
             }

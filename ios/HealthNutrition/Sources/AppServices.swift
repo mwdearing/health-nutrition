@@ -121,13 +121,15 @@ final class AppServices {
         journal = JournalViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore, productStore: journalStore,
-            productSharing: CustomProductSharingModel(store: journalStore, coordinator: productSharing, service: products))
+            productSharing: CustomProductSharingModel(store: journalStore, coordinator: productSharing, service: products),
+            preferences: displayPreferences)
         let supplementSchedules = UserDefaultsSupplementStackStore()
         // The same nutrient facts and reference group as the vitamins and minerals screen, so the list's
         // upper-limit notes say what that screen says.
         supplementStack = SupplementStackViewModel(
             store: journalStore, favorites: favoritesStore, schedules: supplementSchedules,
-            lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences)
+            lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
+            preferences: displayPreferences)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences)
