@@ -192,7 +192,7 @@ public final class SavedMealsModel: ObservableObject {
         }
         let count = leftoverIDs.count
         leftoverWarning = count == 0 ? nil
-            : "\(Self.entriesText(count)) from a saved meal that could not be logged "
+            : "\(Self.entriesText(count)) left over from logging or undoing a saved meal "
                 + (count == 1 ? "is" : "are") + " still in the Journal. Delete "
                 + (count == 1 ? "it" : "them") + " there."
     }

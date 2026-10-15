@@ -101,7 +101,9 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     }
 }
 
-/// Adds, renames and removes saved meals, refusing anything it could not log back exactly.
+/// Adds, renames and removes saved meals, refusing an amount it could not log back exactly. It does not
+/// re-check what the journal checks when an entry is written (component ids, categories): items come from
+/// entries the journal already accepted.
 public struct SavedMealBook {
     public static let maximumNameLength = 60
     public static let maximumItems = 30

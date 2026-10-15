@@ -16,7 +16,7 @@ public struct FrequentItem: Equatable, Identifiable {
 /// Items logged at least `minimumCount` times among the newest active entries, most often first.
 ///
 /// Counted over the newest `window` entries rather than a span of days, so the list follows what the person
-/// logs now without a clock: a daily logger's window is a couple of weeks, an occasional logger's longer.
+/// logs now without a clock: at about 15 entries a day the window is two weeks, at 5 a day about six weeks.
 /// An item is identified as a recent is (snapshot or category and component names, and the meal), so the
 /// same oats at breakfast and at dinner are counted apart. Water is left out: it has its own quick add, and
 /// counted here it would push every food off the list. Ties go to the item used most recently.
@@ -38,7 +38,9 @@ public struct FrequentItemsProvider {
             .sorted { $0.occurredAt > $1.occurredAt }
             .prefix(window)
         var counts: [String: Int] = [:]
-        var newest: [String: (template: RepeatTemplate, lastUsedAt: Date)] = [:]
+        // The newest entry of each item, kept as read: a template (which may read a product) is built only
+        // for an item that turns out to be logged often, not for every item seen once.
+        var newest: [String: (intake: Intake, revision: IntakeRevision)] = [:]
         for intake in intakes {
             // An entry with no amounts cannot be repeated, so it is not counted toward anything.
             guard let revisions = try? store.revisions(of: intake.id),
@@ -49,14 +51,15 @@ public struct FrequentItemsProvider {
             counts[key, default: 0] += 1
             // Entries come newest first, so the first one seen is the one the item repeats.
             guard newest[key] == nil else { continue }
-            newest[key] = (
-                template: RecentItemsProvider(store: store).template(intake: intake, revision: current),
-                lastUsedAt: intake.occurredAt)
+            newest[key] = (intake: intake, revision: current)
         }
+        let provider = RecentItemsProvider(store: store)
         var items: [FrequentItem] = []
         for (key, value) in newest {
             guard let count = counts[key], count >= Self.minimumCount else { continue }
-            items.append(FrequentItem(id: key, template: value.template, count: count, lastUsedAt: value.lastUsedAt))
+            items.append(FrequentItem(
+                id: key, template: provider.template(intake: value.intake, revision: value.revision), count: count,
+                lastUsedAt: value.intake.occurredAt))
         }
         return Array(items.sorted {
             if $0.count != $1.count { return $0.count > $1.count }

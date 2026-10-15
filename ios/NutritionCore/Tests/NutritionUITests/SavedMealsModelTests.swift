@@ -187,7 +187,7 @@ final class SavedMealsModelTests: XCTestCase {
         let token = try XCTUnwrap(model.undoToken)
         XCTAssertEqual(token.result.createdIDs.count, 1)
         XCTAssertEqual(token.message, "Could not log Usual breakfast. 1 entry was left in the journal.")
-        let warning = "1 entry from a saved meal that could not be logged is still in the Journal. Delete it there."
+        let warning = "1 entry left over from logging or undoing a saved meal is still in the Journal. Delete it there."
         XCTAssertEqual(model.leftoverWarning, warning)
         // The warning outlives the timed Undo offer, a later read and a later log.
         model.expireUndo(token)
@@ -211,7 +211,7 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertEqual(model.undoToken?.message, "Could not remove 2 entries. Try again.")
         XCTAssertEqual(
             model.leftoverWarning,
-            "2 entries from a saved meal that could not be logged are still in the Journal. Delete them there.")
+            "2 entries left over from logging or undoing a saved meal are still in the Journal. Delete them there.")
         journal.failWritesAfterFirstCreate = false
         XCTAssertTrue(model.undo(now: now))
         XCTAssertNil(model.leftoverWarning)
