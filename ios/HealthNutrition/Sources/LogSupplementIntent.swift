@@ -110,29 +110,51 @@ struct SupplementEntity: AppEntity {
     }
 }
 
+/// Which items of the supplement list the picker and Siri may be told about.
+enum SupplementPickerPolicy {
+    /// - Parameters:
+    ///   - identifiers: the ids a saved shortcut stores, or nil for an enumeration (the picker, Siri's prompts).
+    ///   - isUnlocked: false while the device is locked.
+    ///   - isBusy: true while Erase all data or an import runs.
+    ///
+    /// Nothing is offered while busy. An enumeration is offered only unlocked, so a list of supplement names is not
+    /// read out or shown before unlocking. A lookup by id is allowed locked: a saved shortcut holds an opaque id,
+    /// returns no list, and then reaches the action's own unlock requirement.
+    static func visible(
+        _ items: [ShortcutSupplement], identifiers: [String]?, isUnlocked: Bool, isBusy: Bool
+    ) -> [ShortcutSupplement] {
+        guard !isBusy else { return [] }
+        if let identifiers { return items.filter { identifiers.contains($0.id) } }
+        return isUnlocked ? items : []
+    }
+}
+
 struct SupplementEntityQuery: EntityQuery {
-    /// The names of what a person takes are not offered while the device is locked: protected data is
-    /// unavailable then, and the picker and Siri's prompts run before the action's own unlock requirement.
     @MainActor
     static var isDeviceUnlocked: () -> Bool = { UIApplication.shared.isProtectedDataAvailable }
 
     @MainActor
-    private func rows() -> [SupplementStackRow] {
-        guard Self.isDeviceUnlocked() else { return [] }
-        guard let services = AppServicesRegistry.current, !AppServicesRegistry.isBusy else { return [] }
-        let stack = services.supplementStack
-        stack.load(now: Date())
-        return stack.rows
+    private func entities(identifiers: [String]?) -> [SupplementEntity] {
+        var items: [ShortcutSupplement] = []
+        if let services = AppServicesRegistry.current, !AppServicesRegistry.isBusy {
+            let stack = services.supplementStack
+            stack.load(now: Date())
+            items = stack.items
+        }
+        return SupplementPickerPolicy
+            .visible(
+                items, identifiers: identifiers, isUnlocked: Self.isDeviceUnlocked(), isBusy: AppServicesRegistry.isBusy)
+            .map { SupplementEntity(id: $0.id, title: $0.title) }
     }
 
     @MainActor
     func entities(for identifiers: [String]) async throws -> [SupplementEntity] {
-        rows().filter { identifiers.contains($0.id) }.map { SupplementEntity(id: $0.id, title: $0.title) }
+        entities(identifiers: identifiers)
     }
 
     @MainActor
     func suggestedEntities() async throws -> [SupplementEntity] {
-        rows().map { SupplementEntity(id: $0.id, title: $0.title) }
+        entities(identifiers: nil)
     }
 }
 
@@ -146,7 +168,8 @@ struct LogSupplementTakenIntent: AppIntent {
     static let description = IntentDescription("Marks a supplement from your list as taken.")
     static let openAppWhenRun = true
     /// Running the action, and so "Logged <supplement>", needs an unlocked device. Choosing an item happens
-    /// before this applies, so the picker offers no names while the device is locked (see SupplementEntityQuery).
+    /// before this applies, so no list of names is offered while the device is locked (SupplementPickerPolicy);
+    /// a saved shortcut's stored id still resolves and then reaches this requirement.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @Parameter(title: "Supplement", requestValueDialog: "Which supplement?")

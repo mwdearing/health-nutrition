@@ -41,10 +41,12 @@ Both shortcuts:
 
 **Log supplement taken and your supplement names.** The action needs the device unlocked to run (its
 authentication policy requires local device authentication), and it speaks "Logged <supplement>" only then.
-The items on your own supplement list are offered by title to Siri and the Shortcuts picker only while protected
-data is available, which is when the device is unlocked: while it is locked the picker offers nothing, so a
-title is not read out or shown before you unlock. Nothing leaves the device. Log water keeps its existing unlock
-behaviour and only gains the erase and restore guard above.
+No list of your supplement names is offered while the device is locked: the picker in Shortcuts and Siri's
+prompts get an empty list until you unlock (protected data is available only then). A shortcut you already saved
+holds the item's id rather than a list, so it still resolves while locked and then reaches the unlock
+requirement; asking Siri for a supplement by spoken name while locked does not resolve until you unlock.
+Nothing leaves the device. Log water keeps its existing unlock behaviour and only gains the erase and restore
+guard above.
 
 After either shortcut writes an entry the app reloads Today, the Diary and the Library and runs a Health
 delivery pass, as after an add in the app. The undo offer a supplement write creates lasts ten seconds, then
@@ -52,4 +54,5 @@ expires even if the list is not open; deleting the entry from Today or the Diary
 
 Device check for the first signed build: with the device locked, ask Siri to log a supplement when your list has
 two items, and note what it says before it asks to unlock; open the Shortcuts picker on the locked device and
-note that it lists nothing until you unlock; and look for the items in Spotlight while locked.
+note that it lists nothing until you unlock; run a saved "Log supplement taken" shortcut while locked and
+note that it asks you to unlock and then logs; and look for the items in Spotlight while locked.

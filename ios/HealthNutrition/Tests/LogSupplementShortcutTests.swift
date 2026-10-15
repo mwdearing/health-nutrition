@@ -117,4 +117,27 @@ final class LogSupplementShortcutTests: XCTestCase {
         _ = SupplementShortcut.log(favoriteID: "a", now: date(hour: 21), stack: stack, calendar: utc)
         XCTAssertEqual(stack.taken.first?.time, evening)
     }
+
+    private let items = [
+        ShortcutSupplement(id: "a", title: "Creatine", openTimes: []),
+        ShortcutSupplement(id: "b", title: "Zinc", openTimes: []),
+    ]
+
+    func testALockedDeviceGetsNoListButASavedShortcutsIdStillResolves() {
+        XCTAssertTrue(
+            SupplementPickerPolicy.visible(items, identifiers: nil, isUnlocked: false, isBusy: false).isEmpty)
+        XCTAssertEqual(
+            SupplementPickerPolicy.visible(items, identifiers: ["b"], isUnlocked: false, isBusy: false).map(\.id),
+            ["b"])
+    }
+
+    func testAnUnlockedDeviceGetsTheListAndNothingIsOfferedWhileBusy() {
+        XCTAssertEqual(
+            SupplementPickerPolicy.visible(items, identifiers: nil, isUnlocked: true, isBusy: false).map(\.id),
+            ["a", "b"])
+        XCTAssertTrue(
+            SupplementPickerPolicy.visible(items, identifiers: ["a"], isUnlocked: true, isBusy: true).isEmpty)
+        XCTAssertTrue(
+            SupplementPickerPolicy.visible(items, identifiers: nil, isUnlocked: true, isBusy: true).isEmpty)
+    }
 }
