@@ -49,5 +49,10 @@ struct HealthNutritionShortcuts: AppShortcutsProvider {
             phrases: ["Log water in \(.applicationName)", "Add water in \(.applicationName)"],
             shortTitle: "Log water",
             systemImageName: "drop")
+        AppShortcut(
+            intent: LogSavedMealIntent(),
+            phrases: ["Log a saved meal in \(.applicationName)", "Add a saved meal in \(.applicationName)"],
+            shortTitle: "Log saved meal",
+            systemImageName: "fork.knife")
     }
 }

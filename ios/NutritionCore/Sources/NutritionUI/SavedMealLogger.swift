@@ -28,6 +28,11 @@ public struct SavedMealPartialLogError: Error {
     public let remainingIDs: [String]
     public let underlying: any Error
 
+    public init(remainingIDs: [String], underlying: any Error) {
+        self.remainingIDs = remainingIDs
+        self.underlying = underlying
+    }
+
     public var result: SavedMealLogResult { SavedMealLogResult(createdIDs: remainingIDs, skippedCount: 0) }
 }
 
