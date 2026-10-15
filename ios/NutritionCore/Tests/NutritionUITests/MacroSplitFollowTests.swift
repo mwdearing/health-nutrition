@@ -173,6 +173,20 @@ final class MacroSplitFollowTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, GoalsViewModel.macroSplitFollowFailedMessage)
     }
 
+    func testARefusedFollowClearsARowErrorUnderTheRefilledMacroFields() throws {
+        let store = RefusingGoalStore(goals: [energyGoal(2000)])
+        let model = try appliedModel(store)
+        model.draftText["protein"] = "0"
+        XCTAssertFalse(model.commitTarget(for: "protein"))
+        XCTAssertNotNil(model.rowError["protein"])
+        store.refused = ["fat"]
+
+        commitEnergy(model, "2500")
+
+        XCTAssertNil(model.rowError["protein"])
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.macroSplitFollowFailedMessage)
+    }
+
     func testARefusedFollowWhoseRollbackAlsoFailsSaysTheGoalsMayBeMixed() throws {
         let store = RefusingGoalStore(goals: [energyGoal(2000)])
         let model = try appliedModel(store)

@@ -159,6 +159,58 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
     }
 
+    /// Metric display, water typed in fl oz: 8 fl oz is stored as 236.588 mL and shown as 237, so the
+    /// field text never matches the read. An outside change must still be followed, not written back.
+    func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideChange() throws {
+        let goals = InMemoryGoalStore(goals: [])
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        let written = try XCTUnwrap(try goals.goal(for: "water"))
+        XCTAssertEqual(written.unit, .mL)
+
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(3000))
+        XCTAssertEqual(model.draftText["water"], "3000")
+        XCTAssertEqual(model.selectedUnits["water"], .mL)
+    }
+
+    func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideRemoval() throws {
+        let goals = InMemoryGoalStore(goals: [])
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        try goals.removeGoal(nutrient: "water")
+        model.load()
+        XCTAssertEqual(model.draftText["water"], "")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertNil(try goals.goal(for: "water"))
+    }
+
+    func testAWaterGoalCommittedInAnotherUnitIsNotRewrittenWhenNothingMoved() throws {
+        let goals = InMemoryGoalStore(goals: [])
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        let first = try goals.goal(for: "water")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(try goals.goal(for: "water"), first)
+        XCTAssertEqual(model.draftText["water"], "8")
+        XCTAssertEqual(model.selectedUnits["water"], .flOz)
+    }
+
     /// Water has a target too, in mL, and its own line compares the day's water against it.
     func testAWaterGoalComparesTheDaysWaterInMilliliters() throws {
         let journal = try makeJournalStore()
