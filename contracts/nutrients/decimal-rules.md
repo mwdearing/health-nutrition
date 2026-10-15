@@ -39,7 +39,9 @@ stored one.
 ## One rounding rule, for a division that does not terminate
 
 Multiplying two decimals is always exact, and so is applying a unit factor,
-because every factor in the registry is a power of ten. A division is the only
+because every unit factor in the registry is a power of ten (the vitamin D
+factor of 0.025 mcg per IU, below, is not a power of ten, but multiplying by it
+is exact too). A division is the only
 step whose exact result may have no finite decimal form: 1 g consumed of a 3 g
 basis is `0.333...` of it. There are exactly three divisions in this contract:
 
@@ -79,7 +81,9 @@ catalog, and no such implementation may round or cut to stay inside it:
 - Every input, every intermediate (including an amount expressed in its
   dimension's canonical unit on the way to the target unit), every product,
   every sum and every result must be a decimal of at most 38 significant digits, counted without leading and trailing zeros. A unit
-  factor is a power of ten and never adds a digit.
+  factor is a power of ten and never adds a digit; the vitamin D factor (0.025
+  mcg per IU) can add up to two, so a vitamin D amount converted from IU in the
+  catalog is held to the bound like any other product.
 - The leading significant digit of every one of them must have a place value
   from 10^-127 to 10^127 (an adjusted exponent of -127 to 127, the range the app
   already enforces when it reads numbers). `0.005` has the adjusted exponent -3
@@ -182,16 +186,21 @@ in this repository converts one to the other: an IU of vitamin A or vitamin E is
 a different mass depending on the form (retinol or beta carotene, natural or
 synthetic alpha-tocopherol), which an IU figure does not say. A provider that
 states an amount in IU keeps it in IU. No v1 nutrient is published in IU, because
-the app keeps its standard nutrients as masses: a label that states vitamin A or
-E only in IU is published with that nutrient `unknown`, never with a guessed mass.
+the app keeps its standard nutrients as masses: a label that states vitamin A only
+in IU is published with `vitamin_a` `unknown`, never with a guessed mass (vitamin E
+has no v1 nutrient, so it is not published at all).
 `IU` stays in the unit registry so that an operation can name it and refuse it.
 
 Vitamin D is the one exception (owner decision, 2026-10-14). An IU of vitamin D is
 defined as 0.025 mcg, for D2 and D3 alike, so it is a fixed mass. The registry
 states it on the nutrient (`"mcg_per_international_unit": "0.025"` on `vitamin_d`),
 and an operation that names `vitamin_d` converts IU to a mass through it: 400 IU is
-10 mcg, and 10 mcg plus 400 IU of vitamin D sums to 20 mcg. The multiplication is
-exact, so no rounding rule applies. Only IU to a mass converts; a mass is never
+10 mcg, and 10 mcg plus 400 IU of vitamin D sums to 20 mcg. In the catalog the
+multiplication is exact, so no rounding rule applies. The iOS journal restates
+vitamin D with the `Decimal` arithmetic described under "The journal keeps the
+digits its arithmetic gives": a logged entry's total after the entry is scaled,
+and a recipe ingredient's amount before the recipe is divided into portions.
+Only IU to a mass converts; a mass is never
 converted into IU, and an operation that names no nutrient, or another nutrient,
 refuses IU as before. A sum that asks for its total in IU keeps IU: vitamin D
 amounts stated in IU add up in IU, and a mass among them is refused. The stored
