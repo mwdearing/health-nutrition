@@ -39,16 +39,29 @@ struct WidgetSnapshot: Codable, Equatable {
 enum WidgetAppGroup {
     private static let extensionSuffix = ".widgets"
 
-    /// `group.<app bundle id>`. The widget extension's bundle id is the app's plus `.widgets`, so the suffix
-    /// is removed and both processes name the same group.
-    static func identifier(forBundleIdentifier bundleIdentifier: String) -> String {
+    /// `group.<app bundle id>`. The widget extension's bundle id is the app's plus `.widgets`, so in the extension
+    /// that one suffix is removed and both processes name the same group. The app's own identifier is used as it
+    /// is, even when it happens to end in `.widgets`.
+    static func identifier(forBundleIdentifier bundleIdentifier: String, isExtension: Bool) -> String {
         var base = bundleIdentifier
-        if base.hasSuffix(extensionSuffix) { base.removeLast(extensionSuffix.count) }
+        if isExtension, base.hasSuffix(extensionSuffix) { base.removeLast(extensionSuffix.count) }
         return "group." + base
     }
 
     static var current: String? {
-        Bundle.main.bundleIdentifier.map { identifier(forBundleIdentifier: $0) }
+        let isExtension = Bundle.main.bundleURL.pathExtension == "appex"
+        return Bundle.main.bundleIdentifier.map { identifier(forBundleIdentifier: $0, isExtension: isExtension) }
+    }
+}
+
+/// How the widget writes a figure: a whole number, or nothing when the value is missing, not finite, or too large
+/// to be a daily total (so the conversion to Int below can never trap).
+enum WidgetFigure {
+    static let largest = 1_000_000_000.0
+
+    static func wholeNumber(_ value: Double?) -> String? {
+        guard let value, value.isFinite, abs(value) <= largest else { return nil }
+        return String(Int(value.rounded()))
     }
 }
 

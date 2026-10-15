@@ -33,7 +33,9 @@ final class WidgetSnapshotPublisher {
     }
 
     func publish(from today: TodayViewModel) {
-        guard let store, !isErasing(), Self.shouldPublish(errorMessage: today.errorMessage) else { return }
+        guard let store, !isErasing(),
+            Self.shouldPublish(errorMessage: today.errorMessage, hasLoaded: !today.dateSubtitle.isEmpty)
+        else { return }
         let snapshot = Self.snapshot(from: today, now: Date())
         do {
             try store.write(snapshot)
@@ -43,11 +45,12 @@ final class WidgetSnapshotPublisher {
         }
     }
 
-    /// Nothing is written while Today reports an error. After a failed reload Today keeps the rows and totals it
-    /// had before, so stamping them with a fresh time would make yesterday's figures look current and defeat the
-    /// widget's stale-day check; the file keeps its old time instead, and a later successful load publishes.
-    nonisolated static func shouldPublish(errorMessage: String?) -> Bool {
-        errorMessage == nil
+    /// Nothing is written until Today has loaded successfully once, and not while it reports an error. Before the
+    /// first load Today holds only its initializer defaults, and after a failed reload it keeps the rows and totals
+    /// it had, so stamping either with a fresh time would replace valid totals or make yesterday's look current and
+    /// defeat the widget's stale-day check. The file keeps its old time, and a later successful load publishes.
+    nonisolated static func shouldPublish(errorMessage: String?, hasLoaded: Bool) -> Bool {
+        hasLoaded && errorMessage == nil
     }
 
     static func snapshot(from today: TodayViewModel, now: Date) -> WidgetSnapshot {

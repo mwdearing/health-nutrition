@@ -23,9 +23,18 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     func testTheAppGroupIsNamedAfterTheAppAndTheExtensionResolvesToTheSameGroup() {
-        let app = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.HealthNutrition")
-        let widgets = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.HealthNutrition.widgets")
+        let app = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.HealthNutrition", isExtension: false)
+        let widgets = WidgetAppGroup.identifier(
+            forBundleIdentifier: "dev.example.HealthNutrition.widgets", isExtension: true)
         XCTAssertEqual(app, "group.dev.example.HealthNutrition")
+        XCTAssertEqual(widgets, app)
+    }
+
+    func testAnAppIdentifierThatEndsInWidgetsKeepsItInTheAppAndLosesOnlyTheExtensionsOwnSuffix() {
+        let app = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.nutrition.widgets", isExtension: false)
+        let widgets = WidgetAppGroup.identifier(
+            forBundleIdentifier: "dev.example.nutrition.widgets.widgets", isExtension: true)
+        XCTAssertEqual(app, "group.dev.example.nutrition.widgets")
         XCTAssertEqual(widgets, app)
     }
 
@@ -98,7 +107,23 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     func testNothingIsPublishedWhileTodayReportsAnError() {
-        XCTAssertTrue(WidgetSnapshotPublisher.shouldPublish(errorMessage: nil))
-        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(errorMessage: "Could not read the journal."))
+        XCTAssertTrue(WidgetSnapshotPublisher.shouldPublish(errorMessage: nil, hasLoaded: true))
+        XCTAssertFalse(
+            WidgetSnapshotPublisher.shouldPublish(errorMessage: "Could not read the journal.", hasLoaded: true))
+    }
+
+    func testNothingIsPublishedBeforeTheFirstSuccessfulLoad() {
+        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(errorMessage: nil, hasLoaded: false))
+        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(errorMessage: "Could not read the journal.", hasLoaded: false))
+    }
+
+    func testFiguresAreWholeNumbersAndHugeOrBrokenValuesAreLeftOut() {
+        XCTAssertEqual(WidgetFigure.wholeNumber(1_849.6), "1850")
+        XCTAssertEqual(WidgetFigure.wholeNumber(0), "0")
+        XCTAssertNil(WidgetFigure.wholeNumber(nil))
+        XCTAssertNil(WidgetFigure.wholeNumber(.nan))
+        XCTAssertNil(WidgetFigure.wholeNumber(.infinity))
+        // Larger than Int.max as a Double: would trap in Int(...) without the bound.
+        XCTAssertNil(WidgetFigure.wholeNumber(1e30))
     }
 }

@@ -33,8 +33,8 @@ struct TodayProvider: TimelineProvider {
 }
 
 private func figure(_ value: Double?, unit: String) -> String {
-    guard let value, value.isFinite else { return "—" }
-    return "\(Int(value.rounded())) \(unit)"
+    guard let text = WidgetFigure.wholeNumber(value) else { return "—" }
+    return "\(text) \(unit)"
 }
 
 struct TodayWidgetView: View {
@@ -52,7 +52,7 @@ struct TodayWidgetView: View {
             Gauge(value: snapshot?.energyFraction ?? 0) {
                 Text("kcal")
             } currentValueLabel: {
-                Text(snapshot?.energyKcal.map { "\(Int($0.rounded()))" } ?? "—")
+                Text(WidgetFigure.wholeNumber(snapshot?.energyKcal) ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
             .privacySensitive()
