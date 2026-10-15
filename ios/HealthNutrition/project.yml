@@ -27,6 +27,9 @@ settings:
     # "group." plus this, so the signed-beta and unsigned-ipa workflows set this one value, never
     # PRODUCT_BUNDLE_IDENTIFIER (which would give the extension the app's own identifier).
     APP_BUNDLE_ID: dev.example.HealthNutrition
+    # The marketing version of the app and of its widget extension, one value so they cannot drift (App Store
+    # Connect rejects an extension whose version differs from its app). The signed-beta workflow reads this line.
+    MARKETING_VERSION: "0.1.25"
 
 targets:
   HealthNutrition:
@@ -76,7 +79,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(APP_BUNDLE_ID)"
         PRODUCT_NAME: HealthNutrition
-        MARKETING_VERSION: "0.1.25"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: HealthNutrition
@@ -133,8 +135,6 @@ targets:
         INFOPLIST_FILE: Widgets/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: "$(APP_BUNDLE_ID).widgets"
         PRODUCT_NAME: HealthNutritionWidgets
-        # Must equal the app's: App Store Connect rejects an extension whose version differs from its app.
-        MARKETING_VERSION: "0.1.22"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Today

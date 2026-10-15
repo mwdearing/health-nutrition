@@ -102,8 +102,11 @@ def test_the_widget_extension_is_embedded_and_shares_the_app_identifier_and_vers
     # The extension's identifier is the app's plus ".widgets"; neither is a literal the workflows could override.
     assert app_settings["PRODUCT_BUNDLE_IDENTIFIER"] == "$(APP_BUNDLE_ID)"
     assert widget_settings["PRODUCT_BUNDLE_IDENTIFIER"] == "$(APP_BUNDLE_ID).widgets"
-    # App Store Connect rejects an extension whose version differs from its app.
-    assert widget_settings["MARKETING_VERSION"] == app_settings["MARKETING_VERSION"]
+    # App Store Connect rejects an extension whose version differs from its app: one project-level value that
+    # neither target overrides.
+    assert "MARKETING_VERSION" in settings["base"]
+    assert "MARKETING_VERSION" not in app_settings
+    assert "MARKETING_VERSION" not in widget_settings
     assert widget_settings["CURRENT_PROJECT_VERSION"] == app_settings["CURRENT_PROJECT_VERSION"]
 
 
