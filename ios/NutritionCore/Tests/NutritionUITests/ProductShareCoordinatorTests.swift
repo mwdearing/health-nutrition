@@ -282,6 +282,20 @@ extension ProductShareCoordinatorTests {
         XCTAssertFalse(AccountPresentations.shouldPresentDisclosure(needsDisclosure: false, presentingSignIn: false))
         XCTAssertFalse(AccountPresentations.shouldPresentDisclosure(needsDisclosure: true, presentingSignIn: true))
     }
+    @MainActor func testDisclosureReviewRequestOnlyCountsWhileSignedInAndUnacknowledged() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
+        await account.load()
+        XCTAssertTrue(account.needsDisclosure)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 1)
+        await account.acknowledgeProductDisclosure()
+        XCTAssertFalse(account.needsDisclosure)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 1)
+    }
     @MainActor func testRefusedAcknowledgmentSaysSoInsteadOfDoingNothing() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
         // The server never reports the caller's acknowledgment back, so Continue cannot complete.

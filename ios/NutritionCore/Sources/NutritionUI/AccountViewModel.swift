@@ -48,6 +48,9 @@ public final class AccountViewModel: ObservableObject {
     @Published public private(set) var emailStep: EmailStep = .enterAddress
     /// True while the signed-in account has not read the sharing disclosure on this device.
     @Published public private(set) var needsDisclosure = false
+    /// Counts the person's requests to see the disclosure again. A sheet that was dismissed without
+    /// acknowledging has no other way back while Settings stays open.
+    @Published public private(set) var disclosureReviewRequests = 0
     /// True only once the server's profile has been read. Until then the name and the sharing switch stay
     /// locked, so a failed read can never lead to a write that replaces the stored values with defaults.
     @Published public private(set) var profileReady = false
@@ -302,6 +305,12 @@ public final class AccountViewModel: ObservableObject {
         if phase == .signedIn {
             needsDisclosure = !currentAccountAcknowledged
         }
+    }
+
+    /// Asks for the disclosure sheet again. Only meaningful while it still needs acknowledging.
+    public func requestDisclosureReview() {
+        guard phase == .signedIn, needsDisclosure else { return }
+        disclosureReviewRequests += 1
     }
 
     /// The signed-in person has read the sharing disclosure. Stored for this account, so it is not shown again

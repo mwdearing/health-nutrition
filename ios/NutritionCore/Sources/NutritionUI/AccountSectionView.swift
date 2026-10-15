@@ -40,6 +40,10 @@ public struct AccountSectionView: View {
                     Button("Resume sharing") { Task { await model.recoverSharingAfterFailedDeletion() } }
                         .disabled(model.isBusy)
                 }
+                if model.needsDisclosure {
+                    Button("Sharing products") { model.requestDisclosureReview() }
+                        .disabled(model.isBusy)
+                }
                 Button("Sign out") { Task { await model.signOut() } }
                     .disabled(model.isBusy)
                 Button("Delete account", role: .destructive) { model.presentingDeleteConfirmation = true }
@@ -105,6 +109,11 @@ struct AccountPresentations: ViewModifier {
             }
             .onChange(of: model.profileReady) { _, ready in
                 if ready, Self.shouldPresentDisclosure(needsDisclosure: model.needsDisclosure, presentingSignIn: model.presentingSignIn) {
+                    showingDisclosure = true
+                }
+            }
+            .onChange(of: model.disclosureReviewRequests) { _, _ in
+                if Self.shouldPresentDisclosure(needsDisclosure: model.needsDisclosure, presentingSignIn: model.presentingSignIn) {
                     showingDisclosure = true
                 }
             }
