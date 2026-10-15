@@ -104,8 +104,12 @@ stated value by that factor in Foundation `Decimal` arithmetic, keeping whatever
 that arithmetic returns. It does not round the scaling quotient to 10 fraction
 digits (only a conversion into an input unit on the way, such as mL into cups,
 is rounded to 10 fraction digits, as `UnitRegistry` always does), and it does
-not refuse a result past 38 significant digits: `Decimal` shortens it to 38
-instead. For example, 24 fl oz (709.7647095 mL) of a 710 mL serving gives the
+not refuse a long result: `Decimal` keeps at most 38 significant digits, or 39
+when the leading digits are small enough to fit its 128-bit mantissa. A value
+the journal stores, such as a snapshot a repeated entry or a recipe serving
+writes, is rounded half away from zero to 38 significant digits when it has 39,
+because that is the most the journal reads back (`StoredDecimal`).
+For example, 24 fl oz (709.7647095 mL) of a 710 mL serving gives the
 factor `0.99966860492957746478873239436619718309` on an iPhone, where the exact
 quotient rounds to `...310` at that length. For a basis that states its
 serving, the division comes before the multiplication: with 1 g logged of a
