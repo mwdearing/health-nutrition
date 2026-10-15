@@ -459,13 +459,21 @@ public final class NutrientGapsViewModel: ObservableObject {
     static func tallies(
         store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
     ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]]) {
+        try tallies(intakes: try store.activeIntakes(), store: store, lookup: lookup, now: now, days: days)
+    }
+
+    /// The same, over intakes a caller has already read from `store`, so a screen that reads the journal
+    /// for its own purposes (the supplement list) does not read it a second time to check upper limits.
+    static func tallies(
+        intakes: [Intake], store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
+    ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]]) {
         // Keyed by each entry's own local date, so after a change of time zone two entries on different
         // dates never share a day, even when each is the same number of days before its own today.
         var byDate: [Int: [String: NutrientDayTally]] = [:]
         var skipped = 0
         var logged: Set<Int> = []
         let nutrients = Self.nutrients
-        for intake in try store.activeIntakes() where intake.lifecycle == .active {
+        for intake in intakes where intake.lifecycle == .active {
             guard let day = Self.localDay(now, intake) else {
                 skipped += 1
                 continue

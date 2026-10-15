@@ -66,7 +66,9 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
   never for folate or vitamin A, whose forms the journal cannot tell apart ([reference intakes](reference-intakes.md)).
   An item is marked "Above the upper limit today" for each of those nutrients its label states and the
   limit counts (any product for an all-sources limit, a supplement for the supplement limits). An item
-  with no label is never marked. Without a group, nothing is checked and the list says where to choose one.
+  with no label is never marked. Without a group, nothing is checked, and once the list has items its
+  footer says where to choose one. The check reuses the entries the list has just read, so it adds no
+  journal read of its own.
 - Not yet: Supplement Facts search to add a product directly.
 - Code: `NutritionUI/SupplementStack.swift` (schedule, today's times, stored schedules),
   `SupplementStackViewModel.swift`, `SupplementStackView.swift`. Tests: `SupplementStackTests`.

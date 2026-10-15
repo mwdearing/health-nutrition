@@ -931,6 +931,65 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(grouped.rows.first?.aboveUpperLimit, [])
     }
 
+    func testTheLimitCheckReadsTheJournalNoMoreThanTheListDoes() throws {
+        let inner = try makeStore()
+        let store = StackReadCountingStore(inner: inner)
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(inner, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+
+        let (noGroup, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: nil)
+        let before = store.activeIntakesCalls
+        noGroup.load(now: now)
+        let withoutGroup = store.activeIntakesCalls - before
+
+        let (grouped, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        let start = store.activeIntakesCalls
+        grouped.load(now: now)
+        XCTAssertEqual(grouped.limitRows.map(\.nutrient), ["magnesium"])
+        XCTAssertEqual(store.activeIntakesCalls - start, withoutGroup)
+    }
+
+    func testAFailedLimitCheckIsSaidAndTheListStillShows() throws {
+        let inner = try makeStore()
+        let store = StackReadCountingStore(inner: inner)
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let entry = try log(inner, at: now.addingTimeInterval(-3_600))
+        store.unreadableIntakeIDs = [entry]
+        try saveFavorite(favorites, snapshot: nil)
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        model.load(now: now)
+        XCTAssertTrue(model.limitCheckFailed)
+        XCTAssertTrue(model.limitRows.isEmpty)
+        XCTAssertEqual(model.rows.count, 1)
+        XCTAssertFalse(model.readFailed)
+    }
+
+    func testReplacedStoresClearTheLimitNotesOfAHiddenList() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        let screen = UUID()
+        model.appeared(screen, now: now)
+        XCTAssertFalse(model.limitRows.isEmpty)
+        model.disappeared(screen)
+        model.storesWereReplaced(now: now)
+        XCTAssertTrue(model.limitRows.isEmpty)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
     func testEraseEmptiesTheList() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()

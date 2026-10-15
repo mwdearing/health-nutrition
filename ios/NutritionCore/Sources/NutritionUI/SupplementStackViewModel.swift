@@ -152,7 +152,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 readFailed = true
                 return
             }
-            let (counted, unreadable, todayTimes) = try loggedCounts(on: clock.dayKey)
+            let (counted, unreadable, todayTimes, active) = try loggedCounts(on: clock.dayKey)
             let keptMarks = try prunedMarks(keeping: todayTimes, on: clock.dayKey)
             var products: [String: ProductDefinition?] = [:]
             func product(_ snapshotID: String?) -> ProductDefinition? {
@@ -166,7 +166,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 guard snapshotID != nil else { return category == Self.supplementCategory ? .supplement : .food }
                 return product(snapshotID)?.kind ?? .food
             }
-            let limits = upperLimitRows(now: now)
+            let limits = upperLimitRows(now: now, intakes: active)
             bases = planned.compactMap { entry -> RowBasis? in
                 guard let favorite = byID[entry.key] else { return nil }
                 let template = RepeatTemplate(favorite: favorite)
@@ -245,10 +245,11 @@ public final class SupplementStackViewModel: ObservableObject {
 
     /// Today's rows that are above an upper limit, built exactly as the vitamins and minerals screen builds
     /// its rows. A read failure is reported rather than read as "nothing above a limit".
-    private func upperLimitRows(now: Date) -> (rows: [NutrientGapRow], hasGroup: Bool, failed: Bool) {
+    /// `intakes` are the active entries this read already holds, so the check does not read the journal again.
+    private func upperLimitRows(now: Date, intakes: [Intake]) -> (rows: [NutrientGapRow], hasGroup: Bool, failed: Bool) {
         guard let group = referencePreferences?.referenceGroup else { return ([], false, false) }
         do {
-            let day = try NutrientGapsViewModel.tallies(store: store, lookup: lookup, now: now)
+            let day = try NutrientGapsViewModel.tallies(intakes: intakes, store: store, lookup: lookup, now: now)
             let rows = NutrientGapsViewModel.nutrients.map { nutrient in
                 NutrientGapRow(
                     nutrient: nutrient, label: NutrientNames.displayName(for: nutrient),
@@ -302,7 +303,7 @@ public final class SupplementStackViewModel: ObservableObject {
     /// happened, which says which Taken marks still stand. An unreadable entry is counted apart rather than
     /// skipped, because skipping it would read as "not taken".
     private func loggedCounts(on dayKey: String) throws
-        -> (counts: [String: [String]], unreadable: Int, todayTimes: [String: Date])
+        -> (counts: [String: [String]], unreadable: Int, todayTimes: [String: Date], active: [Intake])
     {
         var counts: [String: [String]] = [:]
         var unreadable = 0
@@ -321,7 +322,9 @@ public final class SupplementStackViewModel: ObservableObject {
                 category: intake.category, snapshotID: current.productSnapshotID, names: current.components.map(\.name))
             counts[key, default: []].append(intake.id)
         }
-        return (counts, unreadable, Dictionary(today.map { ($0.id, $0.occurredAt) }, uniquingKeysWith: { first, _ in first }))
+        return (
+            counts, unreadable, Dictionary(today.map { ($0.id, $0.occurredAt) }, uniquingKeysWith: { first, _ in first }),
+            active)
     }
 
     /// The stored Taken marks for today whose entry is still in today's journal at the time the tap logged
