@@ -44,6 +44,19 @@ final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Send
     func deleteAccount() async throws {}
 }
 
+/// Keeps saved meals in memory for one capture.
+final class ScreenshotSavedMealStore: SavedMealStoring, @unchecked Sendable {
+    private var stored: [SavedMeal] = []
+
+    func meals() throws -> [SavedMeal] { stored }
+
+    func update(_ change: (inout [SavedMeal]) throws -> Void) throws {
+        var copy = stored
+        try change(&copy)
+        stored = copy
+    }
+}
+
 /// Writes a PNG of each screen, in light and dark, for the design system.
 ///
 /// The screens are the real views on a throwaway store filled with invented entries. The test only
@@ -637,8 +650,13 @@ private struct ScreenshotProductService: CommunityProductServicing {
 
     func testSavedMealSections() throws {
         let services = try makeSeededServices()
+        // Its own in-memory list, so the saved meal never reaches the simulator's defaults or another capture.
+        let meals = SavedMealsModel(store: ScreenshotSavedMealStore(), journal: services.journalStore)
+        let breakfast = try services.journalStore.activeIntakes().filter { $0.id == intakeIDs[0] }
+        XCTAssertTrue(meals.save(name: "Weekday breakfast", meal: .breakfast, intakes: breakfast))
+        meals.load()
         try capture("SavedMealSections") {
-            NavigationStack { List { SavedMealSections(model: services.savedMeals, query: "", showsMeals: true, onLog: { _ in }) } }
+            NavigationStack { List { SavedMealSections(model: meals, query: "", showsMeals: true, onLog: { _ in }) } }
         }
     }
 
