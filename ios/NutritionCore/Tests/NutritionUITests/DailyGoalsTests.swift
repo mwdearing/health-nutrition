@@ -19,6 +19,31 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
     }
 }
 
+/// A goal store that counts writes, can be written behind a screen's back without counting, and can
+/// refuse single-goal reads or writes, so a test can see what a commit did and survive a failed read.
+private final class SpyGoalStore: GoalStore, @unchecked Sendable {
+    private let inner = InMemoryGoalStore(goals: [])
+    private(set) var writes = 0
+    var failsGoalReads = false
+    var failsWrites = false
+    private struct Refused: Error {}
+
+    func goals() throws -> [NutrientGoal] { try inner.goals() }
+    func goal(for nutrient: String) throws -> NutrientGoal? {
+        if failsGoalReads { throw Refused() }
+        return try inner.goal(for: nutrient)
+    }
+    func setGoal(_ goal: NutrientGoal) throws {
+        if failsWrites { throw Refused() }
+        writes += 1
+        try inner.setGoal(goal)
+    }
+    func removeGoal(nutrient: String) throws { try inner.removeGoal(nutrient: nutrient) }
+    func close() { inner.close() }
+    /// A change from another writer: not counted, and never refused.
+    func writeBehind(_ goal: NutrientGoal) throws { try inner.setGoal(goal) }
+}
+
 /// The daily goals as Today shows them: what the day has reached against a target, or as a plain
 /// total where no target is set.
 @MainActor
@@ -157,6 +182,200 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertTrue(model.commitTarget(for: "water"))
         XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(2000))
         XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
+    }
+
+    /// Metric display, water typed in fl oz: 8 fl oz is stored as 236.588 mL and shown as 237, so the
+    /// field text never matches the read. An outside change must still be followed, not written back.
+    func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideChange() throws {
+        let goals = InMemoryGoalStore(goals: [])
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        let written = try XCTUnwrap(try goals.goal(for: "water"))
+        XCTAssertEqual(written.unit, .mL)
+
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(3000))
+        XCTAssertEqual(model.draftText["water"], "3000")
+        XCTAssertEqual(model.selectedUnits["water"], .mL)
+    }
+
+    /// The display preference moves (another scene) between the last read and the commit: the commit's
+    /// own reload must not re-pair the typed text with the new display unit.
+    func testAWaterCommitKeepsTheUnitItWasWrittenInWhenThePreferenceMovesFirst() throws {
+        let goals = InMemoryGoalStore(goals: [])
+        let preferences = InMemoryDisplayPreferences(unitSystem: .metric)
+        let model = GoalsViewModel(store: goals, preferences: preferences)
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .mL
+        preferences.unitSystem = .usCustomary
+
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(8))
+        XCTAssertEqual(model.draftText["water"], "8")
+        XCTAssertEqual(model.selectedUnits["water"], .mL)
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(8))
+    }
+
+    /// The record is built from what the write stored: a later single-goal read that fails must not
+    /// leave the field free to write its text over an outside change.
+    func testAWaterCommitSurvivesAFailedReadAfterItsWrite() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        goals.failsGoalReads = true
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(goals.writes, 1)
+
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+        // The goal cannot be read, so the field is neither followed nor written, and it says so.
+        XCTAssertFalse(model.commitTarget(for: "water"))
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+
+        XCTAssertEqual(goals.writes, 1)
+        goals.failsGoalReads = false
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(3000))
+    }
+
+    /// Committing again with nothing moved writes nothing.
+    func testAnUnchangedCommittedWaterFieldWritesNothingOnBlur() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(goals.writes, 1)
+    }
+
+    /// Typing the committed text back after an outside change is the person's input, not the old
+    /// commit: it is written, not replaced by the stored goal.
+    func testRetypingTheCommittedWaterTextAfterAnOutsideChangeIsTheirInput() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+
+        model.draftText["water"] = ""
+        model.draftText["water"] = "8"
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 2)
+        XCTAssertEqual(model.draftText["water"], "8")
+        XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
+        XCTAssertNotEqual(try goals.goal(for: "water")?.target, Decimal(3000))
+    }
+
+    /// One replacing edit that leaves the text identical still arrives through the view's setter, and
+    /// it is the person's input.
+    func testAnIdenticalReplacingEditOfTheCommittedWaterTextIsTheirInput() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+
+        model.userEditedDraft("8", for: "water")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 2)
+        XCTAssertEqual(model.draftText["water"], "8")
+    }
+
+    /// Focus and blur without an edit still follow the store and write nothing.
+    func testBlurWithoutAnEditAfterAnOutsideRemovalFollowsTheStore() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.removeGoal(nutrient: "water")
+
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 1)
+        XCTAssertNil(try goals.goal(for: "water"))
+        XCTAssertEqual(model.draftText["water"], "")
+    }
+
+    /// Metric, water typed in mL: the display reproduces the text, so the field equals what was read.
+    /// An outside change and then an outside removal must still be followed on blur.
+    func testAWaterFieldTypedInMillilitersFollowsAnOutsideChangeThenRemoval() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "3000"
+        model.selectedUnits["water"] = .mL
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(2500), unit: .mL))
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertEqual(model.draftText["water"], "2500")
+
+        try goals.removeGoal(nutrient: "water")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 1)
+        XCTAssertNil(try goals.goal(for: "water"))
+        XCTAssertEqual(model.draftText["water"], "")
+    }
+
+    /// Changing the unit picker is the person's input: the picker's commit writes the text in the
+    /// unit they chose, even over a goal that moved behind the screen.
+    func testChangingTheWaterUnitAfterACommitIsTheirInput() throws {
+        let goals = SpyGoalStore()
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        try goals.writeBehind(NutrientGoal(nutrient: "water", target: Decimal(3000), unit: .mL))
+
+        model.selectedUnits["water"] = .mL
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        XCTAssertEqual(goals.writes, 2)
+        XCTAssertEqual(try goals.goal(for: "water")?.target, Decimal(8))
+    }
+
+    func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideRemoval() throws {
+        let goals = InMemoryGoalStore(goals: [])
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["water"] = "8"
+        model.selectedUnits["water"] = .flOz
+        XCTAssertTrue(model.commitTarget(for: "water"))
+
+        try goals.removeGoal(nutrient: "water")
+        model.load()
+        XCTAssertEqual(model.draftText["water"], "")
+        XCTAssertTrue(model.commitTarget(for: "water"))
+        XCTAssertNil(try goals.goal(for: "water"))
     }
 
     /// Water has a target too, in mL, and its own line compares the day's water against it.

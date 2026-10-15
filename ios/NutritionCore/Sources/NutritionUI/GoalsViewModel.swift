@@ -134,8 +134,14 @@ public final class GoalsViewModel: ObservableObject {
     /// journal's current snapshots carry.
     @Published public private(set) var offeredKeys: [String] = NutrientGoalChoices.keys
     @Published public private(set) var errorMessage: String?
-    @Published public var draftText: [String: String] = [:]
-    @Published public var selectedUnits: [String: MeasureUnit] = [:]
+    @Published public var draftText: [String: String] = [:] {
+        // Any change to the water text after a commit is the person's input, even when they type the
+        // committed text back, so the record of the commit is dropped.
+        didSet { dropCommittedWaterIfEdited() }
+    }
+    @Published public var selectedUnits: [String: MeasureUnit] = [:] {
+        didSet { dropCommittedWaterIfEdited() }
+    }
     @Published public private(set) var rowError: [String: String] = [:]
     /// The split the macro gram goals follow, or nil when they do not follow the energy goal. Worked out
     /// when the goals load and whenever the stored split changes, never per render: a stored split that
@@ -185,6 +191,28 @@ public final class GoalsViewModel: ObservableObject {
     private var loadedUnitSystem: UnitSystem?
     private var storedWaterDraft: String?
     private var storedWaterUnit: MeasureUnit?
+    /// The water goal as the last read found it (nil when none), so an unchanged field can tell the
+    /// store has moved since without a full reload.
+    private var storedWaterGoal: NutrientGoal?
+    /// The water field as this screen last committed it: the text and unit the person typed and the
+    /// goal that write stored. The display may not reproduce that text (8 fl oz is stored as
+    /// about 236.59 mL and shown as 237), so the field is compared against this, in stored units, to tell
+    /// "still what I committed" from "typed since". Cleared once the field follows the store.
+    private var committedWater: (text: String, unit: MeasureUnit?, goal: NutrientGoal?)?
+
+    /// A person's edit of a field, from the view's binding. For water it drops the commit record even
+    /// when the new text equals the committed text, because a value comparison cannot tell a retyped
+    /// "8" from an untouched one; only the binding's setter runs for a real edit, not for focus alone.
+    public func userEditedDraft(_ text: String, for nutrient: String) {
+        if nutrient == DailyTotalsBuilder.waterKey { committedWater = nil }
+        draftText[nutrient] = text
+    }
+
+    private func dropCommittedWaterIfEdited() {
+        guard let committed = committedWater else { return }
+        let key = DailyTotalsBuilder.waterKey
+        if draftText[key] != committed.text || selectedUnits[key] != committed.unit { committedWater = nil }
+    }
     /// The text each field was last filled with from the store, so a read can tell a field the person
     /// has not typed in since from one they have.
     private var loadedDraftText: [String: String] = [:]
@@ -248,9 +276,20 @@ public final class GoalsViewModel: ObservableObject {
                 DecimalFormatting.text(self.displayGoal($0).amount)
             }
             self.storedWaterUnit = byNutrient[DailyTotalsBuilder.waterKey].map { self.displayGoal($0).unit }
+            self.storedWaterGoal = byNutrient[DailyTotalsBuilder.waterKey]
             for key in offeredKeys {
-                let waterUnitChanged = key == DailyTotalsBuilder.waterKey
+                var waterUnitChanged = key == DailyTotalsBuilder.waterKey
                     && self.loadedUnitSystem != self.preferences.unitSystem
+                if key == DailyTotalsBuilder.waterKey, let committed = committedWater {
+                    if draftText[key] != committed.text || selectedUnits[key] != committed.unit {
+                        // Typed in, or the unit changed, since the commit: the field is the person's.
+                        committedWater = nil
+                    } else if byNutrient[key] != committed.goal {
+                        // Still the committed text, but the stored goal moved behind this screen.
+                        committedWater = nil
+                        waterUnitChanged = true
+                    }
+                }
                 // A field the person has not typed in since the last read always shows what is stored,
                 // so a goal removed, put back or changed behind this screen (a clear that stopped
                 // partway, a setup save rolled back) is never saved back over the store from old text
@@ -430,9 +469,30 @@ public final class GoalsViewModel: ObservableObject {
     public func commitTarget(for nutrient: String) -> Bool {
         let text = (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         rowError[nutrient] = nil
-        if nutrient == DailyTotalsBuilder.waterKey,
-           text == self.storedWaterDraft, selectedUnits[nutrient] == self.storedWaterUnit {
-            return true
+        if nutrient == DailyTotalsBuilder.waterKey {
+            // A field that still holds what was last read or committed writes nothing. If the store has
+            // moved behind the screen since, the field follows it; a read that fails is said, so the
+            // field is not taken for the stored goal.
+            let heldRead = text == self.storedWaterDraft && selectedUnits[nutrient] == self.storedWaterUnit
+            var held: NutrientGoal?
+            var holds = false
+            if let committed = committedWater, text == committed.text, selectedUnits[nutrient] == committed.unit {
+                held = committed.goal
+                holds = true
+            } else if heldRead {
+                held = storedWaterGoal
+                holds = true
+            }
+            if holds {
+                switch Result(catching: { try store.goal(for: nutrient) }) {
+                case .success(let current):
+                    if current != held { load() }
+                case .failure:
+                    errorMessage = Self.readFailedMessage
+                    return false
+                }
+                return true
+            }
         }
         if text.isEmpty {
             guard removeTarget(for: nutrient) else { return false }
@@ -447,8 +507,23 @@ public final class GoalsViewModel: ObservableObject {
         // out from. A read that fails leaves nothing to check, and the split is then not followed.
         var previousEnergy: NutrientGoal?
         if nutrient == Self.energyKey { previousEnergy = (try? store.goal(for: Self.energyKey)) ?? nil }
-        guard setTarget(text, for: nutrient, unit: selectedUnits[nutrient]) else { return false }
+        // The unit the write uses. Restored below, because setTarget's load() can move selectedUnits to
+        // a new display unit, and the record must pair the text with the unit it was written in.
+        let writtenUnit = selectedUnits[nutrient]
+        // The record is built from the goal this write stores, not a second read, which can fail.
+        var written: NutrientGoal?
+        if nutrient == DailyTotalsBuilder.waterKey {
+            committedWater = nil
+            let chosen = writtenUnit ?? self.unit(for: nutrient)
+            written = (try? Quantity(value: target, unit: chosen).converted(to: .mL))
+                .map { NutrientGoal(nutrient: nutrient, target: $0.value, unit: $0.unit) }
+        }
+        guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
         draftText[nutrient] = DecimalFormatting.text(target)
+        if nutrient == DailyTotalsBuilder.waterKey {
+            selectedUnits[nutrient] = writtenUnit
+            if let written { committedWater = (draftText[nutrient] ?? text, writtenUnit, written) }
+        }
         if nutrient == Self.energyKey { followEnergyGoal(from: previousEnergy) }
         return true
     }
@@ -573,6 +648,7 @@ public final class GoalsViewModel: ObservableObject {
                 for key in Self.macroSplitKeys {
                     draftText[key] = nil
                     selectedUnits[key] = nil
+                    rowError[key] = nil
                 }
                 load()
                 errorMessage = restored
