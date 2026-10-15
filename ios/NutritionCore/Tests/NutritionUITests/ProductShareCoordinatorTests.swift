@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import XCTest
 import NutritionDomain
@@ -88,7 +87,29 @@ private actor SuspendedProductService: CommunityProductServicing {
     func finishConsent(_ state: ProductConsentState) { consentReply?.resume(returning: state) }
     private var arrivals: [(Int, CheckedContinuation<Void, Never>)] = []
     func setCapabilities(_ value: ProductCatalogCapabilities) { caps = value }
-    func capabilities() async throws -> ProductCatalogCapabilities { caps }
+    /// When set, `capabilities()` throws it instead of answering.
+    var capabilitiesError: Error?
+    private var holdCapabilities = false
+    private var capabilitiesReply: CheckedContinuation<ProductCatalogCapabilities, Error>?
+    private var capabilitiesArrival: CheckedContinuation<Void, Never>?
+    func setCapabilitiesError(_ value: Error?) { capabilitiesError = value }
+    func holdNextCapabilities() { holdCapabilities = true }
+    func waitForCapabilities() async {
+        if capabilitiesReply != nil { return }
+        await withCheckedContinuation { capabilitiesArrival = $0 }
+    }
+    func finishCapabilities() { capabilitiesReply?.resume(returning: caps); capabilitiesReply = nil }
+    func capabilities() async throws -> ProductCatalogCapabilities {
+        if holdCapabilities {
+            holdCapabilities = false
+            return try await withCheckedThrowingContinuation {
+                capabilitiesReply = $0
+                capabilitiesArrival?.resume(); capabilitiesArrival = nil
+            }
+        }
+        if let capabilitiesError { throw capabilitiesError }
+        return caps
+    }
     func waitForRequests(_ count: Int) async {
         if bodies.count >= count { return }
         await withCheckedContinuation { arrivals.append((count, $0)) }
@@ -294,23 +315,38 @@ extension ProductShareCoordinatorTests {
         XCTAssertFalse(account.needsDisclosure)
         XCTAssertFalse(account.disclosureDue)
     }
-    @MainActor func testAlreadyAcknowledgedSignInIsNeverDue() async throws {
+    @MainActor func testAlreadyAcknowledgedSignInIsNotDueWhileCapabilitiesLoad() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
         let preferences = InMemoryDisplayPreferences()
         preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
         let account = AccountViewModel(service: service, preferences: preferences, productService: products)
-        // The state the view would read after each batch of changes: sampled on the next main-actor turn, as
-        // SwiftUI does, so two writes made in one synchronous step count once.
-        var seen: [Bool] = []
-        let watch = account.objectWillChange.sink { _ in
-            Task { @MainActor in seen.append(account.disclosureDue) }
-        }
-        await account.load()
-        for _ in 0..<5 { await Task.yield() }
-        watch.cancel()
+        await products.holdNextCapabilities()
+        let loading = Task { await account.load() }
+        await products.waitForCapabilities()
+        // The window: signed in, profile read, capabilities not yet, so `needsDisclosure` is only a guess.
+        XCTAssertTrue(account.profileReady)
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureReady)
+        XCTAssertFalse(account.disclosureDue)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
+        await products.finishCapabilities()
+        await loading.value
         XCTAssertFalse(account.needsDisclosure)
         XCTAssertFalse(account.disclosureDue)
-        XCTAssertFalse(seen.contains(true))
+    }
+    @MainActor func testFailedCapabilityReadNeverOffersTheDisclosureToAnAcknowledgedAccount() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        await products.setCapabilitiesError(ProductAPIError.unavailable)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
+        let account = AccountViewModel(service: service, preferences: preferences, productService: products)
+        await account.load()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureReady)
+        XCTAssertFalse(account.disclosureDue)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
     }
     @MainActor func testDisclosureReviewRequestOnlyCountsWhileSignedInAndUnacknowledged() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()

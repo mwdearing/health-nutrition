@@ -307,18 +307,21 @@ public final class AccountViewModel: ObservableObject {
         }
     }
 
-    /// True when the disclosure sheet should be up: signed in, not yet acknowledged, and the facts the answer
-    /// rests on have been read. Until the profile and the server capabilities have loaded, `needsDisclosure`
-    /// can still be a provisional guess, and showing the sheet then would ask an already-acknowledged person
-    /// again. Sign-in has its own sheet, which comes first.
+    /// True once the facts `needsDisclosure` rests on have been read: signed in, the profile loaded and, when a
+    /// product service exists, the server capabilities. Until then `needsDisclosure` can still be a provisional
+    /// guess, and showing the sheet, or offering to reopen it, would ask an already-acknowledged person again.
+    public var disclosureReady: Bool {
+        phase == .signedIn && profileReady && (productService == nil || productCapabilities != nil)
+    }
+
+    /// True when the disclosure sheet should be up. Sign-in has its own sheet, which comes first.
     public var disclosureDue: Bool {
-        phase == .signedIn && needsDisclosure && profileReady && !presentingSignIn
-            && (productService == nil || productCapabilities != nil)
+        disclosureReady && needsDisclosure && !presentingSignIn
     }
 
     /// Asks for the disclosure sheet again. Only meaningful while it still needs acknowledging.
     public func requestDisclosureReview() {
-        guard phase == .signedIn, needsDisclosure else { return }
+        guard disclosureReady, needsDisclosure else { return }
         disclosureReviewRequests += 1
     }
 

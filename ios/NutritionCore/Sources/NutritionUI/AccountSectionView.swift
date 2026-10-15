@@ -40,7 +40,7 @@ public struct AccountSectionView: View {
                     Button("Resume sharing") { Task { await model.recoverSharingAfterFailedDeletion() } }
                         .disabled(model.isBusy)
                 }
-                if model.needsDisclosure {
+                if model.needsDisclosure && model.disclosureReady {
                     Button("Sharing products") { model.requestDisclosureReview() }
                         .disabled(model.isBusy)
                 }
