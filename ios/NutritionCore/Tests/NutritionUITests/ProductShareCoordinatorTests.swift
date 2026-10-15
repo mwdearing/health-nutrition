@@ -299,10 +299,14 @@ extension ProductShareCoordinatorTests {
         let preferences = InMemoryDisplayPreferences()
         preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
         let account = AccountViewModel(service: service, preferences: preferences, productService: products)
-        // Every state seen just before a change, which covers the provisional window while capabilities load.
+        // The state the view would read after each batch of changes: sampled on the next main-actor turn, as
+        // SwiftUI does, so two writes made in one synchronous step count once.
         var seen: [Bool] = []
-        let watch = account.objectWillChange.sink { _ in seen.append(account.disclosureDue) }
+        let watch = account.objectWillChange.sink { _ in
+            Task { @MainActor in seen.append(account.disclosureDue) }
+        }
         await account.load()
+        for _ in 0..<5 { await Task.yield() }
         watch.cancel()
         XCTAssertFalse(account.needsDisclosure)
         XCTAssertFalse(account.disclosureDue)
