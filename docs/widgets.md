@@ -11,17 +11,19 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   It is rewritten each time Today's figures are read successfully (see "When the summary is written").
 - **Lock Screen.** The figures are marked privacy sensitive, so the system redacts them while the device is
   locked, according to the person's Lock Screen widget settings.
-- **Erase all data.** Clears the summary: it is replaced by an empty one (no entries, no figures) at once, so the
-  widget shows "Nothing logged today"; if that write fails the file is removed instead, and the widgets are
+- **Erase all data.** Clears the summary, and runs first among the erasers: it is replaced by an empty one (no entries, no figures) at once, so the
+  widget shows "Nothing logged today"; if that write fails the whole folder is removed instead, and the widgets are
   refreshed either way. If the file cannot be removed either, it is emptied in place; the widget cannot decode an
   empty file and shows dashes. If even that cannot be done the erase reports failure to the person and the file
   stays until a later erase or write succeeds. A write that was already pending from before the erase is dropped by an erase counter
   (not the clock); Today then reloads and writes the real empty day.
 - **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
   shows dashes rather than claiming nothing was logged.
-- **How it is written.** To a fixed temporary name that is left out of backups, then moved over the summary;
-  the temporary is removed by erase. If the file cannot be left out of backups the write fails and nothing is
-  left on disk.
+- **How it is written.** The summary lives in its own folder inside the App Group container, and that folder is
+  left out of device backups, so everything in it (a temporary included) is excluded from the moment it exists.
+  A new summary is written to a fixed temporary name in the folder and moved over the file. If the folder cannot
+  be left out of backups nothing is written and the folder is removed. A temporary left by a crash is removed at
+  launch and by erase.
 - **When the summary is written.** The app writes it each time Today has read the journal successfully, and
   stamps it with that moment (`TodayViewModel.lastLoadedAt`). Before the first successful load, after a failed
   reload, or when something merely notifies without reading, nothing is written, so a failed read never replaces

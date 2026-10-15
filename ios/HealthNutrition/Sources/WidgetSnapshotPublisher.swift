@@ -25,14 +25,15 @@ final class WidgetSnapshotPublisher {
     /// - Parameter isErasing: true while Erase all data runs. A write then would put figures back that the
     ///   eraser just removed; the reload Today does once the erase finishes publishes the empty day.
     func start(today: TodayViewModel, isErasing: @escaping @MainActor () -> Bool = { false }) {
-        guard store != nil else { return }
+        guard let store else { return }
         self.isErasing = isErasing
+        // A temporary left by a write that was interrupted by a crash or a kill is removed at launch.
+        store.removeStaleTemporary()
         // Every change to the totals goes through a load, and a successful load sets `lastLoadedAt`: the summary
         // is written when that moment changes and stamped with it. Nothing else (an undo expiring, a failed
         // reload, a notification after midnight) can make retained totals look fresh.
         subscription = today.$lastLoadedAt
             .compactMap { $0 }
-            .removeDuplicates()
             // Stamped with the erase generation when the load is announced, before the debounce, so a write that
             // was already pending when an erase ran is recognised whatever the clock does in between. Today's load
             // is synchronous on the main actor, so the moment it is announced is the moment the journal was read:
@@ -63,7 +64,8 @@ final class WidgetSnapshotPublisher {
             try store.write(snapshot)
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
-            // The widgets keep showing the last snapshot; the app does not depend on this write.
+            // The previous summary is as it was; the app does not depend on this write.
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 

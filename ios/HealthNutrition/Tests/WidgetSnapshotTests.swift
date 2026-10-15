@@ -90,23 +90,35 @@ final class WidgetSnapshotTests: XCTestCase {
         try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll()
         // No figure is left: the widget cannot decode an empty file and shows dashes.
         XCTAssertNil(store.read())
-        let url = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
+        let url = folder.appendingPathComponent(WidgetSnapshotStore.fileName)
         XCTAssertEqual(try Data(contentsOf: url).count, 0)
     }
 
-    func testAWriteLeavesNoTemporaryAndErasePicksUpOneLeftByAnInterruptedWrite() throws {
+    private var folder: URL { directory.appendingPathComponent(WidgetSnapshotStore.folderName) }
+
+    func testAWriteLeavesOnlyTheSummaryInItsOwnFolderAndEraseRemovesTheFolderWithAnyTemporary() throws {
         let store = WidgetSnapshotStore(directory: directory)
         try store.write(sample())
-        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        XCTAssertEqual(names, [WidgetSnapshotStore.fileName])
-        // An interrupted write leaves the fixed temporary name behind; erase removes it with the summary.
-        let leftover = directory.appendingPathComponent(WidgetSnapshotStore.fileName + ".tmp")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [WidgetSnapshotStore.folderName])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), [WidgetSnapshotStore.fileName])
+        // An interrupted write leaves the fixed temporary name behind; launch cleanup, and erase, remove it.
+        let leftover = folder.appendingPathComponent(WidgetSnapshotStore.fileName + ".tmp")
+        try Data("figures".utf8).write(to: leftover)
+        store.removeStaleTemporary()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path))
         try Data("figures".utf8).write(to: leftover)
         try store.erase()
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
     }
 
-    func testASummaryThatCannotBeLeftOutOfBackupsIsNotLeftOnDisk() throws {
+    func testTheFolderIsExcludedFromBackupSoNothingInsideItCanBeBackedUp() throws {
+        let store = WidgetSnapshotStore(directory: directory)
+        try store.write(sample())
+        let values = try folder.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+    }
+
+    func testAFolderThatCannotBeLeftOutOfBackupsIsNotLeftOnDisk() throws {
         var store = WidgetSnapshotStore(directory: directory)
         struct Refused: Error {}
         store.excludeFromBackup = { _ in throw Refused() }
@@ -130,14 +142,6 @@ final class WidgetSnapshotTests: XCTestCase {
         erasure.markErased()
         XCTAssertFalse(erasure.accepts(generation: pending), "a load announced before the erase is dropped")
         XCTAssertTrue(erasure.accepts(generation: erasure.generation), "the reload after the erase publishes")
-    }
-
-    func testTheSummaryFileIsExcludedFromBackup() throws {
-        let store = WidgetSnapshotStore(directory: directory)
-        try store.write(sample())
-        let url = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
-        let values = try url.resourceValues(forKeys: [.isExcludedFromBackupKey])
-        XCTAssertEqual(values.isExcludedFromBackup, true)
     }
 
     func testEnergyFractionNeedsAKnownTotalAndAGoalAndNeverExceedsOne() {

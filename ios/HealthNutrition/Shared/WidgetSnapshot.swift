@@ -77,6 +77,10 @@ enum WidgetFigure {
 /// in the widget; a test passes a temporary one.
 struct WidgetSnapshotStore {
     static let fileName = "today-widget.json"
+    /// The summary lives in its own folder inside the App Group container, and that folder is what is left out of
+    /// device backups: everything in it, a temporary included, is excluded from the moment it exists, so no step
+    /// of a write can leave a figure in a backup.
+    static let folderName = "WidgetSummary"
 
     let directory: URL
     var fileManager: FileManager = .default
@@ -84,7 +88,7 @@ struct WidgetSnapshotStore {
     var writeData: (Data, URL) throws -> Void = { data, url in
         try data.write(to: url, options: [.completeFileProtectionUntilFirstUserAuthentication])
     }
-    /// Leaves a file out of device backups. A parameter so a test can make it fail.
+    /// Leaves a folder out of device backups. A parameter so a test can make it fail.
     var excludeFromBackup: (URL) throws -> Void = { url in
         var url = url
         var values = URLResourceValues()
@@ -101,9 +105,10 @@ struct WidgetSnapshotStore {
         return WidgetSnapshotStore(directory: url, fileManager: fileManager)
     }
 
-    private var fileURL: URL { directory.appendingPathComponent(Self.fileName) }
-    /// Where a new summary is written before it replaces the file. A fixed name, so erase can always remove it.
-    private var temporaryURL: URL { directory.appendingPathComponent(Self.fileName + ".tmp") }
+    private var folderURL: URL { directory.appendingPathComponent(Self.folderName, isDirectory: true) }
+    private var fileURL: URL { folderURL.appendingPathComponent(Self.fileName) }
+    /// Where a new summary is written before it replaces the file. A fixed name inside the folder.
+    private var temporaryURL: URL { folderURL.appendingPathComponent(Self.fileName + ".tmp") }
 
     func read() -> WidgetSnapshot? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
@@ -112,31 +117,39 @@ struct WidgetSnapshotStore {
         return try? decoder.decode(WidgetSnapshot.self, from: data)
     }
 
-    /// Written with file protection until first unlock, to a fixed temporary name that is left out of backups, and
-    /// then moved over the file, so the widget never reads half a file and no unnamed temporary is left behind.
-    /// The summary is left out of device backups: if that cannot be arranged the write fails and nothing is left on
-    /// disk, so the claim in the privacy copy is always true of what is stored.
+    /// Makes sure the folder exists and is left out of backups before anything is put in it. If it cannot be left
+    /// out the folder is removed again and the call throws, so a summary is never stored where a backup would
+    /// take it.
+    private func prepareFolder() throws {
+        if !fileManager.fileExists(atPath: folderURL.path) {
+            try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        }
+        do {
+            try excludeFromBackup(folderURL)
+        } catch {
+            try? fileManager.removeItem(at: folderURL)
+            throw error
+        }
+    }
+
+    /// Written with file protection until first unlock, to a fixed temporary name in the excluded folder and then
+    /// moved over the file, so the widget never reads half a file.
     func write(_ snapshot: WidgetSnapshot) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(snapshot)
+        try prepareFolder()
         let temporary = temporaryURL
-        var replaced = false
         do {
             try writeData(data, temporary)
-            try excludeFromBackup(temporary)
             if fileManager.fileExists(atPath: fileURL.path) {
                 _ = try fileManager.replaceItemAt(fileURL, withItemAt: temporary)
             } else {
                 try fileManager.moveItem(at: temporary, to: fileURL)
             }
-            replaced = true
-            try excludeFromBackup(fileURL)
         } catch {
+            // Whatever the failure, no half-written temporary stays; the previous summary is as it was.
             try? fileManager.removeItem(at: temporary)
-            // A summary that could not be left out of backups must not stay on disk. A failure before the
-            // replacement leaves the previous summary as it was.
-            if replaced { try? fileManager.removeItem(at: fileURL) }
             let logger = Logger(
                 subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "widget-summary")
             logger.error("Could not write the summary: \(error.localizedDescription, privacy: .private)")
@@ -144,17 +157,24 @@ struct WidgetSnapshotStore {
         }
     }
 
-    /// Removes the summary and any temporary left by an interrupted write.
+    /// Removes the whole folder: the summary and any temporary an interrupted write left. Throws if it is still
+    /// there afterwards, so an erase never reports success with a figure on disk.
     func erase() throws {
-        try? fileManager.removeItem(at: temporaryURL)
-        guard fileManager.fileExists(atPath: fileURL.path) else { return }
-        try fileManager.removeItem(at: fileURL)
+        guard fileManager.fileExists(atPath: folderURL.path) else { return }
+        try fileManager.removeItem(at: folderURL)
+        if fileManager.fileExists(atPath: folderURL.path) { throw CocoaError(.fileWriteUnknown) }
     }
 
-    /// Last resort when neither replacing nor removing the file works: empties it in place, so no figure is left
-    /// on disk. The widget treats a file it cannot decode as "no summary" and shows dashes.
-    func truncate() throws {
+    /// Removes a temporary left by an interrupted write, when the app starts. Best effort: it is inside the
+    /// excluded folder and the next write or an erase replaces or removes it anyway.
+    func removeStaleTemporary() {
         try? fileManager.removeItem(at: temporaryURL)
+    }
+
+    /// Last resort when the folder cannot be removed: empties the summary file in place and removes the temporary, so
+    /// no figure is left on disk. The widget treats a file it cannot decode as "no summary" and shows dashes.
+    func truncate() throws {
+        if fileManager.fileExists(atPath: temporaryURL.path) { try fileManager.removeItem(at: temporaryURL) }
         try Data().write(to: fileURL)
     }
 }
