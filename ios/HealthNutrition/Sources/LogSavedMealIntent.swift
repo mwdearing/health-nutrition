@@ -128,8 +128,10 @@ struct LogSavedMealIntent: AppIntent {
         } else {
             meals = nil
         }
+        // One time for the write and the reload, so a run across midnight files the meal on the day Today shows.
+        let now = Date()
         let outcome = SavedMealShortcut.log(
-            id: savedMeal.id, meal: meal?.label, now: Date(), meals: meals,
+            id: savedMeal.id, meal: meal?.label, now: now, meals: meals,
             log: { saved, meal, now in
                 guard let services else { throw SavedMealError.notFound }
                 // As a log from the screen does, an earlier Undo offer is dropped first, so Undo in the app never
@@ -141,7 +143,7 @@ struct LogSavedMealIntent: AppIntent {
         // Whatever was written (all of it, part of it, or entries a failed write left), the app reloads as it
         // does after an add from its own screens, so Today and the Diary show it and Apple Health gets it
         // now rather than at the next foreground.
-        if let services { Self.reload(services, now: Date()) }
+        if let services { Self.reload(services, now: now) }
         return .result(dialog: IntentDialog(stringLiteral: outcome.message))
     }
 
