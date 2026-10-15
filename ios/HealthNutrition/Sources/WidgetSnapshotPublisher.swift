@@ -34,7 +34,9 @@ final class WidgetSnapshotPublisher {
             .compactMap { $0 }
             .removeDuplicates()
             // Stamped with the erase generation when the load is announced, before the debounce, so a write that
-            // was already pending when an erase ran is recognised whatever the clock does in between.
+            // was already pending when an erase ran is recognised whatever the clock does in between. Today's load
+            // is synchronous on the main actor, so the moment it is announced is the moment the journal was read:
+            // no read can start before an erase and finish after it.
             .map { [erasure] loadedAt in (loadedAt: loadedAt, generation: erasure.generation) }
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
             .sink { [weak self, weak today] load in
@@ -49,7 +51,6 @@ final class WidgetSnapshotPublisher {
         }
     }
 
-    @MainActor
     func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
         guard let store, !isErasing(), erasure.accepts(generation: generation) else { return }
         let snapshot = Self.snapshot(from: today, now: loadedAt)
