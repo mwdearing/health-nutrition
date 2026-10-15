@@ -15,6 +15,9 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   the app writes an empty summary (no entries, no figures), so the widget shows "Nothing logged today".
 - **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
   shows dashes rather than claiming nothing was logged.
+- **A new day.** A summary written on an earlier day is not shown as today's: with the app closed after
+  midnight the widget shows dashes (the same state as unreadable) until the app writes today's summary. The
+  widget asks to be refreshed shortly after local midnight for this.
 - **Backups and accounts.** The App Group container is part of device backups like the rest of the app's
   files, and the summary is per device: signing out of an account does not change it.
 - **Nothing is sent anywhere.** The widget has no network access and links no package.

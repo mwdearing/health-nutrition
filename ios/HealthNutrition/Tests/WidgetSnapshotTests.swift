@@ -61,4 +61,27 @@ final class WidgetSnapshotTests: XCTestCase {
         snapshot.energyGoalKcal = 0
         XCTAssertNil(snapshot.energyFraction)
     }
+
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    func testASummaryFromEarlierTodayIsCurrentAndYesterdaysIsNot() {
+        var snapshot = sample()
+        // 2023-11-14 22:13:20 UTC.
+        let evening = Date(timeIntervalSince1970: 1_700_000_000)
+        snapshot.generatedAt = evening
+        XCTAssertTrue(snapshot.isCurrent(on: evening.addingTimeInterval(60 * 60), calendar: utc))
+        // Just after midnight, with the app closed: still yesterday's summary.
+        XCTAssertFalse(snapshot.isCurrent(on: evening.addingTimeInterval(3 * 60 * 60), calendar: utc))
+    }
+
+    func testTheRefreshIsJustAfterTheNextLocalMidnight() {
+        let evening = Date(timeIntervalSince1970: 1_700_000_000)
+        let refresh = WidgetSnapshot.refreshAfterMidnight(from: evening, calendar: utc)
+        // 2023-11-15 00:01:00 UTC.
+        XCTAssertEqual(refresh, Date(timeIntervalSince1970: 1_700_006_460))
+    }
 }

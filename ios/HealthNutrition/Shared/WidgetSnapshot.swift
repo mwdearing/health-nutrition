@@ -13,6 +13,19 @@ struct WidgetSnapshot: Codable, Equatable {
     var fatGrams: Double?
     var waterMilliliters: Double?
 
+    /// Whether this summary was written on the same local day as `now`. After midnight, with the app closed, the
+    /// file still holds yesterday's totals; the widget must not present them as today's.
+    func isCurrent(on now: Date, calendar: Calendar = .current) -> Bool {
+        calendar.isDate(generatedAt, inSameDayAs: now)
+    }
+
+    /// Shortly after the next local midnight, when a refresh drops yesterday's summary.
+    static func refreshAfterMidnight(from now: Date, calendar: Calendar = .current) -> Date {
+        let startOfToday = calendar.startOfDay(for: now)
+        let midnight = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? now.addingTimeInterval(86_400)
+        return midnight.addingTimeInterval(60)
+    }
+
     /// How much of the energy goal is reached, 0 through 1, or nil without a known total and a goal.
     var energyFraction: Double? {
         guard let energyKcal, let energyGoalKcal, energyGoalKcal > 0, energyKcal.isFinite, energyGoalKcal.isFinite
