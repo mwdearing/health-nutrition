@@ -22,6 +22,9 @@ public enum StoredDecimal {
             fractionDigits -= 1
             rounded = DisplayRounding.rounded(value, fractionDigits: fractionDigits)
         }
+        // At the edges of Decimal's range there is no room to round, and Foundation returns zero. A value
+        // that cannot be rounded is kept as it is rather than turned into a different number.
+        guard readsBack(rounded), !rounded.isNaN, rounded != 0, (rounded < 0) == (value < 0) else { return value }
         return rounded
     }
 
@@ -37,14 +40,15 @@ public enum StoredDecimal {
 
     /// A value the store wrote as text: what `DecimalText` reads back, or, for a row written before the
     /// journal kept its values readable, a value the encoder wrote with one digit more, rounded as
-    /// `storable` rounds it. Text in any other form stays refused.
+    /// `storable` rounds it. Text in any other form, or a value that cannot be rounded, stays refused.
     static func readBack(_ text: String) -> Decimal? {
         if let value = DecimalText.decode(text) { return value }
         guard DecimalText.isValidDecimalText(text),
               let value = Decimal(string: text, locale: DecimalText.locale), !value.isNaN,
               DecimalText.encode(value) == text
         else { return nil }
-        return storable(value)
+        let rounded = storable(value)
+        return readsBack(rounded) ? rounded : nil
     }
 
     private static func readsBack(_ value: Decimal) -> Bool {
