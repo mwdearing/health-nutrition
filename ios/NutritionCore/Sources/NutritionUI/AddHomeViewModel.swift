@@ -92,8 +92,10 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
                 }
                 let factor = IntakeContextSnapshotBasis.scalingFactor(
                     labelBasis: product.labelBasis, logged: prefill.components)
+                // Scaled values are kept to what the journal reads back (`StoredDecimal`) before they name a
+                // snapshot, so the snapshot id and the stored values agree.
                 let nutrients = product.nutrients.mapValues { value in
-                    factor.map { value.scaled(by: $0) } ?? .unknown
+                    factor.map { StoredDecimal.storable(value.scaled(by: $0)) } ?? .unknown
                 }
                 model.applyLabelProduct(ProductDefinition(
                     snapshotID: UUID().uuidString.lowercased(), productID: product.productID,

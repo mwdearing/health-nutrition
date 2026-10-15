@@ -79,6 +79,9 @@ public enum RecipeLogger {
     public static func snapshot(
         for version: RecipeVersion, perServing: [String: NutrientValue], in store: JournalStore
     ) throws -> ProductDefinition {
+        // A serving that does not divide evenly can carry a digit more than the journal reads back; it is
+        // kept to what the store keeps (`StoredDecimal`) before it names a snapshot or is compared with one.
+        let perServing = StoredDecimal.storable(perServing)
         let labelBasis = basisText(version.yield)
         func product(_ snapshotID: String) -> ProductDefinition {
             ProductDefinition(

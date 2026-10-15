@@ -1531,6 +1531,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// `undoRestore` to remove.
     @discardableResult
     private static func restoreSnapshot(_ product: ProductDefinition, in context: ModelContext) throws -> Bool {
+        // Compared and written as the store keeps them (`StoredDecimal`), so a value one digit too long to
+        // read back is the same value it was stored as rather than a conflict.
+        let product = product.withNutrients(StoredDecimal.storable(product.nutrients))
         let id = product.snapshotID
         let existing = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
@@ -2036,6 +2039,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// refused: the snapshot id still names one product, and the values only ever fill in what the
     /// product states. Any other difference is still a conflict.
     private static func insertSnapshot(_ product: ProductDefinition, in context: ModelContext) throws {
+        // Compared and written as the store keeps them (`StoredDecimal`), as a restore does.
+        let product = product.withNutrients(StoredDecimal.storable(product.nutrients))
         let id = product.snapshotID
         let existing = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
@@ -2237,7 +2242,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             switch value {
             case .known(let amount, let unit):
                 return StoredNutrient(
-                    id: id, state: "known", valueText: DecimalText.encode(amount), unitSymbol: unit.symbol,
+                    id: id, state: "known", valueText: DecimalText.encode(StoredDecimal.storable(amount)),
+                    unitSymbol: unit.symbol,
                     displayName: displayName)
             case .unknown:
                 return StoredNutrient(id: id, state: "unknown", valueText: nil, unitSymbol: nil, displayName: displayName)
@@ -2279,7 +2285,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         for item in stored {
             switch item.state {
             case "known":
-                guard let text = item.valueText, let amount = DecimalText.decode(text),
+                guard let text = item.valueText, let amount = StoredDecimal.readBack(text),
                     let symbol = item.unitSymbol, let unit = try? UnitRegistry.unit(for: symbol)
                 else { continue }
                 values[item.id] = .known(amount, unit)
