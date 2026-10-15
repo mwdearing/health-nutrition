@@ -32,6 +32,7 @@ public struct JournalImportLimits: Sendable, Equatable {
         try consume(root["tombstones"], from: &remaining)
         try consume(root["favorites"], from: &remaining)
         try consume(root["products"], from: &remaining)
+        try consume(root["saved_meals"], from: &remaining)
 
         guard let intakes = root["intakes"] as? [Any] else { return }
         for intakeItem in intakes {
@@ -45,10 +46,22 @@ public struct JournalImportLimits: Sendable, Equatable {
             }
         }
 
-        guard let favorites = root["favorites"] as? [Any] else { return }
-        for favoriteItem in favorites {
-            guard let favorite = favoriteItem as? [String: Any] else { continue }
-            try consume(favorite["components"], from: &remaining)
+        if let favorites = root["favorites"] as? [Any] {
+            for favoriteItem in favorites {
+                guard let favorite = favoriteItem as? [String: Any] else { continue }
+                try consume(favorite["components"], from: &remaining)
+            }
+        }
+
+        // A saved meal's items are templates like favorites, so they and their components count the same way.
+        guard let savedMeals = root["saved_meals"] as? [Any] else { return }
+        for savedMealItem in savedMeals {
+            guard let savedMeal = savedMealItem as? [String: Any], let items = savedMeal["items"] as? [Any] else { continue }
+            try consume(items.count, from: &remaining)
+            for item in items {
+                guard let template = item as? [String: Any] else { continue }
+                try consume(template["components"], from: &remaining)
+            }
         }
     }
 

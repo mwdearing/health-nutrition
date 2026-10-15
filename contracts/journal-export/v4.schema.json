@@ -427,7 +427,8 @@
         "name": {
           "description": "1 to 60 characters once outer spaces are trimmed; unique in the list, ignoring case.",
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 60
         },
         "meal": {
           "description": "The meal the group was saved under, or null for none.",

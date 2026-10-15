@@ -1077,7 +1077,8 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         let data = try JournalExporter.encode(try makeExport(store: store))
 
         let decoded = try JournalExporter.decode(data)
-        XCTAssertEqual(decoded.schemaVersion, 3)
+        // Written by this build, so at its version; a revision's own time is there from version 3 on.
+        XCTAssertEqual(decoded.schemaVersion, JournalExport.currentSchemaVersion)
         let exported = try XCTUnwrap(decoded.intakes.first { $0.id == firstID }?.revisions)
         XCTAssertEqual(exported[0].occurredAt, Date(timeIntervalSince1970: 1_705_260_000))
         XCTAssertEqual(exported[0].timeZoneIdentifier, "Europe/Berlin")

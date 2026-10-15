@@ -18,9 +18,9 @@ rejects dates Foundation would normalize, including the skipped cutover days. Th
 not change any schema's shape.
 
 The contract lives in the repository next to the code:
-- `contracts/journal-export/v3.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
-- `contracts/journal-export/example.v3.json` - a small synthetic document that validates against it.
-- `contracts/journal-export/v2.schema.json`, `v1.schema.json` and their examples - the version 2 and version 1 contracts, kept unchanged and still read.
+- `contracts/journal-export/v4.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
+- `contracts/journal-export/example.v4.json` - a small synthetic document that validates against it.
+- `contracts/journal-export/v3.schema.json`, `v2.schema.json`, `v1.schema.json` and their examples - the version 3, 2 and 1 contracts, kept unchanged and still read.
 
 Version 2 is version 1 with one field: `provenance.kind`, which says whether a product is a `food`, a
 `drink` or a `supplement`. It is what a restore needs to know whether a snapshot joins the day's count of
@@ -264,8 +264,8 @@ already resolved is reused instead of being fetched again for every revision tha
 means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
 `JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
 ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
-build **writes version 3 and reads versions 1, 2 and 3**; `decode(_:)` refuses anything else by value
-rather than by shape, so a version 4 file is never half-understood.
+build **writes version 4 and reads versions 1, 2, 3 and 4**; `decode(_:)` refuses anything else by value
+rather than by shape, so a version 5 file is never half-understood.
 
 Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
 in its own right: its documents carry no kind, and refusing them would take away the only backup a person

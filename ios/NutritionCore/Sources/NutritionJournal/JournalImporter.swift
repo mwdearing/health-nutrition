@@ -728,6 +728,8 @@ public enum JournalImporter {
                 // The group's meal applies to every item, so an item that names one of its own is not what the
                 // app writes and is refused rather than silently changed.
                 guard item.meal == nil else { throw JournalImportError.corrupt("\(label) names a meal of its own") }
+                // An item with no amounts is one the app never saves, and logging it would add nothing.
+                guard !item.components.isEmpty else { throw JournalImportError.corrupt("\(label) has no components") }
                 items.append(try restoredTemplate(item, named: label, products: products))
             }
             meals.append(JournalSavedMeal(id: savedMeal.id, name: name, meal: meal, items: items))

@@ -131,6 +131,14 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
             ("an unknown meal", { meal in var meal = meal; meal["meal"] = "brunch"; return meal }),
             ("no items", { meal in var meal = meal; meal["items"] = [[String: Any]](); return meal }),
             ("a long name", { meal in var meal = meal; meal["name"] = String(repeating: "a", count: 61); return meal }),
+            ("an empty name", { meal in var meal = meal; meal["name"] = ""; return meal }),
+            ("an item with no components", { meal in
+                var meal = meal
+                var items = meal["items"] as? [[String: Any]] ?? []
+                items[0]["components"] = [[String: Any]]()
+                meal["items"] = items
+                return meal
+            }),
             ("an item with its own meal", { meal in
                 var meal = meal
                 var items = meal["items"] as? [[String: Any]] ?? []
@@ -153,6 +161,25 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
                 label)
             XCTAssertEqual(try journal.activeIntakes(), [], label)
             XCTAssertEqual(savedMeals.meals, [], label)
+        }
+    }
+
+    /// Saved meals, their items and the items' components count toward the import's element ceiling, as
+    /// favorites and their components do.
+    func testSavedMealsCountTowardTheImportCeiling() throws {
+        let full = try savedMealsExport()
+        var root = try fields(full)
+        root["saved_meals"] = [[String: Any]]()
+        let without = try JSONSerialization.data(withJSONObject: root)
+        // The smallest ceiling the file without saved meals passes.
+        var ceiling = 0
+        while (try? JournalImportLimits(maxImportBytes: 1 << 24, maxAggregateElements: ceiling).validate(without)) == nil {
+            ceiling += 1
+            guard ceiling < 10_000 else { return XCTFail("no ceiling found") }
+        }
+        XCTAssertThrowsError(
+            try JournalImportLimits(maxImportBytes: 1 << 24, maxAggregateElements: ceiling).validate(full)) {
+            XCTAssertEqual($0 as? JournalImportError, .tooLarge)
         }
     }
 
