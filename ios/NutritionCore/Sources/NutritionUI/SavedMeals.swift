@@ -107,11 +107,13 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     }
 
     /// The list is written before its receipt, so a stop between the two leaves the file's meals with no
-    /// receipt, which a resume recognises and writes again.
+    /// receipt, which a resume recognises and writes again. The check and the write share the store's lock.
     public func restoreJournalSavedMeals(_ meals: [JournalSavedMeal], receipt: String) throws {
         let list = meals.map { SavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
         let data = try JSONEncoder().encode(list)
-        lock.withLock {
+        try lock.withLock {
+            let current = try read()
+            guard current.isEmpty || current == list else { throw JournalImportError.notEmpty }
             defaults.set(data, forKey: Self.key)
             defaults.set(receipt, forKey: Self.restoreReceiptKey)
         }
@@ -129,8 +131,13 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
         }
     }
 
-    public func clearRestoredSavedMeals() throws {
-        try eraseAll()
+    public func clearRestoredSavedMeals(_ meals: [JournalSavedMeal]) throws {
+        let list = meals.map { SavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
+        try lock.withLock {
+            guard try read() == list else { throw JournalImportError.notEmpty }
+            defaults.removeObject(forKey: Self.key)
+            defaults.removeObject(forKey: Self.restoreReceiptKey)
+        }
     }
 
     private func read() throws -> [SavedMeal] {

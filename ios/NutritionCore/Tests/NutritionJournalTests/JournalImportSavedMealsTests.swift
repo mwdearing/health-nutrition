@@ -9,31 +9,41 @@ private final class MemorySavedMeals: JournalSavedMealsStore, @unchecked Sendabl
     var meals: [JournalSavedMeal]
     var receipt: String?
     var failRestore = false
+    /// Runs as a restore begins, as a meal saved in another window at that moment would.
+    var beforeRestore: (MemorySavedMeals) -> Void = { _ in }
 
     init(_ meals: [JournalSavedMeal] = []) { self.meals = meals }
 
     func journalSavedMeals() throws -> [JournalSavedMeal] { meals }
     func restoreJournalSavedMeals(_ meals: [JournalSavedMeal], receipt: String) throws {
+        beforeRestore(self)
         if failRestore { throw Failure() }
+        guard self.meals.isEmpty || self.meals == meals else { throw JournalImportError.notEmpty }
         self.meals = meals
         self.receipt = receipt
     }
     func hasSavedMealsRestoreReceipt(_ receipt: String) throws -> Bool { self.receipt == receipt }
     func removeSavedMealsRestoreReceipt(_ receipt: String) throws { if self.receipt == receipt { self.receipt = nil } }
-    func clearRestoredSavedMeals() throws {
-        meals = []
+    func clearRestoredSavedMeals(_ meals: [JournalSavedMeal]) throws {
+        guard self.meals == meals else { throw JournalImportError.notEmpty }
+        self.meals = []
         receipt = nil
     }
 }
 
 /// A favorites store whose restore always fails, after the saved meals were written.
 private final class FailingFavorites: FavoritesStore, FavoritesRestoreTarget, @unchecked Sendable {
+    /// Runs before the failure, as another window writing in between would.
+    var beforeFailing: () -> Void = {}
     func add(_ favorite: FavoriteTemplate) throws {}
     func remove(id: String) throws {}
     func list() throws -> [FavoriteTemplate] { [] }
     func contains(id: String) throws -> Bool { false }
     func close() {}
-    func restore(_ favorites: [FavoriteTemplate]) throws { throw FavoritesError.injectedSaveFailure }
+    func restore(_ favorites: [FavoriteTemplate]) throws {
+        beforeFailing()
+        throw FavoritesError.injectedSaveFailure
+    }
 }
 
 /// Saved meals in a version 4 export: written in the list's order with the products their items use, and
@@ -201,6 +211,81 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         }
         XCTAssertEqual(try journal.activeIntakes(), [])
         XCTAssertEqual(savedMeals.meals.map(\.id), ["mine"])
+    }
+
+    /// A version 4 file states the whole saved meals list, so even one with none is not restored over a phone
+    /// that keeps some: what the phone keeps would otherwise stay mixed into the restored data.
+    func testAVersion4FileWithNoSavedMealsIsRefusedOverAPhoneThatKeepsSome() throws {
+        let directory = try self.directory()
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: try filledStore(directory), savedMeals: MemorySavedMeals(), appVersion: appVersion,
+                exportedAt: exportedAt))
+        let target = try self.directory()
+        let journal = try store(target)
+        let savedMeals = MemorySavedMeals([JournalSavedMeal(id: "mine", name: "Mine", meal: nil, items: [template("x", name: "X")])])
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, savedMeals: savedMeals)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertEqual(try journal.activeIntakes(), [])
+        XCTAssertEqual(savedMeals.meals.map(\.id), ["mine"])
+    }
+
+    /// A meal saved in another window after the import checked the list is not overwritten: the store refuses
+    /// the write, and the journal is undone.
+    func testAMealSavedMeanwhileIsNotOverwritten() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let savedMeals = MemorySavedMeals()
+        let mine = JournalSavedMeal(id: "mine", name: "Mine", meal: nil, items: [template("x", name: "X")])
+        savedMeals.beforeRestore = { store in if store.meals.isEmpty { store.meals = [mine] } }
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try savedMealsExport(), into: journal, favorites: try favorites(target), savedMeals: savedMeals)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertEqual(savedMeals.meals, [mine])
+        XCTAssertEqual(try journal.activeIntakes(), [])
+    }
+
+    /// Undoing the saved meals after a failed favorites write leaves a list someone changed meanwhile alone,
+    /// and says the restore was partial.
+    func testUndoLeavesAListChangedMeanwhile() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let savedMeals = MemorySavedMeals()
+        let favorites = FailingFavorites()
+        favorites.beforeFailing = { savedMeals.meals.removeLast() }
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try savedMealsExport(), into: journal, favorites: favorites, savedMeals: savedMeals)) {
+            XCTAssertEqual($0 as? JournalImportError, .partialRestore(retainedIntakes: 0, retainedTombstones: 0))
+        }
+        XCTAssertEqual(savedMeals.meals.map(\.id), ["meal-2"], "the changed list is left as it is")
+        XCTAssertEqual(try journal.activeIntakes(), [])
+    }
+
+    /// A file with no entries at all writes nothing to the journal, so a stop after its saved meals leaves an
+    /// empty journal; the flag naming the file is what lets the same file finish.
+    func testAStopInAFileWithNoEntriesIsFinished() throws {
+        let source = try directory()
+        let favoritesSource = try favorites(source)
+        try favoritesSource.add(template("fav-tea-1", name: "Sample tea"))
+        let lunch = JournalSavedMeal(id: "meal-2", name: "Lunch box", meal: nil, items: [template("item-3", name: "Sample apple")])
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: try store(source), favorites: favoritesSource, savedMeals: MemorySavedMeals([lunch]),
+                appVersion: appVersion, exportedAt: exportedAt))
+        let digest = JournalImporter.fileDigest(data)
+        let target = try directory()
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+        let savedMeals = MemorySavedMeals()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try savedMeals.restoreJournalSavedMeals([lunch], receipt: digest)
+
+        _ = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, savedMeals: savedMeals)
+        XCTAssertEqual(try favoritesStore.list().map(\.id), ["fav-tea-1"])
+        XCTAssertEqual(savedMeals.meals, [lunch])
+        XCTAssertNil(try journal.restoreInProgressDigest())
     }
 
     func testAFailedFavoritesWriteEmptiesTheSavedMealsAndTheJournalAgain() throws {

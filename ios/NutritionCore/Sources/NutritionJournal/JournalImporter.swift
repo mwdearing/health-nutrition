@@ -209,7 +209,12 @@ public enum JournalImporter {
         let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil
         let progress = hasSecondPhase ? store as? JournalRestoreProgress : nil
         let digest = fileDigest(data)
-        if try journalHoldsAnything(store) {
+        // A file with no entries and no deleted ones writes nothing to the journal, so a stop after its saved meals
+        // leaves an empty journal; the flag naming this file is then what says a restore of it is unfinished.
+        let writesJournal = !plan.entries.isEmpty || !plan.tombstones.isEmpty
+        var resumesEmptyJournal = false
+        if !writesJournal, let progress { resumesEmptyJournal = try progress.restoreInProgressDigest() == digest }
+        if try journalHoldsAnything(store) || resumesEmptyJournal {
             // **A restore of this same file that the app stopped after its journal's save is finished (#118).**
             // The flag beside the store names the file whose journal was written and whose second phase was not
             // finished, and the journal has to hold exactly that file's journal: a flag left by a stop before
@@ -255,8 +260,10 @@ public enum JournalImporter {
         }
 
         // Saved meals are restored only into an empty list: merging a file's meals into the phone's would have
-        // to choose between two meals of one name, and a restore does not choose.
-        if let savedMealsTarget, try !savedMealsTarget.journalSavedMeals().isEmpty {
+        // to choose between two meals of one name, and a restore does not choose. A version 4 file states the
+        // whole list, an empty one included, so it is refused over a phone that keeps any. The store checks again
+        // as it writes, so a meal saved in another window meanwhile is not overwritten.
+        if document.schemaVersion >= 4, let savedMeals, try !savedMeals.journalSavedMeals().isEmpty {
             throw JournalImportError.notEmpty
         }
         // The journal is empty, so any flag found is stale and this run's own replaces it. It goes down before
@@ -274,19 +281,24 @@ public enum JournalImporter {
             throw error
         }
         if hasSecondPhase {
+            var savedMealsWritten = false
             do {
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
-                if let savedMealsTarget { try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest) }
+                if let savedMealsTarget {
+                    try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
+                    savedMealsWritten = true
+                }
                 if let favoritesTarget { try favoritesTarget.restore(plan.favorites, receipt: digest) }
             } catch let secondPhaseFailure {
                 // The journal is undone or reported as partial, so there is no unfinished restore of this file
                 // to finish, and a flag left here could only be misread later.
                 defer { try? progress?.clearRestoreInProgress() }
-                // The list was empty before this restore, so putting it back is emptying it.
+                // The list was empty before this restore, so putting it back is emptying it, but only while it
+                // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
                 var savedMealsLeft = false
-                if let savedMealsTarget {
-                    do { try savedMealsTarget.clearRestoredSavedMeals() } catch { savedMealsLeft = true }
+                if let savedMealsTarget, savedMealsWritten {
+                    do { try savedMealsTarget.clearRestoredSavedMeals(plan.savedMeals) } catch { savedMealsLeft = true }
                 }
                 do {
                     try journal.undoRestore(receipt)

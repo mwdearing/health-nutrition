@@ -425,10 +425,9 @@
           "minLength": 1
         },
         "name": {
-          "description": "1 to 60 characters once outer spaces are trimmed; unique in the list, ignoring case.",
+          "description": "1 to 60 characters once outer spaces are trimmed, counted as the app counts characters; unique in the list, ignoring case.",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 60
+          "minLength": 1
         },
         "meal": {
           "description": "The meal the group was saved under, or null for none.",
@@ -445,12 +444,54 @@
           ]
         },
         "items": {
-          "description": "Templates shaped like a favorite. An item's meal is null: the group's meal applies to all of them.",
+          "description": "Templates shaped like a favorite, each with a null meal: the group's meal applies to all of them.",
           "type": "array",
           "minItems": 1,
           "maxItems": 30,
           "items": {
-            "$ref": "#/$defs/favorite"
+            "$ref": "#/$defs/saved_meal_item"
+          }
+        }
+      }
+    },
+    "saved_meal_item": {
+      "description": "A saved meal's item: a favorite's shape whose meal is always null, since the group's meal applies to every item.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "category",
+        "meal",
+        "product_snapshot_id",
+        "components"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "meal": {
+          "type": "null"
+        },
+        "product_snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/component"
           }
         }
       }

@@ -48,12 +48,17 @@ public enum JournalSavedMealLimits {
 public protocol JournalSavedMealsStore: AnyObject, Sendable {
     /// Every saved meal, in the list's own order (newest first).
     func journalSavedMeals() throws -> [JournalSavedMeal]
-    /// Replaces the list with `meals` and records `receipt`. A failure leaves the list as it was.
+    /// Replaces the list with `meals` and records `receipt`, as one step: when the list holds anything other
+    /// than `meals` (empty, or exactly these from a restore stopped partway), it throws
+    /// `JournalImportError.notEmpty` and writes nothing, so a meal saved meanwhile is never overwritten. Any
+    /// failure leaves the list as it was.
     func restoreJournalSavedMeals(_ meals: [JournalSavedMeal], receipt: String) throws
     /// Whether a restore that carried this receipt has been written.
     func hasSavedMealsRestoreReceipt(_ receipt: String) throws -> Bool
     /// Forgets the receipt once nothing needs it.
     func removeSavedMealsRestoreReceipt(_ receipt: String) throws
-    /// Empties the list and forgets any receipt: how a restore whose next step failed is put back.
-    func clearRestoredSavedMeals() throws
+    /// Empties the list and forgets any receipt, how a restore whose next step failed is put back, but only
+    /// while the list still holds exactly `meals`; otherwise it throws `JournalImportError.notEmpty` and leaves
+    /// the list alone.
+    func clearRestoredSavedMeals(_ meals: [JournalSavedMeal]) throws
 }

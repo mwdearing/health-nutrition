@@ -545,9 +545,10 @@ public struct JournalRestoreReceipt: Sendable, Equatable {
 /// A journal store that remembers, across a relaunch, that a restore of one file wrote its journal and had not
 /// yet written that file's favorites (#118).
 ///
-/// The journal and the favorites are two saves in two store files, and the in-process undo between them does not
-/// survive the app being stopped. The flag is what lets the same file, imported again, finish the favorites
-/// instead of being refused because the journal is no longer empty. It holds only a digest of the file.
+/// The journal, the saved meals and the favorites are separate writes in separate stores, and the in-process undo
+/// between them does not survive the app being stopped. The flag is what lets the same file, imported again, finish
+/// the saved meals and the favorites instead of being refused because the journal is no longer empty. It holds only
+/// a digest of the file.
 public protocol JournalRestoreProgress: AnyObject, Sendable {
     /// Records that a restore of the file with this digest is about to write the journal.
     func markRestoreInProgress(fileDigest: String) throws

@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 import NutritionJournal
 import XCTest
 @testable import NutritionUI
@@ -45,7 +46,12 @@ final class SavedMealsBackupTests: XCTestCase {
         let defaults = makeDefaults()
         let store = UserDefaultsSavedMealStore(defaults: defaults)
         try store.restoreJournalSavedMeals([meal("meal-1", "Usual lunch")], receipt: "digest-1")
-        try store.clearRestoredSavedMeals()
+        // A list changed since the restore is left alone.
+        XCTAssertThrowsError(try store.clearRestoredSavedMeals([meal("meal-9", "Something else")])) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertEqual(try store.journalSavedMeals().map(\.id), ["meal-1"])
+        try store.clearRestoredSavedMeals([meal("meal-1", "Usual lunch")])
         XCTAssertEqual(try store.journalSavedMeals(), [])
         XCTAssertNil(defaults.object(forKey: UserDefaultsSavedMealStore.restoreReceiptKey))
 
@@ -53,6 +59,21 @@ final class SavedMealsBackupTests: XCTestCase {
         try store.eraseAll()
         XCTAssertNil(defaults.object(forKey: UserDefaultsSavedMealStore.key))
         XCTAssertNil(defaults.object(forKey: UserDefaultsSavedMealStore.restoreReceiptKey))
+    }
+
+    func testARestoreIsRefusedOverAListHoldingOtherMeals() throws {
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        try SavedMealBook(store: store).add(name: "Mine", meal: nil, templates: [
+            RepeatTemplate(
+                displayName: "Sample pear", category: "food", meal: nil,
+                components: [IntakeComponent(componentID: "pear", name: "Sample pear", amount: 1, unit: .serving)],
+                productSnapshotID: nil),
+        ])
+        XCTAssertThrowsError(try store.restoreJournalSavedMeals([meal("meal-1", "Usual lunch")], receipt: "digest-1")) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertEqual(try store.meals().map(\.name), ["Mine"])
+        XCTAssertFalse(try store.hasSavedMealsRestoreReceipt("digest-1"))
     }
 
     func testTheBookAndTheImporterKeepTheSameLimits() {

@@ -162,11 +162,16 @@ domain, so their writes cannot be one transaction. **The journal is written firs
 every row; the saved meals and then the favorites follow, each in one write (the second phase). A file that
 carries saved meals needs a saved meals store, as one with favorites needs a favorites store, and saved meals
 are restored only into an empty list: a phone that already keeps saved meals is refused as `notEmpty` rather
-than merged into, since a merge would have to choose between two meals of one name. When a second-phase write
-fails, the importer empties the saved meals list again (it was empty before) and tries to undo the journal rows
-it wrote. If that succeeds, the failure is reported and every store is as it was found, so the same file can
-simply be imported again. Saved meals that could not be emptied again are reported as a partial restore. When
-the journal write itself fails, it rolls itself back and nothing was written at all.
+than merged into, since a merge would have to choose between two meals of one name. That holds for a version 4
+file with no saved meals too, since it states the whole list. The saved meals store checks the list again in the
+same step as it writes, so a meal saved in another window during the import is never overwritten; the import is
+refused instead. When a second-phase write fails, the importer empties the saved meals list again (it was empty
+before), but only while it still holds exactly what the restore wrote, and tries to undo the journal rows it
+wrote. If that succeeds, the failure is reported and every store is as it was found, so the same file can simply
+be imported again. Saved meals that could not be emptied again, or that changed meanwhile and were left alone,
+are reported as a partial restore. When the journal write itself fails, it rolls itself back and nothing was
+written at all. A file with no entries and no deleted ones writes nothing to the journal, so a stop after its
+saved meals leaves an empty journal; the flag naming that file is then what lets importing it again finish.
 
 The compensation is narrow on purpose. `restore` returns a receipt naming, for each entry it wrote, the
 lifecycle, the current revision and the revision numbers that are its own; `undoRestore` removes exactly those
@@ -178,7 +183,7 @@ importing that file again. The message does not include store errors or entry de
 only for the snapshots that restore created, which nothing else writes. This two-file compensation runs only
 while the app is alive.
 
-**A restore the app stopped between its two saves is finished by importing the same file again (#118).** Just
+**A restore the app stopped after its journal's save is finished by importing the same file again (#118).** Just
 before the journal's save the store writes a small flag beside its file holding the SHA-256 of the file being
 imported, and the import clears it once its run is over: second phase written, undone, or reported as a partial
 restore. A flag that cannot be cleared after the second phase was written is reported as a failed import rather

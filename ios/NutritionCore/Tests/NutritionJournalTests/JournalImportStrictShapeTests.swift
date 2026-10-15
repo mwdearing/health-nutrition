@@ -305,12 +305,15 @@ final class JournalImportStrictShapeTests: XCTestCase {
             ("tombstone", JournalImportV4Keys.tombstone),
             ("favorite", JournalImportV4Keys.favorite),
             ("saved_meal", JournalImportV4Keys.savedMeal),
+            // A saved meal's item has a favorite's keys; the schema only adds that its meal is null.
+            ("saved_meal_item", JournalImportV4Keys.favorite),
         ]
         let minimumLengthFields: [String: Set<String>] = [
             "root": ["app_version"], "intake": ["category", "time_zone"], "revision": ["time_zone"],
             "provenance": ["snapshot_id", "product_id", "name", "label_basis", "catalog_origin", "catalog_version"],
             "component": ["unit"], "tombstone": ["time_zone"],
             "favorite": ["id", "display_name", "category"], "saved_meal": ["id", "name"],
+            "saved_meal_item": ["id", "display_name", "category"],
         ]
         for entry in expected {
             var shape = schema
