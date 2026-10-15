@@ -142,7 +142,11 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public var brand: String = ""
     @Published public var barcode: String = ""
     @Published public var amountText: String = "" {
-        didSet { editedFields.insert(.amount) }
+        didSet {
+            editedFields.insert(.amount)
+            // A figure written by anything but the prefill no longer stands for the stored amount.
+            if !isPrefilling { prefillBacking = nil }
+        }
     }
     @Published public var unit: MeasureUnit = .g
     @Published public var category: String = "food"
@@ -179,10 +183,13 @@ public final class AddIntakeViewModel: ObservableObject {
     private var editedFields: Set<AddIntakeField> = []
     /// What a prefilled amount stands for: the figure shown in the reader's unit, and the exact stored amount
     /// behind it. Saving the form untouched writes the stored amount, so a rounded reading never restates it.
+    private var isPrefilling = false
     private var prefillBacking: (shownAmount: Decimal, shownUnit: MeasureUnit, storedAmount: Decimal, storedUnit: MeasureUnit)?
 
     /// Shows a stored amount in the reader's unit while keeping the exact stored quantity behind it.
     func prefillAmount(_ component: IntakeComponent, system: UnitSystem) {
+        isPrefilling = true
+        defer { isPrefilling = false }
         let shown = AmountDisplay.display(component, system: system, roundsStoredUnit: true)
         guard !shown.isBelowSmallest, !component.amount.isNaN else {
             amountText = DecimalFormatting.text(component.amount)
@@ -652,6 +659,7 @@ public final class AddIntakeViewModel: ObservableObject {
         kind = revision.content.kind
         category = revision.content.kind.rawValue
         amountText = ""
+        prefillBacking = nil
         switch revision.content.basis {
         case .per100g: unit = .g
         case .per100mL: unit = .mL

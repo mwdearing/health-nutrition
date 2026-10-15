@@ -66,6 +66,23 @@ final class AddHomeTests: XCTestCase {
         }
     }
 
+    /// Typing into the prefilled amount means the typed figure is what is saved, not the stored amount.
+    func testEditingAPrefilledAmountSavesTheTypedFigure() throws {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setUnitSystem(.usCustomary)
+        let store = try makeStore()
+        let home = AddHomeViewModel(store: store, preferences: preferences, now: { self.now })
+        let template = RepeatTemplate(displayName: "Drink", category: "food", meal: nil,
+            components: [IntakeComponent(componentID: "drink", name: "Drink", amount: 250, unit: .mL)])
+        let details = try home.makeDetails(prefill: template, now: now)
+        XCTAssertEqual(details.amountText, "8.45")
+        details.amountText = "8.45"
+        XCTAssertTrue(details.save(now: now))
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        let component = try XCTUnwrap(store.revisions(of: intake.id).first?.components.first)
+        XCTAssertNotEqual(component.amount, Decimal(250))
+    }
+
     func testQuickAddFromRecentCanBeUndone() throws {
         let store = try makeStore()
         let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")

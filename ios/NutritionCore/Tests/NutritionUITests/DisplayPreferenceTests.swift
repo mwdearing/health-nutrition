@@ -372,6 +372,15 @@ final class QuickWaterPreferenceTests: XCTestCase {
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(300))
     }
 
+    /// Metric reads a stored 400.55 mL at the digits a reading carries, as the button always did.
+    func testQuickWaterLabelRoundsAStoredAmountUnderMetric() throws {
+        let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(string: "400.55")!)
+        let model = TodayViewModel(
+            store: RecordingStore(makeID: { "unused" }), timeZoneIdentifier: "UTC", makeID: { "w" },
+            preferences: preferences)
+        XCTAssertEqual(model.quickWaterLabel, "Add 400.6 mL water")
+    }
+
     /// Under US customary the stored amount is still milliliters and the label follows the preference.
     func testQuickWaterPreferenceUnderUSCustomarySaysFluidOuncesAndStoresMilliliters() throws {
         let store = RecordingStore(makeID: { "unused" })
