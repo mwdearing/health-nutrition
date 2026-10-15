@@ -56,9 +56,10 @@ app can't read and is left out, so these figures may be low.").
 - An entry that states an amount adds it, converted into the nutrient's unit. An entry typed by hand is read component
   by component, so a component that states the nutrient keeps its amount even when another component does not; the entry
   then also counts as unknown.
-- A food or drink that could state the nutrient but does not, or states it in a unit that cannot be added (vitamins A, D
+- A food or drink that could state the nutrient but does not, or states it in a unit that cannot be added (vitamins A
   and E in IU), is counted as **unknown for that entry**. It adds nothing, so the figure becomes a floor ("At least 120
-  mg") rather than letting one unlabelled food hide what the others do state.
+  mg") rather than letting one unlabelled food hide what the others do state. Vitamin D in IU can be added: it counts
+  as mcg (1 IU is 0.025 mcg).
 - A water entry, and a supplement that does not declare the nutrient, say nothing about it and count nowhere.
 
 ## What each row says
@@ -96,4 +97,6 @@ real amount is never shown as zero.
 
 ## Not yet
 
-Past single days and longer spans are later work. IU conversion for vitamins A, D and E is not done: the factor depends on the form.
+Past single days and longer spans are later work. IU conversion for vitamins A and E is not done: the factor depends on
+the form. Vitamin D in IU is converted (0.025 mcg per IU), except for a component typed by hand with no product, which
+still reads as unknown here.

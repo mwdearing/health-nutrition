@@ -81,13 +81,81 @@ final class HealthKitWritePlanTests: XCTestCase {
         XCTAssertTrue(plan([:]).isEmpty)
     }
 
-    func testInternationalUnitsAreSkippedRatherThanConverted() {
+    func testVitaminDInIUIsWrittenInMcgAndOtherIUsAreSkipped() throws {
+        // 400 IU of vitamin D is defined as 10 mcg. Vitamin A's IU depends on the form, so it is skipped.
         let specs = plan([
             "vitaminD": .known(dec("400"), .iu),
+            "vitaminA": .known(dec("900"), .iu),
             "vitaminB12": .known(dec("2.4"), .mcg),
         ])
 
-        XCTAssertEqual(specs.map(\.syncIdentifier), ["intake:\(intakeID):vitaminB12"])
+        XCTAssertEqual(
+            specs.map(\.syncIdentifier), ["intake:\(intakeID):vitaminB12", "intake:\(intakeID):vitaminD"])
+        let vitaminD = try spec("vitaminD", in: specs)
+        XCTAssertEqual(vitaminD.amount, dec("10"))
+        XCTAssertEqual(vitaminD.unitSymbol, "mcg")
+    }
+
+    /// The contract's vitamin D IU-to-mass vectors, read from `contracts/nutrients/golden.v1.json` through
+    /// `#filePath`, hold through the nutrient mapping. The app converts vitamin D's IU there rather than in
+    /// NutritionDomain, so this is where Swift runs them.
+    func testTheGoldenVitaminDInternationalUnitVectorsHoldThroughTheMapping() throws {
+        let url = try XCTUnwrap(Self.goldenFile(), "contracts/nutrients/golden.v1.json is missing")
+        let root = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let cases = try XCTUnwrap(root["cases"] as? [[String: Any]])
+        let vectors = cases.filter { item in
+            guard item["op"] as? String == "convert", item["nutrient"] as? String == "vitamin_d",
+                let input = item["input"] as? [String: Any]
+            else { return false }
+            return input["unit"] as? String == "IU" && input["to"] as? String != "IU"
+        }
+        XCTAssertTrue(
+            vectors.contains { $0["id"] as? String == "convert_vitamin_d_international_units_to_mass" },
+            "the 400 IU to 10 mcg vector is missing")
+        let mapping = try XCTUnwrap(HealthKitWritePlanner.mapping(for: "vitaminD"))
+        for vector in vectors {
+            let id = vector["id"] as? String ?? "?"
+            let input = try XCTUnwrap(vector["input"] as? [String: Any], id)
+            let expected = try XCTUnwrap(vector["expect"] as? [String: Any], id)
+            let amountText = try XCTUnwrap(input["amount"] as? String, id)
+            let targetSymbol = try XCTUnwrap(input["to"] as? String, id)
+            let expectedAmountText = try XCTUnwrap(expected["amount"] as? String, id)
+            let expectedSymbol = try XCTUnwrap(expected["unit"] as? String, id)
+            guard case .known(let restated, let unit) = mapping.restatingInternationalUnits(.known(dec(amountText), .iu))
+            else { return XCTFail("\(id): vitamin D in IU was not restated as a mass") }
+            let target = try MeasureUnit(symbol: targetSymbol)
+            let converted = try Quantity(value: restated, unit: unit).converted(to: target)
+            XCTAssertEqual(converted.value, dec(expectedAmountText), id)
+            XCTAssertEqual(converted.unit, try MeasureUnit(symbol: expectedSymbol), id)
+        }
+    }
+
+    private static func goldenFile(file: StaticString = #filePath) -> URL? {
+        var directory = URL(fileURLWithPath: "\(file)").deletingLastPathComponent()
+        for _ in 0..<5 {
+            let candidate = directory.appendingPathComponent("contracts/nutrients/golden.v1.json")
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            let parent = directory.deletingLastPathComponent()
+            if parent.path == directory.path { return nil }
+            directory = parent
+        }
+        return nil
+    }
+
+    func testVitaminDInIUUnderItsAliasIsWrittenInMcg() throws {
+        let specs = plan(["vitamin-d": .known(dec("1000"), .iu)])
+        XCTAssertEqual(try spec("vitaminD", in: specs).amount, dec("25"))
+    }
+
+    func testOnlyVitaminDHasAFixedAmountPerInternationalUnit() throws {
+        let withFactor = HealthKitWritePlanner.mappings.filter { $0.amountPerInternationalUnit != nil }
+        XCTAssertEqual(withFactor.map(\.nutrientKey), ["vitaminD"])
+        let vitaminD = try XCTUnwrap(HealthKitWritePlanner.mapping(for: "vitaminD"))
+        XCTAssertEqual(vitaminD.restatingInternationalUnits(.known(dec("2000"), .iu)), .known(dec("50"), .mcg))
+        XCTAssertEqual(vitaminD.restatingInternationalUnits(.belowReportingThreshold(.iu)), .belowReportingThreshold(.mcg))
+        XCTAssertEqual(vitaminD.restatingInternationalUnits(.known(dec("5"), .mcg)), .known(dec("5"), .mcg))
+        let vitaminA = try XCTUnwrap(HealthKitWritePlanner.mapping(for: "vitaminA"))
+        XCTAssertEqual(vitaminA.restatingInternationalUnits(.known(dec("900"), .iu)), .known(dec("900"), .iu))
     }
 
     func testAnUnmappedNutrientKeyIsSkipped() {

@@ -105,7 +105,12 @@ kilojoule factor to apply and would skip a total it cannot convert.
 A total that is `.unknown`, `.notApplicable` or `.belowReportingThreshold` is skipped, and so is:
 
 - a nutrient key with no mapping in the table,
-- an international-unit total (IU never converts, and HealthKit has no IU dietary unit),
+- an international-unit total for any nutrient but vitamin D (HealthKit has no IU dietary unit, and an
+  IU of vitamin A or E is a different amount depending on the form, which the label figure does not say).
+  An IU of vitamin D is defined as 0.025 mcg, so a vitamin D total in IU is written in mcg: 400 IU is
+  10 mcg. The factor lives on the vitamin D row of the mapping table (`amountPerInternationalUnit`), and
+  the daily totals use the same restatement. Entries already delivered before this change are not
+  re-delivered, so a past day whose vitamin D was stated only in IU keeps no Health sample for it,
 - a total whose unit cannot be converted to the mapped unit, such as energy in grams.
 
 Skipping means *no sample at all*, never a sample of zero: the journal reads an absent nutrient as

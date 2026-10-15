@@ -57,6 +57,30 @@ final class LibraryFrequentsTests: XCTestCase {
         XCTAssertEqual(try FrequentItemsProvider(store: store).frequents().map(\.count), [3, 2])
     }
 
+    /// A recipe version logged again with the same values keeps one snapshot, so it is one Recents row,
+    /// a favorite made from the first entry stars it, and it counts toward Often logged.
+    func testARecipeVersionLoggedAgainIsOneRecentOneFavoriteAndOftenLogged() throws {
+        let store = try makeStore()
+        let recipe = uiSampleVersion()
+        try RecipeLogger.logPortion(
+            store: store, version: recipe, portion: 1, now: now, id: UUID().uuidString.lowercased(),
+            timeZoneIdentifier: "UTC")
+        let library = try makeLibrary(store: store)
+        library.load()
+        let first = try XCTUnwrap(library.sections.first { $0.title == "Recents" }?.items.first)
+        library.addFavorite(first)
+
+        try RecipeLogger.logPortion(
+            store: store, version: recipe, portion: 1, now: now.addingTimeInterval(60),
+            id: UUID().uuidString.lowercased(), timeZoneIdentifier: "UTC")
+        library.load()
+
+        let recents = library.sections.first { $0.title == "Recents" }?.items ?? []
+        XCTAssertEqual(recents.filter { $0.title == recipe.title }.count, 1)
+        XCTAssertEqual(recents.first { $0.title == recipe.title }?.isFavorite, true)
+        XCTAssertEqual(library.frequentItems.map(\.title), [recipe.title])
+    }
+
     func testTieGoesToTheItemUsedLast() throws {
         let store = try makeStore()
         for seconds in [1, 2] { try addEntry(store, "Oat porridge", at: seconds) }

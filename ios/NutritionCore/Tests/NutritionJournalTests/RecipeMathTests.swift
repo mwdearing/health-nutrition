@@ -88,6 +88,22 @@ final class RecipeMathTests: XCTestCase {
         XCTAssertEqual(RecipeMath.totals(of: version).values["energy"], .known(1001, .kcal))
     }
 
+    func testVitaminDInIUAddsUpWithMcgAndVitaminAInIUStaysUnknown() {
+        let version = sampleVersion(
+            ingredients: [
+                // 100 g at 4 IU/g is 400 IU, which is 10 mcg; 100 g at 0.05 mcg/g is 5 mcg.
+                sampleIngredient("drops", amount: "100", perUnit: [
+                    "vitaminD": .known(dec("4"), .iu), "vitaminA": .known(dec("9"), .iu),
+                ], basis: .g),
+                sampleIngredient("milk", amount: "100", perUnit: [
+                    "vitaminD": .known(dec("0.05"), .mcg), "vitaminA": .known(dec("3"), .mcg),
+                ], basis: .g),
+            ])
+        let totals = RecipeMath.totals(of: version)
+        XCTAssertEqual(totals.values["vitaminD"], .known(dec("15"), .mcg))
+        XCTAssertEqual(totals.values["vitaminA"], .unknown)
+    }
+
     func testMassToVolumeWithoutDensityIsLacking() {
         let version = sampleVersion(
             ingredients: [sampleIngredient("milk", amount: "250", unit: .mL, perUnit: energyPerUnit("0.5"), basis: .g)])

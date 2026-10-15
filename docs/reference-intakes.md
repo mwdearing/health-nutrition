@@ -35,8 +35,9 @@ both are summed as folate. Since 1 mcg of folic acid is 1.667 mcg DFE (folate fa
 micrograms than the folic acid in it, so comparing it with the 1,000 mcg limit can only warn early. Restating the limit as
 1,667 mcg DFE instead would let 1,200 mcg of plain folic acid, which is above the limit, read as below it.
 
-A total a label stated in IU (vitamins A, D and E on older labels) is not converted by the table; the conversion depends
-on the form, and a caller that cannot convert should not compare.
+A vitamin D amount a label stated in IU is restated in mcg before it is totalled (an IU of vitamin D is defined as
+0.025 mcg, so 400 IU is 10 mcg), so it compares with the vitamin D values here. A vitamin A or E amount stated in IU
+is not converted: the factor depends on the form, and a caller that cannot convert should not compare.
 
 ## Upper limits and what they count
 

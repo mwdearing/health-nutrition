@@ -268,9 +268,13 @@ public enum DailyTotalsBuilder {
         // A known value in another dimension (protein in IU, say) makes the sum throw, and a throw is
         // answered as unknown, the same as a mismatched pair. Without a mapping nothing is checked.
         // A captured alias (`vitamin-a`) may state IU, so only the canonical key is held to the mass unit.
-        let expected = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
-            ? HealthKitWritePlanner.mapping(for: nutrient)?.unit : nil
-        let total = (try? NutrientTotal.sum(values, expecting: expected)) ?? NutrientTotal(
+        let mapping = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
+            ? HealthKitWritePlanner.mapping(for: nutrient) : nil
+        let expected = mapping?.unit
+        // Vitamin D stated in IU is restated in mcg before summing, so it adds up with mcg values; an IU
+        // for any other nutrient is left as it is and stays unknown here.
+        let restated = mapping.map { mapping in values.map(mapping.restatingInternationalUnits) } ?? values
+        let total = (try? NutrientTotal.sum(restated, expecting: expected)) ?? NutrientTotal(
             value: .unknown,
             coverage: Coverage(
                 knownCount: 0, totalCount: values.count, hasBelowReportingThreshold: false,

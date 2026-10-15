@@ -36,7 +36,7 @@ Lengths count Unicode scalars, and bounds apply both before and after NFC displa
 
 Ordinary nonnegative decimal strings match the schema grammar, have at most six fractional digits, are finite and at most 1000000000. Signs, exponent notation, whitespace, leading zeros (except zero itself), NaN and Infinity are rejected. Serving quantity must be strictly positive and use mass, volume or count. Numeric per-serving facts require a serving definition. Threshold facts have no amount and may have a unit; unknown and not_applicable have neither. Known zero remains known.
 
-`energyKcal` has energy dimension. All other standard keys have mass dimension. This includes vitaminD; IU is permitted for ingredient facts and retained without conversion, but never inferred equivalent to mass. Threshold unit dimensions obey the same rules as known facts. Units are the closed canonical registry in the schema, including case-sensitive `mL`, `L`, `IU` and `fl oz`; kJ is unsupported.
+`energyKcal` has energy dimension. All other standard keys have mass dimension. This includes vitaminD; IU is permitted for ingredient facts and retained without conversion, but never inferred equivalent to mass. Fact equivalence is unchanged by the vitamin D exception in `contracts/nutrients/decimal-rules.md`: a vitamin D fact stated in IU and one stated in mcg are different facts here, and the 0.025 mcg per IU conversion applies only where amounts are summed or written as a mass. Threshold unit dimensions obey the same rules as known facts. Units are the closed canonical registry in the schema, including case-sensitive `mL`, `L`, `IU` and `fl oz`; kJ is unsupported.
 
 ## Display, search and equivalence
 
