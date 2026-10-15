@@ -277,6 +277,11 @@ extension ProductShareCoordinatorTests {
         let owners = await products.consentCalls
         XCTAssertEqual(owners, [UUID(uuidString: session.userID)!])
     }
+    @MainActor func testDisclosureComesBackAfterProfileRecoversOnlyWhenNeededAndNotDuringSignIn() {
+        XCTAssertTrue(AccountPresentations.shouldPresentDisclosure(needsDisclosure: true, presentingSignIn: false))
+        XCTAssertFalse(AccountPresentations.shouldPresentDisclosure(needsDisclosure: false, presentingSignIn: false))
+        XCTAssertFalse(AccountPresentations.shouldPresentDisclosure(needsDisclosure: true, presentingSignIn: true))
+    }
     @MainActor func testRefusedAcknowledgmentSaysSoInsteadOfDoingNothing() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
         // The server never reports the caller's acknowledgment back, so Continue cannot complete.

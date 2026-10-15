@@ -75,6 +75,12 @@ struct AccountPresentations: ViewModifier {
     @ObservedObject var model: AccountViewModel
     @State private var showingDisclosure = false
 
+    /// Whether the disclosure sheet should be up. The one rule behind every trigger below, so a sheet that was
+    /// dismissed without acknowledging comes back once the profile has loaded and Continue can work.
+    static func shouldPresentDisclosure(needsDisclosure: Bool, presentingSignIn: Bool) -> Bool {
+        needsDisclosure && !presentingSignIn
+    }
+
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $model.presentingSignIn, onDismiss: {
@@ -96,6 +102,11 @@ struct AccountPresentations: ViewModifier {
             }
             .onChange(of: model.needsDisclosure) { _, needed in
                 if needed && !model.presentingSignIn { showingDisclosure = true }
+            }
+            .onChange(of: model.profileReady) { _, ready in
+                if ready, Self.shouldPresentDisclosure(needsDisclosure: model.needsDisclosure, presentingSignIn: model.presentingSignIn) {
+                    showingDisclosure = true
+                }
             }
             .onAppear {
                 showingDisclosure = model.needsDisclosure && !model.presentingSignIn
