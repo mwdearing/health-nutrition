@@ -132,6 +132,9 @@ struct LogSavedMealIntent: AppIntent {
             id: savedMeal.id, meal: meal?.label, now: Date(), meals: meals,
             log: { saved, meal, now in
                 guard let services else { throw SavedMealError.notFound }
+                // As a log from the screen does, an earlier Undo offer is dropped first, so Undo in the app never
+                // names a meal logged before this one.
+                services.savedMeals.clearUndo()
                 return try SavedMealLogger(store: services.journalStore).log(saved, as: meal, now: now)
             },
             leftovers: { ids in services?.savedMeals.recordLeftovers(ids) })
