@@ -477,7 +477,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let milliliters = milliliters(
             for: typed, in: AmountDisplay.volumeUnit(for: oldSystem))
         quickWaterText = DecimalFormatting.text(
-            AmountDisplay.display(milliliters, unit: .mL, system: unitSystem, roundsStoredUnit: true).amount)
+            AmountDisplay.display(milliliters, unit: .mL, system: unitSystem).amount)
     }
 
     /// The unit systems offered, in a stable order.

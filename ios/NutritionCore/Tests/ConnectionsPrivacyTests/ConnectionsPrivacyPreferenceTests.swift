@@ -165,18 +165,19 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(250))
     }
 
-    /// A figure converted from ounces to milliliters is rounded to a reading, so Save does not store the
-    /// long converted decimal.
-    func testSwitchingToMetricWithATypedDraftSavesTheRoundedConvertedFigure() throws {
+    /// Metric states the milliliters a typed ounce figure stands for, unrounded, as it always has: the field
+    /// is the stored figure, and a reading's rounding belongs to display text only.
+    func testSwitchingToMetricWithATypedDraftStatesTheExactMilliliters() throws {
         let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-switch"))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
         model.unitSystem = .usCustomary
         model.quickWaterText = "8.45"
         model.unitSystem = .metric
 
-        XCTAssertEqual(model.quickWaterText, "249.9")
+        XCTAssertEqual(model.quickWaterText, "249.896324803125")
         XCTAssertTrue(model.saveQuickWaterAmount())
-        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "249.9", locale: AmountParser.locale))
+        XCTAssertEqual(
+            preferences.quickWaterMilliliters, Decimal(string: "249.896324803125", locale: AmountParser.locale))
     }
 
     /// A stored amount is the field's starting text under metric, and saving it untouched keeps it.
