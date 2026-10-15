@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 import XCTest
 
 @testable import HealthNutrition
@@ -83,5 +84,16 @@ final class WidgetSnapshotTests: XCTestCase {
         let refresh = WidgetSnapshot.refreshAfterMidnight(from: evening, calendar: utc)
         // 2023-11-15 00:01:00 UTC.
         XCTAssertEqual(refresh, Date(timeIntervalSince1970: 1_700_006_460))
+    }
+
+    func testAMilligramTotalIsConvertedToGramsBeforeItIsWritten() {
+        XCTAssertEqual(WidgetSnapshotUnits.value(Quantity(value: 500, unit: .mg), in: .g) ?? -1, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(WidgetSnapshotUnits.value(Quantity(value: 2, unit: .kg), in: .g) ?? -1, 2_000, accuracy: 1e-9)
+        XCTAssertEqual(WidgetSnapshotUnits.value(Quantity(value: 42, unit: .g), in: .g), 42)
+    }
+
+    func testAValueThatCannotBeConvertedIsLeftOut() {
+        // Volume to mass needs a density the snapshot does not have.
+        XCTAssertNil(WidgetSnapshotUnits.value(Quantity(value: 10, unit: .mL), in: .g))
     }
 }

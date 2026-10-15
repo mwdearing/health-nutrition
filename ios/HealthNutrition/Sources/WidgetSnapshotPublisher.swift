@@ -44,18 +44,30 @@ final class WidgetSnapshotPublisher {
     }
 
     static func snapshot(from today: TodayViewModel, now: Date) -> WidgetSnapshot {
-        func total(_ key: String) -> Double? {
+        func total(_ key: String, in unit: MeasureUnit) -> Double? {
             guard let line = today.progress.first(where: { $0.nutrient == key }),
-                case .known(let value, _) = line.amount
+                case .known(let value, let stored) = line.amount
             else { return nil }
-            return NSDecimalNumber(decimal: value).doubleValue
+            return WidgetSnapshotUnits.value(Quantity(value: value, unit: stored), in: unit)
         }
-        let energyGoal = today.progress.first { $0.nutrient == "energy" }?.goal
+        let energyGoal = today.progress.first { $0.nutrient == "energy" }?.goal.flatMap {
+            WidgetSnapshotUnits.value(Quantity(value: $0.target, unit: $0.unit), in: .kcal)
+        }
         return WidgetSnapshot(
-            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: total("energy"),
-            energyGoalKcal: energyGoal.map { NSDecimalNumber(decimal: $0.target).doubleValue },
-            proteinGrams: total("protein"), carbohydrateGrams: total("carbohydrate"), fatGrams: total("fat"),
+            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: total("energy", in: .kcal),
+            energyGoalKcal: energyGoal, proteinGrams: total("protein", in: .g),
+            carbohydrateGrams: total("carbohydrate", in: .g), fatGrams: total("fat", in: .g),
             waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue)
+    }
+}
+
+/// The snapshot's figures are in one fixed unit each (g, kcal, mL); a total stored in another compatible unit is
+/// converted first, and a value that cannot be converted is left out, which the widget shows as dashes.
+enum WidgetSnapshotUnits {
+    static func value(_ quantity: Quantity, in target: MeasureUnit) -> Double? {
+        guard let converted = try? quantity.converted(to: target) else { return nil }
+        let number = NSDecimalNumber(decimal: converted.value).doubleValue
+        return number.isFinite ? number : nil
     }
 }
 
