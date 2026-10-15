@@ -42,7 +42,7 @@ Removing the keys restores defaults; it does not write replacement values, with 
 
 - The local Keychain session stored on this phone is cleared. A Keychain failure is reported as a partial erase, while other local erasers still run. This is local credential removal only; no server logout or account deletion request is made.
 - Export files named `journal-export-….json` in the temporary directory are removed, including files left by an earlier app launch. A file that cannot be deleted is reported as a failed cleanup.
-- The supplement list's times and days (`supplementStack.schedules` in the app's defaults domain) are removed by `UserDefaultsSupplementStackStore`. The items themselves are favorites and go with `favorites.store`.
+- The supplement list's times and days (`supplementStack.schedules` in the app's defaults domain) and the times each Taken was for (`supplementStack.taken`) are removed by `UserDefaultsSupplementStackStore`. The items themselves are favorites and go with `favorites.store`.
 - The screen clears its export state and entry count when erase begins so it does not keep offering data that is being removed.
 - Saved meals (the `library.savedMeals.v1` key in the app's defaults domain) are removed by their own eraser. After a successful erase the saved meals list is read again and any Undo offer for a logged meal is dropped. See [Saved meals](saved-meals.md).
 

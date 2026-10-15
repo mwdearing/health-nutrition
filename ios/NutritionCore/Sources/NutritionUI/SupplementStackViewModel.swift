@@ -48,10 +48,11 @@ public struct SupplementStackCandidate: Identifiable, Equatable {
 /// The supplement list: favorites with the times of day they are taken, a one-tap "Taken" that logs an
 /// entry, and where each of today's times stands.
 ///
-/// Nothing about "taken" is stored. Each load counts today's entries of each item in the journal, so an
-/// entry logged from the Library counts, and deleting or undoing an entry un-marks its time. The times
-/// live in `SupplementStackStoring`; the amounts and the product snapshot live in the favorite, so a
-/// "Taken" logs exactly what the favorite copied, label snapshot included.
+/// Each load counts today's entries of each item in the journal, so an entry logged from the Library
+/// counts, and deleting or undoing an entry un-marks its time. All that is stored about a Taken is which
+/// time it was for, per entry. The schedules and those marks live in `SupplementStackStoring`; the amounts
+/// and the product snapshot live in the favorite, so a "Taken" logs exactly what the favorite copied,
+/// label snapshot included.
 @MainActor
 public final class SupplementStackViewModel: ObservableObject {
     @Published public private(set) var rows: [SupplementStackRow] = []
@@ -102,9 +103,13 @@ public final class SupplementStackViewModel: ObservableObject {
     }
 
     private var bases: [RowBasis] = []
-    /// Today's entries per item, as of the last full read, and the day they were counted for.
-    private var counts: [String: Int] = [:]
+    /// Today's entries per item (their journal ids), as of the last full read, and the day they were
+    /// counted for.
+    private var counts: [String: [String]] = [:]
     private var countedDay: String?
+    /// The time each Taken tap was for, by entry id, as of the last full read. Only today's marks for
+    /// entries still in the journal are kept.
+    private var marks: [String: SupplementTakenMark] = [:]
     /// The screens showing the list, one id each, in case more than one window shows it. A set rather than
     /// a count, so an appearance reported twice without a disappearance in between is still one screen.
     /// The app's reloads only reread the journal while one is shown: a list nobody is looking at is read
@@ -128,7 +133,8 @@ public final class SupplementStackViewModel: ObservableObject {
                 readFailed = true
                 return
             }
-            let (counted, unreadable) = try loggedCounts(on: clock.dayKey)
+            let (counted, unreadable, todayTimes) = try loggedCounts(on: clock.dayKey)
+            let keptMarks = try prunedMarks(keeping: todayTimes, on: clock.dayKey)
             var kinds: [String: ProductKind] = [:]
             func kind(_ snapshotID: String?, category: String) -> ProductKind {
                 guard let snapshotID else { return category == Self.supplementCategory ? .supplement : .food }
@@ -154,6 +160,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 return order == .orderedSame ? left.favoriteID < right.favoriteID : order == .orderedAscending
             }
             counts = counted
+            marks = keptMarks
             countedDay = clock.dayKey
             unreadableEntriesToday = unreadable
             rows = makeRows(clock: clock)
@@ -186,13 +193,23 @@ public final class SupplementStackViewModel: ObservableObject {
 
     private func makeRows(clock: SupplementStackClock) -> [SupplementStackRow] {
         bases.map { basis in
-            let logged = counts[basis.matchKey] ?? 0
+            let entries = counts[basis.matchKey] ?? []
+            // Entries a Taken tap recorded mark their own time; the rest fill the open times.
+            let recorded = entries.compactMap { id -> (minute: Int, entryID: String?)? in
+                guard let mark = marks[id], mark.favoriteID == basis.favoriteID, mark.dayKey == clock.dayKey,
+                      let time = mark.timeOfDay
+                else { return nil }
+                return (minute: SupplementSchedule.minuteOfDay(time), entryID: id as String?)
+            }
+            let logged = entries.count
             let isDue = basis.schedule.weekdays.contains(clock.weekday)
             return SupplementStackRow(
                 id: basis.favoriteID, title: basis.title, detail: basis.detail, kind: basis.kind,
                 schedule: basis.schedule, isDueToday: isDue,
                 slots: isDue
-                    ? SupplementStackDay.slots(for: basis.schedule, takenCount: logged, minuteOfDay: clock.minuteOfDay)
+                    ? SupplementStackDay.slots(
+                        for: basis.schedule, recorded: recorded, unrecordedCount: logged - recorded.count,
+                        minuteOfDay: clock.minuteOfDay)
                     : [],
                 loggedToday: logged, canLog: basis.canLog)
         }
@@ -202,6 +219,7 @@ public final class SupplementStackViewModel: ObservableObject {
     private func forget() {
         bases = []
         counts = [:]
+        marks = [:]
         countedDay = nil
         unreadableEntriesToday = 0
     }
@@ -216,14 +234,18 @@ public final class SupplementStackViewModel: ObservableObject {
         return kept
     }
 
-    /// Today's entries per item, each on the local day of its own time zone, the rule the Journal groups by,
-    /// and how many of today's entries could not be read. An unreadable entry is counted apart rather than
+    /// Today's entries per item (their ids), each on the local day of its own time zone, the rule the
+    /// Journal groups by; how many of today's entries could not be read; and when each of today's entries
+    /// happened, which says which Taken marks still stand. An unreadable entry is counted apart rather than
     /// skipped, because skipping it would read as "not taken".
-    private func loggedCounts(on dayKey: String) throws -> (counts: [String: Int], unreadable: Int) {
-        var counts: [String: Int] = [:]
+    private func loggedCounts(on dayKey: String) throws
+        -> (counts: [String: [String]], unreadable: Int, todayTimes: [String: Date])
+    {
+        var counts: [String: [String]] = [:]
         var unreadable = 0
-        let today = try store.activeIntakes().filter {
-            $0.lifecycle == .active && IntakeCopier.dayKey($0.occurredAt, zoneIdentifier: $0.timeZoneIdentifier) == dayKey
+        let active = try store.activeIntakes().filter { $0.lifecycle == .active }
+        let today = active.filter {
+            IntakeCopier.dayKey($0.occurredAt, zoneIdentifier: $0.timeZoneIdentifier) == dayKey
         }
         for intake in today {
             guard let revisions = try? store.revisions(of: intake.id),
@@ -234,9 +256,24 @@ public final class SupplementStackViewModel: ObservableObject {
             }
             let key = SupplementStackDay.matchKey(
                 category: intake.category, snapshotID: current.productSnapshotID, names: current.components.map(\.name))
-            counts[key, default: 0] += 1
+            counts[key, default: []].append(intake.id)
         }
-        return (counts, unreadable)
+        return (counts, unreadable, Dictionary(today.map { ($0.id, $0.occurredAt) }, uniquingKeysWith: { first, _ in first }))
+    }
+
+    /// The stored Taken marks for today whose entry is still in today's journal at the time the tap logged
+    /// it. Any other mark (its entry deleted, moved to another day, or given another time in the Journal,
+    /// or the mark from another day) is dropped from the store when the list is read.
+    private func prunedMarks(keeping todayTimes: [String: Date], on dayKey: String) throws
+        -> [String: SupplementTakenMark]
+    {
+        let stored = schedules.takenMarks()
+        let kept = stored.filter { entry in
+            guard entry.value.dayKey == dayKey, let occurredAt = todayTimes[entry.key] else { return false }
+            return entry.value.matches(occurredAt: occurredAt)
+        }
+        if kept.count != stored.count { try schedules.saveTakenMarks(kept) }
+        return kept
     }
 
     /// Favorites not on the list, supplements first, then supplements logged recently that no favorite
@@ -300,21 +337,30 @@ public final class SupplementStackViewModel: ObservableObject {
                 // The picker can be older than the journal: an erase, a restore or a delete in another
                 // window may have removed the entry it showed. Only a supplement the journal still holds is
                 // saved, so nothing erased comes back as a favorite.
-                guard try RecentItemsProvider(store: store).recents(limit: .max)
-                    .contains(where: { "recent:\($0.id)" == candidate.id })
+                // The entry the picker showed must still be in the journal with the amounts it showed: an
+                // edit in another window changes what a favorite would copy, and a delete leaves nothing to
+                // copy. Either way nothing is saved, and the list reads the journal again.
+                guard let fresh = try RecentItemsProvider(store: store).recents(limit: .max)
+                    .first(where: { "recent:\($0.id)" == candidate.id }),
+                    fresh.template.components == template.components
                 else {
                     return refuse("Could not add it to your supplements.", now: now)
                 }
-                // Starred since the picker was built, here or in another window, with the same amounts: that
-                // favorite goes on the list rather than a second copy of it. A favorite of the same product
-                // with other amounts is not what the picker showed, so a new one is saved instead.
-                if let starred = stored.first(where: { RepeatTemplate(favorite: $0)?.components == template.components
-                    && Self.matchKey($0) == Self.matchKey(template) })
-                {
+                let recentKey = Self.matchKey(fresh.template)
+                let sameItem = stored.filter { Self.matchKey($0) == recentKey }
+                let sameAmounts = sameItem.filter { RepeatTemplate(favorite: $0)?.components == fresh.template.components }
+                if sameAmounts.count != sameItem.count {
+                    // Starred since the picker was built with other amounts. A second favorite of the same
+                    // item would share its Library identity, and removing either star would remove both, so
+                    // nothing is saved; the reloaded picker offers that favorite instead.
+                    return refuse("Could not add it to your supplements.", now: now)
+                } else if let starred = sameAmounts.first {
+                    // Starred since the picker was built, with the same amounts: that favorite goes on the
+                    // list rather than a second copy of it.
                     favoriteID = starred.id
-                    key = Self.matchKey(template)
+                    key = recentKey
                 } else {
-                    guard let favorite = makeFavorite(from: template, title: candidate.title) else {
+                    guard let favorite = makeFavorite(from: fresh.template, title: candidate.title) else {
                         errorMessage = "This supplement has an amount that cannot be saved."
                         return false
                     }
@@ -376,12 +422,16 @@ public final class SupplementStackViewModel: ObservableObject {
     /// Logs one entry of the item now, from the favorite as it is stored at this moment, and offers Undo.
     /// False, with no token, when nothing was logged.
     ///
+    /// `time` is the time of day the tap was for, and that time is the one the list marks taken. Without
+    /// one (a tap on a day off the schedule, or after every time is taken) the entry fills the open times
+    /// like an entry logged anywhere else.
+    ///
     /// The favorite is read again rather than taken from the row: a row on screen can outlive its favorite
     /// (removed in the Library, or erased from Settings), and logging from a copy would write an entry for
     /// something no longer on the list.
     @discardableResult
-    public func markTaken(_ row: SupplementStackRow, now: Date) -> Bool {
-        undoToken = nil
+    public func markTaken(_ row: SupplementStackRow, at time: ReminderTime? = nil, now: Date) -> Bool {
+        // An earlier Taken's Undo offer stays up unless this one writes an entry and replaces it.
         do {
             guard schedules.schedules()[row.id] != nil,
                   let favorite = try favorites.list().first(where: { $0.id == row.id })
@@ -394,6 +444,18 @@ public final class SupplementStackViewModel: ObservableObject {
             }
             let repeater = IntakeRepeater(store: store, timeZoneProvider: zoneID, makeID: makeID)
             let id = try repeater.create(from: template, now: now)
+            // A time the item's schedule no longer has (a row older than an edit of its times) is not
+            // recorded: the entry fills an open time like any other.
+            if let time, let clock = SupplementStackClock(now: now, zoneIdentifier: zoneID()),
+               schedules.schedules()[favorite.id]?.times.contains(time) == true
+            {
+                // The entry is written either way. A mark that cannot be saved only means this entry
+                // fills an open time the way an entry logged elsewhere does.
+                var stored = schedules.takenMarks()
+                stored[id] = SupplementTakenMark(
+                    favoriteID: favorite.id, dayKey: clock.dayKey, time: time, loggedAt: now)
+                try? schedules.saveTakenMarks(stored)
+            }
             undoToken = LibraryUndoToken(intakeID: id, message: "Logged \(favorite.displayName)")
             errorMessage = nil
             load(now: now)
@@ -419,6 +481,26 @@ public final class SupplementStackViewModel: ObservableObject {
             return true
         } catch JournalError.intakeDeleted(_) {
             undoToken = nil
+            load(now: now)
+            return false
+        } catch {
+            errorMessage = "Could not undo. Try again."
+            return false
+        }
+    }
+
+    /// Deletes the entry a Taken tap recorded for this time, after the Undo offer is gone (the screen shows
+    /// Undo Taken only then): a Taken on the wrong time is put right from the list. False, with a message, when nothing was deleted. A time an
+    /// entry logged elsewhere filled has no recorded entry, and is corrected in the Journal instead.
+    @discardableResult
+    public func undoTaken(_ slot: SupplementSlot, now: Date) -> Bool {
+        guard let entryID = slot.recordedEntryID else { return false }
+        do {
+            try store.delete(intakeID: entryID, now: now)
+            if undoToken?.intakeID == entryID { undoToken = nil }
+            load(now: now)
+            return true
+        } catch JournalError.intakeDeleted(_) {
             load(now: now)
             return false
         } catch {

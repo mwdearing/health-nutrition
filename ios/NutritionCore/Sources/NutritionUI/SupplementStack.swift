@@ -89,11 +89,44 @@ public enum SupplementSlotState: Equatable, Sendable {
 public struct SupplementSlot: Equatable, Sendable {
     public let time: ReminderTime
     public let state: SupplementSlotState
+    /// The journal entry a Taken tap recorded for this time, when it was marked that way. Nil for a time
+    /// an entry logged elsewhere filled, or one not taken: only a recorded Taken can be undone from here.
+    public let recordedEntryID: String?
 
-    public init(time: ReminderTime, state: SupplementSlotState) {
+    public init(time: ReminderTime, state: SupplementSlotState, recordedEntryID: String? = nil) {
         self.time = time
         self.state = state
+        self.recordedEntryID = recordedEntryID
     }
+}
+
+/// The time a Taken tap was for: the item, the local day and the time of day. Kept per journal entry, so
+/// the list shows the time the person said rather than one it guessed. Only today's marks are kept.
+public struct SupplementTakenMark: Codable, Equatable, Sendable {
+    public let favoriteID: String
+    /// `yyyy-MM-dd`, the day the entry was logged for.
+    public let dayKey: String
+    /// "08:00", the stored form of the time.
+    let time: String
+    /// When the entry was logged by the tap. An entry whose time was corrected since (in the Journal) no
+    /// longer stands for the tap, so its mark is dropped and it fills an open time like any other entry.
+    public let loggedAt: Date
+
+    public init(favoriteID: String, dayKey: String, time: ReminderTime, loggedAt: Date) {
+        self.favoriteID = favoriteID
+        self.dayKey = dayKey
+        self.time = time.storedText
+        self.loggedAt = loggedAt
+    }
+
+    /// Whether the entry still has the time the tap logged it at. A second's slack covers how a stored
+    /// date is rounded; a correction in the Journal moves it by at least a minute.
+    func matches(occurredAt: Date) -> Bool {
+        abs(occurredAt.timeIntervalSince(loggedAt)) < 1
+    }
+
+    /// The time of day, or nil for a stored value that does not read as one.
+    public var timeOfDay: ReminderTime? { ReminderTime(storedText: time) }
 }
 
 /// The present as the list reads it: the local day, weekday and minute in one time zone.
@@ -123,20 +156,53 @@ struct SupplementStackClock: Equatable {
 
 /// How today's entries of one item map onto its times.
 enum SupplementStackDay {
-    /// Today's times for one schedule, earliest first. Entries fill the times in order: two entries by noon
-    /// on a morning-and-evening schedule mark both times taken, because the list counts what was logged
-    /// today, not the minute it was logged. A time reads "not logged" only once it has passed.
-    static func slots(for schedule: SupplementSchedule, takenCount: Int, minuteOfDay: Int) -> [SupplementSlot] {
-        schedule.times.enumerated().map { index, time in
+    /// Today's times for one schedule, earliest first, and where each stands.
+    ///
+    /// A time a Taken tap recorded is marked taken: `recordedMinutes` are those times, as minutes since
+    /// midnight. Entries with no recorded time (logged from the Library, say) then fill the times still
+    /// open, earliest first; `unrecordedCount` is how many there are. A recorded time the schedule no longer
+    /// has counts as unrecorded. What is left over marks nothing. A time nothing marks reads "not logged"
+    /// once it has passed and "later" before.
+    static func slots(
+        for schedule: SupplementSchedule, recordedMinutes: [Int], unrecordedCount: Int, minuteOfDay: Int
+    ) -> [SupplementSlot] {
+        slots(
+            for: schedule, recorded: recordedMinutes.map { (minute: $0, entryID: String?.none) },
+            unrecordedCount: unrecordedCount, minuteOfDay: minuteOfDay)
+    }
+
+    /// The same, with the entry each recorded time came from, so a time marked by a Taken tap can name
+    /// the entry to undo.
+    static func slots(
+        for schedule: SupplementSchedule, recorded: [(minute: Int, entryID: String?)], unrecordedCount: Int,
+        minuteOfDay: Int
+    ) -> [SupplementSlot] {
+        let minutes = schedule.times.map(SupplementSchedule.minuteOfDay)
+        var taken = Array(repeating: false, count: minutes.count)
+        var entryIDs = [String?](repeating: nil, count: minutes.count)
+        var unrecorded = unrecordedCount
+        for mark in recorded {
+            if let index = minutes.firstIndex(of: mark.minute), !taken[index] {
+                taken[index] = true
+                entryIDs[index] = mark.entryID
+            } else {
+                unrecorded += 1
+            }
+        }
+        for index in minutes.indices where !taken[index] && unrecorded > 0 {
+            taken[index] = true
+            unrecorded -= 1
+        }
+        return schedule.times.indices.map { index in
             let state: SupplementSlotState
-            if index < takenCount {
+            if taken[index] {
                 state = .taken
-            } else if SupplementSchedule.minuteOfDay(time) <= minuteOfDay {
+            } else if minutes[index] <= minuteOfDay {
                 state = .notLogged
             } else {
                 state = .later
             }
-            return SupplementSlot(time: time, state: state)
+            return SupplementSlot(time: schedule.times[index], state: state, recordedEntryID: entryIDs[index])
         }
     }
 
@@ -202,6 +268,10 @@ public protocol SupplementStackStoring: AnyObject {
     func schedules() -> [String: SupplementSchedule]
     /// Replaces the whole list.
     func save(_ schedules: [String: SupplementSchedule]) throws
+    /// The time each Taken tap was for, by journal entry id.
+    func takenMarks() -> [String: SupplementTakenMark]
+    /// Replaces every mark.
+    func saveTakenMarks(_ marks: [String: SupplementTakenMark]) throws
 }
 
 /// Keeps the schedules as one JSON object under one key in the app's defaults domain, the way the custom
@@ -211,10 +281,13 @@ public protocol SupplementStackStoring: AnyObject {
 /// An entry that does not read as a schedule is left out rather than failing the whole list, and a value
 /// that is not a JSON object of schedules reads as an empty list.
 ///
-/// Erase all data removes the key: the schedules say what a person takes and when, so they are erased
-/// with the favorites they belong to.
+/// The times Taken taps were for are kept the same way under a second key.
+///
+/// Erase all data removes both keys: the schedules and the marks say what a person takes and when, so they
+/// are erased with the favorites they belong to.
 public final class UserDefaultsSupplementStackStore: SupplementStackStoring, JournalErasing, @unchecked Sendable {
     public static let key = "supplementStack.schedules"
+    public static let takenKey = "supplementStack.taken"
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -234,8 +307,33 @@ public final class UserDefaultsSupplementStackStore: SupplementStackStoring, Jou
         defaults.set(try encoder.encode(schedules), forKey: Self.key)
     }
 
+    public func takenMarks() -> [String: SupplementTakenMark] {
+        guard let data = defaults.data(forKey: Self.takenKey),
+              let stored = try? JSONDecoder().decode([String: LenientMark].self, from: data)
+        else { return [:] }
+        return stored.compactMapValues(\.mark)
+    }
+
+    public func saveTakenMarks(_ marks: [String: SupplementTakenMark]) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        defaults.set(try encoder.encode(marks), forKey: Self.takenKey)
+    }
+
     public func eraseAll() throws {
         defaults.removeObject(forKey: Self.key)
+        defaults.removeObject(forKey: Self.takenKey)
+    }
+}
+
+/// One stored mark that may not read: nil rather than a thrown error, so one damaged mark does not hide the
+/// others. A mark whose time does not read as a time of day is dropped as well.
+private struct LenientMark: Decodable {
+    let mark: SupplementTakenMark?
+
+    init(from decoder: Decoder) throws {
+        let decoded = try? SupplementTakenMark(from: decoder)
+        mark = decoded?.timeOfDay == nil ? nil : decoded
     }
 }
 
