@@ -128,3 +128,19 @@ def test_the_unsigned_device_build_fails_when_the_widget_extension_is_not_embedd
     text = (ROOT / ".github/workflows/ios.yml").read_text()
     assert "PlugIns/HealthNutritionWidgets.appex" in text
 
+
+def test_the_widget_privacy_manifest_declares_no_tracking_and_no_required_reason_api() -> None:
+    import plistlib
+
+    path = ROOT / "ios/HealthNutrition/Widgets/PrivacyInfo.xcprivacy"
+    with path.open("rb") as handle:
+        manifest = plistlib.load(handle)
+    assert manifest["NSPrivacyTracking"] is False
+    assert manifest["NSPrivacyTrackingDomains"] == []
+    assert manifest["NSPrivacyAccessedAPITypes"] == []
+    collected = manifest["NSPrivacyCollectedDataTypes"]
+    assert [entry["NSPrivacyCollectedDataType"] for entry in collected] == [
+        "NSPrivacyCollectedDataTypeOtherUserContent"
+    ]
+    assert collected[0]["NSPrivacyCollectedDataTypeTracking"] is False
+

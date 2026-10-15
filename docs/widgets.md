@@ -11,9 +11,10 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   It is rewritten each time Today's figures are read successfully (see "When the summary is written").
 - **Lock Screen.** The figures are marked privacy sensitive, so the system redacts them while the device is
   locked, according to the person's Lock Screen widget settings.
-- **Erase all data.** Replaces the summary with an empty one (no entries, no figures) at once, so the widget shows
-  "Nothing logged today", and drops any write that was already pending from before the erase; Today then reloads
-  and writes the real empty day.
+- **Erase all data.** Clears the summary: it is replaced by an empty one (no entries, no figures) at once, so the
+  widget shows "Nothing logged today"; if that write fails the file is removed instead, and the widgets are
+  refreshed either way. A write that was already pending from before the erase is dropped by an erase counter
+  (not the clock); Today then reloads and writes the real empty day.
 - **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
   shows dashes rather than claiming nothing was logged.
 - **When the summary is written.** The app writes it each time Today has read the journal successfully, and
@@ -35,9 +36,11 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
 - **Privacy manifest.** The extension has its own, matching the app's declaration for this data.
 
 Device check for the first signed build: with the device locked, confirm the Lock Screen widget hides the
-calorie figure and the gauge value (not only the Home Screen figures); after Erase all data confirm the widget
+calorie figure and the gauge value (not only the Home Screen figures); this Lock Screen claim in PRIVACY.md
+stays only if that check confirms it; after Erase all data confirm the widget
 reads "Nothing logged today"; and after midnight with the app closed confirm it shows dashes, not yesterday's
-figures.
+figures; and confirm the summary file is excluded from a device backup (its resource value
+`isExcludedFromBackup` reads back true).
 
 Not built yet: a water button on the widget or Lock Screen (it needs the Log water intent split from the app's
 services so it can run from the extension), and configuration options.

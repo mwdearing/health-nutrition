@@ -33,19 +33,25 @@ final class WidgetSnapshotPublisher {
         subscription = today.$lastLoadedAt
             .compactMap { $0 }
             .removeDuplicates()
+            // Stamped with the erase generation when the load is announced, before the debounce, so a write that
+            // was already pending when an erase ran is recognised whatever the clock does in between.
+            .map { [erasure] loadedAt in (loadedAt: loadedAt, generation: erasure.generation) }
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self, weak today] loadedAt in
+            .sink { [weak self, weak today] load in
                 // Delivered on the main queue by the debounce scheduler above, so this is the main actor.
                 MainActor.assumeIsolated {
                     guard let self, let today else { return }
-                    self.publish(from: today, loadedAt: loadedAt)
+                    self.publish(from: today, loadedAt: load.loadedAt, generation: load.generation)
                 }
             }
-        if let loadedAt = today.lastLoadedAt { publish(from: today, loadedAt: loadedAt) }
+        if let loadedAt = today.lastLoadedAt {
+            publish(from: today, loadedAt: loadedAt, generation: erasure.generation)
+        }
     }
 
-    func publish(from today: TodayViewModel, loadedAt: Date) {
-        guard let store, !isErasing(), erasure.accepts(loadedAt: loadedAt) else { return }
+    @MainActor
+    func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
+        guard let store, !isErasing(), erasure.accepts(generation: generation) else { return }
         let snapshot = Self.snapshot(from: today, now: loadedAt)
         do {
             try store.write(snapshot)
@@ -83,32 +89,37 @@ enum WidgetSnapshotUnits {
     }
 }
 
-/// When Erase all data last ran, so a summary write that was already pending (a load stamped before the erase)
-/// can be recognised and dropped instead of putting the erased figures back.
+/// A counter that moves on every Erase all data, so a summary write that was already pending (a load announced
+/// before the erase) can be recognised and dropped instead of putting the erased figures back. A counter, not a
+/// time: it does not depend on the clock.
 final class WidgetSnapshotErasure: @unchecked Sendable {
     static let shared = WidgetSnapshotErasure()
 
     private let lock = NSLock()
-    private var erasedAt: Date?
+    private var count = 0
 
-    func markErased(at time: Date) {
+    var generation: Int {
         lock.lock()
-        erasedAt = time
+        defer { lock.unlock() }
+        return count
+    }
+
+    func markErased() {
+        lock.lock()
+        count += 1
         lock.unlock()
     }
 
-    /// A load stamped at or before the last erase is stale: it read the journal before the erase.
-    func accepts(loadedAt: Date) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let erasedAt else { return true }
-        return loadedAt > erasedAt
+    /// A load announced under an earlier generation read the journal before an erase.
+    func accepts(generation: Int) -> Bool {
+        generation == self.generation
     }
 }
 
-/// Replaces the widgets' summary with an empty one when the person's data is erased, so "Erase all data" leaves no
-/// figures in the App Group and the widget reads "Nothing logged today" at once. A summary write already pending
-/// at that moment is recognised by its load time and dropped.
+/// Clears the widgets' summary when the person's data is erased, so "Erase all data" leaves no figures in the App
+/// Group. It first replaces the summary with an empty one, so the widget reads "Nothing logged today" at once; if
+/// that write fails it removes the file instead, and it reloads the widgets either way. A summary write already
+/// pending at that moment is recognised by its erase generation and dropped.
 final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
     private let store: WidgetSnapshotStore?
     private let erasure: WidgetSnapshotErasure
@@ -124,9 +135,15 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
     }
 
     func eraseAll() throws {
-        let time = now()
-        erasure.markErased(at: time)
-        try store?.write(WidgetSnapshot.empty(at: time))
-        WidgetCenter.shared.reloadAllTimelines()
+        // The generation moves first: from here on no write announced earlier can land, even if the empty write
+        // below fails and the file has to be removed instead.
+        erasure.markErased()
+        defer { WidgetCenter.shared.reloadAllTimelines() }
+        guard let store else { return }
+        do {
+            try store.write(WidgetSnapshot.empty(at: now()))
+        } catch {
+            try store.erase()
+        }
     }
 }

@@ -67,15 +67,23 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertTrue(after.isCurrent(on: erasedAt))
     }
 
-    func testAWritePendingAtEraseTimeNeverLands() {
+    func testIfTheEmptyWriteFailsTheFileIsRemovedSoNoFigureIsLeftBehind() throws {
+        var store = WidgetSnapshotStore(directory: directory)
+        try store.write(sample())
+        XCTAssertNotNil(store.read())
+        struct WriteFailed: Error {}
+        store.writeData = { _, _ in throw WriteFailed() }
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll()
+        XCTAssertNil(store.read())
+    }
+
+    func testAWritePendingAtEraseTimeNeverLandsWhateverTheClockDoes() {
         let erasure = WidgetSnapshotErasure()
-        let before = Date(timeIntervalSince1970: 1_700_000_000)
-        let erasedAt = Date(timeIntervalSince1970: 1_700_000_100)
-        XCTAssertTrue(erasure.accepts(loadedAt: before), "no erase yet")
-        erasure.markErased(at: erasedAt)
-        XCTAssertFalse(erasure.accepts(loadedAt: before), "a load that read the journal before the erase is dropped")
-        XCTAssertFalse(erasure.accepts(loadedAt: erasedAt))
-        XCTAssertTrue(erasure.accepts(loadedAt: erasedAt.addingTimeInterval(1)), "the reload after the erase publishes")
+        let pending = erasure.generation
+        XCTAssertTrue(erasure.accepts(generation: pending), "no erase yet")
+        erasure.markErased()
+        XCTAssertFalse(erasure.accepts(generation: pending), "a load announced before the erase is dropped")
+        XCTAssertTrue(erasure.accepts(generation: erasure.generation), "the reload after the erase publishes")
     }
 
     func testTheSummaryFileIsExcludedFromBackup() throws {

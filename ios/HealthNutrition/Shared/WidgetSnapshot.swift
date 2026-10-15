@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// What the Today widgets show: the day's figures as plain numbers, written by the app and read by the
 /// widget extension. It is a summary, not the journal: no entry, product name, time or note is in it.
@@ -79,6 +80,10 @@ struct WidgetSnapshotStore {
 
     let directory: URL
     var fileManager: FileManager = .default
+    /// How the bytes reach the file. A parameter so a test can make the write fail.
+    var writeData: (Data, URL) throws -> Void = { data, url in
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
 
     /// The store in the App Group container, or nil where the group is not available (an unsigned
     /// simulator build without the entitlement, for instance), in which case nothing is written.
@@ -104,12 +109,18 @@ struct WidgetSnapshotStore {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(snapshot)
-        try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        // Rewritten at every load, so it is left out of device backups.
+        try writeData(data, fileURL)
+        // Rewritten at every load, so it is left out of device backups. A failure is logged (the error text, never
+        // a figure) rather than swallowed.
         var url = fileURL
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
-        try? url.setResourceValues(values)
+        do {
+            try url.setResourceValues(values)
+        } catch {
+            Logger(subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "widget-summary")
+                .error("Could not leave the summary out of backups: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func erase() throws {
