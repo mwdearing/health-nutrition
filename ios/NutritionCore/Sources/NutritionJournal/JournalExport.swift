@@ -971,10 +971,11 @@ public enum JournalExporter {
         }
 
         let seconds: Date
-        let usesLegacyUTCCalendar = (1...3).contains(schemaVersion)
+        // Every version this build reads, the one it writes included: the writer still uses that calendar.
+        let usesLegacyUTCCalendar = JournalExport.readableSchemaVersions.contains(schemaVersion)
             && (secondsText.hasSuffix("Z") || secondsText.hasSuffix("z"))
         if hasCanonicalISOWholeSecondShape(secondsText) {
-            // V1-v3 backups are written and read with Foundation's historical Julian/Gregorian calendar (the
+            // V1-v4 backups are written and read with Foundation's historical Julian/Gregorian calendar (the
             // writer still uses it, so the version this build writes has to read it the same way).
             // Keep that meaning for the schemas people already hold, while requiring a formatter round-trip
             // so invalid or normalized calendar dates are still refused.

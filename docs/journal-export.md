@@ -11,7 +11,7 @@ cached `DateFormatter` per run and writes the fraction itself, reading it back t
 whole-second dates written by earlier builds still import. Favorites are written in id order, so two exports
 of the same favorites are the same document.
 
-Versions 1 to 3 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
+Versions 1 to 4 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
 the 1582 cutover. Earlier exports used that calendar, and the writer still does, so interpreting their text
 proleptically would shift some restored timestamps; the reader requires exact calendar round-tripping and
 rejects dates Foundation would normalize, including the skipped cutover days. This compatibility rule does
