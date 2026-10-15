@@ -110,9 +110,10 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var missingValuesSummary: String?
     /// The date under the title, "Tuesday, November 14", in the current device time zone.
     @Published public private(set) var dateSubtitle: String = ""
-    /// The `now` of the last load that read the journal successfully, or nil before the first one. A failed load
-    /// leaves it alone, so it names the moment the totals on screen were read; the widgets' summary is stamped
-    /// with it rather than with the time of some later notification.
+    /// The `now` of the load whose totals are the ones on screen: set when a load reads the journal successfully
+    /// and cleared when the next load starts, so it is nil before the first load and after a load that failed
+    /// (its rows and totals may then be partly new). The widgets' summary is stamped with it and only written
+    /// while it still equals the load the write was announced for.
     @Published public private(set) var lastLoadedAt: Date?
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
@@ -186,6 +187,9 @@ public final class TodayViewModel: ObservableObject {
 
     /// Reloads Today: active intakes on the local day of each intake's own time zone.
     public func load(now: Date) {
+        // Nil while a load is in progress and after one that failed, so it only ever names a load whose totals
+        // are the ones on screen; a successful load sets it again at the end.
+        lastLoadedAt = nil
         do {
             var skippedIntakes = 0
             var intakes: [Intake] = []

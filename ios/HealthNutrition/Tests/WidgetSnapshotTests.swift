@@ -94,6 +94,35 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url).count, 0)
     }
 
+    func testAWriteLeavesNoTemporaryAndErasePicksUpOneLeftByAnInterruptedWrite() throws {
+        let store = WidgetSnapshotStore(directory: directory)
+        try store.write(sample())
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertEqual(names, [WidgetSnapshotStore.fileName])
+        // An interrupted write leaves the fixed temporary name behind; erase removes it with the summary.
+        let leftover = directory.appendingPathComponent(WidgetSnapshotStore.fileName + ".tmp")
+        try Data("figures".utf8).write(to: leftover)
+        try store.erase()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
+    }
+
+    func testASummaryThatCannotBeLeftOutOfBackupsIsNotLeftOnDisk() throws {
+        var store = WidgetSnapshotStore(directory: directory)
+        struct Refused: Error {}
+        store.excludeFromBackup = { _ in throw Refused() }
+        XCTAssertThrowsError(try store.write(sample()))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [])
+    }
+
+    func testAFailedWriteLeavesThePreviousSummaryAsItWas() throws {
+        var store = WidgetSnapshotStore(directory: directory)
+        try store.write(sample())
+        struct WriteFailed: Error {}
+        store.writeData = { _, _ in throw WriteFailed() }
+        XCTAssertThrowsError(try store.write(WidgetSnapshot.empty(at: Date())))
+        XCTAssertEqual(store.read(), sample())
+    }
+
     func testAWritePendingAtEraseTimeNeverLandsWhateverTheClockDoes() {
         let erasure = WidgetSnapshotErasure()
         let pending = erasure.generation

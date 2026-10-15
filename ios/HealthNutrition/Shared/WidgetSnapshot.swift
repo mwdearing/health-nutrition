@@ -80,9 +80,16 @@ struct WidgetSnapshotStore {
 
     let directory: URL
     var fileManager: FileManager = .default
-    /// How the bytes reach the file. A parameter so a test can make the write fail.
+    /// How the bytes reach a file. A parameter so a test can make the write fail.
     var writeData: (Data, URL) throws -> Void = { data, url in
-        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try data.write(to: url, options: [.completeFileProtectionUntilFirstUserAuthentication])
+    }
+    /// Leaves a file out of device backups. A parameter so a test can make it fail.
+    var excludeFromBackup: (URL) throws -> Void = { url in
+        var url = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try url.setResourceValues(values)
     }
 
     /// The store in the App Group container, or nil where the group is not available (an unsigned
@@ -95,6 +102,8 @@ struct WidgetSnapshotStore {
     }
 
     private var fileURL: URL { directory.appendingPathComponent(Self.fileName) }
+    /// Where a new summary is written before it replaces the file. A fixed name, so erase can always remove it.
+    private var temporaryURL: URL { directory.appendingPathComponent(Self.fileName + ".tmp") }
 
     func read() -> WidgetSnapshot? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
@@ -103,27 +112,41 @@ struct WidgetSnapshotStore {
         return try? decoder.decode(WidgetSnapshot.self, from: data)
     }
 
-    /// Written with file protection until first unlock, so it is not readable before the device was first
-    /// unlocked after a restart, and replaced atomically so the widget never reads half a file.
+    /// Written with file protection until first unlock, to a fixed temporary name that is left out of backups, and
+    /// then moved over the file, so the widget never reads half a file and no unnamed temporary is left behind.
+    /// The summary is left out of device backups: if that cannot be arranged the write fails and nothing is left on
+    /// disk, so the claim in the privacy copy is always true of what is stored.
     func write(_ snapshot: WidgetSnapshot) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let data = try encoder.encode(snapshot)
-        try writeData(data, fileURL)
-        // Rewritten at every load, so it is left out of device backups. A failure is logged (the error text, never
-        // a figure) rather than swallowed.
-        var url = fileURL
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
+        let temporary = temporaryURL
+        var replaced = false
         do {
-            try url.setResourceValues(values)
+            try writeData(data, temporary)
+            try excludeFromBackup(temporary)
+            if fileManager.fileExists(atPath: fileURL.path) {
+                _ = try fileManager.replaceItemAt(fileURL, withItemAt: temporary)
+            } else {
+                try fileManager.moveItem(at: temporary, to: fileURL)
+            }
+            replaced = true
+            try excludeFromBackup(fileURL)
         } catch {
-            Logger(subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "widget-summary")
-                .error("Could not leave the summary out of backups: \(error.localizedDescription, privacy: .private)")
+            try? fileManager.removeItem(at: temporary)
+            // A summary that could not be left out of backups must not stay on disk. A failure before the
+            // replacement leaves the previous summary as it was.
+            if replaced { try? fileManager.removeItem(at: fileURL) }
+            let logger = Logger(
+                subsystem: Bundle.main.bundleIdentifier ?? "HealthNutrition", category: "widget-summary")
+            logger.error("Could not write the summary: \(error.localizedDescription, privacy: .private)")
+            throw error
         }
     }
 
+    /// Removes the summary and any temporary left by an interrupted write.
     func erase() throws {
+        try? fileManager.removeItem(at: temporaryURL)
         guard fileManager.fileExists(atPath: fileURL.path) else { return }
         try fileManager.removeItem(at: fileURL)
     }
@@ -131,6 +154,7 @@ struct WidgetSnapshotStore {
     /// Last resort when neither replacing nor removing the file works: empties it in place, so no figure is left
     /// on disk. The widget treats a file it cannot decode as "no summary" and shows dashes.
     func truncate() throws {
+        try? fileManager.removeItem(at: temporaryURL)
         try Data().write(to: fileURL)
     }
 }

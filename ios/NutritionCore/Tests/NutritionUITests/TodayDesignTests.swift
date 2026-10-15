@@ -80,6 +80,18 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(today.lastLoadedAt, later)
     }
 
+    func testLastLoadedAtIsNilAfterALoadThatFails() throws {
+        let store = try makeStore()
+        let today = model(store)
+        today.load(now: now)
+        XCTAssertEqual(today.lastLoadedAt, now)
+        // A store that cannot be read: the load fails, and nothing on screen is claimed to be from a load.
+        store.close()
+        today.load(now: now.addingTimeInterval(60))
+        XCTAssertEqual(today.errorMessage, "Could not read the journal.")
+        XCTAssertNil(today.lastLoadedAt)
+    }
+
     func testDateSubtitleFollowsTheCurrentTimeZoneOnReload() throws {
         let store = try makeStore()
         let currentSubtitle = TodayViewModel.makeDateSubtitle(

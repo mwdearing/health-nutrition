@@ -14,10 +14,14 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
 - **Erase all data.** Clears the summary: it is replaced by an empty one (no entries, no figures) at once, so the
   widget shows "Nothing logged today"; if that write fails the file is removed instead, and the widgets are
   refreshed either way. If the file cannot be removed either, it is emptied in place; the widget cannot decode an
-  empty file and shows dashes. A write that was already pending from before the erase is dropped by an erase counter
+  empty file and shows dashes. If even that cannot be done the erase reports failure to the person and the file
+  stays until a later erase or write succeeds. A write that was already pending from before the erase is dropped by an erase counter
   (not the clock); Today then reloads and writes the real empty day.
 - **Not readable yet.** After a restart and before the first unlock the file is protected; the widget then
   shows dashes rather than claiming nothing was logged.
+- **How it is written.** To a fixed temporary name that is left out of backups, then moved over the summary;
+  the temporary is removed by erase. If the file cannot be left out of backups the write fails and nothing is
+  left on disk.
 - **When the summary is written.** The app writes it each time Today has read the journal successfully, and
   stamps it with that moment (`TodayViewModel.lastLoadedAt`). Before the first successful load, after a failed
   reload, or when something merely notifies without reading, nothing is written, so a failed read never replaces

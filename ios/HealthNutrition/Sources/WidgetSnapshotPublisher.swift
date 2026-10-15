@@ -52,9 +52,12 @@ final class WidgetSnapshotPublisher {
     }
 
     func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
-        guard let store, !isErasing(), erasure.accepts(generation: generation) else { return }
-        // `lastLoadedAt` and the totals move together inside TodayViewModel.load(now:), which is synchronous on the
-        // main actor, so reading the totals here, on the main actor, is reading what that load produced.
+        // Only the load whose totals are on screen is written: a pending write from an earlier load, or one whose
+        // successor failed part way (lastLoadedAt is nil then), is dropped.
+        guard let store, !isErasing(), erasure.accepts(generation: generation), today.lastLoadedAt == loadedAt
+        else { return }
+        // Reading the totals here, on the main actor, while `lastLoadedAt` still names this load (checked above),
+        // is reading what that load produced.
         let snapshot = Self.snapshot(from: today, now: loadedAt)
         do {
             try store.write(snapshot)
