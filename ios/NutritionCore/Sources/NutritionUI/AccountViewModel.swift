@@ -307,6 +307,15 @@ public final class AccountViewModel: ObservableObject {
         }
     }
 
+    /// True when the disclosure sheet should be up: signed in, not yet acknowledged, and the facts the answer
+    /// rests on have been read. Until the profile and the server capabilities have loaded, `needsDisclosure`
+    /// can still be a provisional guess, and showing the sheet then would ask an already-acknowledged person
+    /// again. Sign-in has its own sheet, which comes first.
+    public var disclosureDue: Bool {
+        phase == .signedIn && needsDisclosure && profileReady && !presentingSignIn
+            && (productService == nil || productCapabilities != nil)
+    }
+
     /// Asks for the disclosure sheet again. Only meaningful while it still needs acknowledging.
     public func requestDisclosureReview() {
         guard phase == .signedIn, needsDisclosure else { return }
@@ -338,7 +347,8 @@ public final class AccountViewModel: ObservableObject {
         guard !isBusy, let userID = currentUserID, let owner = UUID(uuidString: userID) else { return }
         // A retry starts clean: an earlier refusal must not outlive a later success.
         message = nil
-        // Every refusal below says so: the disclosure sheet has no other way to show why Continue did nothing.
+        // The refusals that follow the stale-account checks set a message: the disclosure sheet has no other way
+        // to show why Continue did nothing. A busy call or a missing account stays silent (Continue is disabled then).
         guard profileReady else { message = Self.profileNotReadyMessage; return }
         let identity = accountIdentity
         busyCount += 1

@@ -79,17 +79,11 @@ struct AccountPresentations: ViewModifier {
     @ObservedObject var model: AccountViewModel
     @State private var showingDisclosure = false
 
-    /// Whether the disclosure sheet should be up. The one rule behind every trigger below, so a sheet that was
-    /// dismissed without acknowledging comes back once the profile has loaded and Continue can work.
-    static func shouldPresentDisclosure(needsDisclosure: Bool, presentingSignIn: Bool) -> Bool {
-        needsDisclosure && !presentingSignIn
-    }
-
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $model.presentingSignIn, onDismiss: {
                 // Read after the sign-in sheet has gone away, so the two sheets are never up together.
-                showingDisclosure = model.needsDisclosure
+                showingDisclosure = model.disclosureDue
             }) {
                 SignInSheet(model: model)
             }
@@ -104,26 +98,26 @@ struct AccountPresentations: ViewModifier {
             } message: {
                 Text("The account and every label it shared are deleted. Data on this device is kept.")
             }
-            .onChange(of: model.needsDisclosure) { _, needed in
-                if needed && !model.presentingSignIn { showingDisclosure = true }
-            }
-            .onChange(of: model.profileReady) { _, ready in
-                if ready, Self.shouldPresentDisclosure(needsDisclosure: model.needsDisclosure, presentingSignIn: model.presentingSignIn) {
+            // One rule for showing and hiding: the model says when the disclosure is due. A sheet is closed here
+            // only once nothing needs acknowledging any more, never because a profile read flipped under it.
+            .onChange(of: model.disclosureDue) { _, due in
+                if due {
                     showingDisclosure = true
+                } else if !model.needsDisclosure {
+                    showingDisclosure = false
                 }
             }
+            // The person asked for it (the Account row), so it is shown whenever it still needs acknowledging.
             .onChange(of: model.disclosureReviewRequests) { _, _ in
-                if Self.shouldPresentDisclosure(needsDisclosure: model.needsDisclosure, presentingSignIn: model.presentingSignIn) {
-                    showingDisclosure = true
-                }
+                if model.needsDisclosure && !model.presentingSignIn { showingDisclosure = true }
             }
             .onAppear {
-                showingDisclosure = model.needsDisclosure && !model.presentingSignIn
+                showingDisclosure = model.disclosureDue
             }
             // Brings the stored sign-in back when Settings opens, if the launch restore could not.
             .task {
                 await model.load()
-                showingDisclosure = model.needsDisclosure && !model.presentingSignIn
+                showingDisclosure = model.disclosureDue
             }
     }
 }

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import XCTest
 import NutritionDomain
@@ -277,10 +278,35 @@ extension ProductShareCoordinatorTests {
         let owners = await products.consentCalls
         XCTAssertEqual(owners, [UUID(uuidString: session.userID)!])
     }
-    @MainActor func testDisclosureComesBackAfterProfileRecoversOnlyWhenNeededAndNotDuringSignIn() {
-        XCTAssertTrue(AccountPresentations.shouldPresentDisclosure(needsDisclosure: true, presentingSignIn: false))
-        XCTAssertFalse(AccountPresentations.shouldPresentDisclosure(needsDisclosure: false, presentingSignIn: false))
-        XCTAssertFalse(AccountPresentations.shouldPresentDisclosure(needsDisclosure: true, presentingSignIn: true))
+    @MainActor func testDisclosureBecomesDueOnlyWhenTheProfileHasLoaded() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        service.profileError = CommunityError.network
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        await account.load()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertFalse(account.profileReady)
+        XCTAssertFalse(account.disclosureDue)
+        service.profileError = nil
+        await account.retryProfile()
+        XCTAssertTrue(account.profileReady)
+        XCTAssertTrue(account.disclosureDue)
+        await account.acknowledgeProductDisclosure()
+        XCTAssertFalse(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureDue)
+    }
+    @MainActor func testAlreadyAcknowledgedSignInIsNeverDue() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
+        let account = AccountViewModel(service: service, preferences: preferences, productService: products)
+        // Every state seen just before a change, which covers the provisional window while capabilities load.
+        var seen: [Bool] = []
+        let watch = account.objectWillChange.sink { _ in seen.append(account.disclosureDue) }
+        await account.load()
+        watch.cancel()
+        XCTAssertFalse(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureDue)
+        XCTAssertFalse(seen.contains(true))
     }
     @MainActor func testDisclosureReviewRequestOnlyCountsWhileSignedInAndUnacknowledged() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
