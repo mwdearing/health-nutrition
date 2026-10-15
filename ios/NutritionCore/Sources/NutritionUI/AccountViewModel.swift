@@ -327,6 +327,8 @@ public final class AccountViewModel: ObservableObject {
     public func acknowledgeProductDisclosure() async {
         guard let productService else { acknowledgeDisclosure(); return }
         guard !isBusy, let userID = currentUserID, let owner = UUID(uuidString: userID) else { return }
+        // A retry starts clean: an earlier refusal must not outlive a later success.
+        message = nil
         // Every refusal below says so: the disclosure sheet has no other way to show why Continue did nothing.
         guard profileReady else { message = Self.profileNotReadyMessage; return }
         let identity = accountIdentity

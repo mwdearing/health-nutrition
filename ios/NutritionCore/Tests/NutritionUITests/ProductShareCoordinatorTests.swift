@@ -297,6 +297,13 @@ extension ProductShareCoordinatorTests {
         XCTAssertTrue(account.needsDisclosure)
         XCTAssertEqual(account.message, AccountViewModel.genericMessage)
         XCTAssertFalse(account.isBusy)
+        // The server catches up: the retry succeeds and the earlier error is gone.
+        await products.setCapabilities(ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
+            limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
+            callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1))
+        await account.acknowledgeProductDisclosure()
+        XCTAssertFalse(account.needsDisclosure)
+        XCTAssertNil(account.message)
     }
     @MainActor func testConsentReplyAfterSignOutCannotAcknowledgeOldOwner() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
