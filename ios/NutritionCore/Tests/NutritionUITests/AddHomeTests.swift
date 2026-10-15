@@ -80,7 +80,8 @@ final class AddHomeTests: XCTestCase {
         XCTAssertTrue(details.save(now: now))
         let intake = try XCTUnwrap(store.activeIntakes().first)
         let component = try XCTUnwrap(store.revisions(of: intake.id).first?.components.first)
-        XCTAssertNotEqual(component.amount, Decimal(250))
+        XCTAssertEqual(component.unit, .mL)
+        XCTAssertEqual(component.amount, Decimal(string: "249.896324803125"))
     }
 
     func testQuickAddFromRecentCanBeUndone() throws {
