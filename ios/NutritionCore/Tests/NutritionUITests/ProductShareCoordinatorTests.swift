@@ -335,6 +335,34 @@ extension ProductShareCoordinatorTests {
         XCTAssertFalse(account.needsDisclosure)
         XCTAssertFalse(account.disclosureDue)
     }
+    @MainActor func testDisclosureDueWhileSignInSheetIsUpIsPendingUntilItsDismissal() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        // Signed in and unacknowledged, but the sign-in sheet has not been reported gone.
+        XCTAssertTrue(account.disclosureReady)
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertTrue(account.disclosurePending)
+        XCTAssertFalse(account.disclosureDue)
+        // The binding turning false is only the start of the dismissal: still pending.
+        account.presentingSignIn = false
+        XCTAssertTrue(account.disclosurePending)
+        XCTAssertFalse(account.disclosureDue)
+        // The sheet's onDismiss reports it gone: now it is due and no longer pending.
+        account.signInSheetDidDismiss()
+        XCTAssertFalse(account.disclosurePending)
+        XCTAssertTrue(account.disclosureDue)
+    }
+    @MainActor func testDismissalReportIsIgnoredWhileTheSignInSheetIsStillRequested() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        account.signInSheetDidDismiss()
+        XCTAssertTrue(account.signInSheetActive)
+        XCTAssertFalse(account.disclosureDue)
+    }
     @MainActor func testFailedCapabilityReadNeverOffersTheDisclosureToAnAcknowledgedAccount() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
         await products.setCapabilitiesError(ProductAPIError.unavailable)

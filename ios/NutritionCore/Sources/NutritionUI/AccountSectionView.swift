@@ -82,7 +82,9 @@ struct AccountPresentations: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $model.presentingSignIn, onDismiss: {
-                // Read after the sign-in sheet has gone away, so the two sheets are never up together.
+                // Runs once the sign-in sheet has fully gone away, so the two sheets are never up together. A
+                // disclosure that became due meanwhile was held as pending and is presented now.
+                model.signInSheetDidDismiss()
                 showingDisclosure = model.disclosureDue
             }) {
                 SignInSheet(model: model)
@@ -109,7 +111,7 @@ struct AccountPresentations: ViewModifier {
             }
             // The person asked for it (the Account row), so it is shown whenever it still needs acknowledging.
             .onChange(of: model.disclosureReviewRequests) { _, _ in
-                if model.needsDisclosure && !model.presentingSignIn { showingDisclosure = true }
+                if model.disclosureReady && model.needsDisclosure && !model.signInSheetActive { showingDisclosure = true }
             }
             .onAppear {
                 showingDisclosure = model.disclosureDue

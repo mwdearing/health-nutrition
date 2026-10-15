@@ -34,7 +34,13 @@ public final class AccountViewModel: ObservableObject {
 
     @Published public private(set) var phase: Phase = .signedOut
     /// Set by the Account section's buttons; the Settings form owns the sheet and the confirmation they open.
-    @Published public var presentingSignIn = false
+    @Published public var presentingSignIn = false {
+        didSet { if presentingSignIn { signInSheetActive = true } }
+    }
+    /// True from the moment the sign-in sheet is asked for until the view reports it has fully gone away
+    /// (`signInSheetDidDismiss`). It outlasts `presentingSignIn` on purpose: the binding turns false when the
+    /// dismissal starts, and a second sheet requested during that animation can be dropped.
+    @Published public private(set) var signInSheetActive = false
     @Published public var presentingDeleteConfirmation = false
     /// The email the account signed in with. Shown in Settings, never in a message.
     @Published public private(set) var email = ""
@@ -314,9 +320,20 @@ public final class AccountViewModel: ObservableObject {
         phase == .signedIn && profileReady && (productService == nil || productCapabilities != nil)
     }
 
-    /// True when the disclosure sheet should be up. Sign-in has its own sheet, which comes first.
+    /// The disclosure is wanted but the sign-in sheet has not finished leaving: it is presented once that sheet
+    /// reports its dismissal, never in the middle of it.
+    public var disclosurePending: Bool {
+        disclosureReady && needsDisclosure && signInSheetActive
+    }
+
+    /// True when the disclosure sheet should be up. The sign-in sheet comes first and is fully gone by then.
     public var disclosureDue: Bool {
-        disclosureReady && needsDisclosure && !presentingSignIn
+        disclosureReady && needsDisclosure && !signInSheetActive
+    }
+
+    /// Called by the view from the sign-in sheet's `onDismiss`, after its dismissal animation has finished.
+    public func signInSheetDidDismiss() {
+        if !presentingSignIn { signInSheetActive = false }
     }
 
     /// Asks for the disclosure sheet again. Only meaningful while it still needs acknowledging.
