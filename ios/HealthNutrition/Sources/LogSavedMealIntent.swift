@@ -14,17 +14,24 @@ enum SavedMealShortcut {
     static let noSavedMealsMessage = "You have no saved meals yet. Save one from a meal in the Diary."
     static let unavailableMessage = SavedMealError.notFound.message
 
+    /// Whether the shortcut has to ask which saved meal: it named none and there are some to choose from. With
+    /// none saved, or the list unavailable, `log` answers instead, so its reply is what the person hears.
+    static func needsSavedMeal(id: String?, meals: [SavedMeal]?) -> Bool {
+        id == nil && !(meals ?? []).isEmpty
+    }
+
     /// - Parameters:
+    ///   - id: the saved meal the shortcut names, or nil when it names none.
     ///   - meals: the saved meals as stored, or nil when the app's services are not available.
     ///   - log: writes the saved meal's items under the meal given, at the time given.
     ///   - leftovers: told the entries a failed write could not remove again, so the app can warn about them.
     static func log(
-        id: String, meal: MealLabel?, now: Date, meals: [SavedMeal]?,
+        id: String?, meal: MealLabel?, now: Date, meals: [SavedMeal]?,
         log: (SavedMeal, MealLabel?, Date) throws -> SavedMealLogResult, leftovers: ([String]) -> Void = { _ in }
     ) -> Outcome {
         guard let meals else { return Outcome(logged: false, message: notReadyMessage) }
         guard !meals.isEmpty else { return Outcome(logged: false, message: noSavedMealsMessage) }
-        guard let saved = meals.first(where: { $0.id == id }) else {
+        guard let id, let saved = meals.first(where: { $0.id == id }) else {
             return Outcome(logged: false, message: unavailableMessage)
         }
         do {
@@ -108,8 +115,10 @@ struct LogSavedMealIntent: AppIntent {
     /// and Siri's prompts) happens before this applies, so the saved meal names can still be listed while locked.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
+    /// Optional, so the action runs when there are no saved meals, or the one a shortcut names was deleted, and
+    /// says so; with saved meals to choose from and none named, it asks for one.
     @Parameter(title: "Saved meal")
-    var savedMeal: SavedMealEntity
+    var savedMeal: SavedMealEntity?
 
     @Parameter(title: "Meal", description: "Leave empty to use the meal it was saved with.")
     var meal: ShortcutMeal?
@@ -128,10 +137,13 @@ struct LogSavedMealIntent: AppIntent {
         } else {
             meals = nil
         }
+        if SavedMealShortcut.needsSavedMeal(id: savedMeal?.id, meals: meals) {
+            throw $savedMeal.needsValueError()
+        }
         // One time for the write and the reload, so a run across midnight files the meal on the day Today shows.
         let now = Date()
         let outcome = SavedMealShortcut.log(
-            id: savedMeal.id, meal: meal?.label, now: now, meals: meals,
+            id: savedMeal?.id, meal: meal?.label, now: now, meals: meals,
             log: { saved, meal, now in
                 guard let services else { throw SavedMealError.notFound }
                 // As a log from the screen does, an earlier Undo offer is dropped first, so Undo in the app never

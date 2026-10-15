@@ -58,6 +58,30 @@ final class LogSavedMealShortcutTests: XCTestCase {
         XCTAssertFalse(wrote)
     }
 
+    func testAsksForASavedMealOnlyWhenThereAreSomeAndNoneIsNamed() {
+        XCTAssertTrue(SavedMealShortcut.needsSavedMeal(id: nil, meals: [saved()]))
+        XCTAssertFalse(SavedMealShortcut.needsSavedMeal(id: "meal-1", meals: [saved()]))
+        XCTAssertFalse(SavedMealShortcut.needsSavedMeal(id: "gone", meals: [saved()]))
+        // With none saved, or the list unavailable, the reply says so rather than asking.
+        XCTAssertFalse(SavedMealShortcut.needsSavedMeal(id: nil, meals: []))
+        XCTAssertFalse(SavedMealShortcut.needsSavedMeal(id: nil, meals: nil))
+        var wrote = false
+        let log: (SavedMeal, MealLabel?, Date) throws -> SavedMealLogResult = { _, _, _ in
+            wrote = true
+            return SavedMealLogResult(createdIDs: ["a"], skippedCount: 0)
+        }
+        XCTAssertEqual(
+            SavedMealShortcut.log(id: nil, meal: nil, now: now, meals: [], log: log).message,
+            SavedMealShortcut.noSavedMealsMessage)
+        XCTAssertEqual(
+            SavedMealShortcut.log(id: nil, meal: nil, now: now, meals: nil, log: log).message,
+            SavedMealShortcut.notReadyMessage)
+        XCTAssertEqual(
+            SavedMealShortcut.log(id: nil, meal: nil, now: now, meals: [saved()], log: log).message,
+            SavedMealShortcut.unavailableMessage)
+        XCTAssertFalse(wrote)
+    }
+
     func testAFailedWriteSaysSoAndReportsLeftovers() {
         let failed = SavedMealShortcut.log(id: "meal-1", meal: nil, now: now, meals: [saved()]) { _, _, _ in
             throw WriteFailed()
