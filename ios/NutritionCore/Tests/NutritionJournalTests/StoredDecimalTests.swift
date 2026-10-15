@@ -60,6 +60,19 @@ final class StoredDecimalTests: XCTestCase {
             dec("13.333333333333333333333333333333333333"))
     }
 
+    /// At the top of `Decimal`'s range there is no room to round: the value is kept as it is, never turned
+    /// into a zero, and a stored row holding it stays refused.
+    func testAValueAtTheTopOfTheRangeIsNeverRoundedToZero() {
+        let text = "340282366920938463463374607431768211455" + String(repeating: "0", count: 127)
+        let top = dec(text)
+        XCTAssertEqual(DecimalText.encode(top), text)
+        XCTAssertEqual(StoredDecimal.storable(top), top)
+        XCTAssertNil(StoredDecimal.readBack(text))
+        XCTAssertNil(
+            SwiftDataJournalStore.decodeNutrients(
+                #"[{"id":"carbohydrate","state":"known","unitSymbol":"g","valueText":"\#(text)"}]"#)["carbohydrate"])
+    }
+
     // MARK: The store
 
     /// A snapshot holding such a value reads back with it, rather than without it.
