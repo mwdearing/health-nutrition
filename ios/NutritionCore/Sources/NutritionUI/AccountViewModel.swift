@@ -101,6 +101,9 @@ public final class AccountViewModel: ObservableObject {
     /// for the whole call, so the sign-in controls stay disabled until the restore has answered.
     public func load() async {
         guard !automaticRestoreClosed else { return }
+        // Signed out with no sign-in sheet up: a request whose dismissal was never reported must not keep the
+        // disclosure held for good. A sign-in that is still leaving has `phase == .signedIn` and is untouched.
+        if phase == .signedOut && !presentingSignIn { signInSheetActive = false }
         busyCount += 1
         defer { busyCount -= 1 }
         let signInsBefore = signInCount
@@ -338,7 +341,7 @@ public final class AccountViewModel: ObservableObject {
 
     /// Asks for the disclosure sheet again. Only meaningful while it still needs acknowledging.
     public func requestDisclosureReview() {
-        guard disclosureReady, needsDisclosure else { return }
+        guard disclosureReady, needsDisclosure, !signInSheetActive else { return }
         disclosureReviewRequests += 1
     }
 
@@ -530,6 +533,7 @@ public final class AccountViewModel: ObservableObject {
         productSharing?.updateAccountContext(nil)
         accountIdentity = UUID()
         productCapabilities = nil
+        if !presentingSignIn { signInSheetActive = false }
         phase = .signedOut
         currentUserID = nil
         email = ""
