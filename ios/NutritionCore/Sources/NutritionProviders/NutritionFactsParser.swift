@@ -928,18 +928,18 @@ public enum NutritionFactsParser {
     }
 
     /// Whether an unrecognized name on a food panel reads like a real row rather than OCR noise. Every
-    /// word is Title Case, and a word is either at least four letters or a short word a panel prints
-    /// ("Fat", "Fiber"). A word that is one or two edits from "Includes" or "Contains" is the misread
-    /// qualifier itself, so it is not a row.
+    /// word starts with a capital letter or a digit, and no later letter is a capital, so a misread like
+    /// "minD" is not a row. A word that is one or two edits from "Includes" or "Contains", or equal to it,
+    /// is the misread qualifier itself, so it is not a row.
     private static func isPlausibleFoodRowName(_ name: String) -> Bool {
-        let shortRowWords: Set<String> = ["fat", "fiber", "fibre"]
         let qualifiers = ["includes", "contains"]
-        for word in name.split(separator: " ") {
+        let words = name.split(separator: " ")
+        guard !words.isEmpty else { return false }
+        for word in words {
             let lower = word.lowercased()
-            guard let first = word.first, first.isUppercase else { return false }
-            guard word.dropFirst().allSatisfy({ $0.isLowercase }) else { return false }
-            guard word.count >= 4 || shortRowWords.contains(lower) else { return false }
-            if qualifiers.contains(where: { $0 != lower && editDistance(lower, $0) <= 2 }) { return false }
+            guard let first = word.first, first.isUppercase || first.isNumber else { return false }
+            guard word.dropFirst().allSatisfy({ !$0.isUppercase || $0.isNumber }) else { return false }
+            if qualifiers.contains(where: { editDistance(lower, $0) <= 2 }) { return false }
         }
         return true
     }

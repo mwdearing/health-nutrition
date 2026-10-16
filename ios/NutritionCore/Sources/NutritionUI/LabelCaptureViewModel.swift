@@ -616,9 +616,6 @@ public final class LabelCaptureViewModel: ObservableObject {
         let frame = frameCount + 1
         var contributed = false
         // The footer keeps the larger unread count, so a photo that could not name a row never hides it.
-        unnamedRowCount = max(unnamedRowCount, panel.unnamedRowCount)
-        // A photo that left rows unread still read the panel, so it counts as a contributing photo.
-        if panel.unnamedRowCount > 0 { contributed = true }
 
         for key in NutritionFactKey.allCases {
             let incoming = panel.value(for: key)
@@ -698,6 +695,8 @@ public final class LabelCaptureViewModel: ObservableObject {
         mergePanelFacts(from: panel, contributed: &contributed)
 
         if contributed {
+            // The footer keeps the larger unread count, so a photo that could not name a row never hides it.
+            unnamedRowCount = max(unnamedRowCount, panel.unnamedRowCount)
             frameCount = frame
             // A first photo that read nothing can still be completed by a second that read some of it.
             if !panel.isUnreadable { isUnreadable = false }
