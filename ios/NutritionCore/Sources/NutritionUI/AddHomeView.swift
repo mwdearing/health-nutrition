@@ -56,11 +56,19 @@ public struct AddHomeView: View {
                 ForEach(model.recents) { recent in
                     Card {
                         HStack {
-                            VStack(alignment: .leading) {
-                                Text(recent.template.displayName).font(.headline)
-                                Text(model.amountSummary(of: recent.template))
-                                    .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                            // A tap on the row logs once, the same as the Add capsule, with Undo.
+                            Button {
+                                if self.model.quickAdd(recent) != nil { self.onChanged() }
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(recent.template.displayName).font(.headline)
+                                    Text(model.amountSummary(of: recent.template))
+                                        .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                                }
                             }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Log \(recent.template.displayName) now")
+                            .accessibilityHint("Logs once. Undo for 10 seconds.")
                             Spacer()
                             QuietCapsule("Add") {
                                 if self.model.quickAdd(recent) != nil { self.onChanged() }
