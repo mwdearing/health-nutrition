@@ -10,6 +10,7 @@ public struct SupplementStackView: View {
     private let onLogged: () -> Void
     @State private var adding = false
     @State private var editing: SupplementStackRow?
+    @State private var saveNotice: SaveNotice?
     @Environment(\.scenePhase) private var scenePhase
     /// This screen's id, so the model can tell two windows showing the list apart.
     @State private var screenID = UUID()
@@ -109,15 +110,20 @@ public struct SupplementStackView: View {
         }
         .sheet(isPresented: $adding) {
             NavigationStack {
-                SupplementStackPicker(model: model, now: now, onDone: { self.adding = false })
+                SupplementStackPicker(model: model, now: now, onDone: { self.adding = false },
+                    onAdded: { self.saveNotice = SaveNotice(SaveLabels.scheduleSaved) })
             }
         }
+        .saveConfirmation(saveNotice)
         .sheet(item: $editing) { row in
             NavigationStack {
                 SupplementScheduleEditor(
                     model: model, title: row.title, initial: row.schedule,
                     onSave: { schedule in
-                        if self.model.setSchedule(schedule, for: row.id, now: self.now()) { self.editing = nil }
+                        if self.model.setSchedule(schedule, for: row.id, now: self.now()) {
+                            self.saveNotice = SaveNotice(SaveLabels.scheduleSaved)
+                            self.editing = nil
+                        }
                     },
                     onRemove: {
                         if self.model.remove(favoriteID: row.id, now: self.now()) { self.editing = nil }
@@ -226,6 +232,7 @@ struct SupplementStackPicker: View {
     @ObservedObject var model: SupplementStackViewModel
     let now: () -> Date
     let onDone: () -> Void
+    var onAdded: () -> Void = {}
 
     var body: some View {
         List {
@@ -244,7 +251,10 @@ struct SupplementStackPicker: View {
                     SupplementScheduleEditor(
                         model: model, title: candidate.title, initial: .standard,
                         onSave: { schedule in
-                            if self.model.add(candidate, schedule: schedule, now: self.now()) { self.onDone() }
+                            if self.model.add(candidate, schedule: schedule, now: self.now()) {
+                                self.onAdded()
+                                self.onDone()
+                            }
                         },
                         onRemove: nil, onCancel: nil)
                 } label: {

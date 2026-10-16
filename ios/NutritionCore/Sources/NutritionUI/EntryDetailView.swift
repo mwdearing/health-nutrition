@@ -8,6 +8,7 @@ public struct EntryDetailView: View {
     @ObservedObject var model: EntryDetailViewModel
     private let now: () -> Date
     private let onFinished: () -> Void
+    private let onSaved: () -> Void
     /// Called after "Try again" re-armed a delivery, so the host can run a delivery pass for it. The screen
     /// reloads the entry once it returns, so the row shows what the pass decided rather than "Waiting to send".
     private let onRetried: () async -> Void
@@ -15,11 +16,12 @@ public struct EntryDetailView: View {
 
     public init(
         model: EntryDetailViewModel, now: @escaping () -> Date = { Date() }, onFinished: @escaping () -> Void,
-        onRetried: @escaping () async -> Void = {}
+        onSaved: @escaping () -> Void = {}, onRetried: @escaping () async -> Void = {}
     ) {
         self.model = model
         self.now = now
         self.onFinished = onFinished
+        self.onSaved = onSaved
         self.onRetried = onRetried
     }
 
@@ -38,7 +40,10 @@ public struct EntryDetailView: View {
             ToolbarItem(placement: .confirmationAction) {
                 if model.isDirty {
                     Button("Save") {
-                        if model.saveDrafts(now: now()) { onFinished() }
+                        if model.saveDrafts(now: now()) {
+                            onSaved()
+                            onFinished()
+                        }
                     }
                     .accessibilityHint("Saves your change")
                 }

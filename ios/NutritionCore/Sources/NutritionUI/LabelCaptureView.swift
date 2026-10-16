@@ -26,6 +26,7 @@ public struct LabelCaptureView: View {
     /// The text typed into whichever correction field is open. The row being corrected is held by the
     /// view model, so beginning one row's correction closes the editor open on any other.
     @State private var draft = ""
+    @State private var saveNotice: SaveNotice?
     /// The serving size typed for a panel that stated none, or the one replacing a serving it did state.
     @State private var servingDraft = ""
     /// The unit a compound correction is stated in, chosen from the picker beside its amount field. It
@@ -76,6 +77,7 @@ public struct LabelCaptureView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Check the label")
+        .saveConfirmation(saveNotice)
     }
 
     /// What the panel is recorded as, read off its heading and changeable here.
@@ -230,6 +232,7 @@ public struct LabelCaptureView: View {
                     ? model.enterServingSize(text: servingDraft)
                     : model.correctServingSize(text: servingDraft)
                 if accepted {
+                    saveNotice = SaveNotice(SaveLabels.nutrientSaved)
                     servingDraft = ""
                 }
             }
@@ -545,6 +548,7 @@ public struct LabelCaptureView: View {
             HStack {
                 Button("Save") {
                     if model.correctAdditional(key: row.key, text: draft, unit: additionalUnit) {
+                        saveNotice = SaveNotice(SaveLabels.nutrientSaved)
                         model.endCorrection()
                     }
                 }
@@ -644,7 +648,10 @@ public struct LabelCaptureView: View {
             // of these become actions for the row, so tapping Cancel could save the draft as well.
             HStack {
                 Button("Save") {
-                    if model.correct(key: row.key, text: draft) { model.endCorrection() }
+                    if model.correct(key: row.key, text: draft) {
+                        saveNotice = SaveNotice(SaveLabels.nutrientSaved)
+                        model.endCorrection()
+                    }
                 }
                 .font(.body)
                 .buttonStyle(.borderless)
