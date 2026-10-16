@@ -91,8 +91,16 @@ struct IntakeRepeater {
 /// `unitSystem` only decides which unit the amount is SHOWN in. The value is never changed, so the
 /// stored number stays the number that was entered.
 enum AmountText {
-    static func describe(_ component: IntakeComponent, unitSystem: UnitSystem = .metric) -> String {
+    /// A supplement logged in spoons is stored in milliliters, so it reads back in the spoons it can only have
+    /// been logged in when the amount is an exact spoon measure (`isSupplement`). Drinks and liquids keep the
+    /// unit system's fluid ounces.
+    static func describe(
+        _ component: IntakeComponent, unitSystem: UnitSystem = .metric, isSupplement: Bool = false
+    ) -> String {
         guard !component.amount.isNaN else { return "unknown" }
+        if isSupplement, component.unit == .mL, let spoons = AmountDisplay.spoonReading(milliliters: component.amount) {
+            return spoons.text
+        }
         return AmountDisplay.display(component, system: unitSystem, roundsStoredUnit: true).text
     }
 
@@ -101,8 +109,12 @@ enum AmountText {
         return trimmed.isEmpty ? "unknown" : trimmed
     }
 
-    static func summary(_ components: [IntakeComponent], unitSystem: UnitSystem = .metric) -> String {
-        components.isEmpty ? "unknown" : components.map { describe($0, unitSystem: unitSystem) }.joined(separator: ", ")
+    static func summary(
+        _ components: [IntakeComponent], unitSystem: UnitSystem = .metric, isSupplement: Bool = false
+    ) -> String {
+        components.isEmpty ? "unknown" : components.map {
+            describe($0, unitSystem: unitSystem, isSupplement: isSupplement)
+        }.joined(separator: ", ")
     }
 
     static func title(_ components: [IntakeComponent]) -> String {

@@ -237,7 +237,7 @@ public final class TodayViewModel: ObservableObject {
                         title: snapshot?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin
                             ? QuickAddViewModel.rowTitle(components: components, product: snapshot)
                             : components.map(\.name).joined(separator: ", "),
-                        detail: components.map { AmountText.describe($0, unitSystem: unitSystem) }
+                        detail: components.map { AmountText.describe($0, unitSystem: unitSystem, isSupplement: kind == .supplement) }
                             .joined(separator: ", "),
                         occurredAt: intake.occurredAt,
                         meal: MealLabel.displayName(for: intake.meal),

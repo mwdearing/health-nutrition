@@ -214,6 +214,27 @@ public enum AmountDisplay {
             smallestAmount: system == .metric ? 1 : smallestShown)
     }
 
+    /// A volume stored in milliliters that is an exact whole or quarter number of teaspoons, or of tablespoons from
+    /// one up, read in that spoon: 19.715686375 mL is "4 tsp". Nil for anything else, so a figure that was not a
+    /// spoon measure is never relabeled. Spoons are typed input only and are stored as milliliters, so this is how a
+    /// supplement logged by the spoon reads back.
+    public static func spoonReading(milliliters: Decimal) -> DisplayAmount? {
+        guard !milliliters.isNaN, milliliters > 0,
+            let teaspoons = try? Quantity(value: milliliters, unit: .mL).converted(to: .teaspoon).value
+        else { return nil }
+        func quarters(_ value: Decimal) -> Decimal? {
+            let scaled = value * 4
+            let nearest = DisplayRounding.rounded(scaled, fractionDigits: 0)
+            let tolerance = Decimal(string: "0.000001", locale: AmountParser.locale)!
+            return abs(scaled - nearest) < tolerance && nearest > 0 ? nearest / 4 : nil
+        }
+        if teaspoons >= 3, let tablespoons = quarters(teaspoons / 3) {
+            return DisplayAmount(amount: tablespoons, unit: .tablespoon)
+        }
+        guard let exact = quarters(teaspoons), teaspoons <= 144 else { return nil }
+        return DisplayAmount(amount: exact, unit: .teaspoon)
+    }
+
     /// The stored component's amount, shown under `system`.
     public static func display(
         _ component: IntakeComponent, system: UnitSystem, roundsStoredUnit: Bool = false

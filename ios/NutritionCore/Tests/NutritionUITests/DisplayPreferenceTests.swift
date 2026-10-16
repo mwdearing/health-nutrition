@@ -244,6 +244,25 @@ final class AmountDisplayPreferenceTests: XCTestCase {
         XCTAssertEqual(text(Decimal(10), .mg, .metric), "10 mg")
     }
 
+    /// A supplement logged by the spoon is stored in milliliters; it reads back in the spoon, never in fluid
+    /// ounces, while a drink keeps the unit system's fluid ounces.
+    func testASupplementLoggedByTheSpoonReadsInSpoons() {
+        let fiber = IntakeComponent(
+            componentID: "f", name: "Fiber Powder", amount: Decimal(string: "19.715686375")!, unit: .mL)
+        XCTAssertEqual(AmountText.describe(fiber, unitSystem: .usCustomary, isSupplement: true), "4 tsp")
+        XCTAssertEqual(AmountText.describe(fiber, unitSystem: .metric, isSupplement: true), "4 tsp")
+        XCTAssertEqual(AmountText.describe(fiber, unitSystem: .usCustomary), "0.6667 fl oz")
+        XCTAssertEqual(AmountDisplay.spoonReading(milliliters: Decimal(string: "14.78676478125")!)?.text, "1 tbsp")
+        XCTAssertEqual(AmountDisplay.spoonReading(milliliters: Decimal(string: "2.464460796875")!)?.text, "0.5 tsp")
+        XCTAssertEqual(AmountDisplay.spoonReading(milliliters: Decimal(string: "9.8578431875")!)?.text, "2 tsp")
+        // A figure that is not a spoon measure is left alone, as is a supplement stored in grams.
+        XCTAssertNil(AmountDisplay.spoonReading(milliliters: 5))
+        let tea = IntakeComponent(componentID: "t", name: "Tea", amount: 5, unit: .mL)
+        XCTAssertEqual(AmountText.describe(tea, unitSystem: .usCustomary, isSupplement: true), "0.1691 fl oz")
+        let grams = IntakeComponent(componentID: "g", name: "Powder", amount: 5, unit: .g)
+        XCTAssertEqual(AmountText.describe(grams, unitSystem: .metric, isSupplement: true), "5 g")
+    }
+
     /// A Recent row's amounts follow the unit system rather than always reading metric.
     func testAmountSummaryFollowsTheUnitSystem() {
         let drink = IntakeComponent(
