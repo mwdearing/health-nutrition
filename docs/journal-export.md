@@ -18,8 +18,8 @@ rejects dates Foundation would normalize, including the skipped cutover days. Th
 not change any schema's shape.
 
 The contract lives in the repository next to the code:
-- `contracts/journal-export/v4.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
-- `contracts/journal-export/example.v4.json` - a small synthetic document that validates against it.
+- `contracts/journal-export/v5.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
+- `contracts/journal-export/example.v5.json` - a small synthetic document that validates against it.
 - `contracts/journal-export/v3.schema.json`, `v2.schema.json`, `v1.schema.json` and their examples - the version 3, 2 and 1 contracts, kept unchanged and still read.
 
 Version 2 is version 1 with one field: `provenance.kind`, which says whether a product is a `food`, a
@@ -53,7 +53,7 @@ the backup.
 `JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
-**Versions 1, 2, 3 and 4 are read**, so a backup taken before the kind, a revision's own time or saved meals
+**Versions 1, 2, 3, 4 and 5 are read**, so a backup taken before the kind, a revision's own time or saved meals
 existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
 `init(from:)`. New exports write version 5. Re-encoding a decoded older document preserves its version and omits
 the fields that version does not have (`kind` for version 1, a revision's time for versions 1 and 2, saved meals
