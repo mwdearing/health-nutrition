@@ -34,6 +34,10 @@ struct RootView: View {
     @State private var settingsAfterWelcome = false
     @State private var settingsAfterAdding = false
     @State private var welcomeAfterSettings = false
+    /// Confirms a save whose screen has closed, on the tab bar or on the screen the person lands on.
+    @State private var saveNotice: SaveNotice?
+    /// Confirms a recipe save; the recipe list stays open in its own sheet, so it confirms there.
+    @State private var recipeNotice: SaveNotice?
 
     @State private var selection: AppTab = .today
     @State private var addHome: AddHomeViewModel?
@@ -202,6 +206,7 @@ struct RootView: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
         }
+        .saveConfirmation(saveNotice)
         // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
         // name an entry into `selectedIntakeID` and one sheet presents over whichever tab is showing.
         // Hanging it on a single tab would leave the other tab's rows dead.
@@ -217,6 +222,7 @@ struct RootView: View {
                             selectedIntakeID = nil
                             reload()
                         },
+                        onSaved: { self.saveNotice = SaveNotice(SaveLabels.entrySaved) },
                         // A re-armed delivery is sent by the next pass, so one is run now; the open entry
                         // reloads its own model when it settles, so it shows what the pass decided.
                         onRetried: { await healthKitDeliveryStatus.runAndSettle() }
@@ -567,7 +573,10 @@ struct RootView: View {
         case .details(let prefill):
             if let model = prefill?.model ?? self.addIntakeModel {
                 AddIntakeView(model: model, now: { Date() },
-                    onSaved: { self.finishAdding() },
+                    onSaved: {
+                        self.saveNotice = SaveNotice(SaveLabels.loggedToDiary)
+                        self.finishAdding()
+                    },
                     onScanLabel: home.scannerAvailability.label ? {
                         self.pushLabelScanner(keeping: model)
                     } : nil)
@@ -589,6 +598,7 @@ struct RootView: View {
                     }
                 }
             )
+            .saveConfirmation(recipeNotice)
             .navigationDestination(for: RecipeRoute.self) { route in
                 switch route {
                 case .detail(let version):
@@ -607,6 +617,7 @@ struct RootView: View {
                             // was opened with, and saving writes a new one.
                             recipeNavigation.path = []
                             recipeList.load()
+                            recipeNotice = SaveNotice(SaveLabels.recipeSaved)
                         }
                     )
                 }

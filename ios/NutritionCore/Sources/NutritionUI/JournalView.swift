@@ -21,6 +21,7 @@ public struct JournalView: View {
     @State private var saveMealName = ""
     /// True once Save was tapped in the open prompt, so the prompt shows only its own refusal.
     @State private var saveMealTried = false
+    @State private var saveNotice: SaveNotice?
 
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
@@ -90,6 +91,7 @@ public struct JournalView: View {
             .scrollContentBackground(.hidden)
             .background(TokenColors.background)
             .navigationTitle("Journal")
+            .saveConfirmation(saveNotice)
             .onAppear {
                 model.load(now: now())
                 jumpNotice = nil
@@ -129,6 +131,7 @@ public struct JournalView: View {
                         jumpNotice = nil
                         saveMealTried = true
                         if model.saveMeal(target.sectionID, groupID: target.groupID, name: saveMealName) {
+                            saveNotice = SaveNotice(SaveLabels.mealSaved)
                             saveMealTarget = nil
                         }
                     }

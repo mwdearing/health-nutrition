@@ -8,6 +8,7 @@ public struct GoalsView: View {
     @State private var showingClearConfirmation = false
     @State private var showingSetup = false
     @State private var setupModel: GoalSetupViewModel?
+    @State private var saveNotice: SaveNotice?
 
     public init(model: GoalsViewModel) {
         self.model = model
@@ -58,6 +59,7 @@ public struct GoalsView: View {
         .background(TokenColors.background)
         .navigationTitle("Daily goals")
         .onAppear { self.model.load() }
+        .saveConfirmation(saveNotice)
         .onChange(of: focusedNutrient) { previous, _ in
             if let previous { self.model.commitTarget(for: previous) }
         }
@@ -66,7 +68,9 @@ public struct GoalsView: View {
             self.setupModel = nil
         }) {
             if let setupModel {
-                NavigationStack { GoalSetupView(model: setupModel) }
+                NavigationStack {
+                    GoalSetupView(model: setupModel, onSaved: { self.saveNotice = SaveNotice(SaveLabels.goalsSaved) })
+                }
             }
         }
         .confirmationDialog("Clear all goals?", isPresented: $showingClearConfirmation, titleVisibility: .visible) {

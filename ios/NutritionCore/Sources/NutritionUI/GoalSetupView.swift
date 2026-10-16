@@ -8,10 +8,12 @@ import SwiftUI
 /// saves on the last screen leave it.
 public struct GoalSetupView: View {
     @ObservedObject var model: GoalSetupViewModel
+    private let onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedKey: String?
 
-    public init(model: GoalSetupViewModel) {
+    public init(model: GoalSetupViewModel, onSaved: @escaping () -> Void = {}) {
+        self.onSaved = onSaved
         self.model = model
     }
 
@@ -174,7 +176,10 @@ public struct GoalSetupView: View {
                     PrimaryCapsule("Done") { dismiss() }
                 } else if !model.draftTargets.isEmpty {
                     PrimaryCapsule("Save goals") {
-                        if model.save() { dismiss() }
+                        if model.save() {
+                            onSaved()
+                            dismiss()
+                        }
                     }
                 }
             } else {

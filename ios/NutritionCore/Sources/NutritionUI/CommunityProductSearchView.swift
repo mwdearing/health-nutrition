@@ -16,6 +16,7 @@ public struct CommunityProductSearchView: View {
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
+    @State private var saveNotice: SaveNotice?
     /// The saved meal whose "Log to which meal" choice is up.
     @State private var mealToLog: SavedMeal?
     @FocusState private var searchFocused: Bool
@@ -125,7 +126,11 @@ public struct CommunityProductSearchView: View {
                             if model.canLoadAlternatives { Button("Load more alternatives") { Task { await model.loadAlternatives() } } }
                             if let error = model.inspectionError { Text(error) }
                             if model.inspectionNeedsRefresh { Button("Refresh shared facts") { Task { await model.refreshInspection() } } }
-                            Button("Save representative on this phone") { select(product); model.closeInspection() }
+                            Button("Save representative on this phone") {
+                                select(product)
+                                if selectionError == nil { saveNotice = SaveNotice(SaveLabels.productSaved) }
+                                model.closeInspection()
+                            }
                                 .disabled(model.inspectionNeedsRefresh)
                         }
                     }
@@ -135,6 +140,7 @@ public struct CommunityProductSearchView: View {
             }
         }
         .navigationTitle("Find products")
+        .saveConfirmation(saveNotice)
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
         // Focus after the push animation. Setting focus during the transition can be dropped.
         .task {
