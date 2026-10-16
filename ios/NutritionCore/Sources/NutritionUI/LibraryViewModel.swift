@@ -18,16 +18,28 @@ public struct RecentItemsProvider {
     /// The units entries were logged in, read once per provider, so a template carries the unit its entry used.
     private let loggedUnits: [String: [String: MeasureUnit]]
     /// The entries logged with "Save to Library" off, read once per provider, so a template built from one keeps
-    /// its copies out of Library as repeating the entry does.
-    private let keptOutOfLibrary: Set<String>
+    /// its copies out of Library as repeating the entry does. Nil when the read failed: `requireExclusions()` then
+    /// refuses the list, so a failed read never opens the exclusion.
+    private let keptOutOfLibrary: Set<String>?
 
     public init(store: JournalStore) {
         self.store = store
         self.loggedUnits = LoggedUnitIndex.load(from: store)
-        self.keptOutOfLibrary = (try? (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary()) ?? []
+        if let exclusions = store as? JournalLibraryExclusions {
+            self.keptOutOfLibrary = try? exclusions.intakeIDsNotSavedToLibrary()
+        } else {
+            self.keptOutOfLibrary = []
+        }
+    }
+
+    /// Refuses to build rows when the exclusions could not be read, so a one-tap copy of an entry kept out of
+    /// Library cannot land in Products because a read failed.
+    func requireExclusions() throws {
+        guard keptOutOfLibrary != nil else { throw JournalError.corruptRecord("library exclusions") }
     }
 
     public func recents(limit: Int = RecentItemsProvider.defaultLimit) throws -> [RecentItem] {
+        try requireExclusions()
         var seen = Set<String>()
         var result: [RecentItem] = []
         let intakes = try store.activeIntakes().filter { $0.lifecycle == .active }.sorted { $0.occurredAt > $1.occurredAt }
@@ -49,7 +61,7 @@ public struct RecentItemsProvider {
         RepeatTemplate(
             displayName: displayName(of: revision), category: intake.category, meal: intake.meal,
             components: revision.components, productSnapshotID: revision.productSnapshotID,
-            loggedUnits: loggedUnits[intake.id] ?? [:], keepsOutOfLibrary: keptOutOfLibrary.contains(intake.id))
+            loggedUnits: loggedUnits[intake.id] ?? [:], keepsOutOfLibrary: keptOutOfLibrary?.contains(intake.id) ?? false)
     }
 
     /// The row title for one revision. A quick add is always one serving of the same name, so its typed
@@ -99,6 +111,8 @@ public struct RecentItemsProvider {
             let identity = product.catalogOrigin == ProductOrigin.label_capture ? snapshotID : product.productID
             guard seenProducts.insert(identity).inserted else { continue }
             let key = Self.key(category: intake.category, revision: current, meal: intake.meal)
+            // A product kept out of Library is skipped above (the exclusion set), so a template built here never
+            // needs the `keepsOutOfLibrary` flag.
             result.append(RecentItem(
                 id: key,
                 template: RepeatTemplate(

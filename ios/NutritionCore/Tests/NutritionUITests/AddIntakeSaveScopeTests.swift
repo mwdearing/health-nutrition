@@ -209,9 +209,21 @@ final class LibraryChoiceExportTests: XCTestCase {
         let home = AddHomeViewModel(store: store, now: { self.when })
         home.load()
         let recent = try XCTUnwrap(home.recents.first)
-        XCTAssertTrue(recent.template.keepsOutOfLibrary)
         let token = try XCTUnwrap(home.quickAdd(recent))
         XCTAssertEqual(try store.intakeIDsNotSavedToLibrary(), [id, token.intakeID])
+    }
+
+    /// A normal entry's Recents template carries no exclusion, so its one-tap copy stays in Library.
+    func testOneTapFromRecentsOfANormalEntryStaysInLibrary() throws {
+        let id = UUID().uuidString.lowercased()
+        let store = try makeStore()
+        try logBar(store, id: id)
+        let home = AddHomeViewModel(store: store, now: { self.when })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertFalse(recent.template.keepsOutOfLibrary)
+        _ = try XCTUnwrap(home.quickAdd(recent))
+        XCTAssertTrue(try store.intakeIDsNotSavedToLibrary().isEmpty)
     }
 
     /// A version 4 backup has no choices, so every entry it restores is saved to Library.
