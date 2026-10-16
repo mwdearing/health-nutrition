@@ -7,6 +7,11 @@ final class AddSearchRowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
+        // A fresh install shows the welcome cover over Today until it is dismissed. Get started is what
+        // a first-time user taps, so the test does the same before it looks for Add.
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+
         // Two buttons share this label and the first one is not hittable, so the tap went nowhere. Pick
         // the hittable one, and wait for it to become hittable rather than tapping straight away.
         let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
@@ -41,7 +46,7 @@ final class AddSearchRowUITests: XCTestCase {
     private func describeAddState(_ app: XCUIApplication) -> String {
         let buttons = app.buttons.allElementsBoundByIndex
             .map { "\($0.label)|id=\($0.identifier)|hittable=\($0.isHittable)" }
-            .filter { $0.localizedCaseInsensitiveContains("add") || $0.localizedCaseInsensitiveContains("search") }
+            .filter { $0.localizedCaseInsensitiveContains("add") || $0.localizedCaseInsensitiveContains("search") || $0.localizedCaseInsensitiveContains("started") || $0.localizedCaseInsensitiveContains("restore") }
         let tabs = app.tabBars.buttons.allElementsBoundByIndex.map { $0.label }
         return "Add-related buttons: [\(buttons.joined(separator: "; "))] tab bar: [\(tabs.joined(separator: ", "))] sheets: \(app.sheets.count)"
     }
