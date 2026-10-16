@@ -80,6 +80,11 @@ on:
         required: false
         default: ""
         type: string
+      scheme:
+        description: "Xcode scheme to test (empty uses HealthNutrition)"
+        required: false
+        default: HealthNutrition
+        type: string
 
 permissions:
   contents: read
@@ -195,7 +200,8 @@ jobs:
         working-directory: ios/HealthNutrition
         env:
           SIMULATOR: ${{ steps.simulator.outputs.name }}
-        run: xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutrition -disableAutomaticPackageResolution -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO test
+          SCHEME: ${{ inputs.scheme || 'HealthNutrition' }}
+        run: xcodebuild -project HealthNutrition.xcodeproj -scheme "$SCHEME" -disableAutomaticPackageResolution -destination "platform=iOS Simulator,name=$SIMULATOR" CODE_SIGNING_ALLOWED=NO test
 
   # A Release build for a real device, unsigned. The signed upload archives in Release and cannot show its
   # log (the Actions log is public), so an error that only the optimizer raises (for example a view body the
