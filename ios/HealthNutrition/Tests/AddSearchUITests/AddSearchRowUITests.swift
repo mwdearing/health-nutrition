@@ -7,9 +7,20 @@ final class AddSearchRowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        let addButton = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement")).firstMatch
-        XCTAssertTrue(addButton.waitForExistence(timeout: 15), "the Add button is not on the Today screen")
-        addButton.tap()
+        // Two buttons share this label and the first one is not hittable, so the tap went nowhere. Pick
+        // the hittable one, and wait for it to become hittable rather than tapping straight away.
+        let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+        let hittableAdd = NSPredicate(format: "isHittable == true")
+        let addButton = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
+        if addButton == nil {
+            let deadline = Date().addingTimeInterval(15)
+            while Date() < deadline, !addCandidates.allElementsBoundByIndex.contains(where: { $0.exists && $0.isHittable }) {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+            }
+        }
+        let tappable = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
+        XCTAssertNotNil(tappable, "no hittable Add button on the Today screen (matching: \(hittableAdd))")
+        tappable?.tap()
 
         let row = app.buttons.matching(NSPredicate(format: "label == %@", "Search foods, brands, drinks")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10),
