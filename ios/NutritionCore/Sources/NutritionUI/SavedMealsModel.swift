@@ -229,10 +229,10 @@ public final class SavedMealsModel: ObservableObject {
                 + (count == 1 ? "it" : "them") + " there."
     }
 
-    /// Reloads first and sets the message after, so the reload can never clear the reason it gives.
-    @discardableResult
     static let savedWithoutUnitsMessage = "The meal was saved, but the units you entered could not be kept."
 
+    /// Reloads first and sets the message after, so the reload can never clear the reason it gives.
+    @discardableResult
     private func finish(failure message: String) -> Bool {
         load()
         notice = message
