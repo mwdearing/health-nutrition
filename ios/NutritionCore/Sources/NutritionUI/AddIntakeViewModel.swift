@@ -176,6 +176,21 @@ public final class AddIntakeViewModel: ObservableObject {
     public var saveBlockedMessage: String? {
         hasAttemptedSave && (nameError != nil || amountError != nil) ? Self.fixFieldsMessage : nil
     }
+
+    /// What Save does beyond the Diary entry, shown above the Save button. A product from a barcode, a label or a
+    /// search is also saved to Library > Products; a typed-in or quick-add entry is not. When Share labels is on, a
+    /// captured label is also sent to the community catalog.
+    public var saveScopeMessage: String {
+        let product = productSnapshot()
+        let savedToProducts = product != nil && product?.catalogOrigin != "manual"
+        var sentences = [savedToProducts
+            ? "Adds one entry to your Diary. The product is also saved to Library > Products."
+            : "Adds one entry to your Diary only."]
+        if labelValues != nil, storedProduct == nil, isSharingAllowed() {
+            sentences.append("Share labels is on, so saving this label also sends its product name, brand, barcode, serving text and nutrient amounts to the community catalog.")
+        }
+        return sentences.joined(separator: " ")
+    }
     /// Whether a tap of Save has been made on this form. Once it has, every field that is wrong shows its error.
     @Published public private(set) var hasAttemptedSave = false
     /// The fields edited so far, and the fields focus has left since. An error shows under a field once

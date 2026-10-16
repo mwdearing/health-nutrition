@@ -230,11 +230,15 @@ public struct AddIntakeView: View {
                         .foregroundStyle(TokenColors.error)
                         .accessibilityLabel("Cannot save: \(message)")
                 }
+                Text(model.saveScopeMessage)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 PrimaryCapsule("Save") {
                     if self.model.save(now: self.now()) { self.onSaved() }
                 }
                 .accessibilityLabel("Save")
-                .accessibilityHint("Checks the amount and adds the entry to the journal")
+                .accessibilityHint("Adds this entry to the Diary")
             }
             .padding(DesignSpacing.m)
             .background(TokenColors.background)
