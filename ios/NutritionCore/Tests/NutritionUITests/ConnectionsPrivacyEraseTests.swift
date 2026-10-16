@@ -340,7 +340,6 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(ConnectionsPrivacyViewModel.eraseButtonTitle, "Erase all data")
     }
 
-    /// A copy the person already shared or saved elsewhere is not reachable from here, and saying
     /// Erasing the journal does not remove Health samples, so both erase surfaces must say so.
     func testTheConfirmationAndFooterSayHealthSamplesStay() {
         for text in [
@@ -352,6 +351,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         }
     }
 
+    /// A copy the person already shared or saved elsewhere is not reachable from here, and saying
     /// otherwise would let someone erase their journal and leave a shared copy behind not knowing.
     func testTheConfirmationAndFooterWarnThatASharedCopyIsNotErased() {
         let texts = [

@@ -425,13 +425,7 @@ public final class EntryDetailViewModel: ObservableObject {
             fieldErrors = errors
             guard errors.isEmpty, !parsed.isEmpty else { return false }
             var product: ProductDefinition?
-            // A product link that cannot be read is refused, not dropped: the new revision would lose the product.
-            if let snapshotID = current?.productSnapshotID {
-                guard let found = try store.product(snapshotID: snapshotID) else {
-                    throw IntakeRepeatError.productUnavailable
-                }
-                product = found
-            }
+            if let snapshotID = current?.productSnapshotID { product = try store.product(snapshotID: snapshotID) }
             let correctedTime: Date? = storedOccurredAt == nil || storedOccurredAt == occurredAt
                 ? nil
                 : occurredAt
