@@ -70,7 +70,10 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
 
     /// A template's amounts as the reader's unit system shows them.
     public func amountSummary(of template: RepeatTemplate) -> String {
-        AmountText.summary(template.components, unitSystem: preferences.unitSystem)
+        let kind = template.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+        return AmountText.summary(
+            template.components, unitSystem: preferences.unitSystem,
+            loggedUnits: kind == .supplement ? template.loggedUnits : [:])
     }
 
     public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {
@@ -85,8 +88,10 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         if prefill.components.count > 1 {
             // The current Details form has one amount. Present the whole recorded combination as
             // one serving, spelling out all original amounts rather than silently dropping any.
+            let comboKind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
             model.name = prefill.components.map {
-                "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem)))"
+                let loggedUnit = comboKind == .supplement ? prefill.loggedUnits[$0.componentID] : nil
+                return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit)))"
             }.joined(separator: ", ")
             model.category = prefill.category
             model.amountText = "1"
@@ -119,7 +124,10 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         }
         model.name = prefill.displayName
         model.category = prefill.category
-        model.prefillAmount(component, system: preferences.unitSystem)
+        let kind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+        model.prefillAmount(
+            component, system: preferences.unitSystem,
+            loggedUnit: kind == .supplement ? prefill.loggedUnits[component.componentID] : nil)
         return model
     }
 

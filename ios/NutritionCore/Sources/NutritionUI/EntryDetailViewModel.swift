@@ -190,6 +190,8 @@ public final class EntryDetailViewModel: ObservableObject {
     /// The amount drafts as `load` seeded them, so `isDirty` compares what the person has typed with
     /// what the entry states.
     private var loadedDrafts: [String: String] = [:]
+    /// The unit each component was logged in, read when the entry loads. Only a supplement reads back in it.
+    private var loggedUnits: [String: MeasureUnit] = [:]
     /// The zone the entry's time is a wall clock in, as the view shows and edits it.
     ///
     /// The picker is bound to this rather than to the device zone, because the stored time is a wall
@@ -256,6 +258,7 @@ public final class EntryDetailViewModel: ObservableObject {
             productName = snapshot?.name
             brand = snapshot?.brand
             kind = snapshot?.kind ?? .food
+            loggedUnits = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
             // The field reads at the digits a reading carries (354.9 mL, not 354.88235475 mL). Untouched, a
@@ -388,6 +391,12 @@ public final class EntryDetailViewModel: ObservableObject {
         // not from the rounded text the field was seeded with.
         let untouched = Self.sameAmountText(loadedDrafts[componentID] ?? "", draft)
         let amount = untouched ? (AmountParser.parse(row.amountText) ?? typed) : typed
+        // A supplement logged by the spoon reads back in that spoon, so the line never shows fluid ounces for it.
+        if kind == .supplement, row.unit == .mL, let logged = loggedUnits[componentID],
+            let reading = AmountDisplay.reading(milliliters: amount, loggedAs: logged)
+        {
+            return reading.text
+        }
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
     }
 

@@ -953,7 +953,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
         [
             JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self,
             JournalSchemaV5.self, JournalSchemaV6.self, JournalSchemaV7.self, JournalSchemaV8.self,
-            JournalSchemaV9.self,
+            JournalSchemaV9.self, JournalSchemaV10.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -978,6 +978,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: JournalSchemaV6.self, toVersion: JournalSchemaV7.self),
             .lightweight(fromVersion: JournalSchemaV7.self, toVersion: JournalSchemaV8.self),
             .lightweight(fromVersion: JournalSchemaV8.self, toVersion: JournalSchemaV9.self),
+            .lightweight(fromVersion: JournalSchemaV9.self, toVersion: JournalSchemaV10.self),
         ]
     }
 
@@ -1075,6 +1076,7 @@ private struct StoredNutrient: Codable {
 /// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
 /// initializer.
 public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWrittenLedger, JournalSnapshotSource, JournalLibraryExclusions,
+    JournalLoggedUnits,
     JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalRestoreProgress, JournalErasing,
     JournalMealEditing,
     @unchecked Sendable
@@ -1098,7 +1100,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
-        let schema = Schema(versionedSchema: JournalSchemaV9.self)
+        let schema = Schema(versionedSchema: JournalSchemaV10.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -1438,6 +1440,20 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             for id in Set(plan.keptOutOfLibrary) where restoredIDs.contains(id) {
                 context.insert(JournalSchemaV9.LibraryExclusionRecord(intakeID: id))
             }
+            // The same for the units entries were logged in, but only for the owners this file restores: the
+            // phone's own favorites keep theirs when the file carries none.
+            let restoredOwnerIDs = restoredIDs.union(plan.favorites.map(\.id))
+                .union(plan.savedMeals.flatMap(\.items).map(\.id))
+            let ownersWithUnits = Set(plan.loggedUnits.map(\.intakeID)).intersection(restoredOwnerIDs)
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>())
+            where ownersWithUnits.contains(row.intakeID) {
+                context.delete(row)
+            }
+            for loggedUnit in plan.loggedUnits where restoredOwnerIDs.contains(loggedUnit.intakeID) {
+                context.insert(JournalSchemaV10.LoggedUnitRecord(
+                    intakeID: loggedUnit.intakeID, componentID: loggedUnit.componentID,
+                    unitSymbol: loggedUnit.unit.symbol))
+            }
             var restored: [JournalRestoredIntake] = []
             var insertedProducts: [String] = []
             for product in plan.products {
@@ -1477,7 +1493,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                         intakeID: tombstone.id, lifecycle: .deleted,
                         currentRevision: tombstone.currentRevision, revisionNumbers: []))
             }
-            return JournalRestoreReceipt(intakes: restored, insertedProductSnapshotIDs: insertedProducts)
+            let ownersWritten = Array(ownersWithUnits.subtracting(restoredIDs))
+            return JournalRestoreReceipt(
+                intakes: restored, insertedProductSnapshotIDs: insertedProducts, loggedUnitOwnerIDs: ownersWritten)
         }
     }
 
@@ -1514,7 +1532,17 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                         context.delete(row)
                     }
                 }
+                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> { $0.intakeID == intakeID })) {
+                    context.delete(row)
+                }
                 context.delete(record)
+            }
+            for ownerID in receipt.loggedUnitOwnerIDs {
+                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> { $0.intakeID == ownerID })) {
+                    context.delete(row)
+                }
             }
             for snapshotID in receipt.insertedProductSnapshotIDs {
                 for row in try context.fetch(FetchDescriptor<ProductRecord>(
@@ -1606,6 +1634,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         // fails the erase before anything is deleted, so the screen reports it.
         try clearRestoreInProgress()
         _ = try commit { context in
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
@@ -2084,6 +2113,32 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     public func keepOutOfLibrary(intakeID: String) throws {
         try commit { context in
             context.insert(JournalSchemaV9.LibraryExclusionRecord(intakeID: intakeID))
+        }
+    }
+
+    /// Records the unit a component was logged in. Written before the entry, like the Library choice.
+    public func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
+        let ownerID = loggedUnit.intakeID
+        let componentID = loggedUnit.componentID
+        try commit { context in
+            // One unit per owner and component: a second write replaces the first, so the backup never meets two.
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
+                    $0.intakeID == ownerID && $0.componentID == componentID
+                })) {
+                context.delete(row)
+            }
+            context.insert(JournalSchemaV10.LoggedUnitRecord(
+                intakeID: ownerID, componentID: componentID, unitSymbol: loggedUnit.unit.symbol))
+        }
+    }
+
+    /// Every recorded unit. A row whose symbol is not a unit this build knows is left out, so it reads as stored.
+    public func loggedUnits() throws -> [JournalLoggedUnit] {
+        let context = ModelContext(try openContainer())
+        return try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()).compactMap { row in
+            guard let unit = try? MeasureUnit(symbol: row.unitSymbol) else { return nil }
+            return JournalLoggedUnit(intakeID: row.intakeID, componentID: row.componentID, unit: unit)
         }
     }
 

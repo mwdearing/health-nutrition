@@ -214,6 +214,19 @@ public enum AmountDisplay {
             smallestAmount: system == .metric ? 1 : smallestShown)
     }
 
+    /// A volume stored in milliliters, read in the unit it was logged in: 19.715686375 mL logged as 4 tsp reads "4 tsp".
+    /// The quantity is the same, so this is the stored amount converted to `loggedUnit` and rounded like any other
+    /// reading. Nil when the stored unit is not milliliters or the logged unit is not a volume.
+    public static func reading(milliliters amount: Decimal, loggedAs loggedUnit: MeasureUnit) -> DisplayAmount? {
+        guard !amount.isNaN, loggedUnit.dimension == .volume, loggedUnit != .mL,
+            let converted = try? Quantity(value: amount, unit: .mL).converted(to: loggedUnit), !converted.value.isNaN
+        else { return nil }
+        let rounded = DisplayRounding.rounded(
+            converted.value, fractionDigits: fractionDigits(for: converted.value))
+        let tooSmall = converted.value != 0 && abs(rounded) < smallestShown
+        return DisplayAmount(amount: rounded, unit: loggedUnit, isBelowSmallest: tooSmall)
+    }
+
     /// The stored component's amount, shown under `system`.
     public static func display(
         _ component: IntakeComponent, system: UnitSystem, roundsStoredUnit: Bool = false

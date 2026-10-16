@@ -15,9 +15,12 @@ public struct RecentItem: Equatable, Identifiable {
 public struct RecentItemsProvider {
     public static let defaultLimit = 20
     private let store: JournalStore
+    /// The units entries were logged in, read once per provider, so a template carries the unit its entry used.
+    private let loggedUnits: [String: [String: MeasureUnit]]
 
     public init(store: JournalStore) {
         self.store = store
+        self.loggedUnits = LoggedUnitIndex.load(from: store)
     }
 
     public func recents(limit: Int = RecentItemsProvider.defaultLimit) throws -> [RecentItem] {
@@ -41,7 +44,8 @@ public struct RecentItemsProvider {
     func template(intake: Intake, revision: IntakeRevision) -> RepeatTemplate {
         RepeatTemplate(
             displayName: displayName(of: revision), category: intake.category, meal: intake.meal,
-            components: revision.components, productSnapshotID: revision.productSnapshotID)
+            components: revision.components, productSnapshotID: revision.productSnapshotID,
+            loggedUnits: loggedUnits[intake.id] ?? [:])
     }
 
     /// The row title for one revision. A quick add is always one serving of the same name, so its typed
@@ -95,7 +99,8 @@ public struct RecentItemsProvider {
                 id: key,
                 template: RepeatTemplate(
                     displayName: AmountText.title(current.components), category: intake.category, meal: intake.meal,
-                    components: current.components, productSnapshotID: snapshotID),
+                    components: current.components, productSnapshotID: snapshotID,
+                    loggedUnits: loggedUnits[intake.id] ?? [:]),
                 lastUsedAt: intake.occurredAt))
         }
         return result.sorted {
@@ -278,8 +283,12 @@ public final class LibraryViewModel: ObservableObject {
 
     /// The amounts, then the meal when the template states one: two rows that differ only by meal
     /// (a Breakfast and a Dinner of the same food) have to be told apart on the row itself.
-    static func detail(_ template: RepeatTemplate, unitSystem: UnitSystem = .metric) -> String {
-        let amounts = AmountText.summary(template.components, unitSystem: unitSystem)
+    static func detail(
+        _ template: RepeatTemplate, unitSystem: UnitSystem = .metric, isSupplement: Bool = false
+    ) -> String {
+        // Only a supplement reads back in the unit it was logged in; a drink keeps the unit system's.
+        let amounts = AmountText.summary(
+            template.components, unitSystem: unitSystem, loggedUnits: isSupplement ? template.loggedUnits : [:])
         guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
         return "\(amounts) · \(meal)"
     }
@@ -292,9 +301,10 @@ public final class LibraryViewModel: ObservableObject {
             let recents = try RecentItemsProvider(store: store).recents()
             let foods = try RecentItemsProvider(store: store).foods()
             let frequents = try FrequentItemsProvider(store: store).frequents(limit: .max)
+            let loggedUnitIndex = LoggedUnitIndex.load(from: store)
             let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
-                RepeatTemplate(favorite: favorite) ?? RepeatTemplate(
+                RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex) ?? RepeatTemplate(
                     displayName: favorite.displayName, category: favorite.category, meal: favorite.meal, components: [],
                     productSnapshotID: favorite.productSnapshotID)
             }
@@ -316,13 +326,13 @@ public final class LibraryViewModel: ObservableObject {
                 let template = favoriteTemplates[index]
                 return LibraryItem(
                     id: "favorite:\(favorite.id)", title: favorite.displayName,
-                    detail: Self.detail(template, unitSystem: preferences.unitSystem), isFavorite: true, template: template,
+                    detail: Self.detail(template, unitSystem: preferences.unitSystem, isSupplement: kind(of: template) == .supplement), isFavorite: true, template: template,
                     kind: kind(of: template))
             }
             let recentItems = recents.map { recent -> LibraryItem in
                 LibraryItem(
                     id: "recent:\(recent.id)", title: recent.template.displayName,
-                    detail: Self.detail(recent.template, unitSystem: preferences.unitSystem),
+                    detail: Self.detail(recent.template, unitSystem: preferences.unitSystem, isSupplement: kind(of: recent.template) == .supplement),
                     isFavorite: favoriteKeys.contains(recent.id), template: recent.template,
                     kind: kind(of: recent.template))
             }
@@ -336,7 +346,7 @@ public final class LibraryViewModel: ObservableObject {
             func foodItem(_ food: RecentItem) -> LibraryItem {
                 LibraryItem(
                     id: "food:\(food.id)", title: food.template.displayName,
-                    detail: Self.detail(food.template, unitSystem: preferences.unitSystem),
+                    detail: Self.detail(food.template, unitSystem: preferences.unitSystem, isSupplement: kind(of: food.template) == .supplement),
                     isFavorite: favoriteKeys.contains(food.id), template: food.template,
                     kind: kind(of: food.template))
             }
@@ -345,7 +355,7 @@ public final class LibraryViewModel: ObservableObject {
             frequentItems = frequents.map { frequent -> LibraryItem in
                 LibraryItem(
                     id: "frequent:\(frequent.id)", title: frequent.template.displayName,
-                    detail: Self.detail(frequent.template, unitSystem: preferences.unitSystem),
+                    detail: Self.detail(frequent.template, unitSystem: preferences.unitSystem, isSupplement: kind(of: frequent.template) == .supplement),
                     isFavorite: favoriteKeys.contains(frequent.id), template: frequent.template,
                     kind: kind(of: frequent.template))
             }
@@ -527,6 +537,14 @@ public final class LibraryViewModel: ObservableObject {
             if try favorites.list().contains(where: { Self.key(of: $0) == key }) {
                 load()
                 return
+            }
+            // The units the entry was logged in follow it into the favorite, keyed by the favorite's own id.
+            if let units = store as? JournalLoggedUnits {
+                for component in item.template.components where component.unit == .mL {
+                    guard let loggedUnit = item.template.loggedUnits[component.componentID] else { continue }
+                    try units.recordLoggedUnit(JournalLoggedUnit(
+                        intakeID: favorite.id, componentID: component.componentID, unit: loggedUnit))
+                }
             }
             try favorites.add(favorite)
             load()

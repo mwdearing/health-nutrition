@@ -215,10 +215,14 @@ public final class AddIntakeViewModel: ObservableObject {
     private var prefillBacking: (shownAmount: Decimal, shownUnit: MeasureUnit, storedAmount: Decimal, storedUnit: MeasureUnit)?
 
     /// Shows a stored amount in the reader's unit while keeping the exact stored quantity behind it.
-    func prefillAmount(_ component: IntakeComponent, system: UnitSystem) {
+    func prefillAmount(_ component: IntakeComponent, system: UnitSystem, loggedUnit: MeasureUnit? = nil) {
         isPrefilling = true
         defer { isPrefilling = false }
-        let shown = AmountDisplay.display(component, system: system, roundsStoredUnit: true)
+        // An amount logged by the spoon opens in that spoon, with the exact stored milliliters behind it.
+        let shown = component.unit == .mL
+            ? loggedUnit.flatMap { AmountDisplay.reading(milliliters: component.amount, loggedAs: $0) }
+                ?? AmountDisplay.display(component, system: system, roundsStoredUnit: true)
+            : AmountDisplay.display(component, system: system, roundsStoredUnit: true)
         guard !shown.isBelowSmallest, !component.amount.isNaN else {
             amountText = DecimalFormatting.text(component.amount)
             unit = component.unit
@@ -230,6 +234,8 @@ public final class AddIntakeViewModel: ObservableObject {
         prefillBacking = (shown.amount, shown.unit, component.amount, component.unit)
     }
     private var leftFields: Set<AddIntakeField> = []
+    /// The volume units whose typed amount is stored as milliliters and worth reading back as typed.
+    static let loggedVolumeUnits: Set<MeasureUnit> = [.teaspoon, .tablespoon, .cup, .flOz]
     @Published public private(set) var lookupState: BarcodeLookupState = .idle
     /// Nutrients prefilled from the last successful lookup; a nutrient the source did not give
     /// stays `.unknown` and is never stored as zero.
@@ -815,7 +821,14 @@ public final class AddIntakeViewModel: ObservableObject {
             name: trimmedName, amount: storedAmount, unit: storedUnit)
         // The exclusion is written first: if it fails nothing is saved, and a retry cannot make a second entry.
         let keepsOutOfLibrary = canChooseLibrary && !savesToLibrary
+        // A volume typed in a spoon, a cup or fluid ounces is stored as milliliters; the unit it was typed in is
+        // recorded beside it so a supplement reads back as it was logged. Written first, like the choice above.
+        let loggedUnit: MeasureUnit? = storedUnit == .mL && Self.loggedVolumeUnits.contains(unit) ? unit : nil
         do {
+            if let loggedUnit, let units = store as? JournalLoggedUnits {
+                try units.recordLoggedUnit(JournalLoggedUnit(
+                    intakeID: intake.id, componentID: component.componentID, unit: loggedUnit))
+            }
             if keepsOutOfLibrary {
                 guard let exclusions = store as? JournalLibraryExclusions else {
                     saveError = "Could not save the entry."

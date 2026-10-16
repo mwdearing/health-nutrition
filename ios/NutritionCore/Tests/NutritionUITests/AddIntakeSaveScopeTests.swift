@@ -197,3 +197,194 @@ final class LibraryChoiceExportTests: XCTestCase {
         XCTAssertTrue(try restored.intakeIDsNotSavedToLibrary().isEmpty)
     }
 }
+
+@MainActor
+final class LoggedUnitTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeStore() throws -> SwiftDataJournalStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+    }
+
+    private func logFiber(_ store: SwiftDataJournalStore, unit: MeasureUnit, amount: String) throws -> String {
+        let model = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        model.name = "Fiber Powder"
+        model.amountText = amount
+        model.unit = unit
+        XCTAssertTrue(model.save(now: now))
+        return try XCTUnwrap(store.activeIntakes().first).id
+    }
+
+    /// An amount typed in a spoon is stored as milliliters and its unit is recorded, so it can read back as typed.
+    func testASpoonAmountIsStoredAsMillilitersAndItsUnitIsRecorded() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let component = try XCTUnwrap(store.revisions(of: id).first?.components.first)
+        XCTAssertEqual(component.unit, .mL)
+        XCTAssertEqual(component.amount, Decimal(string: "19.715686375"))
+        XCTAssertEqual(
+            try store.loggedUnits(),
+            [JournalLoggedUnit(intakeID: id, componentID: component.componentID, unit: .teaspoon)])
+    }
+
+    /// A mass or a milliliter amount typed as such records nothing, so it reads as stored.
+    func testAnAmountTypedInTheStoredUnitRecordsNoLoggedUnit() throws {
+        let store = try makeStore()
+        _ = try logFiber(store, unit: .g, amount: "5")
+        XCTAssertTrue(try store.loggedUnits().isEmpty)
+        let otherStore = try makeStore()
+        _ = try logFiber(otherStore, unit: .mL, amount: "20")
+        XCTAssertTrue(try otherStore.loggedUnits().isEmpty)
+    }
+
+    /// A backup carries the logged unit and a restore writes it back; a version 5 backup has none.
+    func testALoggedUnitSurvivesABackupAndRestore() throws {
+        let source = try makeStore()
+        let id = try logFiber(source, unit: .teaspoon, amount: "4")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+        let restored = try makeStore()
+        _ = try JournalImporter.importExport(data, into: restored, favorites: nil)
+        XCTAssertEqual(try restored.loggedUnits().map(\.intakeID), [id])
+        XCTAssertEqual(try restored.loggedUnits().map(\.unit), [.teaspoon])
+
+        var older = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
+        older.schemaVersion = 5
+        let target = try makeStore()
+        _ = try JournalImporter.importExport(try JournalExporter.encode(older), into: target, favorites: nil)
+        XCTAssertEqual(try target.activeIntakes().map(\.id), [id])
+        XCTAssertTrue(try target.loggedUnits().isEmpty)
+    }
+
+    /// Starring a spoon-logged supplement keeps the unit with the favorite, so it still reads as logged.
+    func testAFavoriteKeepsTheLoggedUnit() throws {
+        let store = try makeStore()
+        _ = try logFiber(store, unit: .teaspoon, amount: "4")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let library = LibraryViewModel(store: store, favorites: favorites)
+        library.load()
+        let recent = try XCTUnwrap(library.sections.first { $0.title == "Recents" }?.items.first)
+        library.addFavorite(recent)
+        let favorite = try XCTUnwrap(try favorites.list().first)
+        XCTAssertEqual(try store.loggedUnits().filter { $0.intakeID == favorite.id }.map(\.unit), [.teaspoon])
+        let template = try XCTUnwrap(RepeatTemplate(
+            favorite: favorite, loggedUnitIndex: LoggedUnitIndex.load(from: store)))
+        XCTAssertEqual(AmountText.summary(template.components, loggedUnits: template.loggedUnits), "4 tsp")
+    }
+
+    /// Repeating an entry logged by the spoon logs the same spoon again.
+    func testRepeatingAnEntryKeepsTheLoggedUnit() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let home = AddHomeViewModel(store: store, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertEqual(recent.template.loggedUnits.values.first, .teaspoon)
+        let token = try XCTUnwrap(home.quickAdd(recent))
+        XCTAssertEqual(
+            Set(try store.loggedUnits().map(\.intakeID)), [id, token.intakeID])
+    }
+
+    /// A version 6 file naming a unit outside tsp, tbsp, cup and fl oz is refused whole.
+    func testAnImportedLoggedUnitOutsideTheContractIsRefused() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .teaspoon, amount: "4")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+        for symbol in ["L", "g"] {
+            var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+            var units = try XCTUnwrap(root["logged_units"] as? [[String: Any]])
+            units[0]["unit"] = symbol
+            root["logged_units"] = units
+            let target = try makeStore()
+            XCTAssertThrowsError(try JournalImporter.importExport(
+                try JSONSerialization.data(withJSONObject: root), into: target, favorites: nil), symbol)
+            XCTAssertTrue(try target.activeIntakes().isEmpty)
+        }
+    }
+
+    /// The same component listed twice is refused whole, and the exporter refuses to write a unit outside the four.
+    func testADuplicateLoggedUnitIsRefusedAndTheEncoderChecksTheUnit() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .teaspoon, amount: "4")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var units = try XCTUnwrap(root["logged_units"] as? [[String: Any]])
+        var other = units[0]
+        other["unit"] = "tbsp"
+        units.append(other)
+        root["logged_units"] = units
+        let target = try makeStore()
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try JSONSerialization.data(withJSONObject: root), into: target, favorites: nil))
+        XCTAssertTrue(try target.activeIntakes().isEmpty)
+
+        var document = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
+        document.loggedUnits[0].unit = "L"
+        XCTAssertThrowsError(try JournalExporter.encode(document))
+    }
+
+    /// A backup that carries a favorite carries its logged unit, and a restore writes it back under the same id.
+    func testAFavoritesLoggedUnitSurvivesABackupAndRestore() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .teaspoon, amount: "4")
+        let sourceFavorites = try makeFavorites()
+        let library = LibraryViewModel(store: source, favorites: sourceFavorites)
+        library.load()
+        library.addFavorite(try XCTUnwrap(library.sections.first { $0.title == "Recents" }?.items.first))
+        let favoriteID = try XCTUnwrap(try sourceFavorites.list().first).id
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, favorites: sourceFavorites, appVersion: "0.1.0", exportedAt: now))
+
+        let restored = try makeStore()
+        let restoredFavorites = try makeFavorites()
+        _ = try JournalImporter.importExport(data, into: restored, favorites: restoredFavorites)
+        XCTAssertTrue(try restored.loggedUnits().contains {
+            $0.intakeID == favoriteID && $0.unit == .teaspoon
+        })
+    }
+
+    /// A restore that carries no favorites leaves the phone's own favorites' units alone.
+    func testARestoreKeepsTheUnitsOfFavoritesItDoesNotCarry() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .g, amount: "5")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+        let target = try makeStore()
+        let own = JournalLoggedUnit(intakeID: "an-existing-favorite", componentID: "fiber-powder", unit: .teaspoon)
+        try target.recordLoggedUnit(own)
+        _ = try JournalImporter.importExport(data, into: target, favorites: nil)
+        XCTAssertEqual(try target.loggedUnits(), [own])
+    }
+
+    /// A multi-item prefill names its amounts in the unit system, not a logged unit, unless it is a supplement.
+    func testAMultiItemPrefillOfANonSupplementIgnoresLoggedUnits() throws {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setUnitSystem(.usCustomary)
+        let home = AddHomeViewModel(store: try makeStore(), preferences: preferences, now: { self.now })
+        let template = RepeatTemplate(
+            displayName: "Mix", category: "food",
+            components: [
+                IntakeComponent(componentID: "a", name: "A", amount: Decimal(string: "19.715686375")!, unit: .mL),
+                IntakeComponent(componentID: "b", name: "B", amount: 5, unit: .g),
+            ],
+            loggedUnits: ["a": .teaspoon])
+        let details = try home.makeDetails(prefill: template, now: now)
+        XCTAssertTrue(details.name.contains("0.6667 fl oz"), details.name)
+        XCTAssertFalse(details.name.contains("tsp"), details.name)
+    }
+
+    private func makeFavorites() throws -> SwiftDataFavoritesStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+    }
+}

@@ -137,6 +137,17 @@ enum JournalImportV5Keys {
     static let root: Set<String> = JournalImportV4Keys.root.union(["kept_out_of_library"])
 }
 
+/// The keys each object in a version 6 export has, taken from `contracts/journal-export/v6.schema.json`.
+///
+/// Version 6 is version 5 with `logged_units` at the root: the unit each spoon, cup or fluid-ounce component was
+/// logged in. Every other object is as it was in version 5.
+enum JournalImportV6Keys {
+    static let root: Set<String> = JournalImportV5Keys.root.union(["logged_units"])
+    static let loggedUnit: Set<String> = ["intake_id", "component_id", "unit"]
+    /// The units `logged_units` may name, as `contracts/journal-export/v6.schema.json` lists them.
+    static let loggedUnitSymbols: Set<String> = ["tsp", "tbsp", "cup", "fl oz"]
+}
+
 /// The keys each object in a version 4 export has, taken from `contracts/journal-export/v4.schema.json`.
 ///
 /// Version 4 is version 3 with `saved_meals` at the root, each a saved meal whose items have a favorite's keys.
@@ -438,7 +449,7 @@ public enum JournalImporter {
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
         let revisionKeys = version >= 3 ? JournalImportV3Keys.revision : JournalImportV1Keys.revision
-        let rootKeys = version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
+        let rootKeys = version >= 6 ? JournalImportV6Keys.root : version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
         try checkObject(root, keys: rootKeys, path: "$", version: version)
         try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
@@ -490,6 +501,13 @@ public enum JournalImporter {
             try checkMinimumLengthOne(
                 favorite, keys: ["id", "display_name", "category"], path: path, version: version)
             try checkComponents(favorite["components"], path: "\(path).components", version: version)
+        }
+        if version >= 6 {
+            for (index, item) in try objects(root["logged_units"], path: "$.logged_units").enumerated() {
+                let path = "$.logged_units[\(index)]"
+                try checkObject(
+                    try object(item, path: path), keys: JournalImportV6Keys.loggedUnit, path: path, version: version)
+            }
         }
         if version >= 5 {
             guard root["kept_out_of_library"] is [String] else {
@@ -720,7 +738,23 @@ public enum JournalImporter {
             entries: entries, tombstones: tombstones,
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites,
             savedMeals: try restoredSavedMeals(document.savedMeals, products: productsByID),
-            keptOutOfLibrary: document.keptOutOfLibrary)
+            keptOutOfLibrary: document.keptOutOfLibrary,
+            loggedUnits: try restoredLoggedUnits(document.loggedUnits))
+    }
+
+    /// The units a version 6 file carries, refused as a whole when one is not a unit this build knows.
+    private static func restoredLoggedUnits(_ items: [JournalExportLoggedUnit]) throws -> [JournalLoggedUnit] {
+        var seen = Set<String>()
+        return try items.map { item in
+            guard JournalImportV6Keys.loggedUnitSymbols.contains(item.unit), !item.intakeID.isEmpty,
+                !item.componentID.isEmpty, let unit = try? MeasureUnit(symbol: item.unit),
+                seen.insert(item.intakeID + "\u{1F}" + item.componentID).inserted
+            else {
+                throw JournalImportError.malformed(
+                    "$.logged_units: \(item.unit) is not one of tsp, tbsp, cup or fl oz, an id is empty, or a component is listed twice")
+            }
+            return JournalLoggedUnit(intakeID: item.intakeID, componentID: item.componentID, unit: unit)
+        }
     }
 
     /// The saved meals a version 4 file carries, refused as a whole when any breaks a rule the app keeps when

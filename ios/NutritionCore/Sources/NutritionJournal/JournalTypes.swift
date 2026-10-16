@@ -410,6 +410,31 @@ public protocol JournalLibraryExclusions: AnyObject, Sendable {
     func intakeIDsNotSavedToLibrary() throws -> Set<String>
 }
 
+/// The unit one component of an entry was logged in, when that unit is a spoon, a cup or fluid ounces and the
+/// amount is stored in milliliters. The stored amount is the same quantity either way.
+public struct JournalLoggedUnit: Sendable, Hashable {
+    public var intakeID: String
+    public var componentID: String
+    public var unit: MeasureUnit
+
+    public init(intakeID: String, componentID: String, unit: MeasureUnit) {
+        self.intakeID = intakeID
+        self.componentID = componentID
+        self.unit = unit
+    }
+}
+
+/// The units entries were logged in. A separate protocol, so stores that predate it need not change. A component
+/// with no entry here reads in the unit its amount is stored in.
+public protocol JournalLoggedUnits: AnyObject, Sendable {
+    /// Records the unit a component was logged in, under the id of the entry or of the favorite made from it.
+    /// Written before the entry; a row whose entry never saved is harmless, because ids are random and every
+    /// restore and erase clears the rows.
+    func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws
+    /// Every recorded unit.
+    func loggedUnits() throws -> [JournalLoggedUnit]
+}
+
 public protocol JournalStore: AnyObject, Sendable {
     /// When true, the next write inserts its rows and then fails before committing.
     var failNextSaveForTesting: Bool { get set }
@@ -501,11 +526,13 @@ public struct JournalRestorePlan: Sendable {
     public var savedMeals: [JournalSavedMeal]
     /// Intakes restored with their product kept out of Library > Products. Written in the same save as the entries.
     public var keptOutOfLibrary: [String]
+    /// The units restored entries were logged in, from version 6. Written in the same save as the entries.
+    public var loggedUnits: [JournalLoggedUnit]
 
     public init(
         entries: [JournalRestoreEntry], tombstones: [Intake],
         products: [ProductDefinition], favorites: [FavoriteTemplate], savedMeals: [JournalSavedMeal] = [],
-        keptOutOfLibrary: [String] = []
+        keptOutOfLibrary: [String] = [], loggedUnits: [JournalLoggedUnit] = []
     ) {
         self.entries = entries
         self.tombstones = tombstones
@@ -513,6 +540,7 @@ public struct JournalRestorePlan: Sendable {
         self.favorites = favorites
         self.savedMeals = savedMeals
         self.keptOutOfLibrary = keptOutOfLibrary
+        self.loggedUnits = loggedUnits
     }
 }
 
@@ -548,10 +576,16 @@ public struct JournalRestoreReceipt: Sendable, Equatable {
     /// Product snapshots this restore created a row for. A snapshot the store already had is not listed:
     /// undoing must leave it, and the nutrient values it holds, alone.
     public var insertedProductSnapshotIDs: [String]
+    /// The owners (favorites and saved-meal items) whose logged-unit rows this restore wrote, so undoing it can
+    /// remove them again.
+    public var loggedUnitOwnerIDs: [String]
 
-    public init(intakes: [JournalRestoredIntake], insertedProductSnapshotIDs: [String]) {
+    public init(
+        intakes: [JournalRestoredIntake], insertedProductSnapshotIDs: [String], loggedUnitOwnerIDs: [String] = []
+    ) {
         self.intakes = intakes
         self.insertedProductSnapshotIDs = insertedProductSnapshotIDs
+        self.loggedUnitOwnerIDs = loggedUnitOwnerIDs
     }
 }
 
