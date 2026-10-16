@@ -65,9 +65,11 @@ public struct RecentItemsProvider {
         let intakes = try store.activeIntakes()
             .filter { $0.lifecycle == .active && $0.category != DailyTotalsBuilder.waterCategory }
             .sorted { $0.occurredAt > $1.occurredAt }
+        // Entries logged with "Save to Library" off stay out of Products; they still appear in Recents.
+        let keptOutOfLibrary = (store as? JournalLibraryExclusions).flatMap { try? $0.intakeIDsNotSavedToLibrary() } ?? []
         // Each snapshot is read once, however many entries used it: a product logged hundreds of times is one query.
         var productsBySnapshot: [String: ProductDefinition?] = [:]
-        for intake in intakes {
+        for intake in intakes where !keptOutOfLibrary.contains(intake.id) {
             guard let revisions = try? store.revisions(of: intake.id),
                 let current = revisions.first(where: { $0.number == intake.currentRevision }),
                 let snapshotID = current.productSnapshotID

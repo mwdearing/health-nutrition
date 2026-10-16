@@ -953,6 +953,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
         [
             JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self,
             JournalSchemaV5.self, JournalSchemaV6.self, JournalSchemaV7.self, JournalSchemaV8.self,
+            JournalSchemaV9.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -976,6 +977,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: JournalSchemaV5.self, toVersion: JournalSchemaV6.self),
             .lightweight(fromVersion: JournalSchemaV6.self, toVersion: JournalSchemaV7.self),
             .lightweight(fromVersion: JournalSchemaV7.self, toVersion: JournalSchemaV8.self),
+            .lightweight(fromVersion: JournalSchemaV8.self, toVersion: JournalSchemaV9.self),
         ]
     }
 
@@ -1072,7 +1074,7 @@ private struct StoredNutrient: Codable {
 /// already met by the two conformances above. Declaring the refinement says so at the type, so a caller
 /// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
 /// initializer.
-public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWrittenLedger, JournalSnapshotSource,
+public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWrittenLedger, JournalSnapshotSource, JournalLibraryExclusions,
     JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalRestoreProgress, JournalErasing,
     JournalMealEditing,
     @unchecked Sendable
@@ -1096,7 +1098,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
-        let schema = Schema(versionedSchema: JournalSchemaV8.self)
+        let schema = Schema(versionedSchema: JournalSchemaV9.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         container = try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
@@ -1429,6 +1431,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard try context.fetchCount(FetchDescriptor<IntakeRecord>()) == 0 else {
                 throw JournalImportError.notEmpty
             }
+            // The export does not carry Library choices, so every restored entry is saved to Library as it was
+            // before the choice existed. Rows left by an earlier store must not hide a restored entry's product.
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()) { context.delete(row) }
             var restored: [JournalRestoredIntake] = []
             var insertedProducts: [String] = []
             for product in plan.products {
@@ -1597,6 +1602,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         // fails the erase before anything is deleted, so the screen reports it.
         try clearRestoreInProgress()
         _ = try commit { context in
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductOperationRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV7.ProductAccountRecord>()) { context.delete(row) }
@@ -2067,6 +2073,20 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     public func activeIntakes() throws -> [Intake] {
         try Self.readActiveIntakes(container: try openContainer())
+    }
+
+    /// Records that an entry was logged with "Save to Library" off. Written before the entry, so a failure
+    /// leaves nothing saved; an unreferenced row is harmless because intake ids are random.
+    public func keepOutOfLibrary(intakeID: String) throws {
+        try commit { context in
+            context.insert(JournalSchemaV9.LibraryExclusionRecord(intakeID: intakeID))
+        }
+    }
+
+    /// The entries whose product is kept out of Library > Products.
+    public func intakeIDsNotSavedToLibrary() throws -> Set<String> {
+        let context = ModelContext(try openContainer())
+        return Set(try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()).map(\.intakeID))
     }
 
     public func activeIntakesFromBackground() async throws -> [Intake] {

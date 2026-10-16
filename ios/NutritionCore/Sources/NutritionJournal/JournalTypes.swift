@@ -401,6 +401,15 @@ public struct OutboxOperation: Sendable, Hashable {
     }
 }
 
+/// The Library choice an entry was logged with. A separate protocol, so stores that predate it need not change.
+/// An entry with no row here is saved to Library > Products, as every entry was before the choice existed.
+public protocol JournalLibraryExclusions: AnyObject, Sendable {
+    /// Records that the entry was logged with "Save to Library" off.
+    func keepOutOfLibrary(intakeID: String) throws
+    /// The entries whose product is kept out of Library > Products.
+    func intakeIDsNotSavedToLibrary() throws -> Set<String>
+}
+
 public protocol JournalStore: AnyObject, Sendable {
     /// When true, the next write inserts its rows and then fails before committing.
     var failNextSaveForTesting: Bool { get set }

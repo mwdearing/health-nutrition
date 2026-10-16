@@ -230,6 +230,13 @@ public struct AddIntakeView: View {
                         .foregroundStyle(TokenColors.error)
                         .accessibilityLabel("Cannot save: \(message)")
                 }
+                if model.canChooseLibrary {
+                    Toggle("Save to Library", isOn: $model.savesToLibrary)
+                        .accessibilityHint("Scanned and searched products are kept in Library, or only this entry is logged")
+                    Text("Scanned and searched products are kept in Library > Products. Turn this off to log only this entry.")
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
                 Text(model.saveScopeMessage)
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
