@@ -143,7 +143,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "Every entry, favorite, saved meal, recipe, supplement and daily goal this app stores on this device is deleted, and the daily reminder "
         + "is switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
-        + "it there yourself. Nutrition and water samples this app wrote to Apple Health stay in Health and are not removed. "
+        + "it there yourself. Nutrition and water data this app wrote to Apple Health stays there: delete it in the Health app. "
         + "Erasing also signs you out on this phone; your community account and any "
         + "shared labels remain on the server."
     public static let eraseConfirmationTitle = "Erase all data?"
@@ -152,7 +152,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let eraseFooterMessage =
         "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily "
         + "reminder, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
-        + "or in another app — is not erased: delete it there yourself. Health samples this app wrote stay in Health. Erasing signs you out on this phone; "
+        + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this phone; "
         + "your community account and any shared labels remain on the server."
     public static let eraseFailedMessage =
         "Some stored data could not be erased. Quit and reopen the app, then try again."

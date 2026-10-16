@@ -347,7 +347,8 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             ConnectionsPrivacyViewModel.eraseConfirmationMessage,
             ConnectionsPrivacyViewModel.eraseFooterMessage,
         ] {
-            XCTAssertTrue(text.contains("stay in Health"), text)
+            XCTAssertTrue(text.contains("in the Health app"), text)
+            XCTAssertTrue(text.contains("stays there"), text)
         }
     }
 
