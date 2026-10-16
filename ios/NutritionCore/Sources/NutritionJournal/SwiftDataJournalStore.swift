@@ -1444,8 +1444,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             // phone's own favorites keep theirs when the file carries none.
             let restoredOwnerIDs = restoredIDs.union(plan.favorites.map(\.id))
                 .union(plan.savedMeals.flatMap(\.items).map(\.id))
+            let ownersWithUnits = Set(plan.loggedUnits.map(\.intakeID)).intersection(restoredOwnerIDs)
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>())
-            where restoredOwnerIDs.contains(row.intakeID) {
+            where ownersWithUnits.contains(row.intakeID) {
                 context.delete(row)
             }
             for loggedUnit in plan.loggedUnits where restoredOwnerIDs.contains(loggedUnit.intakeID) {
@@ -1492,7 +1493,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                         intakeID: tombstone.id, lifecycle: .deleted,
                         currentRevision: tombstone.currentRevision, revisionNumbers: []))
             }
-            let ownersWritten = Array(Set(plan.loggedUnits.map(\.intakeID)).intersection(restoredOwnerIDs).subtracting(restoredIDs))
+            let ownersWritten = Array(ownersWithUnits.subtracting(restoredIDs))
             return JournalRestoreReceipt(
                 intakes: restored, insertedProductSnapshotIDs: insertedProducts, loggedUnitOwnerIDs: ownersWritten)
         }
@@ -2117,10 +2118,18 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Records the unit a component was logged in. Written before the entry, like the Library choice.
     public func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
+        let ownerID = loggedUnit.intakeID
+        let componentID = loggedUnit.componentID
         try commit { context in
+            // One unit per owner and component: a second write replaces the first, so the backup never meets two.
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
+                    $0.intakeID == ownerID && $0.componentID == componentID
+                })) {
+                context.delete(row)
+            }
             context.insert(JournalSchemaV10.LoggedUnitRecord(
-                intakeID: loggedUnit.intakeID, componentID: loggedUnit.componentID,
-                unitSymbol: loggedUnit.unit.symbol))
+                intakeID: ownerID, componentID: componentID, unitSymbol: loggedUnit.unit.symbol))
         }
     }
 

@@ -43,4 +43,15 @@ final class JournalSchemaV10MigrationTests: XCTestCase {
         XCTAssertEqual(try store.loggedUnits(), [logged])
         store.close()
     }
+
+    /// A second write for the same owner and component replaces the first.
+    func testARepeatedWriteReplacesTheLoggedUnit() throws {
+        let store = try SwiftDataJournalStore(url: try url())
+        try store.recordLoggedUnit(JournalLoggedUnit(intakeID: "owner", componentID: "fiber", unit: .teaspoon))
+        try store.recordLoggedUnit(JournalLoggedUnit(intakeID: "owner", componentID: "fiber", unit: .tablespoon))
+        XCTAssertEqual(
+            try store.loggedUnits(),
+            [JournalLoggedUnit(intakeID: "owner", componentID: "fiber", unit: .tablespoon)])
+        store.close()
+    }
 }
