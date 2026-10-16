@@ -20,10 +20,13 @@ public struct CommunityProductSearchView: View {
     @State private var mealToLog: SavedMeal?
     @FocusState private var searchFocused: Bool
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
-                library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil) {
+                library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
+                focusSearchOnAppear: Bool = false) {
         self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
-        self.library = library; self.onPick = onPick
+        self.library = library; self.onPick = onPick; self.focusSearchOnAppear = focusSearchOnAppear
     }
+    /// Opened from Add's search row: the field takes focus so the keyboard is up at once.
+    private let focusSearchOnAppear: Bool
     public var body: some View {
         List {
             Section {
@@ -136,6 +139,7 @@ public struct CommunityProductSearchView: View {
                 library?.load()
                 library?.savedMeals?.load()
             }
+            if focusSearchOnAppear { searchFocused = true }
         }
         // The Undo window ends with this screen, as it does on the Library screen.
         .onDisappear { library?.savedMeals?.clearUndo() }

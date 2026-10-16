@@ -548,7 +548,8 @@ struct RootView: View {
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
                     onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
-                    library: self.services.library, onPick: { self.openTemplate($0, home: home) })
+                    library: self.services.library, onPick: { self.openTemplate($0, home: home) },
+                    focusSearchOnAppear: true)
                     .overlay(alignment: .bottom) {
                         if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                     }
