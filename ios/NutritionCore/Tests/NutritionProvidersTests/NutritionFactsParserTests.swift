@@ -1058,6 +1058,16 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.unnamedRowCount, 5)
     }
 
+    /// Capitals in a printed row name are the label's own, and a valid row keeps its amount whatever case it uses.
+    func testFoodPanelKeepsAllCapitalRowsAndHeadedVitamins() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "SUGAR ALCOHOL 3g", "Vitamin A 900IU", "Vitamin C 90mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["SUGAR ALCOHOL", "Vitamin A", "Vitamin C"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
     /// A nutrient a food panel prints that the named table does not carry is still a row of its own.
     func testFoodPanelKeepsKnownNutrientsTheNamedTableDoesNotCarry() throws {
         let panel = parse([

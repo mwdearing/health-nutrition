@@ -941,7 +941,10 @@ public enum NutritionFactsParser {
         for word in words {
             let lower = word.lowercased()
             guard let first = word.first, first.isUppercase || first.isNumber else { return false }
-            guard word.dropFirst().allSatisfy({ !$0.isUppercase || $0.isNumber }) else { return false }
+            // Title Case or all capitals; a mix such as "minD" or "mIND" is OCR noise.
+            let allCapitals = word.allSatisfy({ !$0.isLowercase })
+            let titleCase = word.dropFirst().allSatisfy({ !$0.isUppercase })
+            guard allCapitals || titleCase else { return false }
             let letters = word.filter(\.isLetter).count
             let hasDigit = word.contains(where: \.isNumber)
             guard letters >= 4 || hasDigit || shortRowWords.contains(lower) else { return false }
