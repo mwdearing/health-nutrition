@@ -486,12 +486,18 @@ public final class EntryDetailViewModel: ObservableObject {
     /// amount and so has no text to seed. The unknown's field therefore reads as untouched exactly when it
     /// is still empty.
     ///
-    /// A weight or volume is seeded rounded to the digits its reading carries, in its own unit. An amount too
-    /// small for those digits keeps its full text, so a real amount never reads as none of it.
+    /// A gram, kilogram, milliliter, liter, ounce or fluid ounce is seeded rounded to the digits its reading
+    /// carries, in its own unit. Every other unit is seeded as stored. An amount too small for those digits
+    /// keeps its full text, so a real amount never reads as none of it.
+    ///
+    /// The field states the stored amount at display precision, so typing the figure it shows means "the amount
+    /// shown", which is the exact stored amount: the form stays clean and the exact figure is kept. Saving the
+    /// shown digits would change the stored value by less than half the last digit, with nothing a reader could
+    /// see change.
     static func seededAmountText(_ amount: Decimal, unit: MeasureUnit = .serving) -> String {
         guard !amount.isNaN else { return "" }
         let shown = AmountDisplay.display(amount, unit: unit, system: .metric, roundsStoredUnit: true)
-        guard !shown.isBelowSmallest, shown.unit == unit else { return DecimalFormatting.text(amount) }
+        guard !shown.isBelowSmallest else { return DecimalFormatting.text(amount) }
         return DecimalFormatting.text(shown.amount)
     }
 

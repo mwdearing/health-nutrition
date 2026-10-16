@@ -1011,8 +1011,8 @@ final class JournalLibraryTests: XCTestCase {
         return Dictionary(uniqueKeysWithValues: model.sections.flatMap(\.rows).map { ($0.id, $0.detail) })
     }
 
-    /// A scaled entry reads as a kitchen figure in the Journal under both unit systems, never as the long
-    /// decimal the arithmetic left.
+    /// A pin, not a regression test for the entry field: the Journal path already rounded. A scaled entry reads
+    /// as a kitchen figure in the Journal under both unit systems, never as the long decimal the arithmetic left.
     func testJournalRowsReadRoundedAmountsUnderBothUnitSystems() {
         let metric = journalDetails(.metric)
         XCTAssertEqual(metric["fiber"], "19.7 mL")
