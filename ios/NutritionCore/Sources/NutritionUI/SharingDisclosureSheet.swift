@@ -31,6 +31,13 @@ public struct SharingDisclosureSheet: View {
                     ))
                     .disabled(!model.profileReady || model.isBusy)
                 }
+                if let message = model.message {
+                    Section {
+                        Text(message)
+                            .font(.callout)
+                            .foregroundStyle(TokenColors.textPrimary)
+                    }
+                }
                 Section {
                     Button("Continue") {
                         Task {
@@ -44,8 +51,9 @@ public struct SharingDisclosureSheet: View {
             .scrollContentBackground(.hidden)
             .background(TokenColors.background)
             .tint(TokenColors.accent)
-            // Only the Continue button counts as reading it: a swipe down must not be taken for agreement.
-            .interactiveDismissDisabled()
+            // A swipe down closes the sheet without acknowledging anything: only Continue counts as reading it,
+            // and nothing is shared until then. The sheet sits on Settings, so it must never trap the person
+            // there when saving the acknowledgment fails.
             .navigationTitle("Sharing products")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

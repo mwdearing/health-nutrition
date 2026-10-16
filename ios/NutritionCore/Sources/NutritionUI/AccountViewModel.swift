@@ -34,7 +34,13 @@ public final class AccountViewModel: ObservableObject {
 
     @Published public private(set) var phase: Phase = .signedOut
     /// Set by the Account section's buttons; the Settings form owns the sheet and the confirmation they open.
-    @Published public var presentingSignIn = false
+    @Published public var presentingSignIn = false {
+        didSet { if presentingSignIn { signInSheetActive = true } }
+    }
+    /// True from the moment the sign-in sheet is asked for until the view reports it has fully gone away
+    /// (`signInSheetDidDismiss`). It outlasts `presentingSignIn` on purpose: the binding turns false when the
+    /// dismissal starts, and a second sheet requested during that animation can be dropped.
+    @Published public private(set) var signInSheetActive = false
     @Published public var presentingDeleteConfirmation = false
     /// The email the account signed in with. Shown in Settings, never in a message.
     @Published public private(set) var email = ""
@@ -48,6 +54,9 @@ public final class AccountViewModel: ObservableObject {
     @Published public private(set) var emailStep: EmailStep = .enterAddress
     /// True while the signed-in account has not read the sharing disclosure on this device.
     @Published public private(set) var needsDisclosure = false
+    /// Counts the person's requests to see the disclosure again. A sheet that was dismissed without
+    /// acknowledging has no other way back while Settings stays open.
+    @Published public private(set) var disclosureReviewRequests = 0
     /// True only once the server's profile has been read. Until then the name and the sharing switch stay
     /// locked, so a failed read can never lead to a write that replaces the stored values with defaults.
     @Published public private(set) var profileReady = false
@@ -92,6 +101,9 @@ public final class AccountViewModel: ObservableObject {
     /// for the whole call, so the sign-in controls stay disabled until the restore has answered.
     public func load() async {
         guard !automaticRestoreClosed else { return }
+        // Signed out with no sign-in sheet up: a request whose dismissal was never reported must not keep the
+        // disclosure held for good. A sign-in that is still leaving has `phase == .signedIn` and is untouched.
+        if phase == .signedOut && !presentingSignIn { signInSheetActive = false }
         busyCount += 1
         defer { busyCount -= 1 }
         let signInsBefore = signInCount
@@ -304,6 +316,51 @@ public final class AccountViewModel: ObservableObject {
         }
     }
 
+    /// True once the facts `needsDisclosure` rests on have been read: signed in, the profile loaded and, when a
+    /// product service exists, the server capabilities. Until then `needsDisclosure` can still be a provisional
+    /// guess, and showing the sheet, or offering to reopen it, would ask an already-acknowledged person again.
+    public var disclosureReady: Bool {
+        phase == .signedIn && profileReady && (productService == nil || productCapabilities != nil)
+    }
+
+    /// The disclosure is wanted but the sign-in sheet has not finished leaving: it is presented once that sheet
+    /// reports its dismissal, never in the middle of it.
+    public var disclosurePending: Bool {
+        disclosureReady && needsDisclosure && signInSheetActive
+    }
+
+    /// True when the disclosure sheet should be up. The sign-in sheet comes first and is fully gone by then.
+    public var disclosureDue: Bool {
+        disclosureReady && needsDisclosure && !signInSheetActive
+    }
+
+    private var settingsDisappeared = false
+
+    /// Called when the Settings form goes away. A sheet over it does not count: the form stays on screen then.
+    public func settingsDidDisappear() { settingsDisappeared = true }
+
+    /// Called when the Settings form appears again after it had gone away. A sign-in that completed but whose
+    /// dismissal was never reported (the form was torn down with the sheet up) would otherwise keep the sheet
+    /// requested and the disclosure held for good. Does nothing unless the form really went away first, so an
+    /// appearance during the sheet's own dismissal cannot free the flag early.
+    public func settingsDidAppear() {
+        guard settingsDisappeared else { return }
+        settingsDisappeared = false
+        if phase == .signedIn && presentingSignIn { presentingSignIn = false }
+        if !presentingSignIn { signInSheetActive = false }
+    }
+
+    /// Called by the view from the sign-in sheet's `onDismiss`, after its dismissal animation has finished.
+    public func signInSheetDidDismiss() {
+        if !presentingSignIn { signInSheetActive = false }
+    }
+
+    /// Asks for the disclosure sheet again. Only meaningful while it still needs acknowledging.
+    public func requestDisclosureReview() {
+        guard disclosureReady, needsDisclosure, !signInSheetActive else { return }
+        disclosureReviewRequests += 1
+    }
+
     /// The signed-in person has read the sharing disclosure. Stored for this account, so it is not shown again
     /// for that account on this device. Ignored while a call is running, so a tap during a busy call is never
     /// taken for agreement, and ignored when nobody is signed in.
@@ -326,21 +383,35 @@ public final class AccountViewModel: ObservableObject {
     /// Version-two consent is an owner-bound server acknowledgment, independent of sharing permission.
     public func acknowledgeProductDisclosure() async {
         guard let productService else { acknowledgeDisclosure(); return }
-        guard !isBusy, profileReady, let userID = currentUserID, let owner = UUID(uuidString: userID) else { return }
+        guard !isBusy, let userID = currentUserID, let owner = UUID(uuidString: userID) else { return }
+        // A retry starts clean: an earlier refusal must not outlive a later success.
+        message = nil
+        // The refusals that follow the stale-account checks set a message: the disclosure sheet has no other way
+        // to show why Continue did nothing. A busy call or a missing account stays silent (Continue is disabled then).
+        guard profileReady else { message = Self.profileNotReadyMessage; return }
         let identity = accountIdentity
         busyCount += 1
         defer { busyCount -= 1 }
         do {
             let capability = try await productService.capabilities()
-            guard currentUserID == userID, accountIdentity == identity, capability.supportedVersion == 2 else { return }
+            guard currentUserID == userID, accountIdentity == identity, capability.supportedVersion == 2 else {
+                if currentUserID == userID, accountIdentity == identity { message = Self.genericMessage }
+                return
+            }
             let consent = try await productService.acknowledgeConsent(version: 2, expectedOwnerID: owner)
             guard currentUserID == userID, accountIdentity == identity, consent.version == 2,
-                  consent.acknowledged, consent.generation == capability.consentGeneration else { return }
+                  consent.acknowledged, consent.generation == capability.consentGeneration else {
+                if currentUserID == userID, accountIdentity == identity { message = Self.genericMessage }
+                return
+            }
             let refreshed = try await productService.capabilities()
             guard currentUserID == userID, accountIdentity == identity,
                   refreshed.consentGeneration == consent.generation,
                   refreshed.callerAcknowledgment?.version == 2,
-                  refreshed.callerAcknowledgment?.generation == consent.generation else { return }
+                  refreshed.callerAcknowledgment?.generation == consent.generation else {
+                if currentUserID == userID, accountIdentity == identity { message = Self.genericMessage }
+                return
+            }
             productCapabilities = refreshed
             preferences.setHasSeenCommunityDisclosure(true, for: userID)
             needsDisclosure = false
@@ -478,6 +549,7 @@ public final class AccountViewModel: ObservableObject {
         productSharing?.updateAccountContext(nil)
         accountIdentity = UUID()
         productCapabilities = nil
+        if !presentingSignIn { signInSheetActive = false }
         phase = .signedOut
         currentUserID = nil
         email = ""

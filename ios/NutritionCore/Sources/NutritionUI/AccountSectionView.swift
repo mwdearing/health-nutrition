@@ -40,6 +40,10 @@ public struct AccountSectionView: View {
                     Button("Resume sharing") { Task { await model.recoverSharingAfterFailedDeletion() } }
                         .disabled(model.isBusy)
                 }
+                if model.needsDisclosure && model.disclosureReady {
+                    Button("Sharing products") { model.requestDisclosureReview() }
+                        .disabled(model.isBusy)
+                }
                 Button("Sign out") { Task { await model.signOut() } }
                     .disabled(model.isBusy)
                 Button("Delete account", role: .destructive) { model.presentingDeleteConfirmation = true }
@@ -78,8 +82,10 @@ struct AccountPresentations: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $model.presentingSignIn, onDismiss: {
-                // Read after the sign-in sheet has gone away, so the two sheets are never up together.
-                showingDisclosure = model.needsDisclosure
+                // Runs once the sign-in sheet has fully gone away, so the two sheets are never up together. A
+                // disclosure that became due meanwhile was held as pending and is presented now.
+                model.signInSheetDidDismiss()
+                showingDisclosure = model.disclosureDue
             }) {
                 SignInSheet(model: model)
             }
@@ -94,16 +100,28 @@ struct AccountPresentations: ViewModifier {
             } message: {
                 Text("The account and every label it shared are deleted. Data on this device is kept.")
             }
-            .onChange(of: model.needsDisclosure) { _, needed in
-                if needed && !model.presentingSignIn { showingDisclosure = true }
+            // One rule for showing and hiding: the model says when the disclosure is due. A sheet is closed here
+            // only once nothing needs acknowledging any more, never because a profile read flipped under it.
+            .onChange(of: model.disclosureDue) { _, due in
+                if due {
+                    showingDisclosure = true
+                } else if !model.needsDisclosure {
+                    showingDisclosure = false
+                }
+            }
+            // The person asked for it (the Account row), so it is shown whenever it still needs acknowledging.
+            .onChange(of: model.disclosureReviewRequests) { _, _ in
+                if model.disclosureReady && model.needsDisclosure && !model.signInSheetActive { showingDisclosure = true }
             }
             .onAppear {
-                showingDisclosure = model.needsDisclosure && !model.presentingSignIn
+                model.settingsDidAppear()
+                showingDisclosure = model.disclosureDue
             }
+            .onDisappear { model.settingsDidDisappear() }
             // Brings the stored sign-in back when Settings opens, if the launch restore could not.
             .task {
                 await model.load()
-                showingDisclosure = model.needsDisclosure && !model.presentingSignIn
+                showingDisclosure = model.disclosureDue
             }
     }
 }

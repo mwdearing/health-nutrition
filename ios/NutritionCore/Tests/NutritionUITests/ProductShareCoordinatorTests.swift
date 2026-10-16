@@ -87,7 +87,29 @@ private actor SuspendedProductService: CommunityProductServicing {
     func finishConsent(_ state: ProductConsentState) { consentReply?.resume(returning: state) }
     private var arrivals: [(Int, CheckedContinuation<Void, Never>)] = []
     func setCapabilities(_ value: ProductCatalogCapabilities) { caps = value }
-    func capabilities() async throws -> ProductCatalogCapabilities { caps }
+    /// When set, `capabilities()` throws it instead of answering.
+    var capabilitiesError: Error?
+    private var holdCapabilities = false
+    private var capabilitiesReply: CheckedContinuation<ProductCatalogCapabilities, Error>?
+    private var capabilitiesArrival: CheckedContinuation<Void, Never>?
+    func setCapabilitiesError(_ value: Error?) { capabilitiesError = value }
+    func holdNextCapabilities() { holdCapabilities = true }
+    func waitForCapabilities() async {
+        if capabilitiesReply != nil { return }
+        await withCheckedContinuation { capabilitiesArrival = $0 }
+    }
+    func finishCapabilities() { capabilitiesReply?.resume(returning: caps); capabilitiesReply = nil }
+    func capabilities() async throws -> ProductCatalogCapabilities {
+        if holdCapabilities {
+            holdCapabilities = false
+            return try await withCheckedThrowingContinuation {
+                capabilitiesReply = $0
+                capabilitiesArrival?.resume(); capabilitiesArrival = nil
+            }
+        }
+        if let capabilitiesError { throw capabilitiesError }
+        return caps
+    }
     func waitForRequests(_ count: Int) async {
         if bodies.count >= count { return }
         await withCheckedContinuation { arrivals.append((count, $0)) }
@@ -276,6 +298,198 @@ extension ProductShareCoordinatorTests {
         XCTAssertTrue(accountService.updates.isEmpty)
         let owners = await products.consentCalls
         XCTAssertEqual(owners, [UUID(uuidString: session.userID)!])
+    }
+    @MainActor func testDisclosureBecomesDueOnlyWhenTheProfileHasLoaded() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        service.profileError = CommunityError.network
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        await account.load()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertFalse(account.profileReady)
+        XCTAssertFalse(account.disclosureDue)
+        service.profileError = nil
+        await account.retryProfile()
+        XCTAssertTrue(account.profileReady)
+        XCTAssertTrue(account.disclosureDue)
+        await account.acknowledgeProductDisclosure()
+        XCTAssertFalse(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureDue)
+    }
+    @MainActor func testAlreadyAcknowledgedSignInIsNotDueWhileCapabilitiesLoad() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
+        let account = AccountViewModel(service: service, preferences: preferences, productService: products)
+        await products.holdNextCapabilities()
+        let loading = Task { await account.load() }
+        await products.waitForCapabilities()
+        // The window: signed in, profile read, capabilities not yet, so `needsDisclosure` is only a guess.
+        XCTAssertTrue(account.profileReady)
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureReady)
+        XCTAssertFalse(account.disclosureDue)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
+        await products.finishCapabilities()
+        await loading.value
+        XCTAssertFalse(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureDue)
+    }
+    @MainActor func testDisclosureDueWhileSignInSheetIsUpIsPendingUntilItsDismissal() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        // Signed in and unacknowledged, but the sign-in sheet has not been reported gone.
+        XCTAssertTrue(account.disclosureReady)
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertTrue(account.disclosurePending)
+        XCTAssertFalse(account.disclosureDue)
+        // The binding turning false is only the start of the dismissal: still pending.
+        account.presentingSignIn = false
+        XCTAssertTrue(account.disclosurePending)
+        XCTAssertFalse(account.disclosureDue)
+        // The sheet's onDismiss reports it gone: now it is due and no longer pending.
+        account.signInSheetDidDismiss()
+        XCTAssertFalse(account.disclosurePending)
+        XCTAssertTrue(account.disclosureDue)
+    }
+    @MainActor func testDismissalReportIsIgnoredWhileTheSignInSheetIsStillRequested() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        account.signInSheetDidDismiss()
+        XCTAssertTrue(account.signInSheetActive)
+        XCTAssertFalse(account.disclosureDue)
+    }
+    @MainActor func testFailedCapabilityReadNeverOffersTheDisclosureToAnAcknowledgedAccount() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        await products.setCapabilitiesError(ProductAPIError.unavailable)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setHasSeenCommunityDisclosure(true, for: AccountTestSupport.session.userID)
+        let account = AccountViewModel(service: service, preferences: preferences, productService: products)
+        await account.load()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertFalse(account.disclosureReady)
+        XCTAssertFalse(account.disclosureDue)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
+    }
+    @MainActor func testDisclosureReviewRequestOnlyCountsWhenReadySignedInAndUnacknowledged() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
+        // Profile read, capabilities not yet: needsDisclosure is only a guess, so a request is refused.
+        await products.holdNextCapabilities()
+        let loading = Task { await account.load() }
+        await products.waitForCapabilities()
+        XCTAssertTrue(account.needsDisclosure)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
+        await products.finishCapabilities()
+        await loading.value
+        XCTAssertTrue(account.needsDisclosure)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 1)
+        await account.acknowledgeProductDisclosure()
+        XCTAssertFalse(account.needsDisclosure)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 1)
+    }
+    @MainActor func testDisclosureReviewRequestIsRefusedWhileTheSignInSheetIsStillActive() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        account.presentingSignIn = false
+        XCTAssertTrue(account.disclosureReady)
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 0)
+        account.signInSheetDidDismiss()
+        account.requestDisclosureReview()
+        XCTAssertEqual(account.disclosureReviewRequests, 1)
+    }
+    @MainActor func testSettingsAppearingFreesASignInSheetThatNeverReportedItsDismissal() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        // Signed in, but the sheet's dismissal was never reported (the form was torn down with it up).
+        XCTAssertEqual(account.phase, .signedIn)
+        XCTAssertTrue(account.presentingSignIn)
+        XCTAssertFalse(account.disclosureDue)
+        account.settingsDidDisappear()
+        account.settingsDidAppear()
+        XCTAssertFalse(account.presentingSignIn)
+        XCTAssertFalse(account.signInSheetActive)
+        XCTAssertTrue(account.disclosureDue)
+    }
+    @MainActor func testSettingsAppearingKeepsARequestedSignInSheetWhileSignedOut() async throws {
+        let service = FakeAccountService(session: nil), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        account.settingsDidDisappear()
+        account.settingsDidAppear()
+        XCTAssertTrue(account.presentingSignIn)
+        XCTAssertTrue(account.signInSheetActive)
+    }
+    @MainActor func testSettingsAppearingDuringTheSignInSheetsOwnDismissalDoesNotFreeIt() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        let account = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: products)
+        account.presentingSignIn = true
+        await account.load()
+        // The binding has turned false and the dismissal is animating; the form never went away.
+        account.presentingSignIn = false
+        account.settingsDidAppear()
+        XCTAssertTrue(account.signInSheetActive)
+        XCTAssertFalse(account.disclosureDue)
+        account.signInSheetDidDismiss()
+        XCTAssertTrue(account.disclosureDue)
+    }
+    @MainActor func testSignInSheetFlagCannotStayStuckAfterAMissedDismissal() async throws {
+        // A request whose dismissal was never reported, signed out: Settings opening (load) frees it.
+        let signedOut = FakeAccountService(session: AccountTestSupport.session)
+        signedOut.restored = nil
+        let first = AccountViewModel(service: signedOut, preferences: InMemoryDisplayPreferences(), productService: SuspendedProductService())
+        first.presentingSignIn = true
+        first.presentingSignIn = false
+        XCTAssertTrue(first.signInSheetActive)
+        await first.load()
+        XCTAssertFalse(first.signInSheetActive)
+        // Signed in with the dismissal never reported: signing out frees it.
+        let service = FakeAccountService(session: AccountTestSupport.session)
+        let second = AccountViewModel(service: service, preferences: InMemoryDisplayPreferences(), productService: SuspendedProductService())
+        second.presentingSignIn = true
+        await second.load()
+        second.presentingSignIn = false
+        XCTAssertTrue(second.signInSheetActive)
+        await second.signOut()
+        XCTAssertFalse(second.signInSheetActive)
+    }
+    @MainActor func testRefusedAcknowledgmentSaysSoInsteadOfDoingNothing() async throws {
+        let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
+        // The server never reports the caller's acknowledgment back, so Continue cannot complete.
+        await products.setCapabilities(ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
+            limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
+            callerAcknowledgment: nil, consentGeneration: "1", sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1))
+        let preferences = InMemoryDisplayPreferences()
+        let account = AccountViewModel(service: service, preferences: preferences, productService: products)
+        await account.load()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertNil(account.message)
+        await account.acknowledgeProductDisclosure()
+        XCTAssertTrue(account.needsDisclosure)
+        XCTAssertEqual(account.message, AccountViewModel.genericMessage)
+        XCTAssertFalse(account.isBusy)
+        // The server catches up: the retry succeeds and the earlier error is gone.
+        await products.setCapabilities(ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
+            limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
+            callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1", sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1))
+        await account.acknowledgeProductDisclosure()
+        XCTAssertFalse(account.needsDisclosure)
+        XCTAssertNil(account.message)
     }
     @MainActor func testConsentReplyAfterSignOutCannotAcknowledgeOldOwner() async throws {
         let service = FakeAccountService(session: AccountTestSupport.session), products = SuspendedProductService()
