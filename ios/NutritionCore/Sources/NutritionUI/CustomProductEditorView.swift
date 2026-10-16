@@ -9,7 +9,6 @@ public struct CustomProductEditorView: View {
     private let sharing: CustomProductSharingModel?
     private let onSaved: (CustomProductRevision, Bool) -> Void
     @State private var openDetails = false
-    @State private var saveNotice: SaveNotice?
     public init(model: CustomProductEditorViewModel, sharing: CustomProductSharingModel? = nil, onSaved: @escaping (CustomProductRevision, Bool) -> Void) {
         self.model = model; self.sharing = sharing; self.onSaved = onSaved
     }
@@ -98,7 +97,6 @@ public struct CustomProductEditorView: View {
                 Button("Save product on this phone") {
                     do {
                         let saved = try model.save(now: Date())
-                        saveNotice = SaveNotice(SaveLabels.productSaved)
                         onSaved(saved, openDetails)
                     } catch { }
                 }
@@ -108,7 +106,6 @@ public struct CustomProductEditorView: View {
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }
         }
         .navigationTitle("Product editor")
-        .saveConfirmation(saveNotice)
     }
 }
 
