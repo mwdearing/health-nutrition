@@ -15,9 +15,12 @@ public struct RecentItem: Equatable, Identifiable {
 public struct RecentItemsProvider {
     public static let defaultLimit = 20
     private let store: JournalStore
+    /// The units entries were logged in, read once per provider, so a template carries the unit its entry used.
+    private let loggedUnits: [String: [String: MeasureUnit]]
 
     public init(store: JournalStore) {
         self.store = store
+        self.loggedUnits = LoggedUnitIndex.load(from: store)
     }
 
     public func recents(limit: Int = RecentItemsProvider.defaultLimit) throws -> [RecentItem] {
@@ -41,7 +44,8 @@ public struct RecentItemsProvider {
     func template(intake: Intake, revision: IntakeRevision) -> RepeatTemplate {
         RepeatTemplate(
             displayName: displayName(of: revision), category: intake.category, meal: intake.meal,
-            components: revision.components, productSnapshotID: revision.productSnapshotID)
+            components: revision.components, productSnapshotID: revision.productSnapshotID,
+            loggedUnits: loggedUnits[intake.id] ?? [:])
     }
 
     /// The row title for one revision. A quick add is always one serving of the same name, so its typed
@@ -95,7 +99,8 @@ public struct RecentItemsProvider {
                 id: key,
                 template: RepeatTemplate(
                     displayName: AmountText.title(current.components), category: intake.category, meal: intake.meal,
-                    components: current.components, productSnapshotID: snapshotID),
+                    components: current.components, productSnapshotID: snapshotID,
+                    loggedUnits: loggedUnits[intake.id] ?? [:]),
                 lastUsedAt: intake.occurredAt))
         }
         return result.sorted {
@@ -275,7 +280,9 @@ public final class LibraryViewModel: ObservableObject {
     static func detail(
         _ template: RepeatTemplate, unitSystem: UnitSystem = .metric, isSupplement: Bool = false
     ) -> String {
-        let amounts = AmountText.summary(template.components, unitSystem: unitSystem, isSupplement: isSupplement)
+        // Only a supplement reads back in the unit it was logged in; a drink keeps the unit system's.
+        let amounts = AmountText.summary(
+            template.components, unitSystem: unitSystem, loggedUnits: isSupplement ? template.loggedUnits : [:])
         guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
         return "\(amounts) · \(meal)"
     }

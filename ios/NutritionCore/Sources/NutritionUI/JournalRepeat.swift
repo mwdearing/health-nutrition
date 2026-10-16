@@ -9,16 +9,20 @@ public struct RepeatTemplate: Equatable {
     public var meal: String?
     public var components: [IntakeComponent]
     public var productSnapshotID: String?
+    /// The unit each component was logged in, by component id, when the entry it came from was logged in a spoon,
+    /// a cup or fluid ounces. Repeating the template logs the same units.
+    public var loggedUnits: [String: MeasureUnit]
 
     public init(
         displayName: String, category: String, meal: String? = nil, components: [IntakeComponent],
-        productSnapshotID: String? = nil
+        productSnapshotID: String? = nil, loggedUnits: [String: MeasureUnit] = [:]
     ) {
         self.displayName = displayName
         self.category = category
         self.meal = meal
         self.components = components
         self.productSnapshotID = productSnapshotID
+        self.loggedUnits = loggedUnits
     }
 
     /// Returns nil when any component has a malformed amount or unit: the whole template is rejected.
@@ -68,6 +72,14 @@ struct IntakeRepeater {
         let intake = Intake(
             id: makeID(), category: template.category, occurredAt: now,
             timeZoneIdentifier: timeZoneProvider(), meal: template.meal)
+        // The units the original was logged in are carried over, written first like the other per-entry choices.
+        if let units = store as? JournalLoggedUnits {
+            for component in template.components where component.unit == .mL {
+                guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
+                try units.recordLoggedUnit(JournalLoggedUnit(
+                    intakeID: intake.id, componentID: component.componentID, unit: loggedUnit))
+            }
+        }
         try store.create(intake, components: template.components, product: product, now: now)
         return intake.id
     }
@@ -81,7 +93,8 @@ struct IntakeRepeater {
         }
         let template = RepeatTemplate(
             displayName: "", category: intake.category, meal: intake.meal, components: current.components,
-            productSnapshotID: current.productSnapshotID)
+            productSnapshotID: current.productSnapshotID,
+            loggedUnits: LoggedUnitIndex.load(from: store)[intake.id] ?? [:])
         return try create(from: template, now: now)
     }
 }
@@ -91,15 +104,17 @@ struct IntakeRepeater {
 /// `unitSystem` only decides which unit the amount is SHOWN in. The value is never changed, so the
 /// stored number stays the number that was entered.
 enum AmountText {
-    /// A supplement logged in spoons is stored in milliliters, so it reads back in the spoons it can only have
-    /// been logged in when the amount is an exact spoon measure (`isSupplement`). Drinks and liquids keep the
-    /// unit system's fluid ounces.
+    /// A supplement logged by the spoon is stored in milliliters, so it reads back in the unit it was logged in
+    /// (`loggedUnit`, passed only for supplements) rather than in the unit system's fluid ounces. Drinks and
+    /// everything else pass nil and read as the unit system says.
     static func describe(
-        _ component: IntakeComponent, unitSystem: UnitSystem = .metric, isSupplement: Bool = false
+        _ component: IntakeComponent, unitSystem: UnitSystem = .metric, loggedUnit: MeasureUnit? = nil
     ) -> String {
         guard !component.amount.isNaN else { return "unknown" }
-        if isSupplement, component.unit == .mL, let spoons = AmountDisplay.spoonReading(milliliters: component.amount) {
-            return spoons.text
+        if let loggedUnit, component.unit == .mL,
+            let logged = AmountDisplay.reading(milliliters: component.amount, loggedAs: loggedUnit)
+        {
+            return logged.text
         }
         return AmountDisplay.display(component, system: unitSystem, roundsStoredUnit: true).text
     }
@@ -110,14 +125,25 @@ enum AmountText {
     }
 
     static func summary(
-        _ components: [IntakeComponent], unitSystem: UnitSystem = .metric, isSupplement: Bool = false
+        _ components: [IntakeComponent], unitSystem: UnitSystem = .metric, loggedUnits: [String: MeasureUnit] = [:]
     ) -> String {
         components.isEmpty ? "unknown" : components.map {
-            describe($0, unitSystem: unitSystem, isSupplement: isSupplement)
+            describe($0, unitSystem: unitSystem, loggedUnit: loggedUnits[$0.componentID])
         }.joined(separator: ", ")
     }
 
     static func title(_ components: [IntakeComponent]) -> String {
         components.isEmpty ? "unknown" : components.map { name($0) }.joined(separator: ", ")
+    }
+}
+
+
+/// The units entries were logged in, read once per screen load: intake id, then component id.
+enum LoggedUnitIndex {
+    static func load(from store: JournalStore) -> [String: [String: MeasureUnit]] {
+        guard let units = (store as? JournalLoggedUnits).flatMap({ try? $0.loggedUnits() }) else { return [:] }
+        var index: [String: [String: MeasureUnit]] = [:]
+        for unit in units { index[unit.intakeID, default: [:]][unit.componentID] = unit.unit }
+        return index
     }
 }

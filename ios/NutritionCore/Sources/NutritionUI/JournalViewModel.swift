@@ -191,6 +191,7 @@ public final class JournalViewModel: ObservableObject {
             var intakesByDay: [String: [Intake]] = [:]
             // One snapshot is read once per load, however many entries name it.
             var snapshots: [String: ProductDefinition?] = [:]
+            let loggedUnits = LoggedUnitIndex.load(from: store)
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
                 guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else {
                     skipped += 1
@@ -209,7 +210,8 @@ public final class JournalViewModel: ObservableObject {
                         guard intake.category == "water", !component.amount.isNaN else {
                             return AmountText.describe(
                                 component, unitSystem: self.preferences.unitSystem,
-                                isSupplement: (snapshot?.kind ?? .food) == .supplement)
+                                loggedUnit: (snapshot?.kind ?? .food) == .supplement
+                                    ? loggedUnits[intake.id]?[component.componentID] : nil)
                         }
                         return AmountDisplay.water(
                             component.amount, unit: component.unit, system: self.preferences.unitSystem).text

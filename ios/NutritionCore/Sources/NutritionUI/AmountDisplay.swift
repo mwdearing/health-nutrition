@@ -214,25 +214,17 @@ public enum AmountDisplay {
             smallestAmount: system == .metric ? 1 : smallestShown)
     }
 
-    /// A volume stored in milliliters that is an exact whole or quarter number of teaspoons, or of tablespoons from
-    /// one up, read in that spoon: 19.715686375 mL is "4 tsp". Nil for anything else, so a figure that was not a
-    /// spoon measure is never relabeled. Spoons are typed input only and are stored as milliliters, so this is how a
-    /// supplement logged by the spoon reads back.
-    public static func spoonReading(milliliters: Decimal) -> DisplayAmount? {
-        guard !milliliters.isNaN, milliliters > 0,
-            let teaspoons = try? Quantity(value: milliliters, unit: .mL).converted(to: .teaspoon).value
+    /// A volume stored in milliliters, read in the unit it was logged in: 19.715686375 mL logged as 4 tsp reads "4 tsp".
+    /// The quantity is the same, so this is the stored amount converted to `loggedUnit` and rounded like any other
+    /// reading. Nil when the stored unit is not milliliters or the logged unit is not a volume.
+    public static func reading(milliliters amount: Decimal, loggedAs loggedUnit: MeasureUnit) -> DisplayAmount? {
+        guard !amount.isNaN, loggedUnit.dimension == .volume, loggedUnit != .mL,
+            let converted = try? Quantity(value: amount, unit: .mL).converted(to: loggedUnit), !converted.value.isNaN
         else { return nil }
-        func quarters(_ value: Decimal) -> Decimal? {
-            let scaled = value * 4
-            let nearest = DisplayRounding.rounded(scaled, fractionDigits: 0)
-            let tolerance = Decimal(string: "0.000001", locale: AmountParser.locale)!
-            return abs(scaled - nearest) < tolerance && nearest > 0 ? nearest / 4 : nil
-        }
-        if teaspoons >= 3, let tablespoons = quarters(teaspoons / 3) {
-            return DisplayAmount(amount: tablespoons, unit: .tablespoon)
-        }
-        guard let exact = quarters(teaspoons), teaspoons <= 144 else { return nil }
-        return DisplayAmount(amount: exact, unit: .teaspoon)
+        let rounded = DisplayRounding.rounded(
+            converted.value, fractionDigits: fractionDigits(for: converted.value))
+        let tooSmall = converted.value != 0 && abs(rounded) < smallestShown
+        return DisplayAmount(amount: rounded, unit: loggedUnit, isBelowSmallest: tooSmall)
     }
 
     /// The stored component's amount, shown under `system`.

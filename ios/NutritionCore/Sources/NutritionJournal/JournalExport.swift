@@ -383,6 +383,26 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
 
 /// A saved meal, exported as the named group of templates it is. Each item has the shape of a favorite and
 /// states no meal of its own (`meal` is `null`); the group's `meal` applies to all of them.
+/// The unit one component of an entry was logged in, from version 6: `intake_id`, `component_id` and the unit's
+/// `unit` symbol (`tsp`, `tbsp`, `cup` or `fl oz`). The component's own amount is still stored in milliliters.
+public struct JournalExportLoggedUnit: Sendable, Hashable, Codable {
+    public var intakeID: String
+    public var componentID: String
+    public var unit: String
+
+    public init(intakeID: String, componentID: String, unit: String) {
+        self.intakeID = intakeID
+        self.componentID = componentID
+        self.unit = unit
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case intakeID = "intake_id"
+        case componentID = "component_id"
+        case unit
+    }
+}
+
 public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
     public var id: String
     public var name: String
@@ -422,7 +442,7 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
     }
 }
 
-/// The exported document, schema version 5. See `contracts/journal-export/v5.schema.json`.
+/// The exported document, schema version 6. See `contracts/journal-export/v6.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
 /// written against version 1 keeps working. This build writes version 5 and reads versions 1 to 5, so a backup
@@ -433,14 +453,14 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
 /// than restore it without them.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 5
+    public static let currentSchemaVersion = 6
 
     /// Every version this build reads, in the order they were written.
     ///
     /// Version 1 is here because its documents are still backups people hold: it has no product kind and
     /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
     /// backup. Anything outside this set is refused by value rather than by shape.
-    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, currentSchemaVersion]
+    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, 5, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
@@ -458,6 +478,9 @@ public struct JournalExport: Sendable, Hashable, Codable {
     /// The intakes whose product is kept out of Library > Products, from version 5, sorted. Empty for a document
     /// of an earlier version, which has no such field, so every entry in it is saved to Library.
     public var keptOutOfLibrary: [String]
+    /// The unit each component was logged in, from version 6, sorted by intake then component. Empty for a document
+    /// of an earlier version, which has no such field, so every amount in it reads in the unit it is stored in.
+    public var loggedUnits: [JournalExportLoggedUnit]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -469,13 +492,14 @@ public struct JournalExport: Sendable, Hashable, Codable {
         case products
         case savedMeals = "saved_meals"
         case keptOutOfLibrary = "kept_out_of_library"
+        case loggedUnits = "logged_units"
     }
 
     public init(
         schemaVersion: Int = JournalExport.currentSchemaVersion, exportedAt: Date, appVersion: String,
         intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite],
         products: [JournalExportProvenance] = [], savedMeals: [JournalExportSavedMeal] = [],
-        keptOutOfLibrary: [String] = []
+        keptOutOfLibrary: [String] = [], loggedUnits: [JournalExportLoggedUnit] = []
     ) {
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
@@ -486,6 +510,7 @@ public struct JournalExport: Sendable, Hashable, Codable {
         self.products = products
         self.savedMeals = savedMeals
         self.keptOutOfLibrary = keptOutOfLibrary
+        self.loggedUnits = loggedUnits
     }
 
     /// `saved_meals` is read only from version 4. The importer's shape check has already refused it in an
@@ -503,6 +528,8 @@ public struct JournalExport: Sendable, Hashable, Codable {
             ? try container.decode([JournalExportSavedMeal].self, forKey: .savedMeals) : []
         keptOutOfLibrary = schemaVersion >= 5
             ? try container.decode([String].self, forKey: .keptOutOfLibrary) : []
+        loggedUnits = schemaVersion >= 6
+            ? try container.decode([JournalExportLoggedUnit].self, forKey: .loggedUnits) : []
     }
 
     /// `saved_meals` is written only for version 4 and later, so a document of an earlier version keeps the
@@ -518,6 +545,7 @@ public struct JournalExport: Sendable, Hashable, Codable {
         try container.encode(products, forKey: .products)
         if schemaVersion >= 4 { try container.encode(savedMeals, forKey: .savedMeals) }
         if schemaVersion >= 5 { try container.encode(keptOutOfLibrary, forKey: .keptOutOfLibrary) }
+        if schemaVersion >= 6 { try container.encode(loggedUnits, forKey: .loggedUnits) }
     }
 }
 
@@ -796,6 +824,10 @@ public enum JournalExporter {
         let exportedIDs = Set(intakes.map(\.id))
         let keptOutOfLibraryIDs = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary()
             .filter { exportedIDs.contains($0) } ?? []
+        let loggedUnitList = try (store as? JournalLoggedUnits)?.loggedUnits()
+            .filter { exportedIDs.contains($0.intakeID) }
+            .map { JournalExportLoggedUnit(intakeID: $0.intakeID, componentID: $0.componentID, unit: $0.unit.symbol) }
+            .sorted { ($0.intakeID, $0.componentID) < ($1.intakeID, $1.componentID) } ?? []
         var savedMealList: [JournalExportSavedMeal] = []
         if let savedMeals {
             savedMealList = try savedMeals.journalSavedMeals().map { try JournalExportSavedMeal(savedMeal: $0) }
@@ -817,7 +849,7 @@ public enum JournalExporter {
             favorites: favoriteList.sorted { $0.id < $1.id },
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID },
             savedMeals: savedMealList,
-            keptOutOfLibrary: keptOutOfLibraryIDs.sorted())
+            keptOutOfLibrary: keptOutOfLibraryIDs.sorted(), loggedUnits: loggedUnitList)
         try validateExportRequiredFields(document)
         return document
     }

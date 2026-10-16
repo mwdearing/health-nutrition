@@ -184,3 +184,78 @@ final class LibraryChoiceExportTests: XCTestCase {
         XCTAssertTrue(try restored.intakeIDsNotSavedToLibrary().isEmpty)
     }
 }
+
+@MainActor
+final class LoggedUnitTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeStore() throws -> SwiftDataJournalStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+    }
+
+    private func logFiber(_ store: SwiftDataJournalStore, unit: MeasureUnit, amount: String) throws -> String {
+        let model = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        model.name = "Fiber Powder"
+        model.amountText = amount
+        model.unit = unit
+        XCTAssertTrue(model.save(now: now))
+        return try XCTUnwrap(store.activeIntakes().first).id
+    }
+
+    /// An amount typed in a spoon is stored as milliliters and its unit is recorded, so it can read back as typed.
+    func testASpoonAmountIsStoredAsMillilitersAndItsUnitIsRecorded() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let component = try XCTUnwrap(store.revisions(of: id).first?.components.first)
+        XCTAssertEqual(component.unit, .mL)
+        XCTAssertEqual(component.amount, Decimal(string: "19.715686375"))
+        XCTAssertEqual(
+            try store.loggedUnits(),
+            [JournalLoggedUnit(intakeID: id, componentID: component.componentID, unit: .teaspoon)])
+    }
+
+    /// A mass or a milliliter amount typed as such records nothing, so it reads as stored.
+    func testAnAmountTypedInTheStoredUnitRecordsNoLoggedUnit() throws {
+        let store = try makeStore()
+        _ = try logFiber(store, unit: .g, amount: "5")
+        XCTAssertTrue(try store.loggedUnits().isEmpty)
+        let otherStore = try makeStore()
+        _ = try logFiber(otherStore, unit: .mL, amount: "20")
+        XCTAssertTrue(try otherStore.loggedUnits().isEmpty)
+    }
+
+    /// A backup carries the logged unit and a restore writes it back; a version 5 backup has none.
+    func testALoggedUnitSurvivesABackupAndRestore() throws {
+        let source = try makeStore()
+        let id = try logFiber(source, unit: .teaspoon, amount: "4")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+        let restored = try makeStore()
+        _ = try JournalImporter.importExport(data, into: restored, favorites: nil)
+        XCTAssertEqual(try restored.loggedUnits().map(\.intakeID), [id])
+        XCTAssertEqual(try restored.loggedUnits().map(\.unit), [.teaspoon])
+
+        var older = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
+        older.schemaVersion = 5
+        let target = try makeStore()
+        _ = try JournalImporter.importExport(try JournalExporter.encode(older), into: target, favorites: nil)
+        XCTAssertEqual(try target.activeIntakes().map(\.id), [id])
+        XCTAssertTrue(try target.loggedUnits().isEmpty)
+    }
+
+    /// Repeating an entry logged by the spoon logs the same spoon again, and a prefill opens in it.
+    func testRepeatingAndPrefillingKeepTheLoggedUnit() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let home = AddHomeViewModel(store: store, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertEqual(recent.template.loggedUnits.values.first, .teaspoon)
+        let token = try XCTUnwrap(home.quickAdd(recent))
+        XCTAssertEqual(
+            Set(try store.loggedUnits().map(\.intakeID)), [id, token.intakeID])
+    }
+}
