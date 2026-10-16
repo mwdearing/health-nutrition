@@ -1058,6 +1058,16 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.unnamedRowCount, 5)
     }
 
+    /// The bound text of a named row ("Trans Fat Less than 1g") is that row's, not an unread row of its own.
+    func testABoundOnANamedRowIsNotAnUnreadRow() throws {
+        let panel = parse(["Nutrition Facts", "Trans Fat Less than 1g", "Protein Less than 1g"])
+
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+        guard case .belowReportingThreshold = value(.transFat, panel) else {
+            return XCTFail("a bound stays a bound, never a known amount")
+        }
+    }
+
     /// Capitals in a printed row name are the label's own, and a valid row keeps its amount whatever case it uses.
     func testFoodPanelKeepsAllCapitalRowsAndHeadedVitamins() throws {
         let panel = parse([

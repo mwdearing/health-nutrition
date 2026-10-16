@@ -1300,7 +1300,7 @@ public enum NutritionFactsParser {
     /// label puts beside a serving — a net weight, a lot number and a best-by date are not rows.
     private static let panelWords: Set<String> = [
         "amount", "calories", "container", "daily", "dv", "ingredients", "less", "fewer", "under", "below",
-        "lt", "nutrition", "per", "questions", "serving", "servings", "size", "total", "value", "warnings",
+        "lt", "nutrition", "per", "questions", "serving", "servings", "size", "total", "value", "warnings", "than",
         "net", "wt", "weight", "lot", "best", "by",
     ]
 
