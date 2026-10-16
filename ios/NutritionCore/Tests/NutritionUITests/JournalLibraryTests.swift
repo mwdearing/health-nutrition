@@ -184,6 +184,18 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertNotNil(library.undoToken)
     }
 
+    func testRowTapRoutesByMode() {
+        // Pick mode only ever opens details; it never logs. Normal mode only ever logs.
+        XCTAssertEqual(LibraryRowTap.forRow(pickMode: true), .openDetails)
+        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .logOnce)
+    }
+
+    func testDetailsOfferedOnlyWhereTapLogsAndHandlerExists() {
+        XCTAssertTrue(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: true))
+        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: true, hasOpenHandler: true))
+        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: false))
+    }
+
     // MARK: Journal
 
     func testJournalGroupsByLocalDayOfEachIntakesOwnZoneNewestFirst() throws {

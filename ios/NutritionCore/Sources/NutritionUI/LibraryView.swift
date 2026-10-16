@@ -166,10 +166,11 @@ public struct LibraryView: View {
         let opensDetails = onPick != nil
         HStack {
             Button {
-                if let onPick = self.onPick {
-                    onPick(item.template)
-                } else if self.model.quickAdd(item, now: self.now()) {
-                    self.onAdded()
+                switch LibraryRowTap.forRow(pickMode: onPick != nil) {
+                case .openDetails:
+                    onPick?(item.template)
+                case .logOnce:
+                    if self.model.quickAdd(item, now: self.now()) { self.onAdded() }
                 }
             } label: {
                 VStack(alignment: .leading) {
@@ -189,12 +190,12 @@ public struct LibraryView: View {
             .accessibilityLabel(opensDetails ? item.accessibilityLabel(forPick: true) : item.logAccessibilityLabel)
             .modifier(DetailsHint(isOn: opensDetails, logHint: onPick == nil))
             .contextMenu {
-                if let onOpen = self.onOpen, onPick == nil {
+                if LibraryRowTap.offersDetails(pickMode: onPick != nil, hasOpenHandler: onOpen != nil), let onOpen {
                     Button("Details") { onOpen(item.template) }
                 }
             }
             .accessibilityActions {
-                if let onOpen = self.onOpen, onPick == nil {
+                if LibraryRowTap.offersDetails(pickMode: onPick != nil, hasOpenHandler: onOpen != nil), let onOpen {
                     Button("Details") { onOpen(item.template) }
                 }
             }

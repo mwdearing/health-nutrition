@@ -339,6 +339,10 @@ struct RootView: View {
                     onSearchProducts: { self.openAddRoute(.productSearch, home: home) },
                     onOpen: { template in self.openTemplate(template, home: home) }
                 )
+                // A failed Details action from a Recent row shows here, as it does on the picker.
+                .overlay(alignment: .bottom) {
+                    if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
+                }
                 .navigationDestination(for: AddRoute.self) { route in
                     self.addDestination(route, home: home)
                 }
