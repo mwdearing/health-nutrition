@@ -102,7 +102,7 @@ unknowns in a `Coverage`. Three cases are answered as unknown rather than as a n
 "protein was never known" are different facts and only one of them is true, and because a smaller number presented as
 the day's true total under-reports it:
 
-- a snapshot whose basis the journal cannot resolve — `per 100 g or mL`, `per 100 kcal` — states its value for
+- a snapshot whose basis the journal cannot resolve — `per 100 kcal`, or `per 100 g or mL` on an amount that is neither a weight nor a volume — states its value for
   some other amount than the one logged, so the nutrient is unknown;
 - two known values in different dimensions, which cannot be added, so the nutrient is unknown rather than one of them
   being dropped and the smaller sum reported as the day's true total;
