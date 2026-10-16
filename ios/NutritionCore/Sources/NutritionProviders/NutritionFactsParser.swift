@@ -91,6 +91,11 @@ public enum NutritionFactsParser {
         var reviews: [String: ParsedValueReview] = [:]
         var extra: [ParsedAdditionalNutrient] = []
         var displayNames: [String: String] = [:]
+        // Only a Supplement Facts panel, or a capture that shows no panel heading at all, keeps the rows the
+        // parser does not recognize. A Nutrition Facts panel states a fixed set of rows, so an unrecognized
+        // name there is OCR noise ("Inchides", "minD", "lum") and is not kept as a row.
+        let keepsUnrecognizedRows = panelHeading == nil || panelKind(in: cleaned) == .supplementFacts
+        var unnamedRows = 0
 
         var index = 0
         while index < cleaned.count {
@@ -167,6 +172,7 @@ public enum NutritionFactsParser {
             // the named rows' own text here is safe.
             let additionalUsedNextLine = absorbAdditionalRows(
                 in: residual, next: read.usedNextLine ? nil : rowFollowing, into: &extra,
+                keepsUnrecognizedRows: keepsUnrecognizedRows, unnamedRows: &unnamedRows,
                 amounts: &amounts, boundThresholds: &boundThresholds,
                 reviews: &reviews, displayNames: &displayNames)
             let consumedNextLine = read.usedNextLine || additionalUsedNextLine
@@ -180,7 +186,8 @@ public enum NutritionFactsParser {
             additionalNutrients: extra,
             nutrientDisplayNames: displayNames,
             valuesNeedingReview: reviews,
-            panelKind: panelKind(in: cleaned)
+            panelKind: panelKind(in: cleaned),
+            unnamedRowCount: unnamedRows
         )
     }
 
@@ -906,6 +913,61 @@ public enum NutritionFactsParser {
     /// name, and a bare amount in front of one of those is a front-of-pack callout rather than a row.
     private static let amountFirstRows: Set<NutritionFactKey> = [.addedSugars]
 
+    /// Nutrients a US Nutrition Facts panel prints that the named table does not carry. A food panel keeps
+    /// a row with one of these names; any other unrecognized name on a food panel is OCR noise. Names are
+    /// compared with spaces and hyphens removed, so "Folic Acid" and "Folicacid" both match.
+    private static let knownFoodNutrients: Set<String> = [
+        "magnesium", "phosphorus", "zinc", "copper", "manganese", "selenium", "chromium", "molybdenum",
+        "iodine", "chloride", "choline", "vitamina", "vitaminc", "vitamine", "vitamink", "thiamin",
+        "thiamine", "riboflavin", "niacin", "vitaminb6", "folate", "folicacid", "vitaminb12", "biotin",
+        "pantothenicacid",
+    ]
+
+    private static func isKnownFoodNutrient(_ name: String) -> Bool {
+        knownFoodNutrients.contains(name.lowercased().filter { $0 != " " && $0 != "-" })
+    }
+
+    /// Whether an unrecognized name on a food panel reads like a real row rather than OCR noise. Every
+    /// word starts with a capital letter or a digit, and no later letter is a capital (so "minD" is not
+    /// a row). A word is at least four letters, carries a digit ("Q10"), or is a short word a panel
+    /// prints ("Fat", "Sat"). A word that is one or two edits from "Includes" or "Contains", or equal to it,
+    /// is the misread qualifier itself, so it is not a row.
+    private static func isPlausibleFoodRowName(_ name: String) -> Bool {
+        let qualifiers = ["includes", "contains"]
+        let shortRowWords: Set<String> = ["fat", "fiber", "fibre", "oil", "iron", "zinc", "salt", "sat"]
+        let words = name.split(separator: " ")
+        // A name needs a word that starts with a letter, so a bare number ("1", an OCR "I") is no row.
+        guard words.contains(where: { $0.first?.isLetter == true }) else { return false }
+        for word in words {
+            let lower = word.lowercased()
+            guard let first = word.first, first.isUppercase || first.isNumber else { return false }
+            // Title Case or all capitals; a mix such as "minD" or "mIND" is OCR noise.
+            let allCapitals = word.allSatisfy({ !$0.isLowercase })
+            let titleCase = word.dropFirst().allSatisfy({ !$0.isUppercase })
+            guard allCapitals || titleCase else { return false }
+            let letters = word.filter(\.isLetter).count
+            let hasDigit = word.contains(where: \.isNumber)
+            guard letters >= 4 || hasDigit || shortRowWords.contains(lower) else { return false }
+            if qualifiers.contains(where: { editDistance(lower, $0) <= 2 }) { return false }
+        }
+        return true
+    }
+
+    /// The Levenshtein distance between two words, used to recognize a misread panel word.
+    private static func editDistance(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        var previous = Array(0...y.count)
+        for i in 1...max(x.count, 1) where !x.isEmpty {
+            var current = [i] + Array(repeating: 0, count: y.count)
+            for j in 1...max(y.count, 1) where !y.isEmpty {
+                let cost = x[i - 1] == y[j - 1] ? 0 : 1
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+            }
+            previous = current
+        }
+        return previous[y.count]
+    }
+
     /// The words a panel may print between an amount and the nutrient name it belongs to, as in
     /// "Includes 5g Added Sugars". A row that states its amount in front of its name is stated with one
     /// of these words in between, so a number with any other word in front of it is left alone.
@@ -1058,6 +1120,8 @@ public enum NutritionFactsParser {
         in line: String,
         next nextLine: String?,
         into collected: inout [ParsedAdditionalNutrient],
+        keepsUnrecognizedRows: Bool,
+        unnamedRows: inout Int,
         amounts: inout [String: NutrientValue],
         boundThresholds: inout [String: Decimal],
         reviews: inout [String: ParsedValueReview],
@@ -1080,6 +1144,10 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
+            } else if !keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name) {
+                // A row that carries an amount but no name this panel's kind recognizes is unread, not
+                // dropped silently: it is counted so the review screen still shows it as unfinished.
+                unnamedRows += 1
             } else {
                 let review = row.reasons.isEmpty ? nil : ParsedValueReview(reasons: row.reasons)
                 collected.append(
@@ -1232,7 +1300,7 @@ public enum NutritionFactsParser {
     /// label puts beside a serving — a net weight, a lot number and a best-by date are not rows.
     private static let panelWords: Set<String> = [
         "amount", "calories", "container", "daily", "dv", "ingredients", "less", "fewer", "under", "below",
-        "lt", "nutrition", "per", "questions", "serving", "servings", "size", "total", "value", "warnings",
+        "lt", "nutrition", "per", "questions", "serving", "servings", "size", "total", "value", "warnings", "than",
         "net", "wt", "weight", "lot", "best", "by",
     ]
 

@@ -1027,6 +1027,70 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(value(.calories, panel), .known(dec("30"), .kcal))
     }
 
+    /// A capture that misreads a food panel's words must not turn them into rows. A Nutrition Facts panel
+    /// has a fixed set of rows, so text the parser does not recognize there is OCR noise: "Inchides" (for
+    /// Includes), "minD" (for Vitamin D) and "lum" (for Sodium) are printed as their own compounds on the
+    /// review screen today. Only a Supplement Facts panel keeps the rows it does not recognize.
+    func testFoodPanelDoesNotKeepUnrecognizedFragmentsAsRows() throws {
+        let panel = parse([
+            "Nutrition Facts",
+            "Total Sugars 12g",
+            "Inchides 0g",
+            "Added Sugars 25g",
+            "minD 0mcg",
+            "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.panelKind, .nutritionFacts)
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "OCR fragments of a food panel are not rows")
+        XCTAssertEqual(panel.unnamedRowCount, 3, "the three unnamed amounts stay unread, so the footer counts them")
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
+    }
+
+    /// A food panel's real rows that the named table lacks keep their names, while misread fragments do not.
+    func testFoodPanelKeepsPlausibleRowNamesAndDropsMisreadFragments() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "Sugar Alcohol 3g", "Chlorophyll 5mg", "Fish Oil 1g", "Inchides 0g",
+            "minD 0mcg", "lum 260mg", "Lum 260mg", "I 0g",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Sugar Alcohol", "Chlorophyll", "Fish Oil"])
+        XCTAssertEqual(panel.unnamedRowCount, 5)
+    }
+
+    /// The bound text of a named row ("Trans Fat Less than 1g") is that row's, not an unread row of its own.
+    func testABoundOnANamedRowIsNotAnUnreadRow() throws {
+        let panel = parse(["Nutrition Facts", "Trans Fat Less than 1g", "Protein Less than 1g"])
+
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+        guard case .belowReportingThreshold = value(.transFat, panel) else {
+            return XCTFail("a bound stays a bound, never a known amount")
+        }
+    }
+
+    /// Capitals in a printed row name are the label's own, and a valid row keeps its amount whatever case it uses.
+    func testFoodPanelKeepsAllCapitalRowsAndHeadedVitamins() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "SUGAR ALCOHOL 3g", "Vitamin A 900IU", "Vitamin C 90mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["SUGAR ALCOHOL", "Vitamin A", "Vitamin C"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A nutrient a food panel prints that the named table does not carry is still a row of its own.
+    func testFoodPanelKeepsKnownNutrientsTheNamedTableDoesNotCarry() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "Magnesium 40mg", "Vitamin C 12mg",
+            "Folic Acid 100mcg", "Vitamin B6 2mg", "Vitamin B12 2.4mcg",
+        ])
+
+        XCTAssertEqual(
+            panel.additionalNutrients.map(\.name),
+            ["Magnesium", "Vitamin C", "Folic Acid", "Vitamin B6", "Vitamin B12"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
     /// A panel may print a colon after the name it prints an amount behind. It is the label's own
     /// punctuation, so "Calories: 30" states thirty calories exactly as "Calories 30" does.
     func testCaloriesWithAColonAfterTheNameIsRead() throws {
