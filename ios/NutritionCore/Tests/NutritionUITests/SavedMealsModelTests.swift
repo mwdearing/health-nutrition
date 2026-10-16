@@ -5,7 +5,7 @@ import XCTest
 @testable import NutritionUI
 
 /// A real journal that can fail one intake's revision read, or every write after the first create.
-private final class FaultyJournal: JournalStore, @unchecked Sendable {
+private final class FaultyJournal: JournalStore, JournalLoggedUnits, @unchecked Sendable {
     struct Failure: Error {}
     let inner: SwiftDataJournalStore
     var unreadableIntakeID: String?
@@ -46,6 +46,17 @@ private final class FaultyJournal: JournalStore, @unchecked Sendable {
     func product(snapshotID: String) throws -> ProductDefinition? { try inner.product(snapshotID: snapshotID) }
     func activeIntakesFromBackground() async throws -> [Intake] { try await inner.activeIntakesFromBackground() }
     func close() { inner.close() }
+
+    /// When set, every write of a logged unit fails; reads and removals still reach the real store.
+    var failUnitWrites = false
+    func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
+        if failUnitWrites { throw Failure() }
+        try inner.recordLoggedUnit(loggedUnit)
+    }
+    func loggedUnits() throws -> [JournalLoggedUnit] { try inner.loggedUnits() }
+    func removeLoggedUnit(intakeID: String, componentID: String) throws {
+        try inner.removeLoggedUnit(intakeID: intakeID, componentID: componentID)
+    }
 }
 
 /// The screen model for saved meals, and Save as meal from the Journal.
@@ -114,6 +125,30 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertTrue(model.log(saved, as: .breakfast, now: now))
         let loggedAgain = try journal.loggedUnits().filter { $0.intakeID != intake.id && $0.intakeID != saved.items[0].id }
         XCTAssertEqual(loggedAgain.map(\.unit), [.teaspoon])
+    }
+
+    /// A meal whose units cannot be written is not saved at all, and says so.
+    func testAFailedUnitWriteTakesTheMealBackOut() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC",
+            meal: "breakfast")
+        try inner.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "fiber", unit: .teaspoon))
+        try inner.create(
+            intake,
+            components: [IntakeComponent(
+                componentID: "fiber", name: "Fiber", amount: Decimal(string: "19.715686375")!, unit: .mL)],
+            product: nil, now: now)
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        let model = SavedMealsModel(store: store, journal: journal)
+        journal.failUnitWrites = true
+
+        XCTAssertFalse(model.save(name: "Usual", meal: .breakfast, intakes: [intake]))
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "Could not save the meal.")
+        XCTAssertEqual(try store.meals(), [])
+        XCTAssertEqual(try inner.loggedUnits().map(\.intakeID), [intake.id], "only the entry's own row remains")
     }
 
     func testAnUnreadableEntryRefusesTheWholeSave() throws {
