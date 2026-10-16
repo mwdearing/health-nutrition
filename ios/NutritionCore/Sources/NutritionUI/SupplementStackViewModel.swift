@@ -182,7 +182,8 @@ public final class SupplementStackViewModel: ObservableObject {
                         AmountText.summary(
                             $0.components, unitSystem: preferences.unitSystem,
                             loggedUnits: kind(favorite.productSnapshotID, category: favorite.category) == .supplement
-                                ? $0.loggedUnits : [:])
+                                ? $0.loggedUnits : [:],
+                            isSupplement: kind(favorite.productSnapshotID, category: favorite.category) == .supplement)
                     } ?? "unknown",
                     kind: kind(favorite.productSnapshotID, category: favorite.category), schedule: entry.value,
                     matchKey: Self.matchKey(favorite), canLog: template.map { !$0.components.isEmpty } ?? false,
@@ -379,7 +380,8 @@ public final class SupplementStackViewModel: ObservableObject {
                         AmountText.summary(
                             $0.components, unitSystem: preferences.unitSystem,
                             loggedUnits: kind(favorite.productSnapshotID, favorite.category) == .supplement
-                                ? $0.loggedUnits : [:])
+                                ? $0.loggedUnits : [:],
+                            isSupplement: kind(favorite.productSnapshotID, favorite.category) == .supplement)
                     } ?? "unknown",
                     kind: kind(favorite.productSnapshotID, favorite.category), source: .favorite(favorite.id))
             }

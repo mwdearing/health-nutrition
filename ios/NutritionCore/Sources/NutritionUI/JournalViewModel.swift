@@ -211,7 +211,8 @@ public final class JournalViewModel: ObservableObject {
                             return AmountText.describe(
                                 component, unitSystem: self.preferences.unitSystem,
                                 loggedUnit: (snapshot?.kind ?? .food) == .supplement
-                                    ? loggedUnits[intake.id]?[component.componentID] : nil)
+                                    ? loggedUnits[intake.id]?[component.componentID] : nil,
+                                isSupplement: (snapshot?.kind ?? .food) == .supplement)
                         }
                         return AmountDisplay.water(
                             component.amount, unit: component.unit, system: self.preferences.unitSystem).text

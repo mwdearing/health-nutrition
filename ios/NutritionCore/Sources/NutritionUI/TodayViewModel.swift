@@ -249,7 +249,8 @@ public final class TodayViewModel: ObservableObject {
                         detail: components.map {
                             AmountText.describe(
                                 $0, unitSystem: unitSystem,
-                                loggedUnit: kind == .supplement ? loggedUnits[intake.id]?[$0.componentID] : nil)
+                                loggedUnit: kind == .supplement ? loggedUnits[intake.id]?[$0.componentID] : nil,
+                                isSupplement: kind == .supplement)
                         }
                             .joined(separator: ", "),
                         occurredAt: intake.occurredAt,

@@ -73,7 +73,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         let kind = template.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
         return AmountText.summary(
             template.components, unitSystem: preferences.unitSystem,
-            loggedUnits: kind == .supplement ? template.loggedUnits : [:])
+            loggedUnits: kind == .supplement ? template.loggedUnits : [:], isSupplement: kind == .supplement)
     }
 
     public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {
@@ -91,7 +91,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
             let comboKind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
             model.name = prefill.components.map {
                 let loggedUnit = comboKind == .supplement ? prefill.loggedUnits[$0.componentID] : nil
-                return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit)))"
+                return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit, isSupplement: comboKind == .supplement)))"
             }.joined(separator: ", ")
             model.category = prefill.category
             model.amountText = "1"
