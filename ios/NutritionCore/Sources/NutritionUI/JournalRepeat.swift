@@ -57,7 +57,7 @@ struct IntakeRepeater {
     }
 
     @discardableResult
-    func create(from template: RepeatTemplate, now: Date) throws -> String {
+    func create(from template: RepeatTemplate, now: Date, keepOutOfLibrary: Bool = false) throws -> String {
         var product: ProductDefinition?
         if let snapshotID = template.productSnapshotID {
             guard let found = try store.product(snapshotID: snapshotID) else {
@@ -68,11 +68,19 @@ struct IntakeRepeater {
         let intake = Intake(
             id: makeID(), category: template.category, occurredAt: now,
             timeZoneIdentifier: timeZoneProvider(), meal: template.meal)
+        // Written before the entry, as the Add form does, so a failure saves nothing.
+        if keepOutOfLibrary {
+            guard let exclusions = store as? JournalLibraryExclusions else {
+                throw IntakeRepeatError.productUnavailable
+            }
+            try exclusions.keepOutOfLibrary(intakeID: intake.id)
+        }
         try store.create(intake, components: template.components, product: product, now: now)
         return intake.id
     }
 
-    /// Reads the intake's current revision and repeats it.
+    /// Reads the intake's current revision and repeats it. A copy of an entry kept out of Library
+    /// stays out of Library too.
     @discardableResult
     func create(repeating intake: Intake, now: Date) throws -> String {
         let revisions = try store.revisions(of: intake.id)
@@ -82,7 +90,8 @@ struct IntakeRepeater {
         let template = RepeatTemplate(
             displayName: "", category: intake.category, meal: intake.meal, components: current.components,
             productSnapshotID: current.productSnapshotID)
-        return try create(from: template, now: now)
+        let excluded = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary() ?? []
+        return try create(from: template, now: now, keepOutOfLibrary: excluded.contains(intake.id))
     }
 }
 
