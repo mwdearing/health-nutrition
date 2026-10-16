@@ -1492,7 +1492,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                         intakeID: tombstone.id, lifecycle: .deleted,
                         currentRevision: tombstone.currentRevision, revisionNumbers: []))
             }
-            return JournalRestoreReceipt(intakes: restored, insertedProductSnapshotIDs: insertedProducts)
+            let ownersWritten = Array(Set(plan.loggedUnits.map(\.intakeID)).intersection(restoredOwnerIDs).subtracting(restoredIDs))
+            return JournalRestoreReceipt(
+                intakes: restored, insertedProductSnapshotIDs: insertedProducts, loggedUnitOwnerIDs: ownersWritten)
         }
     }
 
@@ -1534,6 +1536,12 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                     context.delete(row)
                 }
                 context.delete(record)
+            }
+            for ownerID in receipt.loggedUnitOwnerIDs {
+                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> { $0.intakeID == ownerID })) {
+                    context.delete(row)
+                }
             }
             for snapshotID in receipt.insertedProductSnapshotIDs {
                 for row in try context.fetch(FetchDescriptor<ProductRecord>(

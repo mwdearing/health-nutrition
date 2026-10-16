@@ -576,10 +576,16 @@ public struct JournalRestoreReceipt: Sendable, Equatable {
     /// Product snapshots this restore created a row for. A snapshot the store already had is not listed:
     /// undoing must leave it, and the nutrient values it holds, alone.
     public var insertedProductSnapshotIDs: [String]
+    /// The owners (favorites and saved-meal items) whose logged-unit rows this restore wrote, so undoing it can
+    /// remove them again.
+    public var loggedUnitOwnerIDs: [String]
 
-    public init(intakes: [JournalRestoredIntake], insertedProductSnapshotIDs: [String]) {
+    public init(
+        intakes: [JournalRestoredIntake], insertedProductSnapshotIDs: [String], loggedUnitOwnerIDs: [String] = []
+    ) {
         self.intakes = intakes
         self.insertedProductSnapshotIDs = insertedProductSnapshotIDs
+        self.loggedUnitOwnerIDs = loggedUnitOwnerIDs
     }
 }
 

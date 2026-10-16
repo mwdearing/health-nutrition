@@ -565,6 +565,9 @@ public enum JournalExportError: Error, Sendable, Equatable {
     case unknownFavoriteAmount(String)
     /// A revision uses a unit the importer cannot restore; the field path contains no user-provided value.
     case unknownRevisionUnit(String)
+    /// `logged_units` names a unit outside the contract's four, or the same owner and component twice. Carries
+    /// the field path, which contains no user-provided value.
+    case invalidLoggedUnit(String)
     /// A revision with no components cannot be restored under the journal export contract.
     case emptyRevisionComponents(String, Int)
     /// An active intake without any revision history cannot be restored under the journal export contract.
@@ -628,6 +631,12 @@ private func validateKnownExportAmount(_ component: JournalExportComponent, path
 
 private func validateExportRequiredFields(_ document: JournalExport) throws {
     try requireExportText(document.appVersion, field: "app_version")
+    var seenLoggedUnits = Set<String>()
+    for (index, item) in document.loggedUnits.enumerated() {
+        guard JournalImportV6Keys.loggedUnitSymbols.contains(item.unit), !item.intakeID.isEmpty,
+            !item.componentID.isEmpty, seenLoggedUnits.insert(item.intakeID + "\u{1F}" + item.componentID).inserted
+        else { throw JournalExportError.invalidLoggedUnit("logged_units[\(index)]") }
+    }
     for (index, intake) in document.intakes.enumerated() {
         let path = "intakes[\(index)]"
         try requireExportText(intake.category, field: "\(path).category")

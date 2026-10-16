@@ -744,12 +744,14 @@ public enum JournalImporter {
 
     /// The units a version 6 file carries, refused as a whole when one is not a unit this build knows.
     private static func restoredLoggedUnits(_ items: [JournalExportLoggedUnit]) throws -> [JournalLoggedUnit] {
-        try items.map { item in
+        var seen = Set<String>()
+        return try items.map { item in
             guard JournalImportV6Keys.loggedUnitSymbols.contains(item.unit), !item.intakeID.isEmpty,
-                !item.componentID.isEmpty, let unit = try? MeasureUnit(symbol: item.unit)
+                !item.componentID.isEmpty, let unit = try? MeasureUnit(symbol: item.unit),
+                seen.insert(item.intakeID + "\u{1F}" + item.componentID).inserted
             else {
                 throw JournalImportError.malformed(
-                    "$.logged_units: \(item.unit) is not one of tsp, tbsp, cup or fl oz, or an id is empty")
+                    "$.logged_units: \(item.unit) is not one of tsp, tbsp, cup or fl oz, an id is empty, or a component is listed twice")
             }
             return JournalLoggedUnit(intakeID: item.intakeID, componentID: item.componentID, unit: unit)
         }

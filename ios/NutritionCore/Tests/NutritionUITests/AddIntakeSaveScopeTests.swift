@@ -282,14 +282,40 @@ final class LoggedUnitTests: XCTestCase {
     func testAnImportedLoggedUnitOutsideTheContractIsRefused() throws {
         let source = try makeStore()
         _ = try logFiber(source, unit: .teaspoon, amount: "4")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
         for symbol in ["L", "g"] {
-            var document = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
-            document.loggedUnits[0].unit = symbol
+            var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+            var units = try XCTUnwrap(root["logged_units"] as? [[String: Any]])
+            units[0]["unit"] = symbol
+            root["logged_units"] = units
             let target = try makeStore()
             XCTAssertThrowsError(try JournalImporter.importExport(
-                try JournalExporter.encode(document), into: target, favorites: nil), symbol)
+                try JSONSerialization.data(withJSONObject: root), into: target, favorites: nil), symbol)
             XCTAssertTrue(try target.activeIntakes().isEmpty)
         }
+    }
+
+    /// The same component listed twice is refused whole, and the exporter refuses to write a unit outside the four.
+    func testADuplicateLoggedUnitIsRefusedAndTheEncoderChecksTheUnit() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .teaspoon, amount: "4")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var units = try XCTUnwrap(root["logged_units"] as? [[String: Any]])
+        var other = units[0]
+        other["unit"] = "tbsp"
+        units.append(other)
+        root["logged_units"] = units
+        let target = try makeStore()
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try JSONSerialization.data(withJSONObject: root), into: target, favorites: nil))
+        XCTAssertTrue(try target.activeIntakes().isEmpty)
+
+        var document = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
+        document.loggedUnits[0].unit = "L"
+        XCTAssertThrowsError(try JournalExporter.encode(document))
     }
 
     /// A backup that carries a favorite carries its logged unit, and a restore writes it back under the same id.
