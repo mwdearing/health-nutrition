@@ -129,7 +129,7 @@ def test_the_unsigned_device_build_fails_when_the_widget_extension_is_not_embedd
     assert "PlugIns/HealthNutritionWidgets.appex" in text
 
 
-def test_the_widget_privacy_manifest_declares_no_tracking_and_no_required_reason_api() -> None:
+def test_the_widget_privacy_manifest_declares_nothing_because_nothing_leaves_the_device() -> None:
     import plistlib
 
     path = ROOT / "ios/HealthNutrition/Widgets/PrivacyInfo.xcprivacy"
@@ -138,9 +138,5 @@ def test_the_widget_privacy_manifest_declares_no_tracking_and_no_required_reason
     assert manifest["NSPrivacyTracking"] is False
     assert manifest["NSPrivacyTrackingDomains"] == []
     assert manifest["NSPrivacyAccessedAPITypes"] == []
-    collected = manifest["NSPrivacyCollectedDataTypes"]
-    assert [entry["NSPrivacyCollectedDataType"] for entry in collected] == [
-        "NSPrivacyCollectedDataTypeOtherUserContent"
-    ]
-    assert collected[0]["NSPrivacyCollectedDataTypeTracking"] is False
-
+    # The summary is read from the App Group on this device and sent nowhere, so there is nothing to declare.
+    assert manifest["NSPrivacyCollectedDataTypes"] == []

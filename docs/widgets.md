@@ -42,12 +42,14 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
   whichever identifier is signed. The App ID `<bundle>.widgets`, the group `group.<bundle>` and the App Groups
   capability on the app's App ID must exist in the developer account before a signed build; the first signed run
   creates the extension's profile through automatic signing, and its log is the check that it worked.
-- **Privacy manifest.** The extension has its own, matching the app's declaration for this data.
+- **Privacy manifest.** The extension has its own: it declares nothing, because nothing leaves the device, which
+  matches the app's manifest declaring nothing for these totals.
 
 Device check for the first signed build: with the device locked, confirm the Lock Screen widget hides the
 calorie figure and the gauge value (not only the Home Screen figures); the Lock Screen sentence is added
 to PRIVACY.md in a follow-up only once that check confirms it; after Erase all data confirm the widget
-reads "Nothing logged today"; and after midnight with the app closed confirm it shows dashes, not yesterday's
+reads "Nothing logged today"; after Erase all data also confirm the Lock Screen widget and the widget gallery preview read "Nothing logged today"
+(WidgetKit keeps its own snapshot cache, which the system manages); and after midnight with the app closed confirm it shows dashes, not yesterday's
 figures; and confirm the summary file is excluded from a device backup (its resource value
 `isExcludedFromBackup` reads back true).
 
