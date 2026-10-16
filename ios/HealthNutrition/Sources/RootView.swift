@@ -38,6 +38,8 @@ struct RootView: View {
     @State private var saveNotice: SaveNotice?
     /// Confirms a recipe save; the recipe list stays open in its own sheet, so it confirms there.
     @State private var recipeNotice: SaveNotice?
+    /// Confirms a save made inside the Add cover, which stays up while details are pushed.
+    @State private var addNotice: SaveNotice?
 
     @State private var selection: AppTab = .today
     @State private var addHome: AddHomeViewModel?
@@ -363,6 +365,7 @@ struct RootView: View {
                     }
                 }
             }
+            .saveConfirmation(addNotice)
         }
     }
 
@@ -553,6 +556,7 @@ struct RootView: View {
         case .productEditor(let editor):
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
+                self.addNotice = SaveNotice(SaveLabels.productSaved)
                 if openDetails { self.openProductDetails(product, home: home) }
             }
         case .productSearch:
@@ -560,6 +564,7 @@ struct RootView: View {
                 CommunityProductSearchView(model: search,
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
+                    onSaved: { self.addNotice = SaveNotice(SaveLabels.productSaved) },
                     onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
                     library: self.services.library, onPick: { self.openTemplate($0, home: home) },

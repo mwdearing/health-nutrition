@@ -7,6 +7,7 @@ public struct CommunityProductSearchView: View {
     private let onSelect: (CustomProductRevision) -> Void
     private let onLegacy: (LegacyCustomProductDraft) -> Void
     private let onSignIn: () -> Void
+    private let onSaved: () -> Void
     private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
     /// The person's own favorites and recents, listed above the products. Both must be given, or the
     /// screen shows products only.
@@ -16,7 +17,6 @@ public struct CommunityProductSearchView: View {
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
-    @State private var saveNotice: SaveNotice?
     /// The saved meal whose "Log to which meal" choice is up.
     @State private var mealToLog: SavedMeal?
     @FocusState private var searchFocused: Bool
@@ -24,7 +24,8 @@ public struct CommunityProductSearchView: View {
     @State private var didAutoFocus = false
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
-                focusSearchOnAppear: Bool = false) {
+                focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
+        self.onSaved = onSaved
         self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
         self.library = library; self.onPick = onPick; self.focusSearchOnAppear = focusSearchOnAppear
     }
@@ -128,7 +129,7 @@ public struct CommunityProductSearchView: View {
                             if model.inspectionNeedsRefresh { Button("Refresh shared facts") { Task { await model.refreshInspection() } } }
                             Button("Save representative on this phone") {
                                 select(product)
-                                if selectionError == nil { saveNotice = SaveNotice(SaveLabels.productSaved) }
+                                if selectionError == nil { onSaved() }
                                 model.closeInspection()
                             }
                                 .disabled(model.inspectionNeedsRefresh)
@@ -140,7 +141,6 @@ public struct CommunityProductSearchView: View {
             }
         }
         .navigationTitle("Find products")
-        .saveConfirmation(saveNotice)
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
         // Focus after the push animation. Setting focus during the transition can be dropped.
         .task {
