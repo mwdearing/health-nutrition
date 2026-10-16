@@ -1041,5 +1041,12 @@ final class JournalLibraryTests: XCTestCase {
         var typed = untouched
         typed.amountText = "355"
         XCTAssertNil(EntryDetailViewModel.unchangedStoredComponent(for: typed, in: stored))
+
+        // Typing the figure the field shows means the amount shown, which is the exact stored amount: the form
+        // stays clean and the exact figure is kept. Any other typed figure is an edit.
+        model.drafts["drink"] = "354.9"
+        XCTAssertFalse(model.isDirty)
+        model.drafts["drink"] = "354.8"
+        XCTAssertTrue(model.isDirty)
     }
 }
