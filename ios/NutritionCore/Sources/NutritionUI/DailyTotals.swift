@@ -30,7 +30,9 @@ public struct DailyTotals: Equatable {
 ///   amount, and liters and milliliters are added exactly.
 /// - A **product snapshot** states its nutrients for the amount its `labelBasis` names, so those
 ///   values are scaled by the factor `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`
-///   gives — the same factor the intake-context encoder uses — and summed exactly. 40 g of a product
+///   gives, or, for a "per 100 g or mL" label on a weight or a volume only, by the per-100 g or per-100 mL
+///   factor `IntakeContextSnapshotBasis.perHundredGOrMLFactor` gives. The intake-context encoder does not take
+///   that fallback. The scaled values are summed exactly. 40 g of a product
 ///   stating 13 g of protein per 100 g contributes 5.2 g, not 13 g. A per-serving basis that also
 ///   states its serving as a quantity is scaled from that serving and the amount logged, because an
 ///   entry recorded as an amount cannot be scaled by a count; see `scalingFactor(labelBasis:logged:)`.

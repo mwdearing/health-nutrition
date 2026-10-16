@@ -58,8 +58,9 @@ Where an amount comes from is decided by two rules, because those are the two th
   category `water` states its volume in its own unit, so it is already the amount. Liters and milliliters are added,
   exactly.
 - A **product snapshot** states its nutrients for the amount its `labelBasis` names, so those values are scaled by the
-  factor `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)` gives — the same factor the intake-context
-  encoder uses — and summed in `Decimal`. 40 g of a product stating 13 g of protein per 100 g contributes 5.2 g. An entry
+  factor `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)` gives, or, for a "per 100 g or mL" label on a
+  weight or a volume only, the per-100 g or per-100 mL factor from `IntakeContextSnapshotBasis.perHundredGOrMLFactor`.
+  The intake-context encoder does not take that fallback. The values are summed in `Decimal`. 40 g of a product stating 13 g of protein per 100 g contributes 5.2 g. An entry
   with no snapshot asks the injected `NutrientFactsLookup` about each component, so a food the catalog can still answer
   still contributes.
 
