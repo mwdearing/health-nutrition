@@ -186,15 +186,17 @@ public struct LibraryView: View {
                 }
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel(opensDetails ? item.accessibilityLabel(forPick: true) : "Log \(item.title) now")
+            .accessibilityLabel(opensDetails ? item.accessibilityLabel(forPick: true) : item.logAccessibilityLabel)
             .modifier(DetailsHint(isOn: opensDetails, logHint: onPick == nil))
             .contextMenu {
                 if let onOpen = self.onOpen, onPick == nil {
                     Button("Details") { onOpen(item.template) }
                 }
             }
-            .accessibilityAction(named: "Details") {
-                if let onOpen = self.onOpen, onPick == nil { onOpen(item.template) }
+            .accessibilityActions {
+                if let onOpen = self.onOpen, onPick == nil {
+                    Button("Details") { onOpen(item.template) }
+                }
             }
             Spacer()
             if let onLegacyProduct, model.canCompleteProduct(item) {

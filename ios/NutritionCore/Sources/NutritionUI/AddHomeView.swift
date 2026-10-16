@@ -70,13 +70,13 @@ public struct AddHomeView: View {
                                 }
                             }
                             .buttonStyle(.borderless)
-                            .accessibilityLabel("Log \(recent.template.displayName) now")
+                            .accessibilityLabel("Log \(recent.template.displayName) now, \(model.amountSummary(of: recent.template))")
                             .accessibilityHint("Logs once. You can undo for 10 seconds.")
                             .contextMenu {
                                 if let onOpen { Button("Details") { onOpen(recent.template) } }
                             }
-                            .accessibilityAction(named: "Details") {
-                                if let onOpen { onOpen(recent.template) }
+                            .accessibilityActions {
+                                if let onOpen { Button("Details") { onOpen(recent.template) } }
                             }
                             Spacer()
                             QuietCapsule("Add") {
