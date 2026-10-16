@@ -913,17 +913,22 @@ public enum NutritionFactsParser {
     /// name, and a bare amount in front of one of those is a front-of-pack callout rather than a row.
     private static let amountFirstRows: Set<NutritionFactKey> = [.addedSugars]
 
+    /// Nutrients a US Nutrition Facts panel prints that the named table does not carry. A food panel keeps
+    /// a row with one of these names; any other unrecognized name on a food panel is OCR noise. Names are
+    /// compared with spaces and hyphens removed, so "Folic Acid" and "Folicacid" both match.
+    private static let knownFoodNutrients: Set<String> = [
+        "magnesium", "phosphorus", "zinc", "copper", "manganese", "selenium", "chromium", "molybdenum",
+        "iodine", "chloride", "choline", "vitamina", "vitaminc", "vitamine", "vitamink", "thiamin",
+        "thiamine", "riboflavin", "niacin", "folate", "folicacid", "biotin", "pantothenicacid",
+    ]
+
+    private static func isKnownFoodNutrient(_ name: String) -> Bool {
+        knownFoodNutrients.contains(name.lowercased().filter { $0 != " " && $0 != "-" })
+    }
+
     /// The words a panel may print between an amount and the nutrient name it belongs to, as in
     /// "Includes 5g Added Sugars". A row that states its amount in front of its name is stated with one
     /// of these words in between, so a number with any other word in front of it is left alone.
-    /// Nutrients a US Nutrition Facts panel prints that the named table does not carry. A food panel keeps
-    /// a row with one of these names; any other unrecognized name on a food panel is OCR noise.
-    private static let knownFoodNutrients: Set<String> = [
-        "magnesium", "phosphorus", "zinc", "copper", "manganese", "selenium", "chromium", "molybdenum",
-        "iodine", "chloride", "choline", "vitamin a", "vitamin c", "vitamin e", "vitamin k", "thiamin",
-        "riboflavin", "niacin", "vitamin b6", "folate", "vitamin b12", "biotin", "pantothenic acid",
-    ]
-
     private static let leadingWords: Set<String> = ["includes", "contains", "about", "with", "of", "has"]
 
     /// A nutrient name found on a line, with the span the name occupies.
@@ -1097,7 +1102,7 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
-            } else if !keepsUnrecognizedRows && !knownFoodNutrients.contains(row.name.lowercased()) {
+            } else if !keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) {
                 // A row that carries an amount but no name this panel's kind recognizes is unread, not
                 // dropped silently: it is counted so the review screen still shows it as unfinished.
                 unnamedRows += 1
