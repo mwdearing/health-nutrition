@@ -155,8 +155,11 @@ public struct JournalSnapshotTotals: Sendable {
         guard let product = try store.product(snapshotID: snapshotID) else {
             throw JournalError.corruptRecord("missing product snapshot \(snapshotID)")
         }
+        // The same factor the day totals use, so a barcode "per 100 g or mL" writes what Today shows.
         guard let factor = IntakeContextSnapshotBasis.scalingFactor(
             labelBasis: product.labelBasis, logged: revision.components)
+            ?? IntakeContextSnapshotBasis.perHundredGOrMLFactor(
+                labelBasis: product.labelBasis, logged: revision.components)
         else { return [:] }
         var scaled: [String: NutrientValue] = [:]
         for (key, value) in product.nutrients {

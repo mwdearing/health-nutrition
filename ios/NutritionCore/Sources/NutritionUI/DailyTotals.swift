@@ -150,29 +150,7 @@ public enum DailyTotalsBuilder {
             return factor
         }
         if let factor = statedServingFactor(labelBasis: labelBasis, logged: components) { return factor }
-        return perHundredGOrMLFactor(labelBasis: labelBasis, logged: components)
-    }
-
-    /// The factor for "per 100 g or mL", the basis a barcode source gives a product whose label is per
-    /// 100 g for a solid and per 100 mL for a liquid. The logged amount is in the dimension it was
-    /// entered in, so a grams entry is over 100 g and a millilitre entry is over 100 mL. No density is
-    /// used: the label's own figure is the one the app has, and the milk-sized correction it would add
-    /// is about 3 percent of a number already rounded on the label. An amount in neither mass nor volume,
-    /// such as a scoop or a piece, has no factor, and neither has a mix of the two.
-    static func perHundredGOrMLFactor(labelBasis: String, logged components: [IntakeComponent]) -> Decimal? {
-        let compact = labelBasis.lowercased().filter { !$0.isWhitespace && $0 != "_" && $0 != "-" }
-        guard compact == "per100gorml" else { return nil }
-        let masses = components.filter { $0.unit.dimension == .mass }
-        let volumes = components.filter { $0.unit.dimension == .volume }
-        guard masses.isEmpty != volumes.isEmpty else { return nil }
-        let unit: MeasureUnit = masses.isEmpty ? .mL : .g
-        var total = Decimal(0)
-        for component in masses + volumes {
-            guard let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: unit)
-            else { return nil }
-            total += converted.value
-        }
-        return total / 100
+        return IntakeContextSnapshotBasis.perHundredGOrMLFactor(labelBasis: labelBasis, logged: components)
     }
 
     /// How much of a stated serving was logged, when the basis names the serving and the entry is
