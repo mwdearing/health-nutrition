@@ -1129,7 +1129,8 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             component("mixed", amount: dec("30"), unit: .g),
             IntakeComponent(componentID: "scoop", name: "Scoop", amount: dec("1"), unit: .scoop),
         ]
-        for components in [mixed, [component("scoop", amount: dec("1"), unit: .scoop)]] {
+        let negative = [component("negative", amount: dec("-30"), unit: .g)]
+        for components in [mixed, [component("scoop", amount: dec("1"), unit: .scoop)], negative] {
             let store = try makeStore(try makeDirectory())
             let product = ProductDefinition(
                 snapshotID: "snap-mixed", productID: "product-mixed", name: "Mixed", brand: nil, barcode: nil,
