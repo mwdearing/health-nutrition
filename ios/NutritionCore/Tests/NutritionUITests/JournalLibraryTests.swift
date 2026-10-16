@@ -156,6 +156,17 @@ final class JournalLibraryTests: XCTestCase {
         }
     }
 
+    func testLogRowLabelKeepsAmountAndSupplementMark() {
+        let template = RepeatTemplate(displayName: "Ipamorelin", category: "supplement",
+            components: [IntakeComponent(componentID: "ipa", name: "Ipamorelin", amount: 2, unit: .mg)])
+        let supplement = LibraryItem(id: "ipa", title: "Ipamorelin", detail: "2 mg",
+            isFavorite: false, template: template, kind: .supplement)
+        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin now, 2 mg, Supplement")
+        let food = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
+            isFavorite: false, template: template, kind: .food)
+        XCTAssertEqual(food.logAccessibilityLabel, "Log Oats now, 40 g")
+    }
+
     // MARK: Journal
 
     func testJournalGroupsByLocalDayOfEachIntakesOwnZoneNewestFirst() throws {
