@@ -10,13 +10,16 @@ public struct AddHomeView: View {
     private let onNewProduct: (() -> Void)?
     private let onSearchProducts: (() -> Void)?
     private let onChanged: () -> Void
+    /// Opens the details form for a Recent row (long-press or the Details action). Nothing is logged there.
+    private let onOpen: ((RepeatTemplate) -> Void)?
     @State private var quickAdd: QuickAddViewModel?
 
     public init(model: AddHomeViewModel, onBarcode: @escaping () -> Void,
         onLabel: @escaping () -> Void, onLibrary: @escaping () -> Void,
         onType: @escaping () -> Void, onChanged: @escaping () -> Void,
-        onNewProduct: (() -> Void)? = nil, onSearchProducts: (() -> Void)? = nil) {
-        self.onNewProduct = onNewProduct; self.onSearchProducts = onSearchProducts
+        onNewProduct: (() -> Void)? = nil, onSearchProducts: (() -> Void)? = nil,
+        onOpen: ((RepeatTemplate) -> Void)? = nil) {
+        self.onNewProduct = onNewProduct; self.onSearchProducts = onSearchProducts; self.onOpen = onOpen
         self.model = model
         self.onBarcode = onBarcode
         self.onLabel = onLabel
@@ -69,6 +72,12 @@ public struct AddHomeView: View {
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Log \(recent.template.displayName) now")
                             .accessibilityHint("Logs once. You can undo for 10 seconds.")
+                            .contextMenu {
+                                if let onOpen { Button("Details") { onOpen(recent.template) } }
+                            }
+                            .accessibilityAction(named: "Details") {
+                                if let onOpen { onOpen(recent.template) }
+                            }
                             Spacer()
                             QuietCapsule("Add") {
                                 if self.model.quickAdd(recent) != nil { self.onChanged() }

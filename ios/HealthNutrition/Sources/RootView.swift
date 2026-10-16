@@ -336,7 +336,8 @@ struct RootView: View {
                     onType: { self.openAddRoute(.details(nil), home: home) },
                     onChanged: { self.reload() },
                     onNewProduct: { self.openProductEditor(home: home) },
-                    onSearchProducts: { self.openAddRoute(.productSearch, home: home) }
+                    onSearchProducts: { self.openAddRoute(.productSearch, home: home) },
+                    onOpen: { template in self.openTemplate(template, home: home) }
                 )
                 .navigationDestination(for: AddRoute.self) { route in
                     self.addDestination(route, home: home)
