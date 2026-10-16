@@ -6,6 +6,11 @@ import NutritionDomain
 import NutritionUI
 
 /// The tab shell: Today, Diary (the journal), Library, Trends and Settings, all reading the same store.
+/// Messages the add flow shows, named here so a test can pin the wording.
+enum AddFlowMessage {
+    static let productDetailsFailed = "Could not open product details."
+}
+
 @MainActor
 struct RootView: View {
     let services: AppServices
@@ -340,8 +345,6 @@ struct RootView: View {
                     onOpen: { template in self.openTemplate(template, home: home) }
                 )
                 // A failed Details action from a Recent row shows here, as it does on the picker.
-                // An error the picker left behind is cleared when Add home reappears.
-                .onAppear { self.addFlowError = nil }
                 .overlay(alignment: .bottom) {
                     if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                 }
@@ -429,7 +432,7 @@ struct RootView: View {
 
     private func openProductDetails(_ product: CustomProductRevision, home: AddHomeViewModel) {
         do { try addNavigation.openProduct(product, home: home, now: Date()); services.library.load() }
-        catch { addFlowError = "Could not open product details." }
+        catch { addFlowError = AddFlowMessage.productDetailsFailed }
     }
     private func startProductDetails(_ product: CustomProductRevision) {
         startAddingIntake()
@@ -538,6 +541,9 @@ struct RootView: View {
                 .overlay(alignment: .bottom) {
                     if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                 }
+                // A picker error is the picker's own: it is cleared when the picker goes away, so it
+                // never shows on Add home. Library product errors are set elsewhere and are not touched.
+                .onDisappear { self.addFlowError = nil }
         case .productEditor(let editor):
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
