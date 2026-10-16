@@ -1440,9 +1440,13 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             for id in Set(plan.keptOutOfLibrary) where restoredIDs.contains(id) {
                 context.insert(JournalSchemaV9.LibraryExclusionRecord(intakeID: id))
             }
-            // The same for the units entries were logged in: stale rows go, and the file's own rows are written.
-            for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }
+            // The same for the units entries were logged in, but only for the owners this file restores: the
+            // phone's own favorites keep theirs when the file carries none.
             let restoredOwnerIDs = restoredIDs.union(plan.favorites.map(\.id))
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>())
+            where restoredOwnerIDs.contains(row.intakeID) {
+                context.delete(row)
+            }
             for loggedUnit in plan.loggedUnits where restoredOwnerIDs.contains(loggedUnit.intakeID) {
                 context.insert(JournalSchemaV10.LoggedUnitRecord(
                     intakeID: loggedUnit.intakeID, componentID: loggedUnit.componentID,

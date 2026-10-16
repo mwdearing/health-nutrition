@@ -680,8 +680,11 @@ public final class SupplementStackViewModel: ObservableObject {
         if let units = store as? JournalLoggedUnits {
             for component in template.components where component.unit == .mL {
                 guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
-                try? units.recordLoggedUnit(JournalLoggedUnit(
-                    intakeID: favoriteID, componentID: component.componentID, unit: loggedUnit))
+                // A unit that cannot be written refuses the favorite, so it never saves without its unit.
+                do {
+                    try units.recordLoggedUnit(JournalLoggedUnit(
+                        intakeID: favoriteID, componentID: component.componentID, unit: loggedUnit))
+                } catch { return nil }
             }
         }
         return FavoriteTemplate(

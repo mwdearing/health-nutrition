@@ -825,8 +825,11 @@ public enum JournalExporter {
         let exportedIDs = Set(intakes.map(\.id))
         let keptOutOfLibraryIDs = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary()
             .filter { exportedIDs.contains($0) } ?? []
+        let exportedOwnerIDs = exportedIDs.union(favoriteList.map(\.id))
         let loggedUnitList = try (store as? JournalLoggedUnits)?.loggedUnits()
-            .filter { exportedIDs.contains($0.intakeID) || favoriteList.contains(where: { favorite in favorite.id == $0.intakeID }) }
+            .filter {
+                exportedOwnerIDs.contains($0.intakeID) && JournalImportV6Keys.loggedUnitSymbols.contains($0.unit.symbol)
+            }
             .map { JournalExportLoggedUnit(intakeID: $0.intakeID, componentID: $0.componentID, unit: $0.unit.symbol) }
             .sorted { ($0.intakeID, $0.componentID) < ($1.intakeID, $1.componentID) } ?? []
         var savedMealList: [JournalExportSavedMeal] = []

@@ -291,4 +291,61 @@ final class LoggedUnitTests: XCTestCase {
             XCTAssertTrue(try target.activeIntakes().isEmpty)
         }
     }
+
+    /// A backup that carries a favorite carries its logged unit, and a restore writes it back under the same id.
+    func testAFavoritesLoggedUnitSurvivesABackupAndRestore() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .teaspoon, amount: "4")
+        let sourceFavorites = try makeFavorites()
+        let library = LibraryViewModel(store: source, favorites: sourceFavorites)
+        library.load()
+        library.addFavorite(try XCTUnwrap(library.sections.first { $0.title == "Recents" }?.items.first))
+        let favoriteID = try XCTUnwrap(try sourceFavorites.list().first).id
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, favorites: sourceFavorites, appVersion: "0.1.0", exportedAt: now))
+
+        let restored = try makeStore()
+        let restoredFavorites = try makeFavorites()
+        _ = try JournalImporter.importExport(data, into: restored, favorites: restoredFavorites)
+        XCTAssertTrue(try restored.loggedUnits().contains {
+            $0.intakeID == favoriteID && $0.unit == .teaspoon
+        })
+    }
+
+    /// A restore that carries no favorites leaves the phone's own favorites' units alone.
+    func testARestoreKeepsTheUnitsOfFavoritesItDoesNotCarry() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .g, amount: "5")
+        let data = try JournalExporter.encode(
+            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+        let target = try makeStore()
+        let own = JournalLoggedUnit(intakeID: "an-existing-favorite", componentID: "fiber-powder", unit: .teaspoon)
+        try target.recordLoggedUnit(own)
+        _ = try JournalImporter.importExport(data, into: target, favorites: nil)
+        XCTAssertEqual(try target.loggedUnits(), [own])
+    }
+
+    /// A multi-item prefill names its amounts in the unit system, not a logged unit, unless it is a supplement.
+    func testAMultiItemPrefillOfANonSupplementIgnoresLoggedUnits() throws {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setUnitSystem(.usCustomary)
+        let home = AddHomeViewModel(store: try makeStore(), preferences: preferences, now: { self.now })
+        let template = RepeatTemplate(
+            displayName: "Mix", category: "food",
+            components: [
+                IntakeComponent(componentID: "a", name: "A", amount: Decimal(string: "19.715686375")!, unit: .mL),
+                IntakeComponent(componentID: "b", name: "B", amount: 5, unit: .g),
+            ],
+            loggedUnits: ["a": .teaspoon])
+        let details = try home.makeDetails(prefill: template, now: now)
+        XCTAssertTrue(details.name.contains("0.6667 fl oz"), details.name)
+        XCTAssertFalse(details.name.contains("tsp"), details.name)
+    }
+
+    private func makeFavorites() throws -> SwiftDataFavoritesStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+    }
 }
