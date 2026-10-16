@@ -385,6 +385,24 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "energy")?.value, .unknown)
     }
 
+    /// A negative logged weight on a "per 100 g or mL" product is no quantity, so the nutrient stays unknown.
+    func testPerHundredGOrMLWithANegativeAmountStaysUnknown() throws {
+        let store = try makeStore()
+        let powder = ProductDefinition(
+            snapshotID: "snapshot-negative", productID: "product-negative", name: "Negative",
+            labelBasis: "per 100 g or mL", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energy": .known(Decimal(40), .kcal)])
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [IntakeComponent(componentID: "neg", name: "Neg", amount: -30, unit: .g)],
+            product: powder, now: when)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energy"])
+
+        XCTAssertEqual(totals.total(for: "energy")?.value, .unknown)
+    }
+
     /// A weight beside a counted scoop on a "per 100 g or mL" product cannot be scaled as one amount, so the
     /// nutrient stays unknown rather than being scaled from the grams alone.
     func testPerHundredGOrMLWithAMixedWeightAndCountStaysUnknown() throws {
