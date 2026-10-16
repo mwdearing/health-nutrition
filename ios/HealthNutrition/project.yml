@@ -113,6 +113,7 @@ targets:
       - path: Tests
         excludes:
           - PrivacyShieldUITests/**
+          - AddSearchUITests/**
     dependencies:
       - target: HealthNutrition
       # The stores, the Connections view model and the recipe types the assertions use are the
@@ -161,16 +162,26 @@ schemes:
       targets:
         HealthNutrition: all
         HealthNutritionTests: [test]
-        HealthNutritionAddUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - HealthNutritionTests
-        - HealthNutritionAddUITests
     archive:
       config: Release
+
+  HealthNutritionAdd:
+    build:
+      targets:
+        HealthNutrition: all
+        HealthNutritionAddUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - HealthNutritionAddUITests
 
   HealthNutritionPrivacy:
     build:
