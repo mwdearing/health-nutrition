@@ -362,6 +362,8 @@ public final class TodayViewModel: ObservableObject {
             goalBars = []
             waterBar = nil
             missingValuesSummary = nil
+            activityGoalNote = nil
+            dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
             errorMessage = "Could not read the journal."
         }
     }
