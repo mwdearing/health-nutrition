@@ -134,6 +134,15 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
     }
 
+    func testTheEraserRemovesALegacyRootSummaryEvenWhenTheEmptyWriteSucceeds() throws {
+        let store = WidgetSnapshotStore(directory: directory)
+        let legacy = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
+        try Data("figures".utf8).write(to: legacy)
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertNotNil(store.read(), "the empty summary was written")
+    }
+
     func testAFolderThatCannotBeLeftOutOfBackupsIsNotLeftOnDisk() throws {
         var store = WidgetSnapshotStore(directory: directory)
         struct Refused: Error {}

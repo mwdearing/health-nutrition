@@ -166,12 +166,17 @@ struct WidgetSnapshotStore {
     /// Removes the whole folder: the summary and any temporary an interrupted write left. Throws if it is still
     /// there afterwards, so an erase never reports success with a figure on disk.
     func erase() throws {
-        // A summary an earlier build kept directly in the container, if there is one, goes too.
-        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName))
-        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName + ".tmp"))
+        removeLegacyRootFiles()
         guard fileManager.fileExists(atPath: folderURL.path) else { return }
         try fileManager.removeItem(at: folderURL)
         if fileManager.fileExists(atPath: folderURL.path) { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    /// A summary an earlier build kept directly in the container instead of the folder, if there is one. Erase all
+    /// data removes it on every path, not only when the folder has to be removed.
+    func removeLegacyRootFiles() {
+        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName))
+        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName + ".tmp"))
     }
 
     /// Removes a temporary left by an interrupted write, when the app starts. Best effort: it is inside the

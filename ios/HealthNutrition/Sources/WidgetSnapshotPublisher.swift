@@ -146,6 +146,7 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
         erasure.markErased()
         defer { WidgetCenter.shared.reloadAllTimelines() }
         guard let store else { return }
+        store.removeLegacyRootFiles()
         do {
             try store.write(WidgetSnapshot.empty(at: now()))
         } catch {
