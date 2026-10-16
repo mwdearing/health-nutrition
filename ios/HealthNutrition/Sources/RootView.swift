@@ -340,6 +340,8 @@ struct RootView: View {
                     onOpen: { template in self.openTemplate(template, home: home) }
                 )
                 // A failed Details action from a Recent row shows here, as it does on the picker.
+                // An error the picker left behind is cleared when Add home reappears.
+                .onAppear { self.addFlowError = nil }
                 .overlay(alignment: .bottom) {
                     if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                 }
