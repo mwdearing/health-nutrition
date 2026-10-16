@@ -5,6 +5,11 @@ import NutritionJournal
 import NutritionDomain
 import NutritionUI
 
+/// Messages the add flow shows, named here so a test can pin the wording.
+enum AddFlowMessage {
+    static let productDetailsFailed = "Could not open product details."
+}
+
 /// The tab shell: Today, Diary (the journal), Library, Trends and Settings, all reading the same store.
 @MainActor
 struct RootView: View {
@@ -427,7 +432,7 @@ struct RootView: View {
 
     private func openProductDetails(_ product: CustomProductRevision, home: AddHomeViewModel) {
         do { try addNavigation.openProduct(product, home: home, now: Date()); services.library.load() }
-        catch { addFlowError = "Could not open product details." }
+        catch { addFlowError = AddFlowMessage.productDetailsFailed }
     }
     private func startProductDetails(_ product: CustomProductRevision) {
         startAddingIntake()
@@ -536,6 +541,9 @@ struct RootView: View {
                 .overlay(alignment: .bottom) {
                     if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                 }
+                // A picker error is the picker's own: it is cleared when the picker goes away, so it
+                // never shows on Add home. Library product errors are set elsewhere and are not touched.
+                .onDisappear { self.addFlowError = nil }
         case .productEditor(let editor):
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
