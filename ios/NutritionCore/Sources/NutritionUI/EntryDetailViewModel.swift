@@ -258,8 +258,10 @@ public final class EntryDetailViewModel: ObservableObject {
             kind = snapshot?.kind ?? .food
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
+            // The field reads at the digits a reading carries (354.9 mL, not 354.88235475 mL). Untouched, a
+            // save still carries the stored component, so the exact figure stays behind the text.
             drafts = Dictionary(uniqueKeysWithValues: current.components.map {
-                ($0.componentID, $0.amount.isNaN ? "" : DecimalFormatting.text($0.amount))
+                ($0.componentID, Self.seededAmountText($0.amount, unit: $0.unit))
             })
             loadedDrafts = drafts
             occurredAt = intake.occurredAt
@@ -380,9 +382,13 @@ public final class EntryDetailViewModel: ObservableObject {
     public func convertedText(for componentID: String) -> String? {
         guard let row = components.first(where: { $0.id == componentID }),
               row.amountText != "unknown",
-              let draft = drafts[componentID], let amount = AmountParser.parseTyped(draft)
+              let draft = drafts[componentID], let typed = AmountParser.parseTyped(draft)
         else { return nil }
-        return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem).text
+        // An untouched draft is the stored amount, so it converts from the exact figure the Journal converts,
+        // not from the rounded text the field was seeded with.
+        let untouched = Self.sameAmountText(loadedDrafts[componentID] ?? "", draft)
+        let amount = untouched ? (AmountParser.parse(row.amountText) ?? typed) : typed
+        return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.
@@ -476,15 +482,27 @@ public final class EntryDetailViewModel: ObservableObject {
         for draft: EditedComponent, in stored: [IntakeComponent]
     ) -> IntakeComponent? {
         guard let existing = stored.first(where: { $0.componentID == draft.componentID }) else { return nil }
-        guard Self.sameAmountText(Self.seededAmountText(existing.amount), draft.amountText) else { return nil }
+        guard Self.sameAmountText(Self.seededAmountText(existing.amount, unit: existing.unit), draft.amountText) else { return nil }
         return existing
     }
 
     /// What an amount field is seeded with: its decimal text, or empty for an `unknown`, which states no
     /// amount and so has no text to seed. The unknown's field therefore reads as untouched exactly when it
     /// is still empty.
-    static func seededAmountText(_ amount: Decimal) -> String {
-        amount.isNaN ? "" : DecimalFormatting.text(amount)
+    ///
+    /// A gram, kilogram, milliliter, liter, ounce or fluid ounce is seeded rounded to the digits its reading
+    /// carries, in its own unit. Every other unit is seeded as stored. An amount too small for those digits
+    /// keeps its full text, so a real amount never reads as none of it.
+    ///
+    /// The field states the stored amount at display precision, so typing the figure it shows means "the amount
+    /// shown", which is the exact stored amount: the form stays clean and the exact figure is kept. Saving the
+    /// shown digits would change the stored value by less than half the last digit, with nothing a reader could
+    /// see change.
+    static func seededAmountText(_ amount: Decimal, unit: MeasureUnit = .serving) -> String {
+        guard !amount.isNaN else { return "" }
+        let shown = AmountDisplay.display(amount, unit: unit, system: .metric, roundsStoredUnit: true)
+        guard !shown.isBelowSmallest else { return DecimalFormatting.text(amount) }
+        return DecimalFormatting.text(shown.amount)
     }
 
     /// Whether the components a save writes are the ones the current revision already holds.

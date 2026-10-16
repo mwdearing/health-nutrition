@@ -989,4 +989,64 @@ final class JournalLibraryTests: XCTestCase {
         model.load(now: now)
         XCTAssertTrue(model.fieldErrors.isEmpty)
     }
+
+    // MARK: Long converted amounts
+
+    private func longAmountStore() -> CannedStore {
+        let ids = ["fiber", "drink", "milk"]
+        let intakes = ids.enumerated().map { index, id in
+            Intake(id: id, category: "food", occurredAt: now.addingTimeInterval(Double(index)), timeZoneIdentifier: "UTC")
+        }
+        return CannedStore(intakes: intakes, components: [
+            "fiber": [IntakeComponent(componentID: "fiber", name: "Fiber Powder", amount: Decimal(string: "19.715686375")!, unit: .mL)],
+            "drink": [IntakeComponent(componentID: "drink", name: "Drink", amount: Decimal(string: "354.88235475")!, unit: .mL)],
+            "milk": [IntakeComponent(componentID: "milk", name: "Milk", amount: Decimal(string: "283.49523125")!, unit: .g)]
+        ])
+    }
+
+    private func journalDetails(_ system: UnitSystem) -> [String: String] {
+        let model = JournalViewModel(
+            store: longAmountStore(), preferences: InMemoryDisplayPreferences(unitSystem: system))
+        model.load(now: now)
+        return Dictionary(uniqueKeysWithValues: model.sections.flatMap(\.rows).map { ($0.id, $0.detail) })
+    }
+
+    /// A pin, not a regression test for the entry field: the Journal path already rounded. A scaled entry reads
+    /// as a kitchen figure in the Journal under both unit systems, never as the long decimal the arithmetic left.
+    func testJournalRowsReadRoundedAmountsUnderBothUnitSystems() {
+        let metric = journalDetails(.metric)
+        XCTAssertEqual(metric["fiber"], "19.7 mL")
+        XCTAssertEqual(metric["drink"], "354.9 mL")
+        XCTAssertEqual(metric["milk"], "283.5 g")
+        let us = journalDetails(.usCustomary)
+        XCTAssertEqual(us["fiber"], "0.6667 fl oz")
+        XCTAssertEqual(us["drink"], "12 fl oz")
+        XCTAssertEqual(us["milk"], "10 oz")
+    }
+
+    /// The entry's amount field starts at the digits a reading carries, and an untouched save still carries
+    /// the exact stored component. Only a typed change writes a new figure.
+    func testEntryAmountFieldIsRoundedAndAnUntouchedSaveKeepsTheExactAmount() throws {
+        let store = longAmountStore()
+        let model = EntryDetailViewModel(store: store, intakeID: "drink", timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertEqual(model.drafts["drink"], "354.9")
+        XCTAssertEqual(model.components.first?.amountText, "354.88235475")
+        XCTAssertFalse(model.isDirty)
+
+        let stored = try XCTUnwrap(store.components["drink"])
+        let untouched = EditedComponent(
+            componentID: "drink", name: "Drink", amountText: try XCTUnwrap(model.drafts["drink"]), unit: .mL)
+        XCTAssertEqual(EntryDetailViewModel.unchangedStoredComponent(for: untouched, in: stored), stored.first)
+        var typed = untouched
+        typed.amountText = "355"
+        XCTAssertNil(EntryDetailViewModel.unchangedStoredComponent(for: typed, in: stored))
+
+        // Typing the figure the field shows means the amount shown, which is the exact stored amount: the form
+        // stays clean and the exact figure is kept. Any other typed figure is an edit.
+        model.drafts["drink"] = "354.9"
+        XCTAssertFalse(model.isDirty)
+        model.drafts["drink"] = "354.8"
+        XCTAssertTrue(model.isDirty)
+    }
 }

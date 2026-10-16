@@ -278,6 +278,19 @@ final class EntryDetailDisplayPreferenceTests: XCTestCase {
         return model
     }
 
+    /// The helper line converts the exact stored amount while the field is untouched, so it agrees with the
+    /// Journal: 300.15 mL is 10.149 fl oz, shown as 10.1, not the 10.2 the rounded 300.2 seed would give.
+    func testTheConvertedLineUsesTheExactStoredAmountUntilTheFieldIsEdited() throws {
+        let model = try model(
+            InMemoryDisplayPreferences(unitSystem: .usCustomary), amount: Decimal(string: "300.15")!, unit: .mL)
+        XCTAssertEqual(model.drafts["oats"], "300.2")
+        XCTAssertEqual(model.convertedText(for: "oats"), "10.1 fl oz")
+        model.drafts["oats"] = "300.2"
+        XCTAssertEqual(model.convertedText(for: "oats"), "10.1 fl oz", "typing the shown figure is still untouched")
+        model.drafts["oats"] = "301"
+        XCTAssertEqual(model.convertedText(for: "oats"), "10.2 fl oz")
+    }
+
     /// An amount stored as unknown has no figure to convert, so the converted line is hidden rather
     /// than shown as "NaN oz".
     func testAnUnknownAmountHidesTheConvertedLine() throws {
