@@ -13,7 +13,7 @@ final class AddSearchRowUITests: XCTestCase {
 
         let row = app.buttons.matching(NSPredicate(format: "label == %@", "Search foods, brands, drinks")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10),
-                      "the search row is not on the Add screen. Hierarchy: \(String(app.debugDescription.prefix(6000)))")
+                      "the search row is not on the Add screen. \(describeAddState(app))")
         XCTAssertTrue(row.isHittable, "the search row is on screen but cannot be tapped")
         row.tap()
 
@@ -24,5 +24,14 @@ final class AddSearchRowUITests: XCTestCase {
         let expectation = XCTNSPredicateExpectation(predicate: focused, object: field)
         XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed,
                        "the search field did not take focus after the row was tapped")
+    }
+
+    /// The Add-related buttons, the tab bar and the sheet count, so a failure says what was on screen.
+    private func describeAddState(_ app: XCUIApplication) -> String {
+        let buttons = app.buttons.allElementsBoundByIndex
+            .map { "\($0.label)|id=\($0.identifier)|hittable=\($0.isHittable)" }
+            .filter { $0.localizedCaseInsensitiveContains("add") || $0.localizedCaseInsensitiveContains("search") }
+        let tabs = app.tabBars.buttons.allElementsBoundByIndex.map { $0.label }
+        return "Add-related buttons: [\(buttons.joined(separator: "; "))] tab bar: [\(tabs.joined(separator: ", "))] sheets: \(app.sheets.count)"
     }
 }
