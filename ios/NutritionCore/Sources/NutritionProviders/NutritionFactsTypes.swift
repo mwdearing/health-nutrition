@@ -143,6 +143,9 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
     /// cropped away or misread is recorded as the food it always was before this was known, so a failed
     /// recognition costs the label's kind and never its values.
     public let panelKind: NutritionPanelKind
+    /// Rows the scan saw that carry an amount but no name the panel's kind recognizes, so they were not
+    /// kept as rows. They are unread: the review screen counts them so the person checks the label.
+    public let unnamedRowCount: Int
 
     public init(
         servingSize: ParsedServingSize?,
@@ -151,7 +154,8 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         additionalNutrients: [ParsedAdditionalNutrient] = [],
         nutrientDisplayNames: [String: String] = [:],
         valuesNeedingReview: [String: ParsedValueReview],
-        panelKind: NutritionPanelKind = .nutritionFacts
+        panelKind: NutritionPanelKind = .nutritionFacts,
+        unnamedRowCount: Int = 0
     ) {
         var complete = nutrients
         for key in NutritionFactKey.allCases where complete[key.rawValue] == nil {
@@ -164,6 +168,7 @@ public struct ParsedNutritionFacts: Sendable, Hashable {
         self.nutrientDisplayNames = nutrientDisplayNames
         self.valuesNeedingReview = valuesNeedingReview
         self.panelKind = panelKind
+        self.unnamedRowCount = unnamedRowCount
     }
 
     /// Whether the capture read a Supplement Facts panel rather than a Nutrition Facts one.

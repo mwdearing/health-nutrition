@@ -442,6 +442,8 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// One row per nutrient the journal names, in panel order. Every row is present from the first
     /// load, so the review screen shows a nutrient the panel omits as unknown rather than hiding it.
     @Published public private(set) var rows: [LabelCaptureRow] = []
+    /// Rows the scan saw but could not name; they count as unread in the footer.
+    @Published public private(set) var unnamedRowCount = 0
     /// One row per compound the panel states that the fifteen journal nutrients do not name, in the
     /// order the panel printed them. Shown under its own heading, because these rows are why anyone
     /// scans a supplement panel at all.
@@ -540,6 +542,7 @@ public final class LabelCaptureViewModel: ObservableObject {
             )
         }
         rows = loaded
+        unnamedRowCount = panel.unnamedRowCount
         additionalRows = panel.additionalNutrients.map {
             LabelCaptureAdditionalRow(
                 key: $0.key, name: $0.name, value: $0.value, reasons: $0.review?.reasons ?? [],
@@ -604,7 +607,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// second photo never replaces a serving the draft already has — never one the user confirmed, in
     /// particular, because that figure is their answer and not the parser's.
     ///
-    /// A photo that read no amount at all contributes nothing and counts for nothing, so a shot that
+    /// A photo that read no amount or unread row at all contributes nothing and counts for nothing, so a shot that
     /// missed the panel leaves the draft exactly as it was rather than looking as though it had been
     /// merged. A photo that repeats rows the draft already has does count: a second reading of a row is
     /// what can answer the parser's doubt about the first one.
@@ -689,6 +692,11 @@ public final class LabelCaptureViewModel: ObservableObject {
         }
 
         mergePanelFacts(from: panel, contributed: &contributed)
+
+        // A photo that could not name a row still read the panel, so it counts as contributing and its
+        // unread rows stay in the footer. The footer keeps the larger unread count across photos.
+        if panel.unnamedRowCount > 0 { contributed = true }
+        unnamedRowCount = max(unnamedRowCount, panel.unnamedRowCount)
 
         if contributed {
             frameCount = frame
@@ -807,6 +815,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// about a different product altogether, and a draft holding two products would be neither.
     public func retake() {
         rows = []
+        unnamedRowCount = 0
         additionalRows = []
         kind = .food
         servingText = nil
@@ -1183,7 +1192,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         let pending = pendingCount
         if pending == 0 {
             let known = rows.filter { $0.value != .unknown }.count
-            return "Read \(known) of \(rows.count) rows. A nutrient the panel does not state stays unknown."
+            return "Read \(known) of \(rows.count + unnamedRowCount) rows. A nutrient the panel does not state stays unknown."
         }
         let pendingRows = rows.filter(\.isPending).count + additionalRows.filter(\.isPending).count
         var parts: [String] = []

@@ -178,6 +178,12 @@ public struct LibraryItem: Equatable, Identifiable {
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
+    /// The label for a tap that logs at once: the name, the amounts and, for a supplement, its kind.
+    public var logAccessibilityLabel: String {
+        let label = detail.isEmpty ? "Log \(title) now" : "Log \(title) now, \(detail)"
+        return kind == .supplement ? label + ", " + kind.displayName : label
+    }
+
     public init(
         id: String, title: String, detail: String, isFavorite: Bool, template: RepeatTemplate,
         kind: ProductKind = .food

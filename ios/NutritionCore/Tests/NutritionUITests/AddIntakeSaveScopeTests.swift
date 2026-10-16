@@ -169,6 +169,19 @@ final class LibraryChoiceExportTests: XCTestCase {
         XCTAssertEqual(try restored.intakeIDsNotSavedToLibrary(), [id])
     }
 
+    /// Repeating an entry kept out of Library keeps the copy out of Library too.
+    func testRepeatOfASwitchedOffEntryStaysOutOfProducts() throws {
+        let id = UUID().uuidString.lowercased()
+        let store = try makeStore()
+        try logBar(store, id: id)
+        try store.keepOutOfLibrary(intakeID: id)
+        let original = try XCTUnwrap(try store.activeIntakes().first { $0.id == id })
+        let copyID = try IntakeRepeater(
+            store: store, timeZoneProvider: { "UTC" }, makeID: { UUID().uuidString.lowercased() }
+        ).create(repeating: original, now: when)
+        XCTAssertEqual(try store.intakeIDsNotSavedToLibrary(), [id, copyID])
+    }
+
     /// A version 4 backup has no choices, so every entry it restores is saved to Library.
     func testVersion4ImportSavesEveryEntryToLibrary() throws {
         let id = UUID().uuidString.lowercased()
