@@ -88,16 +88,27 @@ public final class SavedMealsModel: ObservableObject {
             // The units the entries were logged in follow each item, keyed by the item's own id.
             // A unit that cannot be written takes the meal back out, so it never saves without its units.
             if let units = journal as? JournalLoggedUnits {
+                var writtenOwners: [(owner: String, component: String)] = []
                 do {
                     for (item, template) in zip(saved.items, templates) {
                         for component in template.components where component.unit == .mL {
                             guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
                             try units.recordLoggedUnit(JournalLoggedUnit(
                                 intakeID: item.id, componentID: component.componentID, unit: loggedUnit))
+                            writtenOwners.append((item.id, component.componentID))
                         }
                     }
                 } catch {
-                    try? book.remove(id: saved.id)
+                    // The rows written so far go with the meal, so nothing is left behind in a backup.
+                    for written in writtenOwners {
+                        try? units.removeLoggedUnit(intakeID: written.owner, componentID: written.component)
+                    }
+                    do {
+                        try book.remove(id: saved.id)
+                    } catch {
+                        // The meal could not be taken back out, so it is saved, only without its units.
+                        return finish(failure: Self.savedWithoutUnitsMessage)
+                    }
                     return finish(failure: "Could not save the meal.")
                 }
             }
@@ -220,6 +231,8 @@ public final class SavedMealsModel: ObservableObject {
 
     /// Reloads first and sets the message after, so the reload can never clear the reason it gives.
     @discardableResult
+    static let savedWithoutUnitsMessage = "The meal was saved, but its spoon and cup units could not be kept."
+
     private func finish(failure message: String) -> Bool {
         load()
         notice = message

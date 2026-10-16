@@ -442,21 +442,23 @@ public final class EntryDetailViewModel: ObservableObject {
             // amounts and the time together is an ordinary edit, and is recorded as one.
             let timeOnly = correctedTime != nil
                 && (current.map { Self.componentsUnchanged(from: $0.components, to: parsed) } ?? false)
-            try store.edit(
-                intakeID: intakeID, components: parsed, product: product,
-                changeReason: Self.recordedReason(written: reason, timeOnlyChange: timeOnly), now: now,
-                occurredAt: correctedTime,
-                timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
             // An amount that was typed over is no longer the amount the logged unit described, so that unit is
-            // forgotten and the component reads as the unit system says.
+            // forgotten and the component reads as the unit system says. It goes before the edit, so a failure
+            // here saves nothing and the message below is true; the worst a failed edit leaves is a unit read as
+            // the unit system says.
             if let units = store as? JournalLoggedUnits, let before = current?.components {
                 for component in parsed {
                     guard let old = before.first(where: { $0.componentID == component.componentID }),
                         !Self.sameAmount(old.amount, component.amount)
                     else { continue }
-                    try? units.removeLoggedUnit(intakeID: intakeID, componentID: component.componentID)
+                    try units.removeLoggedUnit(intakeID: intakeID, componentID: component.componentID)
                 }
             }
+            try store.edit(
+                intakeID: intakeID, components: parsed, product: product,
+                changeReason: Self.recordedReason(written: reason, timeOnlyChange: timeOnly), now: now,
+                occurredAt: correctedTime,
+                timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
         } catch {
             errorMessage = "Couldn't save. Your previous amount is kept."
             return false

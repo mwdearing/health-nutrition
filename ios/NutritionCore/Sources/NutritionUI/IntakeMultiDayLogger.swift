@@ -129,6 +129,7 @@ public struct IntakeMultiDayLogger {
             let copy = Intake(
                 id: makeID(), category: intake.category, occurredAt: occurredAt,
                 timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal)
+            var writtenUnits: [String] = []
             do {
                 if keepsOut { try (store as? JournalLibraryExclusions)?.keepOutOfLibrary(intakeID: copy.id) }
                 if let units = store as? JournalLoggedUnits {
@@ -136,11 +137,16 @@ public struct IntakeMultiDayLogger {
                         guard let loggedUnit = loggedUnits[component.componentID] else { continue }
                         try units.recordLoggedUnit(JournalLoggedUnit(
                             intakeID: copy.id, componentID: component.componentID, unit: loggedUnit))
+                        writtenUnits.append(component.componentID)
                     }
                 }
                 try store.create(copy, components: current.components, product: product, now: now)
                 created.append(copy.id)
             } catch let writeError {
+                // A copy that never saved leaves no unit rows behind.
+                for componentID in writtenUnits {
+                    try? (store as? JournalLoggedUnits)?.removeLoggedUnit(intakeID: copy.id, componentID: componentID)
+                }
                 var remaining: [String] = []
                 for id in created.reversed() {
                     do {

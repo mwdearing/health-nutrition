@@ -295,6 +295,36 @@ final class LoggedUnitTests: XCTestCase {
         XCTAssertTrue(try store.loggedUnits().isEmpty)
     }
 
+    /// A time-only correction keeps the unit, and in an entry with two components only the edited one forgets it.
+    func testATimeOnlyEditKeepsTheUnit() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let detail = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        detail.load(now: now)
+        detail.occurredAt = detail.occurredAt.addingTimeInterval(-600)
+        XCTAssertTrue(detail.saveDrafts(now: now))
+        XCTAssertEqual(try store.loggedUnits().map(\.unit), [.teaspoon])
+    }
+
+    func testEditingOneComponentKeepsTheOthersUnit() throws {
+        let store = try makeStore()
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC")
+        try store.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "a", unit: .teaspoon))
+        try store.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "b", unit: .tablespoon))
+        try store.create(
+            intake,
+            components: [
+                IntakeComponent(componentID: "a", name: "A", amount: Decimal(string: "9.8578431875")!, unit: .mL),
+                IntakeComponent(componentID: "b", name: "B", amount: Decimal(string: "14.78676478125")!, unit: .mL),
+            ], product: nil, now: now)
+        let detail = EntryDetailViewModel(store: store, intakeID: intake.id, timeZoneIdentifier: "UTC")
+        detail.load(now: now)
+        detail.drafts["a"] = "20"
+        XCTAssertTrue(detail.saveDrafts(now: now))
+        XCTAssertEqual(try store.loggedUnits().map(\.componentID), ["b"])
+    }
+
     /// Logging an entry again on other days carries the logged unit to each copy.
     func testLoggingOnOtherDaysKeepsTheLoggedUnit() throws {
         let store = try makeStore()
