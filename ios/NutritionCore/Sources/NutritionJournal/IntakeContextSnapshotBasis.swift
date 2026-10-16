@@ -183,6 +183,11 @@ public enum IntakeContextSnapshotBasis: Equatable {
     public static func perHundredGOrMLFactor(labelBasis: String, logged components: [IntakeComponent]) -> Decimal? {
         let compact = labelBasis.lowercased().filter { !$0.isWhitespace && $0 != "_" && $0 != "-" }
         guard compact == "per100gorml" else { return nil }
+        // Every component must be a weight or a volume, and a negative or NaN amount is no quantity: a
+        // scoop beside grams would otherwise be dropped silently, and a negative amount would write a
+        // negative figure into Health.
+        guard components.allSatisfy({ [.mass, .volume].contains($0.unit.dimension) && isPositiveOrZero($0.amount) })
+        else { return nil }
         let masses = components.filter { $0.unit.dimension == .mass }
         let volumes = components.filter { $0.unit.dimension == .volume }
         guard masses.isEmpty != volumes.isEmpty else { return nil }
@@ -194,5 +199,9 @@ public enum IntakeContextSnapshotBasis: Equatable {
             total += converted.value
         }
         return total / 100
+    }
+
+    private static func isPositiveOrZero(_ value: Decimal) -> Bool {
+        !value.isNaN && value >= 0
     }
 }

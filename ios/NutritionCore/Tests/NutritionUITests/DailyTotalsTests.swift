@@ -385,6 +385,29 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "energy")?.value, .unknown)
     }
 
+    /// A weight beside a counted scoop on a "per 100 g or mL" product cannot be scaled as one amount, so the
+    /// nutrient stays unknown rather than being scaled from the grams alone.
+    func testPerHundredGOrMLWithAMixedWeightAndCountStaysUnknown() throws {
+        let store = try makeStore()
+        let powder = ProductDefinition(
+            snapshotID: "snapshot-mixed", productID: "product-mixed", name: "Mixed",
+            labelBasis: "per 100 g or mL", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energy": .known(Decimal(40), .kcal)])
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake,
+            components: [
+                IntakeComponent(componentID: "mixed", name: "Mixed", amount: 30, unit: .g),
+                IntakeComponent(componentID: "scoop", name: "Scoop", amount: 1, unit: .scoop),
+            ],
+            product: powder, now: when)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energy"])
+
+        XCTAssertEqual(totals.total(for: "energy")?.value, .unknown)
+    }
+
     /// One entry whose basis cannot be resolved makes the day's total unknown even though another
     /// entry resolved fine. Dropping the unresolvable one and reporting the rest would be a smaller
     /// number presented as the day's true total.
