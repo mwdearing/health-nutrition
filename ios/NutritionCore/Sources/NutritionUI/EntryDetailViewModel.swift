@@ -382,8 +382,12 @@ public final class EntryDetailViewModel: ObservableObject {
     public func convertedText(for componentID: String) -> String? {
         guard let row = components.first(where: { $0.id == componentID }),
               row.amountText != "unknown",
-              let draft = drafts[componentID], let amount = AmountParser.parseTyped(draft)
+              let draft = drafts[componentID], let typed = AmountParser.parseTyped(draft)
         else { return nil }
+        // An untouched draft is the stored amount, so it converts from the exact figure the Journal converts,
+        // not from the rounded text the field was seeded with.
+        let untouched = Self.sameAmountText(loadedDrafts[componentID] ?? "", draft)
+        let amount = untouched ? (AmountParser.parse(row.amountText) ?? typed) : typed
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
     }
 
