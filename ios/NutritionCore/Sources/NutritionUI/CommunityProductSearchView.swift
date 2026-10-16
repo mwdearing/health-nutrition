@@ -139,9 +139,11 @@ public struct CommunityProductSearchView: View {
         // Focus after the push animation. Setting focus during the transition can be dropped.
         .task {
             guard focusSearchOnAppear, !didAutoFocus else { return }
+            // Counted as this screen's one focus even if it closes during the delay, so a return
+            // never raises the keyboard unasked.
+            didAutoFocus = true
             // A screen left before the delay ends must not raise the keyboard on its way out.
             guard (try? await Task.sleep(nanoseconds: 400_000_000)) != nil else { return }
-            didAutoFocus = true
             searchFocused = true
         }
         .onAppear {
