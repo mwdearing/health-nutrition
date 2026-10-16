@@ -1093,7 +1093,7 @@ public enum NutritionFactsParser {
                 // A row that carries an amount but no name this panel's kind recognizes is unread, not
                 // dropped silently: it is counted so the review screen still shows it as unfinished.
                 unnamedRows += 1
-            } else if keepsUnrecognizedRows {
+            } else {
                 let review = row.reasons.isEmpty ? nil : ParsedValueReview(reasons: row.reasons)
                 collected.append(
                     ParsedAdditionalNutrient(name: row.name, key: row.key, value: row.value, review: review))
