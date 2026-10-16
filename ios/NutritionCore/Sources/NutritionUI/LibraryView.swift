@@ -202,7 +202,7 @@ public struct LibraryView: View {
                 QuietCapsule("Add") {
                     if self.model.quickAdd(item, now: self.now()) { self.onAdded() }
                 }
-                .accessibilityLabel("Add \(item.title) now")
+                .accessibilityLabel("Log \(item.title) now")
             }
             Button {
                 if item.isFavorite { self.model.removeFavorite(item) } else { self.model.addFavorite(item) }

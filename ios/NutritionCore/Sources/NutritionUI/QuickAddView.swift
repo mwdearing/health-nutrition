@@ -48,12 +48,12 @@ public struct QuickAddView: View {
                 if let message = model.saveError {
                     InlineNotice(message, tone: .failed)
                 }
-                PrimaryCapsule("Save") {
+                PrimaryCapsule("Log") {
                     if let token = self.model.save() { self.onSaved(token) }
                 }
                 .disabled(!model.canSave)
                 .opacity(model.canSave ? 1 : 0.5)
-                .accessibilityLabel("Save")
+                .accessibilityLabel("Log")
                 .accessibilityHint("Adds these amounts to the journal")
             }
             .padding(DesignSpacing.m)

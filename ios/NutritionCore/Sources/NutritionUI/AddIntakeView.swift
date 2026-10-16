@@ -241,10 +241,10 @@ public struct AddIntakeView: View {
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                PrimaryCapsule("Save") {
+                PrimaryCapsule("Log") {
                     if self.model.save(now: self.now()) { self.onSaved() }
                 }
-                .accessibilityLabel("Save")
+                .accessibilityLabel("Log")
                 .accessibilityHint("Adds this entry to the Diary")
             }
             .padding(DesignSpacing.m)
