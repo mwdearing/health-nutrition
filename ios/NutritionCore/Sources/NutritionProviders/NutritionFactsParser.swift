@@ -927,6 +927,38 @@ public enum NutritionFactsParser {
         knownFoodNutrients.contains(name.lowercased().filter { $0 != " " && $0 != "-" })
     }
 
+    /// Whether an unrecognized name on a food panel reads like a real row rather than OCR noise. Every
+    /// word is Title Case, and a word is either at least four letters or a short word a panel prints
+    /// ("Fat", "Fiber"). A word that is one or two edits from "Includes" or "Contains" is the misread
+    /// qualifier itself, so it is not a row.
+    private static func isPlausibleFoodRowName(_ name: String) -> Bool {
+        let shortRowWords: Set<String> = ["fat", "fiber", "fibre"]
+        let qualifiers = ["includes", "contains"]
+        for word in name.split(separator: " ") {
+            let lower = word.lowercased()
+            guard let first = word.first, first.isUppercase else { return false }
+            guard word.dropFirst().allSatisfy({ $0.isLowercase }) else { return false }
+            guard word.count >= 4 || shortRowWords.contains(lower) else { return false }
+            if qualifiers.contains(where: { $0 != lower && editDistance(lower, $0) <= 2 }) { return false }
+        }
+        return true
+    }
+
+    /// The Levenshtein distance between two words, used to recognize a misread panel word.
+    private static func editDistance(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        var previous = Array(0...y.count)
+        for i in 1...max(x.count, 1) where !x.isEmpty {
+            var current = [i] + Array(repeating: 0, count: y.count)
+            for j in 1...max(y.count, 1) where !y.isEmpty {
+                let cost = x[i - 1] == y[j - 1] ? 0 : 1
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+            }
+            previous = current
+        }
+        return previous[y.count]
+    }
+
     /// The words a panel may print between an amount and the nutrient name it belongs to, as in
     /// "Includes 5g Added Sugars". A row that states its amount in front of its name is stated with one
     /// of these words in between, so a number with any other word in front of it is left alone.
@@ -1103,7 +1135,7 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
-            } else if !keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) {
+            } else if !keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name) {
                 // A row that carries an amount but no name this panel's kind recognizes is unread, not
                 // dropped silently: it is counted so the review screen still shows it as unfinished.
                 unnamedRows += 1

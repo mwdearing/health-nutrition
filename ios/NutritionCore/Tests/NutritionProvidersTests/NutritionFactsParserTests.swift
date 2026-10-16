@@ -1047,6 +1047,17 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
     }
 
+    /// A food panel's real rows that the named table lacks keep their names, while misread fragments do not.
+    func testFoodPanelKeepsPlausibleRowNamesAndDropsMisreadFragments() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "Sugar Alcohol 3g", "Chlorophyll 5mg", "Inchides 0g",
+            "minD 0mcg", "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Sugar Alcohol", "Chlorophyll"])
+        XCTAssertEqual(panel.unnamedRowCount, 3)
+    }
+
     /// A nutrient a food panel prints that the named table does not carry is still a row of its own.
     func testFoodPanelKeepsKnownNutrientsTheNamedTableDoesNotCarry() throws {
         let panel = parse([

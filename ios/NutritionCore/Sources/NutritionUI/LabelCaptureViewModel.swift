@@ -617,6 +617,8 @@ public final class LabelCaptureViewModel: ObservableObject {
         var contributed = false
         // The footer keeps the larger unread count, so a photo that could not name a row never hides it.
         unnamedRowCount = max(unnamedRowCount, panel.unnamedRowCount)
+        // A photo that left rows unread still read the panel, so it counts as a contributing photo.
+        if panel.unnamedRowCount > 0 { contributed = true }
 
         for key in NutritionFactKey.allCases {
             let incoming = panel.value(for: key)
