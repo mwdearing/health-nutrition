@@ -113,6 +113,7 @@ targets:
       - path: Tests
         excludes:
           - PrivacyShieldUITests/**
+          - AddSearchUITests/**
     dependencies:
       - target: HealthNutrition
       # The stores, the Connections view model and the recipe types the assertions use are the
@@ -127,6 +128,19 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionTests
+        GENERATE_INFOPLIST_FILE: YES
+
+  HealthNutritionAddUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Tests/AddSearchUITests
+    dependencies:
+      - target: HealthNutrition
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionAddUITests
         GENERATE_INFOPLIST_FILE: YES
 
   HealthNutritionPrivacyUITests:
@@ -156,6 +170,18 @@ schemes:
         - HealthNutritionTests
     archive:
       config: Release
+
+  HealthNutritionAdd:
+    build:
+      targets:
+        HealthNutrition: all
+        HealthNutritionAddUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - HealthNutritionAddUITests
 
   HealthNutritionPrivacy:
     build:

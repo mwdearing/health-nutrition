@@ -19,11 +19,16 @@ public struct CommunityProductSearchView: View {
     /// The saved meal whose "Log to which meal" choice is up.
     @State private var mealToLog: SavedMeal?
     @FocusState private var searchFocused: Bool
+    /// Focus is taken once per screen. Going Back from a result must not raise the keyboard over it.
+    @State private var didAutoFocus = false
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
-                library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil) {
+                library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
+                focusSearchOnAppear: Bool = false) {
         self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
-        self.library = library; self.onPick = onPick
+        self.library = library; self.onPick = onPick; self.focusSearchOnAppear = focusSearchOnAppear
     }
+    /// Opened from Add's search row: the field takes focus so the keyboard is up at once.
+    private let focusSearchOnAppear: Bool
     public var body: some View {
         List {
             Section {
@@ -131,6 +136,16 @@ public struct CommunityProductSearchView: View {
         }
         .navigationTitle("Find products")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
+        // Focus after the push animation. Setting focus during the transition can be dropped.
+        .task {
+            guard focusSearchOnAppear, !didAutoFocus else { return }
+            // Counted as this screen's one focus even if it closes during the delay, so a return
+            // never raises the keyboard unasked.
+            didAutoFocus = true
+            // A screen left before the delay ends must not raise the keyboard on its way out.
+            guard (try? await Task.sleep(nanoseconds: 400_000_000)) != nil else { return }
+            searchFocused = true
+        }
         .onAppear {
             if onPick != nil {
                 library?.load()

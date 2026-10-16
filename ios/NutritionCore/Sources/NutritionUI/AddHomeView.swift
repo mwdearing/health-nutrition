@@ -2,6 +2,8 @@ import NutritionJournal
 import SwiftUI
 
 public struct AddHomeView: View {
+    /// The search row's visible text, also its spoken label, so the two cannot drift apart.
+    public static let searchRowTitle = "Search foods, brands, drinks"
     @ObservedObject private var model: AddHomeViewModel
     private let onBarcode: () -> Void
     private let onLabel: () -> Void
@@ -31,7 +33,21 @@ public struct AddHomeView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                if let onSearchProducts { tile("Find products", help: "Search products on this phone, Open Food Facts by name, and shared foods, drinks and supplements.", action: onSearchProducts) }
+                // Search sits at the top: a tap opens product search, where the field takes focus.
+                if let onSearchProducts {
+                    Button(action: onSearchProducts) {
+                        HStack {
+                            Image(systemName: "magnifyingglass").foregroundStyle(TokenColors.textSecondary)
+                            Text(Self.searchRowTitle).foregroundStyle(TokenColors.textSecondary)
+                            Spacer()
+                        }
+                        .padding(DesignSpacing.m)
+                        .background(TokenColors.surface, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Self.searchRowTitle)
+                    .accessibilityHint("Opens product search on this phone, Open Food Facts and shared foods.")
+                }
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
                     ForEach(MealLabel.allCases, id: \.self) { meal in
