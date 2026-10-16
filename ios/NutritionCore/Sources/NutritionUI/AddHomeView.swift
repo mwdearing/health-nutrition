@@ -43,7 +43,7 @@ public struct AddHomeView: View {
                         .background(TokenColors.surface, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Search foods, brands and drinks")
+                    .accessibilityLabel("Search foods, brands, drinks")
                     .accessibilityHint("Opens product search on this phone, Open Food Facts and shared foods.")
                 }
                 Picker("Meal", selection: $model.meal) {
