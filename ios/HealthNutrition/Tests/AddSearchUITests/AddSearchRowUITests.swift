@@ -7,11 +7,11 @@ final class AddSearchRowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        let addButton = app.buttons["Add food, drink, or supplement"]
+        let addButton = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement")).firstMatch
         XCTAssertTrue(addButton.waitForExistence(timeout: 15), "the Add button is not on the Today screen")
         addButton.tap()
 
-        let row = app.buttons["Search foods, brands, drinks"]
+        let row = app.buttons.matching(NSPredicate(format: "label == %@", "Search foods, brands, drinks")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "the search row is not on the Add screen")
         XCTAssertTrue(row.isHittable, "the search row is on screen but cannot be tapped")
         row.tap()
