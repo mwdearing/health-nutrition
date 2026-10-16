@@ -1047,6 +1047,14 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
     }
 
+    /// A nutrient a food panel prints that the named table does not carry is still a row of its own.
+    func testFoodPanelKeepsKnownNutrientsTheNamedTableDoesNotCarry() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Magnesium 40mg", "Vitamin C 12mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Magnesium", "Vitamin C"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
     /// A panel may print a colon after the name it prints an amount behind. It is the label's own
     /// punctuation, so "Calories: 30" states thirty calories exactly as "Calories 30" does.
     func testCaloriesWithAColonAfterTheNameIsRead() throws {

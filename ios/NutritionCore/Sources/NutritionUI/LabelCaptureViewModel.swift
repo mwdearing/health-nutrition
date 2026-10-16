@@ -615,6 +615,8 @@ public final class LabelCaptureViewModel: ObservableObject {
         let panel = NutritionFactsParser.parse(lines: lines)
         let frame = frameCount + 1
         var contributed = false
+        // The footer keeps the larger unread count, so a photo that could not name a row never hides it.
+        unnamedRowCount = max(unnamedRowCount, panel.unnamedRowCount)
 
         for key in NutritionFactKey.allCases {
             let incoming = panel.value(for: key)
