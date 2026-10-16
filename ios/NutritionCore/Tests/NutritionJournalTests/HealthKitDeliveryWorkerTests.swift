@@ -1104,7 +1104,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     /// an intake records, and "per 100 g or mL" says the source did not settle its own dimension -
     /// has no factor. Nothing is written then: a guess would put a wrong number in Health, and a
     /// truncated one would put a right-looking wrong number there. "per 100 g or mL" is resolved by the
-    /// logged dimension, so it is covered by the test below, not here.
+    /// logged dimension, so only its unresolvable shapes are pinned here, in the next test.
     func testASnapshotWhoseLabelBasisCannotBeResolvedContributesNothing() async throws {
         for basis in ["per 100 kcal"] {
             let store = try makeStore(try makeDirectory())
@@ -1119,6 +1119,25 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
 
             XCTAssertEqual(recorded, [:], "\(basis) cannot be scaled, so no snapshot nutrient is stated")
+        }
+    }
+
+    /// "per 100 g or mL" with a weight beside a counted scoop, or with no amount at all, has no factor, so
+    /// nothing is written for it.
+    func testAPerHundredGOrMLLabelWithAMixedOrCountedEntryWritesNothing() async throws {
+        let mixed = [
+            component("mixed", amount: dec("30"), unit: .g),
+            IntakeComponent(componentID: "scoop", name: "Scoop", amount: dec("1"), unit: .scoop),
+        ]
+        for components in [mixed, [component("scoop", amount: dec("1"), unit: .scoop)]] {
+            let store = try makeStore(try makeDirectory())
+            let product = ProductDefinition(
+                snapshotID: "snap-mixed", productID: "product-mixed", name: "Mixed", brand: nil, barcode: nil,
+                labelBasis: "per 100 g or mL", catalogOrigin: "sample", catalogVersion: "1",
+                nutrients: ["energy": .known(dec("40"), .kcal)])
+            try store.create(sampleIntake(), components: components, product: product, now: when)
+            let recorded = try await JournalSnapshotTotals(store: store).totals(intakeID: intakeID, revision: 1)
+            XCTAssertEqual(recorded, [:])
         }
     }
 
