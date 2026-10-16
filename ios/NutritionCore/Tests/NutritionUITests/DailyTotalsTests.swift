@@ -315,7 +315,7 @@ final class DailyTotalsTests: XCTestCase {
         let store = try makeStore()
         let ambiguous = ProductDefinition(
             snapshotID: "snapshot-ambiguous", productID: "product-ambiguous", name: "Mystery bar",
-            labelBasis: "per 100 g or mL", catalogOrigin: "test", catalogVersion: "1",
+            labelBasis: "per 100 kcal", catalogOrigin: "test", catalogVersion: "1",
             nutrients: ["protein": .known(Decimal(13), .g)])
         try addFood(store, name: "Mystery bar", id: "bar", at: when, product: ambiguous)
         let intake = try XCTUnwrap(try store.activeIntakes().first)
@@ -327,6 +327,62 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(total.value, .unknown)
         XCTAssertTrue(total.coverage.hasUnknown)
         XCTAssertNotEqual(total.value, .known(0, .g))
+    }
+
+    /// "per 100 g or mL" on a grams entry is per 100 g: 283.49523125 g of a product stating 37.5 kcal and
+    /// 5.4 g carbohydrate per 100 g or mL is 106.31 kcal and 15.31 g, not unknown.
+    func testPerHundredGOrMLScalesAGramsEntryPer100G() throws {
+        let store = try makeStore()
+        let milk = ProductDefinition(
+            snapshotID: "snapshot-milk", productID: "product-milk", name: "Fat Free 0% Milk",
+            labelBasis: "per 100 g or mL", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energy": .known(Decimal(string: "37.5")!, .kcal),
+                        "carbohydrate": .known(Decimal(string: "5.4")!, .g)])
+        _ = try addFood(store, name: "Fat Free 0% Milk", id: "milk", at: when,
+                        amount: Decimal(string: "283.49523125")!, unit: .g, product: milk)
+        let intakes = try store.activeIntakes()
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energy", "carbohydrate"])
+
+        XCTAssertEqual(totals.total(for: "energy")?.value,
+                       .known(Decimal(string: "37.5")! * Decimal(string: "283.49523125")! / 100, .kcal))
+        XCTAssertEqual(totals.total(for: "carbohydrate")?.value,
+                       .known(Decimal(string: "5.4")! * Decimal(string: "283.49523125")! / 100, .g))
+    }
+
+    /// The same basis on a millilitre entry is per 100 mL, so a 354.88235475 mL drink of a product stating
+    /// 40 kcal per 100 mL is 141.95 kcal.
+    func testPerHundredGOrMLScalesAMillilitreEntryPer100ML() throws {
+        let store = try makeStore()
+        let drink = ProductDefinition(
+            snapshotID: "snapshot-drink", productID: "product-drink", name: "Energy drink",
+            labelBasis: "per 100 g or mL", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energy": .known(Decimal(40), .kcal)])
+        _ = try addFood(store, name: "Energy drink", id: "drink", at: when,
+                        amount: Decimal(string: "354.88235475")!, unit: .mL, product: drink)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energy"])
+
+        XCTAssertEqual(totals.total(for: "energy")?.value,
+                       .known(Decimal(40) * Decimal(string: "354.88235475")! / 100, .kcal))
+    }
+
+    /// A scoop or a piece is neither grams nor millilitres, so "per 100 g or mL" cannot scale it and the
+    /// nutrient stays unknown rather than zero.
+    func testPerHundredGOrMLLeavesACountedEntryUnknown() throws {
+        let store = try makeStore()
+        let powder = ProductDefinition(
+            snapshotID: "snapshot-powder", productID: "product-powder", name: "Powder",
+            labelBasis: "per 100 g or mL", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energy": .known(Decimal(40), .kcal)])
+        _ = try addFood(store, name: "Powder", id: "powder", at: when, amount: 1, unit: .scoop, product: powder)
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energy"])
+
+        XCTAssertEqual(totals.total(for: "energy")?.value, .unknown)
     }
 
     /// One entry whose basis cannot be resolved makes the day's total unknown even though another
