@@ -91,6 +91,10 @@ public enum NutritionFactsParser {
         var reviews: [String: ParsedValueReview] = [:]
         var extra: [ParsedAdditionalNutrient] = []
         var displayNames: [String: String] = [:]
+        // Only a Supplement Facts panel, or a capture that shows no panel heading at all, keeps the rows the
+        // parser does not recognize. A Nutrition Facts panel states a fixed set of rows, so an unrecognized
+        // name there is OCR noise ("Inchides", "minD", "lum") and is not kept as a row.
+        let keepsUnrecognizedRows = panelHeading == nil || panelKind(in: cleaned) == .supplementFacts
 
         var index = 0
         while index < cleaned.count {
@@ -167,6 +171,7 @@ public enum NutritionFactsParser {
             // the named rows' own text here is safe.
             let additionalUsedNextLine = absorbAdditionalRows(
                 in: residual, next: read.usedNextLine ? nil : rowFollowing, into: &extra,
+                keepsUnrecognizedRows: keepsUnrecognizedRows,
                 amounts: &amounts, boundThresholds: &boundThresholds,
                 reviews: &reviews, displayNames: &displayNames)
             let consumedNextLine = read.usedNextLine || additionalUsedNextLine
@@ -1058,6 +1063,7 @@ public enum NutritionFactsParser {
         in line: String,
         next nextLine: String?,
         into collected: inout [ParsedAdditionalNutrient],
+        keepsUnrecognizedRows: Bool,
         amounts: inout [String: NutrientValue],
         boundThresholds: inout [String: Decimal],
         reviews: inout [String: ParsedValueReview],
@@ -1080,7 +1086,7 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
-            } else {
+            } else if keepsUnrecognizedRows {
                 let review = row.reasons.isEmpty ? nil : ParsedValueReview(reasons: row.reasons)
                 collected.append(
                     ParsedAdditionalNutrient(name: row.name, key: row.key, value: row.value, review: review))

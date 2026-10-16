@@ -1027,6 +1027,25 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(value(.calories, panel), .known(dec("30"), .kcal))
     }
 
+    /// A capture that misreads a food panel's words must not turn them into rows. A Nutrition Facts panel
+    /// has a fixed set of rows, so text the parser does not recognize there is OCR noise: "Inchides" (for
+    /// Includes), "minD" (for Vitamin D) and "lum" (for Sodium) are printed as their own compounds on the
+    /// review screen today. Only a Supplement Facts panel keeps the rows it does not recognize.
+    func testFoodPanelDoesNotKeepUnrecognizedFragmentsAsRows() throws {
+        let panel = parse([
+            "Nutrition Facts",
+            "Total Sugars 12g",
+            "Inchides 0g",
+            "Added Sugars 25g",
+            "minD 0mcg",
+            "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.panelKind, .nutritionFacts)
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "OCR fragments of a food panel are not rows")
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
+    }
+
     /// A panel may print a colon after the name it prints an amount behind. It is the label's own
     /// punctuation, so "Calories: 30" states thirty calories exactly as "Calories 30" does.
     func testCaloriesWithAColonAfterTheNameIsRead() throws {
