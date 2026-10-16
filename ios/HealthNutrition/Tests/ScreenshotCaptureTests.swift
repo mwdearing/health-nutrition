@@ -1,7 +1,7 @@
 import NutritionDomain
 import NutritionJournal
 import NutritionProviders
-import NutritionUI
+@testable import NutritionUI
 import SwiftUI
 import UIKit
 import XCTest
@@ -42,6 +42,36 @@ final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Send
     }
 
     func deleteAccount() async throws {}
+}
+
+/// Keeps saved meals in memory for one capture.
+final class ScreenshotSavedMealStore: SavedMealStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [SavedMeal] = []
+
+    func meals() throws -> [SavedMeal] {
+        lock.lock(); defer { lock.unlock() }
+        return stored
+    }
+
+    func update(_ change: (inout [SavedMeal]) throws -> Void) throws {
+        lock.lock(); defer { lock.unlock() }
+        var copy = stored
+        try change(&copy)
+        stored = copy
+    }
+}
+
+/// Keeps supplement schedules and Taken marks in memory, so the supplement captures never read or write
+/// the simulator's standard defaults.
+final class ScreenshotSupplementStackStore: SupplementStackStoring {
+    private var stored: [String: SupplementSchedule] = [:]
+    private var marks: [String: SupplementTakenMark] = [:]
+
+    func schedules() -> [String: SupplementSchedule] { stored }
+    func save(_ schedules: [String: SupplementSchedule]) throws { stored = schedules }
+    func takenMarks() -> [String: SupplementTakenMark] { marks }
+    func saveTakenMarks(_ marks: [String: SupplementTakenMark]) throws { self.marks = marks }
 }
 
 /// Writes a PNG of each screen, in light and dark, for the design system.
@@ -569,6 +599,145 @@ private struct ScreenshotProductService: CommunityProductServicing {
             }.safeAreaInset(edge: .bottom) {
                 PrimaryCapsule(AddIntakeAction.title, systemImage: "plus") {}.padding(.horizontal, DesignSpacing.m)
             }
+        }
+    }
+
+    // MARK: Screens added in the 0.1.21 to 0.1.23 builds. Invented entries only; saved meals and supplement
+    // schedules use in-memory stores so nothing reaches the simulator's defaults.
+
+    func testTrendsView() throws {
+        let services = try makeSeededServices()
+        try capture("TrendsView") {
+            NavigationStack { TrendsView(today: services.today, journal: services.journal) }
+        }
+    }
+
+    func testInsightsHost() throws {
+        let services = try makeSeededServices()
+        services.journal.load(now: Date())
+        try capture("InsightsHost") {
+            NavigationStack { InsightsHost(journal: services.journal) }
+        }
+    }
+
+    func testInsightsView() throws {
+        let zone = TimeZone.current
+        // Midday, so the newest entry is never in the future whatever time the run starts.
+        let start = Calendar.current.startOfDay(for: Date())
+        let now = start.addingTimeInterval(12 * 3_600)
+        let entries = (0..<5).map { day in
+            InsightsWeek.Entry(occurredAt: start.addingTimeInterval(Double(-86_400 * day) + 3_600), timeZoneIdentifier: zone.identifier)
+        }
+        let week = InsightsWeek.make(entries: entries, now: now, zone: zone)
+        let averages = InsightsAverages(lines: [
+            InsightsAverages.Line(id: "energy", text: "Energy: 1,850 kcal a day on average"),
+            InsightsAverages.Line(id: "protein", text: "Protein: 82 g a day on average"),
+        ])
+        try capture("InsightsView") {
+            NavigationStack { InsightsView(week: week, averages: averages) }
+        }
+    }
+
+    func testNutrientGapsView() throws {
+        let services = try makeSeededServices()
+        try capture("NutrientGapsView") {
+            NavigationStack { NutrientGapsView(makeModel: { NutrientGapsViewModel(store: services.journalStore) }) }
+        }
+    }
+
+    func testMacroSplitSection() throws {
+        let services = try makeSeededServices()
+        // An energy goal, so the section shows its percent fields rather than the "set an energy goal" line.
+        try services.goalStore.setGoal(NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        services.goals.load()
+        try capture("MacroSplitSection") {
+            NavigationStack { Form { MacroSplitSection(model: services.goals) } }
+        }
+    }
+
+    func testLogOnOtherDaysSheet() throws {
+        try capture("LogOnOtherDaysSheet") {
+            NavigationStack {
+                LogOnOtherDaysSheet(message: "Rolled oats, 40 g", onLog: { _ in .close }, onCancel: {}, onDone: {})
+            }
+        }
+    }
+
+    func testLibrarySearchSections() throws {
+        let services = try makeSeededServices()
+        services.library.load()
+        try capture("LibrarySearchSections") {
+            NavigationStack { List { LibrarySearchSections(library: services.library, query: "", kind: nil, onPick: { _ in }) } }
+        }
+    }
+
+    func testSavedMealSections() throws {
+        let services = try makeSeededServices()
+        // Its own in-memory list, so the saved meal never reaches the simulator's defaults or another capture.
+        let meals = SavedMealsModel(store: ScreenshotSavedMealStore(), journal: services.journalStore)
+        let breakfast = try services.journalStore.activeIntakes().filter { $0.id == intakeIDs[0] }
+        XCTAssertTrue(meals.save(name: "Weekday breakfast", meal: .breakfast, intakes: breakfast))
+        meals.load()
+        try capture("SavedMealSections") {
+            NavigationStack { List { SavedMealSections(model: meals, query: "", showsMeals: true, onLog: { _ in }) } }
+        }
+    }
+
+    /// A supplement list on its own in-memory schedules: two invented supplements logged today, the first
+    /// on the list with the standard schedule, the second left in the picker.
+    private func makeSupplementStack(_ services: AppServices) throws -> SupplementStackViewModel {
+        let start = Calendar.current.startOfDay(for: Date())
+        let zone = TimeZone.current.identifier
+        for (index, item) in [("vitamin-d", "Vitamin D", 25), ("magnesium", "Magnesium", 200)].enumerated() {
+            let intake = Intake(
+                id: UUID().uuidString.lowercased(), category: "supplement",
+                occurredAt: start.addingTimeInterval(Double(600 + 60 * index)), timeZoneIdentifier: zone)
+            try services.journalStore.create(
+                intake, components: [IntakeComponent(componentID: item.0, name: item.1, amount: Decimal(item.2), unit: .mg)],
+                product: nil, now: Date())
+        }
+        let model = SupplementStackViewModel(
+            store: services.journalStore, favorites: services.favoritesStore, schedules: ScreenshotSupplementStackStore())
+        model.load(now: Date())
+        let first = try XCTUnwrap(model.candidates.first { $0.title.contains("Vitamin D") } ?? model.candidates.first)
+        XCTAssertTrue(model.add(first, schedule: .standard, now: Date()))
+        model.load(now: Date())
+        return model
+    }
+
+    func testSupplementStackView() throws {
+        let services = try makeSeededServices()
+        let stack = try makeSupplementStack(services)
+        try capture("SupplementStackView") {
+            NavigationStack { SupplementStackView(model: stack) }
+        }
+    }
+
+    func testSupplementStackPicker() throws {
+        let services = try makeSeededServices()
+        let stack = try makeSupplementStack(services)
+        try capture("SupplementStackPicker") {
+            NavigationStack { SupplementStackPicker(model: stack, now: { Date() }, onDone: {}) }
+        }
+    }
+
+    func testSupplementScheduleEditor() throws {
+        let services = try makeSeededServices()
+        let stack = try makeSupplementStack(services)
+        try capture("SupplementScheduleEditor") {
+            NavigationStack {
+                SupplementScheduleEditor(
+                    model: stack, title: "Vitamin D", initial: .standard,
+                    onSave: { _ in }, onRemove: nil, onCancel: {})
+            }
+        }
+    }
+
+    func testSupplementsTodayTile() throws {
+        let services = try makeSeededServices()
+        let stack = try makeSupplementStack(services)
+        try capture("SupplementsTodayTile") {
+            NavigationStack { List { SupplementsTodayTile(model: stack, now: { Date() }) } }
         }
     }
 }
