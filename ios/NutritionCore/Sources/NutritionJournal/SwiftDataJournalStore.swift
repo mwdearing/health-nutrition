@@ -1434,7 +1434,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             // Rows left by an earlier store must not hide a restored entry's product, so they go first. The rows
             // written below are the choices the file states; a file older than version 5 states none.
             for row in try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()) { context.delete(row) }
-            for id in Set(plan.keptOutOfLibrary) where plan.entries.contains(where: { $0.intake.id == id }) {
+            let restoredIDs = Set(plan.entries.map { $0.intake.id })
+            for id in Set(plan.keptOutOfLibrary) where restoredIDs.contains(id) {
                 context.insert(JournalSchemaV9.LibraryExclusionRecord(intakeID: id))
             }
             var restored: [JournalRestoredIntake] = []
