@@ -427,8 +427,9 @@ public struct JournalLoggedUnit: Sendable, Hashable {
 /// The units entries were logged in. A separate protocol, so stores that predate it need not change. A component
 /// with no entry here reads in the unit its amount is stored in.
 public protocol JournalLoggedUnits: AnyObject, Sendable {
-    /// Records the unit a component was logged in. Written before the entry, so a failure leaves nothing saved;
-    /// an unreferenced row is harmless because intake ids are random.
+    /// Records the unit a component was logged in, under the id of the entry or of the favorite made from it.
+    /// Written before the entry; a row whose entry never saved is harmless, because ids are random and every
+    /// restore and erase clears the rows.
     func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws
     /// Every recorded unit.
     func loggedUnits() throws -> [JournalLoggedUnit]

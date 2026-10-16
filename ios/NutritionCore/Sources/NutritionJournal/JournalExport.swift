@@ -381,10 +381,9 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
     }
 }
 
-/// A saved meal, exported as the named group of templates it is. Each item has the shape of a favorite and
-/// states no meal of its own (`meal` is `null`); the group's `meal` applies to all of them.
-/// The unit one component of an entry was logged in, from version 6: `intake_id`, `component_id` and the unit's
-/// `unit` symbol (`tsp`, `tbsp`, `cup` or `fl oz`). The component's own amount is still stored in milliliters.
+/// The unit one component of an entry or a favorite was logged in, from version 6: `intake_id` (the id of the
+/// entry, or of the favorite made from it), `component_id` and the unit's `unit` symbol (`tsp`, `tbsp`, `cup` or
+/// `fl oz`). The component's own amount is still stored in milliliters.
 public struct JournalExportLoggedUnit: Sendable, Hashable, Codable {
     public var intakeID: String
     public var componentID: String
@@ -403,6 +402,8 @@ public struct JournalExportLoggedUnit: Sendable, Hashable, Codable {
     }
 }
 
+/// A saved meal, exported as the named group of templates it is. Each item has the shape of a favorite and
+/// states no meal of its own (`meal` is `null`); the group's `meal` applies to all of them.
 public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
     public var id: String
     public var name: String
@@ -445,7 +446,7 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
 /// The exported document, schema version 6. See `contracts/journal-export/v6.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
-/// written against version 1 keeps working. This build writes version 5 and reads versions 1 to 5, so a backup
+/// written against version 1 keeps working. This build writes version 6 and reads versions 1 to 6, so a backup
 /// taken before the product kind, a revision's own time or saved meals existed still restores. Version 3 is
 /// also what tells an older build to stop: a build that reads only versions 1 and 2 refuses the file by its
 /// version, instead of refusing a newer unit symbol (`gummy`, `piece`) partway through as a corrupt amount.
@@ -825,7 +826,7 @@ public enum JournalExporter {
         let keptOutOfLibraryIDs = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary()
             .filter { exportedIDs.contains($0) } ?? []
         let loggedUnitList = try (store as? JournalLoggedUnits)?.loggedUnits()
-            .filter { exportedIDs.contains($0.intakeID) }
+            .filter { exportedIDs.contains($0.intakeID) || favoriteList.contains(where: { favorite in favorite.id == $0.intakeID }) }
             .map { JournalExportLoggedUnit(intakeID: $0.intakeID, componentID: $0.componentID, unit: $0.unit.symbol) }
             .sorted { ($0.intakeID, $0.componentID) < ($1.intakeID, $1.componentID) } ?? []
         var savedMealList: [JournalExportSavedMeal] = []

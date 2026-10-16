@@ -144,6 +144,8 @@ enum JournalImportV5Keys {
 enum JournalImportV6Keys {
     static let root: Set<String> = JournalImportV5Keys.root.union(["logged_units"])
     static let loggedUnit: Set<String> = ["intake_id", "component_id", "unit"]
+    /// The units `logged_units` may name, as `contracts/journal-export/v6.schema.json` lists them.
+    static let loggedUnitSymbols: Set<String> = ["tsp", "tbsp", "cup", "fl oz"]
 }
 
 /// The keys each object in a version 4 export has, taken from `contracts/journal-export/v4.schema.json`.
@@ -743,8 +745,11 @@ public enum JournalImporter {
     /// The units a version 6 file carries, refused as a whole when one is not a unit this build knows.
     private static func restoredLoggedUnits(_ items: [JournalExportLoggedUnit]) throws -> [JournalLoggedUnit] {
         try items.map { item in
-            guard let unit = try? MeasureUnit(symbol: item.unit) else {
-                throw JournalImportError.malformed("$.logged_units: \(item.unit) is not a unit")
+            guard JournalImportV6Keys.loggedUnitSymbols.contains(item.unit), !item.intakeID.isEmpty,
+                !item.componentID.isEmpty, let unit = try? MeasureUnit(symbol: item.unit)
+            else {
+                throw JournalImportError.malformed(
+                    "$.logged_units: \(item.unit) is not one of tsp, tbsp, cup or fl oz, or an id is empty")
             }
             return JournalLoggedUnit(intakeID: item.intakeID, componentID: item.componentID, unit: unit)
         }

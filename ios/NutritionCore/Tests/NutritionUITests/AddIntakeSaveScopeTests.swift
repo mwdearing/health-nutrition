@@ -246,8 +246,27 @@ final class LoggedUnitTests: XCTestCase {
         XCTAssertTrue(try target.loggedUnits().isEmpty)
     }
 
-    /// Repeating an entry logged by the spoon logs the same spoon again, and a prefill opens in it.
-    func testRepeatingAndPrefillingKeepTheLoggedUnit() throws {
+    /// Starring a spoon-logged supplement keeps the unit with the favorite, so it still reads as logged.
+    func testAFavoriteKeepsTheLoggedUnit() throws {
+        let store = try makeStore()
+        _ = try logFiber(store, unit: .teaspoon, amount: "4")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let library = LibraryViewModel(store: store, favorites: favorites)
+        library.load()
+        let recent = try XCTUnwrap(library.sections.first { $0.title == "Recents" }?.items.first)
+        library.addFavorite(recent)
+        let favorite = try XCTUnwrap(try favorites.list().first)
+        XCTAssertEqual(try store.loggedUnits().filter { $0.intakeID == favorite.id }.map(\.unit), [.teaspoon])
+        let template = try XCTUnwrap(RepeatTemplate(
+            favorite: favorite, loggedUnitIndex: LoggedUnitIndex.load(from: store)))
+        XCTAssertEqual(AmountText.summary(template.components, loggedUnits: template.loggedUnits), "4 tsp")
+    }
+
+    /// Repeating an entry logged by the spoon logs the same spoon again.
+    func testRepeatingAnEntryKeepsTheLoggedUnit() throws {
         let store = try makeStore()
         let id = try logFiber(store, unit: .teaspoon, amount: "4")
         let home = AddHomeViewModel(store: store, now: { self.now })
@@ -257,5 +276,19 @@ final class LoggedUnitTests: XCTestCase {
         let token = try XCTUnwrap(home.quickAdd(recent))
         XCTAssertEqual(
             Set(try store.loggedUnits().map(\.intakeID)), [id, token.intakeID])
+    }
+
+    /// A version 6 file naming a unit outside tsp, tbsp, cup and fl oz is refused whole.
+    func testAnImportedLoggedUnitOutsideTheContractIsRefused() throws {
+        let source = try makeStore()
+        _ = try logFiber(source, unit: .teaspoon, amount: "4")
+        for symbol in ["L", "g"] {
+            var document = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
+            document.loggedUnits[0].unit = symbol
+            let target = try makeStore()
+            XCTAssertThrowsError(try JournalImporter.importExport(
+                try JournalExporter.encode(document), into: target, favorites: nil), symbol)
+            XCTAssertTrue(try target.activeIntakes().isEmpty)
+        }
     }
 }

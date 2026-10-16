@@ -26,7 +26,7 @@ public struct RepeatTemplate: Equatable {
     }
 
     /// Returns nil when any component has a malformed amount or unit: the whole template is rejected.
-    public init?(favorite: FavoriteTemplate) {
+    public init?(favorite: FavoriteTemplate, loggedUnitIndex: [String: [String: MeasureUnit]] = [:]) {
         var parsed: [IntakeComponent] = []
         for item in favorite.components {
             guard let amount = AmountParser.parse(item.amountText),
@@ -36,7 +36,7 @@ public struct RepeatTemplate: Equatable {
         }
         self.init(
             displayName: favorite.displayName, category: favorite.category, meal: favorite.meal, components: parsed,
-            productSnapshotID: favorite.productSnapshotID)
+            productSnapshotID: favorite.productSnapshotID, loggedUnits: loggedUnitIndex[favorite.id] ?? [:])
     }
 }
 

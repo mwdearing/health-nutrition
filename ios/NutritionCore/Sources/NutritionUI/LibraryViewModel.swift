@@ -295,9 +295,10 @@ public final class LibraryViewModel: ObservableObject {
             let recents = try RecentItemsProvider(store: store).recents()
             let foods = try RecentItemsProvider(store: store).foods()
             let frequents = try FrequentItemsProvider(store: store).frequents(limit: .max)
+            let loggedUnitIndex = LoggedUnitIndex.load(from: store)
             let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
-                RepeatTemplate(favorite: favorite) ?? RepeatTemplate(
+                RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex) ?? RepeatTemplate(
                     displayName: favorite.displayName, category: favorite.category, meal: favorite.meal, components: [],
                     productSnapshotID: favorite.productSnapshotID)
             }
@@ -530,6 +531,14 @@ public final class LibraryViewModel: ObservableObject {
             if try favorites.list().contains(where: { Self.key(of: $0) == key }) {
                 load()
                 return
+            }
+            // The units the entry was logged in follow it into the favorite, keyed by the favorite's own id.
+            if let units = store as? JournalLoggedUnits {
+                for component in item.template.components where component.unit == .mL {
+                    guard let loggedUnit = item.template.loggedUnits[component.componentID] else { continue }
+                    try units.recordLoggedUnit(JournalLoggedUnit(
+                        intakeID: favorite.id, componentID: component.componentID, unit: loggedUnit))
+                }
             }
             try favorites.add(favorite)
             load()

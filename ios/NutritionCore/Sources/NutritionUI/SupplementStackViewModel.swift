@@ -147,6 +147,7 @@ public final class SupplementStackViewModel: ObservableObject {
     public func load(now: Date) {
         do {
             let stored = try favorites.list()
+            let loggedUnitIndex = LoggedUnitIndex.load(from: store)
             let byID = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let planned = try pruned(schedules.schedules(), keeping: Set(byID.keys))
             guard let clock = SupplementStackClock(now: now, zoneIdentifier: zoneID()) else {
@@ -174,7 +175,7 @@ public final class SupplementStackViewModel: ObservableObject {
             let limits = upperLimitRows(now: now, intakes: active)
             bases = planned.compactMap { entry -> RowBasis? in
                 guard let favorite = byID[entry.key] else { return nil }
-                let template = RepeatTemplate(favorite: favorite)
+                let template = RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex)
                 return RowBasis(
                     favoriteID: favorite.id, title: favorite.displayName,
                     detail: template.map { AmountText.summary($0.components, unitSystem: preferences.unitSystem, loggedUnits: $0.loggedUnits) } ?? "unknown",
@@ -361,11 +362,12 @@ public final class SupplementStackViewModel: ObservableObject {
         favorites stored: [FavoriteTemplate], planned: Set<String>,
         kind: (String?, String) -> ProductKind
     ) throws -> [SupplementStackCandidate] {
+        let loggedUnitIndex = LoggedUnitIndex.load(from: store)
         let onList = Set(stored.filter { planned.contains($0.id) }.map { Self.matchKey($0) })
         let favoriteCandidates = stored
             .filter { !planned.contains($0.id) && !onList.contains(Self.matchKey($0)) }
             .map { favorite -> SupplementStackCandidate in
-                let template = RepeatTemplate(favorite: favorite)
+                let template = RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex)
                 return SupplementStackCandidate(
                     id: "favorite:\(favorite.id)", title: favorite.displayName,
                     detail: template.map { AmountText.summary($0.components, unitSystem: preferences.unitSystem, loggedUnits: $0.loggedUnits) } ?? "unknown",
@@ -517,7 +519,9 @@ public final class SupplementStackViewModel: ObservableObject {
             else {
                 return refuse("This item is no longer on your supplements.", now: now)
             }
-            guard let template = RepeatTemplate(favorite: favorite), !template.components.isEmpty else {
+            guard let template = RepeatTemplate(
+                favorite: favorite, loggedUnitIndex: LoggedUnitIndex.load(from: store)), !template.components.isEmpty
+            else {
                 errorMessage = "This item has no amounts to log."
                 return false
             }
@@ -671,8 +675,17 @@ public final class SupplementStackViewModel: ObservableObject {
                   !$0.amount.isNaN && AmountParser.parse(DecimalFormatting.text($0.amount)) != nil
               })
         else { return nil }
+        let favoriteID = makeID()
+        // The units the entry was logged in follow it into the favorite, keyed by the favorite's own id.
+        if let units = store as? JournalLoggedUnits {
+            for component in template.components where component.unit == .mL {
+                guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
+                try? units.recordLoggedUnit(JournalLoggedUnit(
+                    intakeID: favoriteID, componentID: component.componentID, unit: loggedUnit))
+            }
+        }
         return FavoriteTemplate(
-            id: makeID(), displayName: title, category: template.category,
+            id: favoriteID, displayName: title, category: template.category,
             components: template.components.map {
                 FavoriteComponent(
                     componentID: $0.componentID, name: $0.name, amountText: DecimalFormatting.text($0.amount),

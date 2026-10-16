@@ -1442,7 +1442,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             }
             // The same for the units entries were logged in: stale rows go, and the file's own rows are written.
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }
-            for loggedUnit in plan.loggedUnits where restoredIDs.contains(loggedUnit.intakeID) {
+            let restoredOwnerIDs = restoredIDs.union(plan.favorites.map(\.id))
+            for loggedUnit in plan.loggedUnits where restoredOwnerIDs.contains(loggedUnit.intakeID) {
                 context.insert(JournalSchemaV10.LoggedUnitRecord(
                     intakeID: loggedUnit.intakeID, componentID: loggedUnit.componentID,
                     unitSymbol: loggedUnit.unit.symbol))
