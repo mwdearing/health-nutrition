@@ -143,7 +143,8 @@ public struct IntakeMultiDayLogger {
                 try store.create(copy, components: current.components, product: product, now: now)
                 created.append(copy.id)
             } catch let writeError {
-                // A copy that never saved leaves no unit rows behind.
+                // A copy that never saved gives its unit rows back. Copies already written keep theirs, as a
+                // deleted entry always does: nothing reads a row whose entry is deleted.
                 for componentID in writtenUnits {
                     try? (store as? JournalLoggedUnits)?.removeLoggedUnit(intakeID: copy.id, componentID: componentID)
                 }

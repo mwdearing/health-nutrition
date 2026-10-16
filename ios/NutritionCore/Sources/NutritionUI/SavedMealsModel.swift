@@ -99,15 +99,21 @@ public final class SavedMealsModel: ObservableObject {
                         }
                     }
                 } catch {
-                    // The rows written so far go with the meal, so nothing is left behind in a backup.
+                    // The rows written so far go with the meal. A removal that fails leaves a row for an id no meal
+                    // has any more, which nothing reads and which a restore or erase clears.
                     for written in writtenOwners {
                         try? units.removeLoggedUnit(intakeID: written.owner, componentID: written.component)
                     }
                     do {
                         try book.remove(id: saved.id)
                     } catch {
-                        // The meal could not be taken back out, so it is saved, only without its units.
-                        return finish(failure: Self.savedWithoutUnitsMessage)
+                        // The meal could not be taken back out, so it is saved, only without its units. It is a save
+                        // that happened, so this returns true and the Journal's sheet closes; the notice says what
+                        // was lost.
+                        load()
+                        notice = Self.savedWithoutUnitsMessage
+                        noticeIsFailure = true
+                        return true
                     }
                     return finish(failure: "Could not save the meal.")
                 }

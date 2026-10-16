@@ -59,6 +59,21 @@ private final class FaultyJournal: JournalStore, JournalLoggedUnits, @unchecked 
     }
 }
 
+/// A saved-meals store that refuses any update which would remove a meal, so a meal cannot be taken back out.
+private final class RemoveRefusingStore: SavedMealStoring, @unchecked Sendable {
+    struct Refused: Error {}
+    let inner: UserDefaultsSavedMealStore
+    init(_ inner: UserDefaultsSavedMealStore) { self.inner = inner }
+    func meals() throws -> [SavedMeal] { try inner.meals() }
+    func update(_ change: (inout [SavedMeal]) throws -> Void) throws {
+        var probe = try inner.meals()
+        let before = probe.count
+        try change(&probe)
+        if probe.count < before { throw Refused() }
+        try inner.update(change)
+    }
+}
+
 /// The screen model for saved meals, and Save as meal from the Journal.
 ///
 /// Synthetic names and ids only. Lowercase UUID intake ids.
@@ -149,6 +164,30 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertEqual(model.notice, "Could not save the meal.")
         XCTAssertEqual(try store.meals(), [])
         XCTAssertEqual(try inner.loggedUnits().map(\.intakeID), [intake.id], "only the entry's own row remains")
+    }
+
+    /// When the units cannot be written and the meal cannot be taken back out either, the meal is saved, the
+    /// caller is told the save happened, and the notice says its units were lost.
+    func testAMealThatCannotBeTakenBackOutIsSavedWithAnExplainingNotice() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC",
+            meal: "breakfast")
+        try inner.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "fiber", unit: .teaspoon))
+        try inner.create(
+            intake,
+            components: [IntakeComponent(
+                componentID: "fiber", name: "Fiber", amount: Decimal(string: "19.715686375")!, unit: .mL)],
+            product: nil, now: now)
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        let model = SavedMealsModel(store: RemoveRefusingStore(store), journal: journal)
+        journal.failUnitWrites = true
+
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [intake]))
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "The meal was saved, but the units you entered could not be kept.")
+        XCTAssertEqual(try store.meals().map(\.name), ["Usual"])
     }
 
     func testAnUnreadableEntryRefusesTheWholeSave() throws {
