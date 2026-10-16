@@ -134,12 +134,17 @@ public struct CommunityProductSearchView: View {
         }
         .navigationTitle("Find products")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
+        // Focus after the push animation. Setting focus during the transition can be dropped.
+        .task {
+            guard focusSearchOnAppear else { return }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            searchFocused = true
+        }
         .onAppear {
             if onPick != nil {
                 library?.load()
                 library?.savedMeals?.load()
             }
-            if focusSearchOnAppear { searchFocused = true }
         }
         // The Undo window ends with this screen, as it does on the Library screen.
         .onDisappear { library?.savedMeals?.clearUndo() }
