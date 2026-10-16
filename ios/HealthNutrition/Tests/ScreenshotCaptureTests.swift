@@ -327,7 +327,8 @@ final class ScreenshotCaptureTests: XCTestCase {
                                     lookup: services.barcodeLookup, preferences: services.displayPreferences)
         try capture("AddHomeView") {
             NavigationStack {
-                AddHomeView(model: home, onBarcode: {}, onLabel: {}, onLibrary: {}, onType: {}, onChanged: {})
+                AddHomeView(model: home, onBarcode: {}, onLabel: {}, onLibrary: {}, onType: {}, onChanged: {},
+                            onSearchProducts: {})
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
                     }
