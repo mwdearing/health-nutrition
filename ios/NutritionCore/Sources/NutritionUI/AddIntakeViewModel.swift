@@ -181,8 +181,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// product, not a typed-in or quick-add entry. Only these show the "Save to Library" switch.
     public var canChooseLibrary: Bool {
         guard let product = productSnapshot() else { return false }
-        return product.catalogOrigin != "manual"
+        return !Self.libraryLeftOutOrigins.contains(product.catalogOrigin)
     }
+
+    /// The origins Library > Products leaves out (`LibraryViewModel.foods()`): typed-in, quick-add and recipe entries.
+    private static let libraryLeftOutOrigins: Set<String> = [
+        "manual", IntakeContextFactCatalog.quickAddOrigin, RecipeLogger.catalogOrigin,
+    ]
 
     /// What Save does beyond the Diary entry, shown above the Save button. A product from a barcode, a label or a
     /// search is also saved to Library > Products unless "Save to Library" is off; a typed-in or quick-add entry
@@ -192,7 +197,9 @@ public final class AddIntakeViewModel: ObservableObject {
         var sentences = [savedToProducts
             ? "Adds one entry to your Diary. The product is also saved to Library > Products."
             : "Adds one entry to your Diary only."]
-        if labelValues != nil, storedProduct == nil, isSharingAllowed() {
+        // The same checks the save path uses to send a label, so the line promises only an upload that will happen.
+        if prefilledFromCapture, labelValues != nil, storedProduct == nil, labelSubmitter != nil, isSharingAllowed(),
+           communitySubmission() != nil {
             sentences.append("Share labels is on, so saving this label also sends its product name, brand, barcode, serving text and nutrient amounts to the community catalog.")
         }
         return sentences.joined(separator: " ")

@@ -11,7 +11,7 @@ cached `DateFormatter` per run and writes the fraction itself, reading it back t
 whole-second dates written by earlier builds still import. Favorites are written in id order, so two exports
 of the same favorites are the same document.
 
-Versions 1 to 4 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
+Versions 1 to 5 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
 the 1582 cutover. Earlier exports used that calendar, and the writer still does, so interpreting their text
 proleptically would shift some restored timestamps; the reader requires exact calendar round-tripping and
 rejects dates Foundation would normalize, including the skipped cutover days. This compatibility rule does
@@ -228,7 +228,7 @@ erase replaces the journal.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `4`; versions 1 to 3 are still read. |
+| `schema_version` | Version of the schema this document follows. This build writes `5`; versions 1 to 4 are still read. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
@@ -273,7 +273,7 @@ already resolved is reused instead of being fetched again for every revision tha
 means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
 `JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
 ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
-build **writes version 4 and reads versions 1, 2, 3 and 4**; `decode(_:)` refuses anything else by value
+build **writes version 5 and reads versions 1, 2, 3, 4 and 5**; `decode(_:)` refuses anything else by value
 rather than by shape, so a version 5 file is never half-understood.
 
 Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
