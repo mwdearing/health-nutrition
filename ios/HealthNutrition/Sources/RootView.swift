@@ -5,12 +5,12 @@ import NutritionJournal
 import NutritionDomain
 import NutritionUI
 
-/// The tab shell: Today, Diary (the journal), Library, Trends and Settings, all reading the same store.
 /// Messages the add flow shows, named here so a test can pin the wording.
 enum AddFlowMessage {
     static let productDetailsFailed = "Could not open product details."
 }
 
+/// The tab shell: Today, Diary (the journal), Library, Trends and Settings, all reading the same store.
 @MainActor
 struct RootView: View {
     let services: AppServices
