@@ -55,7 +55,7 @@ the backup.
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
 **Versions 1, 2, 3 and 4 are read**, so a backup taken before the kind, a revision's own time or saved meals
 existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
-`init(from:)`. New exports write version 4. Re-encoding a decoded older document preserves its version and omits
+`init(from:)`. New exports write version 5. Re-encoding a decoded older document preserves its version and omits
 the fields that version does not have (`kind` for version 1, a revision's time for versions 1 and 2, saved meals
 for versions 1 to 3), so the strict importer still accepts it.
 
@@ -236,6 +236,7 @@ erase replaces the journal.
 | `favorites` | Favorite templates as stored, sorted by id. A favorite is a copy, never a link to an intake. |
 | `products` | Every product snapshot a revision, a favorite or a saved meal's item refers to, sorted by `snapshot_id`. |
 | `saved_meals` | From version 4: the saved meals in the list's own order (newest first), each with `id`, `name`, `meal` (a meal name or `null`) and `items` (favorite-shaped templates in the order they are logged, each with `meal` `null`). At most 100 meals of 1 to 30 items, names of 1 to 60 characters, unique ignoring case. |
+| `kept_out_of_library` | From version 5: the ids of the intakes whose product is kept out of Library > Products, sorted. Empty for a document of an earlier version, so every entry in it is saved to Library. |
 
 Inside a revision, `components` carry `component_id`, `name`, `amount`, `unit` and `value_state`. Amounts
 are **exact decimal strings** in the POSIX format (`"37.5"`, `"250"`), never JSON numbers, because a binary
