@@ -2133,6 +2133,18 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         }
     }
 
+    /// Forgets the unit a component was logged in. A component with no row is left as it is.
+    public func removeLoggedUnit(intakeID ownerID: String, componentID: String) throws {
+        try commit { context in
+            for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
+                    $0.intakeID == ownerID && $0.componentID == componentID
+                })) {
+                context.delete(row)
+            }
+        }
+    }
+
     /// Every recorded unit. A row whose symbol is not a unit this build knows is left out, so it reads as stored.
     public func loggedUnits() throws -> [JournalLoggedUnit] {
         let context = ModelContext(try openContainer())

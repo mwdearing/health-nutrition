@@ -103,6 +103,8 @@ public struct IntakeMultiDayLogger {
         let keepsOut = try ((store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary() ?? []).contains(intake.id)
         var created: [String] = []
         var skipped: [MultiDaySkippedDay] = []
+        // The units the entry was logged in are carried to each copy, as repeating it does.
+        let loggedUnits = LoggedUnitIndex.load(from: store)[intake.id] ?? [:]
         for day in days {
             guard day.key != ownDay else {
                 skipped.append(MultiDaySkippedDay(day: day.key, reason: .entryDay))
@@ -129,6 +131,13 @@ public struct IntakeMultiDayLogger {
                 timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal)
             do {
                 if keepsOut { try (store as? JournalLibraryExclusions)?.keepOutOfLibrary(intakeID: copy.id) }
+                if let units = store as? JournalLoggedUnits {
+                    for component in current.components where component.unit == .mL {
+                        guard let loggedUnit = loggedUnits[component.componentID] else { continue }
+                        try units.recordLoggedUnit(JournalLoggedUnit(
+                            intakeID: copy.id, componentID: component.componentID, unit: loggedUnit))
+                    }
+                }
                 try store.create(copy, components: current.components, product: product, now: now)
                 created.append(copy.id)
             } catch let writeError {

@@ -447,6 +447,16 @@ public final class EntryDetailViewModel: ObservableObject {
                 changeReason: Self.recordedReason(written: reason, timeOnlyChange: timeOnly), now: now,
                 occurredAt: correctedTime,
                 timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
+            // An amount that was typed over is no longer the amount the logged unit described, so that unit is
+            // forgotten and the component reads as the unit system says.
+            if let units = store as? JournalLoggedUnits, let before = current?.components {
+                for component in parsed {
+                    guard let old = before.first(where: { $0.componentID == component.componentID }),
+                        !Self.sameAmount(old.amount, component.amount)
+                    else { continue }
+                    try? units.removeLoggedUnit(intakeID: intakeID, componentID: component.componentID)
+                }
+            }
         } catch {
             errorMessage = "Couldn't save. Your previous amount is kept."
             return false

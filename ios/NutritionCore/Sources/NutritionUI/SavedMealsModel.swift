@@ -86,13 +86,19 @@ public final class SavedMealsModel: ObservableObject {
         do {
             let saved = try book.add(name: name, meal: meal, templates: templates)
             // The units the entries were logged in follow each item, keyed by the item's own id.
+            // A unit that cannot be written takes the meal back out, so it never saves without its units.
             if let units = journal as? JournalLoggedUnits {
-                for (item, template) in zip(saved.items, templates) {
-                    for component in template.components where component.unit == .mL {
-                        guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
-                        try? units.recordLoggedUnit(JournalLoggedUnit(
-                            intakeID: item.id, componentID: component.componentID, unit: loggedUnit))
+                do {
+                    for (item, template) in zip(saved.items, templates) {
+                        for component in template.components where component.unit == .mL {
+                            guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
+                            try units.recordLoggedUnit(JournalLoggedUnit(
+                                intakeID: item.id, componentID: component.componentID, unit: loggedUnit))
+                        }
                     }
+                } catch {
+                    try? book.remove(id: saved.id)
+                    return finish(failure: "Could not save the meal.")
                 }
             }
             load()
