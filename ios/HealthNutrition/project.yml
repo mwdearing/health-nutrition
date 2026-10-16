@@ -129,6 +129,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionTests
         GENERATE_INFOPLIST_FILE: YES
 
+  HealthNutritionAddUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Tests/AddSearchUITests
+    dependencies:
+      - target: HealthNutrition
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionAddUITests
+        GENERATE_INFOPLIST_FILE: YES
+
   HealthNutritionPrivacyUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -148,12 +161,14 @@ schemes:
       targets:
         HealthNutrition: all
         HealthNutritionTests: [test]
+        HealthNutritionAddUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - HealthNutritionTests
+        - HealthNutritionAddUITests
     archive:
       config: Release
 
