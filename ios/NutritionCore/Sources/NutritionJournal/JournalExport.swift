@@ -425,7 +425,7 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
 /// The exported document, schema version 5. See `contracts/journal-export/v5.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
-/// written against version 1 keeps working. This build writes only version 4 and reads all four, so a backup
+/// written against version 1 keeps working. This build writes version 5 and reads versions 1 to 5, so a backup
 /// taken before the product kind, a revision's own time or saved meals existed still restores. Version 3 is
 /// also what tells an older build to stop: a build that reads only versions 1 and 2 refuses the file by its
 /// version, instead of refusing a newer unit symbol (`gummy`, `piece`) partway through as a corrupt amount.

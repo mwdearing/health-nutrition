@@ -39,14 +39,18 @@ public struct JournalImportSummary: Sendable, Equatable {
     public var products: Int
     /// Saved meals written.
     public var savedMeals: Int
+    /// Restored entries whose product is kept out of Library > Products.
+    public var keptOutOfLibrary: Int
 
-    public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0) {
+    public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0,
+                keptOutOfLibrary: Int = 0) {
         self.intakes = intakes
         self.revisions = revisions
         self.tombstones = tombstones
         self.favorites = favorites
         self.products = products
         self.savedMeals = savedMeals
+        self.keptOutOfLibrary = keptOutOfLibrary
     }
 }
 
@@ -361,7 +365,10 @@ public enum JournalImporter {
             tombstones: plan.tombstones.count,
             favorites: plan.favorites.count,
             products: plan.products.count,
-            savedMeals: plan.savedMeals.count)
+            savedMeals: plan.savedMeals.count,
+            keptOutOfLibrary: plan.entries.reduce(0) { count, entry in
+                count + (plan.keptOutOfLibrary.contains(entry.intake.id) ? 1 : 0)
+            })
     }
 
     /// Whether the journal holds any intake, live or deleted.
