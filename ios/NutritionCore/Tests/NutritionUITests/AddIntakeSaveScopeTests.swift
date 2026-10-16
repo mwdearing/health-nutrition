@@ -54,6 +54,7 @@ final class AddIntakeLibrarySwitchTests: XCTestCase {
         let store = try makeStore()
         let model = AddIntakeViewModel(store: store, now: now)
         model.applyLabelProduct(labelProduct(), fromLabelCapture: true)
+        model.name = "Example bar"
         model.amountText = "30"
         model.savesToLibrary = false
         XCTAssertTrue(model.save(now: now))
@@ -65,6 +66,7 @@ final class AddIntakeLibrarySwitchTests: XCTestCase {
         let store = try makeStore()
         let model = AddIntakeViewModel(store: store, now: now)
         model.applyLabelProduct(labelProduct(), fromLabelCapture: true)
+        model.name = "Example bar"
         model.amountText = "30"
         XCTAssertTrue(model.save(now: now))
         XCTAssertTrue(try store.intakeIDsNotSavedToLibrary().isEmpty)
@@ -106,6 +108,7 @@ final class LibraryExclusionStoreTests: XCTestCase {
         let store = try makeStore()
         let model = AddIntakeViewModel(store: store, now: when)
         model.applyLabelProduct(product(), fromLabelCapture: true)
+        model.name = "Example bar"
         model.amountText = "1"
         model.savesToLibrary = false
         store.failNextSaveForTesting = true
