@@ -86,13 +86,36 @@ public final class SavedMealsModel: ObservableObject {
         do {
             let saved = try book.add(name: name, meal: meal, templates: templates)
             // The units the entries were logged in follow each item, keyed by the item's own id.
+            // A unit that cannot be written takes the meal back out, so it never saves without its units.
             if let units = journal as? JournalLoggedUnits {
-                for (item, template) in zip(saved.items, templates) {
-                    for component in template.components where component.unit == .mL {
-                        guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
-                        try? units.recordLoggedUnit(JournalLoggedUnit(
-                            intakeID: item.id, componentID: component.componentID, unit: loggedUnit))
+                var writtenOwners: [(owner: String, component: String)] = []
+                do {
+                    for (item, template) in zip(saved.items, templates) {
+                        for component in template.components where component.unit == .mL {
+                            guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
+                            try units.recordLoggedUnit(JournalLoggedUnit(
+                                intakeID: item.id, componentID: component.componentID, unit: loggedUnit))
+                            writtenOwners.append((item.id, component.componentID))
+                        }
                     }
+                } catch {
+                    // The rows written so far go with the meal. A removal that fails leaves a row for an id no meal
+                    // has any more, which nothing reads and which a restore or erase clears.
+                    for written in writtenOwners {
+                        try? units.removeLoggedUnit(intakeID: written.owner, componentID: written.component)
+                    }
+                    do {
+                        try book.remove(id: saved.id)
+                    } catch {
+                        // The meal could not be taken back out, so it is saved, only without its units. It is a save
+                        // that happened, so this returns true and the Journal's sheet closes; the notice says what
+                        // was lost.
+                        load()
+                        notice = Self.savedWithoutUnitsMessage
+                        noticeIsFailure = true
+                        return true
+                    }
+                    return finish(failure: "Could not save the meal.")
                 }
             }
             load()
@@ -211,6 +234,8 @@ public final class SavedMealsModel: ObservableObject {
                 + (count == 1 ? "is" : "are") + " still in the Journal. Delete "
                 + (count == 1 ? "it" : "them") + " there."
     }
+
+    static let savedWithoutUnitsMessage = "The meal was saved, but the units you entered could not be kept."
 
     /// Reloads first and sets the message after, so the reload can never clear the reason it gives.
     @discardableResult

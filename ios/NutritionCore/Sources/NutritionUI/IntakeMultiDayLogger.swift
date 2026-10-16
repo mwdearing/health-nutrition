@@ -103,6 +103,8 @@ public struct IntakeMultiDayLogger {
         let keepsOut = try ((store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary() ?? []).contains(intake.id)
         var created: [String] = []
         var skipped: [MultiDaySkippedDay] = []
+        // The units the entry was logged in are carried to each copy, as repeating it does.
+        let loggedUnits = LoggedUnitIndex.load(from: store)[intake.id] ?? [:]
         for day in days {
             guard day.key != ownDay else {
                 skipped.append(MultiDaySkippedDay(day: day.key, reason: .entryDay))
@@ -127,11 +129,25 @@ public struct IntakeMultiDayLogger {
             let copy = Intake(
                 id: makeID(), category: intake.category, occurredAt: occurredAt,
                 timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal)
+            var writtenUnits: [String] = []
             do {
                 if keepsOut { try (store as? JournalLibraryExclusions)?.keepOutOfLibrary(intakeID: copy.id) }
+                if let units = store as? JournalLoggedUnits {
+                    for component in current.components where component.unit == .mL {
+                        guard let loggedUnit = loggedUnits[component.componentID] else { continue }
+                        try units.recordLoggedUnit(JournalLoggedUnit(
+                            intakeID: copy.id, componentID: component.componentID, unit: loggedUnit))
+                        writtenUnits.append(component.componentID)
+                    }
+                }
                 try store.create(copy, components: current.components, product: product, now: now)
                 created.append(copy.id)
             } catch let writeError {
+                // A copy that never saved gives its unit rows back. Copies already written keep theirs, as a
+                // deleted entry always does: nothing reads a row whose entry is deleted.
+                for componentID in writtenUnits {
+                    try? (store as? JournalLoggedUnits)?.removeLoggedUnit(intakeID: copy.id, componentID: componentID)
+                }
                 var remaining: [String] = []
                 for id in created.reversed() {
                     do {

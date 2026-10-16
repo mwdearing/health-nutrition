@@ -278,6 +278,64 @@ final class LoggedUnitTests: XCTestCase {
         XCTAssertEqual(AmountText.summary(template.components, loggedUnits: template.loggedUnits), "4 tsp")
     }
 
+    /// Typing a new amount over a spoon-logged entry forgets the spoon, so the entry reads as the unit system says
+    /// instead of showing the new millimeters as spoons; an edit that changes no amount keeps it.
+    func testEditingTheAmountForgetsTheLoggedUnit() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let detail = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        detail.load(now: now)
+        let componentID = try XCTUnwrap(detail.components.first).id
+
+        XCTAssertTrue(detail.saveDrafts(now: now))
+        XCTAssertEqual(try store.loggedUnits().map(\.unit), [.teaspoon], "an untouched save keeps the unit")
+
+        detail.drafts[componentID] = "250"
+        XCTAssertTrue(detail.saveDrafts(now: now))
+        XCTAssertTrue(try store.loggedUnits().isEmpty)
+    }
+
+    /// A time-only correction keeps the unit, and in an entry with two components only the edited one forgets it.
+    func testATimeOnlyEditKeepsTheUnit() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let detail = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
+        detail.load(now: now)
+        detail.occurredAt = detail.occurredAt.addingTimeInterval(-600)
+        XCTAssertTrue(detail.saveDrafts(now: now))
+        XCTAssertEqual(try store.loggedUnits().map(\.unit), [.teaspoon])
+    }
+
+    func testEditingOneComponentKeepsTheOthersUnit() throws {
+        let store = try makeStore()
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC")
+        try store.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "a", unit: .teaspoon))
+        try store.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "b", unit: .tablespoon))
+        try store.create(
+            intake,
+            components: [
+                IntakeComponent(componentID: "a", name: "A", amount: Decimal(string: "9.8578431875")!, unit: .mL),
+                IntakeComponent(componentID: "b", name: "B", amount: Decimal(string: "14.78676478125")!, unit: .mL),
+            ], product: nil, now: now)
+        let detail = EntryDetailViewModel(store: store, intakeID: intake.id, timeZoneIdentifier: "UTC")
+        detail.load(now: now)
+        detail.drafts["a"] = "20"
+        XCTAssertTrue(detail.saveDrafts(now: now))
+        XCTAssertEqual(try store.loggedUnits().map(\.componentID), ["b"])
+    }
+
+    /// Logging an entry again on other days carries the logged unit to each copy.
+    func testLoggingOnOtherDaysKeepsTheLoggedUnit() throws {
+        let store = try makeStore()
+        let id = try logFiber(store, unit: .teaspoon, amount: "4")
+        let result = try IntakeMultiDayLogger(store: store).log(
+            intakeID: id, onDays: ["2023-11-12"], now: now.addingTimeInterval(86_400 * 10))
+        XCTAssertEqual(result.createdIDs.count, 1)
+        let copyID = try XCTUnwrap(result.createdIDs.first)
+        XCTAssertTrue(try store.loggedUnits().contains { $0.intakeID == copyID && $0.unit == .teaspoon })
+    }
+
     /// Repeating an entry logged by the spoon logs the same spoon again.
     func testRepeatingAnEntryKeepsTheLoggedUnit() throws {
         let store = try makeStore()

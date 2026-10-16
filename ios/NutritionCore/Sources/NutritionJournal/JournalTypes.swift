@@ -433,6 +433,8 @@ public protocol JournalLoggedUnits: AnyObject, Sendable {
     func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws
     /// Every recorded unit.
     func loggedUnits() throws -> [JournalLoggedUnit]
+    /// Forgets the unit a component was logged in, for when its amount is replaced by one typed in another unit.
+    func removeLoggedUnit(intakeID: String, componentID: String) throws
 }
 
 public protocol JournalStore: AnyObject, Sendable {
