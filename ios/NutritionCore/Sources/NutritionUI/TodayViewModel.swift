@@ -350,6 +350,20 @@ public final class TodayViewModel: ObservableObject {
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
         } catch {
+            // Clear what the last good read showed, so a failed reload never shows old rows as today's.
+            rows = []
+            mealSections = []
+            waterTotalMilliliters = 0
+            waterEntryCount = 0
+            waterSkippedCount = 0
+            skippedIntakeCount = 0
+            coverage = []
+            progress = []
+            goalBars = []
+            waterBar = nil
+            missingValuesSummary = nil
+            activityGoalNote = nil
+            dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
             errorMessage = "Could not read the journal."
         }
     }

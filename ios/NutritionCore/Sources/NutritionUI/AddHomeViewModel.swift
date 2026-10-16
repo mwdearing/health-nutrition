@@ -184,6 +184,11 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
             undoToken = nil
             load()
             return true
+        } catch JournalError.intakeDeleted(_) {
+            // Already deleted from the Journal: nothing is left to undo, so drop the token.
+            undoToken = nil
+            load()
+            return false
         } catch { errorMessage = "Could not undo."; return false }
     }
 

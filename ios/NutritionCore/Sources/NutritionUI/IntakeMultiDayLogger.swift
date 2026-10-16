@@ -99,6 +99,8 @@ public struct IntakeMultiDayLogger {
         let time = calendar.dateComponents([.hour, .minute, .second], from: intake.occurredAt)
 
         let today = IntakeCopier.dayKey(now, zoneIdentifier: intake.timeZoneIdentifier)
+        // Copies of an entry kept out of Library stay out of Library too.
+        let keepsOut = try ((store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary() ?? []).contains(intake.id)
         var created: [String] = []
         var skipped: [MultiDaySkippedDay] = []
         for day in days {
@@ -126,6 +128,7 @@ public struct IntakeMultiDayLogger {
                 id: makeID(), category: intake.category, occurredAt: occurredAt,
                 timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal)
             do {
+                if keepsOut { try (store as? JournalLibraryExclusions)?.keepOutOfLibrary(intakeID: copy.id) }
                 try store.create(copy, components: current.components, product: product, now: now)
                 created.append(copy.id)
             } catch let writeError {
