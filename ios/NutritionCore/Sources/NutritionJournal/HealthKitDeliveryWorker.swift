@@ -86,7 +86,7 @@ public typealias NutrientTotalsProvider = @Sendable (_ intakeID: String, _ revis
 ///   `labelBasis` (typically per 100 g), not for the amount the component records, so a 40 g
 ///   component of a product whose label states 13 g of protein per 100 g carries 5.2 g. The factor
 ///   comes from `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`, the same arithmetic the
-///   relay encoder uses, with one exception: a "per 100 g or mL" label on a single weight or volume
+///   relay encoder uses, with one exception: a "per 100 g or mL" label on logged amounts that are all weights or all volumes (summed)
 ///   falls back to `IntakeContextSnapshotBasis.perHundredGOrMLFactor` (per 100 g or per 100 mL). The
 ///   relay encoder does not take that fallback. The multiplication is in `Decimal`, never a float.
 ///   **Nothing is written when that factor cannot be resolved** — a basis the journal cannot answer
