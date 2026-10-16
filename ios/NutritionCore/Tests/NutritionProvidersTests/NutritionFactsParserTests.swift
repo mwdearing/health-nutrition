@@ -1051,10 +1051,12 @@ final class NutritionFactsParserTests: XCTestCase {
     func testFoodPanelKeepsKnownNutrientsTheNamedTableDoesNotCarry() throws {
         let panel = parse([
             "Nutrition Facts", "Total Fat 8g", "Magnesium 40mg", "Vitamin C 12mg",
-            "Folic Acid 100mcg",
+            "Folic Acid 100mcg", "Vitamin B6 2mg", "Vitamin B12 2.4mcg",
         ])
 
-        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Magnesium", "Vitamin C", "Folic Acid"])
+        XCTAssertEqual(
+            panel.additionalNutrients.map(\.name),
+            ["Magnesium", "Vitamin C", "Folic Acid", "Vitamin B6", "Vitamin B12"])
         XCTAssertEqual(panel.unnamedRowCount, 0)
     }
 

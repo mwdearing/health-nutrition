@@ -919,7 +919,8 @@ public enum NutritionFactsParser {
     private static let knownFoodNutrients: Set<String> = [
         "magnesium", "phosphorus", "zinc", "copper", "manganese", "selenium", "chromium", "molybdenum",
         "iodine", "chloride", "choline", "vitamina", "vitaminc", "vitamine", "vitamink", "thiamin",
-        "thiamine", "riboflavin", "niacin", "folate", "folicacid", "biotin", "pantothenicacid",
+        "thiamine", "riboflavin", "niacin", "vitaminb6", "folate", "folicacid", "vitaminb12", "biotin",
+        "pantothenicacid",
     ]
 
     private static func isKnownFoodNutrient(_ name: String) -> Bool {
