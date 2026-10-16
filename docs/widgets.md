@@ -9,8 +9,9 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
 - **Where it lives.** In the App Group container shared by the app and the widget extension, named
   `group.<the app's bundle identifier>`, with file protection "complete until first user authentication".
   It is rewritten each time Today's figures are read successfully (see "When the summary is written").
-- **Lock Screen.** The figures are marked privacy sensitive, so the system redacts them while the device is
-  locked, according to the person's Lock Screen widget settings.
+- **Lock Screen.** The figures are marked privacy sensitive, which asks the system to redact them while the
+  device is locked, according to the person's Lock Screen widget settings. PRIVACY.md does not promise this until
+  the device check below has confirmed it; the sentence is added in a follow-up then.
 - **Erase all data.** Clears the summary, and runs first among the erasers: it is replaced by an empty one (no entries, no figures) at once, so the
   widget shows "Nothing logged today"; if that write fails the whole folder is removed instead, and the widgets are
   refreshed either way. If the file cannot be removed either, it is emptied in place; the widget cannot decode an
@@ -44,8 +45,8 @@ rectangular, inline). With nothing logged it reads "Nothing logged today". Tappi
 - **Privacy manifest.** The extension has its own, matching the app's declaration for this data.
 
 Device check for the first signed build: with the device locked, confirm the Lock Screen widget hides the
-calorie figure and the gauge value (not only the Home Screen figures); this Lock Screen claim in PRIVACY.md
-stays only if that check confirms it; after Erase all data confirm the widget
+calorie figure and the gauge value (not only the Home Screen figures); the Lock Screen sentence is added
+to PRIVACY.md in a follow-up only once that check confirms it; after Erase all data confirm the widget
 reads "Nothing logged today"; and after midnight with the app closed confirm it shows dashes, not yesterday's
 figures; and confirm the summary file is excluded from a device backup (its resource value
 `isExcludedFromBackup` reads back true).
