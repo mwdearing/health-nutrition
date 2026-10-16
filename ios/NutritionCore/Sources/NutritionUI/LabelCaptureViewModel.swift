@@ -442,6 +442,8 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// One row per nutrient the journal names, in panel order. Every row is present from the first
     /// load, so the review screen shows a nutrient the panel omits as unknown rather than hiding it.
     @Published public private(set) var rows: [LabelCaptureRow] = []
+    /// Rows the scan saw but could not name; they count as unread in the footer.
+    @Published public private(set) var unnamedRowCount = 0
     /// One row per compound the panel states that the fifteen journal nutrients do not name, in the
     /// order the panel printed them. Shown under its own heading, because these rows are why anyone
     /// scans a supplement panel at all.
@@ -540,6 +542,7 @@ public final class LabelCaptureViewModel: ObservableObject {
             )
         }
         rows = loaded
+        unnamedRowCount = panel.unnamedRowCount
         additionalRows = panel.additionalNutrients.map {
             LabelCaptureAdditionalRow(
                 key: $0.key, name: $0.name, value: $0.value, reasons: $0.review?.reasons ?? [],
@@ -807,6 +810,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// about a different product altogether, and a draft holding two products would be neither.
     public func retake() {
         rows = []
+        unnamedRowCount = 0
         additionalRows = []
         kind = .food
         servingText = nil
@@ -1183,7 +1187,7 @@ public final class LabelCaptureViewModel: ObservableObject {
         let pending = pendingCount
         if pending == 0 {
             let known = rows.filter { $0.value != .unknown }.count
-            return "Read \(known) of \(rows.count) rows. A nutrient the panel does not state stays unknown."
+            return "Read \(known) of \(rows.count + unnamedRowCount) rows. A nutrient the panel does not state stays unknown."
         }
         let pendingRows = rows.filter(\.isPending).count + additionalRows.filter(\.isPending).count
         var parts: [String] = []

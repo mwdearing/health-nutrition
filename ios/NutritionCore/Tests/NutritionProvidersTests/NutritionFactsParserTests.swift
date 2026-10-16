@@ -1043,6 +1043,7 @@ final class NutritionFactsParserTests: XCTestCase {
 
         XCTAssertEqual(panel.panelKind, .nutritionFacts)
         XCTAssertTrue(panel.additionalNutrients.isEmpty, "OCR fragments of a food panel are not rows")
+        XCTAssertEqual(panel.unnamedRowCount, 3, "the three unnamed amounts stay unread, so the footer counts them")
         XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
     }
 
