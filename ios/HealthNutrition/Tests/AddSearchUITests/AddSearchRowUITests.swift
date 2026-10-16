@@ -12,7 +12,8 @@ final class AddSearchRowUITests: XCTestCase {
         addButton.tap()
 
         let row = app.buttons.matching(NSPredicate(format: "label == %@", "Search foods, brands, drinks")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "the search row is not on the Add screen")
+        XCTAssertTrue(row.waitForExistence(timeout: 10),
+                      "the search row is not on the Add screen. Hierarchy: \(String(app.debugDescription.prefix(6000)))")
         XCTAssertTrue(row.isHittable, "the search row is on screen but cannot be tapped")
         row.tap()
 
