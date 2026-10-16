@@ -11,15 +11,16 @@ cached `DateFormatter` per run and writes the fraction itself, reading it back t
 whole-second dates written by earlier builds still import. Favorites are written in id order, so two exports
 of the same favorites are the same document.
 
-Versions 1 to 5 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
+Versions 1 to 6 also retain Foundation's historical Julian/Gregorian calendar meaning for UTC dates before
 the 1582 cutover. Earlier exports used that calendar, and the writer still does, so interpreting their text
 proleptically would shift some restored timestamps; the reader requires exact calendar round-tripping and
 rejects dates Foundation would normalize, including the skipped cutover days. This compatibility rule does
 not change any schema's shape.
 
 The contract lives in the repository next to the code:
-- `contracts/journal-export/v5.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
-- `contracts/journal-export/example.v5.json` - a small synthetic document that validates against it.
+- `contracts/journal-export/v6.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
+- `contracts/journal-export/example.v6.json` - a small synthetic document that validates against it.
+- `contracts/journal-export/v5.schema.json` and `example.v5.json` - the version 5 contract, kept unchanged and still read.
 - `contracts/journal-export/v3.schema.json`, `v2.schema.json`, `v1.schema.json` and their examples - the version 3, 2 and 1 contracts, kept unchanged and still read.
 
 Version 2 is version 1 with one field: `provenance.kind`, which says whether a product is a `food`, a
@@ -53,9 +54,9 @@ the backup.
 `JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
-**Versions 1, 2, 3, 4 and 5 are read**, so a backup taken before the kind, a revision's own time or saved meals
+**Versions 1, 2, 3, 4, 5 and 6 are read**, so a backup taken before the kind, a revision's own time or saved meals
 existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
-`init(from:)`. New exports write version 5. Re-encoding a decoded older document preserves its version and omits
+`init(from:)`. New exports write version 6. Re-encoding a decoded older document preserves its version and omits
 the fields that version does not have (`kind` for version 1, a revision's time for versions 1 and 2, saved meals
 for versions 1 to 3), so the strict importer still accepts it.
 
@@ -228,7 +229,7 @@ erase replaces the journal.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `5`; versions 1 to 4 are still read. |
+| `schema_version` | Version of the schema this document follows. This build writes `6`; versions 1 to 5 are still read. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
@@ -236,6 +237,7 @@ erase replaces the journal.
 | `favorites` | Favorite templates as stored, sorted by id. A favorite is a copy, never a link to an intake. |
 | `products` | Every product snapshot a revision, a favorite or a saved meal's item refers to, sorted by `snapshot_id`. |
 | `saved_meals` | From version 4: the saved meals in the list's own order (newest first), each with `id`, `name`, `meal` (a meal name or `null`) and `items` (favorite-shaped templates in the order they are logged, each with `meal` `null`). At most 100 meals of 1 to 30 items, names of 1 to 60 characters, unique ignoring case. |
+| `logged_units` | From version 6: the unit each component was logged in, for amounts stored in milliliters that were typed in a teaspoon (`tsp`), tablespoon (`tbsp`), cup (`cup`) or fluid ounces (`fl oz`): `intake_id`, `component_id` and `unit`, sorted by intake then component. The amount stays in milliliters; this only says how it was typed. Empty for a document of an earlier version, so every amount in it reads in the unit it is stored in. |
 | `kept_out_of_library` | From version 5: the ids of the intakes whose product is kept out of Library > Products, sorted. Empty for a document of an earlier version, so every entry in it is saved to Library. |
 
 Inside a revision, `components` carry `component_id`, `name`, `amount`, `unit` and `value_state`. Amounts
@@ -273,8 +275,8 @@ already resolved is reused instead of being fetched again for every revision tha
 means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
 `JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
 ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
-build **writes version 5 and reads versions 1, 2, 3, 4 and 5**; `decode(_:)` refuses anything else by value
-rather than by shape, so a version 5 file is never half-understood.
+build **writes version 6 and reads versions 1, 2, 3, 4, 5 and 6**; `decode(_:)` refuses anything else by value
+rather than by shape, so a version 7 file is never half-understood.
 
 Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
 in its own right: its documents carry no kind, and refusing them would take away the only backup a person
