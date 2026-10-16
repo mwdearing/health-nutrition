@@ -935,8 +935,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let savedMeals = summary.savedMeals == 0 ? ""
             : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(summary.savedMeals) saved meals"
         let kept = summary.keptOutOfLibrary == 0 ? ""
-            : summary.keptOutOfLibrary == 1 ? ", 1 product kept out of Library > Products"
-            : ", \(summary.keptOutOfLibrary) products kept out of Library > Products"
+            : summary.keptOutOfLibrary == 1 ? ", 1 entry kept out of Library > Products"
+            : ", \(summary.keptOutOfLibrary) entries kept out of Library > Products"
         return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(kept)."
     }
 
