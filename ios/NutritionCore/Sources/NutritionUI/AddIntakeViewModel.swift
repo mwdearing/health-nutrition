@@ -177,20 +177,29 @@ public final class AddIntakeViewModel: ObservableObject {
         hasAttemptedSave && (nameError != nil || amountError != nil) ? Self.fixFieldsMessage : nil
     }
 
+    /// Whether this entry's product can be kept in Library > Products or left out: a barcode, label or search
+    /// product, not a typed-in or quick-add entry. Only these show the "Save to Library" switch.
+    public var canChooseLibrary: Bool {
+        guard let product = productSnapshot() else { return false }
+        return !Self.libraryLeftOutOrigins.contains(product.catalogOrigin)
+    }
+
+    /// The origins Library > Products leaves out (`LibraryViewModel.foods()`): typed-in, quick-add and recipe entries.
+    private static let libraryLeftOutOrigins: Set<String> = [
+        "manual", IntakeContextFactCatalog.quickAddOrigin, RecipeLogger.catalogOrigin,
+    ]
+
     /// What Save does beyond the Diary entry, shown above the Save button. A product from a barcode, a label or a
-    /// search is also saved to Library > Products; a typed-in or quick-add entry is not. When Share labels is on, a
-    /// captured label is also sent to the community catalog.
+    /// search is also saved to Library > Products unless "Save to Library" is off; a typed-in or quick-add entry
+    /// is not. When Share labels is on, a captured label is also sent to the community catalog.
     public var saveScopeMessage: String {
-        // The same origins Library > Products leaves out (`LibraryViewModel.foods()`): a typed-in, quick-add or recipe
-        // entry is never listed there, so the line must not promise it.
-        let product = productSnapshot()
-        let libraryOrigins: Set<String> = ["manual", IntakeContextFactCatalog.quickAddOrigin, RecipeLogger.catalogOrigin]
-        let savedToProducts = product != nil && !libraryOrigins.contains(product?.catalogOrigin ?? "")
+        let savedToProducts = canChooseLibrary && savesToLibrary
         var sentences = [savedToProducts
             ? "Adds one entry to your Diary. The product is also saved to Library > Products."
             : "Adds one entry to your Diary only."]
         // The same checks the save path uses to send a label, so the line promises only an upload that will happen.
-        if labelValues != nil, storedProduct == nil, labelSubmitter != nil, isSharingAllowed(), communitySubmission() != nil {
+        if prefilledFromCapture, labelValues != nil, storedProduct == nil, labelSubmitter != nil, isSharingAllowed(),
+           communitySubmission() != nil {
             sentences.append("Share labels is on, so saving this label also sends its product name, brand, barcode, serving text and nutrient amounts to the community catalog.")
         }
         return sentences.joined(separator: " ")
@@ -778,6 +787,9 @@ public final class AddIntakeViewModel: ObservableObject {
         lookedUp = product
     }
 
+    /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.
+    @Published public var savesToLibrary = true
+
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
     @discardableResult
     public func save(now: Date) -> Bool {
@@ -801,7 +813,16 @@ public final class AddIntakeViewModel: ObservableObject {
                 forFoodNamed: trimmedName, unit: storedUnit,
                 snapshotNutrientKeys: snapshot.map { Array($0.nutrients.keys) } ?? []),
             name: trimmedName, amount: storedAmount, unit: storedUnit)
+        // The exclusion is written first: if it fails nothing is saved, and a retry cannot make a second entry.
+        let keepsOutOfLibrary = canChooseLibrary && !savesToLibrary
         do {
+            if keepsOutOfLibrary {
+                guard let exclusions = store as? JournalLibraryExclusions else {
+                    saveError = "Could not save the entry."
+                    return false
+                }
+                try exclusions.keepOutOfLibrary(intakeID: intake.id)
+            }
             try store.create(intake, components: [component], product: snapshot, now: now)
         } catch {
             saveError = "Could not save the entry."

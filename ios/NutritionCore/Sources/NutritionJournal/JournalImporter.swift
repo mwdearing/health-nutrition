@@ -39,14 +39,18 @@ public struct JournalImportSummary: Sendable, Equatable {
     public var products: Int
     /// Saved meals written.
     public var savedMeals: Int
+    /// Restored entries whose product is kept out of Library > Products.
+    public var keptOutOfLibrary: Int
 
-    public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0) {
+    public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0,
+                keptOutOfLibrary: Int = 0) {
         self.intakes = intakes
         self.revisions = revisions
         self.tombstones = tombstones
         self.favorites = favorites
         self.products = products
         self.savedMeals = savedMeals
+        self.keptOutOfLibrary = keptOutOfLibrary
     }
 }
 
@@ -123,6 +127,14 @@ enum JournalImportV3Keys {
     static let component = JournalImportV2Keys.component
     static let tombstone = JournalImportV2Keys.tombstone
     static let favorite = JournalImportV2Keys.favorite
+}
+
+/// The keys each object in a version 5 export has, taken from `contracts/journal-export/v5.schema.json`.
+///
+/// Version 5 is version 4 with `kept_out_of_library` at the root: the intake ids whose product is kept out of
+/// Library > Products. Every other object is as it was in version 4.
+enum JournalImportV5Keys {
+    static let root: Set<String> = JournalImportV4Keys.root.union(["kept_out_of_library"])
 }
 
 /// The keys each object in a version 4 export has, taken from `contracts/journal-export/v4.schema.json`.
@@ -353,7 +365,10 @@ public enum JournalImporter {
             tombstones: plan.tombstones.count,
             favorites: plan.favorites.count,
             products: plan.products.count,
-            savedMeals: plan.savedMeals.count)
+            savedMeals: plan.savedMeals.count,
+            keptOutOfLibrary: plan.entries.reduce(0) { count, entry in
+                count + (plan.keptOutOfLibrary.contains(entry.intake.id) ? 1 : 0)
+            })
     }
 
     /// Whether the journal holds any intake, live or deleted.
@@ -423,7 +438,7 @@ public enum JournalImporter {
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
         let revisionKeys = version >= 3 ? JournalImportV3Keys.revision : JournalImportV1Keys.revision
-        let rootKeys = version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
+        let rootKeys = version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
         try checkObject(root, keys: rootKeys, path: "$", version: version)
         try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
@@ -475,6 +490,11 @@ public enum JournalImporter {
             try checkMinimumLengthOne(
                 favorite, keys: ["id", "display_name", "category"], path: path, version: version)
             try checkComponents(favorite["components"], path: "\(path).components", version: version)
+        }
+        if version >= 5 {
+            guard root["kept_out_of_library"] is [String] else {
+                throw JournalImportError.malformed("$.kept_out_of_library must be a list of intake ids")
+            }
         }
         if version >= 4 {
             for (index, item) in try objects(root["saved_meals"], path: "$.saved_meals").enumerated() {
@@ -699,7 +719,8 @@ public enum JournalImporter {
         return JournalRestorePlan(
             entries: entries, tombstones: tombstones,
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites,
-            savedMeals: try restoredSavedMeals(document.savedMeals, products: productsByID))
+            savedMeals: try restoredSavedMeals(document.savedMeals, products: productsByID),
+            keptOutOfLibrary: document.keptOutOfLibrary)
     }
 
     /// The saved meals a version 4 file carries, refused as a whole when any breaks a rule the app keeps when

@@ -65,7 +65,7 @@ public struct AddHomeView: View {
                             QuietCapsule("Add") {
                                 if self.model.quickAdd(recent) != nil { self.onChanged() }
                             }
-                            .accessibilityLabel("Add \(recent.template.displayName)")
+                            .accessibilityLabel("Log \(recent.template.displayName)")
                         }
                     }
                 }

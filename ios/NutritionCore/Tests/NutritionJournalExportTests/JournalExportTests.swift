@@ -233,7 +233,7 @@ final class JournalExportTests: XCTestCase {
                 store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
         let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let schema = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: try contractFile("v4.schema", "json")) as? [String: Any])
+            try JSONSerialization.jsonObject(with: try contractFile("v5.schema", "json")) as? [String: Any])
         let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
 
         try assertRequiredKeys(encoded, against: schema, definitionName: nil, path: "$")
@@ -512,7 +512,9 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 let timestamp = expectedLegacyText + ".123456Z"
                 // Saved meals are a version 4 field, required from version 4 on.
                 let savedMeals = schemaVersion >= 4 ? #","saved_meals":[]"# : ""
-                let json = #"{"schema_version":\#(schemaVersion),"exported_at":"\#(timestamp)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]\#(savedMeals)}"#
+                // The kept-out-of-library list is a version 5 field, required from version 5 on.
+                let keptOutOfLibrary = schemaVersion >= 5 ? #","kept_out_of_library":[]"# : ""
+                let json = #"{"schema_version":\#(schemaVersion),"exported_at":"\#(timestamp)","app_version":"0.1.0","intakes":[],"tombstones":[],"favorites":[],"products":[]\#(savedMeals)\#(keptOutOfLibrary)}"#
                 let restored = try JournalExporter.decode(Data(json.utf8))
                 XCTAssertEqual(restored.schemaVersion, schemaVersion)
                 XCTAssertEqual(
@@ -1253,7 +1255,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
     }
 
     func testEncoderTopLevelKeysMatchTheSchemaProperties() throws {
-        let schemaData = try contractFile("v4.schema", "json")
+        let schemaData = try contractFile("v5.schema", "json")
         let schema = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: schemaData) as? [String: Any])
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
@@ -1263,7 +1265,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(Set(encoded.keys), Set(properties.keys))
         for key in [
             "schema_version", "exported_at", "app_version", "intakes", "tombstones", "favorites", "products",
-            "saved_meals",
+            "saved_meals", "kept_out_of_library",
         ] {
             XCTAssertNotNil(encoded[key], key)
         }

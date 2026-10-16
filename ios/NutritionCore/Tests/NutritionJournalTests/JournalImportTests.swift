@@ -133,6 +133,7 @@ class JournalImportTestCase: XCTestCase {
         var root = try object(of: exportData(favorites: false))
         root["schema_version"] = 1
         root.removeValue(forKey: "saved_meals")
+        root.removeValue(forKey: "kept_out_of_library")
         var products = try XCTUnwrap(root["products"] as? [[String: Any]])
         for index in products.indices { products[index].removeValue(forKey: "kind") }
         root["products"] = products

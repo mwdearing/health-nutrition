@@ -81,7 +81,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
     func testAnExportCarriesSavedMealsInOrderAndRestoresThem() throws {
         let data = try savedMealsExport()
         let root = try fields(data)
-        XCTAssertEqual(root["schema_version"] as? Int, 4)
+        XCTAssertEqual(root["schema_version"] as? Int, JournalExport.currentSchemaVersion)
         let exported = try XCTUnwrap(root["saved_meals"] as? [[String: Any]])
         XCTAssertEqual(exported.map { $0["id"] as? String }, ["meal-2", "meal-1"])
         XCTAssertEqual(exported.map { $0["meal"] as? String }, [nil, "breakfast"])

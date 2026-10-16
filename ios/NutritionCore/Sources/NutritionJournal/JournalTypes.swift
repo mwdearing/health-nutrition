@@ -401,6 +401,15 @@ public struct OutboxOperation: Sendable, Hashable {
     }
 }
 
+/// The Library choice an entry was logged with. A separate protocol, so stores that predate it need not change.
+/// An entry with no row here is saved to Library > Products, as every entry was before the choice existed.
+public protocol JournalLibraryExclusions: AnyObject, Sendable {
+    /// Records that the entry was logged with "Save to Library" off.
+    func keepOutOfLibrary(intakeID: String) throws
+    /// The entries whose product is kept out of Library > Products.
+    func intakeIDsNotSavedToLibrary() throws -> Set<String>
+}
+
 public protocol JournalStore: AnyObject, Sendable {
     /// When true, the next write inserts its rows and then fails before committing.
     var failNextSaveForTesting: Bool { get set }
@@ -490,16 +499,20 @@ public struct JournalRestorePlan: Sendable {
     public var favorites: [FavoriteTemplate]
     /// Saved meals, in the file's order, which the importer writes through the saved meals store.
     public var savedMeals: [JournalSavedMeal]
+    /// Intakes restored with their product kept out of Library > Products. Written in the same save as the entries.
+    public var keptOutOfLibrary: [String]
 
     public init(
         entries: [JournalRestoreEntry], tombstones: [Intake],
-        products: [ProductDefinition], favorites: [FavoriteTemplate], savedMeals: [JournalSavedMeal] = []
+        products: [ProductDefinition], favorites: [FavoriteTemplate], savedMeals: [JournalSavedMeal] = [],
+        keptOutOfLibrary: [String] = []
     ) {
         self.entries = entries
         self.tombstones = tombstones
         self.products = products
         self.favorites = favorites
         self.savedMeals = savedMeals
+        self.keptOutOfLibrary = keptOutOfLibrary
     }
 }
 

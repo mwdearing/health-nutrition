@@ -422,10 +422,10 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
     }
 }
 
-/// The exported document, schema version 4. See `contracts/journal-export/v4.schema.json`.
+/// The exported document, schema version 5. See `contracts/journal-export/v5.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
-/// written against version 1 keeps working. This build writes only version 4 and reads all four, so a backup
+/// written against version 1 keeps working. This build writes version 5 and reads versions 1 to 5, so a backup
 /// taken before the product kind, a revision's own time or saved meals existed still restores. Version 3 is
 /// also what tells an older build to stop: a build that reads only versions 1 and 2 refuses the file by its
 /// version, instead of refusing a newer unit symbol (`gummy`, `piece`) partway through as a corrupt amount.
@@ -433,14 +433,14 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
 /// than restore it without them.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 4
+    public static let currentSchemaVersion = 5
 
     /// Every version this build reads, in the order they were written.
     ///
     /// Version 1 is here because its documents are still backups people hold: it has no product kind and
     /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
     /// backup. Anything outside this set is refused by value rather than by shape.
-    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, currentSchemaVersion]
+    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
@@ -455,6 +455,9 @@ public struct JournalExport: Sendable, Hashable, Codable {
     /// The saved meals, from version 4, in the list's own order. Empty for a document of an earlier version,
     /// which has no such field.
     public var savedMeals: [JournalExportSavedMeal]
+    /// The intakes whose product is kept out of Library > Products, from version 5, sorted. Empty for a document
+    /// of an earlier version, which has no such field, so every entry in it is saved to Library.
+    public var keptOutOfLibrary: [String]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -465,12 +468,14 @@ public struct JournalExport: Sendable, Hashable, Codable {
         case favorites
         case products
         case savedMeals = "saved_meals"
+        case keptOutOfLibrary = "kept_out_of_library"
     }
 
     public init(
         schemaVersion: Int = JournalExport.currentSchemaVersion, exportedAt: Date, appVersion: String,
         intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite],
-        products: [JournalExportProvenance] = [], savedMeals: [JournalExportSavedMeal] = []
+        products: [JournalExportProvenance] = [], savedMeals: [JournalExportSavedMeal] = [],
+        keptOutOfLibrary: [String] = []
     ) {
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
@@ -480,6 +485,7 @@ public struct JournalExport: Sendable, Hashable, Codable {
         self.favorites = favorites
         self.products = products
         self.savedMeals = savedMeals
+        self.keptOutOfLibrary = keptOutOfLibrary
     }
 
     /// `saved_meals` is read only from version 4. The importer's shape check has already refused it in an
@@ -495,6 +501,8 @@ public struct JournalExport: Sendable, Hashable, Codable {
         products = try container.decode([JournalExportProvenance].self, forKey: .products)
         savedMeals = schemaVersion >= 4
             ? try container.decode([JournalExportSavedMeal].self, forKey: .savedMeals) : []
+        keptOutOfLibrary = schemaVersion >= 5
+            ? try container.decode([String].self, forKey: .keptOutOfLibrary) : []
     }
 
     /// `saved_meals` is written only for version 4 and later, so a document of an earlier version keeps the
@@ -509,6 +517,7 @@ public struct JournalExport: Sendable, Hashable, Codable {
         try container.encode(favorites, forKey: .favorites)
         try container.encode(products, forKey: .products)
         if schemaVersion >= 4 { try container.encode(savedMeals, forKey: .savedMeals) }
+        if schemaVersion >= 5 { try container.encode(keptOutOfLibrary, forKey: .keptOutOfLibrary) }
     }
 }
 
@@ -783,6 +792,10 @@ public enum JournalExporter {
                 productsByID[snapshotID] = JournalExportProvenance(product: product)
             }
         }
+        // Only the entries this export writes: a choice for an entry not in the export has nothing to point at.
+        let exportedIDs = Set(intakes.map(\.id))
+        let keptOutOfLibraryIDs = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary()
+            .filter { exportedIDs.contains($0) } ?? []
         var savedMealList: [JournalExportSavedMeal] = []
         if let savedMeals {
             savedMealList = try savedMeals.journalSavedMeals().map { try JournalExportSavedMeal(savedMeal: $0) }
@@ -803,7 +816,8 @@ public enum JournalExporter {
             // store lists newest first, which would otherwise make the order depend on when things were added.
             favorites: favoriteList.sorted { $0.id < $1.id },
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID },
-            savedMeals: savedMealList)
+            savedMeals: savedMealList,
+            keptOutOfLibrary: keptOutOfLibraryIDs.sorted())
         try validateExportRequiredFields(document)
         return document
     }
