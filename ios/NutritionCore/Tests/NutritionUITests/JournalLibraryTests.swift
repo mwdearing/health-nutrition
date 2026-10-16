@@ -165,6 +165,23 @@ final class JournalLibraryTests: XCTestCase {
         let food = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
             isFavorite: false, template: template, kind: .food)
         XCTAssertEqual(food.logAccessibilityLabel, "Log Oats now, 40 g")
+        let bare = LibraryItem(id: "bare", title: "Oats", detail: "",
+            isFavorite: false, template: template, kind: .food)
+        XCTAssertEqual(bare.logAccessibilityLabel, "Log Oats now")
+    }
+
+    func testTapLogsOnceAndOffersUndo() throws {
+        let directory = try makeDirectory()
+        let store = try makeStore()
+        _ = try addFood(store, name: "Oats", at: now)
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let library = LibraryViewModel(store: store, favorites: favorites)
+        library.load()
+        let item = try XCTUnwrap(library.sections.last?.items.first)
+        store.createCalls = 0
+        XCTAssertTrue(library.quickAdd(item, now: now))
+        XCTAssertEqual(store.createCalls, 1)
+        XCTAssertNotNil(library.undoToken)
     }
 
     // MARK: Journal
