@@ -178,7 +178,12 @@ public final class SupplementStackViewModel: ObservableObject {
                 let template = RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex)
                 return RowBasis(
                     favoriteID: favorite.id, title: favorite.displayName,
-                    detail: template.map { AmountText.summary($0.components, unitSystem: preferences.unitSystem, loggedUnits: $0.loggedUnits) } ?? "unknown",
+                    detail: template.map {
+                        AmountText.summary(
+                            $0.components, unitSystem: preferences.unitSystem,
+                            loggedUnits: kind(favorite.productSnapshotID, category: favorite.category) == .supplement
+                                ? $0.loggedUnits : [:])
+                    } ?? "unknown",
                     kind: kind(favorite.productSnapshotID, category: favorite.category), schedule: entry.value,
                     matchKey: Self.matchKey(favorite), canLog: template.map { !$0.components.isEmpty } ?? false,
                     aboveUpperLimit: Self.limitsCounting(product(favorite.productSnapshotID), among: limits.rows))
@@ -370,7 +375,12 @@ public final class SupplementStackViewModel: ObservableObject {
                 let template = RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex)
                 return SupplementStackCandidate(
                     id: "favorite:\(favorite.id)", title: favorite.displayName,
-                    detail: template.map { AmountText.summary($0.components, unitSystem: preferences.unitSystem, loggedUnits: $0.loggedUnits) } ?? "unknown",
+                    detail: template.map {
+                        AmountText.summary(
+                            $0.components, unitSystem: preferences.unitSystem,
+                            loggedUnits: kind(favorite.productSnapshotID, favorite.category) == .supplement
+                                ? $0.loggedUnits : [:])
+                    } ?? "unknown",
                     kind: kind(favorite.productSnapshotID, favorite.category), source: .favorite(favorite.id))
             }
         let supplementsFirst = favoriteCandidates.filter { $0.kind == .supplement }

@@ -1443,6 +1443,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             // The same for the units entries were logged in, but only for the owners this file restores: the
             // phone's own favorites keep theirs when the file carries none.
             let restoredOwnerIDs = restoredIDs.union(plan.favorites.map(\.id))
+                .union(plan.savedMeals.flatMap(\.items).map(\.id))
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>())
             where restoredOwnerIDs.contains(row.intakeID) {
                 context.delete(row)
@@ -1527,6 +1528,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                         predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == number })) {
                         context.delete(row)
                     }
+                }
+                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> { $0.intakeID == intakeID })) {
+                    context.delete(row)
                 }
                 context.delete(record)
             }

@@ -85,6 +85,16 @@ public final class SavedMealsModel: ObservableObject {
         }
         do {
             let saved = try book.add(name: name, meal: meal, templates: templates)
+            // The units the entries were logged in follow each item, keyed by the item's own id.
+            if let units = journal as? JournalLoggedUnits {
+                for (item, template) in zip(saved.items, templates) {
+                    for component in template.components where component.unit == .mL {
+                        guard let loggedUnit = template.loggedUnits[component.componentID] else { continue }
+                        try? units.recordLoggedUnit(JournalLoggedUnit(
+                            intakeID: item.id, componentID: component.componentID, unit: loggedUnit))
+                    }
+                }
+            }
             load()
             notice = "Saved \(saved.name). Log it again from Add, in Find products."
             noticeIsFailure = false

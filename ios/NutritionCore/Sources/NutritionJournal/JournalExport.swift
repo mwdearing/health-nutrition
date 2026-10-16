@@ -825,13 +825,6 @@ public enum JournalExporter {
         let exportedIDs = Set(intakes.map(\.id))
         let keptOutOfLibraryIDs = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary()
             .filter { exportedIDs.contains($0) } ?? []
-        let exportedOwnerIDs = exportedIDs.union(favoriteList.map(\.id))
-        let loggedUnitList = try (store as? JournalLoggedUnits)?.loggedUnits()
-            .filter {
-                exportedOwnerIDs.contains($0.intakeID) && JournalImportV6Keys.loggedUnitSymbols.contains($0.unit.symbol)
-            }
-            .map { JournalExportLoggedUnit(intakeID: $0.intakeID, componentID: $0.componentID, unit: $0.unit.symbol) }
-            .sorted { ($0.intakeID, $0.componentID) < ($1.intakeID, $1.componentID) } ?? []
         var savedMealList: [JournalExportSavedMeal] = []
         if let savedMeals {
             savedMealList = try savedMeals.journalSavedMeals().map { try JournalExportSavedMeal(savedMeal: $0) }
@@ -844,6 +837,14 @@ public enum JournalExporter {
                 productsByID[snapshotID] = JournalExportProvenance(product: product)
             }
         }
+        let exportedOwnerIDs = exportedIDs.union(favoriteList.map(\.id))
+            .union(savedMealList.flatMap(\.items).map(\.id))
+        let loggedUnitList = try (store as? JournalLoggedUnits)?.loggedUnits()
+            .filter {
+                exportedOwnerIDs.contains($0.intakeID) && JournalImportV6Keys.loggedUnitSymbols.contains($0.unit.symbol)
+            }
+            .map { JournalExportLoggedUnit(intakeID: $0.intakeID, componentID: $0.componentID, unit: $0.unit.symbol) }
+            .sorted { ($0.intakeID, $0.componentID) < ($1.intakeID, $1.componentID) } ?? []
         let document = JournalExport(
             exportedAt: exportedAt, appVersion: appVersion,
             intakes: intakes.sorted { $0.id < $1.id },

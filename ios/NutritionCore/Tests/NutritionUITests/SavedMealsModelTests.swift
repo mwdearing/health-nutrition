@@ -93,6 +93,29 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertFalse(model.noticeIsFailure)
     }
 
+    /// A spoon-logged entry saved into a meal keeps its unit, and logging the meal again writes it onto the new entry.
+    func testASavedMealKeepsTheUnitAnItemWasLoggedIn() throws {
+        let journal = try makeJournal()
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC",
+            meal: "breakfast")
+        try journal.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "fiber", unit: .teaspoon))
+        try journal.create(
+            intake,
+            components: [IntakeComponent(
+                componentID: "fiber", name: "Fiber", amount: Decimal(string: "19.715686375")!, unit: .mL)],
+            product: nil, now: now)
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [intake]))
+        let saved = try XCTUnwrap(model.meals.first)
+        XCTAssertTrue(try journal.loggedUnits().contains { $0.intakeID == saved.items[0].id && $0.unit == .teaspoon })
+
+        XCTAssertTrue(model.log(saved, as: .breakfast, now: now))
+        let loggedAgain = try journal.loggedUnits().filter { $0.intakeID != intake.id && $0.intakeID != saved.items[0].id }
+        XCTAssertEqual(loggedAgain.map(\.unit), [.teaspoon])
+    }
+
     func testAnUnreadableEntryRefusesTheWholeSave() throws {
         let inner = try makeJournal()
         let journal = FaultyJournal(inner)
