@@ -156,6 +156,46 @@ final class JournalLibraryTests: XCTestCase {
         }
     }
 
+    func testLogRowLabelKeepsAmountAndSupplementMark() {
+        let template = RepeatTemplate(displayName: "Ipamorelin", category: "supplement",
+            components: [IntakeComponent(componentID: "ipa", name: "Ipamorelin", amount: 2, unit: .mg)])
+        let supplement = LibraryItem(id: "ipa", title: "Ipamorelin", detail: "2 mg",
+            isFavorite: false, template: template, kind: .supplement)
+        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin now, 2 mg, Supplement")
+        let food = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
+            isFavorite: false, template: template, kind: .food)
+        XCTAssertEqual(food.logAccessibilityLabel, "Log Oats now, 40 g")
+        let bare = LibraryItem(id: "bare", title: "Oats", detail: "",
+            isFavorite: false, template: template, kind: .food)
+        XCTAssertEqual(bare.logAccessibilityLabel, "Log Oats now")
+    }
+
+    func testTapLogsOnceAndOffersUndo() throws {
+        let directory = try makeDirectory()
+        let store = try makeStore()
+        _ = try addFood(store, name: "Oats", at: now)
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let library = LibraryViewModel(store: store, favorites: favorites)
+        library.load()
+        let item = try XCTUnwrap(library.sections.last?.items.first)
+        store.createCalls = 0
+        XCTAssertTrue(library.quickAdd(item, now: now))
+        XCTAssertEqual(store.createCalls, 1)
+        XCTAssertNotNil(library.undoToken)
+    }
+
+    func testRowTapRoutesByMode() {
+        // Pick mode only ever opens details; it never logs. Normal mode only ever logs.
+        XCTAssertEqual(LibraryRowTap.forRow(pickMode: true), .openDetails)
+        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .logOnce)
+    }
+
+    func testDetailsOfferedOnlyWhereTapLogsAndHandlerExists() {
+        XCTAssertTrue(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: true))
+        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: true, hasOpenHandler: true))
+        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: false))
+    }
+
     // MARK: Journal
 
     func testJournalGroupsByLocalDayOfEachIntakesOwnZoneNewestFirst() throws {

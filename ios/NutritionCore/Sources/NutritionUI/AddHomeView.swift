@@ -10,13 +10,16 @@ public struct AddHomeView: View {
     private let onNewProduct: (() -> Void)?
     private let onSearchProducts: (() -> Void)?
     private let onChanged: () -> Void
+    /// Opens the details form for a Recent row (long-press or the Details action). Nothing is logged there.
+    private let onOpen: ((RepeatTemplate) -> Void)?
     @State private var quickAdd: QuickAddViewModel?
 
     public init(model: AddHomeViewModel, onBarcode: @escaping () -> Void,
         onLabel: @escaping () -> Void, onLibrary: @escaping () -> Void,
         onType: @escaping () -> Void, onChanged: @escaping () -> Void,
-        onNewProduct: (() -> Void)? = nil, onSearchProducts: (() -> Void)? = nil) {
-        self.onNewProduct = onNewProduct; self.onSearchProducts = onSearchProducts
+        onNewProduct: (() -> Void)? = nil, onSearchProducts: (() -> Void)? = nil,
+        onOpen: ((RepeatTemplate) -> Void)? = nil) {
+        self.onNewProduct = onNewProduct; self.onSearchProducts = onSearchProducts; self.onOpen = onOpen
         self.model = model
         self.onBarcode = onBarcode
         self.onLabel = onLabel
@@ -56,10 +59,24 @@ public struct AddHomeView: View {
                 ForEach(model.recents) { recent in
                     Card {
                         HStack {
-                            VStack(alignment: .leading) {
-                                Text(recent.template.displayName).font(.headline)
-                                Text(model.amountSummary(of: recent.template))
-                                    .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                            // A tap on the row logs once, the same as the Add capsule, with Undo.
+                            Button {
+                                if self.model.quickAdd(recent) != nil { self.onChanged() }
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(recent.template.displayName).font(.headline)
+                                    Text(model.amountSummary(of: recent.template))
+                                        .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                                }
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Log \(recent.template.displayName) now, \(model.amountSummary(of: recent.template))")
+                            .accessibilityHint("Logs once. You can undo for 10 seconds.")
+                            .contextMenu {
+                                if let onOpen { Button("Details") { onOpen(recent.template) } }
+                            }
+                            .accessibilityActions {
+                                if let onOpen { Button("Details") { onOpen(recent.template) } }
                             }
                             Spacer()
                             QuietCapsule("Add") {

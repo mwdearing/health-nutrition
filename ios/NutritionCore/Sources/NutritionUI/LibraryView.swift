@@ -161,13 +161,16 @@ public struct LibraryView: View {
 
     @ViewBuilder
     private func libraryRow(_ item: LibraryItem) -> some View {
-        let opensDetails = onPick != nil || onOpen != nil
+        // Pick mode (Add's "From Library") still opens details first. Elsewhere a tap logs once,
+        // with Undo, and a long press reaches the details form.
+        let opensDetails = onPick != nil
         HStack {
             Button {
-                if let onPick = self.onPick {
-                    onPick(item.template)
-                } else {
-                    self.onOpen?(item.template)
+                switch LibraryRowTap.forRow(pickMode: onPick != nil) {
+                case .openDetails:
+                    onPick?(item.template)
+                case .logOnce:
+                    if self.model.quickAdd(item, now: self.now()) { self.onAdded() }
                 }
             } label: {
                 VStack(alignment: .leading) {
@@ -184,8 +187,18 @@ public struct LibraryView: View {
                 }
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel(item.accessibilityLabel(forPick: opensDetails))
-            .modifier(DetailsHint(isOn: opensDetails))
+            .accessibilityLabel(opensDetails ? item.accessibilityLabel(forPick: true) : item.logAccessibilityLabel)
+            .modifier(DetailsHint(isOn: opensDetails, logHint: onPick == nil))
+            .contextMenu {
+                if LibraryRowTap.offersDetails(pickMode: onPick != nil, hasOpenHandler: onOpen != nil), let onOpen {
+                    Button("Details") { onOpen(item.template) }
+                }
+            }
+            .accessibilityActions {
+                if LibraryRowTap.offersDetails(pickMode: onPick != nil, hasOpenHandler: onOpen != nil), let onOpen {
+                    Button("Details") { onOpen(item.template) }
+                }
+            }
             Spacer()
             if let onLegacyProduct, model.canCompleteProduct(item) {
                 Button(item.template.productSnapshotID == nil ? "Complete product" : "Edit product") {
@@ -220,10 +233,13 @@ public struct LibraryView: View {
 /// The details hint, set only when the row's tap really opens details. Otherwise no hint is set at all.
 private struct DetailsHint: ViewModifier {
     let isOn: Bool
+    let logHint: Bool
 
     func body(content: Content) -> some View {
         if isOn {
             content.accessibilityHint("Opens details without adding an entry")
+        } else if logHint {
+            content.accessibilityHint("Logs once. You can undo for 10 seconds.")
         } else {
             content
         }
