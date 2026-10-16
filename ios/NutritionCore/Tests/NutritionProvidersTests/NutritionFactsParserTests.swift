@@ -1051,11 +1051,11 @@ final class NutritionFactsParserTests: XCTestCase {
     func testFoodPanelKeepsPlausibleRowNamesAndDropsMisreadFragments() throws {
         let panel = parse([
             "Nutrition Facts", "Total Fat 8g", "Sugar Alcohol 3g", "Chlorophyll 5mg", "Fish Oil 1g", "Inchides 0g",
-            "minD 0mcg", "lum 260mg",
+            "minD 0mcg", "lum 260mg", "Lum 260mg", "I 0g",
         ])
 
         XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Sugar Alcohol", "Chlorophyll", "Fish Oil"])
-        XCTAssertEqual(panel.unnamedRowCount, 3)
+        XCTAssertEqual(panel.unnamedRowCount, 5)
     }
 
     /// A nutrient a food panel prints that the named table does not carry is still a row of its own.

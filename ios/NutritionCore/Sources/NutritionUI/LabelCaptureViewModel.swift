@@ -607,7 +607,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// second photo never replaces a serving the draft already has — never one the user confirmed, in
     /// particular, because that figure is their answer and not the parser's.
     ///
-    /// A photo that read no amount at all contributes nothing and counts for nothing, so a shot that
+    /// A photo that read no amount or unread row at all contributes nothing and counts for nothing, so a shot that
     /// missed the panel leaves the draft exactly as it was rather than looking as though it had been
     /// merged. A photo that repeats rows the draft already has does count: a second reading of a row is
     /// what can answer the parser's doubt about the first one.
@@ -615,7 +615,6 @@ public final class LabelCaptureViewModel: ObservableObject {
         let panel = NutritionFactsParser.parse(lines: lines)
         let frame = frameCount + 1
         var contributed = false
-        // The footer keeps the larger unread count, so a photo that could not name a row never hides it.
 
         for key in NutritionFactKey.allCases {
             let incoming = panel.value(for: key)
@@ -694,9 +693,12 @@ public final class LabelCaptureViewModel: ObservableObject {
 
         mergePanelFacts(from: panel, contributed: &contributed)
 
+        // A photo that could not name a row still read the panel, so it counts as contributing and its
+        // unread rows stay in the footer. The footer keeps the larger unread count across photos.
+        if panel.unnamedRowCount > 0 { contributed = true }
+        unnamedRowCount = max(unnamedRowCount, panel.unnamedRowCount)
+
         if contributed {
-            // The footer keeps the larger unread count, so a photo that could not name a row never hides it.
-            unnamedRowCount = max(unnamedRowCount, panel.unnamedRowCount)
             frameCount = frame
             // A first photo that read nothing can still be completed by a second that read some of it.
             if !panel.isUnreadable { isUnreadable = false }
