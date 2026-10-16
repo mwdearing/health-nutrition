@@ -193,6 +193,9 @@ public struct LibraryView: View {
                     Button("Details") { onOpen(item.template) }
                 }
             }
+            .accessibilityAction(named: "Details") {
+                if let onOpen = self.onOpen, onPick == nil { onOpen(item.template) }
+            }
             Spacer()
             if let onLegacyProduct, model.canCompleteProduct(item) {
                 Button(item.template.productSnapshotID == nil ? "Complete product" : "Edit product") {
@@ -233,7 +236,7 @@ private struct DetailsHint: ViewModifier {
         if isOn {
             content.accessibilityHint("Opens details without adding an entry")
         } else if logHint {
-            content.accessibilityHint("Logs once. Undo for 10 seconds. Hold for details.")
+            content.accessibilityHint("Logs once. You can undo for 10 seconds.")
         } else {
             content
         }

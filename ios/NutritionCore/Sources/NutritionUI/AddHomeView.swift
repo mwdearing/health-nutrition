@@ -68,7 +68,7 @@ public struct AddHomeView: View {
                             }
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Log \(recent.template.displayName) now")
-                            .accessibilityHint("Logs once. Undo for 10 seconds.")
+                            .accessibilityHint("Logs once. You can undo for 10 seconds.")
                             Spacer()
                             QuietCapsule("Add") {
                                 if self.model.quickAdd(recent) != nil { self.onChanged() }
