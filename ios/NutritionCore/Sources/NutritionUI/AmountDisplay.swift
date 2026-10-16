@@ -229,7 +229,8 @@ public enum AmountDisplay {
 
     /// A volume stored in milliliters by an entry that has no recorded logged unit (an earlier build's), read as the
     /// spoon it can only have been typed in: an exact whole or quarter number of teaspoons, or of tablespoons from
-    /// one up. A figure that is also a clean fluid-ounce figure (a multiple of 0.25 fl oz, such as 1 fl oz = 6 tsp)
+    /// one up (a whole or half tablespoon is itself a clean fluid-ounce figure, so only odd quarters read as tablespoons).
+    /// A figure that is also a clean fluid-ounce figure (a multiple of 0.25 fl oz, such as 1 fl oz = 6 tsp)
     /// is left to read in fluid ounces, because a drink typed in ounces is as likely as a spoon. Nil otherwise.
     public static func legacySpoonReading(milliliters: Decimal) -> DisplayAmount? {
         guard !milliliters.isNaN, milliliters > 0,

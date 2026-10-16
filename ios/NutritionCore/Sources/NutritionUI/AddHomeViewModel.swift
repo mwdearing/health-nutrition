@@ -129,7 +129,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         let kind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
         model.prefillAmount(
             component, system: preferences.unitSystem,
-            loggedUnit: kind == .supplement ? prefill.loggedUnits[component.componentID] : nil)
+            loggedUnit: kind == .supplement
+                ? prefill.loggedUnits[component.componentID] ?? AmountDisplay.legacySpoonReading(milliliters: component.amount)?.unit
+                : nil)
         return model
     }
 

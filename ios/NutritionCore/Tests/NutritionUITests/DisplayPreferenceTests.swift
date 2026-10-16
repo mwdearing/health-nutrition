@@ -266,6 +266,7 @@ final class AmountDisplayPreferenceTests: XCTestCase {
 
     /// A supplement from before units were recorded has no unit row; its milliliters read as the spoon they can only have
     /// been typed in, unless they are also a clean fluid-ounce figure, and a drink is never relabeled.
+    @MainActor
     func testALegacySupplementWithNoRecordedUnitReadsAsItsSpoon() {
         let fiber = IntakeComponent(
             componentID: "f", name: "Fiber Powder", amount: Decimal(string: "19.715686375")!, unit: .mL)
