@@ -200,6 +200,20 @@ final class LibraryChoiceExportTests: XCTestCase {
         XCTAssertEqual(try store.intakeIDsNotSavedToLibrary(), [id, copyID])
     }
 
+    /// One tap on a Recents row repeats an entry kept out of Library without putting the copy into Products.
+    func testOneTapFromRecentsKeepsAnExcludedEntryOutOfProducts() throws {
+        let id = UUID().uuidString.lowercased()
+        let store = try makeStore()
+        try logBar(store, id: id)
+        try store.keepOutOfLibrary(intakeID: id)
+        let home = AddHomeViewModel(store: store, now: { self.when })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertTrue(recent.template.keepsOutOfLibrary)
+        let token = try XCTUnwrap(home.quickAdd(recent))
+        XCTAssertEqual(try store.intakeIDsNotSavedToLibrary(), [id, token.intakeID])
+    }
+
     /// A version 4 backup has no choices, so every entry it restores is saved to Library.
     func testVersion4ImportSavesEveryEntryToLibrary() throws {
         let id = UUID().uuidString.lowercased()

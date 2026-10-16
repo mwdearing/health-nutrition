@@ -17,10 +17,14 @@ public struct RecentItemsProvider {
     private let store: JournalStore
     /// The units entries were logged in, read once per provider, so a template carries the unit its entry used.
     private let loggedUnits: [String: [String: MeasureUnit]]
+    /// The entries logged with "Save to Library" off, read once per provider, so a template built from one keeps
+    /// its copies out of Library as repeating the entry does.
+    private let keptOutOfLibrary: Set<String>
 
     public init(store: JournalStore) {
         self.store = store
         self.loggedUnits = LoggedUnitIndex.load(from: store)
+        self.keptOutOfLibrary = (try? (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary()) ?? []
     }
 
     public func recents(limit: Int = RecentItemsProvider.defaultLimit) throws -> [RecentItem] {
@@ -45,7 +49,7 @@ public struct RecentItemsProvider {
         RepeatTemplate(
             displayName: displayName(of: revision), category: intake.category, meal: intake.meal,
             components: revision.components, productSnapshotID: revision.productSnapshotID,
-            loggedUnits: loggedUnits[intake.id] ?? [:])
+            loggedUnits: loggedUnits[intake.id] ?? [:], keepsOutOfLibrary: keptOutOfLibrary.contains(intake.id))
     }
 
     /// The row title for one revision. A quick add is always one serving of the same name, so its typed

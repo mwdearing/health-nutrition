@@ -12,10 +12,13 @@ public struct RepeatTemplate: Equatable {
     /// The unit each component was logged in, by component id, when the entry it came from was logged in a spoon,
     /// a cup or fluid ounces. Repeating the template logs the same units.
     public var loggedUnits: [String: MeasureUnit]
+    /// True when the entry this template was built from was logged with "Save to Library" off. Repeating the template
+    /// keeps the copy out of Library too, as repeating that entry does.
+    public var keepsOutOfLibrary: Bool
 
     public init(
         displayName: String, category: String, meal: String? = nil, components: [IntakeComponent],
-        productSnapshotID: String? = nil, loggedUnits: [String: MeasureUnit] = [:]
+        productSnapshotID: String? = nil, loggedUnits: [String: MeasureUnit] = [:], keepsOutOfLibrary: Bool = false
     ) {
         self.displayName = displayName
         self.category = category
@@ -23,6 +26,7 @@ public struct RepeatTemplate: Equatable {
         self.components = components
         self.productSnapshotID = productSnapshotID
         self.loggedUnits = loggedUnits
+        self.keepsOutOfLibrary = keepsOutOfLibrary
     }
 
     /// Returns nil when any component has a malformed amount or unit: the whole template is rejected.
@@ -82,7 +86,7 @@ struct IntakeRepeater {
             }
         }
         // Written before the entry, as the Add form does, so a failure saves nothing.
-        if keepOutOfLibrary {
+        if keepOutOfLibrary || template.keepsOutOfLibrary {
             guard let exclusions = store as? JournalLibraryExclusions else {
                 throw IntakeRepeatError.productUnavailable
             }
