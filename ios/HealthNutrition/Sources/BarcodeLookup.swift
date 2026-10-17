@@ -72,7 +72,7 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
             unit = nil
         } else if lowered.contains("ml") {
             unit = .mL
-        } else if lowered.contains("g") {
+        } else if lowered.range(of: #"\d\s*g\b"#, options: .regularExpression) != nil {
             unit = .g
         } else {
             unit = nil

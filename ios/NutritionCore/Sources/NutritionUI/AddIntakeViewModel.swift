@@ -879,7 +879,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// is stored is the same mass either way; only the figure shown changes.
     private var servingInDisplayUnit: (quantity: Decimal, unit: MeasureUnit)? {
         guard let quantity = servingOption?.quantity, quantity > 0,
-              let servingUnit = servingOption?.unit, servingUnit.dimension == .mass
+              let servingUnit = servingOption?.unit, servingUnit.dimension == .mass,
+              lookedUp?.basis != .per100ml
         else { return nil }
         let target = AmountDisplay.massUnit(for: preferences.unitSystem)
         guard let converted = try? Quantity(value: quantity, unit: servingUnit).converted(to: target)
