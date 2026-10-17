@@ -16,6 +16,11 @@ final class OutsideIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(OutsideIntakeTotals.readQuantityTypeIdentifiers.count, written.count)
     }
 
+    func testEveryMappingRowHasItsOwnIdentifier() {
+        let identifiers = HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier)
+        XCTAssertEqual(Set(identifiers).count, identifiers.count)
+    }
+
     func testSumsOtherAppsSamplesPerNutrient() {
         let totals = OutsideIntakeTotals.totals(from: [
             sample(protein, 12, .g),
