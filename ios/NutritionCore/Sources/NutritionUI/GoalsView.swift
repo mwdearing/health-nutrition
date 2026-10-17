@@ -60,6 +60,7 @@ public struct GoalsView: View {
         .navigationTitle("Daily goals")
         .onAppear { self.model.load() }
         .saveConfirmation(saveNotice)
+        .onChange(of: model.savedSerial) { _, _ in self.saveNotice = SaveNotice(SaveLabels.goalsSaved) }
         .onChange(of: focusedNutrient) { previous, _ in
             if let previous { self.model.commitTarget(for: previous) }
         }

@@ -236,6 +236,7 @@ extension GoalsViewModel {
         }
         self.macroSplitPreferences?.setMacroSplit(split)
         self.refreshFollowedMacroSplit()
+        self.noteMacroSplitSaved()
         return nil
     }
 }
