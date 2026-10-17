@@ -339,8 +339,8 @@ public final class JournalViewModel: ObservableObject {
         guard let closest, let pickedDay = Self.utcDate(fromDayKey: key) else {
             return JournalJumpTarget(sectionID: sections.first?.id, message: nil)
         }
-        // The picked day is a day key, so "yesterday" is judged on the device's calendar day, not UTC.
-        let isYesterday = Self.dayKey(now.addingTimeInterval(-86_400), zone: .current) == key
+        // The picked day is a day key in the journal's zone, so "yesterday" is judged in that same zone.
+        let isYesterday = Self.dayKey(now.addingTimeInterval(-86_400), zone: zone) == key
         // distantPast turns off dayTitle's own "Yesterday" check, which is UTC here and so wrong.
         let dayPhrase = isYesterday
             ? "yesterday"
