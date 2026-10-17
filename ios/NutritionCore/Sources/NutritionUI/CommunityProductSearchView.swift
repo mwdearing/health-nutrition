@@ -129,7 +129,8 @@ public struct CommunityProductSearchView: View {
                             if model.inspectionNeedsRefresh { Button("Refresh shared facts") { Task { await model.refreshInspection() } } }
                             Button("Save representative on this phone") {
                                 select(product)
-                                if selectionError == nil { onSaved() }
+                                // Only a saved product confirms; a legacy label opens an editor draft that is not saved yet.
+                                if selectionError == nil, case .custom = product.product { onSaved() }
                                 model.closeInspection()
                             }
                                 .disabled(model.inspectionNeedsRefresh)

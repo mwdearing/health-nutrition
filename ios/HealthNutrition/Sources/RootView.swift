@@ -564,11 +564,11 @@ struct RootView: View {
                 CommunityProductSearchView(model: search,
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
-                    onSaved: { self.addNotice = SaveNotice(SaveLabels.productSaved) },
                     onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
                     library: self.services.library, onPick: { self.openTemplate($0, home: home) },
-                    focusSearchOnAppear: true)
+                    focusSearchOnAppear: true,
+                    onSaved: { self.addNotice = SaveNotice(SaveLabels.productSaved) })
                     .overlay(alignment: .bottom) {
                         if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                     }
