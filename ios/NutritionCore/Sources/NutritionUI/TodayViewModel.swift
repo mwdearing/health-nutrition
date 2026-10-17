@@ -343,6 +343,7 @@ public final class TodayViewModel: ObservableObject {
                     && ($0.hasGoal || $0.hasKnownAmount)
             }.map { line in
                 var hasEntries = line.hasKnownAmount
+                var someKnown = line.hasKnownAmount
                 var missingCount = 0
                 for entry in foodEntries where entry.kind != .supplement {
                     var entryMissing = false
@@ -350,12 +351,13 @@ public final class TodayViewModel: ObservableObject {
                         let value = DailyTotalsBuilder.value(
                             for: component, snapshot: entry.snapshot, nutrient: line.nutrient, lookup: self.lookup)
                         if value != .notApplicable { hasEntries = true }
+                        if value != .notApplicable && value != .unknown { someKnown = true }
                         if value == .unknown { entryMissing = true }
                     }
                     if entryMissing { missingCount += 1 }
                 }
                 return GoalBarModel.make(
-                    line: line, hasEntries: hasEntries, missingCount: missingCount)
+                    line: line, hasEntries: hasEntries, missingCount: missingCount, someKnown: someKnown)
             }
             waterBar = progress.first {
                 $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
