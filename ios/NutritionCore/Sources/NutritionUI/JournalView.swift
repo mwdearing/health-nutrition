@@ -22,6 +22,7 @@ public struct JournalView: View {
     /// True once Save was tapped in the open prompt, so the prompt shows only its own refusal.
     @State private var saveMealTried = false
     @State private var saveNotice: SaveNotice?
+    @Environment(\.scenePhase) private var scenePhase
 
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
@@ -96,6 +97,10 @@ public struct JournalView: View {
             .onAppear {
                 model.load(now: now())
                 jumpNotice = nil
+            }
+            // Coming back to the app reloads the day titles, so "Yesterday" moves on after midnight.
+            .onChange(of: scenePhase) { phase in
+                if phase == .active { model.load(now: now()) }
             }
             .sheet(isPresented: $showingJumpSheet) {
                 jumpSheet
@@ -234,12 +239,19 @@ public struct JournalView: View {
                 toggleRow(section)
             }
             if model.isExpanded(section) {
-                ForEach(section.mealGroups) { group in
-                    mealHeader(group, in: section)
-                    ForEach(group.rows) { row in
-                        entryButton(row)
+                // The meals sit in one card under the day's header, so they read as that day's entries.
+                Card {
+                    VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                        ForEach(section.mealGroups) { group in
+                            mealHeader(group, in: section)
+                            ForEach(group.rows) { row in
+                                entryButton(row)
+                            }
+                        }
                     }
                 }
+                .listRowSeparator(.hidden)
+                .listRowBackground(TokenColors.background)
             }
         }
         .id(section.id)
@@ -289,30 +301,45 @@ public struct JournalView: View {
                 .foregroundStyle(TokenColors.textSecondary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: DesignSpacing.s)
-            if model.savedMeals != nil, !group.rows.isEmpty {
-                Button {
-                    saveMealName = ""
-                    saveMealTried = false
-                    saveMealTarget = SaveMealTarget(
-                        sectionID: section.id, groupID: group.id, title: group.title,
-                        entryCountText: group.rows.count == 1 ? "1 entry" : "\(group.rows.count) entries")
-                } label: {
-                    Label("Save as meal", systemImage: "bookmark")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Save \(group.title) as a meal")
+            // Labeled buttons when they fit; icon-only when the row is too narrow for both.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: DesignSpacing.s) { mealActions(group, in: section, iconOnly: false) }
+                HStack(spacing: DesignSpacing.s) { mealActions(group, in: section, iconOnly: true) }
             }
-            if model.canCopyToToday(section, now: now()) {
-                Button {
-                    model.copyMealToToday(section.id, groupID: group.id, now: now())
-                } label: {
-                    Label("Copy to today", systemImage: "doc.on.doc")
-                        .font(.subheadline)
+        }
+    }
+
+    @ViewBuilder
+    private func mealActions(_ group: JournalMealGroup, in section: JournalDaySection, iconOnly: Bool) -> some View {
+        if model.savedMeals != nil, !group.rows.isEmpty {
+            Button {
+                saveMealName = ""
+                saveMealTried = false
+                saveMealTarget = SaveMealTarget(
+                    sectionID: section.id, groupID: group.id, title: group.title,
+                    entryCountText: group.rows.count == 1 ? "1 entry" : "\(group.rows.count) entries")
+            } label: {
+                if iconOnly {
+                    Label("Save as meal", systemImage: "bookmark").labelStyle(.iconOnly).font(.subheadline)
+                } else {
+                    Label("Save as meal", systemImage: "bookmark").font(.subheadline)
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Copy \(group.title) to today")
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Save \(group.title) as a meal")
+        }
+        if model.canCopyToToday(section, now: now()) {
+            Button {
+                model.copyMealToToday(section.id, groupID: group.id, now: now())
+            } label: {
+                if iconOnly {
+                    Label("Copy to today", systemImage: "doc.on.doc").labelStyle(.iconOnly).font(.subheadline)
+                } else {
+                    Label("Copy to today", systemImage: "doc.on.doc").font(.subheadline)
+                }
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Copy \(group.title) to today")
         }
     }
 
