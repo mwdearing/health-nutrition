@@ -12,7 +12,7 @@ struct TodayProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TodayEntry) -> Void) {
-        completion(current())
+        completion(current(at: Date()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
@@ -20,13 +20,15 @@ struct TodayProvider: TimelineProvider {
         // refresh shortly after local midnight at the latest, when `current()` stops showing yesterday's summary.
         let now = Date()
         let next = min(now.addingTimeInterval(30 * 60), WidgetSnapshot.refreshAfterMidnight(from: now))
-        completion(Timeline(entries: [current()], policy: .after(next)))
+        // The timeline itself carries the flip: an entry at the next midnight shows dashes (no summary can be from
+        // that day yet) even if the system is late to ask for a reload.
+        let midnight = TodayEntry(date: WidgetSnapshot.nextMidnight(from: now), snapshot: nil)
+        completion(Timeline(entries: [current(at: now), midnight], policy: .after(next)))
     }
 
     /// Today's summary, or nil when none was written today: the widget then shows dashes rather than the
     /// previous day's figures under "Today".
-    private func current() -> TodayEntry {
-        let now = Date()
+    private func current(at now: Date) -> TodayEntry {
         let snapshot = WidgetSnapshotStore.appGroup()?.read().flatMap { $0.isCurrent(on: now) ? $0 : nil }
         return TodayEntry(date: now, snapshot: snapshot)
     }
