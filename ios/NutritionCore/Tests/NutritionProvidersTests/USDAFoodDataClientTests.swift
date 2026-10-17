@@ -137,3 +137,32 @@ private let sampleReply = """
 
     #expect(await client.search(query: "rice") == .transport("the USDA reply could not be read"))
 }
+
+@Test func overlongQueryIsReportedAndNotSent() async {
+    let transport = StubUSDATransport()
+    let client = USDAFoodDataClient(apiKey: "k", transport: transport)
+
+    #expect(await client.search(query: String(repeating: "a", count: 81)) == .queryTooLong)
+    #expect(transport.requests.isEmpty)
+}
+
+@Test func negativeRetryAfterIsIgnored() async {
+    let transport = StubUSDATransport()
+    transport.status = 429
+    transport.headers = ["Retry-After": "-5"]
+    let client = USDAFoodDataClient(apiKey: "k", transport: transport)
+
+    #expect(await client.search(query: "rice") == .rateLimited(retryAfter: nil))
+}
+
+@Test func emptyBrandNameFallsBackToBrandOwner() async throws {
+    let transport = StubUSDATransport()
+    transport.body = Data(#"{"foods":[{"fdcId":9,"description":"Oats","brandName":"","brandOwner":"Acme"}]}"#.utf8)
+    let client = USDAFoodDataClient(apiKey: "k", transport: transport)
+
+    guard case .results(let foods) = await client.search(query: "oats") else {
+        Issue.record("expected results")
+        return
+    }
+    #expect(foods.first?.brand == "Acme")
+}

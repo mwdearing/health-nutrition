@@ -22,6 +22,8 @@ public struct USDAFood: Sendable, Equatable {
 public enum USDAFoodSearchOutcome: Sendable, Equatable {
     case results([USDAFood])
     case empty
+    /// The query is longer than the search accepts; nothing was sent.
+    case queryTooLong
     case rateLimited(retryAfter: TimeInterval?)
     case transport(String)
 }
@@ -33,7 +35,7 @@ public actor USDAFoodDataClient {
     /// Public-domain data sets only. Branded is included because it carries US label data.
     public static let dataTypes = ["Foundation", "SR Legacy", "Branded"]
     public static let searchPageSize = 20
-    public static let searchMinimumScalars = 2
+    public static let searchMinimumCharacters = 2
     public static let searchMaximumCharacters = 80
     /// Search replies are small; a larger body is refused rather than parsed.
     public static let maxResponseBytes = 1 * 1_024 * 1_024
@@ -60,9 +62,11 @@ public actor USDAFoodDataClient {
 
     public func search(query: String) async -> USDAFoodSearchOutcome {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.unicodeScalars.count >= Self.searchMinimumScalars,
-              trimmed.count <= Self.searchMaximumCharacters else {
+        guard trimmed.count >= Self.searchMinimumCharacters else {
             return .empty
+        }
+        guard trimmed.count <= Self.searchMaximumCharacters else {
+            return .queryTooLong
         }
         var components = URLComponents(url: Self.searchURL, resolvingAgainstBaseURL: false)
         components?.queryItems = [
@@ -90,7 +94,9 @@ public actor USDAFoodDataClient {
         case 200..<300:
             break
         case 429:
-            let retry = response.value(forHTTPHeaderField: "Retry-After").flatMap { TimeInterval($0) }
+            let retry = response.value(forHTTPHeaderField: "Retry-After")
+                .flatMap { TimeInterval($0) }
+                .flatMap { $0 >= 0 ? $0 : nil }
             return .rateLimited(retryAfter: retry)
         case 401, 403:
             return .transport("the USDA key was refused")
@@ -127,7 +133,9 @@ public actor USDAFoodDataClient {
             return USDAFood(
                 fdcId: food.fdcId,
                 description: description,
-                brand: (food.brandName ?? food.brandOwner)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                brand: [food.brandName, food.brandOwner]
+                    .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .first { !$0.isEmpty },
                 dataType: food.dataType ?? "",
                 nutrientsPer100g: nutrients,
                 servingGrams: grams,
