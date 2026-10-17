@@ -197,12 +197,19 @@ public struct IntakeComponent: Sendable, Hashable {
     /// Exact decimal amount; stored as decimal text.
     public var amount: Decimal
     public var unit: MeasureUnit
+    /// The share of this drink that is water, 0 to 100. Nil means "use the drink type's preset", and
+    /// a food never sets it. Stored only when the person sets it, so an older row reads as nil.
+    public var hydrationPercent: Decimal?
 
-    public init(componentID: String, name: String, amount: Decimal, unit: MeasureUnit) {
+    public init(
+        componentID: String, name: String, amount: Decimal, unit: MeasureUnit,
+        hydrationPercent: Decimal? = nil
+    ) {
         self.componentID = componentID
         self.name = name
         self.amount = amount
         self.unit = unit
+        self.hydrationPercent = hydrationPercent
     }
 }
 
