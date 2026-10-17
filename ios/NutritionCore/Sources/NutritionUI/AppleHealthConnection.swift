@@ -80,18 +80,23 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
 
     @Published public private(set) var state: AppleHealthConnectionState
     @Published public private(set) var isBusy = false
+    /// Whether the read request has been shown on this device; see `AppleHealthAccess.readAsked`.
+    @Published private var readAsked: Bool
     private let connector: any AppleHealthConnecting
 
     public init(connector: any AppleHealthConnecting) {
         self.connector = connector
-        self.state = connector.currentAccess().state
+        let access = connector.currentAccess()
+        self.state = access.state
+        self.readAsked = access.readAsked
     }
 
     /// Reads Health's answer again. Called when the row appears and when the app comes back to the
     /// foreground, because the answer can change in the Health app while this one is in the background.
     public func refresh() {
-        let fresh = connector.currentAccess().state
-        if fresh != state { state = fresh }
+        let access = connector.currentAccess()
+        if access.state != state { state = access.state }
+        readAsked = access.readAsked
     }
 
     public var canAct: Bool { !isBusy && actionTitle != nil }
