@@ -1544,9 +1544,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                     context.delete(row)
                 }
             }
+            // A row another entry still points at stays: an entry logged after the restore can reuse a restored
+            // snapshot (a repeat does), and removing the row would leave that entry pointing at nothing.
+            let restoredIDs = Set(receipt.intakes.map(\.intakeID))
             for snapshotID in receipt.insertedProductSnapshotIDs {
+                let linkedID = snapshotID
+                let referencing = try context.fetch(FetchDescriptor<RevisionRecord>(
+                    predicate: #Predicate<RevisionRecord> { $0.productSnapshotID == linkedID }))
+                if referencing.contains(where: { !restoredIDs.contains($0.intakeID) }) { continue }
                 for row in try context.fetch(FetchDescriptor<ProductRecord>(
-                    predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID })) {
+                    predicate: #Predicate<ProductRecord> { $0.snapshotID == linkedID })) {
                     context.delete(row)
                 }
             }
