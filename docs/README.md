@@ -34,3 +34,8 @@ Public architecture decisions and design notes for this project live here.
 - [ADR 0001: persistence](adr/0001-persistence.md)
 - [Relay delivery: batches, ordering and outcome mapping](relay-delivery.md)
 - [MVP-GAPS traceability: remaining daily-workflow requirements](mvp-gaps-traceability.md)
+- [App Intents: Log water from Siri, Spotlight and Shortcuts](app-intents.md)
+- [Water and supplement reminders: custom reminder setup](custom-reminders.md)
+- [Reading from Apple Health: the three Health types the app reads](healthkit-reading.md)
+- [Insights: Trends tab, reads the Diary only](insights.md)
+- [My supplements: the supplement stack](supplement-stack.md)
