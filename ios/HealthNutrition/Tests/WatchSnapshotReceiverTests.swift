@@ -91,6 +91,19 @@ final class WatchSnapshotReceiverTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries)
     }
 
+    func testAnEraseFromAnOlderInstallStillEmptiesTheStoredDayWithoutMovingAnyMark() throws {
+        let (receiver, store) = makeReceiver()
+        receiver.receive(context: try context(generation: 0, snapshot: sample(), epoch: "2-new-install"))
+        XCTAssertEqual(store.read(), sample())
+        // Deletion is never held back by the ordering: the Watch shows an empty day (the safe direction).
+        receiver.receive(context: try context(generation: 1, snapshot: nil, epoch: "1-old-install"))
+        XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries)
+        XCTAssertEqual(receiver.highestEraseGeneration, 0, "the newer install's mark did not move")
+        // The newer install's next summary lands again.
+        receiver.receive(context: try context(generation: 0, snapshot: sample(), epoch: "2-new-install"))
+        XCTAssertEqual(store.read(), sample())
+    }
+
     func testAnEnvelopeWithoutAnEpochDoesNotOverrideANamedInstall() throws {
         let (receiver, store) = makeReceiver()
         receiver.receive(context: try context(generation: 3, snapshot: nil, epoch: "1-install"))

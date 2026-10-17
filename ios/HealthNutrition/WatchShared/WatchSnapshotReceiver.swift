@@ -52,7 +52,19 @@ final class WatchSnapshotReceiver {
             let epoch = envelope.epoch ?? Self.unnamedEpoch
             // Epochs sort by install time, so an envelope from an install older than the one applied last (a late
             // delivery, or a second phone) is ignored; a newer install is accepted and takes over.
-            if let applied = defaults.string(forKey: Self.epochKey), epoch.rankedBefore(applied) { return }
+            if let applied = defaults.string(forKey: Self.epochKey), epoch.rankedBefore(applied) {
+                // A summary from an older install is ignored. An erase always reaches the Watch, whatever the
+                // ordering says: the stored day is emptied (the safe direction), without moving any mark.
+                if envelope.snapshot == nil {
+                    do {
+                        try store.write(WidgetSnapshot.empty(at: now()))
+                    } catch {
+                        try? store.erase()
+                    }
+                    reload()
+                }
+                return
+            }
             // Sent before an erase: nothing changes, so nothing is reloaded.
             guard envelope.eraseGeneration >= highest(in: epoch) else { return }
             defaults.set(epoch, forKey: Self.epochKey)
