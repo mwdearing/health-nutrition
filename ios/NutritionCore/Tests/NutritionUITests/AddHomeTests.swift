@@ -84,6 +84,35 @@ final class AddHomeTests: XCTestCase {
         XCTAssertEqual(component.amount, Decimal(string: "249.896324803125"))
     }
 
+    /// A legacy supplement (no recorded unit) opens its Details form in the spoon its row reads in, and saving it
+    /// records that unit on the new entry.
+    func testLegacySupplementPrefillOpensInItsSpoonAndRecordsIt() throws {
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setUnitSystem(.usCustomary)
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "fiber", productID: "fiber", name: "Fiber Powder", labelBasis: "per serving",
+            catalogOrigin: ProductOrigin.label_capture, catalogVersion: "1", kind: .supplement,
+            nutrients: ["fiber": .known(4, .g)])
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: now, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake,
+            components: [IntakeComponent(
+                componentID: "fiber-powder", name: "Fiber Powder", amount: Decimal(string: "19.715686375")!,
+                unit: .mL)],
+            product: product, now: now)
+        let home = AddHomeViewModel(store: store, preferences: preferences, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        let details = try home.makeDetails(prefill: recent.template, now: now)
+        XCTAssertEqual(details.unit, .teaspoon)
+        XCTAssertEqual(details.amountText, "4")
+        XCTAssertTrue(details.save(now: now))
+        let copy = try XCTUnwrap(store.activeIntakes().first { $0.id != intake.id })
+        XCTAssertEqual(try store.loggedUnits().filter { $0.intakeID == copy.id }.map(\.unit), [.teaspoon])
+    }
+
     func testQuickAddFromRecentCanBeUndone() throws {
         let store = try makeStore()
         let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")

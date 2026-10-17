@@ -264,6 +264,32 @@ final class AmountDisplayPreferenceTests: XCTestCase {
             AmountText.summary([fiber], unitSystem: .usCustomary, loggedUnits: ["f": .teaspoon]), "4 tsp")
     }
 
+    /// A supplement from before units were recorded has no unit row; its milliliters read as the spoon they can only have
+    /// been typed in, unless they are also a clean fluid-ounce figure, and a drink is never relabeled.
+    @MainActor
+    func testALegacySupplementWithNoRecordedUnitReadsAsItsSpoon() {
+        let fiber = IntakeComponent(
+            componentID: "f", name: "Fiber Powder", amount: Decimal(string: "19.715686375")!, unit: .mL)
+        XCTAssertEqual(AmountText.describe(fiber, unitSystem: .usCustomary, isSupplement: true), "4 tsp")
+        XCTAssertEqual(AmountText.describe(fiber, unitSystem: .metric, isSupplement: true), "4 tsp")
+        XCTAssertEqual(AmountText.describe(fiber, unitSystem: .usCustomary), "0.6667 fl oz")
+        // 1 tbsp is 0.5 fl oz and 1 fl oz is 6 tsp: clean fluid-ounce figures stay in fluid ounces.
+        let tablespoon = IntakeComponent(
+            componentID: "t", name: "Powder", amount: Decimal(string: "14.78676478125")!, unit: .mL)
+        XCTAssertEqual(AmountText.describe(tablespoon, unitSystem: .usCustomary, isSupplement: true), "0.5 fl oz")
+        // A recorded unit always wins.
+        XCTAssertEqual(
+            AmountText.describe(tablespoon, unitSystem: .usCustomary, loggedUnit: .tablespoon, isSupplement: true),
+            "1 tbsp")
+        // The Library Favorites row for the same amount reads the same way.
+        let template = RepeatTemplate(
+            displayName: "Fiber Powder", category: "supplement", meal: "breakfast", components: [fiber])
+        XCTAssertEqual(
+            LibraryViewModel.detail(template, unitSystem: .usCustomary, isSupplement: true), "4 tsp · Breakfast")
+        XCTAssertEqual(
+            LibraryViewModel.detail(template, unitSystem: .usCustomary, isSupplement: false), "0.6667 fl oz · Breakfast")
+    }
+
     /// A Recent row's amounts follow the unit system rather than always reading metric.
     func testAmountSummaryFollowsTheUnitSystem() {
         let drink = IntakeComponent(

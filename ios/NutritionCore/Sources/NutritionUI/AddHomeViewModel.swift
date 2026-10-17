@@ -73,7 +73,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         let kind = template.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
         return AmountText.summary(
             template.components, unitSystem: preferences.unitSystem,
-            loggedUnits: kind == .supplement ? template.loggedUnits : [:])
+            loggedUnits: kind == .supplement ? template.loggedUnits : [:], isSupplement: kind == .supplement)
     }
 
     public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {
@@ -91,7 +91,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
             let comboKind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
             model.name = prefill.components.map {
                 let loggedUnit = comboKind == .supplement ? prefill.loggedUnits[$0.componentID] : nil
-                return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit)))"
+                return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit, isSupplement: comboKind == .supplement)))"
             }.joined(separator: ", ")
             model.category = prefill.category
             model.amountText = "1"
@@ -127,9 +127,16 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         model.name = prefill.displayName
         model.category = prefill.category
         let kind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
-        model.prefillAmount(
-            component, system: preferences.unitSystem,
-            loggedUnit: kind == .supplement ? prefill.loggedUnits[component.componentID] : nil)
+        // A supplement opens in the unit it was logged in, or, when none was recorded and its amount is stored in
+        // milliliters, in the spoon those milliliters can only have been typed in. Other units open as they are.
+        var openedIn: MeasureUnit?
+        if kind == .supplement {
+            openedIn = prefill.loggedUnits[component.componentID]
+            if openedIn == nil, component.unit == .mL {
+                openedIn = AmountDisplay.legacySpoonReading(milliliters: component.amount)?.unit
+            }
+        }
+        model.prefillAmount(component, system: preferences.unitSystem, loggedUnit: openedIn)
         return model
     }
 

@@ -227,6 +227,30 @@ public enum AmountDisplay {
         return DisplayAmount(amount: rounded, unit: loggedUnit, isBelowSmallest: tooSmall)
     }
 
+    /// A volume stored in milliliters by an entry that has no recorded logged unit (an earlier build's), read as the
+    /// spoon it can only have been typed in: an exact whole or quarter number of teaspoons, or of tablespoons from
+    /// one up (a whole or half tablespoon is itself a clean fluid-ounce figure, so only odd quarters read as tablespoons).
+    /// A figure that is also a clean fluid-ounce figure (a multiple of 0.25 fl oz, such as 1 fl oz = 6 tsp)
+    /// is left to read in fluid ounces, because a drink typed in ounces is as likely as a spoon. Nil otherwise.
+    public static func legacySpoonReading(milliliters: Decimal) -> DisplayAmount? {
+        guard !milliliters.isNaN, milliliters > 0,
+            let teaspoons = try? Quantity(value: milliliters, unit: .mL).converted(to: .teaspoon).value,
+            let fluidOunces = try? Quantity(value: milliliters, unit: .mL).converted(to: .flOz).value
+        else { return nil }
+        let tolerance = Decimal(string: "0.000001", locale: AmountParser.locale)!
+        func nearestQuarter(_ value: Decimal) -> Decimal? {
+            let scaled = value * 4
+            let nearest = DisplayRounding.rounded(scaled, fractionDigits: 0)
+            return abs(scaled - nearest) < tolerance && nearest > 0 ? nearest / 4 : nil
+        }
+        guard nearestQuarter(fluidOunces) == nil, teaspoons <= 144 else { return nil }
+        if teaspoons >= 3, let tablespoons = nearestQuarter(teaspoons / 3) {
+            return DisplayAmount(amount: tablespoons, unit: .tablespoon)
+        }
+        guard let exact = nearestQuarter(teaspoons) else { return nil }
+        return DisplayAmount(amount: exact, unit: .teaspoon)
+    }
+
     /// The stored component's amount, shown under `system`.
     public static func display(
         _ component: IntakeComponent, system: UnitSystem, roundsStoredUnit: Bool = false

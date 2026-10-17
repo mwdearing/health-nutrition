@@ -288,7 +288,8 @@ public final class LibraryViewModel: ObservableObject {
     ) -> String {
         // Only a supplement reads back in the unit it was logged in; a drink keeps the unit system's.
         let amounts = AmountText.summary(
-            template.components, unitSystem: unitSystem, loggedUnits: isSupplement ? template.loggedUnits : [:])
+            template.components, unitSystem: unitSystem, loggedUnits: isSupplement ? template.loggedUnits : [:],
+            isSupplement: isSupplement)
         guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
         return "\(amounts) · \(meal)"
     }

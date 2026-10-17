@@ -118,14 +118,24 @@ enum AmountText {
     /// A supplement logged by the spoon is stored in milliliters, so it reads back in the unit it was logged in
     /// (`loggedUnit`, passed only for supplements) rather than in the unit system's fluid ounces. Drinks and
     /// everything else pass nil and read as the unit system says.
+    ///
+    /// A supplement with no recorded unit (`isSupplement` true, `loggedUnit` nil: an entry or favorite from before the
+    /// unit was recorded) reads as the spoon its milliliters can only have been typed in, when they are an exact spoon
+    /// measure that is not also a clean fluid-ounce figure.
     static func describe(
-        _ component: IntakeComponent, unitSystem: UnitSystem = .metric, loggedUnit: MeasureUnit? = nil
+        _ component: IntakeComponent, unitSystem: UnitSystem = .metric, loggedUnit: MeasureUnit? = nil,
+        isSupplement: Bool = false
     ) -> String {
         guard !component.amount.isNaN else { return "unknown" }
-        if let loggedUnit, component.unit == .mL,
-            let logged = AmountDisplay.reading(milliliters: component.amount, loggedAs: loggedUnit)
-        {
-            return logged.text
+        if component.unit == .mL {
+            if let loggedUnit, let logged = AmountDisplay.reading(milliliters: component.amount, loggedAs: loggedUnit) {
+                return logged.text
+            }
+            if isSupplement, loggedUnit == nil,
+                let legacy = AmountDisplay.legacySpoonReading(milliliters: component.amount)
+            {
+                return legacy.text
+            }
         }
         return AmountDisplay.display(component, system: unitSystem, roundsStoredUnit: true).text
     }
@@ -136,10 +146,11 @@ enum AmountText {
     }
 
     static func summary(
-        _ components: [IntakeComponent], unitSystem: UnitSystem = .metric, loggedUnits: [String: MeasureUnit] = [:]
+        _ components: [IntakeComponent], unitSystem: UnitSystem = .metric, loggedUnits: [String: MeasureUnit] = [:],
+        isSupplement: Bool = false
     ) -> String {
         components.isEmpty ? "unknown" : components.map {
-            describe($0, unitSystem: unitSystem, loggedUnit: loggedUnits[$0.componentID])
+            describe($0, unitSystem: unitSystem, loggedUnit: loggedUnits[$0.componentID], isSupplement: isSupplement)
         }.joined(separator: ", ")
     }
 

@@ -397,6 +397,12 @@ public final class EntryDetailViewModel: ObservableObject {
         {
             return reading.text
         }
+        // An entry from before units were recorded reads as the spoon its milliliters can only have been typed in.
+        if kind == .supplement, row.unit == .mL, loggedUnits[componentID] == nil,
+            let legacy = AmountDisplay.legacySpoonReading(milliliters: amount)
+        {
+            return legacy.text
+        }
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
     }
 
