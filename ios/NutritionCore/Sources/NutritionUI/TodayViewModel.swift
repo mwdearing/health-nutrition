@@ -588,7 +588,7 @@ public final class TodayViewModel: ObservableObject {
 
     /// Each named meal's calories, summed from that meal's own intakes with the same totals builder as
     /// the day. A meal with any unknown energy shows no figure rather than a partial one. A meal whose
-    /// totals cannot be read shows no figure too: the header is cosmetic, so it must not fail the load.
+    /// totals cannot be read shows no figure too, so the header never fails the load.
     /// Entries with no meal ("Other") and water are left out.
     private static func withMealEnergy(
         _ sections: [TodayMealSection], intakes: [Intake], store: JournalStore, lookup: NutrientFactsLookup
@@ -618,7 +618,6 @@ public final class TodayViewModel: ObservableObject {
     /// Throwing rather than swallowing: the totals are built from the same intakes the rows above
     /// were built from, so a store that cannot be read has already failed the load and there is
     /// nothing honest left to show.
-
     private static func progressLines(
         tracked: [String], goals: [NutrientGoal], intakes: [Intake], store: JournalStore,
         lookup: NutrientFactsLookup, displayNames: [String: String]
