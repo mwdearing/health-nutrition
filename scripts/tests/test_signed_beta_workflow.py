@@ -2,9 +2,9 @@
 
 The workflow signs with an App Store Connect API key held in a protected GitHub
 Environment. The repository is public, so what keeps the key safe is the shape of
-the workflow: it can start only by hand, it needs a reviewer's approval, it never
-reads secrets outside its own steps, and it never writes a secret to a log or an
-artifact.
+the workflow: it can start only by dispatch, it runs only from main and only builds a commit
+already on main, it never reads secrets outside its own steps, and it never writes a secret
+to a log or an artifact.
 """
 
 from __future__ import annotations
@@ -185,7 +185,7 @@ def test_the_bundle_id_is_a_secret_not_an_input_and_no_identity_is_in_the_file()
         "dict[str, object]",
         cast("dict[str, object]", _load()["on"])["workflow_dispatch"],
     )
-    assert set(cast("dict[str, object]", inputs["inputs"])) == {"marketing_version"}
+    assert set(cast("dict[str, object]", inputs["inputs"])) == {"marketing_version", "sha"}
     assert "inputs.bundle_id" not in text
     assert "com.mwdearing" not in text
     assert "dev.example" not in text  # the placeholder never reaches a signed build

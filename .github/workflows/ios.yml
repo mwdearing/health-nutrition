@@ -24,6 +24,10 @@ on:
       - ".github/workflows/privacy-shield.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
       - "scripts/tests/test_signed_beta_archive_check.py"
+      - "scripts/tests/test_beta_schedule.py"
+      - ".github/scripts/beta_state.py"
+      - ".github/workflows/scheduled-beta.yml"
+      - ".github/workflows/announce-beta.yml"
       - "scripts/tests/test_project_declarations.py"
       - "scripts/tests/test_ios_workflow.py"
       - "scripts/tests/test_add_capsule_placement.py"
@@ -54,6 +58,10 @@ on:
       - ".github/workflows/privacy-shield.yml"
       - "scripts/tests/test_signed_beta_workflow.py"
       - "scripts/tests/test_signed_beta_archive_check.py"
+      - "scripts/tests/test_beta_schedule.py"
+      - ".github/scripts/beta_state.py"
+      - ".github/workflows/scheduled-beta.yml"
+      - ".github/workflows/announce-beta.yml"
       - "scripts/tests/test_project_declarations.py"
       - "scripts/tests/test_ios_workflow.py"
       - "scripts/tests/test_add_capsule_placement.py"
@@ -119,7 +127,7 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_privacy_documentation_consistency.py scripts/tests/test_journal_restore_import_race.py
       # The signed-upload workflow is manual-only and reviewer-gated; these tests pin that shape.
       - name: Test the signed-upload workflow guardrails
-        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py scripts/tests/test_signed_beta_archive_check.py
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py scripts/tests/test_signed_beta_archive_check.py scripts/tests/test_beta_schedule.py
       - name: Test the project declarations
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
       - name: Check the CI release build keeps its shape
