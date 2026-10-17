@@ -45,7 +45,9 @@ jobs:
         working-directory: ios/HealthNutrition
     steps:
       # The commit is data from a dispatch input: it is passed through the environment, never into the script text,
-      # and accepted only when it is the head of main or an ancestor of it, so a branch or fork commit can never be signed.
+      # and accepted only when it is the head of main or an ancestor of it, so a branch or fork commit can never be
+      # signed. It is compared with the commit this run was dispatched from (the head of main, because the job runs
+      # only from main), not with the name "main", which a tag could shadow.
       - name: Check the commit to build is on main
         env:
           SHA: ${{ inputs.sha }}
@@ -61,7 +63,7 @@ jobs:
             echo "::error::sha must be 40 lowercase hex characters."
             exit 1
           fi
-          relation=$(gh api "repos/$REPO/compare/$SHA...main" --jq .status 2>/dev/null || true)
+          relation=$(gh api "repos/$REPO/compare/$SHA...$GITHUB_SHA" --jq .status 2>/dev/null || true)
           if [ "$relation" != "identical" ] && [ "$relation" != "ahead" ]; then
             echo "::error::That commit is not on main."
             exit 1

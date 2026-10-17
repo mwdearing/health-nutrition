@@ -78,10 +78,24 @@ def newest_green_sha(runs: Iterable[dict]) -> str | None:
     return good[0]["head_sha"] if good else None
 
 
+def last_upload_version(signed_runs: Iterable[dict]) -> str | None:
+    """The version in the name of the newest successful signed run that carries one, else None."""
+    named = [
+        (run["created_at"], parsed["version"])
+        for run in signed_runs
+        if run.get("conclusion") == "success" and (parsed := parse_title(run.get("display_title", "")))
+    ]
+    return max(named)[1] if named else None
+
+
 def decide(green_sha: str | None, state: dict[str, str] | None, signed_runs: Iterable[dict]) -> dict[str, str]:
     """Either {"action": "skip", "reason": ...} or {"action": "dispatch", "version": ..., "sha": ...}."""
+    signed_runs = list(signed_runs)
     if state is None:
         return {"action": "skip", "reason": "the beta log issue has no readable last version and commit"}
+    recorded = last_upload_version(signed_runs)
+    if recorded is not None and recorded != state["last_version"]:
+        return {"action": "skip", "reason": "the beta log's last version disagrees with the last signed run's name"}
     if green_sha is None:
         return {"action": "skip", "reason": "no green ios run on main was found"}
     if any(run.get("status") in ACTIVE for run in signed_runs):
@@ -89,6 +103,22 @@ def decide(green_sha: str | None, state: dict[str, str] | None, signed_runs: Ite
     if green_sha == state["last_sha"]:
         return {"action": "skip", "reason": "the newest green commit is already the last upload"}
     return {"action": "dispatch", "version": next_version(state["last_version"]), "sha": green_sha}
+
+
+TRUSTED_AUTHORS = ("OWNER", "MEMBER", "COLLABORATOR")
+
+
+def pick_state_issue(issues: Iterable[dict]) -> dict | None:
+    """The oldest open issue with the log's title that someone with write access to the repository opened. Anyone
+    can open an issue with any title, so a stranger's look-alike is never the state or the place to post."""
+    for issue in issues:
+        if (
+            issue.get("title") == ISSUE_TITLE
+            and "pull_request" not in issue
+            and issue.get("author_association") in TRUSTED_AUTHORS
+        ):
+            return issue
+    return None
 
 
 def release_notes(subjects: Iterable[str]) -> str:
@@ -127,11 +157,8 @@ class Api:
         return list(data.get("workflow_runs", [])) if isinstance(data, dict) else []
 
     def state_issue(self) -> dict | None:
-        issues = self.request("GET", "/issues?state=open&per_page=100")
-        for issue in issues if isinstance(issues, list) else []:
-            if issue.get("title") == ISSUE_TITLE and "pull_request" not in issue:
-                return issue
-        return None
+        issues = self.request("GET", "/issues?state=open&per_page=100&sort=created&direction=asc")
+        return pick_state_issue(issues if isinstance(issues, list) else [])
 
 
 def _write_output(name: str, value: str) -> None:
@@ -155,7 +182,7 @@ def plan() -> int:
     active: list[dict] = []
     for status in ACTIVE:
         active += api.runs("signed-beta.yml", f"&status={status}")
-    decision = decide(green, state, active)
+    decision = decide(green, state, active + api.runs("signed-beta.yml", "&status=success"))
     print(json.dumps(decision))
     _write_output("action", decision["action"])
     if decision["action"] != "dispatch":

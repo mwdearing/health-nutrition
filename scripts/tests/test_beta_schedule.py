@@ -148,7 +148,7 @@ def test_the_signed_workflow_builds_only_a_commit_on_main_and_passes_it_by_envir
     assert gate < checkout
     assert steps[gate]["env"]["SHA"] == "${{ inputs.sha }}"
     run = str(steps[gate]["run"])
-    assert "compare/$SHA...main" in run and '"identical"' in run and '"ahead"' in run
+    assert "compare/$SHA...$GITHUB_SHA" in run and '"identical"' in run and '"ahead"' in run
     assert "[0-9a-f]{40}" in run
     assert steps[checkout]["with"]["ref"] == "${{ inputs.sha || github.sha }}"
     assert signed["permissions"] == {"contents": "read"}
@@ -171,8 +171,43 @@ def test_the_announce_workflow_can_only_write_issues_and_reads_the_run_as_data()
     assert announce["on"]["workflow_run"] == {"workflows": ["Signed beta upload"], "types": ["completed"]}
     assert announce["permissions"] == {"contents": "read", "issues": "write"}
     text = (WORKFLOWS / "announce-beta.yml").read_text()
+    (job,) = cast("dict[str, dict[str, Any]]", announce["jobs"]).values()
+    condition = " ".join(str(job["if"]).split())
+    for required in (
+        "workflow_run.path == '.github/workflows/signed-beta.yml'",
+        "workflow_run.event == 'workflow_dispatch'",
+        "workflow_run.head_branch == 'main'",
+        "workflow_run.head_repository.full_name == github.repository",
+    ):
+        assert required in condition
     assert "secrets." not in text
     for script in _run_scripts("announce-beta.yml") + _run_scripts("scheduled-beta.yml"):
         assert not re.search(r"\$\{\{", script), "event data must reach scripts only through the environment"
     checkout = text.split("actions/checkout", 1)[1]
     assert "ref: main" in checkout and "persist-credentials: false" in checkout
+
+
+def _issue(**kw: Any) -> dict[str, Any]:
+    issue = {"title": "TestFlight beta log", "author_association": "OWNER", "number": 1}
+    issue.update(kw)
+    return issue
+
+
+def test_only_the_repository_owners_log_issue_counts() -> None:
+    pick = beta["pick_state_issue"]
+    assert pick([_issue()])["number"] == 1
+    assert pick([_issue(author_association="NONE", number=2), _issue(number=3)])["number"] == 3
+    assert pick([_issue(author_association="NONE")]) is None
+    assert pick([_issue(pull_request={})]) is None
+    assert pick([_issue(title="Something else")]) is None
+    assert pick([_issue(author_association="FIRST_TIME_CONTRIBUTOR")]) is None
+
+
+def test_a_log_that_disagrees_with_the_last_signed_run_is_not_trusted() -> None:
+    runs = [{"conclusion": "success", "display_title": f"Signed beta 0.1.30 {A}", "created_at": "2026-10-18T05:00:00Z", "status": "completed"}]
+    assert beta["decide"](B, {"last_version": "0.1.30", "last_sha": A}, runs)["action"] == "dispatch"
+    forged = {"last_version": "9.9.9", "last_sha": A}
+    assert beta["decide"](B, forged, runs)["action"] == "skip"
+    older = runs + [{"conclusion": "success", "display_title": f"Signed beta 0.1.31 {B}", "created_at": "2026-10-18T17:00:00Z", "status": "completed"}]
+    assert beta["last_upload_version"](older) == "0.1.31"
+    assert beta["last_upload_version"]([{"conclusion": "success", "display_title": "Signed beta upload", "created_at": "x"}]) is None
