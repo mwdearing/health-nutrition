@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import NutritionJournal
 import NutritionUI
 
 /// Reads today's steps and active energy and the person's recent weight from HealthKit, for the
@@ -16,7 +17,13 @@ final class HealthKitReader: BodyActivityReading {
     }
 
     private static var readTypes: Set<HKObjectType> {
-        [HKQuantityType(.stepCount), HKQuantityType(.activeEnergyBurned), HKQuantityType(.bodyMass)]
+        var types: Set<HKObjectType> = [HKQuantityType(.stepCount), HKQuantityType(.activeEnergyBurned), HKQuantityType(.bodyMass)]
+        for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
+            if let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: identifier)) {
+                types.insert(type)
+            }
+        }
+        return types
     }
 
     var hasAskedForReadAccess: Bool { defaults.bool(forKey: Self.askedKey) }
@@ -42,6 +49,7 @@ final class HealthKitReader: BodyActivityReading {
         var readings = BodyActivityReadings()
         readings.steps = await sum(.stepCount, unit: .count(), from: startOfDay, to: now)
         readings.activeEnergyKcal = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: startOfDay, to: now)
+        readings.outsideNutrients = await outsideNutrientTotals(from: startOfDay, to: now)
         if let latest = await latestWeight(before: now) {
             readings.latestWeightKg = latest.kilograms
             readings.latestWeightDate = latest.date
@@ -63,6 +71,43 @@ final class HealthKitReader: BodyActivityReading {
             options: .cumulativeSum)
         guard let quantity = try? await descriptor.result(for: healthStore)?.sumQuantity() else { return nil }
         return Decimal(quantity.doubleValue(for: unit))
+    }
+
+    /// Today's nutrient totals from samples other apps wrote. This app's own samples are flagged by
+    /// their source and left out by `OutsideIntakeTotals`, so an entry logged here is never counted twice.
+    private func outsideNutrientTotals(from start: Date, to end: Date) async -> [String: Decimal] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let own = HKSource.default()
+        var samples: [OutsideNutrientSample] = []
+        for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
+            guard
+                let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }),
+                let hkUnit = Self.healthKitUnit(for: mapping.unit),
+                let found = try? await HKSampleQueryDescriptor(
+                    predicates: [.quantitySample(type: HKQuantityType(HKQuantityTypeIdentifier(rawValue: identifier)), predicate: predicate)],
+                    sortDescriptors: []).result(for: healthStore)
+            else { continue }
+            for sample in found {
+                samples.append(OutsideNutrientSample(
+                    quantityTypeIdentifier: identifier,
+                    value: Decimal(sample.quantity.doubleValue(for: hkUnit)),
+                    unit: mapping.unit,
+                    isWrittenByThisApp: sample.sourceRevision.source == own))
+            }
+        }
+        return OutsideIntakeTotals.totals(from: samples)
+    }
+
+    /// The HealthKit unit for each unit the nutrient table uses. A unit not listed here is not read.
+    private static func healthKitUnit(for unit: MeasureUnit) -> HKUnit? {
+        switch unit.symbol {
+        case "g": return .gram()
+        case "mg": return .gramUnit(with: .milli)
+        case "mcg": return .gramUnit(with: .micro)
+        case "mL": return .literUnit(with: .milli)
+        case "kcal": return .kilocalorie()
+        default: return nil
+        }
     }
 
     /// The newest weight sample at or before `date`.

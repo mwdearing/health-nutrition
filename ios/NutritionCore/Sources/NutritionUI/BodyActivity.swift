@@ -12,11 +12,16 @@ public struct BodyActivityReadings: Equatable, Sendable {
     /// The newest weight at least 30 days older than `latestWeightDate`, for the trend line.
     public var earlierWeightKg: Decimal?
     public var earlierWeightDate: Date?
+    /// Today's nutrient totals from entries other apps wrote to Health, per canonical nutrient key, in
+    /// each key's unit. Entries this app wrote are left out, so nothing is counted twice.
+    public var outsideNutrients: [String: Decimal]
 
     public init(
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
-        latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil
+        latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil,
+        outsideNutrients: [String: Decimal] = [:]
     ) {
+        self.outsideNutrients = outsideNutrients
         self.steps = steps
         self.activeEnergyKcal = activeEnergyKcal
         self.latestWeightKg = latestWeightKg
@@ -103,6 +108,25 @@ public final class BodyActivityViewModel: ObservableObject {
     public var weightText: String? {
         readings.latestWeightKg.map { weight($0) }
     }
+
+    /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
+    public var outsideText: String? {
+        var parts: [String] = []
+        if let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) kcal") }
+        if let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
+        if let water = readings.outsideNutrients["water"] {
+            if unitSystem() == .usCustomary {
+                parts.append("\(Self.whole(water / Self.millilitersPerFluidOunce)) fl oz water")
+            } else {
+                parts.append("\(Self.whole(water)) mL water")
+            }
+        }
+        guard !parts.isEmpty else { return nil }
+        return "From other apps: " + parts.joined(separator: ", ")
+    }
+
+    /// Milliliters per US fluid ounce, exact to the definition.
+    static let millilitersPerFluidOunce = Decimal(string: "29.5735295625")!
 
     /// "Down 2.1 lb over 34 days", "Up …", or "No change over 34 days", naming the actual interval
     /// between the two samples; nil without both weights and dates.
@@ -198,6 +222,9 @@ public struct BodyActivityCard: View {
                         Text(trend).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                     }
                 }
+            }
+            if let outside = model.outsideText {
+                Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
         }
     }
