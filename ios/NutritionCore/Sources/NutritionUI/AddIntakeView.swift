@@ -158,6 +158,7 @@ public struct AddIntakeView: View {
                 }
                 DatePicker("When", selection: $model.occurredAt)
             }
+            AddServingControls(model: model)
 
             // A product the catalog lists but states no nutrition facts for is one sentence rather than
             // rows of "unknown". Its attribution still travels with it.

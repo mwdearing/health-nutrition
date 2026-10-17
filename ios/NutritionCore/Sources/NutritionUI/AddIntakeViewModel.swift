@@ -146,8 +146,16 @@ public final class AddIntakeViewModel: ObservableObject {
             editedFields.insert(.amount)
             // A figure written by anything but the prefill no longer stands for the stored amount.
             if !isPrefilling { prefillBacking = nil }
+            // An amount typed by hand no longer equals a count of servings.
+            if !isPrefilling && !isSettingServings { servingCount = "" }
         }
     }
+    /// How many servings the amount stands for, when the picked product gave a serving size. Typing a
+    /// count writes the amount; typing an amount clears the count.
+    @Published public private(set) var servingCount: String = ""
+    /// The serving size the source gave, kept whatever the basis, so the amount can open on one serving.
+    @Published public private(set) var servingOption: ServingDefinition?
+    private var isSettingServings = false
     @Published public var unit: MeasureUnit = .g
     @Published public var category: String = "food"
     @Published public var occurredAt: Date
@@ -795,6 +803,45 @@ public final class AddIntakeViewModel: ObservableObject {
         serving = product.basis == .perServing ? product.serving : nil
         attribution = product.attribution
         lookedUp = product
+        servingOption = product.serving
+        openOnOneServing()
+    }
+
+    /// Opens the amount on one serving when the source gave its weight. The person still confirms the
+    /// amount; this only starts it on a serving they can count up from.
+    private func openOnOneServing() {
+        guard let quantity = servingOption?.quantity, quantity > 0,
+              let servingUnit = servingOption?.unit, servingUnit.dimension == .mass
+        else {
+            servingCount = ""
+            return
+        }
+        isPrefilling = true
+        amountText = DecimalFormatting.text(quantity)
+        unit = servingUnit
+        isPrefilling = false
+        servingCount = "1"
+    }
+
+    /// Sets the amount to a count of servings: the count times one serving, in the serving's unit.
+    public func setServingCount(_ text: String) {
+        guard let quantity = servingOption?.quantity, let servingUnit = servingOption?.unit else { return }
+        guard let count = AmountParser.parseTyped(text) else {
+            servingCount = text
+            return
+        }
+        servingCount = text
+        isSettingServings = true
+        amountText = DecimalFormatting.text(count * quantity)
+        isSettingServings = false
+        unit = servingUnit
+    }
+
+    /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
+    /// mass or the values are not per 100 g; per-serving values are not scaled here.
+    public var amountPreview: AmountPreview? {
+        AmountPreview.make(
+            nutrients: prefilledNutrients, basis: lookupBasis, amountText: amountText, unit: unit)
     }
 
     /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.
