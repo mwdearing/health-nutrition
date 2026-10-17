@@ -169,11 +169,18 @@ public struct SavedMealBook {
         try store.meals()
     }
 
+    /// Ids for the items of a meal about to be added, made by the same generator `add` uses.
+    public func newItemIDs(count: Int) -> [String] { (0..<count).map { _ in makeID() } }
+
     /// Saves `templates` as one new meal, newest first in the list, and returns it. The name is trimmed.
     /// Each template's own meal is dropped: the group is logged under `meal`, or under the meal picked then.
+    /// `itemIDs` lets the caller name each item before the meal is written, so units keyed by those ids can be
+    /// written first; omitted, each item gets a new id.
     @discardableResult
-    public func add(name: String, meal: MealLabel?, templates: [RepeatTemplate]) throws -> SavedMeal {
-        let items = try templates.map { try Self.item(from: $0, id: makeID()) }
+    public func add(name: String, meal: MealLabel?, templates: [RepeatTemplate], itemIDs: [String]? = nil) throws -> SavedMeal {
+        let ids = itemIDs ?? templates.map { _ in makeID() }
+        guard ids.count == templates.count else { throw SavedMealError.itemCount }
+        let items = try zip(templates, ids).map { try Self.item(from: $0, id: $1) }
         let id = makeID()
         var saved = SavedMeal(id: id, name: name, meal: meal, items: items)
         try store.update { list in
