@@ -196,7 +196,7 @@ jobs:
       # Fails the build when the widget extension did not reach the archive or is built or signed wrong, so it is
       # caught here and not on a phone. The bundle identifier is a secret in this public repository: every check
       # compares in the shell and prints only OK or FAIL, key names, the extension point and OS floors.
-      - name: Check the archive embeds the widget extension
+      - name: Check the archive embeds the widget and Watch extensions
         env:
           BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
         run: |
@@ -234,11 +234,12 @@ jobs:
           check "extension build number matches the app" eq "$(field "$appex" CFBundleVersion)" "$(field "$app" CFBundleVersion)"
           echo "Extension OS floor: $(field "$appex" MinimumOSVersion)"
           echo "App OS floor: $(field "$app" MinimumOSVersion)"
-          for target in "$app" "$appex"; do
+          group_key="com.apple.security.application-groups"
+          check_signing() { # check_signing <bundle path>: the App Group entitlement and the embedded profile
+            local target="$1" name ent profile prof
             name=$(basename "$target")
             ent="$RUNNER_TEMP/$name.entitlements.plist"
             codesign -d --entitlements :- "$target" > "$ent" 2>/dev/null || true
-            group_key="com.apple.security.application-groups"
             check "$name carries the $group_key key" "$pb" -c "Print :$group_key" "$ent"
             check "$name's first App Group is the app's group" eq "$("$pb" -c "Print :$group_key:0" "$ent" 2>/dev/null || true)" "$group"
             # A second group is a line starting with "group." on either stream; a not-found message never is.
@@ -256,9 +257,53 @@ jobs:
             else
               echo "FAIL  $name has an embedded provisioning profile"; fail=1
             fi
-          done
+          }
+          check_signing "$app"
+          check_signing "$appex"
+
+          # The Watch app, when the archive has one: it sits under Watch/ in the app, with its own widget extension.
+          # Whether the archive must have one is read from the checked-out project, so a dropped embed fails the run.
+          # Any mention of the Watch target, or any watchOS target at all, counts, so neither a changed way of writing
+          # the dependency nor a renamed target can silence this.
+          if [ ! -f project.yml ]; then
+            echo "::error::project.yml is not where this step expects it."
+            exit 1
+          fi
+          expect_watch=0
+          if grep -q 'HealthNutritionWatch' project.yml || grep -qiE 'platform.*watchOS' project.yml; then expect_watch=1; fi
+          watch_count=$(ls -d "$app"/Watch/*.app 2>/dev/null | wc -l | tr -d ' ' || true)
+          if [ "$watch_count" -eq 0 ] && [ "$expect_watch" -eq 0 ]; then
+            echo "NOTE  this project does not embed a Watch app; the Watch checks are skipped"
+          elif [ "$watch_count" -eq 0 ]; then
+            echo "FAIL  the archive has a Watch app, as the project embeds one"; fail=1
+          else
+            check "the archive has exactly one Watch app" eq "$watch_count" "1"
+            watch=$(ls -d "$app"/Watch/*.app | head -n 1)
+            watchex="$watch/PlugIns/HealthNutritionWatchWidgets.appex"
+            echo "Watch apps:"
+            ls "$app/Watch"
+            check "the Watch app is HealthNutritionWatch.app" eq "$(basename "$watch")" "HealthNutritionWatch.app"
+            if [ ! -d "$watchex" ]; then
+              echo "FAIL  the Watch app embeds PlugIns/HealthNutritionWatchWidgets.appex"; fail=1
+            else
+              echo "OK    the Watch app embeds PlugIns/HealthNutritionWatchWidgets.appex"
+              check "Watch app bundle id is the app's id plus .watchkitapp" eq "$(field "$watch" CFBundleIdentifier)" "$BUNDLE_ID.watchkitapp"
+              check "Watch app names the iPhone app as its companion" eq "$(field "$watch" WKCompanionAppBundleIdentifier)" "$BUNDLE_ID"
+              check "Watch widget bundle id is the app's id plus .watchkitapp.widgets" eq "$(field "$watchex" CFBundleIdentifier)" "$BUNDLE_ID.watchkitapp.widgets"
+              wpoint=$(field "$watchex" NSExtension:NSExtensionPointIdentifier)
+              echo "Watch extension point: $wpoint"
+              check "Watch extension point is com.apple.widgetkit-extension" eq "$wpoint" "com.apple.widgetkit-extension"
+              check "Watch app version matches the iPhone app" eq "$(field "$watch" CFBundleShortVersionString)" "$(field "$app" CFBundleShortVersionString)"
+              check "Watch app build number matches the iPhone app" eq "$(field "$watch" CFBundleVersion)" "$(field "$app" CFBundleVersion)"
+              check "Watch widget version matches the iPhone app" eq "$(field "$watchex" CFBundleShortVersionString)" "$(field "$app" CFBundleShortVersionString)"
+              check "Watch widget build number matches the iPhone app" eq "$(field "$watchex" CFBundleVersion)" "$(field "$app" CFBundleVersion)"
+              echo "Watch app OS floor: $(field "$watch" MinimumOSVersion)"
+              check_signing "$watch"
+              check_signing "$watchex"
+            fi
+          fi
           if [ "$fail" -ne 0 ]; then
-            echo "::error::The archive's widget extension check failed; see the FAIL lines above."
+            echo "::error::The archive's widget and Watch extension check failed; see the FAIL lines above."
           fi
           exit "$fail"
 
