@@ -298,7 +298,6 @@ public struct JournalView: View {
                         entryCountText: group.rows.count == 1 ? "1 entry" : "\(group.rows.count) entries")
                 } label: {
                     Label("Save as meal", systemImage: "bookmark")
-                        .labelStyle(.iconOnly)
                         .font(.subheadline)
                 }
                 .buttonStyle(.borderless)
