@@ -801,6 +801,10 @@ public final class AddIntakeViewModel: ObservableObject {
         serving = nil
         attribution = nil
         lookedUp = nil
+        // A serving from an earlier product must not stay on the Servings control or count the next entry.
+        servingOption = nil
+        servingCount = ""
+        prefillBacking = nil
         labelValues = nil
         prefilledFromCapture = false
         storedProduct = nil
@@ -838,9 +842,10 @@ public final class AddIntakeViewModel: ObservableObject {
         attribution = product.attribution
         lookedUp = product
         servingOption = product.serving
-        openOnOneServing()
         // A unit chosen before this pick may not total against this product; move it to one that does.
         if !unitOptions.contains(unit), let first = unitOptions.first { unit = first }
+        // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
+        if AmountParser.parseTyped(amountText) == nil { openOnOneServing() }
     }
 
     /// Opens the amount on one serving when the source gave its weight. The person still confirms the
@@ -890,7 +895,8 @@ public final class AddIntakeViewModel: ObservableObject {
         isSettingServings = true
         defer { isSettingServings = false }
         guard let count = AmountParser.parseTyped(text) else {
-            amountText = ""
+            // A cleared field clears the amount; a partly typed count ("1.") leaves it until it is complete.
+            if text.trimmingCharacters(in: .whitespaces).isEmpty { amountText = "" }
             return
         }
         amountText = DecimalFormatting.text(count * display.quantity)
@@ -905,7 +911,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// mass or the values are not per 100 g; per-serving values are not scaled here.
     public var amountPreview: AmountPreview? {
         AmountPreview.make(
-            nutrients: prefilledNutrients, basis: lookupBasis, amountText: amountText, unit: unit)
+            nutrients: prefilledNutrients, basis: lookupBasis ?? lookedUp?.basis, amountText: amountText, unit: unit)
     }
 
     /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.

@@ -17,11 +17,11 @@ public struct AmountPreview: Equatable {
     ) -> AmountPreview? {
         guard basis == .per100g, let amount = AmountParser.parseTyped(amountText) else { return nil }
         let grams: Decimal
-        switch unit {
-        case .g: grams = amount
-        case .oz: grams = amount * gramsPerOunce
-        default: return nil
-        }
+        // Any mass the menu offers converts exactly through the shared quantity conversion; a volume does not.
+        guard unit.dimension == .mass,
+              let converted = try? Quantity(value: amount, unit: unit).converted(to: .g)
+        else { return nil }
+        grams = converted.value
         // Only a value in the unit the key is stated in (kcal for energy, grams for the macros) is scaled.
         func per(_ key: String, in expected: MeasureUnit) -> Decimal? {
             guard case .known(let value, let stated) = nutrients[key] ?? .unknown, stated == expected else {
