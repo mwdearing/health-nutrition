@@ -19,12 +19,6 @@ final class AddIntakeServingTests: XCTestCase {
             preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
     }
 
-    /// The amount on the form, read in grams whatever unit the form shows it in.
-    private func grams(_ model: AddIntakeViewModel) -> Decimal {
-        let amount = AmountParser.parseTyped(model.amountText) ?? 0
-        return (try? Quantity(value: amount, unit: model.unit).converted(to: .g).value) ?? 0
-    }
-
     /// A per-100 g product with a 2 oz serving and 200 kcal per 100 g.
     private func picked(serving: ServingDefinition?) -> LookedUpProduct {
         LookedUpProduct(
@@ -107,6 +101,22 @@ final class AddIntakeServingTests: XCTestCase {
         // Two ounces is 56.7 grams: the stored mass is the same, shown in the metric unit.
         let shown = try XCTUnwrap(AmountParser.parse(model.amountText))
         XCTAssertLessThan(abs(shown - Decimal(string: "56.7")!), Decimal(string: "0.01")!)
+    }
+
+    func testClearedAmountShowsANoticeUntilAnAmountIsTyped() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: nil))
+        model.unit = .serving
+        model.amountText = "2"
+        model.applyLookedUp(picked(serving: nil))
+        XCTAssertEqual(model.amountText, "")
+        XCTAssertEqual(model.unitNotice, "Amount cleared. This food can't be measured in serving.")
+        model.amountText = "abc"
+        XCTAssertNotNil(model.unitNotice, "text that is not an amount does not clear the notice")
+        model.amountText = "100"
+        XCTAssertNil(model.unitNotice)
+        model.invalidateLookup()
+        XCTAssertNil(model.unitNotice)
     }
 
     private func makeStore() throws -> SwiftDataJournalStore {
