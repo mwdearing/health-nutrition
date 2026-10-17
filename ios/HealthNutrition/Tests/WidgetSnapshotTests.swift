@@ -57,7 +57,7 @@ final class WidgetSnapshotTests: XCTestCase {
         let store = WidgetSnapshotStore(directory: directory)
         try store.write(sample())
         let erasedAt = Date(timeIntervalSince1970: 1_700_000_100)
-        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure(), now: { erasedAt }).eraseAll()
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure(), watch: nil, now: { erasedAt }).eraseAll()
         let after = try XCTUnwrap(store.read())
         // The widget reads "Nothing logged today": no entries, no figures, and it is today's summary.
         XCTAssertFalse(after.hasEntries)
@@ -73,7 +73,7 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNotNil(store.read())
         struct WriteFailed: Error {}
         store.writeData = { _, _ in throw WriteFailed() }
-        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll()
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure(), watch: nil).eraseAll()
         XCTAssertNil(store.read())
     }
 
@@ -87,7 +87,7 @@ final class WidgetSnapshotTests: XCTestCase {
         struct WriteFailed: Error {}
         store.writeData = { _, _ in throw WriteFailed() }
         store.fileManager = FailingRemoval()
-        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll()
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure(), watch: nil).eraseAll()
         // No figure is left: the widget cannot decode an empty file and shows dashes.
         XCTAssertNil(store.read())
         let url = folder.appendingPathComponent(WidgetSnapshotStore.fileName)
@@ -138,7 +138,7 @@ final class WidgetSnapshotTests: XCTestCase {
         let store = WidgetSnapshotStore(directory: directory)
         let legacy = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
         try Data("figures".utf8).write(to: legacy)
-        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll()
+        try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure(), watch: nil).eraseAll()
         XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
         XCTAssertNotNil(store.read(), "the empty summary was written")
     }
@@ -159,7 +159,7 @@ final class WidgetSnapshotTests: XCTestCase {
         manager.protected = legacy
         try Data("figures".utf8).write(to: legacy)
         try store.write(sample())
-        XCTAssertThrowsError(try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll())
+        XCTAssertThrowsError(try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure(), watch: nil).eraseAll())
         XCTAssertThrowsError(try store.removeLegacyRootFiles())
         // The folder's summary was still emptied, and the failure is not swallowed.
         XCTAssertEqual(store.read()?.hasEntries, false)

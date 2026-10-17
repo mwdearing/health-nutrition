@@ -27,6 +27,9 @@ struct HealthNutritionApp: App {
             let made = try AppServices.make(reminderScheduler: SystemReminderScheduler())
             AppServicesRegistry.register(made)
             Self.widgetSnapshots.start(today: made.today, isErasing: { made.connections.isErasing })
+            WatchSessionTransport.shared.onReady = { WatchSnapshotSender.shared.transportBecameReady() }
+            WatchSnapshotSender.shared.resumeAfterLaunch()
+            WatchSessionTransport.shared.activate()
             _services = State(initialValue: made)
         } catch {
             _services = State(initialValue: nil)
