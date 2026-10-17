@@ -63,8 +63,8 @@ final class WidgetSnapshotPublisher {
         let snapshot = Self.snapshot(from: today, now: loadedAt)
         do {
             try store.write(snapshot)
-            // The same summary, under the current erase generation, goes to a paired Watch.
-            watch?.submit(WatchSnapshotEnvelope(eraseGeneration: generation, snapshot: snapshot))
+            // The same summary goes to a paired Watch; the sender drops it if an erase has happened since this load.
+            watch?.submit(snapshot, erasureGeneration: generation)
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             // The summary on disk is the previous one or none; the app does not depend on this write.
@@ -155,7 +155,7 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
         defer { WidgetCenter.shared.reloadAllTimelines() }
         // The Watch's copy is replaced by an empty envelope under the new generation (held and sent on activation
         // if the session is not active yet), whether or not the App Group store exists on this build.
-        watch?.erased(generation: erasure.generation)
+        watch?.erased(erasureGeneration: erasure.generation)
         guard let store else { return }
         // The legacy files are tried first and a failure is reported at the end, after the folder's summary has
         // been emptied, so one failure cannot leave the other figures behind.

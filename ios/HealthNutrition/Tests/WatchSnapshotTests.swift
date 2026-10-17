@@ -101,18 +101,23 @@ final class WatchSnapshotTests: XCTestCase {
 
     // MARK: Sender
 
+    private final class MemoryState: WatchSenderState, @unchecked Sendable {
+        var eraseGeneration = 0
+        var eraseUnsent = false
+    }
+
     func testASummaryIsSentWhenTheSessionCanSend() {
         let transport = FakeTransport()
-        let sender = WatchSnapshotSender(transport: transport)
-        sender.submit(WatchSnapshotEnvelope(eraseGeneration: 0, snapshot: sample()))
+        let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
+        sender.submit(sample(), erasureGeneration: 0)
         XCTAssertEqual(transport.lastEnvelope?.snapshot, sample())
     }
 
     func testASummaryIsHeldUntilTheSessionIsReady() {
         let transport = FakeTransport()
         transport.canSend = false
-        let sender = WatchSnapshotSender(transport: transport)
-        sender.submit(WatchSnapshotEnvelope(eraseGeneration: 0, snapshot: sample()))
+        let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
+        sender.submit(sample(), erasureGeneration: 0)
         XCTAssertTrue(transport.sent.isEmpty)
         transport.canSend = true
         sender.transportBecameReady()
@@ -124,9 +129,9 @@ final class WatchSnapshotTests: XCTestCase {
     func testAnEraseBeforeActivationReplacesTheHeldSummary() {
         let transport = FakeTransport()
         transport.canSend = false
-        let sender = WatchSnapshotSender(transport: transport)
-        sender.submit(WatchSnapshotEnvelope(eraseGeneration: 0, snapshot: sample()))
-        sender.erased(generation: 1)
+        let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
+        sender.submit(sample(), erasureGeneration: 0)
+        sender.erased(erasureGeneration: 1)
         transport.canSend = true
         sender.transportBecameReady()
         XCTAssertEqual(transport.sent.count, 1)
@@ -134,40 +139,72 @@ final class WatchSnapshotTests: XCTestCase {
         XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 1)
     }
 
-    func testASummaryFromBeforeAnEraseNeverReplacesTheErase() {
+    func testASummaryFromBeforeAnEraseNeverReplacesTheEraseEvenOnceTheEraseWasSent() {
         let transport = FakeTransport()
-        transport.canSend = false
-        let sender = WatchSnapshotSender(transport: transport)
-        sender.erased(generation: 2)
-        sender.submit(WatchSnapshotEnvelope(eraseGeneration: 1, snapshot: sample()))
-        transport.canSend = true
-        sender.transportBecameReady()
+        let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
+        sender.erased(erasureGeneration: 1)
+        XCTAssertEqual(transport.sent.count, 1, "the erase went out at once")
+        // A load announced before the erase reaches the sender after it: dropped, the erase stays the last context.
+        sender.submit(sample(), erasureGeneration: 0)
+        XCTAssertEqual(transport.sent.count, 1)
         XCTAssertNil(transport.lastEnvelope?.snapshot)
-        XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 2)
+        // A load announced after the erase is sent, under the new generation.
+        sender.submit(sample(), erasureGeneration: 1)
+        XCTAssertEqual(transport.lastEnvelope?.snapshot, sample())
+        XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 1)
     }
 
     func testAFailedSendIsKeptForTheNextAttempt() {
         let transport = FakeTransport()
         transport.fails = true
-        let sender = WatchSnapshotSender(transport: transport)
-        sender.erased(generation: 1)
+        let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
+        sender.erased(erasureGeneration: 1)
         XCTAssertTrue(transport.sent.isEmpty)
         transport.fails = false
         sender.transportBecameReady()
         XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 1)
     }
 
+    func testAnEraseThatNeverReachedTheWatchIsSentAfterARelaunch() {
+        let state = MemoryState()
+        let first = FakeTransport()
+        first.canSend = false
+        WatchSnapshotSender(transport: first, state: state).erased(erasureGeneration: 1)
+        XCTAssertTrue(state.eraseUnsent, "remembered while it is unsent")
+        // The app is terminated; the next run reads the remembered state.
+        let second = FakeTransport()
+        second.canSend = false
+        let relaunched = WatchSnapshotSender(transport: second, state: state)
+        relaunched.resumeAfterLaunch()
+        second.canSend = true
+        relaunched.transportBecameReady()
+        XCTAssertNil(second.lastEnvelope?.snapshot)
+        XCTAssertEqual(second.lastEnvelope?.eraseGeneration, 1)
+        XCTAssertFalse(state.eraseUnsent, "cleared once the Watch has been handed it")
+    }
+
+    func testTheEraseGenerationOnlyGoesUpAcrossRelaunches() {
+        let state = MemoryState()
+        WatchSnapshotSender(transport: FakeTransport(), state: state).erased(erasureGeneration: 1)
+        let transport = FakeTransport()
+        let relaunched = WatchSnapshotSender(transport: transport, state: state)
+        relaunched.submit(sample(), erasureGeneration: 0)
+        XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 1, "summaries carry the persisted generation")
+        relaunched.erased(erasureGeneration: 1)
+        XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 2)
+    }
+
     func testConcurrentSubmissionsNeverLeaveAnOlderEnvelopeLast() {
         for _ in 0..<20 {
             let transport = FakeTransport()
             transport.delay = 0.01
-            let sender = WatchSnapshotSender(transport: transport)
+            let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
             let group = DispatchGroup()
             DispatchQueue.global().async(group: group) {
-                sender.submit(WatchSnapshotEnvelope(eraseGeneration: 0, snapshot: self.sample()))
+                sender.submit(self.sample(), erasureGeneration: 0)
             }
             DispatchQueue.global().async(group: group) {
-                sender.erased(generation: 1)
+                sender.erased(erasureGeneration: 1)
             }
             group.wait()
             // Whatever the interleaving, the last context the Watch was handed is the erase.
@@ -177,9 +214,10 @@ final class WatchSnapshotTests: XCTestCase {
     }
 
     func testNothingIsSentWithoutATransport() {
-        let sender = WatchSnapshotSender(transport: nil)
-        sender.submit(WatchSnapshotEnvelope(eraseGeneration: 0, snapshot: sample()))
-        sender.erased(generation: 1)
+        let sender = WatchSnapshotSender(transport: nil, state: MemoryState())
+        sender.submit(sample(), erasureGeneration: 0)
+        sender.erased(erasureGeneration: 1)
+        sender.resumeAfterLaunch()
         sender.transportBecameReady()
     }
 
@@ -187,9 +225,9 @@ final class WatchSnapshotTests: XCTestCase {
 
     func testEraseAllDataLeavesAnEmptyContextForTheWatch() throws {
         let transport = FakeTransport()
-        let sender = WatchSnapshotSender(transport: transport)
+        let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
         let erasure = WidgetSnapshotErasure()
-        sender.submit(WatchSnapshotEnvelope(eraseGeneration: erasure.generation, snapshot: sample()))
+        sender.submit(sample(), erasureGeneration: erasure.generation)
         try WidgetSnapshotEraser(store: nil, erasure: erasure, watch: sender).eraseAll()
         // What the Watch will be handed is the empty envelope under the new generation: nothing of the summary.
         let last = try XCTUnwrap(transport.lastEnvelope)

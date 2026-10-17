@@ -61,7 +61,10 @@ The phone sends a paired Apple Watch the same summary the widgets read, in an en
 WatchConnectivity's application context (latest value wins, device to device, no server). The sender
 (`WatchSnapshotSender`) runs right after the summary is written, with the publisher's gates, and only when the
 session is active, a Watch is paired and the Watch app is installed; otherwise the latest envelope is held and sent
-on activation. An envelope from before the latest erase never replaces one from after it. A decoder tolerates unknown
+on activation. The erase generation is kept across launches (two numbers in the app's defaults: the generation and
+whether the last erase has reached the Watch), so it only ever goes up and an erase that was not delivered before the
+app was closed is sent first at the next launch. A summary from a load that began before the latest erase is dropped
+by the sender under the same lock the erase takes, so it can never replace the erase. Sends are serialized. A decoder tolerates unknown
 fields; an unknown `schemaVersion`, a malformed payload or one over 4 KB decodes to "invalid" and is shown as dashes.
 The real session sits behind `WatchSnapshotTransport` so everything above it is unit-tested with a fake, because
 WatchConnectivity does not exist on the platform the package tests build on. The Watch app that receives and shows
