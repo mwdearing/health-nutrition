@@ -831,6 +831,8 @@ public final class AddIntakeViewModel: ObservableObject {
     private func openOnOneServing() {
         guard let display = servingInDisplayUnit else {
             servingCount = ""
+            // A backing from an earlier product must not carry over to this one.
+            prefillBacking = nil
             return
         }
         isPrefilling = true
