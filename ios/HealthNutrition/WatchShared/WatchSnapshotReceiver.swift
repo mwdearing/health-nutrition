@@ -30,9 +30,9 @@ final class WatchSnapshotReceiver {
 
     func receive(context: [String: Any]) {
         guard let store else { return }
-        defer { reload() }
         switch WatchSnapshotEnvelope.decode(context: context) {
         case .envelope(let envelope):
+            // Sent before an erase: nothing changes, so nothing is reloaded.
             guard envelope.eraseGeneration >= highestEraseGeneration else { return }
             defaults.set(envelope.eraseGeneration, forKey: Self.highestGenerationKey)
             let snapshot = envelope.snapshot ?? WidgetSnapshot.empty(at: now())
@@ -42,8 +42,10 @@ final class WatchSnapshotReceiver {
                 // A summary that cannot be stored must not leave an older one behind.
                 try? store.erase()
             }
+            reload()
         case .unsupportedSchema, .invalid:
             try? store.erase()
+            reload()
         }
     }
 }
