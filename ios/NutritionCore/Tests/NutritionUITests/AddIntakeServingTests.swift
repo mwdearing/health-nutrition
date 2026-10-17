@@ -80,4 +80,12 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertNotNil(energy)
         XCTAssertEqual(energy?.cannotScale, false)
     }
+
+    func testPerHundredGramPickOffersOnlyMassUnits() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        XCTAssertFalse(model.unitOptions.contains(.serving), "a count cannot be totalled against per 100 g")
+        XCTAssertTrue(model.unitOptions.contains(.oz))
+        XCTAssertTrue(model.unitOptions.contains(.g))
+    }
 }
