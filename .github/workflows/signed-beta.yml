@@ -270,7 +270,7 @@ jobs:
             exit 1
           fi
           expect_watch=0
-          if grep -q 'HealthNutritionWatch' project.yml || grep -qiE "platform[\"']?:[[:space:]]*[\"']?watchOS" project.yml; then expect_watch=1; fi
+          if grep -q 'HealthNutritionWatch' project.yml || grep -qiE 'platform.*watchOS' project.yml; then expect_watch=1; fi
           watch_count=$(ls -d "$app"/Watch/*.app 2>/dev/null | wc -l | tr -d ' ' || true)
           if [ "$watch_count" -eq 0 ] && [ "$expect_watch" -eq 0 ]; then
             echo "NOTE  this project does not embed a Watch app; the Watch checks are skipped"

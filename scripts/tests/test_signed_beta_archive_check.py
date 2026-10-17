@@ -245,6 +245,8 @@ def test_a_project_that_embeds_a_watch_app_requires_one_in_the_archive(archive: 
         "    platform: 'watchOS'\n",
         "    {type: application, platform: watchOS}\n",
         '    {"type": "application", "platform": "watchOS"}\n',
+        "    platform: [iOS, watchOS]\n",
+        "    platform : watchOS\n",
     ],
 )
 def test_a_renamed_watch_target_still_requires_a_watch_app(archive: Archive, declaration: str) -> None:
