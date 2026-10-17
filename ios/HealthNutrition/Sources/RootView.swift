@@ -461,6 +461,8 @@ struct RootView: View {
     }
 
     private func finishAdding() {
+        // A confirmation from the cover outlives it: hand it to the root so it still shows after the cover closes.
+        if let notice = self.addNotice { self.saveNotice = notice; self.addNotice = nil }
         self.addNavigation.reset()
         self.addHome = nil
         self.addIntakeModel = nil
