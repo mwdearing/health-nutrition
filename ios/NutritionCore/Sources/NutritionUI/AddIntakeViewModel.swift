@@ -156,7 +156,12 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The serving size the source gave, kept whatever the basis, so the amount can open on one serving.
     @Published public private(set) var servingOption: ServingDefinition?
     private var isSettingServings = false
-    @Published public var unit: MeasureUnit = .g
+    @Published public var unit: MeasureUnit = .g {
+        didSet {
+            // A count of servings was for the unit it was typed against; a different unit clears it.
+            if !isPrefilling && !isSettingServings { servingCount = "" }
+        }
+    }
     @Published public var category: String = "food"
     @Published public var occurredAt: Date
     /// Which meal of the day this entry was eaten at. Nil by default and never inferred from the
@@ -834,6 +839,8 @@ public final class AddIntakeViewModel: ObservableObject {
         lookedUp = product
         servingOption = product.serving
         openOnOneServing()
+        // A unit chosen before this pick may not total against this product; move it to one that does.
+        if !unitOptions.contains(unit), let first = unitOptions.first { unit = first }
     }
 
     /// Opens the amount on one serving when the source gave its weight. The person still confirms the
