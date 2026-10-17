@@ -127,11 +127,16 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         model.name = prefill.displayName
         model.category = prefill.category
         let kind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
-        model.prefillAmount(
-            component, system: preferences.unitSystem,
-            loggedUnit: kind == .supplement
-                ? prefill.loggedUnits[component.componentID] ?? AmountDisplay.legacySpoonReading(milliliters: component.amount)?.unit
-                : nil)
+        // A supplement opens in the unit it was logged in, or, when none was recorded and its amount is stored in
+        // milliliters, in the spoon those milliliters can only have been typed in. Other units open as they are.
+        var openedIn: MeasureUnit?
+        if kind == .supplement {
+            openedIn = prefill.loggedUnits[component.componentID]
+            if openedIn == nil, component.unit == .mL {
+                openedIn = AmountDisplay.legacySpoonReading(milliliters: component.amount)?.unit
+            }
+        }
+        model.prefillAmount(component, system: preferences.unitSystem, loggedUnit: openedIn)
         return model
     }
 
