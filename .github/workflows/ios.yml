@@ -267,6 +267,14 @@ jobs:
             echo "The widget extension is not embedded in $app" >&2
             exit 1
           fi
+          if [ ! -d "$app/Watch/HealthNutritionWatch.app" ]; then
+            echo "The Watch app is not embedded in $app" >&2
+            exit 1
+          fi
+          if [ ! -d "$app/Watch/HealthNutritionWatch.app/PlugIns/HealthNutritionWatchWidgets.appex" ]; then
+            echo "The Watch widget extension is not embedded in the Watch app" >&2
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/ipa"
           cd "$RUNNER_TEMP/ipa"
           mkdir -p Payload
