@@ -61,10 +61,11 @@ final class WidgetSnapshotPublisher {
         // Reading the totals here, on the main actor, while `lastLoadedAt` still names this load (checked above),
         // is reading what that load produced.
         let snapshot = Self.snapshot(from: today, now: loadedAt)
+        // The same summary goes to a paired Watch whether or not the App Group write works; the sender drops it if
+        // an erase has happened since this load.
+        watch?.submit(snapshot, erasureGeneration: generation)
         do {
             try store.write(snapshot)
-            // The same summary goes to a paired Watch; the sender drops it if an erase has happened since this load.
-            watch?.submit(snapshot, erasureGeneration: generation)
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             // The summary on disk is the previous one or none; the app does not depend on this write.

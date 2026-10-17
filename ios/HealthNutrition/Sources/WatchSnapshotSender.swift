@@ -115,6 +115,9 @@ final class WatchSnapshotSender: @unchecked Sendable {
             // Any context under the current generation replaces what the Watch held before the erase, an empty
             // one or a summary from after it alike.
             state.deliveredGeneration = max(state.deliveredGeneration, envelope.eraseGeneration)
+            // Written after the send on purpose: writing it first would lose an erase whose send then failed. If the
+            // app dies between the two, the next launch resends the empty envelope, the safe direction, and the
+            // launch's own Today load publishes the current summary over it.
             lock.unlock()
         } catch {
             // Kept for the next flush; the app does not depend on this send.
