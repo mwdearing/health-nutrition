@@ -454,13 +454,16 @@ public final class EntryDetailViewModel: ObservableObject {
             // here saves nothing and the message below is true; the worst a failed edit leaves is a unit read as
             // the unit system says.
             if let units = store as? JournalLoggedUnits, let before = current?.components {
-                let known = try LoggedUnitIndex.loadOrThrow(from: store)[intakeID] ?? [:]
+                // Read only when an amount actually changed, so a save that changes no amount (a time correction)
+                // does not depend on the units being readable.
+                var known: [String: MeasureUnit]?
                 for component in parsed {
                     guard let old = before.first(where: { $0.componentID == component.componentID }),
                         !Self.sameAmount(old.amount, component.amount)
                     else { continue }
+                    if known == nil { known = try LoggedUnitIndex.loadOrThrow(from: store)[intakeID] ?? [:] }
                     try units.removeLoggedUnit(intakeID: intakeID, componentID: component.componentID)
-                    if let loggedUnit = known[component.componentID] {
+                    if let loggedUnit = known?[component.componentID] {
                         forgotten.append(JournalLoggedUnit(
                             intakeID: intakeID, componentID: component.componentID, unit: loggedUnit))
                     }

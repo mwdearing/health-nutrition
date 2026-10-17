@@ -223,6 +223,21 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertEqual(try store.meals(), [])
     }
 
+    /// Recents refuse to build rows while the recorded units cannot be read, so a one-tap copy is never made without
+    /// the unit its entry was logged in.
+    func testAFailedUnitReadRefusesTheRecentsRows() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        _ = try fiberEntry(inner)
+        journal.failUnitReads = true
+        let home = AddHomeViewModel(store: journal, now: { self.now })
+
+        home.load()
+
+        XCTAssertEqual(home.errorMessage, "Could not read recent items.")
+        XCTAssertTrue(home.recents.isEmpty)
+    }
+
     func testAFailedUnitReadStopsLoggingOnOtherDays() throws {
         let inner = try makeJournal()
         let journal = FaultyJournal(inner)
