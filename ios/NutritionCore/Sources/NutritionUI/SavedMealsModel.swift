@@ -91,7 +91,7 @@ public final class SavedMealsModel: ObservableObject {
         // Each item gets its id before anything is written, and its units are written first, keyed by that id.
         // A save can then fail only before the meal exists, so the meal never saves without its units. Units
         // left behind by a failed save belong to ids no meal has, which nothing reads.
-        let itemIDs = templates.map { _ in UUID().uuidString.lowercased() }
+        let itemIDs = book.newItemIDs(count: templates.count)
         var writtenOwners: [(owner: String, component: String)] = []
         let units = journal as? JournalLoggedUnits
         func undoUnitWrites() {

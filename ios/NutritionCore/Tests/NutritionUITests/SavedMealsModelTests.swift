@@ -148,7 +148,9 @@ final class SavedMealsModelTests: XCTestCase {
     }
 
     /// A meal whose units cannot be written is not saved at all, and says so.
-    func testAFailedUnitWriteTakesTheMealBackOut() throws {
+    /// Units are written before the meal, so a failed unit write means no meal is ever written; the test
+    /// checks no meal exists and the entry's own unit row is untouched.
+    func testAFailedUnitWriteSavesNoMeal() throws {
         let inner = try makeJournal()
         let journal = FaultyJournal(inner)
         let intake = Intake(
