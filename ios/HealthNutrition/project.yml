@@ -29,7 +29,7 @@ settings:
     APP_BUNDLE_ID: dev.example.HealthNutrition
     # The marketing version of the app and of its widget extension, one value so they cannot drift (App Store
     # Connect rejects an extension whose version differs from its app). The signed-beta workflow reads this line.
-    MARKETING_VERSION: "0.1.25"
+    MARKETING_VERSION: "0.1.28"
 
 targets:
   HealthNutrition:

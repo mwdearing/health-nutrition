@@ -581,8 +581,9 @@ struct RootView: View {
             if let model = prefill?.model ?? self.addIntakeModel {
                 AddIntakeView(model: model, now: { Date() },
                     onSaved: {
-                        self.saveNotice = SaveNotice(SaveLabels.loggedToDiary)
                         self.finishAdding()
+                        // After finishing, so an earlier product confirmation does not replace this one.
+                        self.saveNotice = SaveNotice(SaveLabels.loggedToDiary)
                     },
                     onScanLabel: home.scannerAvailability.label ? {
                         self.pushLabelScanner(keeping: model)
