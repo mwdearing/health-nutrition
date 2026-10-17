@@ -332,7 +332,7 @@ public final class TodayViewModel: ObservableObject {
             progress = try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
                 displayNames: Self.printedNames(in: snapshots))
-            mealSections = try Self.withMealEnergy(mealSections, intakes: intakes, store: store, lookup: lookup)
+            mealSections = Self.withMealEnergy(mealSections, intakes: intakes, store: store, lookup: lookup)
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
             // A goal switched off on the Goals screen keeps its target and its totals, but no bar.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
@@ -586,27 +586,25 @@ public final class TodayViewModel: ObservableObject {
         !value.isNaN && value > 0
     }
 
-    /// The lines Today shows, one per tracked nutrient and in the order they are tracked.
-    ///
-    /// Throwing rather than swallowing: the totals are built from the same intakes the rows above
-    /// were built from, so a store that cannot be read has already failed the load and there is
-    /// nothing honest left to show.
-    /// Each meal's calories, summed from that meal's own intakes with the same totals builder as the
-    /// day. A meal with any unknown energy shows no figure rather than a partial one.
+    /// Each named meal's calories, summed from that meal's own intakes with the same totals builder as
+    /// the day. A meal with any unknown energy shows no figure rather than a partial one. A meal whose
+    /// totals cannot be read shows no figure too: the header is cosmetic, so it must not fail the load.
+    /// Entries with no meal ("Other") and water are left out.
     private static func withMealEnergy(
         _ sections: [TodayMealSection], intakes: [Intake], store: JournalStore, lookup: NutrientFactsLookup
-    ) throws -> [TodayMealSection] {
+    ) -> [TodayMealSection] {
         let named = MealLabel.allCases.map(\.displayName)
-        return try sections.map { section in
+        return sections.map { section in
             var section = section
+            guard named.contains(section.title) else { return section }
             let mealIntakes = intakes.filter { intake in
                 guard intake.category != DailyTotalsBuilder.waterCategory else { return false }
                 let meal = MealLabel.displayName(for: intake.meal).flatMap { named.contains($0) ? $0 : nil }
-                return (meal ?? "Other") == section.title
+                return meal == section.title
             }
             guard !mealIntakes.isEmpty else { return section }
-            let totals = try DailyTotalsBuilder.totals(
-                for: mealIntakes, store: store, lookup: lookup, nutrients: [energyKey])
+            guard let totals = try? DailyTotalsBuilder.totals(
+                for: mealIntakes, store: store, lookup: lookup, nutrients: [energyKey]) else { return section }
             if let total = totals.total(for: energyKey), !total.coverage.hasUnknown,
                case .known(let kcal, _) = total.value {
                 section.energyKcal = kcal
@@ -614,6 +612,12 @@ public final class TodayViewModel: ObservableObject {
             return section
         }
     }
+
+    /// The lines Today shows, one per tracked nutrient and in the order they are tracked.
+    ///
+    /// Throwing rather than swallowing: the totals are built from the same intakes the rows above
+    /// were built from, so a store that cannot be read has already failed the load and there is
+    /// nothing honest left to show.
 
     private static func progressLines(
         tracked: [String], goals: [NutrientGoal], intakes: [Intake], store: JournalStore,
