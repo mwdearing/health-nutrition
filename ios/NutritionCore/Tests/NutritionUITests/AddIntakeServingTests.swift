@@ -96,4 +96,23 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertTrue(model.unitOptions.contains(.oz))
         XCTAssertTrue(model.unitOptions.contains(.g))
     }
+
+    func testPickOpensOnOneServingInGramsUnderMetric() throws {
+        let model = AddIntakeViewModel(
+            store: try makeStore(), now: now, timeZoneIdentifier: "UTC", lookup: nil,
+            preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        XCTAssertEqual(model.unit, .g)
+        XCTAssertEqual(model.servingCount, "1")
+        // Two ounces is 56.7 grams: the stored mass is the same, shown in the metric unit.
+        let shown = try XCTUnwrap(AmountParser.parse(model.amountText))
+        XCTAssertLessThan(abs(shown - Decimal(string: "56.7")!), Decimal(string: "0.01")!)
+    }
+
+    private func makeStore() throws -> SwiftDataJournalStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+    }
 }
