@@ -681,3 +681,34 @@ public protocol JournalOutboxDelivery: JournalStore {
     /// person has resolved the denial is their decision, not a scheduled run's.
     func rearmDelivery(operationID: String) throws
 }
+
+/// The kind of drink an entry is, used only to prefill its water share when it is logged. The share is
+/// stored on the component, so no drink type is stored. Presets are typical values, editable per entry.
+public enum DrinkType: String, CaseIterable, Sendable {
+    case water, tea, coffee, soda, sportsDrink, juice, milk
+
+    public var displayName: String {
+        switch self {
+        case .water: "Water"
+        case .tea: "Tea"
+        case .coffee: "Coffee"
+        case .soda: "Soda"
+        case .sportsDrink: "Sports drink"
+        case .juice: "Juice"
+        case .milk: "Milk"
+        }
+    }
+
+    /// The water share this type prefills, as a percentage from 0 to 100.
+    public var hydrationPercent: Decimal {
+        switch self {
+        case .water: 100
+        case .tea: 99
+        case .coffee: 98
+        case .soda: 90
+        case .sportsDrink: 92
+        case .juice: 88
+        case .milk: 87
+        }
+    }
+}

@@ -937,6 +937,14 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
     @discardableResult
+    /// The water share of a drink, 0 to 100. Set by picking a drink type (its preset) or edited by hand; a
+    /// drink saves the share it shows, and nil falls back to `defaultDrinkHydrationPercent`.
+    @Published public var waterSharePercent: Decimal? = nil
+    /// The drink type the share was prefilled from. Only the share is stored.
+    @Published public var drinkType: DrinkType? = nil {
+        didSet { if let drinkType { waterSharePercent = drinkType.hydrationPercent } }
+    }
+
     public func save(now: Date) -> Bool {
         hasAttemptedSave = true
         let trimmedName = typedName
@@ -957,7 +965,8 @@ public final class AddIntakeViewModel: ObservableObject {
             componentID: Self.componentID(
                 forFoodNamed: trimmedName, unit: storedUnit,
                 snapshotNutrientKeys: snapshot.map { Array($0.nutrients.keys) } ?? []),
-            name: trimmedName, amount: storedAmount, unit: storedUnit)
+            name: trimmedName, amount: storedAmount, unit: storedUnit,
+            hydrationPercent: kind == .drink ? (waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) : nil)
         // The exclusion is written first: if it fails nothing is saved, and a retry cannot make a second entry.
         let keepsOutOfLibrary = canChooseLibrary && !savesToLibrary
         // A volume typed in a spoon, a cup or fluid ounces is stored as milliliters; the unit it was typed in is

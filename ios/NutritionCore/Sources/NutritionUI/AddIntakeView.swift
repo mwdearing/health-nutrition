@@ -61,6 +61,26 @@ public struct AddIntakeView: View {
                     .pickerStyle(.segmented)
                     .accessibilityLabel("Kind of product")
                     .accessibilityHint("Food, drink or supplement. A supplement is left out of the day's food coverage")
+                    if model.kind == .drink {
+                        Picker("Drink type", selection: $model.drinkType) {
+                            Text("Choose a type").tag(DrinkType?.none)
+                            ForEach(DrinkType.allCases, id: \.self) { type in
+                                Text(type.displayName).tag(DrinkType?.some(type))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Stepper(
+                            value: Binding(
+                                get: { Double(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber) },
+                                set: { model.waterSharePercent = Decimal($0) }),
+                            in: 0...100, step: 5
+                        ) {
+                            Text("Water share \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))%")
+                        }
+                        Text("Counts as \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))% water")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                    }
                     if model.canLookUpBarcode && !model.isCustomProduct {
                         LabeledField("Barcode (optional)") { focus in
                             HStack {
