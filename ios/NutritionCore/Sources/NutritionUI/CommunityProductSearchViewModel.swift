@@ -124,7 +124,7 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
         guard let seconds = retryAfterSeconds else {
             return "Too many product searches just now. Try again in a minute."
         }
-        return "Too many Open Food Facts searches just now. Try again in about \(seconds) second\(seconds == 1 ? "" : "s")."
+        return "Too many product searches just now. Try again in about \(seconds) second\(seconds == 1 ? "" : "s")."
     }
     private func merge(_ page: CommunityProductPage) {
         for product in page.products {
