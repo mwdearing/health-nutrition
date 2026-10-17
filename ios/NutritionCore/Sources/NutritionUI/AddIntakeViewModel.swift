@@ -287,7 +287,10 @@ public final class AddIntakeViewModel: ObservableObject {
     /// dimension it is stated in; a "serving" or a count logged against it saves unknown values for the day.
     public var unitOptions: [MeasureUnit] {
         switch lookedUp?.basis {
-        case .per100g?: return units.filter { $0.dimension == .mass }
+        case .per100g?:
+            // A household volume (cup, tablespoon, teaspoon) totals only where a density is known for the name.
+            let density = densityApplies && IngredientDensityCatalog.match(typedName) != nil
+            return units.filter { $0.dimension == .mass || (density && UnitSelection.typedVolumes.contains($0)) }
         case .per100ml?: return units.filter { $0.dimension == .volume }
         default: return units
         }
@@ -887,7 +890,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Whether the picked product has a serving weight the servings count can use: a mass, given as a
     /// number. A volume or a count serving does not, so the count is not offered for it.
     public var canCountServings: Bool {
-        guard let quantity = servingOption?.quantity, quantity > 0, let servingUnit = servingOption?.unit
+        guard let quantity = servingOption?.quantity, quantity > 0, let servingUnit = servingOption?.unit,
+              lookedUp?.basis != .per100ml
         else { return false }
         return servingUnit.dimension == .mass
     }
@@ -899,8 +903,9 @@ public final class AddIntakeViewModel: ObservableObject {
         isSettingServings = true
         defer { isSettingServings = false }
         guard let count = AmountParser.parseTyped(text) else {
-            // A cleared field clears the amount; a partly typed count ("1.") leaves it until it is complete.
-            if text.trimmingCharacters(in: .whitespaces).isEmpty { amountText = "" }
+            // A cleared field, or a completed zero, clears the amount; a partly typed count ("1.") leaves it.
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || Decimal(string: trimmed, locale: AmountParser.locale) == 0 { amountText = "" }
             return
         }
         amountText = DecimalFormatting.text(count * display.quantity)
