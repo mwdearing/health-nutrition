@@ -174,7 +174,7 @@ public struct AddIntakeView: View {
                 }
             }
             if model.hasPrefilledValues {
-                Section("This adds") {
+                Section(model.thisAddsTitle) {
                     ForEach(model.thisAdds, id: \.key) { line in
                         LabeledContent(line.displayName, value: line.text)
                     }

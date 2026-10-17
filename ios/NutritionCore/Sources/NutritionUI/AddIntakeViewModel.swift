@@ -470,6 +470,14 @@ public final class AddIntakeViewModel: ObservableObject {
     }
 
     /// Recomputed from the same metric components and basis rules used for the saved total.
+    /// The heading over the nutrient list. Once an amount exists it says what the entry adds; before that
+    /// the list shows the product's own values, so it is titled with their basis rather than as an addition.
+    public var thisAddsTitle: String {
+        if AmountParser.parseTyped(amountText) != nil { return "This adds" }
+        guard let label = (lookupBasis ?? lookedUp?.basis)?.label else { return "Imported values" }
+        return label.prefix(1).uppercased() + label.dropFirst()
+    }
+
     public var thisAdds: [ThisAddsLine] {
         guard hasPrefilledValues else { return [] }
         // Until a usable amount exists, the imported values stand as the product states them, so the
