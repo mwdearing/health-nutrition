@@ -1331,14 +1331,20 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
             }
-            // No product passed means the caller could not read the product row, or there is none. The
-            // link the entry already has is carried forward rather than cleared, so an edit never drops it.
+            // No product passed. When the previous revision's product row is still there, the caller simply
+            // has no product to give and the link is cleared. When that row is missing, the caller could not
+            // read it, so the link is carried forward rather than dropped.
             let previousNumber = record.currentRevision
             var carriedSnapshotID: String?
             if product == nil {
                 let previousRows = try context.fetch(FetchDescriptor<RevisionRecord>(
                     predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == previousNumber }))
-                carriedSnapshotID = previousRows.first?.productSnapshotID
+                if let linked = previousRows.first?.productSnapshotID {
+                    let linkedID = linked
+                    let productRows = try context.fetch(FetchDescriptor<ProductRecord>(
+                        predicate: #Predicate<ProductRecord> { $0.snapshotID == linkedID }))
+                    if productRows.isEmpty { carriedSnapshotID = linked }
+                }
             }
             let number = record.currentRevision + 1
             record.currentRevision = number

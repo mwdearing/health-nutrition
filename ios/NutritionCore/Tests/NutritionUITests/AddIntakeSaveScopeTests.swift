@@ -187,19 +187,18 @@ final class LibraryChoiceExportTests: XCTestCase {
         XCTAssertEqual(copy.note, "after the run")
     }
 
-    /// An edit that passes no product keeps the product link the entry already had; it is not dropped.
-    func testEditWithoutAProductKeepsTheLink() throws {
+    /// An edit that passes no product clears the link when the product row is still there: nothing was
+    /// unreadable, so no link is kept behind the caller's back.
+    func testEditWithoutAProductClearsALinkWhoseProductIsStillStored() throws {
         let id = UUID().uuidString.lowercased()
         let store = try makeStore()
         try logBar(store, id: id)
-        let first = try XCTUnwrap(try store.revisions(of: id).first { $0.number == 1 })
-        let snapshot = try XCTUnwrap(first.productSnapshotID)
         _ = try store.edit(
             intakeID: id,
             components: [IntakeComponent(componentID: "example-bar", name: "Example bar", amount: 2, unit: .g)],
             product: nil, changeReason: "Amount changed", now: when, occurredAt: nil, timeZoneIdentifier: nil)
         let second = try XCTUnwrap(try store.revisions(of: id).first { $0.number == 2 })
-        XCTAssertEqual(second.productSnapshotID, snapshot)
+        XCTAssertNil(second.productSnapshotID)
     }
 
     /// Repeating an entry kept out of Library keeps the copy out of Library too.
