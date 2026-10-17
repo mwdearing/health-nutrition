@@ -44,7 +44,15 @@ public enum OutsideIntakeTotals {
             }) else {
                 continue
             }
-            guard let converted = try? Quantity(value: sample.value, unit: sample.unit).converted(to: mapping.unit) else {
+            // An IU sample with a fixed conversion (vitamin D) is restated the way the writer restates it.
+            var value = sample.value
+            var unit = sample.unit
+            if unit == .iu {
+                guard let factor = mapping.amountPerInternationalUnit else { continue }
+                value *= factor
+                unit = mapping.unit
+            }
+            guard let converted = try? Quantity(value: value, unit: unit).converted(to: mapping.unit) else {
                 continue
             }
             totals[mapping.nutrientKey, default: 0] += converted.value

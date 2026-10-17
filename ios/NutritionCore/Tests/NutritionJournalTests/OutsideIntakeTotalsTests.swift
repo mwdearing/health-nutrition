@@ -40,13 +40,12 @@ final class OutsideIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(totals["water"], 1000)
     }
 
-    func testVitaminDInIUIsNotCountedAsMicrograms() {
-        // HealthKit stores vitamin D in micrograms; an IU sample that cannot be converted is skipped
-        // rather than added as a raw number.
+    func testVitaminDInIUIsRestatedInMicrograms() {
+        // 400 IU of vitamin D is 10 mcg (0.025 mcg per IU), the same restatement the writer applies.
         let totals = OutsideIntakeTotals.totals(from: [
             sample(vitaminD, 400, .iu),
         ])
-        XCTAssertNil(totals["vitaminD"])
+        XCTAssertEqual(totals["vitaminD"], 10)
     }
 
     func testUnmappedTypesAndUnconvertibleUnitsAddNothing() {
