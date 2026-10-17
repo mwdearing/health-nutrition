@@ -10,10 +10,21 @@ final class WatchSnapshotTests: XCTestCase {
         struct Refused: Error {}
         var canSend = true
         var fails = false
-        private(set) var sent: [[String: Any]] = []
+        /// Makes each send slow, so concurrent sends overlap.
+        var delay: TimeInterval = 0
+        private let lock = NSLock()
+        private var all: [[String: Any]] = []
+        var sent: [[String: Any]] {
+            lock.lock()
+            defer { lock.unlock() }
+            return all
+        }
         func send(context: [String: Any]) throws {
             if fails { throw Refused() }
-            sent.append(context)
+            if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+            lock.lock()
+            all.append(context)
+            lock.unlock()
         }
         var lastEnvelope: WatchSnapshotEnvelope? {
             guard let last = sent.last, case .envelope(let envelope) = WatchSnapshotEnvelope.decode(context: last)
@@ -144,6 +155,25 @@ final class WatchSnapshotTests: XCTestCase {
         transport.fails = false
         sender.transportBecameReady()
         XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 1)
+    }
+
+    func testConcurrentSubmissionsNeverLeaveAnOlderEnvelopeLast() {
+        for _ in 0..<20 {
+            let transport = FakeTransport()
+            transport.delay = 0.01
+            let sender = WatchSnapshotSender(transport: transport)
+            let group = DispatchGroup()
+            DispatchQueue.global().async(group: group) {
+                sender.submit(WatchSnapshotEnvelope(eraseGeneration: 0, snapshot: self.sample()))
+            }
+            DispatchQueue.global().async(group: group) {
+                sender.erased(generation: 1)
+            }
+            group.wait()
+            // Whatever the interleaving, the last context the Watch was handed is the erase.
+            XCTAssertEqual(transport.lastEnvelope?.eraseGeneration, 1)
+            XCTAssertNil(transport.lastEnvelope?.snapshot)
+        }
     }
 
     func testNothingIsSentWithoutATransport() {

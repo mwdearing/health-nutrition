@@ -8,6 +8,9 @@ final class WatchSnapshotSender: @unchecked Sendable {
 
     private let transport: WatchSnapshotTransport?
     private let lock = NSLock()
+    /// Held across a whole flush (read the held envelope, send it, clear it), so two flushes on different threads
+    /// cannot send out of order and leave the Watch with an older context than the latest one submitted.
+    private let sendLock = NSLock()
     private var pending: WatchSnapshotEnvelope?
 
     init(transport: WatchSnapshotTransport?) {
@@ -38,7 +41,10 @@ final class WatchSnapshotSender: @unchecked Sendable {
     }
 
     private func flush() {
-        guard let transport, transport.canSend else { return }
+        guard let transport else { return }
+        sendLock.lock()
+        defer { sendLock.unlock() }
+        guard transport.canSend else { return }
         lock.lock()
         let envelope = pending
         lock.unlock()
