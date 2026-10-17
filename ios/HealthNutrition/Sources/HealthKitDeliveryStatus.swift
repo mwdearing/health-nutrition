@@ -195,9 +195,9 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
 
     // MARK: - Actions
 
-    /// Asks HealthKit for write access to every type in the planner's mapping table, and for no read
-    /// access at all: the writer only ever saves and deletes its own samples, so nothing here needs to
-    /// read anything out of Health.
+    /// Asks HealthKit for write access to every type in the planner's mapping table, and for read access
+    /// to the same nutrient types, so the totals include what other apps logged to Health. Read access
+    /// is requested here, in the Connect step, and the reader is the only thing that uses it.
     ///
     /// The types come from `HealthKitWritePlanner.mappings` rather than from a list written here, so a
     /// row added to the table is requested too. An identifier HealthKit does not know is named on
@@ -226,8 +226,8 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
         do {
             // The async request returns nothing: it completes once the sheet is done and HealthKit
             // deliberately never says which types were granted.
-            try await healthStore.requestAuthorization(toShare: mapped.share, read: [])
-            var summary = "requested write access for \(mapped.share.count) mapped type(s), no read access"
+            try await healthStore.requestAuthorization(toShare: mapped.share, read: mapped.read)
+            var summary = "requested write and read access for \(mapped.share.count) nutrient type(s)"
             if !mapped.unresolved.isEmpty {
                 summary += "; HealthKit does not know \(mapped.unresolved.sorted().joined(separator: ", "))"
             }
