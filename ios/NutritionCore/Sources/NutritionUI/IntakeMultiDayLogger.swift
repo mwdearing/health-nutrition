@@ -126,9 +126,10 @@ public struct IntakeMultiDayLogger {
                 skipped.append(MultiDaySkippedDay(day: day.key, reason: day.key == today ? .laterToday : .future))
                 continue
             }
-            let copy = Intake(
+            var copy = Intake(
                 id: makeID(), category: intake.category, occurredAt: occurredAt,
                 timeZoneIdentifier: intake.timeZoneIdentifier, meal: intake.meal)
+            copy.note = intake.note
             var writtenUnits: [String] = []
             do {
                 if keepsOut { try (store as? JournalLibraryExclusions)?.keepOutOfLibrary(intakeID: copy.id) }

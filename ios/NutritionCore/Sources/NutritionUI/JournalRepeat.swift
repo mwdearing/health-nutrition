@@ -61,7 +61,7 @@ struct IntakeRepeater {
     }
 
     @discardableResult
-    func create(from template: RepeatTemplate, now: Date, keepOutOfLibrary: Bool = false) throws -> String {
+    func create(from template: RepeatTemplate, now: Date, keepOutOfLibrary: Bool = false, note: String? = nil) throws -> String {
         var product: ProductDefinition?
         if let snapshotID = template.productSnapshotID {
             guard let found = try store.product(snapshotID: snapshotID) else {
@@ -69,9 +69,10 @@ struct IntakeRepeater {
             }
             product = found
         }
-        let intake = Intake(
+        var intake = Intake(
             id: makeID(), category: template.category, occurredAt: now,
             timeZoneIdentifier: timeZoneProvider(), meal: template.meal)
+        intake.note = note
         // The units the original was logged in are carried over, written first like the other per-entry choices.
         if let units = store as? JournalLoggedUnits {
             for component in template.components where component.unit == .mL {
@@ -104,7 +105,8 @@ struct IntakeRepeater {
             productSnapshotID: current.productSnapshotID,
             loggedUnits: LoggedUnitIndex.load(from: store)[intake.id] ?? [:])
         let excluded = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary() ?? []
-        return try create(from: template, now: now, keepOutOfLibrary: excluded.contains(intake.id))
+        return try create(
+            from: template, now: now, keepOutOfLibrary: excluded.contains(intake.id), note: intake.note)
     }
 }
 
