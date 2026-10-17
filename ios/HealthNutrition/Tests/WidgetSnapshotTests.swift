@@ -30,6 +30,16 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(widgets, app)
     }
 
+    func testTheWatchAppAndItsWidgetsResolveToTheSameGroupAsThePhoneApp() {
+        let app = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.HealthNutrition", isExtension: false)
+        let watch = WidgetAppGroup.identifier(
+            forBundleIdentifier: "dev.example.HealthNutrition.watchkitapp", isExtension: false, isWatch: true)
+        let watchWidgets = WidgetAppGroup.identifier(
+            forBundleIdentifier: "dev.example.HealthNutrition.watchkitapp.widgets", isExtension: true, isWatch: true)
+        XCTAssertEqual(watch, app)
+        XCTAssertEqual(watchWidgets, app)
+    }
+
     func testAnAppIdentifierThatEndsInWidgetsKeepsItInTheAppAndLosesOnlyTheExtensionsOwnSuffix() {
         let app = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.nutrition.widgets", isExtension: false)
         let widgets = WidgetAppGroup.identifier(
