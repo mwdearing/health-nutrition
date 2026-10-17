@@ -82,6 +82,15 @@ leaves the device, so there is nothing to declare; the app's manifest declares n
 reads one small summary file from the App Group container and has no network access, no preferences and no clock
 measurement. The summary file is left out of device backups and is cleared on erase (see [Widgets](widgets.md)).
 
+## The Watch app and its widgets
+
+The Watch app and the Watch widget extension each ship their own manifest (`Watch/PrivacyInfo.xcprivacy`,
+`WatchWidgets/PrivacyInfo.xcprivacy`). Neither collects data and tracking is `false`: the summary comes from the
+paired phone and stays on the Watch. The widget extension declares no required-reason APIs, like the phone's. The
+Watch app declares `UserDefaults` with reason `CA92.1` because it keeps one number there, the highest erase
+generation it has applied, for its own function. The receiver that uses it is compiled into the Watch app and the
+phone app but not into either widget extension, which is pinned by a repo test.
+
 ## Keeping it honest
 
 `scripts/check_privacy_manifest.py` scans the Swift code the app actually ships

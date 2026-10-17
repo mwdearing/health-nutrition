@@ -102,6 +102,7 @@ final class WatchSnapshotTests: XCTestCase {
     // MARK: Sender
 
     private final class MemoryState: WatchSenderState, @unchecked Sendable {
+        var epoch = "test-epoch"
         var eraseGeneration = 0
         var deliveredGeneration = 0
     }
@@ -199,6 +200,13 @@ final class WatchSnapshotTests: XCTestCase {
         let relaunched = WatchSnapshotSender(transport: second, state: state)
         relaunched.resumeAfterLaunch()
         XCTAssertTrue(second.sent.isEmpty)
+    }
+
+    func testEveryEnvelopeNamesTheInstall() {
+        let transport = FakeTransport()
+        let sender = WatchSnapshotSender(transport: transport, state: MemoryState())
+        sender.submit(sample(), erasureGeneration: 0)
+        XCTAssertEqual(transport.lastEnvelope?.epoch, "test-epoch")
     }
 
     func testTheEraseGenerationOnlyGoesUpAcrossRelaunches() {

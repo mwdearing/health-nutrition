@@ -67,8 +67,29 @@ app was closed is sent first at the next launch. A summary from a load that bega
 by the sender under the same lock the erase takes, so it can never replace the erase. Sends are serialized. A decoder tolerates unknown
 fields; an unknown `schemaVersion`, a malformed payload or one over 4 KB decodes to "invalid" and is shown as dashes.
 The real session sits behind `WatchSnapshotTransport` so everything above it is unit-tested with a fake, because
-WatchConnectivity does not exist on the platform the package tests build on. The Watch app that receives and shows
-the summary is a separate change.
+WatchConnectivity does not exist on the platform the package tests build on.
+
+## The Watch app and Watch widgets
+
+`HealthNutritionWatch` (watchOS 11, embedded in the phone app; identifier `<bundle>.watchkitapp`) receives the
+envelope, applies it with `WatchSnapshotReceiver` and shows today's figures. It has no feature of its own and logs
+nothing. It keeps the summary in its own App Group container (`group.<bundle>`, the same name as the phone's; each
+device has its own container) using the same store, so the Watch widgets read it the way the phone's do.
+`HealthNutritionWatchWidgets` (`<bundle>.watchkitapp.widgets`, embedded in the Watch app) offers circular,
+rectangular, corner and inline complications and a Smart Stack card whose relevance rises around the usual meal
+times; its timeline carries an entry at the next midnight that shows dashes.
+
+The receiver ignores an envelope below the highest erase generation it has applied (kept across launches), stores an
+empty day for the erase, and removes the stored summary for an unknown schema version, a malformed or an oversized
+payload so the widgets show dashes. Delivery is background and budgeted by the system: the complication updates after
+the phone app has run and the system has delivered, and the phone widget has the same limit.
+
+Device check on a paired Apple Watch (signed build): the complication shows today's totals after the phone app opens
+once; locked Watch (confirm which figures show, then add the sentence to PRIVACY.md only if confirmed); after Erase all
+data on the phone the Watch reads "Nothing logged today", and with the Watch off during the erase it clears on
+reconnect; airplane mode during a log, then back online, the figures catch up; after midnight with the phone app
+closed it shows dashes; unpair and re-pair leaves no stale data; a Watch app one schema version behind the phone
+shows dashes and does not crash.
 
 Not built yet: a water button on the widget or Lock Screen (it needs the Log water intent split from the app's
 services so it can run from the extension), and configuration options.
