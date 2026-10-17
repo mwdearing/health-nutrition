@@ -63,4 +63,21 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertEqual(model.amountPreview?.kcal, Decimal(100))
         XCTAssertNil(model.amountPreview?.protein, "a nutrient the source did not give is unknown")
     }
+
+    func testThisAddsShowsImportedValuesBeforeAnAmountExists() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: nil))
+        model.amountText = ""
+        let lines = model.thisAdds
+        XCTAssertTrue(lines.contains { $0.key == LookedUpProduct.energyKcal && !$0.cannotScale })
+        XCTAssertFalse(lines.contains { $0.cannotScale }, "an empty amount never reads as can't be worked out")
+    }
+
+    func testOunceAmountScalesThroughGrams() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
+        XCTAssertNotNil(energy)
+        XCTAssertEqual(energy?.cannotScale, false)
+    }
 }

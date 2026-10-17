@@ -471,9 +471,20 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// Recomputed from the same metric components and basis rules used for the saved total.
     public var thisAdds: [ThisAddsLine] {
-        guard hasPrefilledValues, let amount = AmountParser.parseTyped(amountText),
+        guard hasPrefilledValues else { return [] }
+        // Until a usable amount exists, the imported values stand as the product states them, so the
+        // section never shows a column of "can't be worked out" for an empty field.
+        guard let amount = AmountParser.parseTyped(amountText),
             let basis = lookedUp?.labelBasis ?? prefilledProduct?.labelBasis
-        else { return [] }
+        else {
+            return Self.thisAddsKeys.compactMap { key in
+                let value = self.prefilledValue(for: key)
+                guard value != .unknown else { return nil }
+                return ThisAddsLine(
+                    key: key, displayName: LookedUpProduct.displayNames[key] ?? NutrientNames.displayName(for: key),
+                    value: value, cannotScale: false)
+            }
+        }
         let stored = storedQuantity(amount: amount, unit: unit, name: typedName)
         let components = [IntakeComponent(
             componentID: Self.componentID(forFoodNamed: typedName, unit: stored.unit),
