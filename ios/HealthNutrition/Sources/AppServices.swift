@@ -68,7 +68,7 @@ final class AppServices {
     /// same builds as `account`, and then no catalog call is made.
     let community: CommunityClient?
     let productService: (any CommunityProductServicing)?
-    /// Open Food Facts name search for Find products. Nil in builds that make no network calls at all.
+    /// Name search for Find products over USDA and Open Food Facts. Nil in builds that make no network calls at all.
     var productNameSearch: (any ProductNameSearching)? = nil
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
@@ -175,7 +175,12 @@ final class AppServices {
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
-        productNameSearch = openFoodFacts
+        // USDA FoodData Central joins name search when the build carries a key; without one, search is
+        // Open Food Facts alone, as before.
+        let usdaKey = (Bundle.main.object(forInfoDictionaryKey: "USDA_FDC_API_KEY") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let usda = usdaKey.flatMap { $0.isEmpty ? nil : USDAProductNameSearch(client: USDAFoodDataClient(apiKey: $0)) }
+        productNameSearch = FoodDatabaseSearch(openFoodFacts: openFoodFacts, usda: usda)
         let totals = JournalSnapshotTotals(store: journalStore)
         let healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,

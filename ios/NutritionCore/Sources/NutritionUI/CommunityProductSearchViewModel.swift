@@ -122,7 +122,7 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
     /// per-minute cap on searches, so the text names the person's searches and not the source.
     public static func openFoodFactsLimitText(retryAfterSeconds: Int?) -> String {
         guard let seconds = retryAfterSeconds else {
-            return "Too many Open Food Facts searches just now. Try again in a minute."
+            return "Too many product searches just now. Try again in a minute."
         }
         return "Too many Open Food Facts searches just now. Try again in about \(seconds) second\(seconds == 1 ? "" : "s")."
     }

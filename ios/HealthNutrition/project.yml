@@ -75,6 +75,7 @@ targets:
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
         HCAPTCHA_SITE_KEY: "$(HCAPTCHA_SITE_KEY)"
+        USDA_FDC_API_KEY: "$(USDA_FDC_API_KEY)"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(APP_BUNDLE_ID)"

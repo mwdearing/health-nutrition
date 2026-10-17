@@ -46,7 +46,7 @@ public struct AddHomeView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Self.searchRowTitle)
-                    .accessibilityHint("Opens product search on this phone, Open Food Facts and shared foods.")
+                    .accessibilityHint("Opens product search on this phone, public food databases and shared foods.")
                 }
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
