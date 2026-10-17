@@ -132,6 +132,11 @@ class Archive:
             groups = ["group.other"]
         if changes.get("no_widget_profile"):
             widget_profile = False
+        if changes.get("bad_widget_id"):
+            widget_id = f"{BUNDLE}.watchkitapp.other"
+        widget_groups = [GROUP, "group.extra"] if changes.get("widget_two_groups") else None
+        if changes.get("widget_wrong_group"):
+            widget_groups = ["group.other"]
         _bundle(
             watch,
             app_id,
@@ -148,6 +153,7 @@ class Archive:
                 widget_id,
                 point=point,
                 profile=widget_profile,
+                groups=widget_groups,
                 build=str(changes.get("widget_build", "136")),
                 extra=cast("dict[str, object]", changes.get("widget_info", {})),
             )
@@ -258,6 +264,9 @@ WATCH_CASES = [
     ({"watch_info": {"CFBundleShortVersionString": "9.9.9"}}, "Watch app version matches the iPhone app"),
     ({"widget_build": "99"}, "Watch widget build number matches the iPhone app"),
     ({"widget_info": {"CFBundleShortVersionString": "9.9.9"}}, "Watch widget version matches the iPhone app"),
+    ({"bad_widget_id": True}, "Watch widget bundle id is the app's id plus .watchkitapp.widgets"),
+    ({"widget_wrong_group": True}, "HealthNutritionWatchWidgets.appex's first App Group is the app's group"),
+    ({"widget_two_groups": True}, "HealthNutritionWatchWidgets.appex lists exactly one App Group"),
     ({"no_widget": True}, "the Watch app embeds PlugIns/HealthNutritionWatchWidgets.appex"),
     ({"renamed": True}, "the Watch app is HealthNutritionWatch.app"),
     ({"two_apps": True}, "the archive has exactly one Watch app"),
@@ -275,7 +284,7 @@ def test_a_wrongly_built_watch_app_fails_on_exactly_its_check(archive: Archive, 
 
 def test_the_output_never_contains_the_bundle_id(archive: Archive) -> None:
     archive.project_yml("      - target: HealthNutritionWatch\n")
-    for change in ({}, {"bad_id": True}, {"two_groups": True}):
+    for change in ({}, {"bad_id": True}, {"two_groups": True}, {"wrong_group": True}, {"widget_wrong_group": True}):
         archive.add_watch(**change)
         result = archive.run()
         assert BUNDLE not in result.stdout + result.stderr
