@@ -103,7 +103,7 @@ final class WatchSnapshotTests: XCTestCase {
 
     private final class MemoryState: WatchSenderState, @unchecked Sendable {
         var eraseGeneration = 0
-        var eraseUnsent = false
+        var deliveredGeneration = 0
     }
 
     func testASummaryIsSentWhenTheSessionCanSend() {
@@ -181,6 +181,24 @@ final class WatchSnapshotTests: XCTestCase {
         XCTAssertNil(second.lastEnvelope?.snapshot)
         XCTAssertEqual(second.lastEnvelope?.eraseGeneration, 1)
         XCTAssertFalse(state.eraseUnsent, "cleared once the Watch has been handed it")
+    }
+
+    func testAPostEraseSummaryThatReplacesAHeldEraseCountsAsDeliveringIt() {
+        let state = MemoryState()
+        let first = FakeTransport()
+        first.canSend = false
+        let sender = WatchSnapshotSender(transport: first, state: state)
+        sender.erased(erasureGeneration: 1)
+        sender.submit(sample(), erasureGeneration: 1)  // a load after the erase replaces the held empty envelope
+        first.canSend = true
+        sender.transportBecameReady()
+        XCTAssertEqual(first.lastEnvelope?.eraseGeneration, 1)
+        XCTAssertFalse(state.eraseUnsent)
+        // After a relaunch nothing is re-sent, so the correct post-erase summary is not blanked.
+        let second = FakeTransport()
+        let relaunched = WatchSnapshotSender(transport: second, state: state)
+        relaunched.resumeAfterLaunch()
+        XCTAssertTrue(second.sent.isEmpty)
     }
 
     func testTheEraseGenerationOnlyGoesUpAcrossRelaunches() {

@@ -1,11 +1,16 @@
 import Foundation
 
 /// What survives a relaunch of the app about the Watch: the erase generation (it must only ever go up, because the
-/// Watch drops anything below the highest it has seen) and whether the last erase has reached the Watch yet. Two
-/// numbers, no figures.
+/// Watch drops anything below the highest it has seen) and the newest generation the Watch has been handed a context
+/// for. An erase has not reached the Watch while the first is ahead of the second; there is no separate flag to get
+/// out of step with the generation. Two numbers, no figures.
 protocol WatchSenderState: AnyObject, Sendable {
     var eraseGeneration: Int { get set }
-    var eraseUnsent: Bool { get set }
+    var deliveredGeneration: Int { get set }
+}
+
+extension WatchSenderState {
+    var eraseUnsent: Bool { eraseGeneration > deliveredGeneration }
 }
 
 /// Kept in the app's own defaults under keys of its own. Erase all data clears the stores it knows by key, never
@@ -13,7 +18,7 @@ protocol WatchSenderState: AnyObject, Sendable {
 final class UserDefaultsWatchSenderState: WatchSenderState, @unchecked Sendable {
     private let defaults: UserDefaults
     private static let generationKey = "watchSnapshot.eraseGeneration"
-    private static let unsentKey = "watchSnapshot.eraseUnsent"
+    private static let deliveredKey = "watchSnapshot.deliveredGeneration"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -24,9 +29,9 @@ final class UserDefaultsWatchSenderState: WatchSenderState, @unchecked Sendable 
         set { defaults.set(newValue, forKey: Self.generationKey) }
     }
 
-    var eraseUnsent: Bool {
-        get { defaults.bool(forKey: Self.unsentKey) }
-        set { defaults.set(newValue, forKey: Self.unsentKey) }
+    var deliveredGeneration: Int {
+        get { defaults.integer(forKey: Self.deliveredKey) }
+        set { defaults.set(newValue, forKey: Self.deliveredKey) }
     }
 }
 
@@ -73,7 +78,6 @@ final class WatchSnapshotSender: @unchecked Sendable {
         lock.lock()
         highestErasure = max(highestErasure, erasureGeneration)
         state.eraseGeneration += 1
-        state.eraseUnsent = true
         pending = WatchSnapshotEnvelope(eraseGeneration: state.eraseGeneration, snapshot: nil)
         lock.unlock()
         flush()
@@ -108,7 +112,9 @@ final class WatchSnapshotSender: @unchecked Sendable {
             lock.lock()
             // Only clear what was sent: a newer envelope submitted meanwhile stays held.
             if pending == envelope { pending = nil }
-            if envelope.snapshot == nil, envelope.eraseGeneration == state.eraseGeneration { state.eraseUnsent = false }
+            // Any context under the current generation replaces what the Watch held before the erase, an empty
+            // one or a summary from after it alike.
+            state.deliveredGeneration = max(state.deliveredGeneration, envelope.eraseGeneration)
             lock.unlock()
         } catch {
             // Kept for the next flush; the app does not depend on this send.

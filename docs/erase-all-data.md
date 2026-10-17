@@ -57,7 +57,7 @@ folder's summary has been emptied.
 A paired Apple Watch is handed the same summary (see [Widgets](widgets.md)). Erase all data also replaces what the
 phone last sent the Watch with an empty envelope under a new erase generation; if the Watch connection is not yet
 active the empty envelope is held and sent on activation, and an erase not yet delivered when the app is closed is
-remembered (the generation and a flag, no figures) and sent at the next launch. The system delivers it when the Watch is next reachable,
+remembered (two numbers, no figures) and sent at the next launch. The system delivers it when the Watch is next reachable,
 so a Watch that is off or away during the erase keeps its copy until then, limited to the rest of the same day
 because a summary from an earlier day shows dashes.
 

@@ -62,7 +62,7 @@ WatchConnectivity's application context (latest value wins, device to device, no
 (`WatchSnapshotSender`) runs right after the summary is written, with the publisher's gates, and only when the
 session is active, a Watch is paired and the Watch app is installed; otherwise the latest envelope is held and sent
 on activation. The erase generation is kept across launches (two numbers in the app's defaults: the generation and
-whether the last erase has reached the Watch), so it only ever goes up and an erase that was not delivered before the
+the newest generation the Watch has been handed), so it only ever goes up and an erase that was not delivered before the
 app was closed is sent first at the next launch. A summary from a load that began before the latest erase is dropped
 by the sender under the same lock the erase takes, so it can never replace the erase. Sends are serialized. A decoder tolerates unknown
 fields; an unknown `schemaVersion`, a malformed payload or one over 4 KB decodes to "invalid" and is shown as dashes.
