@@ -50,6 +50,18 @@ struct MacroSplitSection: View {
                     .foregroundStyle(TokenColors.textSecondary)
             }
         }
+        .onAppear { self.showStoredSplit() }
+        // Any save on the screen, the setup sheet's included, may change the gram goals the fields describe.
+        .onChange(of: self.model.savedSerial) { _, _ in self.showStoredSplit() }
+    }
+
+    /// Puts the stored split in the three fields, so the percentages the summary line shows are the ones
+    /// the fields hold and can be applied again without retyping.
+    private func showStoredSplit() {
+        guard let current = self.model.currentMacroPercents() else { return }
+        self.proteinText = DecimalFormatting.text(current.protein)
+        self.carbohydrateText = DecimalFormatting.text(current.carbohydrate)
+        self.fatText = DecimalFormatting.text(current.fat)
     }
 
     private var isEmpty: Bool {

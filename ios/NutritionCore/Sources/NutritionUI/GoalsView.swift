@@ -6,7 +6,7 @@ public struct GoalsView: View {
     @ObservedObject var model: GoalsViewModel
     @FocusState private var focusedNutrient: String?
     @State private var showingClearConfirmation = false
-    @State private var showingSetup = false
+    /// The sheet's presence and its model are one state, so the sheet cannot appear before its content has a model.
     @State private var setupModel: GoalSetupViewModel?
     @State private var saveNotice: SaveNotice?
 
@@ -22,7 +22,6 @@ public struct GoalsView: View {
                     .foregroundStyle(TokenColors.textSecondary)
                 Button("Help me set my goals") {
                     self.setupModel = GoalSetupViewModel(goals: self.model)
-                    self.showingSetup = true
                 }
             }
             MacroSplitSection(model: model)
@@ -64,14 +63,12 @@ public struct GoalsView: View {
         .onChange(of: focusedNutrient) { previous, _ in
             if let previous { self.model.commitTarget(for: previous) }
         }
-        .sheet(isPresented: $showingSetup, onDismiss: {
+        .sheet(item: $setupModel, onDismiss: {
             self.setupModel?.clearAnswers()
             self.setupModel = nil
-        }) {
-            if let setupModel {
-                NavigationStack {
-                    GoalSetupView(model: setupModel, onSaved: { self.saveNotice = SaveNotice(SaveLabels.goalsSaved) })
-                }
+        }) { setupModel in
+            NavigationStack {
+                GoalSetupView(model: setupModel, onSaved: { self.saveNotice = SaveNotice(SaveLabels.goalsSaved) })
             }
         }
         .confirmationDialog("Clear all goals?", isPresented: $showingClearConfirmation, titleVisibility: .visible) {
