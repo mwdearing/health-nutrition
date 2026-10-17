@@ -1331,6 +1331,21 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
             }
+            // No product passed. When the previous revision's product row is still stored, the caller simply has
+            // no product to give and the link is cleared. When that row is missing, the caller could not read it,
+            // so the link is carried forward rather than dropped.
+            let previousNumber = record.currentRevision
+            var carriedSnapshotID: String?
+            if product == nil {
+                let previousRows = try context.fetch(FetchDescriptor<RevisionRecord>(
+                    predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == previousNumber }))
+                if let linked = previousRows.first?.productSnapshotID {
+                    let linkedID = linked
+                    let productRows = try context.fetch(FetchDescriptor<ProductRecord>(
+                        predicate: #Predicate<ProductRecord> { $0.snapshotID == linkedID }))
+                    if productRows.isEmpty { carriedSnapshotID = linked }
+                }
+            }
             let number = record.currentRevision + 1
             record.currentRevision = number
             // The corrected time moves the entry's own row, in the same save as the revision that
@@ -1345,7 +1360,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             return try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
                 product: product, changeReason: changeReason, now: now,
-                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
+                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context,
+                carriedSnapshotID: carriedSnapshotID)
         }
     }
 
@@ -1373,13 +1389,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             }
             let components = try Self.decode(previous.componentsJSON)
             var product: ProductDefinition?
+            var carriedSnapshotID: String?
             if let snapshotID = previous.productSnapshotID {
                 let productRows = try context.fetch(FetchDescriptor<ProductRecord>(
                     predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
-                guard let productRow = productRows.first else {
-                    throw JournalError.corruptRecord("product")
+                if let productRow = productRows.first {
+                    product = Self.snapshot(from: productRow)
+                } else {
+                    // The product row is missing: keep the link as the entry has it, as an amount edit does.
+                    carriedSnapshotID = snapshotID
                 }
-                product = Self.snapshot(from: productRow)
             }
             let number = current + 1
             record.meal = stored
@@ -1388,7 +1407,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             return try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: previous.componentsJSON,
                 components: components, product: product, changeReason: "Meal changed", now: now,
-                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
+                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context,
+                carriedSnapshotID: carriedSnapshotID)
         }
     }
 
@@ -2018,21 +2038,22 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private func appendRevision(
         intakeID: String, number: Int, componentsJSON: String, components: [IntakeComponent],
         product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date,
-        timeZoneIdentifier: String, context: ModelContext
+        timeZoneIdentifier: String, context: ModelContext, carriedSnapshotID: String? = nil
     ) throws -> IntakeRevision {
         if let product {
             try Self.insertSnapshot(product, in: context)
         }
+        let snapshotID = product?.snapshotID ?? carriedSnapshotID
         context.insert(RevisionRecord(
             intakeID: intakeID, number: number, componentsJSON: componentsJSON,
-            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now,
+            productSnapshotID: snapshotID, changeReason: changeReason, createdAt: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier))
-        let payload = "\(intakeID):\(number):\(product?.snapshotID ?? "")"
+        let payload = "\(intakeID):\(number):\(snapshotID ?? "")"
             + ":\(IntakeContextTimestamp.utc(occurredAt)):\(timeZoneIdentifier):\(componentsJSON)"
         queueWork(intakeID: intakeID, revision: number, kind: .upsert, payload: payload, context: context)
         return IntakeRevision(
             intakeID: intakeID, number: number, components: components,
-            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now,
+            productSnapshotID: snapshotID, changeReason: changeReason, createdAt: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
 
