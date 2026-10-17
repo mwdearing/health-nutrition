@@ -60,4 +60,23 @@ final class MacroSplitTests: XCTestCase {
         XCTAssertNil(
             MacroSplit.percents(ofEnergyKcal: 0, grams: MacroSplit.Grams(protein: 1, carbohydrate: 1, fat: 1)))
     }
+
+    func testRoundingAloneNeverLeavesTheShownPercentsShortOfHundred() throws {
+        // 102 * 4 = 408 -> 20.4%, 252 * 4 = 1008 -> 50.4%, 65 * 9 = 585 -> 29.25%. Plain rounding shows
+        // 20, 50, 29 (99). The exact shares total 100.05, so the missing point goes to the largest remainder,
+        // the tied 0.4s going to the earlier share.
+        let percents = try XCTUnwrap(
+            MacroSplit.percents(
+                ofEnergyKcal: 2000, grams: MacroSplit.Grams(protein: 102, carbohydrate: 252, fat: 65)))
+        XCTAssertEqual(percents, MacroSplit.Grams(protein: 21, carbohydrate: 50, fat: 29))
+        XCTAssertEqual(percents.protein + percents.carbohydrate + percents.fat, 100)
+    }
+
+    func testSharesThatAreFarFromHundredKeepTheirPlainRounding() throws {
+        // 100 * 4 = 400 -> 20%, 100 * 4 = 400 -> 20%, 100 * 9 = 900 -> 45%: a total of 85 is not rounding.
+        let percents = try XCTUnwrap(
+            MacroSplit.percents(
+                ofEnergyKcal: 2000, grams: MacroSplit.Grams(protein: 100, carbohydrate: 100, fat: 100)))
+        XCTAssertEqual(percents, MacroSplit.Grams(protein: 20, carbohydrate: 20, fat: 45))
+    }
 }

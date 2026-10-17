@@ -20,7 +20,9 @@ public struct GoalPaceOption: Sendable, Equatable {
 /// nothing in this type writes an answer anywhere: the only thing saved is a target a person keeps, and
 /// that goes through `GoalsViewModel` like any target typed on the Goals screen.
 @MainActor
-public final class GoalSetupViewModel: ObservableObject {
+public final class GoalSetupViewModel: ObservableObject, Identifiable {
+    public nonisolated var id: ObjectIdentifier { ObjectIdentifier(self) }
+
     public static let privacyNotice = "Your answers stay on this phone and are not saved. Only the targets you choose are."
     public static let estimateNotice = "These are estimates, not medical advice. If you are pregnant, have a medical condition or take medicines that affect weight or appetite, ask your doctor or dietitian."
     public static let replaceNotice = "This replaces your current targets for these nutrients."
