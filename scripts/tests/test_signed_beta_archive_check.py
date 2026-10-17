@@ -237,6 +237,13 @@ def test_a_project_that_embeds_a_watch_app_requires_one_in_the_archive(archive: 
     assert "FAIL  the archive has a Watch app, as the project embeds one" in result.stdout
 
 
+def test_a_renamed_watch_target_still_requires_a_watch_app(archive: Archive) -> None:
+    archive.project_yml("targets:\n  Companion:\n    type: application\n    platform: watchOS\n")
+    result = archive.run()
+    assert result.returncode != 0
+    assert "FAIL  the archive has a Watch app, as the project embeds one" in result.stdout
+
+
 def test_a_missing_project_file_stops_the_step(archive: Archive) -> None:
     (archive.project / "project.yml").unlink()
     result = archive.run()

@@ -263,13 +263,14 @@ jobs:
 
           # The Watch app, when the archive has one: it sits under Watch/ in the app, with its own widget extension.
           # Whether the archive must have one is read from the checked-out project, so a dropped embed fails the run.
-          # Any mention of the Watch target counts, so a changed way of writing the dependency cannot silence this.
+          # Any mention of the Watch target, or any watchOS target at all, counts, so neither a changed way of writing
+          # the dependency nor a renamed target can silence this.
           if [ ! -f project.yml ]; then
             echo "::error::project.yml is not where this step expects it."
             exit 1
           fi
           expect_watch=0
-          if grep -q 'HealthNutritionWatch' project.yml; then expect_watch=1; fi
+          if grep -q 'HealthNutritionWatch' project.yml || grep -qiE '^[[:space:]]*platform:[[:space:]]*watchOS' project.yml; then expect_watch=1; fi
           watch_count=$(ls -d "$app"/Watch/*.app 2>/dev/null | wc -l | tr -d ' ' || true)
           if [ "$watch_count" -eq 0 ] && [ "$expect_watch" -eq 0 ]; then
             echo "NOTE  this project does not embed a Watch app; the Watch checks are skipped"
