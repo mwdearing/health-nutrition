@@ -88,6 +88,7 @@ public struct TodayView: View {
             }
             .padding(.horizontal, DesignSpacing.m)
             .padding(.vertical, DesignSpacing.s)
+            .padding(.bottom, DesignSpacing.floatingClearance)
         }
         .background(TokenColors.background)
         .navigationTitle("Today")

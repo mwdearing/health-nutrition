@@ -88,6 +88,7 @@ public struct JournalView: View {
                     proxy.scrollTo(section, anchor: .top)
                 }
             }
+            .contentMargins(.bottom, DesignSpacing.floatingClearance, for: .scrollContent)
             .scrollContentBackground(.hidden)
             .background(TokenColors.background)
             .navigationTitle("Journal")
