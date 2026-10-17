@@ -78,6 +78,7 @@ final class DisplayPreferenceTests: XCTestCase {
     func testUnitSystemPreferenceChoosesOfferedUnitsAndDisplayedAmount() throws {
         let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("units-customary"))
         preferences.setUnitSystem(.usCustomary)
+        preferences.setQuickWaterMilliliters(Decimal(250))
         let model = makeModel(preferences)
 
         XCTAssertEqual(model.unitSystem, .usCustomary)
@@ -107,21 +108,22 @@ final class DisplayPreferenceTests: XCTestCase {
         XCTAssertTrue(rebuilt.quickWaterLabel.contains("fl oz"))
     }
 
-    /// With nothing stored, the app is metric and the quick glass is 250 mL, exactly as before.
-    func testDefaultsAreMetricAndTwoHundredAndFiftyMilliliters() throws {
+    /// With nothing stored, the app is US units and the quick glass is 8 fl oz; amounts are still stored in metric.
+    func testDefaultsAreUSUnitsAndAnEightFluidOunceGlass() throws {
         let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("units-default"))
-        XCTAssertEqual(preferences.unitSystem, .metric)
-        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(250))
+        XCTAssertEqual(preferences.unitSystem, .usCustomary)
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "236.5882365", locale: AmountParser.locale))
 
         let model = makeModel(preferences)
-        XCTAssertEqual(model.quickWaterLabel, "Add 250 mL water")
-        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 250 milliliters of water")
+        XCTAssertEqual(model.quickWaterLabel, "Add 8 fl oz water")
+        XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add 8 fluid ounces of water")
 
         let add = AddIntakeViewModel(
             store: RecordingStore(makeID: { "intake" }), now: now, timeZoneIdentifier: "UTC",
             preferences: preferences)
-        XCTAssertEqual(add.units, UnitRegistry.all)
-        XCTAssertEqual(Array(add.units.prefix(2)), [.g, .mg])
+        // A new entry starts in ounces, and the picker puts the US units first.
+        XCTAssertEqual(add.unit, .oz)
+        XCTAssertEqual(Array(add.units.prefix(2)), [.oz, .flOz])
     }
 
     /// The two implementations have to behave the same way, or the app and its tests would be talking

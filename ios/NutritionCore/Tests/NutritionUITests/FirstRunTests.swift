@@ -93,8 +93,8 @@ final class FirstRunTests: XCTestCase {
         XCTAssertFalse(preferences.hasSeenWelcome)
         XCTAssertFalse(preferences.isChecklistHidden)
         XCTAssertFalse(preferences.hasReviewedUnits)
-        XCTAssertEqual(preferences.unitSystem, .metric)
-        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(250))
+        XCTAssertEqual(preferences.unitSystem, DisplayPreferenceDefaults.unitSystem)
+        XCTAssertEqual(preferences.quickWaterMilliliters, DisplayPreferenceDefaults.quickWaterMilliliters)
         let leftover = suite.dictionaryRepresentation().keys.filter { $0.hasPrefix("display.") }
         XCTAssertEqual(leftover.sorted(), [])
     }
@@ -113,8 +113,8 @@ final class FirstRunTests: XCTestCase {
         XCTAssertFalse(memory.hasSeenWelcome)
         XCTAssertFalse(memory.isChecklistHidden)
         XCTAssertFalse(memory.hasReviewedUnits)
-        XCTAssertEqual(memory.unitSystem, .metric)
-        XCTAssertEqual(memory.quickWaterMilliliters, Decimal(250))
+        XCTAssertEqual(memory.unitSystem, DisplayPreferenceDefaults.unitSystem)
+        XCTAssertEqual(memory.quickWaterMilliliters, DisplayPreferenceDefaults.quickWaterMilliliters)
     }
 
     // MARK: - The checklist ticks off

@@ -20,6 +20,15 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         return defaults!
     }
 
+    /// A suite that already holds a person's metric choice and a 250 mL glass, for tests of how those settings behave.
+    /// The tests of what a new install has use `makeSuite` and read the defaults.
+    private func metricSuite(_ label: String) -> UserDefaults {
+        let defaults = makeSuite(label)
+        defaults.set("metric", forKey: "display.unitSystem")
+        defaults.set("250", forKey: "display.quickWaterMilliliters")
+        return defaults
+    }
+
     private func makeStore() throws -> SwiftDataJournalStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -30,7 +39,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
     /// The picker starts on what is stored, offers both systems, and a change is written through at
     /// once rather than when the screen goes away.
     func testUnitSystemPreferenceIsOfferedAndWrittenThroughOnChange() throws {
-        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("unit-system"))
+        let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("unit-system"))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
 
         XCTAssertEqual(model.unitSystem, .metric)
@@ -46,7 +55,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
     /// A valid amount is stored exactly and the error is cleared; an amount above zero is all it takes.
     func testQuickWaterPreferenceAcceptsAnAmountAboveZeroAndClearsTheError() throws {
-        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water"))
+        let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("quick-water"))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
         XCTAssertEqual(model.quickWaterText, "250")
 
@@ -64,7 +73,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
     /// An amount that is not above zero, or is not a number at all, is refused with a message and
     /// leaves the stored value alone.
     func testQuickWaterPreferenceRefusesAnAmountThatIsNotAboveZero() throws {
-        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-bad"))
+        let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("quick-water-bad"))
         preferences.setQuickWaterMilliliters(Decimal(300))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
 
@@ -80,7 +89,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
     /// ounces and not twelve milliliters. What is stored stays milliliters, so the entry the Today
     /// button writes is the same water either way.
     func testQuickWaterFieldIsEnteredInThePreferredUnit() throws {
-        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-us"))
+        let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("quick-water-us"))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
 
         XCTAssertEqual(model.quickWaterUnit, .mL)
@@ -168,7 +177,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
     /// Metric states the milliliters a typed ounce figure stands for, unrounded, as it always has: the field
     /// is the stored figure, and a reading's rounding belongs to display text only.
     func testSwitchingToMetricWithATypedDraftStatesTheExactMilliliters() throws {
-        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-switch"))
+        let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("quick-water-switch"))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
         model.unitSystem = .usCustomary
         model.quickWaterText = "8.45"
@@ -182,7 +191,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
     /// A stored amount is the field's starting text under metric, and saving it untouched keeps it.
     func testStoredMillilitersStartTheFieldUnroundedAndSaveUnchangedUnderMetric() throws {
-        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-stored"))
+        let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("quick-water-stored"))
         preferences.setQuickWaterMilliliters(Decimal(string: "400.55", locale: AmountParser.locale)!)
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
 
@@ -195,7 +204,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
     /// entered with. The ounce display's rounding belongs to a converted figure, and applying it to an
     /// unconverted one would restate 400.55 mL as 400.6 in the field the person is still editing.
     func testQuickWaterDraftKeepsTheMillilitersAsTypedUnderMetric() throws {
-        let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("quick-water-metric"))
+        let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("quick-water-metric"))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
 
         model.quickWaterText = "400.55"
@@ -231,7 +240,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
     /// A stored preference is read back into the screen, so reopening it shows what was saved.
     func testStoredQuickWaterPreferenceIsReadBackIntoTheScreen() throws {
-        let defaults = makeSuite("quick-water-reload")
+        let defaults = metricSuite("quick-water-reload")
         let first = UserDefaultsDisplayPreferences(defaults: defaults)
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: first)
         model.quickWaterText = "750"
@@ -281,15 +290,15 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: waterKey))
         XCTAssertEqual(preferences.unitSystem, DisplayPreferenceDefaults.unitSystem)
         XCTAssertEqual(preferences.quickWaterMilliliters, DisplayPreferenceDefaults.quickWaterMilliliters)
-        // The screen shows the defaults rather than the settings that were just erased.
-        XCTAssertEqual(model.unitSystem, .metric)
-        XCTAssertEqual(model.quickWaterText, "250")
+        // The screen shows the defaults (US units, an 8 fl oz glass) rather than the settings that were just erased.
+        XCTAssertEqual(model.unitSystem, .usCustomary)
+        XCTAssertEqual(model.quickWaterText, "8")
         XCTAssertNil(model.quickWaterError)
         // A screen built after the erase reads the same defaults, not the erased settings.
         let reopened = ConnectionsPrivacyViewModel(
             store: store, erasers: [store], preferences: UserDefaultsDisplayPreferences(defaults: defaults))
-        XCTAssertEqual(reopened.unitSystem, .metric)
-        XCTAssertEqual(reopened.quickWaterText, "250")
+        XCTAssertEqual(reopened.unitSystem, .usCustomary)
+        XCTAssertEqual(reopened.quickWaterText, "8")
     }
 
     /// The in-memory implementation clears the same way, so the two cannot disagree about what an
@@ -312,8 +321,8 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
         XCTAssertEqual(preferences.unitSystem, DisplayPreferenceDefaults.unitSystem)
         XCTAssertEqual(preferences.quickWaterMilliliters, DisplayPreferenceDefaults.quickWaterMilliliters)
-        XCTAssertEqual(model.unitSystem, .metric)
-        XCTAssertEqual(model.quickWaterText, "250")
+        XCTAssertEqual(model.unitSystem, .usCustomary)
+        XCTAssertEqual(model.quickWaterText, "8")
     }
 
     /// A stored amount of 0.001 mL is a real amount, too small for the fluid ounce's digits. Under the US

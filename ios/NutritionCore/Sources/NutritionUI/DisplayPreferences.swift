@@ -61,10 +61,13 @@ public protocol CommunityDisclosurePreferences: AnyObject {
     func clearProductSharingPausesAfterErase()
 }
 
-/// The defaults a person has before they change anything: metric, and a 250 mL glass.
+/// The defaults a person has before they change anything: US units, and an 8 fl oz glass.
+///
+/// Amounts are always stored in metric (mL and g); these only decide what is shown and offered first. 8 fl oz is
+/// exactly 236.5882365 mL, so the quick-add button reads "8 fl oz" under US units.
 public enum DisplayPreferenceDefaults {
-    public static let unitSystem = UnitSystem.metric
-    public static let quickWaterMilliliters = Decimal(250)
+    public static let unitSystem = UnitSystem.usCustomary
+    public static let quickWaterMilliliters = Decimal(string: "236.5882365", locale: Locale(identifier: "en_US_POSIX"))!
 }
 
 /// Holds the preferences in this app's own defaults domain, under namespaced keys.
@@ -304,9 +307,11 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         if shown { hiddenTodayGoals.remove(nutrient) } else { hiddenTodayGoals.insert(nutrient) }
     }
 
+    /// The in-memory preferences keep a metric, 250 mL start of their own: they stand in for a person's choice in
+    /// tests and previews, which name the unit system they mean, and are not the defaults a new install has.
     public init(
-        unitSystem: UnitSystem = DisplayPreferenceDefaults.unitSystem,
-        quickWaterMilliliters: Decimal = DisplayPreferenceDefaults.quickWaterMilliliters
+        unitSystem: UnitSystem = .metric,
+        quickWaterMilliliters: Decimal = Decimal(250)
     ) {
         self.unitSystem = unitSystem
         self.quickWaterMilliliters = quickWaterMilliliters

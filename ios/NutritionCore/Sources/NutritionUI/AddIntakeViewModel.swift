@@ -308,6 +308,8 @@ public final class AddIntakeViewModel: ObservableObject {
         self.labelScannerAvailable = labelScannerAvailable
         self.labelSubmitter = labelSubmitter
         self.isSharingAllowed = isSharingAllowed
+        // A new entry starts in the unit system's weight unit: ounces under US units, grams under metric.
+        self.unit = AmountDisplay.massUnit(for: preferences.unitSystem)
     }
 
     private var prefilledProduct: ProductDefinition? { storedProduct ?? labelValues }
