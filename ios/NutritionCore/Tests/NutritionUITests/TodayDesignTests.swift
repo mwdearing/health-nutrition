@@ -393,6 +393,37 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(Set(today.mealSections.first?.rows.map(\.title) ?? []), ["Plain", "Picnic"])
     }
 
+    func testMealSectionsShowTheirOwnCalories() throws {
+        let store = try makeStore()
+        let porridge = ProductDefinition(
+            snapshotID: "snap-porridge", productID: "p-porridge", name: "Porridge", labelBasis: "per 100 g",
+            catalogOrigin: "test", catalogVersion: "1", kind: .food, nutrients: ["energy": .known(Decimal(400), .kcal)])
+        let soup = ProductDefinition(
+            snapshotID: "snap-soup", productID: "p-soup", name: "Soup", labelBasis: "per 100 g",
+            catalogOrigin: "test", catalogVersion: "1", kind: .food, nutrients: ["energy": .known(Decimal(250), .kcal)])
+        try log(store, name: "Porridge", meal: "breakfast", product: porridge)
+        try log(store, name: "Soup", meal: "dinner", product: soup)
+        let today = model(store, tracked: ["energy"])
+        today.load(now: now)
+        XCTAssertEqual(today.mealSections.first { $0.title == "Breakfast" }?.energyKcal, 400)
+        XCTAssertEqual(today.mealSections.first { $0.title == "Dinner" }?.energyKcal, 250)
+    }
+
+    func testMealCaloriesStayNilWhenUnknownOrWhenTheEntryHasNoMeal() throws {
+        let store = try makeStore()
+        let unvalued = ProductDefinition(
+            snapshotID: "snap-unvalued", productID: "p-unvalued", name: "Unvalued", labelBasis: "per 100 g",
+            catalogOrigin: "test", catalogVersion: "1", kind: .food, nutrients: [:])
+        try log(store, name: "Unvalued", meal: "lunch", product: unvalued)
+        try log(store, name: "No meal", meal: nil, product: ProductDefinition(
+            snapshotID: "snap-nomeal", productID: "p-nomeal", name: "No meal", labelBasis: "per 100 g",
+            catalogOrigin: "test", catalogVersion: "1", kind: .food, nutrients: ["energy": .known(Decimal(600), .kcal)]))
+        let today = model(store, tracked: ["energy"])
+        today.load(now: now)
+        XCTAssertNil(today.mealSections.first { $0.title == "Lunch" }?.energyKcal)
+        XCTAssertNil(today.mealSections.first { $0.title == "Other" }?.energyKcal)
+    }
+
     func testMealSectionsDoNotListWaterEntriesAsRows() throws {
         let store = try makeStore()
         try log(store, name: "Water", grams: 250, category: "water")

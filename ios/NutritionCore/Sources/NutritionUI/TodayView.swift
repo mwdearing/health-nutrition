@@ -265,10 +265,21 @@ public struct TodayView: View {
 
     private func mealSection(_ section: TodayMealSection) -> some View {
         VStack(alignment: .leading, spacing: DesignSpacing.s) {
-            Text(section.title)
-                .font(.headline)
-                .foregroundStyle(TokenColors.textPrimary)
-                .accessibilityAddTraits(.isHeader)
+            HStack(alignment: .firstTextBaseline) {
+                Text(section.title)
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                if let kcal = section.energyKcal {
+                    // A small positive amount must not round to "0 kcal", which reads as nothing logged.
+                    let figure = kcal > 0 && kcal < 1 ? "under 1" : BodyActivityViewModel.whole(kcal)
+                    Text("\(figure) kcal")
+                        .font(.subheadline)
+                        .foregroundStyle(TokenColors.textSecondary)
+                        .accessibilityLabel("\(figure) calories")
+                }
+                Spacer()
+            }
             Card {
                 VStack(alignment: .leading, spacing: DesignSpacing.m) {
                     ForEach(section.rows) { row in
