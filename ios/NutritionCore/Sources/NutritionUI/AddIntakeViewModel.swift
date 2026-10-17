@@ -655,7 +655,8 @@ public final class AddIntakeViewModel: ObservableObject {
         invalidateLookup()
         barcode = product.barcode
         apply(product)
-        lookupState = .found(product)
+        // A row with no barcode was not a barcode lookup, so the form does not say it was.
+        lookupState = product.barcode.isEmpty ? .idle : .found(product)
     }
 
     /// Fills the form from a panel the user captured and confirmed, the way a barcode lookup fills it.
@@ -956,7 +957,10 @@ public final class AddIntakeViewModel: ObservableObject {
         let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         return ProductDefinition(
             snapshotID: lookedUp.snapshotIdentity(name: trimmedName, brand: trimmedBrand, kind: kind),
-            productID: lookedUp.barcode,
+            // A row with no barcode gets an identity derived from its content, prefixed so it can never read as a barcode.
+            productID: lookedUp.barcode.isEmpty
+                ? "search-" + lookedUp.snapshotIdentity(name: trimmedName, brand: trimmedBrand, kind: kind)
+                : lookedUp.barcode,
             name: trimmedName,
             brand: trimmedBrand,
             barcode: lookedUp.barcode,
