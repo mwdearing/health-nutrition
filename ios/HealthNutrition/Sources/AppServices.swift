@@ -179,7 +179,10 @@ final class AppServices {
         // Open Food Facts alone, as before.
         let usdaKey = (Bundle.main.object(forInfoDictionaryKey: "USDA_FDC_API_KEY") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let usda = usdaKey.flatMap { $0.isEmpty ? nil : USDAProductNameSearch(client: USDAFoodDataClient(apiKey: $0)) }
+        // An unexpanded build setting reads as the literal "$(USDA_FDC_API_KEY)"; that is no key.
+        let usda = usdaKey.flatMap { key -> USDAProductNameSearch? in
+            key.isEmpty || key.contains("$(") ? nil : USDAProductNameSearch(client: USDAFoodDataClient(apiKey: key))
+        }
         productNameSearch = FoodDatabaseSearch(openFoodFacts: openFoodFacts, usda: usda)
         let totals = JournalSnapshotTotals(store: journalStore)
         let healthKitDelivery = HealthKitDeliveryWorker(
