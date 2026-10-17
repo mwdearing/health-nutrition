@@ -202,7 +202,11 @@ jobs:
         run: |
           set -euo pipefail
           pb=/usr/libexec/PlistBuddy
-          app=$(ls -d "$RUNNER_TEMP"/HealthNutrition.xcarchive/Products/Applications/*.app | head -n 1)
+          app=$(ls -d "$RUNNER_TEMP"/HealthNutrition.xcarchive/Products/Applications/*.app 2>/dev/null | head -n 1 || true)
+          if [ -z "$app" ]; then
+            echo "::error::The archive has no app under Products/Applications."
+            exit 1
+          fi
           appex="$app/PlugIns/HealthNutritionWidgets.appex"
           group="group.$BUNDLE_ID"
           fail=0
@@ -218,8 +222,9 @@ jobs:
             exit 1
           fi
           echo "OK    PlugIns/HealthNutritionWidgets.appex is present"
-          field() { "$pb" -c "Print :$2" "$1/Info.plist"; }
-          eq() { [ "$1" = "$2" ]; }
+          trap 'rm -f "$RUNNER_TEMP"/*.entitlements.plist "$RUNNER_TEMP"/*.profile.plist' EXIT
+          field() { "$pb" -c "Print :$2" "$1/Info.plist" 2>/dev/null || true; }
+          eq() { [ -n "$1" ] && [ "$1" = "$2" ]; } # an empty value never counts as a match
           check "extension bundle id is the app's id plus .widgets" eq "$(field "$appex" CFBundleIdentifier)" "$BUNDLE_ID.widgets"
           check "app bundle id is the configured id" eq "$(field "$app" CFBundleIdentifier)" "$BUNDLE_ID"
           point=$(field "$appex" NSExtension:NSExtensionPointIdentifier)
@@ -236,7 +241,7 @@ jobs:
             group_key="com.apple.security.application-groups"
             check "$name carries the $group_key key" "$pb" -c "Print :$group_key" "$ent"
             check "$name's first App Group is the app's group" eq "$("$pb" -c "Print :$group_key:0" "$ent" 2>/dev/null || true)" "$group"
-            if "$pb" -c "Print :$group_key:1" "$ent" >/dev/null 2>&1; then
+            if [ -n "$("$pb" -c "Print :$group_key:1" "$ent" 2>/dev/null || true)" ]; then
               echo "FAIL  $name lists exactly one App Group"; fail=1
             else
               echo "OK    $name lists exactly one App Group"
@@ -251,7 +256,6 @@ jobs:
               echo "FAIL  $name has an embedded provisioning profile"; fail=1
             fi
           done
-          rm -f "$RUNNER_TEMP"/*.entitlements.plist "$RUNNER_TEMP"/*.profile.plist
           if [ "$fail" -ne 0 ]; then
             echo "::error::The archive's widget extension check failed; see the FAIL lines above."
           fi
