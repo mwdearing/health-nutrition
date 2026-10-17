@@ -6,6 +6,21 @@ struct AddServingControls: View {
     @ObservedObject var model: AddIntakeViewModel
 
     var body: some View {
+        Group {
+            servingsSection
+            if let notice = model.unitNotice {
+                Section {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                        .accessibilityLabel(notice)
+                }
+                .listRowBackground(TokenColors.background)
+            }
+        }
+    }
+
+    @ViewBuilder private var servingsSection: some View {
         if model.canCountServings, let serving = model.servingOption {
             Section {
                 LabeledField("Servings") { focus in

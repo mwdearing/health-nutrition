@@ -144,6 +144,7 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public var amountText: String = "" {
         didSet {
             editedFields.insert(.amount)
+            if !isPrefilling && !isSettingServings && !amountText.isEmpty { unitNotice = nil }
             // A figure written by anything but the prefill no longer stands for the stored amount.
             if !isPrefilling { prefillBacking = nil }
             // An amount typed by hand no longer equals a count of servings.
@@ -156,6 +157,9 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The serving size the source gave, kept whatever the basis, so the amount can open on one serving.
     @Published public private(set) var servingOption: ServingDefinition?
     private var isSettingServings = false
+    /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
+    /// goes once the person types an amount.
+    @Published public private(set) var unitNotice: String?
     @Published public var unit: MeasureUnit = .g {
         didSet {
             // A count of servings was for the unit it was typed against; a different unit clears it.
@@ -803,6 +807,7 @@ public final class AddIntakeViewModel: ObservableObject {
         lookedUp = nil
         // A serving from an earlier product must not stay on the Servings control or count the next entry.
         servingOption = nil
+        unitNotice = nil
         servingCount = ""
         prefillBacking = nil
         labelValues = nil
@@ -845,8 +850,10 @@ public final class AddIntakeViewModel: ObservableObject {
         // A unit chosen before this pick may not total against this product. The typed figure was in that unit,
         // so it cannot be carried over: the unit moves to one that totals and the amount is cleared to be re-entered.
         if !unitOptions.contains(unit), let first = unitOptions.first {
+            let typed = unit
             unit = first
             amountText = ""
+            unitNotice = "Amount cleared. This food can't be measured in \(typed.symbol)."
         }
         // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
         if AmountParser.parseTyped(amountText) == nil { openOnOneServing() }

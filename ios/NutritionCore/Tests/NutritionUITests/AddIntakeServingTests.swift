@@ -14,7 +14,9 @@ final class AddIntakeServingTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
-        return AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC", lookup: nil)
+        return AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC", lookup: nil,
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
     }
 
     /// The amount on the form, read in grams whatever unit the form shows it in.
@@ -35,16 +37,16 @@ final class AddIntakeServingTests: XCTestCase {
         let model = try makeModel()
         model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
         XCTAssertEqual(model.servingCount, "1")
-        // Two ounces, whatever the unit system shows them in.
-        XCTAssertLessThan(abs(grams(model) - Decimal(string: "56.6990462500")!), Decimal(string: "0.001")!)
+        XCTAssertEqual(model.amountText, "2")
+        XCTAssertEqual(model.unit, .oz)
     }
 
     func testServingCountSetsTheAmount() throws {
         let model = try makeModel()
         model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
         model.setServingCount("3")
-        // Three servings of two ounces: six ounces, whatever the unit system shows them in.
-        XCTAssertLessThan(abs(grams(model) - Decimal(string: "170.097")!), Decimal(string: "0.01")!)
+        XCTAssertEqual(model.amountText, "6")
+        XCTAssertEqual(model.unit, .oz)
     }
 
     func testTypingAnAmountClearsTheCount() throws {
