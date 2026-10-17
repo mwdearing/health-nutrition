@@ -201,6 +201,10 @@ public struct IntakeComponent: Sendable, Hashable {
     /// a food never sets it. Stored only when the person sets it, so an older row reads as nil.
     public var hydrationPercent: Decimal?
 
+    /// The water share a drink uses when it sets none: 90 percent, a typical soft drink. Today's total and
+    /// the Health write both read it, so they agree.
+    public static let defaultDrinkHydrationPercent: Decimal = 90
+
     public init(
         componentID: String, name: String, amount: Decimal, unit: MeasureUnit,
         hydrationPercent: Decimal? = nil

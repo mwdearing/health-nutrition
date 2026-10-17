@@ -237,7 +237,7 @@ final class JournalExportTests: XCTestCase {
                 store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
         let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let schema = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: try contractFile("v6.schema", "json")) as? [String: Any])
+            try JSONSerialization.jsonObject(with: try contractFile("v\(JournalExport.currentSchemaVersion).schema", "json")) as? [String: Any])
         let definitions = try XCTUnwrap(schema["$defs"] as? [String: Any])
 
         try assertRequiredKeys(encoded, against: schema, definitionName: nil, path: "$")
@@ -1261,7 +1261,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
     }
 
     func testEncoderTopLevelKeysMatchTheSchemaProperties() throws {
-        let schemaData = try contractFile("v6.schema", "json")
+        let schemaData = try contractFile("v\(JournalExport.currentSchemaVersion).schema", "json")
         let schema = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: schemaData) as? [String: Any])
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
@@ -1344,5 +1344,27 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             directory = parent
         }
         return nil
+    }
+
+    /// A drink's water share is written on its component, and a component that sets none writes null: the
+    /// version 7 contract requires the key on every component.
+    func testComponentWritesHydrationPercentOrNull() throws {
+        let drink = IntakeComponent(
+            componentID: "soda", name: "7up", amount: 7.5, unit: try MeasureUnit(symbol: "fl oz"),
+            hydrationPercent: 90)
+        let food = IntakeComponent(
+            componentID: "rice", name: "Rice", amount: 100, unit: try MeasureUnit(symbol: "g"))
+        let encoder = JSONEncoder()
+        let drinkJSON = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: try encoder.encode(JournalExportComponent(component: drink)))
+                as? [String: Any])
+        let foodJSON = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: try encoder.encode(JournalExportComponent(component: food)))
+                as? [String: Any])
+
+        XCTAssertEqual(drinkJSON["hydration_percent"] as? String, "90")
+        XCTAssertTrue(foodJSON.keys.contains("hydration_percent"))
+        XCTAssertTrue(foodJSON["hydration_percent"] is NSNull)
+        XCTAssertEqual(JournalExport.currentSchemaVersion, 7)
     }
 }

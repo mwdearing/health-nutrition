@@ -248,7 +248,7 @@ public final class TodayViewModel: ObservableObject {
                                 let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                                 Self.isPositive(converted.value)
                             else { continue }
-                            let share = component.hydrationPercent ?? Self.defaultDrinkHydrationPercent
+                            let share = component.hydrationPercent ?? IntakeComponent.defaultDrinkHydrationPercent
                             waterTotal += converted.value * share / 100
                         }
                     }
@@ -414,10 +414,6 @@ public final class TodayViewModel: ObservableObject {
     }
 
     /// The daily water goal used until the person sets one: 2,000 mL (about 68 fl oz).
-    /// The water share used for a drink that does not set its own: 90 percent, a typical soft drink.
-    /// Per-type presets (tea, coffee, juice) need a drink type on the entry; until then one share covers
-    /// every drink.
-    static let defaultDrinkHydrationPercent: Decimal = 90
     static let defaultWaterGoal = NutrientGoal(
         nutrient: DailyTotalsBuilder.waterKey, target: 2000, unit: .mL)
 

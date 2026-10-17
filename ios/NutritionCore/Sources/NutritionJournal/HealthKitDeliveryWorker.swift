@@ -135,7 +135,9 @@ public struct JournalSnapshotTotals: Sendable {
             : nil
         let category = intake?.category ?? deleted?.category ?? Self.waterCategory
         var totals: [String: NutrientValue] = [:]
-        if let water = Self.recordedWater(in: entry.components, category: category) {
+        // A drink writes its water share, not its full volume: the share is what the day counts too.
+        let isDrink = try entry.productSnapshotID.flatMap { try store.product(snapshotID: $0) }?.kind == .drink
+        if let water = Self.recordedWater(in: entry.components, category: category, drink: isDrink) {
             totals["water"] = water
         }
         // The water the components record wins a contested key: it is what was actually poured, where
@@ -178,15 +180,19 @@ public struct JournalSnapshotTotals: Sendable {
     }
 
     /// The milliliters the revision's components record, summed, and only for a drink.
-    private static func recordedWater(in components: [IntakeComponent], category: String) -> NutrientValue? {
-        guard category == waterCategory else { return nil }
+    private static func recordedWater(
+        in components: [IntakeComponent], category: String, drink: Bool
+    ) -> NutrientValue? {
+        guard category == waterCategory || drink else { return nil }
         var milliliters = Decimal(0)
         var found = false
         for component in components {
             guard component.unit.dimension == .volume else { continue }
             guard let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
             else { continue }
-            milliliters += converted.value
+            // A water entry counts its whole volume; a drink counts its share of it.
+            let share = category == waterCategory ? Decimal(100) : (component.hydrationPercent ?? IntakeComponent.defaultDrinkHydrationPercent)
+            milliliters += converted.value * share / 100
             found = true
         }
         return found ? .known(milliliters, .mL) : nil
