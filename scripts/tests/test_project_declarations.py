@@ -87,3 +87,56 @@ def test_the_site_key_is_an_empty_build_setting_read_from_the_bundle() -> None:
     assert settings["base"]["HCAPTCHA_SITE_KEY"] == ""
     info = cast("dict[str, dict[str, object]]", app["info"])
     assert info["properties"]["HCAPTCHA_SITE_KEY"] == "$(HCAPTCHA_SITE_KEY)"
+
+
+def test_the_widget_extension_is_embedded_and_shares_the_app_identifier_and_version() -> None:
+    project = _project()
+    settings = cast("dict[str, dict[str, object]]", project["settings"])
+    assert settings["base"]["APP_BUNDLE_ID"] == "dev.example.HealthNutrition"
+    app = _target("HealthNutrition")
+    widgets = _target("HealthNutritionWidgets")
+    assert widgets["type"] == "app-extension"
+    assert {"target": "HealthNutritionWidgets"} in cast("list[dict[str, str]]", app["dependencies"])
+    app_settings = cast("dict[str, dict[str, str]]", app["settings"])["base"]
+    widget_settings = cast("dict[str, dict[str, str]]", widgets["settings"])["base"]
+    # The extension's identifier is the app's plus ".widgets"; neither is a literal the workflows could override.
+    assert app_settings["PRODUCT_BUNDLE_IDENTIFIER"] == "$(APP_BUNDLE_ID)"
+    assert widget_settings["PRODUCT_BUNDLE_IDENTIFIER"] == "$(APP_BUNDLE_ID).widgets"
+    # App Store Connect rejects an extension whose version differs from its app: one project-level value that
+    # neither target overrides.
+    assert "MARKETING_VERSION" in settings["base"]
+    assert "MARKETING_VERSION" not in app_settings
+    assert "MARKETING_VERSION" not in widget_settings
+    assert widget_settings["CURRENT_PROJECT_VERSION"] == app_settings["CURRENT_PROJECT_VERSION"]
+
+
+def test_the_widgets_link_no_package_and_read_only_the_shared_snapshot() -> None:
+    widgets = _target("HealthNutritionWidgets")
+    assert "dependencies" not in widgets or not widgets["dependencies"]
+    sources = [entry["path"] for entry in cast("list[dict[str, object]]", widgets["sources"])]
+    assert sources == ["Widgets", "Shared"]
+
+
+def test_the_workflows_set_the_app_identifier_not_the_product_identifier() -> None:
+    for name in ("signed-beta.yml", "ios.yml"):
+        text = (ROOT / ".github/workflows" / name).read_text()
+        assert "PRODUCT_BUNDLE_IDENTIFIER" not in text, name
+        assert "APP_BUNDLE_ID=" in text, name
+
+
+def test_the_unsigned_device_build_fails_when_the_widget_extension_is_not_embedded() -> None:
+    text = (ROOT / ".github/workflows/ios.yml").read_text()
+    assert "PlugIns/HealthNutritionWidgets.appex" in text
+
+
+def test_the_widget_privacy_manifest_declares_nothing_because_nothing_leaves_the_device() -> None:
+    import plistlib
+
+    path = ROOT / "ios/HealthNutrition/Widgets/PrivacyInfo.xcprivacy"
+    with path.open("rb") as handle:
+        manifest = plistlib.load(handle)
+    assert manifest["NSPrivacyTracking"] is False
+    assert manifest["NSPrivacyTrackingDomains"] == []
+    assert manifest["NSPrivacyAccessedAPITypes"] == []
+    # The summary is read from the App Group on this device and sent nowhere, so there is nothing to declare.
+    assert manifest["NSPrivacyCollectedDataTypes"] == []

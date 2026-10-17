@@ -46,6 +46,12 @@ Removing the keys restores defaults; it does not write replacement values, with 
 - The screen clears its export state and entry count when erase begins so it does not keep offering data that is being removed.
 - Saved meals (the `library.savedMeals.v1` key in the app's defaults domain, and the `library.savedMeals.restoreReceipt.v1` key a restore leaves) are removed by their own eraser. After a successful erase the saved meals list is read again and any Undo offer for a logged meal is dropped. See [Saved meals](saved-meals.md).
 
+## The widgets' summary
+
+The Today widgets read a small summary file in the App Group container (see [Widgets](widgets.md)). Erase all
+data first replaces the summary with an empty one and then removes the summary's folder and asks the widgets to
+refresh; Today then reloads empty and writes the real empty day, so they show "Nothing logged today".
+
 ## What remains
 
 - **The community server account and submissions.** Local erase does not call the server. Use account controls to sign out or delete an account. Account deletion removes that profile and its submissions; an independently approved owner-reviewed catalog snapshot can remain without contributor identity.

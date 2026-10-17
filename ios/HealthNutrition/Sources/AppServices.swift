@@ -87,7 +87,8 @@ final class AppServices {
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
         reminderScheduler: ReminderScheduling,
         productService: (any CommunityProductServicing)? = nil,
-        accountServiceOverride: CommunityAccountServicing? = nil
+        accountServiceOverride: CommunityAccountServicing? = nil,
+        widgetSnapshotEraser: JournalErasing
     ) {
         self.displayPreferences = displayPreferences
         let community = Self.makeCommunity()
@@ -147,7 +148,8 @@ final class AppServices {
         }
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
-            erasers: ([journalStore, favoritesStore, recipeStore, goalStore, savedMealStore] as [JournalErasing])
+            erasers: [widgetSnapshotEraser]
+                + ([journalStore, favoritesStore, recipeStore, goalStore, savedMealStore] as [JournalErasing])
                 + reminderErasers + ([supplementSchedules] as [JournalErasing]),
             preferences: displayPreferences,
             beforeErase: {
@@ -284,7 +286,8 @@ final class AppServices {
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
         reminderScheduler: ReminderScheduling,
         productService: (any CommunityProductServicing)? = nil,
-        accountServiceOverride: CommunityAccountServicing? = nil
+        accountServiceOverride: CommunityAccountServicing? = nil,
+        widgetSnapshotEraser: JournalErasing = WidgetSnapshotEraser()
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.
@@ -328,7 +331,7 @@ final class AppServices {
                 journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
                 goalStore: goalStore, displayPreferences: displayPreferences,
                 reminderScheduler: reminderScheduler, productService: productService,
-                accountServiceOverride: accountServiceOverride)
+                accountServiceOverride: accountServiceOverride, widgetSnapshotEraser: widgetSnapshotEraser)
         } catch {
             recipeStore.close()
             favoritesStore.close()

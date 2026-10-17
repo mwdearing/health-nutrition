@@ -71,6 +71,14 @@ events that happened in the app, which is exactly this. Wall-clock time
 (`Date()`) is used separately for the request's `last_modified_t` handling,
 where a real timestamp is what matters.
 
+## The widget extension
+
+The Today widget extension ships its own `ios/HealthNutrition/Widgets/PrivacyInfo.xcprivacy`. It declares no collected
+data types and no required-reason APIs, and `NSPrivacyTracking` is `false`. The summary the widget shows never
+leaves the device, so there is nothing to declare; the app's manifest declares nothing for it either. The extension
+reads one small summary file from the App Group container and has no network access, no preferences and no clock
+measurement. The summary file is left out of device backups and is cleared on erase (see [Widgets](widgets.md)).
+
 ## Keeping it honest
 
 `scripts/check_privacy_manifest.py` scans the Swift code the app actually ships

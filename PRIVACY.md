@@ -15,3 +15,10 @@ Health Nutrition stores your food, supplement and water journal on this device. 
 - **Export and erase.** Export creates a JSON file on this device, and the system share sheet sends it only to the destination you choose. Erase all data removes the app's local journal rows, supplement list, preferences, local account session and export files it can still reach. It does not delete a server account or shared submissions, remove HealthKit samples already written, or reach a copy already shared or saved in another app. Row deletion is not a promise of forensic erasure.
 
 Questions or concerns: open an issue at https://github.com/mwdearing/health-nutrition/issues (never include real health data). Security reports: see [SECURITY.md](SECURITY.md).
+
+## Widgets
+
+The Today widget on the Home Screen and Lock Screen shows the day's calories, macros and water. The app writes
+them as plain totals into a file in an App Group container on this device, the only place the widget reads. The
+widget has no network access, the file is cleared when you use Erase all data, and it is left out of device
+backups.

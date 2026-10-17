@@ -12,6 +12,8 @@ import SwiftUI
 struct HealthNutritionApp: App {
     @State private var services: AppServices?
     @State private var startupError: String?
+    /// Keeps the Today widgets' summary current. Held for the app's lifetime.
+    private static let widgetSnapshots = WidgetSnapshotPublisher()
 
     init() {
         #if DEBUG
@@ -24,6 +26,7 @@ struct HealthNutritionApp: App {
         do {
             let made = try AppServices.make(reminderScheduler: SystemReminderScheduler())
             AppServicesRegistry.register(made)
+            Self.widgetSnapshots.start(today: made.today, isErasing: { made.connections.isErasing })
             _services = State(initialValue: made)
         } catch {
             _services = State(initialValue: nil)
