@@ -1,0 +1,63 @@
+import Foundation
+import NutritionDomain
+import XCTest
+@testable import NutritionJournal
+
+/// The read half of Apple Health nutrition: what other apps' samples add to the day, and which
+/// samples are skipped. Every value is synthetic.
+final class OutsideIntakeTotalsTests: XCTestCase {
+    private let protein = "HKQuantityTypeIdentifierDietaryProtein"
+    private let water = "HKQuantityTypeIdentifierDietaryWater"
+    private let vitaminD = "HKQuantityTypeIdentifierDietaryVitaminD"
+
+    func testReadTypesAreExactlyTheWrittenTypes() {
+        let written = Set(HealthKitWritePlanner.mappings.map(\.quantityTypeIdentifier))
+        XCTAssertEqual(Set(OutsideIntakeTotals.readQuantityTypeIdentifiers), written)
+        XCTAssertEqual(OutsideIntakeTotals.readQuantityTypeIdentifiers.count, written.count)
+    }
+
+    func testSumsOtherAppsSamplesPerNutrient() {
+        let totals = OutsideIntakeTotals.totals(from: [
+            sample(protein, 12, .g),
+            sample(protein, 8, .g),
+        ])
+        XCTAssertEqual(totals["protein"], 20)
+    }
+
+    func testSkipsSamplesThisAppWrote() {
+        let totals = OutsideIntakeTotals.totals(from: [
+            sample(protein, 12, .g, own: true),
+            sample(protein, 5, .g),
+        ])
+        XCTAssertEqual(totals["protein"], 5)
+    }
+
+    func testConvertsIntoTheMappingUnit() {
+        // Water is stored in milliliters; a liter from another app is 1000 mL.
+        let totals = OutsideIntakeTotals.totals(from: [
+            sample(water, 1, .L),
+        ])
+        XCTAssertEqual(totals["water"], 1000)
+    }
+
+    func testVitaminDInIUIsNotCountedAsMicrograms() {
+        // HealthKit stores vitamin D in micrograms; an IU sample that cannot be converted is skipped
+        // rather than added as a raw number.
+        let totals = OutsideIntakeTotals.totals(from: [
+            sample(vitaminD, 400, .iu),
+        ])
+        XCTAssertNil(totals["vitaminD"])
+    }
+
+    func testUnmappedTypesAndUnconvertibleUnitsAddNothing() {
+        let totals = OutsideIntakeTotals.totals(from: [
+            sample("HKQuantityTypeIdentifierStepCount", 9_000, .g),
+            sample(protein, 4, .mL),
+        ])
+        XCTAssertTrue(totals.isEmpty)
+    }
+
+    private func sample(_ identifier: String, _ value: Decimal, _ unit: MeasureUnit, own: Bool = false) -> OutsideNutrientSample {
+        OutsideNutrientSample(quantityTypeIdentifier: identifier, value: value, unit: unit, isWrittenByThisApp: own)
+    }
+}
