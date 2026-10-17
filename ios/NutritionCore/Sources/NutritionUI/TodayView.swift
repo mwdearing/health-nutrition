@@ -265,10 +265,19 @@ public struct TodayView: View {
 
     private func mealSection(_ section: TodayMealSection) -> some View {
         VStack(alignment: .leading, spacing: DesignSpacing.s) {
-            Text(section.title)
-                .font(.headline)
-                .foregroundStyle(TokenColors.textPrimary)
-                .accessibilityAddTraits(.isHeader)
+            HStack(alignment: .firstTextBaseline) {
+                Text(section.title)
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                if let kcal = section.energyKcal {
+                    Text("\(BodyActivityViewModel.whole(kcal)) kcal")
+                        .font(.subheadline)
+                        .foregroundStyle(TokenColors.textSecondary)
+                        .accessibilityLabel("\(BodyActivityViewModel.whole(kcal)) calories")
+                }
+                Spacer()
+            }
             Card {
                 VStack(alignment: .leading, spacing: DesignSpacing.m) {
                     ForEach(section.rows) { row in

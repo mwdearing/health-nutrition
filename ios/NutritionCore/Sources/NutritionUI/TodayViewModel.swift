@@ -61,6 +61,8 @@ public struct TodayMealSection: Equatable, Identifiable {
     public let id: String
     public let title: String
     public let rows: [TodayRow]
+    /// The meal's calories, or nil when they cannot be totaled completely. Never 0 for "unknown".
+    public var energyKcal: Decimal?
 
     public init(id: String, title: String, rows: [TodayRow]) {
         self.id = id
@@ -330,6 +332,7 @@ public final class TodayViewModel: ObservableObject {
             progress = try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
                 displayNames: Self.printedNames(in: snapshots))
+            mealSections = try Self.withMealEnergy(mealSections, intakes: intakes, store: store, lookup: lookup)
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
             // A goal switched off on the Goals screen keeps its target and its totals, but no bar.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
@@ -588,6 +591,30 @@ public final class TodayViewModel: ObservableObject {
     /// Throwing rather than swallowing: the totals are built from the same intakes the rows above
     /// were built from, so a store that cannot be read has already failed the load and there is
     /// nothing honest left to show.
+    /// Each meal's calories, summed from that meal's own intakes with the same totals builder as the
+    /// day. A meal with any unknown energy shows no figure rather than a partial one.
+    private static func withMealEnergy(
+        _ sections: [TodayMealSection], intakes: [Intake], store: JournalStore, lookup: NutrientFactsLookup
+    ) throws -> [TodayMealSection] {
+        let named = MealLabel.allCases.map(\.displayName)
+        return try sections.map { section in
+            var section = section
+            let mealIntakes = intakes.filter { intake in
+                guard intake.category != DailyTotalsBuilder.waterCategory else { return false }
+                let meal = MealLabel.displayName(for: intake.meal).flatMap { named.contains($0) ? $0 : nil }
+                return (meal ?? "Other") == section.title
+            }
+            guard !mealIntakes.isEmpty else { return section }
+            let totals = try DailyTotalsBuilder.totals(
+                for: mealIntakes, store: store, lookup: lookup, nutrients: [energyKey])
+            if let total = totals.total(for: energyKey), !total.coverage.hasUnknown,
+               case .known(let kcal, _) = total.value {
+                section.energyKcal = kcal
+            }
+            return section
+        }
+    }
+
     private static func progressLines(
         tracked: [String], goals: [NutrientGoal], intakes: [Intake], store: JournalStore,
         lookup: NutrientFactsLookup, displayNames: [String: String]
