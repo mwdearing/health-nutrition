@@ -829,17 +829,27 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Opens the amount on one serving when the source gave its weight. The person still confirms the
     /// amount; this only starts it on a serving they can count up from.
     private func openOnOneServing() {
-        guard let quantity = servingOption?.quantity, quantity > 0,
-              let servingUnit = servingOption?.unit, servingUnit.dimension == .mass
-        else {
+        guard let display = servingInDisplayUnit else {
             servingCount = ""
             return
         }
         isPrefilling = true
-        amountText = DecimalFormatting.text(quantity)
-        unit = servingUnit
+        amountText = DecimalFormatting.text(display.quantity)
+        unit = display.unit
         isPrefilling = false
         servingCount = "1"
+    }
+
+    /// The serving in the person's mass unit: ounces under US units, grams under metric. The amount that
+    /// is stored is the same mass either way; only the figure shown changes.
+    private var servingInDisplayUnit: (quantity: Decimal, unit: MeasureUnit)? {
+        guard let quantity = servingOption?.quantity, quantity > 0,
+              let servingUnit = servingOption?.unit, servingUnit.dimension == .mass
+        else { return nil }
+        let target = AmountDisplay.massUnit(for: preferences.unitSystem)
+        guard let converted = try? Quantity(value: quantity, unit: servingUnit).converted(to: target)
+        else { return (quantity, servingUnit) }
+        return (converted.value, target)
     }
 
     /// Whether the picked product has a serving weight the servings count can use: a mass, given as a
@@ -852,8 +862,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// Sets the amount to a count of servings: the count times one serving, in the serving's unit.
     public func setServingCount(_ text: String) {
-        guard canCountServings, let quantity = servingOption?.quantity, let servingUnit = servingOption?.unit
-        else { return }
+        guard canCountServings, let display = servingInDisplayUnit else { return }
         servingCount = text
         isSettingServings = true
         defer { isSettingServings = false }
@@ -861,8 +870,8 @@ public final class AddIntakeViewModel: ObservableObject {
             amountText = ""
             return
         }
-        amountText = DecimalFormatting.text(count * quantity)
-        unit = servingUnit
+        amountText = DecimalFormatting.text(count * display.quantity)
+        unit = display.unit
     }
 
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
