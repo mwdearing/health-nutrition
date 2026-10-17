@@ -6,7 +6,7 @@ import Foundation
 /// out of step with the generation. Two numbers, no figures.
 protocol WatchSenderState: AnyObject, Sendable {
     /// Names this install; created once and kept with the counters, so a reinstall (which also resets them) gets a
-    /// new one that sorts after the old, and the Watch knows to start its comparison again.
+    /// new one, and the Watch knows to start its comparison again.
     var epoch: String { get }
     var eraseGeneration: Int { get set }
     var deliveredGeneration: Int { get set }
@@ -29,9 +29,7 @@ final class UserDefaultsWatchSenderState: WatchSenderState, @unchecked Sendable 
         epochLock.lock()
         defer { epochLock.unlock() }
         if let existing = defaults.string(forKey: Self.epochKey) { return existing }
-        // Starts with the time of creation, zero-padded so that a later install always sorts after an earlier one.
-        let milliseconds = String(format: "%013lld", Int64(Date().timeIntervalSince1970 * 1000))
-        let created = milliseconds + "-" + UUID().uuidString
+        let created = UUID().uuidString
         defaults.set(created, forKey: Self.epochKey)
         return created
     }
