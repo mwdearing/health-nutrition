@@ -50,7 +50,7 @@ connects Apple Health in Settings and allows it, nutrients from
 real logged food and water entries are written to HealthKit on the device. That
 is not data collection: nothing leaves the phone. The app reads back the
 samples it wrote itself, to replace or remove them after an edit or delete, and,
-only after the person asks on Today, their steps, active energy and weight. After the person connects Apple Health, the app also reads the nutrient types it writes, so the day's totals include nutrition other apps logged. Those readings stay on the phone and are not sent anywhere. A debug build's
+only after the person asks on Today, their steps, active energy and weight. When the person connects Apple Health, the app also asks to read the nutrient types it writes. Once the totals use that access, they will include nutrition other apps logged. Those readings will stay on the phone and will not be sent anywhere. A debug build's
 HealthKit screen can also write separate test samples.
 Erasing local journal rows does not remove HealthKit samples already written.
 Photos and personal intake details such as amounts eaten, meal and time are not
