@@ -842,8 +842,12 @@ public final class AddIntakeViewModel: ObservableObject {
         attribution = product.attribution
         lookedUp = product
         servingOption = product.serving
-        // A unit chosen before this pick may not total against this product; move it to one that does.
-        if !unitOptions.contains(unit), let first = unitOptions.first { unit = first }
+        // A unit chosen before this pick may not total against this product. The typed figure was in that unit,
+        // so it cannot be carried over: the unit moves to one that totals and the amount is cleared to be re-entered.
+        if !unitOptions.contains(unit), let first = unitOptions.first {
+            unit = first
+            amountText = ""
+        }
         // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
         if AmountParser.parseTyped(amountText) == nil { openOnOneServing() }
     }
