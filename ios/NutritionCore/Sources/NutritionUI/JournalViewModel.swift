@@ -343,7 +343,7 @@ public final class JournalViewModel: ObservableObject {
             pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale, now: now)
         return JournalJumpTarget(
             sectionID: closest.id,
-            message: "Nothing logged on \(title). Showing the closest day with entries.")
+            message: "Nothing logged on \(title == "Yesterday" ? "yesterday" : title). Showing the closest day with entries.")
     }
 
     /// Whole days between two yyyy-MM-dd keys, or Int.max when either key cannot be read.
