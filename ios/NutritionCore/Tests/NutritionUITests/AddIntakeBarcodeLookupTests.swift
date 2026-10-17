@@ -105,6 +105,7 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         model.applyLookedUp(oatMilk(barcode: ""))
         XCTAssertEqual(model.name, "Oat drink")
         XCTAssertEqual(model.barcode, "")
+        XCTAssertEqual(model.lookupState, .idle, "a search row is not a barcode lookup")
     }
 
     /// A value that is neither empty nor a valid code is still refused, as before.
