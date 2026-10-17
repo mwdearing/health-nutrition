@@ -193,6 +193,70 @@ jobs:
             "HCAPTCHA_SITE_KEY=${HCAPTCHA_SITE_KEY:-}" \
             "USDA_FDC_API_KEY=${USDA_FDC_API_KEY:-}"
 
+      # Fails the build when the widget extension did not reach the archive or is built or signed wrong, so it is
+      # caught here and not on a phone. The bundle identifier is a secret in this public repository: every check
+      # compares in the shell and prints only OK or FAIL, key names, the extension point and OS floors.
+      - name: Check the archive embeds the widget extension
+        env:
+          BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+        run: |
+          set -euo pipefail
+          pb=/usr/libexec/PlistBuddy
+          app=$(ls -d "$RUNNER_TEMP"/HealthNutrition.xcarchive/Products/Applications/*.app | head -n 1)
+          appex="$app/PlugIns/HealthNutritionWidgets.appex"
+          group="group.$BUNDLE_ID"
+          fail=0
+          check() { # check <label> <command...>: prints OK or FAIL, never a value
+            local label="$1"; shift
+            if "$@" >/dev/null 2>&1; then echo "OK    $label"; else echo "FAIL  $label"; fail=1; fi
+          }
+          echo "Embedded extensions:"
+          ls "$app/PlugIns" 2>/dev/null || true
+          if [ ! -d "$appex" ]; then
+            echo "FAIL  PlugIns/HealthNutritionWidgets.appex is present"
+            echo "::error::The archive has no PlugIns/HealthNutritionWidgets.appex."
+            exit 1
+          fi
+          echo "OK    PlugIns/HealthNutritionWidgets.appex is present"
+          field() { "$pb" -c "Print :$2" "$1/Info.plist"; }
+          eq() { [ "$1" = "$2" ]; }
+          check "extension bundle id is the app's id plus .widgets" eq "$(field "$appex" CFBundleIdentifier)" "$BUNDLE_ID.widgets"
+          check "app bundle id is the configured id" eq "$(field "$app" CFBundleIdentifier)" "$BUNDLE_ID"
+          point=$(field "$appex" NSExtension:NSExtensionPointIdentifier)
+          echo "Extension point: $point"
+          check "extension point is com.apple.widgetkit-extension" eq "$point" "com.apple.widgetkit-extension"
+          check "extension version matches the app" eq "$(field "$appex" CFBundleShortVersionString)" "$(field "$app" CFBundleShortVersionString)"
+          check "extension build number matches the app" eq "$(field "$appex" CFBundleVersion)" "$(field "$app" CFBundleVersion)"
+          echo "Extension OS floor: $(field "$appex" MinimumOSVersion)"
+          echo "App OS floor: $(field "$app" MinimumOSVersion)"
+          for target in "$app" "$appex"; do
+            name=$(basename "$target")
+            ent="$RUNNER_TEMP/$name.entitlements.plist"
+            codesign -d --entitlements :- "$target" > "$ent" 2>/dev/null || true
+            group_key="com.apple.security.application-groups"
+            check "$name carries the $group_key key" "$pb" -c "Print :$group_key" "$ent"
+            check "$name's first App Group is the app's group" eq "$("$pb" -c "Print :$group_key:0" "$ent" 2>/dev/null || true)" "$group"
+            if "$pb" -c "Print :$group_key:1" "$ent" >/dev/null 2>&1; then
+              echo "FAIL  $name lists exactly one App Group"; fail=1
+            else
+              echo "OK    $name lists exactly one App Group"
+            fi
+            profile="$target/embedded.mobileprovision"
+            if [ -f "$profile" ]; then
+              echo "OK    $name has an embedded provisioning profile"
+              prof="$RUNNER_TEMP/$name.profile.plist"
+              security cms -D -i "$profile" > "$prof" 2>/dev/null || true
+              check "$name's profile grants the app's group" eq "$("$pb" -c "Print :Entitlements:$group_key:0" "$prof" 2>/dev/null || true)" "$group"
+            else
+              echo "FAIL  $name has an embedded provisioning profile"; fail=1
+            fi
+          done
+          rm -f "$RUNNER_TEMP"/*.entitlements.plist "$RUNNER_TEMP"/*.profile.plist
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::The archive's widget extension check failed; see the FAIL lines above."
+          fi
+          exit "$fail"
+
       - name: Export and upload to App Store Connect
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
