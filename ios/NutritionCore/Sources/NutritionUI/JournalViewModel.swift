@@ -339,11 +339,16 @@ public final class JournalViewModel: ObservableObject {
         guard let closest, let pickedDay = Self.utcDate(fromDayKey: key) else {
             return JournalJumpTarget(sectionID: sections.first?.id, message: nil)
         }
-        let title = Self.dayTitle(
-            pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale, now: now)
+        // The picked day is a day key, so "yesterday" is judged on the device's calendar day, not UTC.
+        let isYesterday = Self.dayKey(now.addingTimeInterval(-86_400), zone: .current) == key
+        let title = isYesterday
+            ? "yesterday"
+            // distantPast turns off dayTitle's own "Yesterday" check, which is UTC here and so wrong.
+            : Self.dayTitle(
+                pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale, now: .distantPast)
         return JournalJumpTarget(
             sectionID: closest.id,
-            message: "Nothing logged on \(title == "Yesterday" ? "yesterday" : title). Showing the closest day with entries.")
+            message: "Nothing logged on \(title). Showing the closest day with entries.")
     }
 
     /// Whole days between two yyyy-MM-dd keys, or Int.max when either key cannot be read.
