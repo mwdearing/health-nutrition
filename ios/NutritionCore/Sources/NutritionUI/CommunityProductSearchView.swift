@@ -74,8 +74,10 @@ public struct CommunityProductSearchView: View {
                             if let attribution = product.attribution { Text(attribution.text).font(.footnote) }
                         }
                     }.accessibilityHint("Opens intake details filled from this product. Nothing is logged until you save.")
-                    if let attribution = product.attribution, let url = URL(string: attribution.url) {
-                        Link("Source and license", destination: url).font(.footnote)
+                }
+                ForEach(Self.sourceAttributions(model.openFoodFactsResults), id: \.self) { attribution in
+                    if let url = URL(string: attribution.url) {
+                        Link(attribution.text, destination: url).font(.footnote)
                     }
                 }
             } }
@@ -181,6 +183,11 @@ public struct CommunityProductSearchView: View {
         .onChange(of: query) { _, text in model.filterLocal(query: text, kind: kind) }
         .onChange(of: kind) { _, selected in model.filterLocal(query: query, kind: selected) }
     }
+    /// One attribution per source, in a stable order, so each license link shows once under the results.
+    static func sourceAttributions(_ products: [LookedUpProduct]) -> [ProductAttribution] {
+        Array(Set(products.compactMap(\.attribution))).sorted { $0.source < $1.source }
+    }
+
     @ViewBuilder private var openFoodFactsStatus: some View {
         switch model.openFoodFactsState {
         case .idle: EmptyView()

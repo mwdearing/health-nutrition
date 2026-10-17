@@ -33,16 +33,11 @@ struct FoodDatabaseSearch: ProductNameSearching {
     static func merge(usda: ProductNameSearchOutcome, openFoodFacts: ProductNameSearchOutcome) -> ProductNameSearchOutcome {
         let usdaRows = rows(from: usda)
         let offRows = rows(from: openFoodFacts)
-        let half = maxResults / 2
-        var merged = Array(usdaRows.prefix(half)) + Array(offRows.prefix(half))
-        let spareForUSDA = maxResults - merged.count
-        if spareForUSDA > 0 {
-            merged += usdaRows.dropFirst(half).prefix(spareForUSDA)
-        }
-        let spareForOFF = maxResults - merged.count
-        if spareForOFF > 0 {
-            merged += offRows.dropFirst(half).prefix(spareForOFF)
-        }
+        // Open Food Facts keeps at most half the cap; USDA takes what remains, so USDA rows stay first
+        // and no more than maxResults rows are returned.
+        let offCount = min(offRows.count, maxResults / 2)
+        let usdaCount = min(usdaRows.count, maxResults - offCount)
+        let merged = Array(usdaRows.prefix(usdaCount)) + Array(offRows.prefix(maxResults - usdaCount))
         if !merged.isEmpty {
             return .results(merged)
         }

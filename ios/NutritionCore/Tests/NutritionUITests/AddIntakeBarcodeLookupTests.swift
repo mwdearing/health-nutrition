@@ -99,6 +99,22 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
 
     // MARK: Prefilling
 
+    /// A name-search row has no barcode (USDA has none). Picking one must still fill the form.
+    func testNameSearchRowWithoutBarcodeFillsTheForm() throws {
+        let model = try makeModel(nil)
+        model.applyLookedUp(oatMilk(barcode: ""))
+        XCTAssertEqual(model.name, "Oat drink")
+        XCTAssertEqual(model.barcode, "")
+        XCTAssertEqual(model.lookupState, .idle, "a search row is not a barcode lookup")
+    }
+
+    /// A value that is neither empty nor a valid code is still refused, as before.
+    func testInvalidBarcodeOnAPickedRowIsRefused() throws {
+        let model = try makeModel(nil)
+        model.applyLookedUp(oatMilk(barcode: "12345"))
+        XCTAssertEqual(model.name, "")
+    }
+
     func testFoundPrefillsNameBrandAndNutrients() async throws {
         let model = try makeModel(FakeBarcodeLookup(result: .found(oatMilk())))
         model.barcode = validBarcode
