@@ -51,6 +51,26 @@ final class DailyTotalsTests: XCTestCase {
             nutrients: ["protein": .known(Decimal(13), .g)])
     }
 
+    /// A product as a USDA name-search pick saves it: per 100 g, no barcode, the search identity as its
+    /// product id and the usda source. Logged as two ounces, which is 56.7 g in the stored amount.
+    func testUSDAPickLoggedInOuncesTotalsKnownEnergy() throws {
+        let store = try makeStore()
+        let usda = ProductDefinition(
+            snapshotID: "usda-snap", productID: "search-usda-snap", name: "Rice cake", brand: nil,
+            barcode: "", labelBasis: "per 100 g", catalogOrigin: "usda-fdc", catalogVersion: "unknown",
+            nutrients: ["energyKcal": .known(Decimal(200), .kcal)])
+        try addFood(store, name: "Rice cake", id: "rice", at: when,
+                    amount: Decimal(string: "56.6990462500")!, unit: .g, product: usda)
+        let intakes = try store.activeIntakes()
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
+        guard case .known(let kcal, _) = totals.total(for: "energyKcal")?.value else {
+            XCTFail("a USDA pick logged in ounces must total known energy")
+            return
+        }
+        XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 113.4, accuracy: 0.1)
+    }
+
     @discardableResult
     private func addFood(
         _ store: JournalStore, name: String, id: String, at date: Date, zone: String = "UTC",
