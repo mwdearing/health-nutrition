@@ -224,7 +224,7 @@ public final class JournalViewModel: ObservableObject {
                     isWater: intake.category == "water")
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
-                    titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
+                    titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale, now: now)
                 }
                 groups[key, default: []].append(row)
                 intakesByDay[key, default: []].append(intake)
@@ -339,7 +339,8 @@ public final class JournalViewModel: ObservableObject {
         guard let closest, let pickedDay = Self.utcDate(fromDayKey: key) else {
             return JournalJumpTarget(sectionID: sections.first?.id, message: nil)
         }
-        let title = Self.dayTitle(pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale)
+        let title = Self.dayTitle(
+            pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale, now: now)
         return JournalJumpTarget(
             sectionID: closest.id,
             message: "Nothing logged on \(title). Showing the closest day with entries.")
