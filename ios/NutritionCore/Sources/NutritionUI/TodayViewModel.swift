@@ -338,7 +338,9 @@ public final class TodayViewModel: ObservableObject {
             let hiddenGoals = hiddenTodayGoals(in: preferences)
             goalBars = progress.filter {
                 // Only a line that still has a goal can be hidden: with the goal gone, its plain total stays.
+                // A row with neither a goal nor a known amount today has nothing to show, so it is left out.
                 $0.nutrient != DailyTotalsBuilder.waterKey && !($0.hasGoal && hiddenGoals.contains($0.nutrient))
+                    && ($0.hasGoal || $0.hasKnownAmount)
             }.map { line in
                 var hasEntries = line.hasKnownAmount
                 var missingCount = 0

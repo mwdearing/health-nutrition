@@ -79,9 +79,9 @@ public struct GoalBarModel: Equatable, Identifiable {
         guard case .known(let total, let unit) = line.amount else {
             let reason = reasonText(line: line, missingCount: missingCount, skippedWaterCount: skippedWaterCount)
             return GoalBarModel(
-                id: line.id, label: label, valueText: "Can't total yet", state: .cannotTotal,
+                id: line.id, label: label, valueText: "No data", state: .cannotTotal,
                 fraction: nil, goalMarker: nil,
-                accessibilityText: "\(label), can't total yet, \(reason)", reason: reason)
+                accessibilityText: "\(label), no data, \(reason)", reason: reason)
         }
         let displayTotal = shown(total, unit)
         let figure = displayTotal.text
