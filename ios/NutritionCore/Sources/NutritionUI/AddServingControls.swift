@@ -6,7 +6,7 @@ struct AddServingControls: View {
     @ObservedObject var model: AddIntakeViewModel
 
     var body: some View {
-        if let serving = model.servingOption, serving.quantity != nil {
+        if model.canCountServings, let serving = model.servingOption {
             Section {
                 LabeledField("Servings") { focus in
                     TextField(

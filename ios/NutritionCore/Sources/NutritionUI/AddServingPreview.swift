@@ -22,15 +22,18 @@ public struct AmountPreview: Equatable {
         case .oz: grams = amount * gramsPerOunce
         default: return nil
         }
-        func per(_ key: String) -> Decimal? {
-            guard case .known(let value, _) = nutrients[key] ?? .unknown else { return nil }
+        // Only a value in the unit the key is stated in (kcal for energy, grams for the macros) is scaled.
+        func per(_ key: String, in expected: MeasureUnit) -> Decimal? {
+            guard case .known(let value, let stated) = nutrients[key] ?? .unknown, stated == expected else {
+                return nil
+            }
             return value * grams / 100
         }
         return AmountPreview(
             grams: grams,
-            kcal: per(LookedUpProduct.energyKcal),
-            protein: per(LookedUpProduct.protein),
-            carbohydrates: per(LookedUpProduct.carbohydrates),
-            fat: per(LookedUpProduct.fat))
+            kcal: per(LookedUpProduct.energyKcal, in: .kcal),
+            protein: per(LookedUpProduct.protein, in: .g),
+            carbohydrates: per(LookedUpProduct.carbohydrates, in: .g),
+            fat: per(LookedUpProduct.fat, in: .g))
     }
 }

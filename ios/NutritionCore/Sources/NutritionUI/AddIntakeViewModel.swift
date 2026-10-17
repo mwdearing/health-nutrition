@@ -823,17 +823,26 @@ public final class AddIntakeViewModel: ObservableObject {
         servingCount = "1"
     }
 
+    /// Whether the picked product has a serving weight the servings count can use: a mass, given as a
+    /// number. A volume or a count serving does not, so the count is not offered for it.
+    public var canCountServings: Bool {
+        guard let quantity = servingOption?.quantity, quantity > 0, let servingUnit = servingOption?.unit
+        else { return false }
+        return servingUnit.dimension == .mass
+    }
+
     /// Sets the amount to a count of servings: the count times one serving, in the serving's unit.
     public func setServingCount(_ text: String) {
-        guard let quantity = servingOption?.quantity, let servingUnit = servingOption?.unit else { return }
-        guard let count = AmountParser.parseTyped(text) else {
-            servingCount = text
-            return
-        }
+        guard canCountServings, let quantity = servingOption?.quantity, let servingUnit = servingOption?.unit
+        else { return }
         servingCount = text
         isSettingServings = true
+        defer { isSettingServings = false }
+        guard let count = AmountParser.parseTyped(text) else {
+            amountText = ""
+            return
+        }
         amountText = DecimalFormatting.text(count * quantity)
-        isSettingServings = false
         unit = servingUnit
     }
 
