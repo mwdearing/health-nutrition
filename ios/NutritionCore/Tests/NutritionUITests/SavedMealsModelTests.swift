@@ -53,7 +53,12 @@ private final class FaultyJournal: JournalStore, JournalLoggedUnits, @unchecked 
         if failUnitWrites { throw Failure() }
         try inner.recordLoggedUnit(loggedUnit)
     }
-    func loggedUnits() throws -> [JournalLoggedUnit] { try inner.loggedUnits() }
+    /// When set, reading the recorded units fails.
+    var failUnitReads = false
+    func loggedUnits() throws -> [JournalLoggedUnit] {
+        if failUnitReads { throw Failure() }
+        return try inner.loggedUnits()
+    }
     func removeLoggedUnit(intakeID: String, componentID: String) throws {
         try inner.removeLoggedUnit(intakeID: intakeID, componentID: componentID)
     }
@@ -188,6 +193,77 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertTrue(model.noticeIsFailure)
         XCTAssertEqual(model.notice, "The meal was saved, but the units you entered could not be kept.")
         XCTAssertEqual(try store.meals().map(\.name), ["Usual"])
+    }
+
+    private func fiberEntry(_ inner: SwiftDataJournalStore) throws -> Intake {
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC",
+            meal: "breakfast")
+        try inner.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "fiber", unit: .teaspoon))
+        try inner.create(
+            intake,
+            components: [IntakeComponent(
+                componentID: "fiber", name: "Fiber", amount: Decimal(string: "19.715686375")!, unit: .mL)],
+            product: nil, now: now)
+        return intake
+    }
+
+    /// A failed read of the recorded units stops the writes that would carry them, instead of creating the copy or
+    /// the meal without its units.
+    func testAFailedUnitReadStopsSavingAMeal() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let intake = try fiberEntry(inner)
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        let model = SavedMealsModel(store: store, journal: journal)
+        journal.failUnitReads = true
+
+        XCTAssertFalse(model.save(name: "Usual", meal: .breakfast, intakes: [intake]))
+        XCTAssertEqual(model.notice, "Could not save the meal.")
+        XCTAssertEqual(try store.meals(), [])
+    }
+
+    /// Recents refuse to build rows while the recorded units cannot be read, so a one-tap copy is never made without
+    /// the unit its entry was logged in.
+    func testAFailedUnitReadRefusesTheRecentsRows() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        _ = try fiberEntry(inner)
+        journal.failUnitReads = true
+        let home = AddHomeViewModel(store: journal, now: { self.now })
+
+        home.load()
+
+        XCTAssertEqual(home.errorMessage, "Could not read recent items.")
+        XCTAssertTrue(home.recents.isEmpty)
+    }
+
+    func testAFailedUnitReadStopsLoggingOnOtherDays() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let intake = try fiberEntry(inner)
+        journal.failUnitReads = true
+
+        XCTAssertThrowsError(try IntakeMultiDayLogger(store: journal).log(
+            intakeID: intake.id, onDays: ["2023-11-12"], now: now.addingTimeInterval(86_400 * 10)))
+        XCTAssertEqual(try inner.activeIntakes().map(\.id), [intake.id], "no copy was created")
+    }
+
+    func testAFailedUnitReadStopsAnEditThatWouldForgetTheUnit() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let intake = try fiberEntry(inner)
+        let detail = EntryDetailViewModel(store: journal, intakeID: intake.id, timeZoneIdentifier: "UTC")
+        detail.load(now: now)
+        let componentID = try XCTUnwrap(detail.components.first).id
+        detail.drafts[componentID] = "250"
+        journal.failUnitReads = true
+
+        XCTAssertFalse(detail.saveDrafts(now: now))
+        XCTAssertEqual(detail.errorMessage, "Couldn't save. Your previous amount is kept.")
+        let kept = try XCTUnwrap(inner.revisions(of: intake.id).last?.components.first)
+        XCTAssertEqual(kept.amount, Decimal(string: "19.715686375"))
+        XCTAssertEqual(try inner.loggedUnits().map(\.unit), [.teaspoon], "the unit is still recorded")
     }
 
     func testAnUnreadableEntryRefusesTheWholeSave() throws {

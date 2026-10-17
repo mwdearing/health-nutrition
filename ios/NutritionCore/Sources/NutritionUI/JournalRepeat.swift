@@ -107,7 +107,7 @@ struct IntakeRepeater {
         let template = RepeatTemplate(
             displayName: "", category: intake.category, meal: intake.meal, components: current.components,
             productSnapshotID: current.productSnapshotID,
-            loggedUnits: LoggedUnitIndex.load(from: store)[intake.id] ?? [:])
+            loggedUnits: try LoggedUnitIndex.loadOrThrow(from: store)[intake.id] ?? [:])
         let excluded = try (store as? JournalLibraryExclusions)?.intakeIDsNotSavedToLibrary() ?? []
         return try create(
             from: template, now: now, keepOutOfLibrary: excluded.contains(intake.id), note: intake.note)
@@ -166,6 +166,16 @@ enum AmountText {
 
 /// The units entries were logged in, read once per screen load: intake id, then component id.
 enum LoggedUnitIndex {
+    /// The same index, but a failed read throws. A write path that carries units to a new entry uses this, so a
+    /// failed read stops the write instead of creating the entry without its units.
+    static func loadOrThrow(from store: JournalStore) throws -> [String: [String: MeasureUnit]] {
+        guard let units = store as? JournalLoggedUnits else { return [:] }
+        var index: [String: [String: MeasureUnit]] = [:]
+        for unit in try units.loggedUnits() { index[unit.intakeID, default: [:]][unit.componentID] = unit.unit }
+        return index
+    }
+
+    /// For display: a failed read shows every amount in the unit it is stored in rather than failing the screen.
     static func load(from store: JournalStore) -> [String: [String: MeasureUnit]] {
         guard let units = (store as? JournalLoggedUnits).flatMap({ try? $0.loggedUnits() }) else { return [:] }
         var index: [String: [String: MeasureUnit]] = [:]

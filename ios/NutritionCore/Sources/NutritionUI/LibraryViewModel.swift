@@ -15,8 +15,10 @@ public struct RecentItem: Equatable, Identifiable {
 public struct RecentItemsProvider {
     public static let defaultLimit = 20
     private let store: JournalStore
-    /// The units entries were logged in, read once per provider, so a template carries the unit its entry used.
-    private let loggedUnits: [String: [String: MeasureUnit]]
+    /// The units entries were logged in, read once per provider, so a template carries the unit its entry used. Nil
+    /// when the read failed: `requireExclusions()` then refuses the list, so a one-tap copy is never made without
+    /// the units its entry was logged in.
+    private let loggedUnits: [String: [String: MeasureUnit]]?
     /// The entries logged with "Save to Library" off, read once per provider, so a template built from one keeps
     /// its copies out of Library as repeating the entry does. Nil when the read failed: `requireExclusions()` then
     /// refuses the list, so a failed read never opens the exclusion.
@@ -24,7 +26,7 @@ public struct RecentItemsProvider {
 
     public init(store: JournalStore) {
         self.store = store
-        self.loggedUnits = LoggedUnitIndex.load(from: store)
+        self.loggedUnits = try? LoggedUnitIndex.loadOrThrow(from: store)
         if let exclusions = store as? JournalLibraryExclusions {
             self.keptOutOfLibrary = try? exclusions.intakeIDsNotSavedToLibrary()
         } else {
@@ -32,10 +34,12 @@ public struct RecentItemsProvider {
         }
     }
 
-    /// Refuses to build rows when the exclusions could not be read, so a one-tap copy of an entry kept out of
-    /// Library cannot land in Products because a read failed.
+    /// Refuses to build rows when the exclusions or the recorded units could not be read, so a one-tap copy of an
+    /// entry kept out of Library cannot land in Products, and a copy cannot lose its unit, because a read failed.
     func requireExclusions() throws {
-        guard keptOutOfLibrary != nil else { throw JournalError.corruptRecord("library exclusions") }
+        guard keptOutOfLibrary != nil, loggedUnits != nil else {
+            throw JournalError.corruptRecord("library exclusions or logged units")
+        }
     }
 
     public func recents(limit: Int = RecentItemsProvider.defaultLimit) throws -> [RecentItem] {
@@ -61,7 +65,7 @@ public struct RecentItemsProvider {
         RepeatTemplate(
             displayName: displayName(of: revision), category: intake.category, meal: intake.meal,
             components: revision.components, productSnapshotID: revision.productSnapshotID,
-            loggedUnits: loggedUnits[intake.id] ?? [:], keepsOutOfLibrary: keptOutOfLibrary?.contains(intake.id) ?? false)
+            loggedUnits: loggedUnits?[intake.id] ?? [:], keepsOutOfLibrary: keptOutOfLibrary?.contains(intake.id) ?? false)
     }
 
     /// The row title for one revision. A quick add is always one serving of the same name, so its typed
@@ -118,7 +122,7 @@ public struct RecentItemsProvider {
                 template: RepeatTemplate(
                     displayName: AmountText.title(current.components), category: intake.category, meal: intake.meal,
                     components: current.components, productSnapshotID: snapshotID,
-                    loggedUnits: loggedUnits[intake.id] ?? [:]),
+                    loggedUnits: loggedUnits?[intake.id] ?? [:]),
                 lastUsedAt: intake.occurredAt))
         }
         return result.sorted {
