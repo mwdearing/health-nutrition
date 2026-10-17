@@ -64,7 +64,7 @@ public struct SavedMealLogger {
     public func log(_ saved: SavedMeal, as meal: MealLabel?, now: Date) throws -> SavedMealLogResult {
         var created: [String] = []
         var skipped = 0
-        let loggedUnitIndex = LoggedUnitIndex.load(from: store)
+        let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
         for item in saved.items {
             guard var template = RepeatTemplate(favorite: item, loggedUnitIndex: loggedUnitIndex),
                 !template.components.isEmpty

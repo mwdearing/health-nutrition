@@ -75,7 +75,11 @@ public final class SavedMealsModel: ObservableObject {
         let provider = RecentItemsProvider(store: journal)
         // The templates below read which entries were kept out of Library; a failed read refuses the save rather
         // than building them as if none were.
-        do { try provider.requireExclusions() } catch { return finish(failure: "Could not save the meal.") }
+        // The units are read the same way: a failed read refuses the save, so a meal is never built without them.
+        do {
+            try provider.requireExclusions()
+            _ = try LoggedUnitIndex.loadOrThrow(from: journal)
+        } catch { return finish(failure: "Could not save the meal.") }
         var templates: [RepeatTemplate] = []
         // Entries logged at the same moment, as a copied day's are, keep the order Copy to today uses.
         for intake in intakes.sorted(by: { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) }) {

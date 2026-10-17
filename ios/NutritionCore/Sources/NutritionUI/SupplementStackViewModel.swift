@@ -532,7 +532,8 @@ public final class SupplementStackViewModel: ObservableObject {
                 return refuse("This item is no longer on your supplements.", now: now)
             }
             guard let template = RepeatTemplate(
-                favorite: favorite, loggedUnitIndex: LoggedUnitIndex.load(from: store)), !template.components.isEmpty
+                favorite: favorite, loggedUnitIndex: try LoggedUnitIndex.loadOrThrow(from: store)),
+                !template.components.isEmpty
             else {
                 errorMessage = "This item has no amounts to log."
                 return false

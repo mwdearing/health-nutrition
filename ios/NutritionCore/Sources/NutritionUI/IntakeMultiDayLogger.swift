@@ -104,7 +104,7 @@ public struct IntakeMultiDayLogger {
         var created: [String] = []
         var skipped: [MultiDaySkippedDay] = []
         // The units the entry was logged in are carried to each copy, as repeating it does.
-        let loggedUnits = LoggedUnitIndex.load(from: store)[intake.id] ?? [:]
+        let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)[intake.id] ?? [:]
         for day in days {
             guard day.key != ownDay else {
                 skipped.append(MultiDaySkippedDay(day: day.key, reason: .entryDay))

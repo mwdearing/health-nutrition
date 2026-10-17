@@ -454,7 +454,7 @@ public final class EntryDetailViewModel: ObservableObject {
             // here saves nothing and the message below is true; the worst a failed edit leaves is a unit read as
             // the unit system says.
             if let units = store as? JournalLoggedUnits, let before = current?.components {
-                let known = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
+                let known = try LoggedUnitIndex.loadOrThrow(from: store)[intakeID] ?? [:]
                 for component in parsed {
                     guard let old = before.first(where: { $0.componentID == component.componentID }),
                         !Self.sameAmount(old.amount, component.amount)
