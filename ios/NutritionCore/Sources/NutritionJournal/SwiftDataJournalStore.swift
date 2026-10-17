@@ -1331,6 +1331,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
             }
+            // No product passed means the caller could not read the product row, or there is none. The
+            // link the entry already has is carried forward rather than cleared, so an edit never drops it.
+            let previousNumber = record.currentRevision
+            var carriedSnapshotID: String?
+            if product == nil {
+                let previousRows = try context.fetch(FetchDescriptor<RevisionRecord>(
+                    predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == previousNumber }))
+                carriedSnapshotID = previousRows.first?.productSnapshotID
+            }
             let number = record.currentRevision + 1
             record.currentRevision = number
             // The corrected time moves the entry's own row, in the same save as the revision that
@@ -1345,7 +1354,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             return try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
                 product: product, changeReason: changeReason, now: now,
-                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
+                occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context,
+                carriedSnapshotID: carriedSnapshotID)
         }
     }
 
@@ -2018,21 +2028,22 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private func appendRevision(
         intakeID: String, number: Int, componentsJSON: String, components: [IntakeComponent],
         product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date,
-        timeZoneIdentifier: String, context: ModelContext
+        timeZoneIdentifier: String, context: ModelContext, carriedSnapshotID: String? = nil
     ) throws -> IntakeRevision {
         if let product {
             try Self.insertSnapshot(product, in: context)
         }
+        let snapshotID = product?.snapshotID ?? carriedSnapshotID
         context.insert(RevisionRecord(
             intakeID: intakeID, number: number, componentsJSON: componentsJSON,
-            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now,
+            productSnapshotID: snapshotID, changeReason: changeReason, createdAt: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier))
-        let payload = "\(intakeID):\(number):\(product?.snapshotID ?? "")"
+        let payload = "\(intakeID):\(number):\(snapshotID ?? "")"
             + ":\(IntakeContextTimestamp.utc(occurredAt)):\(timeZoneIdentifier):\(componentsJSON)"
         queueWork(intakeID: intakeID, revision: number, kind: .upsert, payload: payload, context: context)
         return IntakeRevision(
             intakeID: intakeID, number: number, components: components,
-            productSnapshotID: product?.snapshotID, changeReason: changeReason, createdAt: now,
+            productSnapshotID: snapshotID, changeReason: changeReason, createdAt: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
 
