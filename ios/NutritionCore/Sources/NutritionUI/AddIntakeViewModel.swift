@@ -278,6 +278,16 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The unit system the offered list is built from.
     public var unitSystem: UnitSystem { preferences.unitSystem }
 
+    /// The units the Unit menu offers. A product stated per 100 g or per 100 mL can only be totalled in the
+    /// dimension it is stated in; a "serving" or a count logged against it saves unknown values for the day.
+    public var unitOptions: [MeasureUnit] {
+        switch lookedUp?.basis {
+        case .per100g?: return units.filter { $0.dimension == .mass }
+        case .per100ml?: return units.filter { $0.dimension == .volume }
+        default: return units
+        }
+    }
+
     private let store: JournalStore
     private let preferences: DisplayPreferences
     private let makeID: () -> String

@@ -125,7 +125,7 @@ public struct AddIntakeView: View {
                                 .foregroundStyle(TokenColors.textSecondary)
                                 .accessibilityHidden(true)
                             Picker("Unit", selection: $model.unit) {
-                                ForEach(model.units, id: \.symbol) { unit in
+                                ForEach(model.unitOptions, id: \.symbol) { unit in
                                     Text(unit.symbol).tag(unit)
                                 }
                             }
