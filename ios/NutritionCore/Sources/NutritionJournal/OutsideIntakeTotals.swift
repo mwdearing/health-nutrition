@@ -39,21 +39,23 @@ public enum OutsideIntakeTotals {
     public static func totals(from samples: [OutsideNutrientSample]) -> [String: Decimal] {
         var totals: [String: Decimal] = [:]
         for sample in samples where !sample.isWrittenByThisApp {
-            // Every row that names this type is credited, so a shared identifier never hides a nutrient.
-            for mapping in HealthKitWritePlanner.mappings where mapping.quantityTypeIdentifier == sample.quantityTypeIdentifier {
-                // An IU sample with a fixed conversion (vitamin D) is restated the way the writer restates it.
-                var value = sample.value
-                var unit = sample.unit
-                if unit == .iu {
-                    guard let factor = mapping.amountPerInternationalUnit else { continue }
-                    value *= factor
-                    unit = mapping.unit
-                }
-                guard let converted = try? Quantity(value: value, unit: unit).converted(to: mapping.unit) else {
-                    continue
-                }
-                totals[mapping.nutrientKey, default: 0] += converted.value
+            guard let mapping = HealthKitWritePlanner.mappings.first(where: {
+                $0.quantityTypeIdentifier == sample.quantityTypeIdentifier
+            }) else {
+                continue
             }
+            // An IU sample with a fixed conversion (vitamin D) is restated the way the writer restates it.
+            var value = sample.value
+            var unit = sample.unit
+            if unit == .iu {
+                guard let factor = mapping.amountPerInternationalUnit else { continue }
+                value *= factor
+                unit = mapping.unit
+            }
+            guard let converted = try? Quantity(value: value, unit: unit).converted(to: mapping.unit) else {
+                continue
+            }
+            totals[mapping.nutrientKey, default: 0] += converted.value
         }
         return totals
     }
