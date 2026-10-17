@@ -116,10 +116,10 @@ class Archive:
         (self.project / "project.yml").write_text(text)
 
     def add_watch(self, **changes: object) -> None:
-        watch = self.app / "Watch/HealthNutritionWatch.app"
+        watch = self.app / ("Watch/Renamed.app" if changes.get("renamed") else "Watch/HealthNutritionWatch.app")
         shutil.rmtree(self.app / "Watch", ignore_errors=True)
         app_id, companion, widget_id = f"{BUNDLE}.watchkitapp", BUNDLE, f"{BUNDLE}.watchkitapp.widgets"
-        point, groups, widget_profile, widget_build = POINT, None, True, "136"
+        point, groups, widget_profile = POINT, None, True
         if changes.get("bad_id"):
             app_id = f"{BUNDLE}.watch"
         if changes.get("bad_companion"):
@@ -128,22 +128,34 @@ class Archive:
             point = "com.apple.widget-extension"
         if changes.get("two_groups"):
             groups = [GROUP, "group.extra"]
+        if changes.get("wrong_group"):
+            groups = ["group.other"]
         if changes.get("no_widget_profile"):
             widget_profile = False
-        if changes.get("bad_build"):
-            widget_build = "99"
-        _bundle(watch, app_id, extra={"WKCompanionAppBundleIdentifier": companion}, groups=groups)
+        _bundle(
+            watch,
+            app_id,
+            extra={"WKCompanionAppBundleIdentifier": companion, **cast("dict[str, object]", changes.get("watch_info", {}))},
+            groups=groups,
+            profile=not changes.get("no_watch_profile"),
+            build=str(changes.get("watch_build", "136")),
+        )
+        if changes.get("two_apps"):
+            shutil.copytree(watch, self.app / "Watch/Second.app")
         if not changes.get("no_widget"):
             _bundle(
                 watch / "PlugIns/HealthNutritionWatchWidgets.appex",
                 widget_id,
                 point=point,
                 profile=widget_profile,
-                build=widget_build,
+                build=str(changes.get("widget_build", "136")),
+                extra=cast("dict[str, object]", changes.get("widget_info", {})),
             )
 
     def run(self) -> subprocess.CompletedProcess[str]:
-        script = _script().replace("pb=/usr/libexec/PlistBuddy", f"pb={self.bin / 'PlistBuddy'}")
+        original = _script()
+        script = original.replace("pb=/usr/libexec/PlistBuddy", f"pb={self.bin / 'PlistBuddy'}")
+        assert script != original, "the step no longer sets pb= to PlistBuddy; update the stand-in"
         env = {
             **os.environ,
             "PATH": f"{self.bin}:{os.environ['PATH']}",
@@ -197,7 +209,11 @@ def test_a_wrongly_built_widget_fails(archive: Archive, label: str, change: Call
 
 
 def test_no_watch_app_passes_when_the_project_does_not_embed_one(archive: Archive) -> None:
-    assert archive.run().returncode == 0
+    result = archive.run()
+    assert result.returncode == 0
+    assert _fails(result) == []
+    assert "NOTE  this project does not embed a Watch app" in result.stdout
+    assert BUNDLE not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(
@@ -230,16 +246,31 @@ def test_a_correct_watch_app_passes(archive: Archive) -> None:
     assert _fails(result) == []
 
 
-@pytest.mark.parametrize(
-    "change",
-    ["bad_id", "bad_companion", "bad_point", "two_groups", "no_widget_profile", "bad_build", "no_widget"],
-)
-def test_a_wrongly_built_watch_app_fails(archive: Archive, change: str) -> None:
+WATCH_CASES = [
+    ({"bad_id": True}, "Watch app bundle id is the app's id plus .watchkitapp"),
+    ({"bad_companion": True}, "Watch app names the iPhone app as its companion"),
+    ({"bad_point": True}, "Watch extension point is com.apple.widgetkit-extension"),
+    ({"two_groups": True}, "HealthNutritionWatch.app lists exactly one App Group"),
+    ({"wrong_group": True}, "HealthNutritionWatch.app's first App Group is the app's group"),
+    ({"no_watch_profile": True}, "HealthNutritionWatch.app has an embedded provisioning profile"),
+    ({"no_widget_profile": True}, "HealthNutritionWatchWidgets.appex has an embedded provisioning profile"),
+    ({"watch_build": "99"}, "Watch app build number matches the iPhone app"),
+    ({"watch_info": {"CFBundleShortVersionString": "9.9.9"}}, "Watch app version matches the iPhone app"),
+    ({"widget_build": "99"}, "Watch widget build number matches the iPhone app"),
+    ({"widget_info": {"CFBundleShortVersionString": "9.9.9"}}, "Watch widget version matches the iPhone app"),
+    ({"no_widget": True}, "the Watch app embeds PlugIns/HealthNutritionWatchWidgets.appex"),
+    ({"renamed": True}, "the Watch app is HealthNutritionWatch.app"),
+    ({"two_apps": True}, "the archive has exactly one Watch app"),
+]
+
+
+@pytest.mark.parametrize(("change", "label"), WATCH_CASES, ids=[label for _, label in WATCH_CASES])
+def test_a_wrongly_built_watch_app_fails_on_exactly_its_check(archive: Archive, change: dict[str, object], label: str) -> None:
     archive.project_yml("      - target: HealthNutritionWatch\n")
-    archive.add_watch(**{change: True})
+    archive.add_watch(**change)
     result = archive.run()
-    assert result.returncode != 0, change
-    assert _fails(result), change
+    assert result.returncode != 0
+    assert f"FAIL  {label}" in result.stdout
 
 
 def test_the_output_never_contains_the_bundle_id(archive: Archive) -> None:
