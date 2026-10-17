@@ -40,16 +40,17 @@ public actor USDAFoodDataClient {
     /// Search replies are small; a larger body is refused rather than parsed.
     public static let maxResponseBytes = 1 * 1_024 * 1_024
 
-    /// FDC nutrient numbers mapped to the intake form's nutrient keys.
-    static let nutrientKeys: [String: (key: String, unit: MeasureUnit)] = [
-        "1008": ("energyKcal", .kcal),
-        "1003": ("protein", .g),
-        "1005": ("carbohydrates", .g),
-        "2000": ("sugars", .g),
-        "1004": ("fat", .g),
-        "1258": ("saturatedFat", .g),
-        "1079": ("fiber", .g),
-        "1093": ("sodium", .mg),
+    /// FDC nutrient IDs (the `nutrientId` field of a search record) mapped to the intake form's keys.
+    /// `nutrientNumber` is a legacy code (203, 208, ...) and is not read.
+    static let nutrientKeys: [Int: (key: String, unit: MeasureUnit)] = [
+        1008: ("energyKcal", .kcal),
+        1003: ("protein", .g),
+        1005: ("carbohydrates", .g),
+        2000: ("sugars", .g),
+        1004: ("fat", .g),
+        1258: ("saturatedFat", .g),
+        1079: ("fiber", .g),
+        1093: ("sodium", .mg),
     ]
 
     private let apiKey: String
@@ -85,6 +86,9 @@ public actor USDAFoodDataClient {
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport.get(request, maxBytes: Self.maxResponseBytes)
+            guard data.count <= Self.maxResponseBytes else {
+                return .transport("response exceeded the local size limit")
+            }
         } catch BoundedResponseError.responseTooLarge {
             return .transport("response exceeded the local size limit")
         } catch {
@@ -115,14 +119,17 @@ public actor USDAFoodDataClient {
     static func parse(_ data: Data) throws -> [USDAFood] {
         let reply = try JSONDecoder().decode(SearchReply.self, from: data)
         return (reply.foods ?? []).compactMap { food in
+            guard let fdcId = food.fdcId else {
+                return nil
+            }
             guard let description = food.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !description.isEmpty else {
                 return nil
             }
             var nutrients: [String: NutrientValue] = [:]
             for nutrient in food.foodNutrients ?? [] {
-                guard let number = nutrient.nutrientNumber,
-                      let mapping = nutrientKeys[number],
+                guard let id = nutrient.nutrientId,
+                      let mapping = nutrientKeys[id],
                       let value = nutrient.value else {
                     continue
                 }
@@ -131,7 +138,7 @@ public actor USDAFoodDataClient {
             let grams = food.servingSize.flatMap { $0 > 0 && food.servingSizeUnit?.lowercased() == "g" ? $0 : nil }
             let household = food.householdServingFullText?.trimmingCharacters(in: .whitespacesAndNewlines)
             return USDAFood(
-                fdcId: food.fdcId,
+                fdcId: fdcId,
                 description: description,
                 brand: [food.brandName, food.brandOwner]
                     .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -148,7 +155,7 @@ public actor USDAFoodDataClient {
     }
 
     private struct Food: Decodable {
-        let fdcId: Int
+        let fdcId: Int?
         let description: String?
         let dataType: String?
         let brandOwner: String?
@@ -160,7 +167,7 @@ public actor USDAFoodDataClient {
     }
 
     private struct Nutrient: Decodable {
-        let nutrientNumber: String?
+        let nutrientId: Int?
         let value: Decimal?
     }
 }

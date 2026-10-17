@@ -31,10 +31,10 @@ private let sampleReply = """
       "description": "Banana, raw",
       "dataType": "Foundation",
       "foodNutrients": [
-        {"nutrientNumber": "1008", "value": 89},
-        {"nutrientNumber": "1003", "value": 1.09},
-        {"nutrientNumber": "1093", "value": 1},
-        {"nutrientNumber": "9999", "value": 5}
+        {"nutrientId": 1008, "nutrientNumber": "208", "value": 89},
+        {"nutrientId": 1003, "nutrientNumber": "203", "value": 1.09},
+        {"nutrientId": 1093, "nutrientNumber": "307", "value": 1},
+        {"nutrientId": 9999, "nutrientNumber": "1", "value": 5}
       ]
     },
     {
@@ -46,9 +46,10 @@ private let sampleReply = """
       "servingSize": 40,
       "servingSizeUnit": "g",
       "householdServingFullText": "1 bar",
-      "foodNutrients": [{"nutrientNumber": "1008", "value": 200}]
+      "foodNutrients": [{"nutrientId": 1008, "nutrientNumber": "208", "value": 200}]
     },
-    {"fdcId": 3, "dataType": "Branded"}
+    {"fdcId": 3, "dataType": "Branded"},
+    {"description": "No id", "dataType": "Branded"}
   ]
 }
 """
@@ -78,13 +79,13 @@ private let sampleReply = """
         Issue.record("expected results, got \(outcome)")
         return
     }
-    #expect(foods.count == 2)
+    #expect(foods.count == 2, "records without an fdcId are dropped, not fatal")
     #expect(foods[0].description == "Banana, raw")
     #expect(foods[0].nutrientsPer100g["energyKcal"] == .known(89, .kcal))
     #expect(foods[0].nutrientsPer100g["protein"] == .known(Decimal(string: "1.09")!, .g))
     #expect(foods[0].nutrientsPer100g["sodium"] == .known(1, .mg))
     #expect(foods[0].nutrientsPer100g["fat"] == nil, "a nutrient FDC does not give stays absent, never zero")
-    #expect(foods[0].nutrientsPer100g.count == 3, "unmapped nutrient numbers are ignored")
+    #expect(foods[0].nutrientsPer100g.count == 3, "unmapped IDs are ignored; legacy nutrientNumber is never read")
     #expect(foods[0].servingGrams == nil)
     #expect(foods[1].description == "Protein bar")
     #expect(foods[1].brand == "Acme")
@@ -165,4 +166,24 @@ private let sampleReply = """
         return
     }
     #expect(foods.first?.brand == "Acme")
+}
+
+@Test func legacyNutrientNumberAloneMapsNothing() async throws {
+    let transport = StubUSDATransport()
+    transport.body = Data(#"{"foods":[{"fdcId":5,"description":"Rice","foodNutrients":[{"nutrientNumber":"208","value":130}]}]}"#.utf8)
+    let client = USDAFoodDataClient(apiKey: "k", transport: transport)
+
+    guard case .results(let foods) = await client.search(query: "rice") else {
+        Issue.record("expected results")
+        return
+    }
+    #expect(foods.first?.nutrientsPer100g.isEmpty == true)
+}
+
+@Test func oversizedSuccessfulReplyIsRefusedBeforeParsing() async {
+    let transport = StubUSDATransport()
+    transport.body = Data(count: USDAFoodDataClient.maxResponseBytes + 1)
+    let client = USDAFoodDataClient(apiKey: "k", transport: transport)
+
+    #expect(await client.search(query: "rice") == .transport("response exceeded the local size limit"))
 }
