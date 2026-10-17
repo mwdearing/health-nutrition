@@ -237,11 +237,28 @@ def test_a_project_that_embeds_a_watch_app_requires_one_in_the_archive(archive: 
     assert "FAIL  the archive has a Watch app, as the project embeds one" in result.stdout
 
 
-def test_a_renamed_watch_target_still_requires_a_watch_app(archive: Archive) -> None:
-    archive.project_yml("targets:\n  Companion:\n    type: application\n    platform: watchOS\n")
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "    platform: watchOS\n",
+        '    platform: "watchOS"\n',
+        "    platform: 'watchOS'\n",
+        "    {type: application, platform: watchOS}\n",
+        '    {"type": "application", "platform": "watchOS"}\n',
+    ],
+)
+def test_a_renamed_watch_target_still_requires_a_watch_app(archive: Archive, declaration: str) -> None:
+    archive.project_yml("targets:\n  Companion:\n" + declaration)
     result = archive.run()
     assert result.returncode != 0
     assert "FAIL  the archive has a Watch app, as the project embeds one" in result.stdout
+
+
+def test_an_ios_only_project_does_not_expect_a_watch_app(archive: Archive) -> None:
+    archive.project_yml("targets:\n  HealthNutrition:\n    platform: iOS\n")
+    result = archive.run()
+    assert result.returncode == 0
+    assert "NOTE  this project does not embed a Watch app" in result.stdout
 
 
 def test_a_missing_project_file_stops_the_step(archive: Archive) -> None:
