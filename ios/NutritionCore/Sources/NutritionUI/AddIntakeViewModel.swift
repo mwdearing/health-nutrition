@@ -287,10 +287,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// dimension it is stated in; a "serving" or a count logged against it saves unknown values for the day.
     public var unitOptions: [MeasureUnit] {
         switch lookedUp?.basis {
-        case .per100g?:
-            // A household volume (cup, tablespoon, teaspoon) totals only where a density is known for the name.
-            let density = densityApplies && IngredientDensityCatalog.match(typedName) != nil
-            return units.filter { $0.dimension == .mass || (density && UnitSelection.typedVolumes.contains($0)) }
+        case .per100g?: return units.filter { $0.dimension == .mass }
         case .per100ml?: return units.filter { $0.dimension == .volume }
         default: return units
         }
