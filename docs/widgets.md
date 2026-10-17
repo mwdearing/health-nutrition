@@ -53,5 +53,19 @@ reads "Nothing logged today"; after Erase all data also confirm the Lock Screen 
 figures; and confirm the summary file is excluded from a device backup (its resource value
 `isExcludedFromBackup` reads back true).
 
+## Sending the summary to a paired Watch (phone side)
+
+The phone sends a paired Apple Watch the same summary the widgets read, in an envelope
+`{ schemaVersion, eraseGeneration, snapshot }` (`Shared/WatchSnapshotEnvelope.swift`). `snapshot` is the
+`WidgetSnapshot` and nothing else: no entry names, meal times, supplements or account data. The channel is
+WatchConnectivity's application context (latest value wins, device to device, no server). The sender
+(`WatchSnapshotSender`) runs right after the summary is written, with the publisher's gates, and only when the
+session is active, a Watch is paired and the Watch app is installed; otherwise the latest envelope is held and sent
+on activation. An envelope from before the latest erase never replaces one from after it. A decoder tolerates unknown
+fields; an unknown `schemaVersion`, a malformed payload or one over 4 KB decodes to "invalid" and is shown as dashes.
+The real session sits behind `WatchSnapshotTransport` so everything above it is unit-tested with a fake, because
+WatchConnectivity does not exist on the platform the package tests build on. The Watch app that receives and shows
+the summary is a separate change.
+
 Not built yet: a water button on the widget or Lock Screen (it needs the Log water intent split from the app's
 services so it can run from the extension), and configuration options.

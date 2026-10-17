@@ -50,7 +50,15 @@ Removing the keys restores defaults; it does not write replacement values, with 
 
 The Today widgets read a small summary file in the App Group container (see [Widgets](widgets.md)). Erase all
 data first replaces the summary with an empty one and then removes the summary's folder and asks the widgets to
-refresh; Today then reloads empty and writes the real empty day, so they show "Nothing logged today".
+refresh; Today then reloads empty and writes the real empty day, so they show "Nothing logged today". If a
+summary an earlier build kept in the container root cannot be removed, the erase reports a failure after the
+folder's summary has been emptied.
+
+A paired Apple Watch is handed the same summary (see [Widgets](widgets.md)). Erase all data also replaces what the
+phone last sent the Watch with an empty envelope under a new erase generation; if the Watch connection is not yet
+active the empty envelope is held and sent on activation. The system delivers it when the Watch is next reachable,
+so a Watch that is off or away during the erase keeps its copy until then, limited to the rest of the same day
+because a summary from an earlier day shows dashes.
 
 ## What remains
 

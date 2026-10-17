@@ -27,7 +27,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
             displayPreferences: UserDefaultsDisplayPreferences(defaults: suite),
             reminderScheduler: RecordingReminderScheduler(),
             // Never the real App Group: this test only exercises the publisher against its own store.
-            widgetSnapshotEraser: WidgetSnapshotEraser(store: nil))
+            widgetSnapshotEraser: WidgetSnapshotEraser(store: nil, watch: nil))
         return services.today
     }
 
@@ -39,7 +39,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         let today = try makeToday()
         today.load(now: loadedAt)
         let store = makeStore()
-        let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure())
+        let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure(), watch: nil)
         publisher.publish(from: today, loadedAt: loadedAt, generation: 0)
         XCTAssertEqual(store.read()?.generatedAt, loadedAt)
     }
@@ -48,7 +48,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         let today = try makeToday()
         today.load(now: loadedAt)
         let store = makeStore()
-        let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure())
+        let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure(), watch: nil)
         // A write announced for an earlier load: today.lastLoadedAt has moved on.
         publisher.publish(from: today, loadedAt: loadedAt.addingTimeInterval(-60), generation: 0)
         XCTAssertNil(store.read())
@@ -59,7 +59,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         today.load(now: loadedAt)
         let store = makeStore()
         let erasure = WidgetSnapshotErasure()
-        let publisher = WidgetSnapshotPublisher(store: store, erasure: erasure)
+        let publisher = WidgetSnapshotPublisher(store: store, erasure: erasure, watch: nil)
         let pending = erasure.generation
         erasure.markErased()
         publisher.publish(from: today, loadedAt: loadedAt, generation: pending)
@@ -70,7 +70,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         let today = try makeToday()
         today.load(now: loadedAt)
         let store = makeStore()
-        let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure())
+        let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure(), watch: nil)
         publisher.start(today: today, isErasing: { true })
         XCTAssertNil(store.read(), "the launch-time publish also waits out an erase")
     }
