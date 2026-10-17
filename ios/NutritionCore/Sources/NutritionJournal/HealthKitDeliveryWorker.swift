@@ -86,9 +86,12 @@ public typealias NutrientTotalsProvider = @Sendable (_ intakeID: String, _ revis
 ///   `labelBasis` (typically per 100 g), not for the amount the component records, so a 40 g
 ///   component of a product whose label states 13 g of protein per 100 g carries 5.2 g. The factor
 ///   comes from `IntakeContextSnapshotBasis.scalingFactor(labelBasis:logged:)`, the same arithmetic the
-///   relay encoder uses, and the multiplication is in `Decimal`, never a float. **Nothing is
-///   written when that factor cannot be resolved** — a basis the journal cannot answer ("per 100 kcal",
-///   "per 100 g or mL") or components that cannot scale it. An unscaled label value states the whole
+///   relay encoder uses, with one exception: a "per 100 g or mL" label on logged amounts that are all weights or all volumes (summed)
+///   falls back to `IntakeContextSnapshotBasis.perHundredGOrMLFactor` (per 100 g or per 100 mL). The
+///   relay encoder does not take that fallback. The multiplication is in `Decimal`, never a float.
+///   **Nothing is written when that factor cannot be resolved** — a basis the journal cannot answer
+///   ("per 100 kcal", or "per 100 g or mL" on a count, a mix of weight and volume, or a negative amount)
+///   or components that cannot scale it. An unscaled label value states the whole
 ///   package rather than the portion eaten, which is a wrong number in Health, and a guessed one
 ///   worse; the planner then plans no sample for the nutrient, which is the honest outcome. See
 ///   `docs/healthkit-writer.md`.
@@ -155,8 +158,11 @@ public struct JournalSnapshotTotals: Sendable {
         guard let product = try store.product(snapshotID: snapshotID) else {
             throw JournalError.corruptRecord("missing product snapshot \(snapshotID)")
         }
+        // The same factor the day totals use, so a barcode "per 100 g or mL" writes what Today shows.
         guard let factor = IntakeContextSnapshotBasis.scalingFactor(
             labelBasis: product.labelBasis, logged: revision.components)
+            ?? IntakeContextSnapshotBasis.perHundredGOrMLFactor(
+                labelBasis: product.labelBasis, logged: revision.components)
         else { return [:] }
         var scaled: [String: NutrientValue] = [:]
         for (key, value) in product.nutrients {

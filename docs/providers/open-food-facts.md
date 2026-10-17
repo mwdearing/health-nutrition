@@ -159,7 +159,10 @@ Close button and asks once: it does not keep retrying while the notice is on scr
   practice no unit field, so whether a result is per 100 g or per 100 mL is read
   from its pack quantity ("1 gallon", "400 g", "32 fl oz (946 ml)"): only masses
   give per 100 g, only volumes per 100 mL, and a mix or no unit leaves it "per
-  100 g or mL", which cannot be scaled to an amount. A result opens with no
+  100 g or mL". That basis is scaled to an amount only when every logged component
+  is a weight (per 100 g) or every one is a volume (per 100 mL), and the amounts
+  are summed; a count such as a scoop, a mix of weight and volume, or a negative
+  amount still cannot be scaled and stays unknown. A result opens with no
   serving filled in. Opening a result sends nothing: the form is filled from the
   search reply. The owner decided on 2026-10-14 that a picked result's barcode is
   not sent to Open Food Facts to read the fuller record; scanning or typing a

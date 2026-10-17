@@ -1103,9 +1103,10 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     /// A basis the journal cannot resolve against what was logged - "per 100 kcal" is not a quantity
     /// an intake records, and "per 100 g or mL" says the source did not settle its own dimension -
     /// has no factor. Nothing is written then: a guess would put a wrong number in Health, and a
-    /// truncated one would put a right-looking wrong number there.
+    /// truncated one would put a right-looking wrong number there. "per 100 g or mL" is resolved by the
+    /// logged dimension, so only its unresolvable shapes are pinned here, in the next test.
     func testASnapshotWhoseLabelBasisCannotBeResolvedContributesNothing() async throws {
-        for basis in ["per 100 kcal", "per 100 g or mL"] {
+        for basis in ["per 100 kcal"] {
             let store = try makeStore(try makeDirectory())
             let ambiguous = ProductDefinition(
                 snapshotID: "snap-3", productID: "product-3", name: "Sample product", brand: nil, barcode: nil,
@@ -1119,6 +1120,44 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
             XCTAssertEqual(recorded, [:], "\(basis) cannot be scaled, so no snapshot nutrient is stated")
         }
+    }
+
+    /// "per 100 g or mL" with a weight beside a counted scoop, or with no amount at all, has no factor, so
+    /// nothing is written for it.
+    func testAPerHundredGOrMLLabelWithAMixedOrCountedEntryWritesNothing() async throws {
+        let mixed = [
+            component("mixed", amount: dec("30"), unit: .g),
+            IntakeComponent(componentID: "scoop", name: "Scoop", amount: dec("1"), unit: .scoop),
+        ]
+        for components in [mixed, [component("scoop", amount: dec("1"), unit: .scoop)]] {
+            let store = try makeStore(try makeDirectory())
+            let product = ProductDefinition(
+                snapshotID: "snap-mixed", productID: "product-mixed", name: "Mixed", brand: nil, barcode: nil,
+                labelBasis: "per 100 g or mL", catalogOrigin: "sample", catalogVersion: "1",
+                nutrients: ["energy": .known(dec("40"), .kcal)])
+            try store.create(sampleIntake(), components: components, product: product, now: when)
+            let recorded = try await JournalSnapshotTotals(store: store).totals(intakeID: intakeID, revision: 1)
+            XCTAssertEqual(recorded, [:])
+        }
+    }
+
+    /// Milk logged as 283.49523125 g of a product stated per 100 g or mL is written per 100 g, the same as
+    /// Today shows: 37.5 kcal and 5.4 g carbohydrate per 100 becomes about 106.31 kcal and 15.31 g.
+    func testAPerHundredGOrMLLabelWritesTheLoggedGramsPer100G() async throws {
+        let store = try makeStore(try makeDirectory())
+        let milk = ProductDefinition(
+            snapshotID: "snap-milk", productID: "product-milk", name: "Fat Free 0% Milk", brand: nil, barcode: nil,
+            labelBasis: "per 100 g or mL", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["energy": .known(dec("37.5"), .kcal), "carbohydrate": .known(dec("5.4"), .g)])
+        try store.create(
+            sampleIntake(), components: [component("milk", amount: dec("283.49523125"), unit: .g)],
+            product: milk, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertEqual(recorded["energy"], .known(dec("37.5") * dec("283.49523125") / 100, .kcal))
+        XCTAssertEqual(recorded["carbohydrate"], .known(dec("5.4") * dec("283.49523125") / 100, .g))
     }
 
     /// The water path is a separate path: an unresolved snapshot leaves it exactly as it was, because
