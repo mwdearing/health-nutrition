@@ -241,7 +241,8 @@ jobs:
             group_key="com.apple.security.application-groups"
             check "$name carries the $group_key key" "$pb" -c "Print :$group_key" "$ent"
             check "$name's first App Group is the app's group" eq "$("$pb" -c "Print :$group_key:0" "$ent" 2>/dev/null || true)" "$group"
-            if [ -n "$("$pb" -c "Print :$group_key:1" "$ent" 2>/dev/null || true)" ]; then
+            # A second group is a line starting with "group." on either stream; a not-found message never is.
+            if "$pb" -c "Print :$group_key:1" "$ent" 2>&1 | grep -q '^group\.'; then
               echo "FAIL  $name lists exactly one App Group"; fail=1
             else
               echo "OK    $name lists exactly one App Group"
