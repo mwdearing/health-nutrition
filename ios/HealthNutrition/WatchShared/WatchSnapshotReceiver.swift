@@ -3,7 +3,8 @@ import Foundation
 /// The Watch's side of the summary: turns a context the phone sent into the file the Watch widgets read. Written
 /// against plain values and closures (no WatchConnectivity, no WidgetKit) so the iPhone test bundle covers it.
 ///
-/// - An envelope below the highest erase generation seen is ignored: it was sent before an erase.
+/// - An envelope below the highest erase generation seen (within the same phone install) is ignored: it was sent
+///   before an erase.
 /// - An envelope with a summary is stored; one without (the erase) stores an empty day, which the widgets read as
 ///   "Nothing logged today".
 /// - An unknown schema version, a malformed or an oversized payload removes the stored summary: the widgets then
@@ -14,6 +15,9 @@ final class WatchSnapshotReceiver {
     private let now: () -> Date
     private let reload: () -> Void
     private static let highestGenerationKey = "watchReceiver.highestEraseGeneration"
+    private static let epochKey = "watchReceiver.epoch"
+    /// The session delegate and the app's start-up both reach the receiver; one context is applied at a time.
+    private let lock = NSLock()
 
     init(
         store: WidgetSnapshotStore?, defaults: UserDefaults = .standard, now: @escaping () -> Date = { Date() },
@@ -30,8 +34,17 @@ final class WatchSnapshotReceiver {
 
     func receive(context: [String: Any]) {
         guard let store else { return }
+        lock.lock()
+        defer { lock.unlock() }
         switch WatchSnapshotEnvelope.decode(context: context) {
         case .envelope(let envelope):
+            // The generation is only comparable within one install of the phone app: a new epoch (a reinstall or
+            // another phone) starts the comparison again instead of being dropped as "older".
+            let epoch = envelope.epoch ?? ""
+            if epoch != (defaults.string(forKey: Self.epochKey) ?? "") {
+                defaults.set(epoch, forKey: Self.epochKey)
+                defaults.set(0, forKey: Self.highestGenerationKey)
+            }
             // Sent before an erase: nothing changes, so nothing is reloaded.
             guard envelope.eraseGeneration >= highestEraseGeneration else { return }
             defaults.set(envelope.eraseGeneration, forKey: Self.highestGenerationKey)

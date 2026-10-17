@@ -24,7 +24,7 @@ widget has no network access, the file is cleared when you use Erase all data, a
 backups.
 
 If you pair an Apple Watch and install the app on it, the phone sends the Watch the same daily totals (calories,
-macros and water), device to device through the system's Watch connection, and nothing else: no entry names,
+macros and water, your calorie goal and the time they were worked out), device to device through the system's Watch connection, and nothing else: no entry names,
 meal times, supplements or account details. The Watch keeps them in its own App Group storage for its app and its
 complications, and Erase all data replaces them with an empty day; a Watch that is off when you erase is cleared
 when it next connects.

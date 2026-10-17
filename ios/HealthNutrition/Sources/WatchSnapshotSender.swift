@@ -5,6 +5,9 @@ import Foundation
 /// for. An erase has not reached the Watch while the first is ahead of the second; there is no separate flag to get
 /// out of step with the generation. Two numbers, no figures.
 protocol WatchSenderState: AnyObject, Sendable {
+    /// Names this install; created once and kept with the counters, so a reinstall (which also resets them) gets a
+    /// new one and the Watch knows to start its comparison again.
+    var epoch: String { get }
     var eraseGeneration: Int { get set }
     var deliveredGeneration: Int { get set }
 }
@@ -19,6 +22,17 @@ final class UserDefaultsWatchSenderState: WatchSenderState, @unchecked Sendable 
     private let defaults: UserDefaults
     private static let generationKey = "watchSnapshot.eraseGeneration"
     private static let deliveredKey = "watchSnapshot.deliveredGeneration"
+    private static let epochKey = "watchSnapshot.epoch"
+    private let epochLock = NSLock()
+
+    var epoch: String {
+        epochLock.lock()
+        defer { epochLock.unlock() }
+        if let existing = defaults.string(forKey: Self.epochKey) { return existing }
+        let created = UUID().uuidString
+        defaults.set(created, forKey: Self.epochKey)
+        return created
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -67,7 +81,7 @@ final class WatchSnapshotSender: @unchecked Sendable {
             lock.unlock()
             return
         }
-        pending = WatchSnapshotEnvelope(eraseGeneration: state.eraseGeneration, snapshot: snapshot)
+        pending = WatchSnapshotEnvelope(eraseGeneration: state.eraseGeneration, snapshot: snapshot, epoch: state.epoch)
         lock.unlock()
         flush()
     }
@@ -78,7 +92,7 @@ final class WatchSnapshotSender: @unchecked Sendable {
         lock.lock()
         highestErasure = max(highestErasure, erasureGeneration)
         state.eraseGeneration += 1
-        pending = WatchSnapshotEnvelope(eraseGeneration: state.eraseGeneration, snapshot: nil)
+        pending = WatchSnapshotEnvelope(eraseGeneration: state.eraseGeneration, snapshot: nil, epoch: state.epoch)
         lock.unlock()
         flush()
     }
@@ -87,7 +101,7 @@ final class WatchSnapshotSender: @unchecked Sendable {
     func resumeAfterLaunch() {
         lock.lock()
         if state.eraseUnsent, pending == nil {
-            pending = WatchSnapshotEnvelope(eraseGeneration: state.eraseGeneration, snapshot: nil)
+            pending = WatchSnapshotEnvelope(eraseGeneration: state.eraseGeneration, snapshot: nil, epoch: state.epoch)
         }
         lock.unlock()
         flush()

@@ -14,11 +14,19 @@ struct WatchSnapshotEnvelope: Codable, Equatable {
     var eraseGeneration: Int
     /// The summary, or nil after an erase.
     var snapshot: WidgetSnapshot?
+    /// Names this install of the phone app. The erase generation is only comparable within one epoch: after a
+    /// reinstall or a new phone the counter starts again, and the Watch restarts its own comparison when the epoch
+    /// it sees changes. Absent in an envelope from a build that did not send one.
+    var epoch: String?
 
-    init(eraseGeneration: Int, snapshot: WidgetSnapshot?, schemaVersion: Int = Self.currentSchemaVersion) {
+    init(
+        eraseGeneration: Int, snapshot: WidgetSnapshot?, epoch: String? = nil,
+        schemaVersion: Int = Self.currentSchemaVersion
+    ) {
         self.schemaVersion = schemaVersion
         self.eraseGeneration = eraseGeneration
         self.snapshot = snapshot
+        self.epoch = epoch
     }
 
     /// The application context for this envelope.

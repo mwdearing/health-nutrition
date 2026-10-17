@@ -35,8 +35,8 @@ final class WatchSnapshotReceiverTests: XCTestCase {
             carbohydrateGrams: 120, fatGrams: 40, waterMilliliters: 750)
     }
 
-    private func context(generation: Int, snapshot: WidgetSnapshot?) throws -> [String: Any] {
-        try WatchSnapshotEnvelope(eraseGeneration: generation, snapshot: snapshot).context()
+    private func context(generation: Int, snapshot: WidgetSnapshot?, epoch: String? = "a") throws -> [String: Any] {
+        try WatchSnapshotEnvelope(eraseGeneration: generation, snapshot: snapshot, epoch: epoch).context()
     }
 
     func testASummaryIsStoredAndTheWidgetsAreReloaded() throws {
@@ -63,6 +63,19 @@ final class WatchSnapshotReceiverTests: XCTestCase {
         receiver.receive(context: try context(generation: 1, snapshot: sample()))
         XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries, "the late pre-erase summary did not land")
         XCTAssertEqual(reloads, reloadsAfterErase)
+    }
+
+    func testANewInstallOfThePhoneAppStartsTheComparisonAgain() throws {
+        let (receiver, store) = makeReceiver()
+        receiver.receive(context: try context(generation: 5, snapshot: nil, epoch: "old-install"))
+        // The phone app was reinstalled: its counter starts at 0 under a new epoch, and its summaries must land.
+        receiver.receive(context: try context(generation: 0, snapshot: sample(), epoch: "new-install"))
+        XCTAssertEqual(store.read(), sample())
+        XCTAssertEqual(receiver.highestEraseGeneration, 0)
+        // Within the new install the ordering rule applies again.
+        receiver.receive(context: try context(generation: 2, snapshot: nil, epoch: "new-install"))
+        receiver.receive(context: try context(generation: 1, snapshot: sample(), epoch: "new-install"))
+        XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries)
     }
 
     func testTheHighestGenerationSurvivesANewReceiver() throws {
