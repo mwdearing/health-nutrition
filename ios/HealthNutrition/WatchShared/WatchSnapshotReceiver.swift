@@ -50,6 +50,9 @@ final class WatchSnapshotReceiver {
             // epoch (a reinstall or another phone) starts at zero instead of being dropped as "older", and a late
             // envelope from an older install is judged against that install's own mark.
             let epoch = envelope.epoch ?? Self.unnamedEpoch
+            // Epochs sort by install time, so an envelope from an install older than the one applied last (a late
+            // delivery, or a second phone) is ignored; a newer install is accepted and takes over.
+            if let applied = defaults.string(forKey: Self.epochKey), epoch.rankedBefore(applied) { return }
             // Sent before an erase: nothing changes, so nothing is reloaded.
             guard envelope.eraseGeneration >= highest(in: epoch) else { return }
             defaults.set(epoch, forKey: Self.epochKey)
@@ -66,5 +69,14 @@ final class WatchSnapshotReceiver {
             try? store.erase()
             reload()
         }
+    }
+}
+
+private extension String {
+    /// An epoch of an unnamed sender ranks below every named one.
+    func rankedBefore(_ other: String) -> Bool {
+        let mine = self == "unnamed" ? "" : self
+        let theirs = other == "unnamed" ? "" : other
+        return mine < theirs
     }
 }

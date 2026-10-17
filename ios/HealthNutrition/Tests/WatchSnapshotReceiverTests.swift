@@ -67,36 +67,36 @@ final class WatchSnapshotReceiverTests: XCTestCase {
 
     func testANewInstallOfThePhoneAppStartsTheComparisonAgain() throws {
         let (receiver, store) = makeReceiver()
-        receiver.receive(context: try context(generation: 5, snapshot: nil, epoch: "old-install"))
+        receiver.receive(context: try context(generation: 5, snapshot: nil, epoch: "1-old-install"))
         // The phone app was reinstalled: its counter starts at 0 under a new epoch, and its summaries must land.
-        receiver.receive(context: try context(generation: 0, snapshot: sample(), epoch: "new-install"))
+        receiver.receive(context: try context(generation: 0, snapshot: sample(), epoch: "2-new-install"))
         XCTAssertEqual(store.read(), sample())
         XCTAssertEqual(receiver.highestEraseGeneration, 0)
         // Within the new install the ordering rule applies again.
-        receiver.receive(context: try context(generation: 2, snapshot: nil, epoch: "new-install"))
-        receiver.receive(context: try context(generation: 1, snapshot: sample(), epoch: "new-install"))
+        receiver.receive(context: try context(generation: 2, snapshot: nil, epoch: "2-new-install"))
+        receiver.receive(context: try context(generation: 1, snapshot: sample(), epoch: "2-new-install"))
         XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries)
     }
 
-    func testALateEnvelopeFromAnOlderInstallCannotReopenTheNewerInstallsGuard() throws {
+    func testALateEnvelopeFromAnOlderInstallIsIgnoredOnceANewerOneWasApplied() throws {
         let (receiver, store) = makeReceiver()
-        receiver.receive(context: try context(generation: 2, snapshot: nil, epoch: "new-install"))
-        // A stray envelope from the previous install, below that install's own mark, is dropped.
-        receiver.receive(context: try context(generation: 5, snapshot: nil, epoch: "old-install"))
-        receiver.receive(context: try context(generation: 4, snapshot: sample(), epoch: "old-install"))
-        XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries)
-        // Back on the new install, a pre-erase envelope is still recognised.
-        receiver.receive(context: try context(generation: 1, snapshot: sample(), epoch: "new-install"))
+        receiver.receive(context: try context(generation: 2, snapshot: nil, epoch: "2-new-install"))
+        let reloadsBefore = reloads
+        // A stray envelope from the previous install, even one that beats that install's own mark, does not land.
+        receiver.receive(context: try context(generation: 5, snapshot: sample(), epoch: "1-old-install"))
+        XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries, "the stored content is still the newer install's erase")
+        XCTAssertEqual(reloads, reloadsBefore)
+        // The newer install's guard is intact.
+        receiver.receive(context: try context(generation: 1, snapshot: sample(), epoch: "2-new-install"))
         XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries)
     }
 
-    func testAnEnvelopeWithoutAnEpochIsComparedUnderItsOwnGuard() throws {
+    func testAnEnvelopeWithoutAnEpochDoesNotOverrideANamedInstall() throws {
         let (receiver, store) = makeReceiver()
-        receiver.receive(context: try context(generation: 3, snapshot: nil, epoch: "install"))
+        receiver.receive(context: try context(generation: 3, snapshot: nil, epoch: "1-install"))
         receiver.receive(context: try context(generation: 0, snapshot: sample(), epoch: nil))
-        XCTAssertEqual(store.read(), sample(), "an unnamed sender is its own install")
-        receiver.receive(context: try context(generation: 3, snapshot: nil, epoch: "install"))
-        XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries, "the named install's guard was not reset")
+        XCTAssertFalse(try XCTUnwrap(store.read()).hasEntries)
+        XCTAssertEqual(receiver.highestEraseGeneration, 3)
     }
 
     func testTheHighestGenerationSurvivesANewReceiver() throws {
