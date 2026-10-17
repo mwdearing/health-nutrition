@@ -67,21 +67,6 @@ private final class FaultyJournal: JournalStore, JournalLoggedUnits, @unchecked 
     }
 }
 
-/// A saved-meals store that refuses any update which would remove a meal, so a meal cannot be taken back out.
-private final class RemoveRefusingStore: SavedMealStoring, @unchecked Sendable {
-    struct Refused: Error {}
-    let inner: UserDefaultsSavedMealStore
-    init(_ inner: UserDefaultsSavedMealStore) { self.inner = inner }
-    func meals() throws -> [SavedMeal] { try inner.meals() }
-    func update(_ change: (inout [SavedMeal]) throws -> Void) throws {
-        var probe = try inner.meals()
-        let before = probe.count
-        try change(&probe)
-        if probe.count < before { throw Refused() }
-        try inner.update(change)
-    }
-}
-
 /// The screen model for saved meals, and Save as meal from the Journal.
 ///
 /// Synthetic names and ids only. Lowercase UUID intake ids.
