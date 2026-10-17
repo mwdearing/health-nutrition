@@ -134,6 +134,11 @@ public final class GoalsViewModel: ObservableObject {
     /// journal's current snapshots carry.
     @Published public private(set) var offeredKeys: [String] = NutrientGoalChoices.keys
     @Published public private(set) var errorMessage: String?
+    /// Counts each goal the person saves on this screen, so the screen can confirm it. A save that changes nothing does not count.
+    @Published public private(set) var savedSerial = 0
+    func noteSaved() { if !isApplyingMacroSplit { savedSerial += 1 } }
+    /// A macro-split apply writes several goals; it counts once, when the whole apply has saved.
+    func noteMacroSplitSaved() { savedSerial += 1 }
     @Published public var draftText: [String: String] = [:] {
         // Any change to the water text after a commit is the person's input, even when they type the
         // committed text back, so the record of the commit is dropped.
@@ -497,6 +502,7 @@ public final class GoalsViewModel: ObservableObject {
         if text.isEmpty {
             guard removeTarget(for: nutrient) else { return false }
             draftText[nutrient] = ""
+            noteSaved()
             return true
         }
         guard let target = AmountParser.parseTyped(text), !target.isNaN, target > 0 else {
@@ -525,6 +531,7 @@ public final class GoalsViewModel: ObservableObject {
             if let written { committedWater = (draftText[nutrient] ?? text, writtenUnit, written) }
         }
         if nutrient == Self.energyKey { followEnergyGoal(from: previousEnergy) }
+        noteSaved()
         return true
     }
 

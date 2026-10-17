@@ -95,7 +95,10 @@ public struct CustomProductEditorView: View {
             Section {
                 Toggle("Open intake details after saving", isOn: $openDetails)
                 Button("Save product on this phone") {
-                    do { let saved = try model.save(now: Date()); onSaved(saved, openDetails) } catch { }
+                    do {
+                        let saved = try model.save(now: Date())
+                        onSaved(saved, openDetails)
+                    } catch { }
                 }
                 .accessibilityHint("Saves without logging an intake. Eligible new products are queued for sharing.")
                 if let message = model.errorMessage { Text(message).foregroundStyle(TokenColors.error) }

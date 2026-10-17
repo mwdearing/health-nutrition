@@ -7,6 +7,7 @@ public struct CommunityProductSearchView: View {
     private let onSelect: (CustomProductRevision) -> Void
     private let onLegacy: (LegacyCustomProductDraft) -> Void
     private let onSignIn: () -> Void
+    private let onSaved: () -> Void
     private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
     /// The person's own favorites and recents, listed above the products. Both must be given, or the
     /// screen shows products only.
@@ -23,7 +24,8 @@ public struct CommunityProductSearchView: View {
     @State private var didAutoFocus = false
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
-                focusSearchOnAppear: Bool = false) {
+                focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
+        self.onSaved = onSaved
         self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
         self.library = library; self.onPick = onPick; self.focusSearchOnAppear = focusSearchOnAppear
     }
@@ -125,7 +127,12 @@ public struct CommunityProductSearchView: View {
                             if model.canLoadAlternatives { Button("Load more alternatives") { Task { await model.loadAlternatives() } } }
                             if let error = model.inspectionError { Text(error) }
                             if model.inspectionNeedsRefresh { Button("Refresh shared facts") { Task { await model.refreshInspection() } } }
-                            Button("Save representative on this phone") { select(product); model.closeInspection() }
+                            Button("Save representative on this phone") {
+                                select(product)
+                                // Only a saved product confirms; a legacy label opens an editor draft that is not saved yet.
+                                if selectionError == nil, case .custom = product.product { onSaved() }
+                                model.closeInspection()
+                            }
                                 .disabled(model.inspectionNeedsRefresh)
                         }
                     }
