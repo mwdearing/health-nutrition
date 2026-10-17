@@ -73,6 +73,9 @@ public final class SavedMealsModel: ObservableObject {
     @discardableResult
     public func save(name: String, meal: MealLabel?, intakes: [Intake]) -> Bool {
         let provider = RecentItemsProvider(store: journal)
+        // The templates below read which entries were kept out of Library; a failed read refuses the save rather
+        // than building them as if none were.
+        do { try provider.requireExclusions() } catch { return finish(failure: "Could not save the meal.") }
         var templates: [RepeatTemplate] = []
         // Entries logged at the same moment, as a copied day's are, keep the order Copy to today uses.
         for intake in intakes.sorted(by: { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) }) {

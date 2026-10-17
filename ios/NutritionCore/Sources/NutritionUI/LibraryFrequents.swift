@@ -54,6 +54,7 @@ public struct FrequentItemsProvider {
             newest[key] = (intake: intake, revision: current)
         }
         let provider = RecentItemsProvider(store: store)
+        try provider.requireExclusions()
         var items: [FrequentItem] = []
         for (key, value) in newest {
             guard let count = counts[key], count >= Self.minimumCount else { continue }
