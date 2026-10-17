@@ -262,9 +262,16 @@ jobs:
           check_signing "$appex"
 
           # The Watch app, when the archive has one: it sits under Watch/ in the app, with its own widget extension.
-          if ! ls -d "$app"/Watch/*.app >/dev/null 2>&1; then
-            echo "NOTE  no Watch app in this archive; the Watch checks are skipped"
+          # Whether the archive must have one is read from the checked-out project, so a dropped embed fails the run.
+          expect_watch=0
+          if grep -qE '^[[:space:]]*-[[:space:]]+target:[[:space:]]+HealthNutritionWatch[[:space:]]*$' project.yml; then expect_watch=1; fi
+          watch_count=$(ls -d "$app"/Watch/*.app 2>/dev/null | wc -l | tr -d ' ' || true)
+          if [ "$watch_count" -eq 0 ] && [ "$expect_watch" -eq 0 ]; then
+            echo "NOTE  this project does not embed a Watch app; the Watch checks are skipped"
+          elif [ "$watch_count" -eq 0 ]; then
+            echo "FAIL  the archive has a Watch app, as the project embeds one"; fail=1
           else
+            check "the archive has exactly one Watch app" eq "$watch_count" "1"
             watch=$(ls -d "$app"/Watch/*.app | head -n 1)
             watchex="$watch/PlugIns/HealthNutritionWatchWidgets.appex"
             echo "Watch apps:"
