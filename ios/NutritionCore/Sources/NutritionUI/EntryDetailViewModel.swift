@@ -148,6 +148,8 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var productName: String?
     @Published public private(set) var brand: String?
     @Published public private(set) var kind: ProductKind = .food
+    /// A drink's water share, 0 to 100, as the edit screen shows it. Nil means the stored share is kept.
+    @Published public var waterSharePercent: Decimal? = nil
     /// The entry's changes, newest first.
     @Published public private(set) var changes: [EntryChangeRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
@@ -258,6 +260,7 @@ public final class EntryDetailViewModel: ObservableObject {
             productName = snapshot?.name
             brand = snapshot?.brand
             kind = snapshot?.kind ?? .food
+            waterSharePercent = current.components.compactMap(\.hydrationPercent).first
             loggedUnits = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
@@ -440,9 +443,21 @@ public final class EntryDetailViewModel: ObservableObject {
                 if let untouched = Self.unchangedStoredComponent(for: item, in: current?.components ?? []) {
                     parsed.append(untouched)
                 } else if let amount = AmountParser.parseTyped(item.amountText) {
-                    parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: item.unit))
+                    let stored = current?.components.first { $0.componentID == item.componentID }?.hydrationPercent
+                    parsed.append(IntakeComponent(
+                        componentID: item.componentID, name: item.name, amount: amount, unit: item.unit,
+                        hydrationPercent: stored))
                 } else {
                     errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."
+                }
+            }
+            // A drink's water share is the one the edit screen shows, on its volume components only.
+            if kind == .drink, let share = waterSharePercent {
+                parsed = parsed.map { component in
+                    guard component.unit.dimension == .volume else { return component }
+                    var updated = component
+                    updated.hydrationPercent = share
+                    return updated
                 }
             }
             fieldErrors = errors
@@ -560,6 +575,7 @@ public final class EntryDetailViewModel: ObservableObject {
             current.contains { existing in
                 existing.componentID == candidate.componentID && existing.name == candidate.name
                     && existing.unit == candidate.unit && Self.sameAmount(existing.amount, candidate.amount)
+                    && existing.hydrationPercent == candidate.hydrationPercent
             }
         }
     }

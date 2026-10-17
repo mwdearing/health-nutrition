@@ -139,6 +139,21 @@ public struct EntryDetailView: View {
                     }
                 }
             }
+            if model.kind == .drink {
+                Section {
+                    Stepper(
+                        value: Binding(
+                            get: { Double(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber) },
+                            set: { model.waterSharePercent = Decimal($0) }),
+                        in: 0...100, step: 5
+                    ) {
+                        Text("Water share \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))%")
+                    }
+                    Text("Counts as \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))% water")
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
+            }
             if !model.allValues.isEmpty {
                 Section {
                     DisclosureGroup("All \(model.allValues.count) values") {
