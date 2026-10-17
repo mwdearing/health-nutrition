@@ -14,8 +14,10 @@ final class WatchSnapshotReceiver {
     private let defaults: UserDefaults
     private let now: () -> Date
     private let reload: () -> Void
-    private static let highestGenerationKey = "watchReceiver.highestEraseGeneration"
+    private static let highestGenerationPrefix = "watchReceiver.highestEraseGeneration."
     private static let epochKey = "watchReceiver.epoch"
+    /// Stands in for the epoch of an envelope that carries none (a phone build from before epochs).
+    private static let unnamedEpoch = "unnamed"
     /// The session delegate and the app's start-up both reach the receiver; one context is applied at a time.
     private let lock = NSLock()
 
@@ -29,8 +31,14 @@ final class WatchSnapshotReceiver {
         self.reload = reload
     }
 
-    /// The highest erase generation applied so far, kept across launches so it only ever goes up.
-    var highestEraseGeneration: Int { defaults.integer(forKey: Self.highestGenerationKey) }
+    /// The epoch of the phone install whose envelope was applied last.
+    private var currentEpoch: String { defaults.string(forKey: Self.epochKey) ?? Self.unnamedEpoch }
+
+    private func highest(in epoch: String) -> Int { defaults.integer(forKey: Self.highestGenerationPrefix + epoch) }
+
+    /// The highest erase generation applied so far for the phone install seen last, kept across launches so it only
+    /// ever goes up. Kept per install, so a late envelope from an older install cannot reopen the newer one's guard.
+    var highestEraseGeneration: Int { highest(in: currentEpoch) }
 
     func receive(context: [String: Any]) {
         guard let store else { return }
@@ -38,16 +46,14 @@ final class WatchSnapshotReceiver {
         defer { lock.unlock() }
         switch WatchSnapshotEnvelope.decode(context: context) {
         case .envelope(let envelope):
-            // The generation is only comparable within one install of the phone app: a new epoch (a reinstall or
-            // another phone) starts the comparison again instead of being dropped as "older".
-            let epoch = envelope.epoch ?? ""
-            if epoch != (defaults.string(forKey: Self.epochKey) ?? "") {
-                defaults.set(epoch, forKey: Self.epochKey)
-                defaults.set(0, forKey: Self.highestGenerationKey)
-            }
+            // The generation is only comparable within one install of the phone app, so it is kept per epoch: a new
+            // epoch (a reinstall or another phone) starts at zero instead of being dropped as "older", and a late
+            // envelope from an older install is judged against that install's own mark.
+            let epoch = envelope.epoch ?? Self.unnamedEpoch
             // Sent before an erase: nothing changes, so nothing is reloaded.
-            guard envelope.eraseGeneration >= highestEraseGeneration else { return }
-            defaults.set(envelope.eraseGeneration, forKey: Self.highestGenerationKey)
+            guard envelope.eraseGeneration >= highest(in: epoch) else { return }
+            defaults.set(epoch, forKey: Self.epochKey)
+            defaults.set(envelope.eraseGeneration, forKey: Self.highestGenerationPrefix + epoch)
             let snapshot = envelope.snapshot ?? WidgetSnapshot.empty(at: now())
             do {
                 try store.write(snapshot)
