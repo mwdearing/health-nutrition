@@ -104,10 +104,7 @@ public actor USDAFoodDataClient {
         case 200..<300:
             break
         case 429:
-            let retry = response.value(forHTTPHeaderField: "Retry-After")
-                .flatMap { TimeInterval($0) }
-                .flatMap { $0 >= 0 ? $0 : nil }
-            return .rateLimited(retryAfter: retry)
+            return .rateLimited(retryAfter: Self.retryAfter(response.value(forHTTPHeaderField: "Retry-After")))
         case 401, 403:
             return .transport("the USDA key was refused")
         default:
@@ -119,6 +116,25 @@ public actor USDAFoodDataClient {
         } catch {
             return .transport("the USDA reply could not be read")
         }
+    }
+
+    /// Retry-After is either delta-seconds or an HTTP date (RFC 9110). Negative, infinite or unreadable
+    /// values give nil; a date already past gives zero.
+    static func retryAfter(_ header: String?, now: Date = Date()) -> TimeInterval? {
+        guard let text = header?.trimmingCharacters(in: .whitespaces), !text.isEmpty else {
+            return nil
+        }
+        if let seconds = TimeInterval(text) {
+            return seconds.isFinite && seconds >= 0 ? seconds : nil
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let date = formatter.date(from: text) else {
+            return nil
+        }
+        return max(0, date.timeIntervalSince(now))
     }
 
     /// Turns a search reply into foods. Records without a description or FDC id are dropped.

@@ -36,10 +36,13 @@ challenge are separate requests to external services.
 
 A name search in Find products sends only the words the person typed (2 to 80
 characters) to the Open Food Facts search service (`search.openfoodfacts.org`,
-`/search`) when they submit the field, and nothing else from the device; words
-typed in Thai script also send the language code `th`, read from the words.
-Opening one of the results sends nothing: the form is filled from the reply
-already received. It works signed out and is limited to six searches a minute.
+`/search`) and, in builds that carry a USDA key, to USDA FoodData Central
+(`api.nal.usda.gov`, `/fdc/v1/foods/search`) when they submit the field, and
+nothing else from the device. The USDA key travels in a request header, never in
+the URL. Words typed in Thai script also send the language code `th` to Open
+Food Facts, read from the words. Opening one of the results sends nothing: the
+form is filled from the reply already received. It works signed out and is
+limited to six Open Food Facts searches a minute.
 The screen says so beside the results; supplements are not searched there.
 
 The HealthRelay destination is unavailable in this version. After the person

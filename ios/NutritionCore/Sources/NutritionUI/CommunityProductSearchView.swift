@@ -43,7 +43,7 @@ public struct CommunityProductSearchView: View {
                 }
                 Button("Search", action: search)
             } footer: {
-                Text("Your foods and products on this phone narrow as you type. Open Food Facts and shared products are searched only when you tap Search or press Return.")
+                Text("Your foods and products on this phone narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
             }
             // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
             // warning about entries a failed log left behind shows under any kind.
@@ -63,7 +63,7 @@ public struct CommunityProductSearchView: View {
                     }.accessibilityHint("Opens intake details without logging or sharing")
                 }
             }
-            if kind != .supplement { Section(header: Text("Open Food Facts"), footer: Text("The words you search for are sent to Open Food Facts, a public database. Nothing else from this phone is sent.")) {
+            if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this phone is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
                     Button { onOpenFoodFacts(product, kind) } label: {
@@ -74,10 +74,9 @@ public struct CommunityProductSearchView: View {
                             if let attribution = product.attribution { Text(attribution.text).font(.footnote) }
                         }
                     }.accessibilityHint("Opens intake details filled from this product. Nothing is logged until you save.")
-                }
-                if let attribution = model.openFoodFactsResults.compactMap(\.attribution).first,
-                   let url = URL(string: attribution.url) {
-                    Link("Open Food Facts license and source", destination: url).font(.footnote)
+                    if let attribution = product.attribution, let url = URL(string: attribution.url) {
+                        Link("Source and license", destination: url).font(.footnote)
+                    }
                 }
             } }
             Section("Shared products") {
@@ -185,13 +184,13 @@ public struct CommunityProductSearchView: View {
     @ViewBuilder private var openFoodFactsStatus: some View {
         switch model.openFoodFactsState {
         case .idle: EmptyView()
-        case .queryTooShort: Text("Enter at least two characters to search Open Food Facts.")
-        case .loading: ProgressView("Searching Open Food Facts")
+        case .queryTooShort: Text("Enter at least two characters to search food databases.")
+        case .loading: ProgressView("Searching food databases")
         case .results: EmptyView()
-        case .empty: Text("No Open Food Facts products match this search.")
+        case .empty: Text("No products match this search.")
         case .rateLimited(let seconds):
             Text(CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: seconds))
-        case .unavailable: Text("Open Food Facts is unavailable right now.")
+        case .unavailable: Text("Food databases are unavailable right now.")
         }
     }
     @ViewBuilder private var sharedState: some View {

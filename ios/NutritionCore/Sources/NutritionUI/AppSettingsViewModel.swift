@@ -75,6 +75,7 @@ public final class AppSettingsViewModel: ObservableObject {
     public var quickWaterError: String? { connections.quickWaterError }
     public let privacyStatement = "Your journal stays on this phone. Nothing is sent anywhere unless you export it."
     public let openFoodFactsAttribution = "Open Food Facts — database available under the Open Database License (ODbL)."
+    public let usdaAttribution = "USDA FoodData Central — public domain data from the U.S. Department of Agriculture."
 
     public let placeholderRows: [SettingsPlaceholderRow] = [
         SettingsPlaceholderRow(id: "appleHealth", title: "Apple Health", detail: "Not connected", issueReference: "#103"),

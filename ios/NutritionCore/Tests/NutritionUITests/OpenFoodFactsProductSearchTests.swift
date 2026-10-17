@@ -65,13 +65,13 @@ final class OpenFoodFactsProductSearchTests: XCTestCase {
     @MainActor func testLimitTextSaysTooManySearchesAndTheWait() {
         XCTAssertEqual(
             CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: 39),
-            "Too many Open Food Facts searches just now. Try again in about 39 seconds.")
+            "Too many product searches just now. Try again in about 39 seconds.")
         XCTAssertEqual(
             CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: 1),
-            "Too many Open Food Facts searches just now. Try again in about 1 second.")
+            "Too many product searches just now. Try again in about 1 second.")
         XCTAssertEqual(
             CommunityProductSearchViewModel.openFoodFactsLimitText(retryAfterSeconds: nil),
-            "Too many Open Food Facts searches just now. Try again in a minute.")
+            "Too many product searches just now. Try again in a minute.")
     }
 
     @MainActor func testFailureIsUnavailableWithoutAffectingLocalResults() async throws {

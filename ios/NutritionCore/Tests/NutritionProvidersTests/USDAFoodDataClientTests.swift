@@ -198,3 +198,18 @@ private let sampleReply = """
     #expect(url.contains("query=mac%20%2B%20cheese"))
     #expect(url.contains("dataType=Foundation,SR%20Legacy,Branded"))
 }
+
+@Test func retryAfterReadsSecondsAndHttpDates() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    #expect(USDAFoodDataClient.retryAfter("30", now: now) == 30)
+    #expect(USDAFoodDataClient.retryAfter("inf", now: now) == nil)
+    #expect(USDAFoodDataClient.retryAfter("-5", now: now) == nil)
+    #expect(USDAFoodDataClient.retryAfter("garbage", now: now) == nil)
+    let later = now.addingTimeInterval(120)
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "GMT")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    #expect(USDAFoodDataClient.retryAfter(formatter.string(from: later), now: now) == 120)
+    #expect(USDAFoodDataClient.retryAfter(formatter.string(from: now.addingTimeInterval(-60)), now: now) == 0)
+}

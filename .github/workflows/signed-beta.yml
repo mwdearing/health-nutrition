@@ -70,6 +70,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           HCAPTCHA_SITE_KEY: ${{ secrets.HCAPTCHA_SITE_KEY }}
+          USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
@@ -142,6 +143,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           HCAPTCHA_SITE_KEY: ${{ secrets.HCAPTCHA_SITE_KEY }}
+          USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
           MARKETING_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
@@ -188,7 +190,8 @@ jobs:
             "CURRENT_PROJECT_VERSION=$BUILD_NUMBER" \
             "SUPABASE_URL=${SUPABASE_URL:-}" \
             "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
-            "HCAPTCHA_SITE_KEY=${HCAPTCHA_SITE_KEY:-}"
+            "HCAPTCHA_SITE_KEY=${HCAPTCHA_SITE_KEY:-}" \
+            "USDA_FDC_API_KEY=${USDA_FDC_API_KEY:-}"
 
       - name: Export and upload to App Store Connect
         env:
