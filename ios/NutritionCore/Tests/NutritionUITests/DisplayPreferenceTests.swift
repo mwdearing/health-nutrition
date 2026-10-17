@@ -78,6 +78,7 @@ final class DisplayPreferenceTests: XCTestCase {
     func testUnitSystemPreferenceChoosesOfferedUnitsAndDisplayedAmount() throws {
         let preferences = UserDefaultsDisplayPreferences(defaults: makeSuite("units-customary"))
         preferences.setUnitSystem(.usCustomary)
+        preferences.setQuickWaterMilliliters(Decimal(250))
         let model = makeModel(preferences)
 
         XCTAssertEqual(model.unitSystem, .usCustomary)

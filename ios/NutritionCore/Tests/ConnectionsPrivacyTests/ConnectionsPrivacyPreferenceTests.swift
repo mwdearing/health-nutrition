@@ -240,7 +240,7 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
     /// A stored preference is read back into the screen, so reopening it shows what was saved.
     func testStoredQuickWaterPreferenceIsReadBackIntoTheScreen() throws {
-        let defaults = makeSuite("quick-water-reload")
+        let defaults = metricSuite("quick-water-reload")
         let first = UserDefaultsDisplayPreferences(defaults: defaults)
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: first)
         model.quickWaterText = "750"
