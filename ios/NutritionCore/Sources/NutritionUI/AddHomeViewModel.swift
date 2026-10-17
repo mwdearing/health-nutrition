@@ -111,7 +111,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
                 }
                 model.applyLabelProduct(ProductDefinition(
                     snapshotID: UUID().uuidString.lowercased(), productID: product.productID,
-                    name: model.name, brand: product.brand, barcode: product.barcode.isEmpty ? nil : product.barcode,
+                    name: model.name, brand: product.brand, barcode: product.barcode?.isEmpty == true ? nil : product.barcode,
                     labelBasis: "per serving", catalogOrigin: product.catalogOrigin,
                     catalogVersion: product.catalogVersion, kind: product.kind,
                     nutrients: nutrients, nutrientDisplayNames: product.nutrientDisplayNames))
