@@ -838,6 +838,10 @@ public final class AddIntakeViewModel: ObservableObject {
         unit = display.unit
         isPrefilling = false
         servingCount = "1"
+        // Saved as the exact serving the source gave, so the rounded figure shown never restates it.
+        if let servingOption, let shown = AmountParser.parseTyped(amountText) {
+            prefillBacking = (shown, display.unit, servingOption.quantity ?? shown, servingOption.unit ?? display.unit)
+        }
     }
 
     /// The serving in the person's mass unit: ounces under US units, grams under metric. The amount that
@@ -872,6 +876,10 @@ public final class AddIntakeViewModel: ObservableObject {
         }
         amountText = DecimalFormatting.text(count * display.quantity)
         unit = display.unit
+        if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
+           let shown = AmountParser.parseTyped(amountText) {
+            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+        }
     }
 
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
