@@ -33,6 +33,8 @@ private struct SaveConfirmationModifier: ViewModifier {
                         .padding(DesignSpacing.m)
                         // VoiceOver hears the announcement posted below, so the visual line stays silent.
                         .accessibilityHidden(true)
+                        // The line is information only, so taps on the controls behind it still reach them.
+                        .allowsHitTesting(false)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
