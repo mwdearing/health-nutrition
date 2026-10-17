@@ -63,6 +63,9 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
 
     /// The mapped types HealthKit resolves, read once so the request, the gate and the spike all
     /// agree on what "every mapped type" means.
+    /// Set once the request that includes nutrient read access has been answered on this device.
+    static let readAskedKey = "healthKit.nutritionReadRequested"
+
     static func mappedTypes() -> MappedTypes {
         var mapped = MappedTypes()
         for mapping in HealthKitWritePlanner.mappings {
@@ -145,6 +148,7 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
         guard HKHealthStore.isHealthDataAvailable() else { return .unavailable }
         let store = HKHealthStore()
         var access = AppleHealthAccess.unavailable
+        access.readAsked = UserDefaults.standard.bool(forKey: Self.readAskedKey)
         for type in mappedTypes().share {
             switch store.authorizationStatus(for: type) {
             case .sharingAuthorized:
@@ -227,7 +231,8 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             // The async request returns nothing: it completes once the sheet is done and HealthKit
             // deliberately never says which types were granted.
             try await healthStore.requestAuthorization(toShare: mapped.share, read: mapped.read)
-            var summary = "requested write and read access for \(mapped.share.count) nutrient type(s)"
+            UserDefaults.standard.set(true, forKey: Self.readAskedKey)
+            var summary = "requested write and read access for \(mapped.read.count) nutrient type(s)"
             if !mapped.unresolved.isEmpty {
                 summary += "; HealthKit does not know \(mapped.unresolved.sorted().joined(separator: ", "))"
             }
