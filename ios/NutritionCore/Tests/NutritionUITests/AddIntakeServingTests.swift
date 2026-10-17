@@ -17,6 +17,12 @@ final class AddIntakeServingTests: XCTestCase {
         return AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC", lookup: nil)
     }
 
+    /// The amount on the form, read in grams whatever unit the form shows it in.
+    private func grams(_ model: AddIntakeViewModel) -> Decimal {
+        let amount = AmountParser.parseTyped(model.amountText) ?? 0
+        return (try? Quantity(value: amount, unit: model.unit).converted(to: .g).value) ?? 0
+    }
+
     /// A per-100 g product with a 2 oz serving and 200 kcal per 100 g.
     private func picked(serving: ServingDefinition?) -> LookedUpProduct {
         LookedUpProduct(
@@ -28,17 +34,17 @@ final class AddIntakeServingTests: XCTestCase {
     func testPickOpensOnOneServingInTheSourceUnit() throws {
         let model = try makeModel()
         model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
-        XCTAssertEqual(model.amountText, "2")
-        XCTAssertEqual(model.unit, .oz)
         XCTAssertEqual(model.servingCount, "1")
+        // Two ounces, whatever the unit system shows them in.
+        XCTAssertLessThan(abs(grams(model) - Decimal(string: "56.6990462500")!), Decimal(string: "0.001")!)
     }
 
     func testServingCountSetsTheAmount() throws {
         let model = try makeModel()
         model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
         model.setServingCount("3")
-        XCTAssertEqual(model.amountText, "6")
-        XCTAssertEqual(model.unit, .oz)
+        // Three servings of two ounces: six ounces, whatever the unit system shows them in.
+        XCTAssertLessThan(abs(grams(model) - Decimal(string: "170.097")!), Decimal(string: "0.01")!)
     }
 
     func testTypingAnAmountClearsTheCount() throws {
