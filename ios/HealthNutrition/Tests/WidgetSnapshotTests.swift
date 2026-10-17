@@ -143,6 +143,41 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNotNil(store.read(), "the empty summary was written")
     }
 
+    func testALegacyRootSummaryThatCannotBeRemovedMakesTheEraseReportFailureAfterTheFolderIsEmptied() throws {
+        final class LegacyRefusing: FileManager {
+            struct Refused: Error {}
+            var protected: URL?
+            override func removeItem(at URL: URL) throws {
+                if URL.path == protected?.path { throw Refused() }
+                try super.removeItem(at: URL)
+            }
+        }
+        let manager = LegacyRefusing()
+        var store = WidgetSnapshotStore(directory: directory)
+        store.fileManager = manager
+        let legacy = directory.appendingPathComponent(WidgetSnapshotStore.fileName)
+        manager.protected = legacy
+        try Data("figures".utf8).write(to: legacy)
+        try store.write(sample())
+        XCTAssertThrowsError(try WidgetSnapshotEraser(store: store, erasure: WidgetSnapshotErasure()).eraseAll())
+        XCTAssertThrowsError(try store.removeLegacyRootFiles())
+        // The folder's summary was still emptied, and the failure is not swallowed.
+        XCTAssertEqual(store.read()?.hasEntries, false)
+        manager.protected = nil
+        try store.removeLegacyRootFiles()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+    }
+
+    func testNextMidnightIsTheStartOfTheFollowingLocalDay() throws {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let evening = try XCTUnwrap(utc.date(from: DateComponents(year: 2026, month: 10, day: 16, hour: 21, minute: 30)))
+        let midnight = WidgetSnapshot.nextMidnight(from: evening, calendar: utc)
+        XCTAssertEqual(utc.dateComponents([.year, .month, .day, .hour, .minute], from: midnight),
+            DateComponents(year: 2026, month: 10, day: 17, hour: 0, minute: 0))
+        XCTAssertEqual(WidgetSnapshot.refreshAfterMidnight(from: evening, calendar: utc), midnight.addingTimeInterval(60))
+    }
+
     func testAFolderThatCannotBeLeftOutOfBackupsIsNotLeftOnDisk() throws {
         var store = WidgetSnapshotStore(directory: directory)
         struct Refused: Error {}

@@ -146,7 +146,9 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
         erasure.markErased()
         defer { WidgetCenter.shared.reloadAllTimelines() }
         guard let store else { return }
-        store.removeLegacyRootFiles()
+        // The legacy files are tried first and a failure is reported at the end, after the folder's summary has
+        // been emptied, so one failure cannot leave the other figures behind.
+        let legacy = Result { try store.removeLegacyRootFiles() }
         do {
             try store.write(WidgetSnapshot.empty(at: now()))
         } catch {
@@ -159,5 +161,6 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
                 try? store.erase()
             }
         }
+        try legacy.get()
     }
 }

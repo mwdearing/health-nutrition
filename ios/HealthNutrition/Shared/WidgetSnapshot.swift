@@ -27,11 +27,15 @@ struct WidgetSnapshot: Codable, Equatable {
         calendar.isDate(generatedAt, inSameDayAs: now)
     }
 
+    /// The next local midnight, when today's summary stops being today's.
+    static func nextMidnight(from now: Date, calendar: Calendar = .current) -> Date {
+        let startOfToday = calendar.startOfDay(for: now)
+        return calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? now.addingTimeInterval(86_400)
+    }
+
     /// Shortly after the next local midnight, when a refresh drops yesterday's summary.
     static func refreshAfterMidnight(from now: Date, calendar: Calendar = .current) -> Date {
-        let startOfToday = calendar.startOfDay(for: now)
-        let midnight = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? now.addingTimeInterval(86_400)
-        return midnight.addingTimeInterval(60)
+        nextMidnight(from: now, calendar: calendar).addingTimeInterval(60)
     }
 
     /// How much of the energy goal is reached, 0 through 1, or nil without a known total and a goal.
@@ -166,17 +170,31 @@ struct WidgetSnapshotStore {
     /// Removes the whole folder: the summary and any temporary an interrupted write left. Throws if it is still
     /// there afterwards, so an erase never reports success with a figure on disk.
     func erase() throws {
-        removeLegacyRootFiles()
-        guard fileManager.fileExists(atPath: folderURL.path) else { return }
-        try fileManager.removeItem(at: folderURL)
-        if fileManager.fileExists(atPath: folderURL.path) { throw CocoaError(.fileWriteUnknown) }
+        // Both are attempted; a legacy file that cannot be removed is reported after the folder has been dealt with.
+        let legacy = Result { try removeLegacyRootFiles() }
+        if fileManager.fileExists(atPath: folderURL.path) {
+            try fileManager.removeItem(at: folderURL)
+            if fileManager.fileExists(atPath: folderURL.path) { throw CocoaError(.fileWriteUnknown) }
+        }
+        try legacy.get()
     }
 
     /// A summary an earlier build kept directly in the container instead of the folder, if there is one. Erase all
-    /// data removes it on every path, not only when the folder has to be removed.
-    func removeLegacyRootFiles() {
-        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName))
-        try? fileManager.removeItem(at: directory.appendingPathComponent(Self.fileName + ".tmp"))
+    /// data removes it on every path, not only when the folder has to be removed. Throws if one is still there
+    /// afterwards, so an erase never reports success with a figure on disk; a file that is not there is fine.
+    func removeLegacyRootFiles() throws {
+        var failure: Error?
+        for name in [Self.fileName, Self.fileName + ".tmp"] {
+            let url = directory.appendingPathComponent(name)
+            guard fileManager.fileExists(atPath: url.path) else { continue }
+            do {
+                try fileManager.removeItem(at: url)
+            } catch {
+                failure = failure ?? error
+            }
+            if fileManager.fileExists(atPath: url.path) { failure = failure ?? CocoaError(.fileWriteUnknown) }
+        }
+        if let failure { throw failure }
     }
 
     /// Removes a temporary left by an interrupted write, when the app starts. Best effort: it is inside the

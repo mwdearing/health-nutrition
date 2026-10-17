@@ -20,7 +20,10 @@ struct TodayProvider: TimelineProvider {
         // refresh shortly after local midnight at the latest, when `current()` stops showing yesterday's summary.
         let now = Date()
         let next = min(now.addingTimeInterval(30 * 60), WidgetSnapshot.refreshAfterMidnight(from: now))
-        completion(Timeline(entries: [current()], policy: .after(next)))
+        // The timeline itself carries the flip: an entry at the next midnight shows dashes (no summary can be from
+        // that day yet) even if the system is late to ask for a reload.
+        let midnight = TodayEntry(date: WidgetSnapshot.nextMidnight(from: now), snapshot: nil)
+        completion(Timeline(entries: [current(), midnight], policy: .after(next)))
     }
 
     /// Today's summary, or nil when none was written today: the widget then shows dashes rather than the
