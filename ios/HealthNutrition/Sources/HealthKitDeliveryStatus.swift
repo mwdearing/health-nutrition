@@ -61,11 +61,11 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
         var unresolved: [String] = []
     }
 
-    /// The mapped types HealthKit resolves, read once so the request, the gate and the spike all
-    /// agree on what "every mapped type" means.
     /// Set once the request that includes nutrient read access has been answered on this device.
     static let readAskedKey = "healthKit.nutritionReadRequested"
 
+    /// The mapped types HealthKit resolves, read once so the request, the gate and the spike all
+    /// agree on what "every mapped type" means.
     static func mappedTypes() -> MappedTypes {
         var mapped = MappedTypes()
         for mapping in HealthKitWritePlanner.mappings {
