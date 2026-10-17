@@ -69,10 +69,16 @@ public actor USDAFoodDataClient {
         guard trimmed.count <= Self.searchMaximumCharacters else {
             return .queryTooLong
         }
+        // Values are encoded by hand: URLComponents leaves "+" alone, and FDC reads a bare "+" as a space.
+        let valueAllowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "+&="))
+        let encodedQuery = trimmed.addingPercentEncoding(withAllowedCharacters: valueAllowed) ?? ""
+        let encodedTypes = Self.dataTypes
+            .map { $0.addingPercentEncoding(withAllowedCharacters: valueAllowed) ?? "" }
+            .joined(separator: ",")
         var components = URLComponents(url: Self.searchURL, resolvingAgainstBaseURL: false)
-        components?.queryItems = [
-            URLQueryItem(name: "query", value: trimmed),
-            URLQueryItem(name: "dataType", value: Self.dataTypes.joined(separator: ",")),
+        components?.percentEncodedQueryItems = [
+            URLQueryItem(name: "query", value: encodedQuery),
+            URLQueryItem(name: "dataType", value: encodedTypes),
             URLQueryItem(name: "pageSize", value: String(Self.searchPageSize)),
         ]
         guard let url = components?.url else {

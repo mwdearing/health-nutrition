@@ -187,3 +187,14 @@ private let sampleReply = """
 
     #expect(await client.search(query: "rice") == .transport("response exceeded the local size limit"))
 }
+
+@Test func plusSignInQueryIsEncodedAsLiteral() async throws {
+    let transport = StubUSDATransport()
+    let client = USDAFoodDataClient(apiKey: "k", transport: transport)
+
+    _ = await client.search(query: "mac + cheese")
+
+    let url = try #require(transport.requests.first?.url?.absoluteString)
+    #expect(url.contains("query=mac%20%2B%20cheese"))
+    #expect(url.contains("dataType=Foundation,SR%20Legacy,Branded"))
+}
