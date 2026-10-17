@@ -172,10 +172,13 @@ struct WidgetSnapshotStore {
     func erase() throws {
         // Both are attempted; a legacy file that cannot be removed is reported after the folder has been dealt with.
         let legacy = Result { try removeLegacyRootFiles() }
-        if fileManager.fileExists(atPath: folderURL.path) {
+        let folder = Result { () throws -> Void in
+            guard fileManager.fileExists(atPath: folderURL.path) else { return }
             try fileManager.removeItem(at: folderURL)
             if fileManager.fileExists(atPath: folderURL.path) { throw CocoaError(.fileWriteUnknown) }
         }
+        // The folder's failure is reported first; either one fails the erase.
+        try folder.get()
         try legacy.get()
     }
 
