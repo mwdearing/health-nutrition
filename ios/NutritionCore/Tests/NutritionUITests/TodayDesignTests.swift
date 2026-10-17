@@ -137,7 +137,7 @@ final class TodayDesignTests: XCTestCase {
                 IntakeComponent(componentID: "first", name: "Sample toast", amount: 50, unit: .g),
                 IntakeComponent(componentID: "second", name: "Sample spread", amount: 10, unit: .g)
             ], product: nil, now: now)
-        let today = model(store)
+        let today = model(store, goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
         today.load(now: now)
         XCTAssertEqual(today.goalBars.first?.reason, "1 entry has no protein value")
         try log(store, name: "Sample fruit")
@@ -152,10 +152,10 @@ final class TodayDesignTests: XCTestCase {
             labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
             nutrients: ["protein": .notApplicable, "fiber": .notApplicable])
         try log(store, product: product)
-        let today = model(store)
+        let today = model(store, goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
         today.load(now: now)
-        XCTAssertEqual(today.goalBars.map(\.state), [.nothingLogged, .nothingLogged])
-        XCTAssertEqual(today.goalBars.map(\.valueText), ["Nothing logged yet", "Nothing logged yet"])
+        XCTAssertEqual(today.goalBars.map(\.state), [.nothingLogged])
+        XCTAssertEqual(today.goalBars.map(\.valueText), ["Nothing logged yet"])
     }
 
     // MARK: Goal bars
@@ -178,7 +178,7 @@ final class TodayDesignTests: XCTestCase {
         try log(store, name: "Water", grams: 250, category: "water")
         let today = model(store, goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
         today.load(now: now)
-        XCTAssertEqual(today.goalBars.map(\.state), [.nothingLogged, .nothingLogged])
+        XCTAssertEqual(today.goalBars.map(\.state), [.nothingLogged])
         XCTAssertEqual(today.goalBars.first?.valueText, "Nothing logged yet")
     }
 
@@ -187,7 +187,7 @@ final class TodayDesignTests: XCTestCase {
         try log(store, name: "Sample multi", product: oats(withValues: false, kind: .supplement))
         let today = model(store)
         today.load(now: now)
-        XCTAssertEqual(today.goalBars.map(\.state), [.nothingLogged, .nothingLogged])
+        XCTAssertTrue(today.goalBars.isEmpty, "no goal and nothing known: no bar")
         XCTAssertEqual(today.rows.count, 1, "the supplement is still listed")
     }
 
