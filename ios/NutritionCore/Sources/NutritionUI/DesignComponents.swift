@@ -7,6 +7,8 @@ public enum DesignSpacing {
     public static let s: CGFloat = 8
     public static let m: CGFloat = 14
     public static let l: CGFloat = 22
+    /// Room at the bottom of a scrolling screen for the floating Add button and the tab bar.
+    public static let floatingClearance: CGFloat = 140
 }
 
 /// Corner radii the design uses. Buttons are capsules and need no radius.
