@@ -7,10 +7,15 @@ import WidgetKit
 @main
 struct HealthNutritionWatchApp: App {
     @StateObject private var model = WatchSummaryModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             WatchTodayView(snapshot: model.snapshot)
+        }
+        // A process that stayed alive in the background re-reads what is stored when the app is opened again.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.refresh() }
         }
     }
 }
@@ -30,10 +35,10 @@ final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
-    /// What is stored, if it is from today.
-    private func refresh() {
-        let now = Date()
-        let stored = store?.read().flatMap { $0.isCurrent(on: now) ? $0 : nil }
+    /// What is stored. Whether it is from today is decided by the view, against the clock it is drawn with, so a
+    /// summary does not stay on screen past midnight.
+    func refresh() {
+        let stored = store?.read()
         DispatchQueue.main.async { self.snapshot = stored }
     }
 
@@ -64,6 +69,13 @@ struct WatchTodayView: View {
     }
 
     var body: some View {
+        // Redrawn every minute, so the day changing drops yesterday's figures to dashes without any new data.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content(for: snapshot.flatMap { $0.isCurrent(on: context.date) ? $0 : nil })
+        }
+    }
+
+    private func content(for snapshot: WidgetSnapshot?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Today").font(.headline)
             if snapshot?.hasEntries == false {
