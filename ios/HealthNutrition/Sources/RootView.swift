@@ -460,6 +460,16 @@ struct RootView: View {
         if let home = addHome { openAddRoute(.productSearch, home: home) }
     }
 
+    /// Shows a confirmation on the Add cover. It expires after a few seconds, so closing the cover later does not replay it.
+    private func confirmInAddCover(_ message: String) {
+        let notice = SaveNotice(message)
+        addNotice = notice
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if addNotice == notice { addNotice = nil }
+        }
+    }
+
     private func finishAdding() {
         // A confirmation from the cover outlives it: hand it to the root so it still shows after the cover closes.
         if let notice = self.addNotice { self.saveNotice = notice; self.addNotice = nil }
@@ -558,7 +568,7 @@ struct RootView: View {
         case .productEditor(let editor):
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
-                self.addNotice = SaveNotice(SaveLabels.productSaved)
+                self.confirmInAddCover(SaveLabels.productSaved)
                 if openDetails { self.openProductDetails(product, home: home) }
             }
         case .productSearch:
@@ -570,7 +580,7 @@ struct RootView: View {
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
                     library: self.services.library, onPick: { self.openTemplate($0, home: home) },
                     focusSearchOnAppear: true,
-                    onSaved: { self.addNotice = SaveNotice(SaveLabels.productSaved) })
+                    onSaved: { self.confirmInAddCover(SaveLabels.productSaved) })
                     .overlay(alignment: .bottom) {
                         if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                     }

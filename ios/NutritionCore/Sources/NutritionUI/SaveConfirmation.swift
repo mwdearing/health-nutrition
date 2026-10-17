@@ -54,14 +54,14 @@ private struct SaveConfirmationModifier: ViewModifier {
     }
 }
 
-/// The confirmation line for each save. Nutrient, supplement and goals wording needs Mike's approval before it ships.
+/// The confirmation line for each save. Wording approved by Mike on 2026-10-16 ("Ok and merge"): the recommended lines below.
 public enum SaveLabels {
     public static let productSaved = "Product saved"
     public static let entrySaved = "Entry saved"
     public static let loggedToDiary = "Logged to Diary"
     public static let recipeSaved = "Recipe saved"
     public static let mealSaved = "Meal saved"
-    public static let goalsSaved = "Goals saved"          // proposed, pending Mike
-    public static let scheduleSaved = "Schedule saved"    // proposed, pending Mike
-    public static let nutrientSaved = "Nutrient saved"    // proposed, pending Mike
+    public static let goalsSaved = "Goals saved"
+    public static let scheduleSaved = "Schedule saved"
+    public static let nutrientSaved = "Nutrient saved"
 }
