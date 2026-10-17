@@ -27,28 +27,39 @@ struct FoodDatabaseSearch: ProductNameSearching {
         return Self.merge(usda: usdaResult, openFoodFacts: offResult)
     }
 
-    /// USDA rows come first: generic foods are what most people search for. Open Food Facts rows follow.
-    /// Duplicates are not removed here; the two sources do not share identifiers.
+    /// Each source keeps half of the cap, so a broad USDA match cannot hide every Open Food Facts row. A
+    /// source with fewer rows than its half leaves the spare slots to the other, USDA first. Within the
+    /// result USDA rows come first. Duplicates are not removed; the two sources share no identifiers.
     static func merge(usda: ProductNameSearchOutcome, openFoodFacts: ProductNameSearchOutcome) -> ProductNameSearchOutcome {
-        var rows: [LookedUpProduct] = []
-        var failure: ProductNameSearchOutcome?
+        let usdaRows = rows(from: usda)
+        let offRows = rows(from: openFoodFacts)
+        let half = maxResults / 2
+        var merged = Array(usdaRows.prefix(half)) + Array(offRows.prefix(half))
+        let spareForUSDA = maxResults - merged.count
+        if spareForUSDA > 0 {
+            merged += usdaRows.dropFirst(half).prefix(spareForUSDA)
+        }
+        let spareForOFF = maxResults - merged.count
+        if spareForOFF > 0 {
+            merged += offRows.dropFirst(half).prefix(spareForOFF)
+        }
+        if !merged.isEmpty {
+            return .results(merged)
+        }
         for outcome in [usda, openFoodFacts] {
             switch outcome {
-            case .results(let products):
-                rows += products
-            case .empty:
-                continue
             case .rateLimited, .failed:
-                failure = failure ?? outcome
+                return outcome
+            case .results, .empty:
+                continue
             }
         }
-        if !rows.isEmpty {
-            return .results(Array(rows.prefix(maxResults)))
-        }
-        if let failure {
-            return failure
-        }
         return .empty
+    }
+
+    private static func rows(from outcome: ProductNameSearchOutcome) -> [LookedUpProduct] {
+        if case .results(let products) = outcome { return products }
+        return []
     }
 }
 
