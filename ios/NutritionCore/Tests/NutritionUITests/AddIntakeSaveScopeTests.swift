@@ -169,6 +169,24 @@ final class LibraryChoiceExportTests: XCTestCase {
         XCTAssertEqual(try restored.intakeIDsNotSavedToLibrary(), [id])
     }
 
+    /// A repeat carries the entry's note to the copy.
+    func testRepeatKeepsTheEntryNote() throws {
+        let id = UUID().uuidString.lowercased()
+        let store = try makeStore()
+        var intake = Intake(id: id, category: "food", occurredAt: when, timeZoneIdentifier: "UTC", meal: "breakfast")
+        intake.note = "after the run"
+        try store.create(
+            intake,
+            components: [IntakeComponent(componentID: "example-bar", name: "Example bar", amount: 1, unit: .g)],
+            product: product(), now: when)
+        let original = try XCTUnwrap(try store.activeIntakes().first { $0.id == id })
+        let copyID = try IntakeRepeater(
+            store: store, timeZoneProvider: { "UTC" }, makeID: { UUID().uuidString.lowercased() }
+        ).create(repeating: original, now: when)
+        let copy = try XCTUnwrap(try store.activeIntakes().first { $0.id == copyID })
+        XCTAssertEqual(copy.note, "after the run")
+    }
+
     /// Repeating an entry kept out of Library keeps the copy out of Library too.
     func testRepeatOfASwitchedOffEntryStaysOutOfProducts() throws {
         let id = UUID().uuidString.lowercased()
