@@ -210,3 +210,10 @@ def test_the_watch_privacy_manifests_declare_only_what_the_code_uses() -> None:
             "NSPrivacyAccessedAPITypeReasons": ["CA92.1"],
         }
     ]
+
+
+def test_the_watch_targets_are_embedded_only_and_never_installed_on_their_own() -> None:
+    for name in ("HealthNutritionWatch", "HealthNutritionWatchWidgets"):
+        settings = cast("dict[str, dict[str, object]]", _target(name)["settings"])["base"]
+        # An unquoted YES in the project description reads as a YAML boolean.
+        assert settings["SKIP_INSTALL"] in (True, "YES"), name
