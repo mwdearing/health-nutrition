@@ -480,7 +480,8 @@ public final class JournalViewModel: ObservableObject {
                 goal: goals.first { $0.nutrient == nutrient })
             // A nutrient the day cannot answer for is left off rather than written as "unknown": this
             // is a summary over a list of entries, and the entries below it say which could not be read.
-            guard line.hasKnownAmount else { return nil }
+            // A partial day is left off here too: this summary reads the whole-day amount, not the known part.
+            guard case .known = line.amount else { return nil }
             if nutrient == DailyTotalsBuilder.waterKey, case .known(let amount, let unit) = line.amount {
                 let totalText = "\(line.label) \(AmountDisplay.water(amount, unit: unit, system: unitSystem).text)"
                 guard let goal = line.goal else { return totalText }
