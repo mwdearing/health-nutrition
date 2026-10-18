@@ -1085,10 +1085,26 @@ final class NutritionFactsParserTests: XCTestCase {
     /// Capitalised real words that end a nutrient name are rows: a fragment starts lowercase, so "Mind",
     /// "Hydrate", "Sterol" and "MIND" stay extras while "minD" is unread.
     func testCapitalisedWordsEndingANutrientNameStayRows() throws {
-        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Mind 200mg", "Hydrate 50mg", "Sterol 100mg", "MIND 10mg"])
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Mind 200mg", "Hydrate 50mg", "Sterol 100mg"])
 
-        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Mind", "Hydrate", "Sterol", "MIND"])
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Mind", "Hydrate", "Sterol"])
         XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A lowercase head of a nutrient name is a product or abbreviation, not an OCR tail: "mag" and "pro" stay extras.
+    func testLowercaseHeadsOfNutrientNamesStayRows() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "mag 100mg", "pro 5g"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["mag", "pro"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A bare qualifier misread on a supplement row is structural noise, so both rows are counted unread.
+    func testBareQualifierMisreadsAreCountedUnread() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Include 100mg", "Contain 50mg"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 2)
     }
 
     /// Short real words are rows, not fragments: only a piece of a known nutrient name is noise.

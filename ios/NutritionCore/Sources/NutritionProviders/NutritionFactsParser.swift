@@ -980,7 +980,8 @@ public enum NutritionFactsParser {
         guard word.first?.isLowercase == true else { return false }
         let piece = ocrSkeleton(String(word))
         guard piece.count >= 3, !shortRowWords.contains(word.lowercased()) else { return false }
-        return nutrientSkeletons.contains { $0.hasPrefix(piece) || $0.hasSuffix(piece) }
+        // OCR splits a word mid-way, so the lowercase tail is the one that matches: the head keeps the capital.
+        return nutrientSkeletons.contains { $0.hasSuffix(piece) }
     }
 
     /// The lowercased letters of a word, with the common OCR swaps read as one letter: 1 and i as l, 0 as o,
