@@ -1246,6 +1246,14 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertTrue(panel.additionalNutrients.isEmpty)
     }
 
+    /// A hyphen inside a multi-word known nutrient name is a line-break artifact: "Saturated-Fat 3g" is saturated fat.
+    func testHyphenInsideMultiWordKnownNameLandsOnItsField() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Saturated-Fat 3g"])
+
+        XCTAssertEqual(try amount(.saturatedFat, panel), dec("3"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
     /// A hyphenated supplement name that is not a known nutrient stays an extra with its printed hyphen.
     func testHyphenatedUnknownNameStaysAnExtra() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin-C 60mg"])
