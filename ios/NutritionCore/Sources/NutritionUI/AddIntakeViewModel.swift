@@ -160,6 +160,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The serving size the source gave, kept whatever the basis, so the amount can open on one serving.
     @Published public private(set) var servingOption: ServingDefinition?
     private var isSettingServings = false
+    /// The separator a typed count is read with: the device's, unless a test sets another.
+    private let countDecimalSeparator: String?
     /// True while the amount is the one a count of servings set, so an emptied Servings field can clear it.
     private var amountFromServings = false
     /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
@@ -332,9 +334,11 @@ public final class AddIntakeViewModel: ObservableObject {
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         labelScannerAvailable: Bool = true,
         labelSubmitter: CommunityLabelSubmitting? = nil,
-        isSharingAllowed: @escaping @MainActor () -> Bool = { false }
+        isSharingAllowed: @escaping @MainActor () -> Bool = { false },
+        countDecimalSeparator: String? = Locale.current.decimalSeparator
     ) {
         self.store = store
+        self.countDecimalSeparator = countDecimalSeparator
         self.occurredAt = now
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
@@ -925,7 +929,7 @@ public final class AddIntakeViewModel: ObservableObject {
         // While the count is a draft, only a complete positive number changes the amount. Anything else
         // ("", "0", "0.", "0.0", "0,") is still being typed and leaves the amount alone; commitServingCount
         // settles it when the edit commits.
-        guard let count = AmountParser.parseTyped(text) else { return }
+        guard let count = AmountParser.parseTyped(text, decimalSeparator: countDecimalSeparator) else { return }
         amountText = DecimalFormatting.text(count * display.quantity)
         amountFromServings = true
         unit = display.unit
@@ -949,7 +953,9 @@ public final class AddIntakeViewModel: ObservableObject {
             }
             return
         }
-        let isZero = Decimal(string: AmountParser.normalizedTyped(trimmed), locale: AmountParser.locale) == 0
+        let isZero = Decimal(
+            string: AmountParser.normalizedTyped(trimmed, decimalSeparator: countDecimalSeparator),
+            locale: AmountParser.locale) == 0
         guard isZero else { return }
         isSettingServings = true
         defer { isSettingServings = false }

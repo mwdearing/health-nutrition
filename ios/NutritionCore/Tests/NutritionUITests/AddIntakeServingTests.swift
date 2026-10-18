@@ -9,14 +9,15 @@ import XCTest
 final class AddIntakeServingTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-    private func makeModel() throws -> AddIntakeViewModel {
+    private func makeModel(countDecimalSeparator: String? = Locale.current.decimalSeparator) throws -> AddIntakeViewModel {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         return AddIntakeViewModel(
             store: store, now: now, timeZoneIdentifier: "UTC", lookup: nil,
-            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary),
+            countDecimalSeparator: countDecimalSeparator)
     }
 
     /// A per-100 g product with a 2 oz serving and 200 kcal per 100 g.
@@ -177,5 +178,25 @@ final class AddIntakeServingTests: XCTestCase {
         model.setServingCount("")
         model.commitServingCount()
         XCTAssertEqual(model.amountText, "75")
+    }
+
+    func testCommaLocaleDraftCountLeavesTheAmountAlone() throws {
+        let model = try makeModel(countDecimalSeparator: ",")
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        model.setServingCount("3")
+        XCTAssertEqual(model.amountText, "6")
+        model.setServingCount("0,")
+        XCTAssertEqual(model.amountText, "6", "a comma-locale draft '0,' leaves the amount alone")
+        model.setServingCount("0,5")
+        XCTAssertEqual(model.amountText, "1")
+    }
+
+    func testCommaLocaleCommittedZeroClearsTheAmount() throws {
+        let model = try makeModel(countDecimalSeparator: ",")
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        model.setServingCount("3")
+        model.setServingCount("0,")
+        model.commitServingCount()
+        XCTAssertEqual(model.amountText, "")
     }
 }
