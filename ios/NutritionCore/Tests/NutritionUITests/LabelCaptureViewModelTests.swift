@@ -188,6 +188,20 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertTrue(model.canApply)
     }
 
+    /// Confirming a flagged serving while its correction field is open closes that field, so the values can be used.
+    func testConfirmingTheServingClosesItsCorrectionField() {
+        let model = makeModel()
+        model.load(lines: ["Serving size 1-2 g", "Calories 120", "Protein 3g"])
+        model.beginServingCorrection()
+        XCTAssertTrue(model.isEditingServing)
+        XCTAssertFalse(model.canApply)
+
+        model.confirmServing()
+
+        XCTAssertFalse(model.isEditingServing, "confirming the serving closes its correction field")
+        XCTAssertTrue(model.canApply)
+    }
+
     func testServingSizeUncertaintyHasAnActionableReviewMessage() {
         XCTAssertEqual(
             LabelCaptureRow.summarize([.uncertainServingSize], name: "serving size"),
