@@ -101,7 +101,7 @@ final class HealthKitReader: BodyActivityReading {
                 // Another app may store a sample in international units. Each sample is read in a unit it is
                 // compatible with (checked first, so no incompatible conversion is attempted), and IU is passed
                 // through so OutsideIntakeTotals restates it. Only a nutrient with a fixed IU amount (vitamin D) is
-                // read this way; any other IU sample is skipped rather than dropped later without a trace.
+                // read this way; any other IU sample is skipped here, as any unconvertible sample is.
                 let value: Double
                 let unit: MeasureUnit
                 if sample.quantity.is(compatibleWith: hkUnit) {
