@@ -309,7 +309,7 @@ public struct EntryDetailView: View {
                     .entryAmountKeyboard()
                     .focused(focus)
                     .accessibilityLabel("Amount of \(component.name)")
-                    Text(component.unit.symbol).font(.body).foregroundStyle(TokenColors.textSecondary)
+                    Text(component.unit.screenSymbol).font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
             }
             // The same amount in the unit the reader chose, shown beside the field that edits the stored one.

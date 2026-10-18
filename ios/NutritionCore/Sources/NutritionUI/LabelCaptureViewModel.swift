@@ -219,13 +219,13 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
     static func describe(_ value: NutrientValue) -> String {
         switch value {
         case .known(let amount, let unit):
-            return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.symbol)"
+            return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.screenSymbol)"
         case .unknown:
             return "not on the panel"
         case .notApplicable:
             return "not applicable"
         case .belowReportingThreshold(let unit):
-            return "below reporting threshold" + (unit.map { " \($0.symbol)" } ?? "")
+            return "below reporting threshold" + (unit.map { " \($0.screenSymbol)" } ?? "")
         }
     }
 
@@ -241,7 +241,7 @@ public struct LabelCaptureRow: Identifiable, Equatable, Sendable {
         case .notApplicable:
             return "Does not apply"
         case .belowReportingThreshold(let unit):
-            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
+            return "Less than the label reports" + (unit.map { " (\($0.screenSymbol))" } ?? "")
         }
     }
 }
@@ -1249,7 +1249,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// one, so a misprinted "24O mL" is asked about as 240 mL; otherwise the printed words.
     static func servingReading(quantity: Quantity?, text: String?) -> String {
         if let quantity {
-            return "\(NSDecimalNumber(decimal: quantity.value).stringValue) \(quantity.unit.symbol)"
+            return "\(NSDecimalNumber(decimal: quantity.value).stringValue) \(quantity.unit.screenSymbol)"
         }
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "this serving size" : trimmed
@@ -1317,7 +1317,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     public static func labelBasis(servingText: String?, quantity: Quantity?) -> String {
         let basis = BarcodeLookupBasis.perServing.label
         if let quantity {
-            return "\(basis) (\(NSDecimalNumber(decimal: quantity.value).stringValue) \(quantity.unit.symbol))"
+            return "\(basis) (\(NSDecimalNumber(decimal: quantity.value).stringValue) \(quantity.unit.screenSymbol))"
         }
         let trimmed = servingText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty {

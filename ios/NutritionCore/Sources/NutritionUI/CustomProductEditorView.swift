@@ -50,7 +50,7 @@ public struct CustomProductEditorView: View {
                     TextField("Product serving quantity (optional)", text: $model.servingQuantity).decimalAmountKeyboard().focused(focus)
                 }
                 Picker("Product serving unit", selection: $model.servingUnit) {
-                    ForEach(CustomProductEditorViewModel.servingUnits, id: \.self) { Text($0.symbol).tag($0) }
+                    ForEach(CustomProductEditorViewModel.servingUnits, id: \.self) { Text($0.screenSymbol).tag($0) }
                 }
                 LabeledField("Serving description (optional)") { focus in
                     TextField("Serving description (optional)", text: $model.servingText).focused(focus)
@@ -91,7 +91,7 @@ public struct CustomProductEditorView: View {
                         if fact.state == .known || fact.state == .belowReportingThreshold {
                             Picker("Fact unit", selection: $fact.unit) {
                                 Text("No unit stated").tag(MeasureUnit?.none)
-                                ForEach(CustomProductEditorViewModel.units, id: \.self) { Text($0.symbol).tag(Optional($0)) }
+                                ForEach(CustomProductEditorViewModel.units, id: \.self) { Text($0.screenSymbol).tag(Optional($0)) }
                             }
                             Text("IU amounts stay in IU.").font(.footnote)
                         }
