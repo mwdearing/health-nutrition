@@ -23,6 +23,8 @@ public struct JournalView: View {
     @State private var saveMealTried = false
     @State private var saveNotice: SaveNotice?
     @Environment(\.scenePhase) private var scenePhase
+    /// True while the reload on return to the app is in flight, so it keeps a jump notice on screen.
+    @State private var reloadingOnReturn = false
 
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
@@ -80,9 +82,10 @@ public struct JournalView: View {
                         .background(TokenColors.background)
                 }
             }
-            // A notice about an earlier jump goes whenever the journal reloads.
+            // A notice about an earlier jump goes whenever the journal reloads, except the reload on return to the app.
             .onChange(of: model.loadCount) { _, _ in
-                jumpNotice = nil
+                if !reloadingOnReturn { jumpNotice = nil }
+                reloadingOnReturn = false
             }
             .onChange(of: jumpSerial) { _, _ in
                 if let section = jumpSection {
@@ -100,7 +103,10 @@ public struct JournalView: View {
             }
             // Coming back to the app reloads the day titles, so "Yesterday" moves on after midnight.
             .onChange(of: scenePhase) { phase in
-                if phase == .active { model.load(now: now()) }
+                if phase == .active {
+                    reloadingOnReturn = true
+                    model.load(now: now())
+                }
             }
             .sheet(isPresented: $showingJumpSheet) {
                 jumpSheet
