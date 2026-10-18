@@ -3,8 +3,8 @@ name: Scheduled beta
 # Twice a day, builds the newest main commit that has a green `ios` run, unless that commit is already the last
 # upload. It dispatches signed-beta on that exact commit with the next patch version, so merges that land while it
 # builds do not matter. The schedule lists the UTC times for both Chicago offsets (CDT and CST); the script
-# proceeds only in the noon and midnight Chicago hours, so one firing of each pair does the work and the other
-# exits. The version and commit it continues from live in the pinned "TestFlight beta log" issue. This workflow
+# proceeds only in the Chicago hours of the noon and midnight builds (the firing's hour and the next, so a late
+# start still builds), and builds again only when six hours have passed since the last upload. The version and commit it continues from live in the pinned "TestFlight beta log" issue. This workflow
 # holds no signing secret: it only reads public repository data and asks signed-beta, in the protected
 # environment, to do the signing.
 on:

@@ -68,17 +68,20 @@ def test_state_refuses_a_malformed_version_or_commit() -> None:
 @pytest.mark.parametrize(
     ("utc", "expected"),
     [
-        ((2026, 10, 18, 4, 40), True),    # 23:40 CDT
-        ((2026, 10, 18, 5, 40), False),   # 00:40 CDT
-        ((2026, 10, 18, 16, 40), True),   # 11:40 CDT
-        ((2026, 10, 18, 17, 40), False),  # 12:40 CDT
-        ((2026, 11, 2, 5, 40), True),     # 23:40 CST
-        ((2026, 11, 2, 4, 40), False),    # 22:40 CST
-        ((2026, 11, 2, 17, 40), True),    # 11:40 CST
-        ((2026, 11, 2, 16, 40), False),   # 10:40 CST
+        ((2026, 10, 18, 4, 40), True),     # 23:40 CDT, on time
+        ((2026, 10, 18, 5, 40), True),     # 00:40 CDT, a late start still builds
+        ((2026, 10, 18, 6, 10), False),    # 01:10 CDT, too late
+        ((2026, 10, 18, 16, 40), True),    # 11:40 CDT
+        ((2026, 10, 18, 17, 40), True),    # 12:40 CDT, a late start
+        ((2026, 10, 18, 18, 10), False),   # 13:10 CDT
+        ((2026, 10, 18, 3, 40), False),    # 22:40 CDT
+        ((2026, 11, 2, 5, 40), True),      # 23:40 CST
+        ((2026, 11, 2, 4, 40), False),     # 22:40 CST
+        ((2026, 11, 2, 17, 40), True),     # 11:40 CST
+        ((2026, 11, 2, 16, 40), False),    # 10:40 CST
     ],
 )
-def test_exactly_one_firing_of_each_pair_is_in_the_build_window(utc: tuple[int, ...], expected: bool) -> None:
+def test_a_firing_up_to_an_hour_late_is_still_in_the_build_window(utc: tuple[int, ...], expected: bool) -> None:
     assert beta["in_build_window"](datetime(*utc, tzinfo=timezone.utc)) is expected
 
 
@@ -203,11 +206,51 @@ def test_only_the_repository_owners_log_issue_counts() -> None:
     assert pick([_issue(author_association="FIRST_TIME_CONTRIBUTOR")]) is None
 
 
-def test_a_log_that_disagrees_with_the_last_signed_run_is_not_trusted() -> None:
-    runs = [{"conclusion": "success", "display_title": f"Signed beta 0.1.30 {A}", "created_at": "2026-10-18T05:00:00Z", "status": "completed"}]
-    assert beta["decide"](B, {"last_version": "0.1.30", "last_sha": A}, runs)["action"] == "dispatch"
-    forged = {"last_version": "9.9.9", "last_sha": A}
-    assert beta["decide"](B, forged, runs)["action"] == "skip"
-    older = runs + [{"conclusion": "success", "display_title": f"Signed beta 0.1.31 {B}", "created_at": "2026-10-18T17:00:00Z", "status": "completed"}]
-    assert beta["last_upload_version"](older) == "0.1.31"
-    assert beta["last_upload_version"]([{"conclusion": "success", "display_title": "Signed beta upload", "created_at": "x"}]) is None
+NOW = datetime(2026, 10, 19, 4, 45, tzinfo=timezone.utc)
+
+
+def _signed(version: str, sha: str, finished: str, **kw: Any) -> dict[str, Any]:
+    run = {"conclusion": "success", "display_title": f"Signed beta {version} {sha}", "created_at": finished,
+           "updated_at": finished, "status": "completed"}
+    run.update(kw)
+    return run
+
+
+def test_a_failed_issue_update_cannot_make_the_schedule_repeat_a_version() -> None:
+    stale_issue = {"last_version": "0.1.30", "last_sha": A}
+    runs = [_signed("0.1.31", B, "2026-10-18T17:00:00Z")]
+    decision = beta["decide"]("c" * 40, stale_issue, runs, NOW)
+    assert decision == {"action": "dispatch", "version": "0.1.32", "sha": "c" * 40}
+
+
+def test_an_older_manual_run_cannot_rewind_the_state() -> None:
+    issue = {"last_version": "0.1.31", "last_sha": B}
+    runs = [_signed("0.1.20", A, "2026-10-18T23:00:00Z")]
+    assert beta["effective_state"](issue, runs) == issue
+    assert beta["effective_state"](None, runs)["last_version"] == "0.1.20"
+
+
+def test_a_build_less_than_six_hours_ago_blocks_the_second_firing_of_a_pair() -> None:
+    state = {"last_version": "0.1.30", "last_sha": A, "last_time": "2026-10-19T04:50:00Z"}
+    early = datetime(2026, 10, 19, 5, 40, tzinfo=timezone.utc)
+    assert beta["decide"](B, state, [], early)["action"] == "skip"
+    later = datetime(2026, 10, 19, 11, 0, 1, tzinfo=timezone.utc)
+    assert beta["decide"](B, state, [], later)["action"] == "dispatch"
+
+
+def test_state_remembers_the_time_and_ignores_a_garbled_one() -> None:
+    body = beta["render_state"]("", "0.1.30", A, "2026-10-19T04:50:00Z")
+    assert beta["parse_state"](body)["last_time"] == "2026-10-19T04:50:00Z"
+    garbled = body.replace("2026-10-19T04:50:00Z", "yesterday")
+    assert "last_time" not in beta["parse_state"](garbled)
+    assert "last_time" not in beta["parse_state"](beta["render_state"]("", "0.1.30", A))
+
+
+def test_collaborators_with_read_access_do_not_count_as_trusted_authors() -> None:
+    assert beta["pick_state_issue"]([_issue(author_association="COLLABORATOR")]) is None
+    assert beta["pick_state_issue"]([_issue(author_association="MEMBER")])["number"] == 1
+
+
+def test_the_announce_workflow_passes_the_finish_time_through_the_environment() -> None:
+    text = (WORKFLOWS / "announce-beta.yml").read_text()
+    assert "RUN_UPDATED: ${{ github.event.workflow_run.updated_at }}" in text

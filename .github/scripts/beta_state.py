@@ -19,7 +19,7 @@ import subprocess
 import sys
 import urllib.request
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 ISSUE_TITLE = "TestFlight beta log"
@@ -29,7 +29,11 @@ VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 TITLE = re.compile(r"^Signed beta (?P<version>[0-9]+\.[0-9]+\.[0-9]+) (?P<sha>[0-9a-f]{40})$")
 ACTIVE = ("queued", "in_progress", "waiting", "pending", "requested")
 LOCAL_ZONE = ZoneInfo("America/Chicago")
-LOCAL_HOURS = (11, 23)  # the noon and midnight builds, in Chicago time whichever offset applies
+# Chicago hours that count as the noon and midnight builds: the hour of the firing and the one after, so a firing
+# that GitHub starts up to an hour late still builds. The six-hour spacing below keeps the second firing of a pair
+# (which also lands in these hours) from building again.
+LOCAL_HOURS = (11, 12, 23, 0)
+MIN_SPACING = timedelta(hours=6)
 
 
 def next_version(version: str) -> str:
@@ -39,25 +43,41 @@ def next_version(version: str) -> str:
     return f"{major}.{minor}.{patch + 1}"
 
 
+def _vkey(version: str) -> tuple[int, int, int]:
+    major, minor, patch = (int(part) for part in version.split("."))
+    return major, minor, patch
+
+
+def _time(value: str | None) -> datetime | None:
+    try:
+        return datetime.fromisoformat((value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def parse_state(body: str | None) -> dict[str, str] | None:
-    """The last uploaded version and commit from the issue body, or None when either is missing or malformed."""
+    """The last uploaded version, commit and (when known) time from the issue body, or None when the version or
+    commit is missing or malformed."""
     match = re.search(r"<!-- beta-state\n(?P<block>.*?)\n-->", body or "", re.S)
     if not match:
         return None
-    values = dict(re.findall(r"^(last_version|last_sha):\s*(\S+)\s*$", match["block"], re.M))
+    values = dict(re.findall(r"^(last_version|last_sha|last_time):\s*(\S+)\s*$", match["block"], re.M))
     if not VERSION.match(values.get("last_version", "")) or not SHA.match(values.get("last_sha", "")):
         return None
+    if "last_time" in values and _time(values["last_time"]) is None:
+        del values["last_time"]
     return values
 
 
-def render_state(body: str | None, version: str, sha: str) -> str:
-    """The body with its state block set to this version and commit, keeping the rest."""
+def render_state(body: str | None, version: str, sha: str, time: str | None = None) -> str:
+    """The body with its state block set to this version, commit and time, keeping the rest."""
     if not VERSION.match(version) or not SHA.match(sha):
         raise ValueError("a three-part version and a 40-character commit are required")
-    block = f"<!-- beta-state\nlast_version: {version}\nlast_sha: {sha}\n-->"
+    when = f"\nlast_time: {time}" if time and _time(time) else ""
+    block = f"<!-- beta-state\nlast_version: {version}\nlast_sha: {sha}{when}\n-->"
     existing = body or ""
     if re.search(r"<!-- beta-state\n.*?\n-->", existing, re.S):
-        return re.sub(r"<!-- beta-state\n.*?\n-->", block, existing, count=1, flags=re.S)
+        return re.sub(r"<!-- beta-state\n.*?\n-->", lambda _: block, existing, count=1, flags=re.S)
     return (existing.rstrip() + "\n\n" if existing.strip() else "") + block + "\n"
 
 
@@ -78,34 +98,51 @@ def newest_green_sha(runs: Iterable[dict]) -> str | None:
     return good[0]["head_sha"] if good else None
 
 
-def last_upload_version(signed_runs: Iterable[dict]) -> str | None:
-    """The version in the name of the newest successful signed run that carries one, else None."""
+def last_upload(signed_runs: Iterable[dict]) -> dict[str, str] | None:
+    """The newest successful signed run whose name carries a version and commit, as a state with its finish time."""
     named = [
-        (run["created_at"], parsed["version"])
+        (run.get("updated_at") or run.get("created_at") or "", parsed)
         for run in signed_runs
         if run.get("conclusion") == "success" and (parsed := parse_title(run.get("display_title", "")))
     ]
-    return max(named)[1] if named else None
+    if not named:
+        return None
+    when, parsed = max(named, key=lambda item: (_vkey(item[1]["version"]), item[0]))
+    return {"last_version": parsed["version"], "last_sha": parsed["sha"], "last_time": when}
 
 
-def decide(green_sha: str | None, state: dict[str, str] | None, signed_runs: Iterable[dict]) -> dict[str, str]:
+def effective_state(issue_state: dict[str, str] | None, signed_runs: Iterable[dict]) -> dict[str, str] | None:
+    """What the last upload was: the higher of the log issue's record and the newest signed run's own name, so a
+    failed update of the issue cannot make the schedule repeat a version, and an older manual run cannot rewind it."""
+    from_runs = last_upload(signed_runs)
+    if issue_state is None:
+        return from_runs
+    if from_runs is None or _vkey(issue_state["last_version"]) >= _vkey(from_runs["last_version"]):
+        return issue_state
+    return from_runs
+
+
+def decide(
+    green_sha: str | None, issue_state: dict[str, str] | None, signed_runs: Iterable[dict], now: datetime | None = None
+) -> dict[str, str]:
     """Either {"action": "skip", "reason": ...} or {"action": "dispatch", "version": ..., "sha": ...}."""
     signed_runs = list(signed_runs)
+    state = effective_state(issue_state, signed_runs)
     if state is None:
-        return {"action": "skip", "reason": "the beta log issue has no readable last version and commit"}
-    recorded = last_upload_version(signed_runs)
-    if recorded is not None and recorded != state["last_version"]:
-        return {"action": "skip", "reason": "the beta log's last version disagrees with the last signed run's name"}
+        return {"action": "skip", "reason": "there is no readable last version and commit"}
     if green_sha is None:
         return {"action": "skip", "reason": "no green ios run on main was found"}
     if any(run.get("status") in ACTIVE for run in signed_runs):
         return {"action": "skip", "reason": "a signed beta run is already queued, waiting or running"}
     if green_sha == state["last_sha"]:
         return {"action": "skip", "reason": "the newest green commit is already the last upload"}
+    uploaded = _time(state.get("last_time"))
+    if now is not None and uploaded is not None and now - uploaded < MIN_SPACING:
+        return {"action": "skip", "reason": "a build went out less than six hours ago"}
     return {"action": "dispatch", "version": next_version(state["last_version"]), "sha": green_sha}
 
 
-TRUSTED_AUTHORS = ("OWNER", "MEMBER", "COLLABORATOR")
+TRUSTED_AUTHORS = ("OWNER", "MEMBER")
 
 
 def pick_state_issue(issues: Iterable[dict]) -> dict | None:
@@ -157,8 +194,12 @@ class Api:
         return list(data.get("workflow_runs", [])) if isinstance(data, dict) else []
 
     def state_issue(self) -> dict | None:
-        issues = self.request("GET", "/issues?state=open&per_page=100&sort=created&direction=asc")
-        return pick_state_issue(issues if isinstance(issues, list) else [])
+        for page in range(1, 6):
+            issues = self.request("GET", f"/issues?state=open&per_page=100&sort=created&direction=asc&page={page}")
+            found = pick_state_issue(issues if isinstance(issues, list) else [])
+            if found or not isinstance(issues, list) or len(issues) < 100:
+                return found
+        return None
 
 
 def _write_output(name: str, value: str) -> None:
@@ -182,7 +223,7 @@ def plan() -> int:
     active: list[dict] = []
     for status in ACTIVE:
         active += api.runs("signed-beta.yml", f"&status={status}")
-    decision = decide(green, state, active + api.runs("signed-beta.yml", "&status=success"))
+    decision = decide(green, state, active + api.runs("signed-beta.yml", "&status=success"), datetime.now(ZoneInfo("UTC")))
     print(json.dumps(decision))
     _write_output("action", decision["action"])
     if decision["action"] != "dispatch":
@@ -223,11 +264,23 @@ def announce() -> int:
             "body": f"**Build {version} at `{sha[:7]}` did not upload** ({conclusion}). Run: {url}"})
         return 0
     state = parse_state(issue["body"])
-    notes = release_notes(_git_subjects(state["last_sha"], sha)) if state else release_notes([])
+    if state and _vkey(version) < _vkey(state["last_version"]):
+        api.request("POST", f"/issues/{issue['number']}/comments", {
+            "body": f"Build {number + 100} (version {version}) uploaded from `{sha[:7]}`, which is older than the log's "
+                    f"last version {state['last_version']}. The log keeps its record. Run: {url}"})
+        return 0
+    try:
+        notes = release_notes(_git_subjects(state["last_sha"], sha)) if state else release_notes([])
+    except (subprocess.CalledProcessError, OSError):
+        notes = "- The merged pull requests could not be listed."
     api.request("POST", f"/issues/{issue['number']}/comments", {
         "body": f"**Build {number + 100} (version {version}) uploaded** from `{sha[:7]}`. Run: {url}\n\n"
                 f"Merged since the last upload:\n{notes}"})
-    api.request("PATCH", f"/issues/{issue['number']}", {"body": render_state(issue["body"], version, sha)})
+    try:
+        updated = os.environ.get("RUN_UPDATED") or None
+        api.request("PATCH", f"/issues/{issue['number']}", {"body": render_state(issue["body"], version, sha, updated)})
+    except OSError as error:  # the schedule still reads the signed run's own name, so a missed update is safe
+        print(f"::warning::The log's state could not be updated ({type(error).__name__}).")
     return 0
 
 
