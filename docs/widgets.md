@@ -5,9 +5,10 @@ goal) with Food (fork and knife) and Burned (flame) under it, and, in the medium
 water beside it, on the Home Screen (small, medium) and the Lock Screen (circular, rectangular, inline). Remaining is
 hidden without a goal, Burned without a burned value, and over goal it is a plain negative number. On a day where
 some entries have no calories, Food reads "N+" (VoiceOver "at least N calories") and, while there is something left,
-Remaining reads "Up to N" ("up to N calories remaining"); the medium widget adds its note line, and a small gauge
-holds Food instead of the unmarked Remaining. Burned never has a marker. The circular
-widget's ring is the share of the goal eaten. With nothing logged it reads "Nothing logged today". Tapping it opens
+Remaining reads "Up to N" ("up to N calories remaining"); the medium widget adds its note line. Burned never has a marker. The circular
+widget's ring is the share of the goal eaten and its centre is Food ("N+" on a partial day). The rectangular
+widgets (Lock Screen and Watch) show the calorie block only; the medium widget keeps protein, carbohydrate, fat and
+water beside it, and the Watch app lists them under it. With nothing logged it reads "Nothing logged today". Tapping it opens
 the app.
 
 - **What it reads.** Only a small summary file the app writes (`Shared/WidgetSnapshot.swift`): the day's

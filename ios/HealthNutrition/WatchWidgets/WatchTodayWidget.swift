@@ -81,7 +81,7 @@ struct WatchTodayWidgetView: View {
                     Text("Nothing logged today").font(.footnote)
                 }
             } else {
-                WidgetCalorieSummary(snapshot: snapshot, verticalDetails: true)
+                WidgetCalorieSummary(snapshot: snapshot)
             }
         }
     }

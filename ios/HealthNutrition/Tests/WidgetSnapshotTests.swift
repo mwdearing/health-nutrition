@@ -111,7 +111,7 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.calorieSpoken,
             "up to \(grouped(1_200)) calories remaining, Food, at least 800 calories, Burned, 250 calories")
-        // A small gauge holds Food ("800+") rather than an unmarked Remaining.
+        // The gauge holds Food ("800+"), matching its ring, which is the share of the goal eaten.
         XCTAssertEqual(snapshot.gaugeHeadline, "800+")
         // Burned never gets a marker.
         XCTAssertEqual(snapshot.burnedText, "250")
@@ -119,7 +119,7 @@ final class WidgetSnapshotTests: XCTestCase {
         snapshot.remainingKcal = -150
         XCTAssertFalse(snapshot.remainingIsUpperBound)
         XCTAssertEqual(snapshot.remainingDisplay, grouped(-150))
-        XCTAssertEqual(snapshot.gaugeHeadline, grouped(-150))
+        XCTAssertEqual(snapshot.gaugeHeadline, "800+")
         XCTAssertTrue(snapshot.calorieSpoken.hasPrefix("\(grouped(-150)) calories remaining"))
         snapshot.remainingKcal = 0
         XCTAssertFalse(snapshot.remainingIsUpperBound)
@@ -129,7 +129,7 @@ final class WidgetSnapshotTests: XCTestCase {
         snapshot.partialFigures = nil
         XCTAssertEqual(snapshot.foodText, "800")
         XCTAssertEqual(snapshot.remainingDisplay, grouped(1_200))
-        XCTAssertEqual(snapshot.gaugeHeadline, grouped(1_200))
+        XCTAssertEqual(snapshot.gaugeHeadline, "800")
     }
 
     func testOnlyTheListedFiguresAreTreatedAsPartial() {

@@ -24,11 +24,9 @@ extension WidgetSnapshot {
         remainingText.map { remainingIsUpperBound ? "Up to \($0)" : $0 }
     }
 
-    /// The one figure a small gauge can hold: Remaining, or Food ("N+" when partial) when there is no Remaining or it
-    /// is only an upper bound.
-    var gaugeHeadline: String? {
-        remainingIsUpperBound ? foodText : (remainingText ?? foodText)
-    }
+    /// The one figure a small gauge holds: Food ("N+" when partial). The ring is the share of the goal eaten, so its
+    /// centre is what was eaten, as before; Remaining is on the larger families and in the inline text.
+    var gaugeHeadline: String? { foodText }
 
     /// Remaining for a single line of text: "up to N" on a partial day with something left, otherwise the number.
     var remainingInlineText: String? {
