@@ -14,7 +14,7 @@ final class DrinkFavoriteShareTests: XCTestCase {
                 componentID: "soda", name: "7up", amountText: "200", unitSymbol: "mL",
                 hydrationPercentText: "95")])
 
-        let repeated = try XCTUnwrap(JournalRepeat(favorite: favorite))
+        let repeated = try XCTUnwrap(RepeatTemplate(favorite: favorite))
 
         XCTAssertEqual(repeated.components.first?.hydrationPercent, 95)
     }
@@ -25,7 +25,7 @@ final class DrinkFavoriteShareTests: XCTestCase {
             components: [FavoriteComponent(
                 componentID: "soda", name: "Old soda", amountText: "200", unitSymbol: "mL")])
 
-        let repeated = try XCTUnwrap(JournalRepeat(favorite: favorite))
+        let repeated = try XCTUnwrap(RepeatTemplate(favorite: favorite))
 
         XCTAssertNil(repeated.components.first?.hydrationPercent)
     }
