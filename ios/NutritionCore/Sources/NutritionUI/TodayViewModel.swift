@@ -517,10 +517,10 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// A delete committed anywhere in the app. Undo is offered for the most recent delete only, so an older
-    /// delete offer here is dropped when another entry is deleted.
+    /// A delete committed anywhere in the app. Undo is offered for the most recent change only, so an older
+    /// offer here, a delete or a quick-added water, is dropped when another entry is deleted.
     public func deleteCommitted(intakeID: String) {
-        guard let undo, undo.isDelete, undo.intakeID != intakeID else { return }
+        guard let undo, undo.intakeID != intakeID else { return }
         self.undo = nil
     }
 
