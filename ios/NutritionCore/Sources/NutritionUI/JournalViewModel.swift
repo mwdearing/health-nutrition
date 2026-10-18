@@ -644,9 +644,9 @@ public final class JournalViewModel: ObservableObject {
             .prefix(3).map { goal -> GoalBarModel in
             let line = NutrientProgressLine.make(
                 nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal,
-                knownSum: totals.knownSum(for: goal.nutrient))
+                knownSum: totals.knownSum(for: goal.nutrient), missingCount: totals.missingCount(for: goal.nutrient))
             return GoalBarModel.make(
-                line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: 0,
+                line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: line.missingCount,
                 unitSystem: unitSystem)
         }
     }

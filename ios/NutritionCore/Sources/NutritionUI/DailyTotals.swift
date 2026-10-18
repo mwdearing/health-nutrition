@@ -294,6 +294,15 @@ public enum DailyTotalsBuilder {
         return values
     }
 
+    /// The known part of a day with some unknown entries: the sum of the known values, only when no value is a
+    /// below-threshold bound (a bound is not an amount) and at least one value is known.
+    static func partialKnownSum(_ values: [NutrientValue], nutrient: String) -> NutrientValue? {
+        let raw = rawSum(values, nutrient: nutrient)
+        guard raw.coverage.hasUnknown, !raw.coverage.hasBelowReportingThreshold else { return nil }
+        if case .known = raw.value { return raw.value }
+        return nil
+    }
+
     /// `NutrientTotal.sum`, with any unknown left in the day making the whole nutrient unknown.
     ///
     /// The sum adds what it can and reports the rest in its coverage; that coverage is what decides
@@ -311,15 +320,6 @@ public enum DailyTotalsBuilder {
     /// bound against a target as though the bound were the day's figure, and a person reading "at
     /// least 5 g of 60 g" cannot tell whether the day is met. Unknown is the one answer that cannot
     /// be mistaken for the day being short.
-    /// The known part of a day with some unknown entries: the sum of the known values, only when no value is a
-    /// below-threshold bound (a bound is not an amount) and at least one value is known.
-    static func partialKnownSum(_ values: [NutrientValue], nutrient: String) -> NutrientValue? {
-        let raw = rawSum(values, nutrient: nutrient)
-        guard raw.coverage.hasUnknown, !raw.coverage.hasBelowReportingThreshold else { return nil }
-        if case .known = raw.value { return raw.value }
-        return nil
-    }
-
     private static func sum(_ values: [NutrientValue], nutrient: String) -> NutrientTotal {
         let total = rawSum(values, nutrient: nutrient)
         guard total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold else {

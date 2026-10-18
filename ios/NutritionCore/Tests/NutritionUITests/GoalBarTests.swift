@@ -145,4 +145,18 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(bar.state, .progress)
         XCTAssertEqual(bar.accessibilityText, "Fiber, 10 grams of 30 grams, 1 entry has no fiber value")
     }
+
+    func testDiaryPartialDayNotesTheCountFromTheSameTotal() {
+        let total = NutrientTotal(
+            value: .unknown,
+            coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))
+        let totals = DailyTotals(
+            totals: ["protein": total], knownSums: ["protein": .known(Decimal(12), .g)],
+            missingCounts: ["protein": 1])
+        let bars = JournalViewModel.headerBars(
+            totals: totals, goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)],
+            hasFoodEntries: true, unitSystem: .metric)
+        XCTAssertEqual(bars.first?.reason, "1 entry has no protein value")
+        XCTAssertEqual(bars.first?.state, .progress)
+    }
 }
