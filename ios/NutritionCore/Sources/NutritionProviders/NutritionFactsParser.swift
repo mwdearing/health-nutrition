@@ -1313,12 +1313,18 @@ public enum NutritionFactsParser {
         _ words: ArraySlice<(text: String, range: Range<String.Index>)>
     ) -> (name: String, nutrient: PanelRow?)? {
         guard !words.isEmpty, words.count <= 4 else { return nil }
+        var previous: String?
         for token in words {
             let lower = token.text.lowercased()
-            guard token.text.first?.isLetter == true, !leadingWords.contains(lower), !panelWords.contains(lower),
-                  token.text.allSatisfy({ $0.isLetter || $0.isNumber })
+            // A hyphen is part of a name ("Vitamin B-12"), and a bare number is part of one only directly after a
+            // single letter ("Vitamin B 12"), so "Calories 30" and similar text is never read as a name.
+            let numberAfterLetter = token.text.allSatisfy(\.isNumber) && previous?.count == 1
+            let startsWord = token.text.first?.isLetter == true || numberAfterLetter
+            guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower),
+                  token.text.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" })
             else { return nil }
             guard countedUnit(for: token.text) == nil else { return nil }
+            previous = token.text
         }
         let name = words.map(\.text).joined(separator: " ")
         guard let match = firstRow(in: name) else { return (name, nil) }
