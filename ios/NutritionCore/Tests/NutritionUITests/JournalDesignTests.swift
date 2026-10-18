@@ -317,8 +317,8 @@ final class JournalDesignTests: XCTestCase {
         let withEnergyModel = makeModel(withEnergy)
         withEnergyModel.load(now: designNow)
         let energy = try XCTUnwrap(withEnergyModel.sections.first?.energyText)
-        XCTAssertTrue(energy.contains("kcal"), energy)
-        XCTAssertEqual(energy, "400 kcal")
+        XCTAssertFalse(energy.contains("kcal"), energy)
+        XCTAssertEqual(energy, "400 Calories")
     }
 
     // MARK: Day age per entry, and goals that cannot be read

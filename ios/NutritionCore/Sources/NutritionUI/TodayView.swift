@@ -260,7 +260,7 @@ public struct TodayView: View {
                 if let kcal = section.energyKcal {
                     // A small positive amount must not round to "0 kcal", which reads as nothing logged.
                     let figure = kcal > 0 && kcal < 1 ? "under 1" : BodyActivityViewModel.whole(kcal)
-                    Text("\(figure) kcal")
+                    Text("\(figure) Calories")
                         .font(.subheadline)
                         .foregroundStyle(TokenColors.textSecondary)
                         .accessibilityLabel("\(figure) calories")
