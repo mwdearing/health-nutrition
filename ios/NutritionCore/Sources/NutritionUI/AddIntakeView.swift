@@ -167,10 +167,6 @@ public struct AddIntakeView: View {
                 }
                 if let hint = model.servingHint {
                     Text(hint).font(.footnote).foregroundStyle(TokenColors.textSecondary)
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: DesignSpacing.s) { servingChips }
-                        VStack(alignment: .leading, spacing: DesignSpacing.s) { servingChips }
-                    }
                 }
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
@@ -230,14 +226,6 @@ public struct AddIntakeView: View {
                     }
                 }
             }
-            HStack {
-                Text("Log to several days")
-                Spacer()
-                LaterBadge()
-            }
-            .disabled(true)
-            .accessibilityElement(children: .combine)
-            .accessibilityValue("Not available yet")
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
@@ -275,19 +263,6 @@ public struct AddIntakeView: View {
         }
     }
 
-    private var servingChips: some View {
-        ForEach(["1 serving", "½", "2"], id: \.self) { title in
-            HStack(spacing: DesignSpacing.s) {
-                Text(title).font(.body)
-                LaterBadge()
-            }
-            .padding(DesignSpacing.s)
-            .background(TokenColors.surface, in: Capsule())
-            .disabled(true)
-            .accessibilityElement(children: .combine)
-            .accessibilityValue("Not available yet")
-        }
-    }
 
     /// Where the values came from and, when the source requires it, a titled link to its license.
     @ViewBuilder
