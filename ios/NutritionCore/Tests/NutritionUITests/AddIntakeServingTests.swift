@@ -160,4 +160,22 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertNil(AmountParser.parseTyped("0,", decimalSeparator: ","))
         XCTAssertNil(AmountParser.parseTyped("0.0", decimalSeparator: ","))
     }
+
+    func testEmptiedServingsFieldClearsTheAmountItSet() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        model.setServingCount("3")
+        model.setServingCount("")
+        model.commitServingCount()
+        XCTAssertEqual(model.amountText, "")
+    }
+
+    func testTypedAmountSurvivesAnEmptiedServingsField() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        model.amountText = "75"
+        model.setServingCount("")
+        model.commitServingCount()
+        XCTAssertEqual(model.amountText, "75")
+    }
 }

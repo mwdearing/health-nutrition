@@ -148,7 +148,10 @@ public final class AddIntakeViewModel: ObservableObject {
             // A figure written by anything but the prefill no longer stands for the stored amount.
             if !isPrefilling { prefillBacking = nil }
             // An amount typed by hand no longer equals a count of servings.
-            if !isPrefilling && !isSettingServings { servingCount = "" }
+            if !isPrefilling && !isSettingServings {
+                servingCount = ""
+                amountFromServings = false
+            }
         }
     }
     /// How many servings the amount stands for, when the picked product gave a serving size. Typing a
@@ -157,6 +160,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The serving size the source gave, kept whatever the basis, so the amount can open on one serving.
     @Published public private(set) var servingOption: ServingDefinition?
     private var isSettingServings = false
+    /// True while the amount is the one a count of servings set, so an emptied Servings field can clear it.
+    private var amountFromServings = false
     /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
     /// goes once the person types an amount.
     @Published public private(set) var unitNotice: String?
@@ -916,6 +921,7 @@ public final class AddIntakeViewModel: ObservableObject {
         // settles it when the edit commits.
         guard let count = AmountParser.parseTyped(text) else { return }
         amountText = DecimalFormatting.text(count * display.quantity)
+        amountFromServings = true
         unit = display.unit
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText) {
@@ -927,8 +933,16 @@ public final class AddIntakeViewModel: ObservableObject {
     /// empty or zero then clears the amount, since nothing is left to finish typing.
     public func commitServingCount() {
         let trimmed = servingCount.trimmingCharacters(in: .whitespaces)
-        // Nothing was counted in the Servings field, so there is nothing to settle and a typed amount stays.
-        guard !trimmed.isEmpty else { return }
+        // An emptied Servings field clears the amount it had set, and only that; a typed amount stays.
+        guard !trimmed.isEmpty else {
+            if amountFromServings {
+                isSettingServings = true
+                defer { isSettingServings = false }
+                amountText = ""
+                amountFromServings = false
+            }
+            return
+        }
         let isZero = Decimal(string: AmountParser.normalizedTyped(trimmed), locale: AmountParser.locale) == 0
         guard isZero else { return }
         isSettingServings = true
