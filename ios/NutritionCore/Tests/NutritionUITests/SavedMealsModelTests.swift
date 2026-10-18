@@ -229,7 +229,9 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertEqual(try inner.activeIntakes().map(\.id), [intake.id], "no copy was created")
     }
 
-    func testAFailedUnitReadStopsAnEditThatWouldForgetTheUnit() throws {
+    /// The unit of a changed amount is forgotten in the same commit as the edit, so an unreadable unit index no
+    /// longer stops the edit: the commit removes that component's unit rows without reading them.
+    func testAFailedUnitReadStillSavesTheEditAndForgetsItsUnit() throws {
         let inner = try makeJournal()
         let journal = FaultyJournal(inner)
         let intake = try fiberEntry(inner)
@@ -239,11 +241,10 @@ final class SavedMealsModelTests: XCTestCase {
         detail.drafts[componentID] = "250"
         journal.failUnitReads = true
 
-        XCTAssertFalse(detail.saveDrafts(now: now))
-        XCTAssertEqual(detail.errorMessage, "Couldn't save. Your previous amount is kept.")
-        let kept = try XCTUnwrap(inner.revisions(of: intake.id).last?.components.first)
-        XCTAssertEqual(kept.amount, Decimal(string: "19.715686375"))
-        XCTAssertEqual(try inner.loggedUnits().map(\.unit), [.teaspoon], "the unit is still recorded")
+        XCTAssertTrue(detail.saveDrafts(now: now))
+        let saved = try XCTUnwrap(inner.revisions(of: intake.id).last?.components.first)
+        XCTAssertEqual(saved.amount, Decimal(250))
+        XCTAssertEqual(try inner.loggedUnits().map(\.unit), [], "the changed component's unit is forgotten")
     }
 
     func testAnUnreadableEntryRefusesTheWholeSave() throws {
