@@ -62,6 +62,17 @@ public struct NourishTodayHeader: View {
         return model.goalBars.filter { !shown.contains($0.id) }
     }
 
+    /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal footnote.
+    static func spokenSummary(_ calories: CalorieRemaining, partial: String?, footnote: String?) -> String {
+        [
+            calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
+            calories.food.map { "Food, \(BodyActivityViewModel.whole($0)) calories" },
+            calories.burned.map { "Burned, \(BodyActivityViewModel.whole($0)) calories" },
+            partial,
+            footnote,
+        ].compactMap { $0 }.joined(separator: ", ")
+    }
+
     /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It replaces
     /// the goal ring whenever food is known, so a day without a goal shows food and burned only.
     /// Remaining is hidden without a goal; burned is hidden when there is no Health reading or the setting is off.
@@ -70,13 +81,7 @@ public struct NourishTodayHeader: View {
         let calories = model.calorieRemaining
         // One gate for the visible note and the spoken one: the day's own partial flag.
         let partial: String? = calories.isPartial ? bar(Self.ringKey)?.reason : nil
-        let spoken = [
-            calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
-            calories.food.map { "Food, \(BodyActivityViewModel.whole($0)) calories" },
-            calories.burned.map { "Burned, \(BodyActivityViewModel.whole($0)) calories" },
-            partial,
-            ringFootnote,
-        ].compactMap { $0 }.joined(separator: ", ")
+        let spoken = Self.spokenSummary(calories, partial: partial, footnote: ringFootnote)
         return VStack(alignment: .leading, spacing: DesignSpacing.s) {
             if let remaining = calories.remaining {
                 Text(BodyActivityViewModel.whole(remaining))
