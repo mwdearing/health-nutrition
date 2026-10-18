@@ -56,7 +56,7 @@ public struct NutrientProgressLine: Equatable, Identifiable {
         nutrient: String, total: NutrientTotal?, goal: NutrientGoal?, displayName: String? = nil,
         knownSum: NutrientValue? = nil, missingCount: Int = 0
     ) -> NutrientProgressLine {
-        if let knownSum, total?.coverage.hasUnknown == true {
+        if let knownSum, let coverage = total?.coverage, coverage.hasUnknown || coverage.hasBelowReportingThreshold {
             return NutrientProgressLine(
                 nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName,
                 isPartial: true, knownSum: knownSum, missingCount: missingCount)

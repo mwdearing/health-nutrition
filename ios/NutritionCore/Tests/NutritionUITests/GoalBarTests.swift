@@ -159,4 +159,38 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(bars.first?.reason, "1 entry has no protein value")
         XCTAssertEqual(bars.first?.state, .progress)
     }
+
+    func testPartialSumLeavesBelowThresholdOutAndKeepsTheKnownPart() {
+        let values: [NutrientValue] = [.known(Decimal(5), .g), .belowReportingThreshold(nil)]
+        XCTAssertEqual(DailyTotalsBuilder.partialKnownSum(values, nutrient: "fiber"), .known(Decimal(5), .g))
+        let total = NutrientTotal(
+            value: .unknown,
+            coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: true, hasUnknown: false))
+        let line = NutrientProgressLine.make(
+            nutrient: "fiber", total: total, goal: nil, knownSum: .known(Decimal(5), .g))
+        XCTAssertTrue(line.isPartial, "a bound makes the day partial, not whole")
+        XCTAssertEqual(line.shownAmount, .known(Decimal(5), .g))
+    }
+
+    func testPartialSumStaysUnknownWhenNothingIsKnownOrBounded() {
+        XCTAssertNil(DailyTotalsBuilder.partialKnownSum([.unknown, .unknown], nutrient: "fiber"))
+    }
+
+    func testPartialSumIsZeroWhenEveryEntryIsBelowThreshold() {
+        XCTAssertEqual(
+            DailyTotalsBuilder.partialKnownSum([.belowReportingThreshold(.g), .belowReportingThreshold(.g)], nutrient: "fiber"),
+            .known(Decimal(0), .g))
+    }
+
+    func testBelowThresholdOnlyDayShowsZeroWithTheNote() {
+        let bounded = NutrientProgressLine.make(
+            nutrient: "fiber",
+            total: NutrientTotal(
+                value: .unknown,
+                coverage: Coverage(knownCount: 0, totalCount: 2, hasBelowReportingThreshold: true, hasUnknown: false)),
+            goal: nil, knownSum: .known(Decimal(0), .g))
+        let bar = GoalBarModel.make(line: bounded, hasEntries: true, missingCount: 0)
+        XCTAssertEqual(bar.valueText, "0 g")
+        XCTAssertEqual(bar.reason, "Some entries can't be added up for fiber")
+    }
 }

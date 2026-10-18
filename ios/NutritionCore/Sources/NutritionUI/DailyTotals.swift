@@ -294,13 +294,37 @@ public enum DailyTotalsBuilder {
         return values
     }
 
-    /// The known part of a day with some unknown entries: the sum of the known values, only when no value is a
-    /// below-threshold bound (a bound is not an amount) and at least one value is known.
+    /// The known part of a day with some unknown entries: the sum of the known values. A below-threshold entry is
+    /// a bound ("at least 0") and adds nothing; a day whose only known information is bounds is 0 in the unit.
     static func partialKnownSum(_ values: [NutrientValue], nutrient: String) -> NutrientValue? {
-        let raw = rawSum(values, nutrient: nutrient)
-        guard raw.coverage.hasUnknown, !raw.coverage.hasBelowReportingThreshold else { return nil }
-        if case .known = raw.value { return raw.value }
-        return nil
+        let partialDay = values.contains { value in
+            switch value {
+            case .unknown, .belowReportingThreshold: return true
+            case .known, .notApplicable: return false
+            }
+        }
+        guard partialDay else { return nil }
+        // A below-threshold bound adds 0, so it is left out of the sum rather than stated as a zero.
+        let knownOnly = values.filter {
+            if case .known = $0 { return true }
+            return false
+        }
+        if !knownOnly.isEmpty {
+            let raw = rawSum(knownOnly, nutrient: nutrient)
+            if case .known = raw.value { return raw.value }
+            return nil
+        }
+        // Only bounds (or nothing) are known: the zero needs a unit to be stated in.
+        let mapping = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
+            ? HealthKitWritePlanner.mapping(for: nutrient) : nil
+        // Only a bound makes a zero known: a day with nothing known at all stays unknown.
+        let bounds: [MeasureUnit?] = values.compactMap { value in
+            if case .belowReportingThreshold(let unit) = value { return unit }
+            return nil
+        }
+        guard !bounds.isEmpty else { return nil }
+        guard let unit = bounds.compactMap({ $0 }).first ?? mapping?.unit else { return nil }
+        return .known(0, unit)
     }
 
     /// `NutrientTotal.sum`, with any unknown left in the day making the whole nutrient unknown.
@@ -311,15 +335,11 @@ public enum DailyTotalsBuilder {
     /// person ate. Unknown is never zero: "0 g of protein" and "protein was never known" are
     /// different facts and only one of them is true.
     ///
-    /// **Coverage that is uncertain is answered as unknown, not as a lower bound.** One entry that
-    /// states its nutrient below the reporting threshold carries no amount, only a bound, so adding
-    /// it to what the other entries stated cannot produce the day's total; it produces a number that
-    /// is smaller than the truth by an unknown amount. That is the same defect as the unknown case
-    /// above and is decided the same way, so the sum reads as unknown instead. It is a deliberate loss
-    /// of precision against printing "at least 5 g" beside a goal: the screen would then compare a
-    /// bound against a target as though the bound were the day's figure, and a person reading "at
-    /// least 5 g of 60 g" cannot tell whether the day is met. Unknown is the one answer that cannot
-    /// be mistaken for the day being short.
+    /// **A below-threshold entry is a bound, "at least 0", and never the day's exact total.** It adds 0
+    /// to the known sum (see `partialKnownSum`), so the figure is the exact entries' sum. The day is always
+    /// marked partial, so the figure is shown with the missing-value note and is never presented as complete.
+    /// A day where every entry is below the threshold shows 0 with the note. "No data" is used only when
+    /// nothing at all is known. This total itself (`total(for:)`) stays unknown for such a day.
     private static func sum(_ values: [NutrientValue], nutrient: String) -> NutrientTotal {
         let total = rawSum(values, nutrient: nutrient)
         guard total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold else {
