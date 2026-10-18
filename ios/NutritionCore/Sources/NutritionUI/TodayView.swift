@@ -360,8 +360,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
     var body: some View {
         ZStack(alignment: .trailing) {
             Button(role: .destructive) {
-                withAnimation(.snappy) { offset = 0; settled = 0 }
-                onDelete()
+                closeAndDelete()
             } label: {
                 Image(systemName: "trash")
                     .font(.title3)
@@ -394,8 +393,14 @@ private struct SwipeToDeleteRow<Content: View>: View {
                                 offset = settled
                             }
                         })
-                .accessibilityAction(named: accessibilityName) { onDelete() }
+                .accessibilityAction(named: accessibilityName) { closeAndDelete() }
         }
+    }
+
+    /// Both paths close the row before deleting, so a failed delete does not leave it revealed.
+    private func closeAndDelete() {
+        withAnimation(.snappy) { offset = 0; settled = 0 }
+        onDelete()
     }
 }
 
