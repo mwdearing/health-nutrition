@@ -209,4 +209,48 @@ final class AddIntakeServingTests: XCTestCase {
         model.commitServingCount()
         XCTAssertEqual(model.amountText, "2")
     }
+
+    private struct StubPortions: HouseholdPortionLookup {
+        let grams: [MeasureUnit: Decimal]
+        func listedPortions(fdcId: Int) async -> [MeasureUnit: Decimal] { grams }
+    }
+
+    private func makePortionModel(_ grams: [MeasureUnit: Decimal]) throws -> AddIntakeViewModel {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        return AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC", lookup: nil,
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary),
+            portionLookup: StubPortions(grams: grams))
+    }
+
+    /// A USDA-style pick: per 100 g, with the source's fdcId so its listed measures can be asked for.
+    private func usdaPick() -> LookedUpProduct {
+        LookedUpProduct(
+            barcode: "", name: "Cooked rice", brand: nil, basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(200), .kcal)],
+            attribution: nil, serving: nil, version: nil, sourceID: "1")
+    }
+
+    func testListedCupTotalsThroughItsGramWeight() async throws {
+        let model = try makePortionModel([.cup: 150])
+        model.applyLookedUp(usdaPick())
+        await model.loadListedPortions()
+        XCTAssertTrue(model.unitOptions.contains(.cup), "a listed cup is offered")
+        model.unit = .cup
+        model.amountText = "1"
+        let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
+        // One cup is 150 g, so 200 kcal per 100 g is 300 kcal.
+        XCTAssertEqual(energy?.value, .known(300, .kcal))
+    }
+
+    func testUnlistedCupIsNotOffered() async throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(usdaPick())
+        await model.loadListedPortions()
+        XCTAssertFalse(model.unitOptions.contains(.cup), "a food that lists no cup gets no cup")
+        XCTAssertFalse(model.unitOptions.contains(.teaspoon))
+    }
 }
