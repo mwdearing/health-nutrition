@@ -57,7 +57,7 @@ public enum CustomProductMapping {
         case .per100mL: basis = "per 100 mL"
         case .perServing:
             if let serving = content.serving {
-                basis = "per serving (\(NSDecimalNumber(decimal: serving.quantity).stringValue) \(serving.unit.screenSymbol))"
+                basis = "per serving (\(NSDecimalNumber(decimal: serving.quantity).stringValue) \(serving.unit.symbol))"
             } else { basis = "per serving" }
         }
         var nutrients: [String: NutrientValue] = [:], names: [String: String] = [:]
