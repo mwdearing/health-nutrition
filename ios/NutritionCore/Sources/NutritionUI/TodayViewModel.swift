@@ -394,7 +394,7 @@ public final class TodayViewModel: ObservableObject {
                     return nil
                 },
                 isPartial: foodLine?.isPartial ?? false,
-                burned: burnedCounted ? activeEnergyKcal : nil)
+                burned: burnedCounted ? activeEnergyKcal.flatMap { $0 >= 0 ? $0 : nil } : nil)
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
@@ -403,6 +403,7 @@ public final class TodayViewModel: ObservableObject {
             // Clear what the last good read showed, so a failed reload never shows old rows as today's.
             rows = []
             mealSections = []
+            calorieRemaining = .none
             waterTotalMilliliters = 0
             waterEntryCount = 0
             waterSkippedCount = 0
