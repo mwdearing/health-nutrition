@@ -845,10 +845,19 @@ public enum JournalImporter {
                 throw JournalImportError.corrupt(
                     "\(label) uses the unit \(component.unit), which this build does not know")
             }
+            // The share is read back as it was exported, and must be a percentage; an old export has none.
+            var share: String?
+            if let shareText = component.hydrationPercent {
+                guard let value = DecimalText.decode(shareText), value >= 0, value <= 100 else {
+                    throw JournalImportError.corrupt(
+                        "\(label) has the water share \(shareText), which is not a percentage from 0 to 100")
+                }
+                share = DecimalText.encode(value)
+            }
             restoredComponents.append(
                 FavoriteComponent(
                     componentID: component.componentID, name: component.name, amountText: text,
-                    unitSymbol: component.unit))
+                    unitSymbol: component.unit, hydrationPercentText: share))
         }
         if let snapshotID = template.productSnapshotID, products[snapshotID] == nil {
             throw JournalImportError.corrupt(
