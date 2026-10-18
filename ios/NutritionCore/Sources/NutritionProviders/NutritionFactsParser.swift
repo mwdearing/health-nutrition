@@ -1319,6 +1319,7 @@ public enum NutritionFactsParser {
             // A hyphen is part of a name ("Vitamin B-12"), and a bare number is part of one only directly after a
             // single letter ("Vitamin B 12"), so "Calories 30" and similar text is never read as a name.
             let numberAfterLetter = token.text.allSatisfy(\.isNumber) && previous?.count == 1
+                && previous?.first?.isLetter == true
             let startsWord = token.text.first?.isLetter == true || numberAfterLetter
             guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower),
                   token.text.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" })
