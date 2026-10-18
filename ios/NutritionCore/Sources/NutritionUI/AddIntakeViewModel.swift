@@ -872,7 +872,7 @@ public final class AddIntakeViewModel: ObservableObject {
             unit = first
             amountText = ""
             if hadAmount {
-                unitNotice = "Amount cleared. This food can't be measured in \(typed.symbol)."
+                unitNotice = "Amount cleared. This food can't be measured in \(typed.screenSymbol)."
             }
         }
         // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.

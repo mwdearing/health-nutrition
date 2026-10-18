@@ -149,7 +149,7 @@ public struct CustomProductSharingSection: View {
                         Text(preview.revision.content.kind.displayName)
                         Text(preview.revision.content.basis.rawValue)
                         if let serving = preview.revision.content.serving {
-                            Text("Serving: \(NSDecimalNumber(decimal: serving.quantity).stringValue) \(serving.unit.symbol)")
+                            Text("Serving: \(NSDecimalNumber(decimal: serving.quantity).stringValue) \(serving.unit.screenSymbol)")
                             if let text = serving.text { Text(text) }
                         }
                         if let barcode = preview.revision.content.barcode { Text("Barcode: \(barcode)") }
@@ -186,7 +186,7 @@ public struct CustomProductSharingSection: View {
             Text(content.kind.displayName)
             Text(content.basis.rawValue)
             ForEach(content.facts, id: \.rawKeyIdentity) { fact in
-                Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.symbol ?? "")")
+                Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.screenSymbol ?? "")")
             }
         case .legacyLabel(let label):
             Text(label.kind?.displayName ?? "Kind needs review")
@@ -198,10 +198,10 @@ public struct CustomProductSharingSection: View {
     }
     private static func describe(_ value: NutrientValue) -> String {
         switch value {
-        case .known(let amount, let unit): return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.symbol)"
+        case .known(let amount, let unit): return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.screenSymbol)"
         case .unknown: return "Unknown"
         case .notApplicable: return "Not applicable"
-        case .belowReportingThreshold(let unit): return "Below reporting threshold" + (unit.map { " (\($0.symbol))" } ?? "")
+        case .belowReportingThreshold(let unit): return "Below reporting threshold" + (unit.map { " (\($0.screenSymbol))" } ?? "")
         }
     }
     private func perform(_ action: () throws -> Void) {
