@@ -103,8 +103,9 @@ public enum DailyTotalsBuilder {
             var missing = 0
             for entry in entries {
                 let contribution = contributions(of: entry, nutrient: nutrient, lookup: lookup)
-                // An entry counts as missing when one of its values is unknown. A supplement never contributes
-                // an unknown food nutrient (see `contributions`), so it is never counted here.
+                // An entry counts as missing when one of its values is unknown, which is exactly the case the sum
+                // leaves out. A supplement with an undeclared nutrient contributes nothing, so it is not counted;
+                // one whose label basis cannot be scaled does contribute unknown, and is counted.
                 if contribution.contains(.unknown) { missing += 1 }
                 values.append(contentsOf: contribution)
             }
