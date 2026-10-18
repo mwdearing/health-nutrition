@@ -240,11 +240,13 @@ def plan() -> int:
 
 
 def _git_subjects(previous: str, sha: str) -> list[str]:
+    """The merge subjects between two commits; empty when the range cannot be read (for example after a history
+    rewrite), so the upload is still announced and recorded."""
     result = subprocess.run(
         ["git", "log", "--first-parent", "--format=%s", f"{previous}..{sha}"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )
-    return result.stdout.splitlines()
+    return result.stdout.splitlines() if result.returncode == 0 else []
 
 
 def announce() -> int:

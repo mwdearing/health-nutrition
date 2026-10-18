@@ -256,3 +256,11 @@ def test_collaborators_with_read_access_do_not_count_as_trusted_authors() -> Non
 def test_the_announce_workflow_passes_the_finish_time_through_the_environment() -> None:
     text = (WORKFLOWS / "announce-beta.yml").read_text()
     assert "RUN_UPDATED: ${{ github.event.workflow_run.updated_at }}" in text
+
+
+def test_an_unreadable_commit_range_gives_no_notes_instead_of_crashing(tmp_path: Path, monkeypatch: Any) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.chdir(tmp_path)
+    assert beta["_git_subjects"](A, B) == []
