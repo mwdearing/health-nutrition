@@ -33,6 +33,14 @@ private final class StackReadCountingStore: JournalStore, @unchecked Sendable {
             intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
+
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String])throws -> IntakeRevision {
+        try inner.editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+    }
     func delete(intakeID: String, now: Date) throws { try inner.delete(intakeID: intakeID, now: now) }
     func activeIntakes() throws -> [Intake] {
         activeIntakesCalls += 1

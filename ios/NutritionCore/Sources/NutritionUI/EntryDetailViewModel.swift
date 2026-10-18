@@ -413,11 +413,18 @@ public final class EntryDetailViewModel: ObservableObject {
     /// zone is the entry's own, so the day it lands on is read the same way as before.
     @discardableResult
     public func save(components edited: [EditedComponent], changeReason reason: String, now: Date) -> Bool {
-        var forgotten: [JournalLoggedUnit] = []
         do {
             guard let intake = try store.activeIntakes().first(where: { $0.id == intakeID }) else {
                 fieldErrors = [:]
                 errorMessage = "This entry is no longer available."
+                return false
+            }
+            // The drafts were typed against the revision this screen loaded. If another write has made a newer one
+            // since, saving would overwrite it without the person having seen it, so the save stops here instead.
+            // Revision numbers start at 1, so 0 means no load has happened and there is no screen state to check.
+            guard currentRevision == 0 || intake.currentRevision == currentRevision else {
+                fieldErrors = [:]
+                errorMessage = "This entry changed since you opened it. Reopen it to see the latest amounts."
                 return false
             }
             let current = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }
@@ -450,35 +457,24 @@ public final class EntryDetailViewModel: ObservableObject {
             let timeOnly = correctedTime != nil
                 && (current.map { Self.componentsUnchanged(from: $0.components, to: parsed) } ?? false)
             // An amount that was typed over is no longer the amount the logged unit described, so that unit is
-            // forgotten and the component reads as the unit system says. It goes before the edit, so a failure
-            // here saves nothing and the message below is true; the worst a failed edit leaves is a unit read as
-            // the unit system says.
-            if let units = store as? JournalLoggedUnits, let before = current?.components {
-                // Read only when an amount actually changed, so a save that changes no amount (a time correction)
-                // does not depend on the units being readable.
-                var known: [String: MeasureUnit]?
+            // forgotten in the same commit as the edit: a failed edit forgets nothing, and the component reads as
+            // the unit system says only once the amount has really changed.
+            var unitRemovals: [String] = []
+            if let before = current?.components {
                 for component in parsed {
                     guard let old = before.first(where: { $0.componentID == component.componentID }),
                         !Self.sameAmount(old.amount, component.amount)
                     else { continue }
-                    if known == nil { known = try LoggedUnitIndex.loadOrThrow(from: store)[intakeID] ?? [:] }
-                    try units.removeLoggedUnit(intakeID: intakeID, componentID: component.componentID)
-                    if let loggedUnit = known?[component.componentID] {
-                        forgotten.append(JournalLoggedUnit(
-                            intakeID: intakeID, componentID: component.componentID, unit: loggedUnit))
-                    }
+                    unitRemovals.append(component.componentID)
                 }
             }
-            try store.edit(
+            try store.editRemovingUnits(
                 intakeID: intakeID, components: parsed, product: product,
                 changeReason: Self.recordedReason(written: reason, timeOnlyChange: timeOnly), now: now,
                 occurredAt: correctedTime,
-                timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier)
+                timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier,
+                unitRemovals: unitRemovals)
         } catch {
-            // The edit did not happen, so the units forgotten for it come back and the entry reads as it did.
-            if let units = store as? JournalLoggedUnits {
-                for unit in forgotten { try? units.recordLoggedUnit(unit) }
-            }
             errorMessage = "Couldn't save. Your previous amount is kept."
             return false
         }

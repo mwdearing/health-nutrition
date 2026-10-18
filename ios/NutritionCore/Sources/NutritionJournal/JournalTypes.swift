@@ -460,6 +460,13 @@ public protocol JournalStore: AnyObject, Sendable {
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision
+    /// Edits an entry as `edit` does, and in the same commit removes the logged units of the components named in
+    /// `unitRemovals`. A commit that fails removes nothing, so the units stay exactly as they were.
+    @discardableResult
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]
+    ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws
 

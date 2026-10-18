@@ -995,6 +995,14 @@ final class RelayDeliveryWorkerTests: XCTestCase {
                 now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
         }
 
+        func editRemovingUnits(
+            intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+            now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String])throws -> IntakeRevision {
+            try wrapped.editRemovingUnits(
+                intakeID: intakeID, components: components, product: product, changeReason: changeReason,
+                now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+        }
+
         func delete(intakeID: String, now: Date) throws {
             try wrapped.delete(intakeID: intakeID, now: now)
         }

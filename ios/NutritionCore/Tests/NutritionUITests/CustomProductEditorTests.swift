@@ -335,6 +335,8 @@ private final class ProductIntakeCommandPort: JournalStore, @unchecked Sendable 
         savedRevisions.append(revision); return revision
     }
     func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date?, timeZoneIdentifier: String?) throws -> IntakeRevision { throw CustomProductStoreError.invalidOperation }
+
+    func editRemovingUnits(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String])throws -> IntakeRevision { throw CustomProductStoreError.invalidOperation }
     func delete(intakeID: String, now: Date) throws { intakes.removeAll { $0.id == intakeID } }
     func activeIntakes() throws -> [Intake] { intakes }
     func revisions(of intakeID: String) throws -> [IntakeRevision] { savedRevisions.filter { $0.intakeID == intakeID } }

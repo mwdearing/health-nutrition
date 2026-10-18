@@ -1322,6 +1322,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision {
+        try editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: [])
+    }
+
+    @discardableResult
+    public func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]
+    ) throws -> IntakeRevision {
         guard !components.isEmpty else { throw JournalError.noComponents(intakeID) }
         let json = try Self.encode(components)
         return try commit { context in
@@ -1342,10 +1352,21 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             if let occurredAt { record.occurredAt = occurredAt }
             if let timeZoneIdentifier { record.timeZoneIdentifier = timeZoneIdentifier }
             try Self.supersedeProjections(of: intakeID, in: context)
-            return try appendRevision(
+            let revision = try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
                 product: product, changeReason: changeReason, now: now,
                 occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
+            // The units of changed components go last, after the revision is written. A throw here still discards the
+            // whole unsaved context, so the revision and the removals are saved together or not at all.
+            for componentID in unitRemovals {
+                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
+                        $0.intakeID == intakeID && $0.componentID == componentID
+                    })) {
+                    context.delete(row)
+                }
+            }
+            return revision
         }
     }
 

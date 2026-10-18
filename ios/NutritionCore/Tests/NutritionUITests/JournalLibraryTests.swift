@@ -38,6 +38,18 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
             intakeID: intakeID, components: components, product: product, changeReason: changeReason,
             now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
+
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String])throws -> IntakeRevision {
+        editCalls += 1
+        lastEditProductSnapshotID = product?.snapshotID
+        lastEditOccurredAt = occurredAt
+        lastEditTimeZoneIdentifier = timeZoneIdentifier
+        return try inner.editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason,
+            now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+    }
     func delete(intakeID: String, now: Date) throws {
         deleteCalls += 1
         try inner.delete(intakeID: intakeID, now: now)
@@ -78,6 +90,22 @@ private final class CannedStore: JournalStore, @unchecked Sendable {
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
     ) throws -> IntakeRevision {
+        editCalls += 1
+        lastEditedComponents = components
+        self.changeReason = changeReason
+        self.components[intakeID] = components
+        if let occurredAt, let index = intakes.firstIndex(where: { $0.id == intakeID }) {
+            intakes[index].occurredAt = occurredAt
+        }
+        return IntakeRevision(
+            intakeID: intakeID, number: 1, components: components, productSnapshotID: nil,
+            changeReason: changeReason, createdAt: Date(timeIntervalSince1970: 0),
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+    }
+
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String])throws -> IntakeRevision {
         editCalls += 1
         lastEditedComponents = components
         self.changeReason = changeReason
