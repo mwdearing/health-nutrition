@@ -54,7 +54,7 @@ public struct GoalBarModel: Equatable, Identifiable {
     ///   - skippedWaterCount: for water, the entries left out for not being a volume.
     public static func make(
         line: NutrientProgressLine, hasEntries: Bool, missingCount: Int, skippedWaterCount: Int = 0,
-        unitSystem: UnitSystem = .metric
+        someKnown: Bool = false, unitSystem: UnitSystem = .metric
     ) -> GoalBarModel {
         let label = line.label
         let isWater = line.nutrient == DailyTotalsBuilder.waterKey
@@ -78,10 +78,13 @@ public struct GoalBarModel: Equatable, Identifiable {
         }
         guard case .known(let total, let unit) = line.amount else {
             let reason = reasonText(line: line, missingCount: missingCount, skippedWaterCount: skippedWaterCount)
+            // "No data" only when nothing is known. Otherwise the figure is the existing "Can't total yet" and the
+            // reason sits once, in the footnote, which says which entries lack a value.
+            let figure = someKnown ? "Can't total yet" : "No data"
             return GoalBarModel(
-                id: line.id, label: label, valueText: "Can't total yet", state: .cannotTotal,
+                id: line.id, label: label, valueText: figure, state: .cannotTotal,
                 fraction: nil, goalMarker: nil,
-                accessibilityText: "\(label), can't total yet, \(reason)", reason: reason)
+                accessibilityText: someKnown ? "\(label), \(reason)" : "\(label), no data, \(reason)", reason: reason)
         }
         let displayTotal = shown(total, unit)
         let figure = displayTotal.text

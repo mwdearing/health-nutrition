@@ -210,6 +210,8 @@ public final class TodayViewModel: ObservableObject {
             // the tracked nutrients are known.
             var foodEntries: [(components: [IntakeComponent], snapshot: ProductDefinition?, kind: ProductKind)] = []
             var waterEntries = 0
+            // Water components that counted as a volume: the only water that is known.
+            var countedWater = 0
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
             let loggedUnits = LoggedUnitIndex.load(from: store)
@@ -232,6 +234,7 @@ public final class TodayViewModel: ObservableObject {
                             Self.isPositive(converted.value)
                         {
                             waterTotal += converted.value
+                            countedWater += 1
                         } else {
                             skipped += 1
                         }
@@ -336,11 +339,10 @@ public final class TodayViewModel: ObservableObject {
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
             // A goal switched off on the Goals screen keeps its target and its totals, but no bar.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
-            goalBars = progress.filter {
-                // Only a line that still has a goal can be hidden: with the goal gone, its plain total stays.
-                $0.nutrient != DailyTotalsBuilder.waterKey && !($0.hasGoal && hiddenGoals.contains($0.nutrient))
-            }.map { line in
+            goalBars = progress.compactMap { line -> GoalBarModel? in
+                guard line.nutrient != DailyTotalsBuilder.waterKey else { return nil }
                 var hasEntries = line.hasKnownAmount
+                var someKnown = line.hasKnownAmount
                 var missingCount = 0
                 for entry in foodEntries where entry.kind != .supplement {
                     var entryMissing = false
@@ -348,12 +350,18 @@ public final class TodayViewModel: ObservableObject {
                         let value = DailyTotalsBuilder.value(
                             for: component, snapshot: entry.snapshot, nutrient: line.nutrient, lookup: self.lookup)
                         if value != .notApplicable { hasEntries = true }
+                        if value != .notApplicable && value != .unknown { someKnown = true }
                         if value == .unknown { entryMissing = true }
                     }
                     if entryMissing { missingCount += 1 }
                 }
+                // Only a line that still has a goal can be hidden: with the goal gone, its plain total stays.
+                // A goal-less row with nothing known has nothing to show. One with some entry known stays,
+                // and its note says which entries lack a value.
+                if line.hasGoal && hiddenGoals.contains(line.nutrient) { return nil }
+                guard line.hasGoal || someKnown else { return nil }
                 return GoalBarModel.make(
-                    line: line, hasEntries: hasEntries, missingCount: missingCount)
+                    line: line, hasEntries: hasEntries, missingCount: missingCount, someKnown: someKnown)
             }
             waterBar = progress.first {
                 $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
@@ -361,7 +369,7 @@ public final class TodayViewModel: ObservableObject {
             }.map { line in
                 GoalBarModel.make(
                     line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped,
-                    unitSystem: self.preferences.unitSystem)
+                    someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
             }
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)

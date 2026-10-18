@@ -281,7 +281,7 @@ final class JournalDesignTests: XCTestCase {
         let foodModel = makeModel(foodDay, goals: goals)
         foodModel.load(now: designNow)
         let foodBar = try XCTUnwrap(foodModel.sections.first?.headerBars.first(where: { $0.id == "protein" }))
-        XCTAssertEqual(foodBar.valueText, "Can't total yet")
+        XCTAssertEqual(foodBar.valueText, "No data")
         XCTAssertEqual(foodBar.state, .cannotTotal)
 
         let waterDay = try makeJournalStore()

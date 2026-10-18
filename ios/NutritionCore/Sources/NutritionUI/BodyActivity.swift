@@ -157,8 +157,16 @@ public struct BodyActivityCard: View {
 
     public var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: DesignSpacing.s) {
-                Text(BodyActivityViewModel.title).font(.headline)
+            VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                HStack {
+                    Image(systemName: "figure.walk")
+                        .foregroundStyle(TokenColors.accent)
+                        .accessibilityHidden(true)
+                    Text(BodyActivityViewModel.title)
+                        .font(.headline)
+                        .foregroundStyle(TokenColors.textPrimary)
+                    Spacer(minLength: DesignSpacing.s)
+                }
                 content
             }
         }
