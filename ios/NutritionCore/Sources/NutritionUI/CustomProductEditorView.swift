@@ -153,7 +153,7 @@ public struct CustomProductSharingSection: View {
                             if let text = serving.text { Text(text) }
                         }
                         if let barcode = preview.revision.content.barcode { Text("Barcode: \(barcode)") }
-                        ForEach(preview.revision.content.facts, id: \.rawKeyIdentity) { fact in Text("\(fact.displayName): \(Self.describe(fact.value))") }
+                        ForEach(preview.revision.content.facts, id: \.rawKeyIdentity) { fact in Text("\(fact.displayName): \(Self.describe(fact.value, screen: true))") }
                     }
                     Text("Shared products are visible immediately and remain unverified until owner review. Your consumed amount, time, meal, notes and history are excluded.")
                     if let state = preview.ownState { Text("Your current contribution: \(state.currentState.rawValue), revision \(state.currentRevision ?? "none").") }

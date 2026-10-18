@@ -166,16 +166,19 @@ public struct LookedUpProduct: Sendable, Hashable {
 
     /// One line per nutrient for the form and for a stable signature. Unknown is spelled out, never
     /// rendered as zero.
-    static func describe(_ value: NutrientValue) -> String {
+    /// `describe` is part of the snapshot identity and must keep the stored symbol. `screen: true` is for
+    /// text shown to the person only, where energy reads as Calories.
+    static func describe(_ value: NutrientValue, screen: Bool = false) -> String {
+        func label(_ unit: MeasureUnit) -> String { screen ? unit.screenSymbol : unit.symbol }
         switch value {
         case .known(let amount, let unit):
-            return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.screenSymbol)"
+            return "\(NSDecimalNumber(decimal: amount).stringValue) \(label(unit))"
         case .unknown:
             return "unknown"
         case .notApplicable:
             return "not applicable"
         case .belowReportingThreshold(let unit):
-            return "below reporting threshold" + (unit.map { " \($0.screenSymbol)" } ?? "")
+            return "below reporting threshold" + (unit.map { " \(label($0))" } ?? "")
         }
     }
 
