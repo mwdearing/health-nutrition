@@ -1113,10 +1113,25 @@ final class NutritionFactsParserTests: XCTestCase {
     func testAddedSugarsOilIsNotAddedSugars() throws {
         let panel = parse(["Total Sugars 12g", "Added Sugars oil 5g"])
 
-        if case .known(let value, _) = panel.value(for: .addedSugars), value == dec("5") {
-            XCTFail("Added Sugars oil is not Added Sugars")
+        if case .known = panel.value(for: .addedSugars) {
+            XCTFail("Added Sugars oil must not set the Added Sugars field")
         }
         XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Added Sugars oil"])
+    }
+
+    /// A food panel's Added Sugars row with a misread word lands on its field, as a clean row would.
+    func testFoodPanelAddedSugarsWithNoiseWordLandsOnField() throws {
+        let panel = parse(["Nutrition Facts", "Total Sugars 12g", "Added Sugars ela 25g"])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A real ingredient word that is not one edit from the qualifiers is not read as a misread qualifier.
+    func testRealIngredientNearQualifierIsKept() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Inclusion 100mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Inclusion"])
     }
 
     /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.

@@ -969,7 +969,9 @@ public enum NutritionFactsParser {
         // A qualifier misread stands alone as the whole name, so "Include Blend" is still an ingredient.
         let words = name.split(separator: " ")
         guard words.count == 1, let word = words.first else { return false }
-        if qualifiers.contains(where: { editDistance(word.lowercased(), $0) <= 2 }) { return true }
+        // One edit from the qualifier, or a misread the one-edit rule misses ("Inchides", two edits away).
+        let lowered = word.lowercased()
+        if qualifiers.contains(where: { editDistance(lowered, $0) <= 1 }) || lowered == "inchides" { return true }
         // A fragment is the end of a known nutrient name, with the common OCR swaps read as one letter: OCR
         // cuts a word from its front, so "lum" ends "calcium" and "minD" ends "vitamin d". A short word that
         // starts a nutrient ("Pro", "Mag") is a product or abbreviation of its own, and stays a row.
