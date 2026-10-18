@@ -374,6 +374,7 @@ public struct JournalView: View {
         } label: {
             entryRow(row)
         }
+        .buttonStyle(.borderless)
         .accessibilityLabel(row.accessibilityText)
         .accessibilityHint("Opens the entry")
     }

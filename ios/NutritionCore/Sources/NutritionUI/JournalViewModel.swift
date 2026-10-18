@@ -685,7 +685,7 @@ public final class JournalViewModel: ObservableObject {
         return calendar.date(from: components)
     }
 
-    static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale, now: Date = Date()) -> String {
+    static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale, now: Date) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
