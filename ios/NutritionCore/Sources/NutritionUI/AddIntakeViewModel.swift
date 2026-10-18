@@ -876,7 +876,7 @@ public final class AddIntakeViewModel: ObservableObject {
             }
         }
         // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
-        if AmountParser.parseTyped(amountText) == nil { openOnOneServing() }
+        if AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) == nil { openOnOneServing() }
     }
 
     /// Opens the amount on one serving when the source gave its weight. The person still confirms the
