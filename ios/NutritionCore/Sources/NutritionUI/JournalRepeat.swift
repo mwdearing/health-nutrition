@@ -36,7 +36,14 @@ public struct RepeatTemplate: Equatable {
             guard let amount = AmountParser.parse(item.amountText),
                 let unit = try? MeasureUnit(symbol: item.unitSymbol)
             else { return nil }
-            parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: unit))
+            // A saved share is read back as it was saved; a share that is not a percentage rejects the template.
+            var share: Decimal?
+            if let text = item.hydrationPercentText {
+                guard let value = AmountParser.parse(text), value >= 0, value <= 100 else { return nil }
+                share = value
+            }
+            parsed.append(IntakeComponent(
+                componentID: item.componentID, name: item.name, amount: amount, unit: unit, hydrationPercent: share))
         }
         self.init(
             displayName: favorite.displayName, category: favorite.category, meal: favorite.meal, components: parsed,

@@ -8,12 +8,17 @@ public struct FavoriteComponent: Sendable, Hashable, Codable {
     /// Exact decimal text in the POSIX format, for example "250" or "0.5".
     public var amountText: String
     public var unitSymbol: String
+    /// A drink's water share as decimal text, 0 to 100. Nil for a food, and for a favorite saved before shares.
+    public var hydrationPercentText: String?
 
-    public init(componentID: String, name: String, amountText: String, unitSymbol: String) {
+    public init(
+        componentID: String, name: String, amountText: String, unitSymbol: String, hydrationPercentText: String? = nil
+    ) {
         self.componentID = componentID
         self.name = name
         self.amountText = amountText
         self.unitSymbol = unitSymbol
+        self.hydrationPercentText = hydrationPercentText
     }
 }
 
