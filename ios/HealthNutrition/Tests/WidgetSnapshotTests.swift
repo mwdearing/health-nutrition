@@ -42,24 +42,6 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.water(nil, usUnits: nil), "— mL")
     }
 
-    func testCaloriesAreDrawnAsTheBareNumberAndSpokenAsCalories() {
-        XCTAssertEqual(WidgetFigure.calories(87.4), "87")
-        XCTAssertEqual(WidgetFigure.calories(nil), "—")
-        XCTAssertEqual(WidgetFigure.calories(.infinity), "—")
-        XCTAssertEqual(WidgetFigure.caloriesSpoken(87.4), "87 calories")
-        XCTAssertEqual(WidgetFigure.caloriesSpoken(nil), "Calories unknown")
-    }
-
-    func testAPartialFigureGetsAPlusAndIsSpokenAsAtLeast() {
-        XCTAssertEqual(WidgetFigure.calories(87, partial: true), "87+")
-        XCTAssertEqual(WidgetFigure.calories(87), "87")
-        XCTAssertEqual(WidgetFigure.calories(nil, partial: true), "—", "nothing known stays a dash")
-        XCTAssertEqual(WidgetFigure.caloriesSpoken(87, partial: true), "at least 87 calories")
-        XCTAssertEqual(WidgetFigure.figure(23, unit: "g", partial: true), "23+ g")
-        XCTAssertEqual(WidgetFigure.figure(23, unit: "g"), "23 g")
-        XCTAssertEqual(WidgetFigure.number(0, partial: true), "0+")
-    }
-
     func testASummaryWithoutTheCalorieFieldsDecodesAndTheNewFieldsRoundTrip() throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -75,6 +57,43 @@ final class WidgetSnapshotTests: XCTestCase {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         XCTAssertEqual(try decoder.decode(WidgetSnapshot.self, from: encoder.encode(snapshot)), snapshot)
+    }
+
+    func testPartialMacroFiguresStillGetAPlus() {
+        XCTAssertEqual(WidgetFigure.figure(23, unit: "g", partial: true), "23+ g")
+        XCTAssertEqual(WidgetFigure.figure(23, unit: "g"), "23 g")
+        XCTAssertEqual(WidgetFigure.number(0, partial: true), "0+")
+        XCTAssertEqual(WidgetFigure.number(nil, partial: true), "—", "nothing known stays a dash")
+    }
+
+    func testTheCalorieBlockIsWordedAsTodayWordsIt() throws {
+        var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertNil(snapshot.remainingText)
+        XCTAssertEqual(snapshot.calorieSpoken, "Calories unknown")
+        snapshot.energyKcal = 800
+        snapshot.remainingKcal = 1_200
+        snapshot.burnedKcal = 250
+        let grouped = { (value: Double) in value.formatted(.number.precision(.fractionLength(0))) }
+        XCTAssertEqual(snapshot.remainingText, grouped(1_200))
+        XCTAssertEqual(snapshot.foodText, "800")
+        XCTAssertEqual(snapshot.burnedText, "250")
+        XCTAssertEqual(
+            snapshot.calorieSpoken,
+            "\(grouped(1_200)) calories remaining, Food, 800 calories, Burned, 250 calories")
+        // Over goal is a plain negative number, with no word for it.
+        snapshot.remainingKcal = -150
+        XCTAssertEqual(snapshot.remainingText, grouped(-150))
+        let negative = try XCTUnwrap(snapshot.remainingText)
+        XCTAssertTrue(negative.hasPrefix("-") || negative.hasPrefix("\u{2212}"), "a plain negative number")
+        // Without a goal there is no Remaining; without a burned value there is no Burned.
+        snapshot.remainingKcal = nil
+        snapshot.burnedKcal = nil
+        XCTAssertEqual(WidgetFigure.groupedWholeNumber(-0.4), grouped(0), "never \"-0\"")
+        XCTAssertNil(WidgetFigure.groupedWholeNumber(.infinity))
+        XCTAssertNil(WidgetFigure.groupedWholeNumber(nil))
+        XCTAssertNil(snapshot.remainingText)
+        XCTAssertNil(snapshot.burnedText)
+        XCTAssertEqual(snapshot.calorieSpoken, "Food, 800 calories")
     }
 
     func testOnlyTheListedFiguresAreTreatedAsPartial() {

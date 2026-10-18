@@ -73,12 +73,11 @@ struct WatchTodayView: View {
 
     private func content(for snapshot: WidgetSnapshot?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Today").font(.headline)
             if snapshot?.hasEntries == false {
+                Text("Today").font(.headline)
                 Text("Nothing logged today").font(.footnote).foregroundStyle(.secondary)
             } else {
-                Text(WidgetFigure.calories(snapshot?.energyKcal, partial: snapshot?.isPartial("energy") == true)).font(.title3).privacySensitive()
-                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: snapshot?.isPartial("energy") == true))
+                WidgetCalorieSummary(snapshot: snapshot, verticalDetails: true)
                 Text(
                     "P \(WidgetFigure.number(snapshot?.proteinGrams, partial: snapshot?.isPartial("protein") == true)) · C \(WidgetFigure.number(snapshot?.carbohydrateGrams, partial: snapshot?.isPartial("carbohydrate") == true)) · F \(WidgetFigure.number(snapshot?.fatGrams, partial: snapshot?.isPartial("fat") == true)) g"
                 ).font(.footnote).privacySensitive()

@@ -44,8 +44,9 @@ struct WatchTodayWidgetView: View {
     let entry: WatchTodayEntry
 
     private var snapshot: WidgetSnapshot? { entry.snapshot }
-    private var energyPartial: Bool { snapshot?.isPartial("energy") == true }
-    private var kcal: String { WidgetFigure.calories(snapshot?.energyKcal, partial: energyPartial) }
+    /// Remaining when there is one (a goal is set), otherwise Food, as Today puts them first.
+    private var headline: String { snapshot?.remainingText ?? snapshot?.foodText ?? "—" }
+    private var spoken: String { snapshot?.calorieSpoken ?? "Calories unknown" }
 
     var body: some View {
         switch family {
@@ -53,36 +54,34 @@ struct WatchTodayWidgetView: View {
             Gauge(value: snapshot?.energyFraction ?? 0) {
                 Image(systemName: "fork.knife")
             } currentValueLabel: {
-                Text(kcal)
+                Text(headline)
             }
             .gaugeStyle(.accessoryCircularCapacity)
-            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
+            .accessibilityLabel(spoken)
             .privacySensitive()
         case .accessoryCorner:
-            Text(kcal)
-                .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
+            Text(headline)
+                .accessibilityLabel(spoken)
                 .widgetLabel {
                     Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "fork.knife") }
                 }
                 .privacySensitive()
         case .accessoryInline:
-            Text(snapshot?.hasEntries == false ? "Nothing logged today" : kcal)
-                .accessibilityLabel(
-                    snapshot?.hasEntries == false ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial)
-                )
-                .privacySensitive()
+            if snapshot?.hasEntries == false {
+                Text("Nothing logged today")
+            } else if let remaining = snapshot?.remainingText {
+                Text("Calories remaining \(remaining)").accessibilityLabel(spoken).privacySensitive()
+            } else {
+                Text("\(snapshot?.foodText ?? "—") Food").accessibilityLabel(spoken).privacySensitive()
+            }
         default:
-            VStack(alignment: .leading) {
-                Text("Today").font(.headline)
-                if snapshot?.hasEntries == false {
+            if snapshot?.hasEntries == false {
+                VStack(alignment: .leading) {
+                    Text("Today").font(.headline)
                     Text("Nothing logged today").font(.footnote)
-                } else {
-                    Text("\(kcal) · \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water")
-                        .privacySensitive()
-                    Text(
-                        "P \(WidgetFigure.number(snapshot?.proteinGrams, partial: snapshot?.isPartial("protein") == true)) · C \(WidgetFigure.number(snapshot?.carbohydrateGrams, partial: snapshot?.isPartial("carbohydrate") == true)) · F \(WidgetFigure.number(snapshot?.fatGrams, partial: snapshot?.isPartial("fat") == true)) g"
-                    ).font(.footnote).privacySensitive()
                 }
+            } else {
+                WidgetCalorieSummary(snapshot: snapshot, verticalDetails: true)
             }
         }
     }

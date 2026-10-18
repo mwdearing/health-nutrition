@@ -39,7 +39,6 @@ struct TodayWidgetView: View {
     let entry: TodayEntry
 
     private var snapshot: WidgetSnapshot? { entry.snapshot }
-    private var energyPartial: Bool { snapshot?.isPartial("energy") == true }
     /// No summary could be read (not written yet, or the device has not been unlocked since a restart): the
     /// widget then states nothing about the day rather than claiming nothing was logged.
     private var isEmpty: Bool { snapshot?.hasEntries == false }
@@ -50,27 +49,29 @@ struct TodayWidgetView: View {
             Gauge(value: snapshot?.energyFraction ?? 0) {
                 Image(systemName: "fork.knife")
             } currentValueLabel: {
-                Text(WidgetFigure.calories(snapshot?.energyKcal, partial: energyPartial))
+                Text(snapshot?.remainingText ?? snapshot?.foodText ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
-            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
+            .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
             .privacySensitive()
         case .accessoryRectangular:
-            VStack(alignment: .leading) {
-                Text("Today").font(.headline)
-                if isEmpty {
-                    Text("Nothing logged today")
-                } else {
-                    Text(WidgetFigure.calories(snapshot?.energyKcal, partial: energyPartial))
-                        .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
-                    Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
-                }
+            if isEmpty {
+                Text("Nothing logged today")
+            } else {
+                WidgetCalorieSummary(snapshot: snapshot)
             }
-            .privacySensitive()
         case .accessoryInline:
-            Text(isEmpty ? "Nothing logged today" : WidgetFigure.calories(snapshot?.energyKcal, partial: energyPartial))
-                .accessibilityLabel(isEmpty ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
-                .privacySensitive()
+            if isEmpty {
+                Text("Nothing logged today")
+            } else if let remaining = snapshot?.remainingText {
+                Text("Calories remaining \(remaining)")
+                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .privacySensitive()
+            } else {
+                Text("\(snapshot?.foodText ?? "—") Food")
+                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .privacySensitive()
+            }
         case .systemMedium:
             HStack(alignment: .top, spacing: 16) {
                 summary
@@ -95,17 +96,11 @@ struct TodayWidgetView: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Today").font(.headline)
             if isEmpty {
+                Text("Today").font(.headline)
                 Text("Nothing logged today").font(.footnote)
             } else {
-                Text(WidgetFigure.calories(snapshot?.energyKcal, partial: energyPartial))
-                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
-                    .font(.title2.weight(.semibold))
-                    .privacySensitive()
-                if let fraction = snapshot?.energyFraction {
-                    ProgressView(value: fraction).privacySensitive()
-                }
+                WidgetCalorieSummary(snapshot: snapshot, verticalDetails: true)
             }
         }
     }
