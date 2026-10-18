@@ -155,10 +155,11 @@ public enum NutrientNames {
         return ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst()).joined(separator: " ")
     }
 
-    /// The name a nutrient key is shown under, preferring the words the label printed for it when the
-    /// snapshots this screen read carry them. A key with no printed name falls back to the name it
-    /// spells out.
+    /// The name a nutrient key is shown under. A known nutrient always shows its canonical name, so a label
+    /// that printed "protein" in lower case still reads "Protein". Only an extra with no canonical name uses
+    /// the words the label printed for it, and a key with neither falls back to the name it spells out.
     public static func displayName(for nutrient: String, displayNames: [String: String]) -> String {
-        displayNames[nutrient] ?? displayName(for: nutrient)
+        if names[nutrient] != nil { return displayName(for: nutrient) }
+        return displayNames[nutrient] ?? displayName(for: nutrient)
     }
 }
