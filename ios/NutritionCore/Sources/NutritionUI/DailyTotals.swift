@@ -149,6 +149,9 @@ public enum DailyTotalsBuilder {
         // day holding one food makes the day's water unknown rather than what was actually drunk.
         // The one exception is a stored water share, which counts toward the day's water as Today shows it.
         guard nutrient != waterKey else { return drinkWaterContributions(entry.components) }
+        // An entry with a negative logged amount cannot be added up on any path, so each of its nutrients is
+        // unknown and the partial note says so. A zero amount is a known zero. Water is handled above.
+        if entry.components.contains(where: { $0.amount < 0 }) { return [.unknown] }
         // A snapshot states the product's own values once, not once per component, so it is scaled
         // and summed once per entry. Summing it per component would count a two-component product's
         // protein twice.
@@ -190,9 +193,6 @@ public enum DailyTotalsBuilder {
     static func scalingFactor(
         labelBasis: String, logged components: [IntakeComponent]
     ) -> Decimal? {
-        // A negative logged amount cannot be added up, so the totals treat its entry as unknown rather than
-        // summing a negative. Export and Health keep the factor as stored: they call the shared basis directly.
-        if components.contains(where: { $0.amount < 0 }) { return nil }
         if let factor = IntakeContextSnapshotBasis.scalingFactor(
             labelBasis: labelBasis, logged: components)
         {

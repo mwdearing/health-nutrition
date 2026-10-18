@@ -958,15 +958,51 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "water")?.value, .unknown)
     }
 
-    func testANegativeLoggedAmountIsUnknownForTotalsOnly() {
-        let grams = IntakeComponent(componentID: "fiber", name: "Oats", amount: -40, unit: .g)
-        let counted = IntakeComponent(componentID: "gummy", name: "Gummy", amount: -2, unit: .serving)
-        // Totals treat the entry as unknown rather than summing a negative.
-        XCTAssertNil(DailyTotalsBuilder.scalingFactor(labelBasis: "per 100 g", logged: [grams]))
-        XCTAssertNil(DailyTotalsBuilder.scalingFactor(labelBasis: "per serving", logged: [counted]))
-        // Export and Health use the shared basis, which keeps the stored factor as it is on main.
-        XCTAssertEqual(
-            IntakeContextSnapshotBasis.scalingFactor(labelBasis: "per 100 g", logged: [grams]),
-            Decimal(string: "-0.4"))
+    /// A negative logged amount makes its entry unknown on every path, so the known sum is what the positive
+    /// entries alone add up to. Each lookup below returns the same value whatever the amount, so a negative
+    /// entry that reached the sum would change the total.
+    func testANegativeEntryIsUnknownOnEveryPath() throws {
+        let facts = ComponentFacts(values: ["oats": .known(10, .kcal)])
+        // No product snapshot: the lookup answers each component directly.
+        do {
+            let store = try makeStore()
+            try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
+            try addFood(store, name: "Oats", id: "oats", at: when, amount: -40, unit: .g)
+            let totals = try DailyTotalsBuilder.totals(
+                for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
+            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(10, .kcal), "no-snapshot path")
+        }
+        // Mass snapshot: the stated 10 kcal per 100 g is scaled by the logged grams.
+        do {
+            let store = try makeStore()
+            let product = ProductDefinition(
+                snapshotID: "mass-snap", productID: "search-mass", name: "Oats", brand: nil,
+                barcode: "", labelBasis: "per 100 g", catalogOrigin: "usda-fdc", catalogVersion: "unknown",
+                nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
+            try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g, product: product)
+            try addFood(store, name: "Oats", id: "oats", at: when, amount: -40, unit: .g, product: product)
+            let totals = try DailyTotalsBuilder.totals(
+                for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
+            guard case .known(let kcal, _) = totals.total(for: "energyKcal")?.value else {
+                return XCTFail("the positive mass entry must still total known energy")
+            }
+            XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 4, accuracy: 0.001, "mass path")
+        }
+        // Counted serving: one serving of 10 kcal, logged as two servings and minus two servings.
+        do {
+            let store = try makeStore()
+            let product = ProductDefinition(
+                snapshotID: "count-snap", productID: "search-count", name: "Gummy", brand: nil,
+                barcode: "", labelBasis: "per serving", catalogOrigin: "usda-fdc", catalogVersion: "unknown",
+                nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
+            try addFood(store, name: "Gummy", id: "gummy", at: when, amount: 2, unit: .serving, product: product)
+            try addFood(store, name: "Gummy", id: "gummy", at: when, amount: -2, unit: .serving, product: product)
+            let totals = try DailyTotalsBuilder.totals(
+                for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
+            guard case .known(let kcal, _) = totals.total(for: "energyKcal")?.value else {
+                return XCTFail("the positive count entry must still total known energy")
+            }
+            XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 20, accuracy: 0.001, "count path")
+        }
     }
 }
