@@ -1,14 +1,6 @@
 import Combine
 import Foundation
 
-public struct SettingsPlaceholderRow: Identifiable, Equatable {
-    public let id: String
-    public let title: String
-    public let detail: String
-    public let issueReference: String
-    public var isEnabled: Bool { false }
-}
-
 /// Settings owns presentation only; the existing models retain every store operation.
 @MainActor
 public final class AppSettingsViewModel: ObservableObject {
@@ -77,10 +69,4 @@ public final class AppSettingsViewModel: ObservableObject {
     public let openFoodFactsAttribution = "Open Food Facts — database available under the Open Database License (ODbL)."
     public let usdaAttribution = "USDA FoodData Central — public domain data from the U.S. Department of Agriculture."
 
-    public let placeholderRows: [SettingsPlaceholderRow] = [
-        SettingsPlaceholderRow(id: "appleHealth", title: "Apple Health", detail: "Not connected", issueReference: "#103"),
-        SettingsPlaceholderRow(id: "healthRelay", title: "HealthRelay", detail: "Not connected", issueReference: "HealthRelay #123"),
-        SettingsPlaceholderRow(id: "communitySharing", title: "Share product labels with the community", detail: "Only product facts would ever be shared, never amounts, times or identity.", issueReference: "Needs issue: community sharing"),
-        SettingsPlaceholderRow(id: "keepHistory", title: "Keep history for", detail: "History is kept until you erase it.", issueReference: "#104"),
-    ]
 }
