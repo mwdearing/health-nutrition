@@ -48,6 +48,24 @@ final class TodayDesignTests: XCTestCase {
             trackedNutrients: tracked, timeZoneIdentifier: "UTC")
     }
 
+    func testCaloriesRemainingCountsBurnedOnlyWhenTheSettingIsOn() throws {
+        let store = try makeStore()
+        try log(store, product: oats(withValues: true))
+        let goals = [NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal)]
+        for (on, expected) in [(true, Decimal(240)), (false, nil)] {
+            let prefs = InMemoryDisplayPreferences()
+            prefs.setAddsActiveEnergyToGoal(on)
+            let today = TodayViewModel(
+                store: store, goals: InMemoryGoalStore(goals: goals), lookup: SnapshotNutrientFacts(),
+                trackedNutrients: ["protein", "fiber"], timeZoneIdentifier: "UTC", preferences: prefs)
+            today.activeEnergyKcal = 240
+            today.load(now: now)
+            XCTAssertEqual(today.calorieRemaining.burned, expected)
+            // The goal is the stored one, captured before any activity is added to it.
+            XCTAssertEqual(today.calorieRemaining.goal, 2000)
+        }
+    }
+
     func testGoalBarsAndJournalSectionsReloadChangedGoals() throws {
         let store = try makeStore()
         try log(store, product: oats(withValues: true))
