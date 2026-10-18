@@ -1055,6 +1055,8 @@ private struct StoredComponent: Codable {
     var name: String
     var amountText: String
     var unitSymbol: String
+    /// Optional: absent on every row written before drink water shares, and omitted when nil.
+    var hydrationPercentText: String?
 }
 
 /// One stored nutrient value: the state, plus the amount and unit of a known value. Every decimal is
@@ -2438,9 +2440,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard !component.amount.isNaN, component.amount >= 0 else {
                 throw JournalError.invalidAmount(component.componentID)
             }
+            // A water share is a percentage from 0 to 100, stored as plain decimal text, as the import requires.
+            if let share = component.hydrationPercent {
+                guard share >= 0, share <= 100, DecimalText.isValidDecimalText(DecimalText.encode(share)) else {
+                    throw JournalError.invalidAmount(component.componentID)
+                }
+            }
             stored.append(StoredComponent(
                 componentID: component.componentID, name: component.name,
-                amountText: DecimalText.encode(component.amount), unitSymbol: component.unit.symbol))
+                amountText: DecimalText.encode(component.amount), unitSymbol: component.unit.symbol,
+                hydrationPercentText: component.hydrationPercent.map(DecimalText.encode)))
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -2455,9 +2464,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard let amount = DecimalText.decode(item.amountText) else {
                 throw JournalError.invalidAmount(item.componentID)
             }
+            let hydration = try item.hydrationPercentText.map { text -> Decimal in
+                guard let value = DecimalText.decode(text), value >= 0, value <= 100 else {
+                    throw JournalError.invalidAmount(item.componentID)
+                }
+                return value
+            }
             return IntakeComponent(
                 componentID: item.componentID, name: item.name, amount: amount,
-                unit: try MeasureUnit(symbol: item.unitSymbol))
+                unit: try MeasureUnit(symbol: item.unitSymbol), hydrationPercent: hydration)
         }
     }
 

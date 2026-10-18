@@ -543,8 +543,10 @@ public enum JournalImporter {
         let list = try objects(value, path: path)
         for (index, item) in list.enumerated() {
             let componentPath = "\(path)[\(index)]"
+            // hydration_percent arrived in version 7; a version 6 component with it is an unknown key.
+            let keys = version >= 7 ? JournalImportV1Keys.component.union(["hydration_percent"]) : JournalImportV1Keys.component
             try checkObject(
-                try object(item, path: componentPath), keys: JournalImportV1Keys.component, path: componentPath,
+                try object(item, path: componentPath), keys: keys, path: componentPath,
                 version: version)
             try checkMinimumLengthOne(
                 try object(item, path: componentPath), keys: ["unit"], path: componentPath, version: version)
@@ -843,10 +845,19 @@ public enum JournalImporter {
                 throw JournalImportError.corrupt(
                     "\(label) uses the unit \(component.unit), which this build does not know")
             }
+            // The share is read back as it was exported, and must be a percentage; an old export has none.
+            var share: String?
+            if let shareText = component.hydrationPercent {
+                guard DecimalText.isValidDecimalText(shareText), let value = DecimalText.decode(shareText), value >= 0, value <= 100 else {
+                    throw JournalImportError.corrupt(
+                        "\(label) has the water share \(shareText), which is not a percentage from 0 to 100")
+                }
+                share = DecimalText.encode(value)
+            }
             restoredComponents.append(
                 FavoriteComponent(
                     componentID: component.componentID, name: component.name, amountText: text,
-                    unitSymbol: component.unit))
+                    unitSymbol: component.unit, hydrationPercentText: share))
         }
         if let snapshotID = template.productSnapshotID, products[snapshotID] == nil {
             throw JournalImportError.corrupt(
@@ -930,9 +941,19 @@ public enum JournalImporter {
                         "revision \(revision.number) of \(intakeID) has the amount \(text) for "
                             + "\(component.componentID), which is negative and not a quantity")
                 }
+                var hydration: Decimal?
+                if let text = component.hydrationPercent {
+                    guard DecimalText.isValidDecimalText(text), let share = DecimalText.decode(text), share >= 0, share <= 100 else {
+                        throw JournalImportError.corrupt(
+                            "revision \(revision.number) of \(intakeID) has the water share \(text) for "
+                                + "\(component.componentID), which is not a percentage from 0 to 100")
+                    }
+                    hydration = share
+                }
                 components.append(
                     IntakeComponent(
-                        componentID: component.componentID, name: component.name, amount: amount, unit: unit))
+                        componentID: component.componentID, name: component.name, amount: amount, unit: unit,
+                        hydrationPercent: hydration))
             case .unknown:
                 // The journal keeps a missing amount as a not-a-number decimal and refuses to write one,
                 // so a revision that carries a missing amount cannot be stored. Restoring it as 0 would

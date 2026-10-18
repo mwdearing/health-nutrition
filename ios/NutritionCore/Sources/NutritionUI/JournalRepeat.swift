@@ -36,7 +36,18 @@ public struct RepeatTemplate: Equatable {
             guard let amount = AmountParser.parse(item.amountText),
                 let unit = try? MeasureUnit(symbol: item.unitSymbol)
             else { return nil }
-            parsed.append(IntakeComponent(componentID: item.componentID, name: item.name, amount: amount, unit: unit))
+            // A saved share is read back as it was saved; a share that is not a percentage rejects the template.
+            var share: Decimal?
+            if let text = item.hydrationPercentText {
+                // Plain unsigned decimal text, zero included; anything else rejects the template.
+                guard text.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
+                      let value = Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")),
+                      value >= 0, value <= 100
+                else { return nil }
+                share = value
+            }
+            parsed.append(IntakeComponent(
+                componentID: item.componentID, name: item.name, amount: amount, unit: unit, hydrationPercent: share))
         }
         self.init(
             displayName: favorite.displayName, category: favorite.category, meal: favorite.meal, components: parsed,
@@ -92,7 +103,18 @@ struct IntakeRepeater {
             }
             try exclusions.keepOutOfLibrary(intakeID: intake.id)
         }
-        try store.create(intake, components: template.components, product: product, now: now)
+        // A drink repeated from a template saved before shares gets the default share now, as a new drink does,
+        // so every drink logged from here on counts its water. The stored template itself is not changed.
+        let isDrink = product?.kind == .drink || template.category == "drink"
+        let components = template.components.map { component -> IntakeComponent in
+            guard isDrink, component.hydrationPercent == nil, component.unit.dimension == .volume,
+                  template.category != "water"
+            else { return component }
+            var explicit = component
+            explicit.hydrationPercent = IntakeComponent.defaultDrinkHydrationPercent
+            return explicit
+        }
+        try store.create(intake, components: components, product: product, now: now)
         return intake.id
     }
 

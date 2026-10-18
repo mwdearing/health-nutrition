@@ -197,12 +197,23 @@ public struct IntakeComponent: Sendable, Hashable {
     /// Exact decimal amount; stored as decimal text.
     public var amount: Decimal
     public var unit: MeasureUnit
+    /// The share of this drink that is water, 0 to 100. Nil means "use the drink type's preset", and
+    /// a food never sets it. Stored only when the person sets it, so an older row reads as nil.
+    public var hydrationPercent: Decimal?
 
-    public init(componentID: String, name: String, amount: Decimal, unit: MeasureUnit) {
+    /// The water share a drink uses when it sets none: 90 percent, a typical soft drink. Today's total and
+    /// the Health write both read it, so they agree.
+    public static let defaultDrinkHydrationPercent: Decimal = 90
+
+    public init(
+        componentID: String, name: String, amount: Decimal, unit: MeasureUnit,
+        hydrationPercent: Decimal? = nil
+    ) {
         self.componentID = componentID
         self.name = name
         self.amount = amount
         self.unit = unit
+        self.hydrationPercent = hydrationPercent
     }
 }
 
@@ -669,4 +680,35 @@ public protocol JournalOutboxDelivery: JournalStore {
     /// Clears the suspension, making the operation due again. Deliberately explicit: re-arming after a
     /// person has resolved the denial is their decision, not a scheduled run's.
     func rearmDelivery(operationID: String) throws
+}
+
+/// The kind of drink an entry is, used only to prefill its water share when it is logged. The share is
+/// stored on the component, so no drink type is stored. Presets are typical values, editable per entry.
+public enum DrinkType: String, CaseIterable, Sendable {
+    case water, tea, coffee, soda, sportsDrink, juice, milk
+
+    public var displayName: String {
+        switch self {
+        case .water: "Water"
+        case .tea: "Tea"
+        case .coffee: "Coffee"
+        case .soda: "Soda"
+        case .sportsDrink: "Sports drink"
+        case .juice: "Juice"
+        case .milk: "Milk"
+        }
+    }
+
+    /// The water share this type prefills, as a percentage from 0 to 100.
+    public var hydrationPercent: Decimal {
+        switch self {
+        case .water: 100
+        case .tea: 99
+        case .coffee: 98
+        case .soda: 90
+        case .sportsDrink: 92
+        case .juice: 88
+        case .milk: 87
+        }
+    }
 }

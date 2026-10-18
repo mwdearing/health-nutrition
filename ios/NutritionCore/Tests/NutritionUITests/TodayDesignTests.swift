@@ -496,4 +496,38 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(today.rows.filter(\.isWater).count, 1)
         XCTAssertEqual(today.rows.first { !$0.isWater }?.detailLine, "100 g · 22:13")
     }
+
+    /// Today's water total and the daily totals builder compute a drink's share in two places. For a 50% drink
+    /// both must give the same amount, so the two never disagree on the same day.
+    func testTodayAndTheDailyTotalsShowTheSameShareOfADrink() throws {
+        let store = try makeStore()
+        let drink = ProductDefinition(
+            snapshotID: "snap-today-share", productID: "product-today-share", name: "Sample soda", brand: nil,
+            barcode: nil, labelBasis: "per serving", catalogOrigin: "sample", catalogVersion: "1", kind: .drink)
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "other", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(
+                componentID: "soda", name: "Sample soda", amount: 200, unit: .mL, hydrationPercent: 50)],
+            product: drink, now: now)
+
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        let intakes = try store.activeIntakes()
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["water"])
+
+        XCTAssertEqual(today.waterTotalMilliliters, 100)
+        XCTAssertEqual(totals.total(for: "water")?.value, .known(100, .mL))
+    }
+}
+
+/// The lookup the daily totals use when a test needs only the snapshot's own values.
+private struct SnapshotOnlyFacts: NutrientFactsLookup {
+    func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+        .unknown
+    }
+
+    func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+        snapshot?.value(for: nutrient) ?? .unknown
+    }
 }

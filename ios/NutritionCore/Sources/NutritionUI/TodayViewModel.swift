@@ -233,13 +233,26 @@ public final class TodayViewModel: ObservableObject {
                             let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                             Self.isPositive(converted.value)
                         {
-                            waterTotal += converted.value
+                            // A water entry counts its full volume, or volume times its stored share when one is set.
+                            waterTotal += converted.value * (component.hydrationPercent ?? 100) / 100
                             countedWater += 1
                         } else {
                             skipped += 1
                         }
                     }
                 } else {
+                    // A volume component with a stored water share counts volume times share, whatever its product kind.
+                    // A component with no stored share (logged before shares) adds no water, as on main.
+                    for component in components where component.unit.dimension == .volume {
+                        guard Self.isPositive(component.amount),
+                            let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
+                            Self.isPositive(converted.value),
+                            let share = component.hydrationPercent
+                        else { continue }
+                        waterTotal += converted.value * share / 100
+                        // A stored share counts toward the goal bar too, so the bar reads it as a logged amount.
+                        countedWater += 1
+                    }
                     if kind != .supplement {
                         for component in components { foodComponents.append((component, snapshot, kind)) }
                     }
@@ -368,8 +381,8 @@ public final class TodayViewModel: ObservableObject {
                     && !hiddenGoals.contains(DailyTotalsBuilder.waterKey)
             }.map { line in
                 GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped,
-                    someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
+                    line: line, hasEntries: waterEntries > 0 || countedWater > 0, missingCount: 0,
+                    skippedWaterCount: skipped, someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
             }
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)

@@ -139,6 +139,27 @@ public struct EntryDetailView: View {
                     }
                 }
             }
+            if model.kind == .drink, model.components.contains(where: { $0.unit.dimension == .volume }) {
+                Section {
+                    Stepper(
+                        value: Binding(
+                            get: { Double(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber) },
+                            set: { model.waterSharePercent = Decimal($0) }),
+                        in: 0...100, step: 1
+                    ) {
+                        Text("Water share \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))%")
+                    }
+                    if model.waterSharePercent == nil {
+                        Text("Not counted toward water. Logged before water shares.")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                    } else {
+                        Text("Counts as \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))% water")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
+                    }
+                }
+            }
             if !model.allValues.isEmpty {
                 Section {
                     DisclosureGroup("All \(model.allValues.count) values") {

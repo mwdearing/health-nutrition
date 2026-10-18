@@ -178,15 +178,21 @@ public struct JournalSnapshotTotals: Sendable {
     }
 
     /// The milliliters the revision's components record, summed, and only for a drink.
-    private static func recordedWater(in components: [IntakeComponent], category: String) -> NutrientValue? {
-        guard category == waterCategory else { return nil }
+    private static func recordedWater(
+        in components: [IntakeComponent], category: String
+    ) -> NutrientValue? {
         var milliliters = Decimal(0)
         var found = false
         for component in components {
             guard component.unit.dimension == .volume else { continue }
             guard let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
             else { continue }
-            milliliters += converted.value
+            // A water entry counts its whole volume. Any other entry counts volume times its stored share, and a
+            // component with no stored share (logged before shares) counts nothing, as on main.
+            // A water entry with a stored share counts that share of its volume, and one without counts all of it.
+            guard let share = component.hydrationPercent ?? (category == waterCategory ? Decimal(100) : nil)
+            else { continue }
+            milliliters += converted.value * share / 100
             found = true
         }
         return found ? .known(milliliters, .mL) : nil

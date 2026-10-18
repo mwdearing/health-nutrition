@@ -17,6 +17,8 @@ public struct JournalExportComponent: Sendable, Hashable, Codable {
     /// Unit symbol, for example "g" or "mL".
     public var unit: String
     public var valueState: JournalExportValueState
+    /// The water share of a drink, 0 to 100 as exact decimal text; nil when the component sets none. From version 7.
+    public var hydrationPercent: String?
 
     enum CodingKeys: String, CodingKey {
         case componentID = "component_id"
@@ -24,20 +26,26 @@ public struct JournalExportComponent: Sendable, Hashable, Codable {
         case amount
         case unit
         case valueState = "value_state"
+        case hydrationPercent = "hydration_percent"
     }
 
-    public init(componentID: String, name: String, amount: String?, unit: String, valueState: JournalExportValueState) {
+    public init(
+        componentID: String, name: String, amount: String?, unit: String, valueState: JournalExportValueState,
+        hydrationPercent: String? = nil
+    ) {
         self.componentID = componentID
         self.name = name
         self.amount = amount
         self.unit = unit
         self.valueState = valueState
+        self.hydrationPercent = hydrationPercent
     }
 
     public init(component: IntakeComponent) {
         self.componentID = component.componentID
         self.name = component.name
         self.unit = component.unit.symbol
+        self.hydrationPercent = component.hydrationPercent.map(DecimalText.encode)
         if component.amount.isNaN {
             self.amount = nil
             self.valueState = .unknown
@@ -56,6 +64,10 @@ public struct JournalExportComponent: Sendable, Hashable, Codable {
         try encodeNullable(amount, forKey: .amount, in: &container)
         try container.encode(unit, forKey: .unit)
         try container.encode(valueState, forKey: .valueState)
+        // The share is a version 7 field, so a document written as an older version leaves it out, as that version does.
+        if (encoder.userInfo[exportSchemaVersionKey] as? Int ?? JournalExport.currentSchemaVersion) >= 7 {
+            try encodeNullable(hydrationPercent, forKey: .hydrationPercent, in: &container)
+        }
     }
 }
 
@@ -363,9 +375,16 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
                       DecimalText.decode(component.amountText) != nil else {
                     throw JournalExportError.malformedFavoriteAmount(favorite.id, component.amountText)
                 }
+                if let share = component.hydrationPercentText {
+                    guard DecimalText.isValidDecimalText(share), let value = DecimalText.decode(share),
+                          value >= 0, value <= 100
+                    else {
+                        throw JournalExportError.malformedFavoriteAmount(favorite.id, share)
+                    }
+                }
                 return JournalExportComponent(
                     componentID: component.componentID, name: component.name, amount: component.amountText,
-                    unit: component.unitSymbol, valueState: .known)
+                    unit: component.unitSymbol, valueState: .known, hydrationPercent: component.hydrationPercentText)
             })
     }
 
@@ -454,14 +473,14 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
 /// than restore it without them.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 6
+    public static let currentSchemaVersion = 7
 
     /// Every version this build reads, in the order they were written.
     ///
     /// Version 1 is here because its documents are still backups people hold: it has no product kind and
     /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
     /// backup. Anything outside this set is refused by value rather than by shape.
-    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, 5, currentSchemaVersion]
+    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, 5, 6, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
