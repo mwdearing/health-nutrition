@@ -366,7 +366,7 @@ public final class TodayViewModel: ObservableObject {
             }.map { line in
                 GoalBarModel.make(
                     line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped,
-                    unitSystem: self.preferences.unitSystem)
+                    someKnown: waterEntries > 0, unitSystem: self.preferences.unitSystem)
             }
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
