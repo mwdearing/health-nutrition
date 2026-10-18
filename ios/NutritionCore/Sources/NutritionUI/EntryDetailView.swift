@@ -191,7 +191,6 @@ public struct EntryDetailView: View {
                         .font(.body)
                         .foregroundStyle(TokenColors.textPrimary)
                     Spacer()
-                    LaterBadge()
                 }
                 .accessibilityElement(children: .combine)
                 ForEach(model.sourceDetailRows) { row in
@@ -199,16 +198,6 @@ public struct EntryDetailView: View {
                         .font(.footnote)
                         .accessibilityLabel(row.label)
                         .accessibilityValue(row.value)
-                }
-                if model.isTypedEntry {
-                    Button {} label: {
-                        HStack {
-                            Text("Add values from a label").font(.body)
-                            Spacer()
-                            LaterBadge()
-                        }
-                    }
-                    .laterPlaceholder()
                 }
             }
             Section("Sent to") {
@@ -274,15 +263,6 @@ public struct EntryDetailView: View {
                 .accessibilityLabel("Log this entry again")
                 .accessibilityHint("Adds a new entry with the same amounts at the current time")
                 LogOnOtherDaysButton(model: model, now: now, onFinished: onFinished)
-                Button {} label: {
-                    HStack {
-                        Text("Favorite").font(.body)
-                        Spacer()
-                        LaterBadge()
-                    }
-                }
-                .laterPlaceholder()
-                .accessibilityValue("Not available yet")
                 Button(role: .destructive) {
                     confirmingDelete = true
                 } label: {
