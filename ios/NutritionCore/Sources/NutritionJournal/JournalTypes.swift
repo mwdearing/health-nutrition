@@ -482,6 +482,10 @@ public protocol JournalStore: AnyObject, Sendable {
     ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws
+    /// As `delete`, and returns the delete's place in the store's commit order.
+    func deleteSequenced(intakeID: String, now: Date) throws -> UInt64
+    /// The place of the latest delete in the store's commit order.
+    var deleteSequence: UInt64 { get }
     /// Takes back a delete inside the Undo window: withdraws its queued delete operations and restores the
     /// intake and its projections as they were. Refused once a delete has reached a destination.
     func undoDelete(intakeID: String) throws
@@ -503,6 +507,14 @@ public enum JournalUndo {
 }
 
 extension JournalStore {
+    /// Stores that do not track commit order report zero, so no delete can be ordered after an offer.
+    public func deleteSequenced(intakeID: String, now: Date) throws -> UInt64 {
+        try delete(intakeID: intakeID, now: now)
+        return 0
+    }
+
+    public var deleteSequence: UInt64 { 0 }
+
     /// Stores without undo support refuse it rather than restoring an entry in the app alone.
     public func undoDelete(intakeID: String) throws {
         throw JournalError.undoUnavailable(intakeID)

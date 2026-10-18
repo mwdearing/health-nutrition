@@ -458,6 +458,8 @@ public final class TodayViewModel: ObservableObject {
             return nil
         }
         let handle = UndoHandle(intakeID: intake.id, expiresAt: now.addingTimeInterval(Self.undoWindow))
+        // A water offer is newer than every delete committed so far.
+        offerSequence = store.deleteSequence
         undo = handle
         load(now: now)
         return handle
@@ -517,27 +519,23 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// Deletes made from Today, whose commit hooks have not yet arrived.
-    private var ownDeleteIDs: Set<String> = []
+    /// Where the offer on screen sits in the store's commit order: the delete it offers, or the latest water.
+    private var offerSequence: UInt64 = 0
 
-    /// A delete committed anywhere in the app. Undo is offered for the most recent change only, so an older
-    /// offer here, a delete or a quick-added water, is dropped when another entry is deleted.
-    public func deleteCommitted(intakeID: String) {
-        // A delete made here has already set its offer, and a newer one may own it now: leave it alone.
-        if ownDeleteIDs.remove(intakeID) != nil { return }
-        // A delete made elsewhere is newer than any offer here, so the offer is dropped.
+    /// A delete committed anywhere in the app, reported with its place in commit order. Undo is offered for the
+    /// most recent change only, so the offer goes only when a delete committed after it. A late hook for an
+    /// earlier delete, or for the offered delete itself, carries a lower or equal place and leaves it alone.
+    public func deleteCommitted(sequence: UInt64) {
+        guard undo != nil, sequence > offerSequence else { return }
         undo = nil
     }
 
     /// Deletes an entry from Today, offering Undo for the window. Nothing reaches Apple Health until it passes.
     @discardableResult
     public func deleteEntry(intakeID: String, now: Date) -> Bool {
-        // Recorded before the delete, because its commit hook may run before this method returns.
-        ownDeleteIDs.insert(intakeID)
         do {
-            try store.delete(intakeID: intakeID, now: now)
+            offerSequence = try store.deleteSequenced(intakeID: intakeID, now: now)
         } catch {
-            ownDeleteIDs.remove(intakeID)
             errorMessage = "Could not delete the entry."
             return false
         }

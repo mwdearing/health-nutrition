@@ -1084,7 +1084,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     @unchecked Sendable
 {
     private let lock = NSLock()
-    private var deleteCommittedHandler: (@Sendable (String) -> Void)?
+    private var deleteCommittedHandler: (@Sendable (String, UInt64) -> Void)?
+    /// Counts committed deletes in commit order. Only read or changed under writeLock.
+    private var deleteCounter: UInt64 = 0
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
     private var failFlag = false
@@ -1418,11 +1420,22 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Called after a delete commits, with the intake it removed. The app uses it for every delete, whatever
     /// screen made it, to start delivery once the Undo window ends and to drop an older Undo offer.
-    public func setOnDeleteCommitted(_ handler: @escaping @Sendable (String) -> Void) {
+    public func setOnDeleteCommitted(_ handler: @escaping @Sendable (String, UInt64) -> Void) {
         lock.withLock { deleteCommittedHandler = handler }
     }
 
+    public var deleteSequence: UInt64 {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        return deleteCounter
+    }
+
     public func delete(intakeID: String, now: Date) throws {
+        _ = try deleteSequenced(intakeID: intakeID, now: now)
+    }
+
+    public func deleteSequenced(intakeID: String, now: Date) throws -> UInt64 {
+        var sequence: UInt64 = 0
         try commit { context in
             guard let record = try Self.intakeRecord(intakeID, in: context) else {
                 throw JournalError.unknownIntake(intakeID)
@@ -1436,9 +1449,12 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             queueWork(
                 intakeID: intakeID, revision: revision, kind: .delete,
                 payload: "delete:\(intakeID):\(revision)", deletedAt: now, context: context)
+            deleteCounter += 1
+            sequence = deleteCounter
         }
         let handler = lock.withLock { deleteCommittedHandler }
-        handler?(intakeID)
+        handler?(intakeID, sequence)
+        return sequence
     }
 
     /// Test support: the delete rows still queued for an intake, held or not.
