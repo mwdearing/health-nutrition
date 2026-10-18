@@ -68,11 +68,13 @@ public struct NourishTodayHeader: View {
     /// A partly known day reuses the existing partial note; Remaining is then an upper bound.
     private var calorieSummary: some View {
         let calories = model.calorieRemaining
+        // One gate for the visible note and the spoken one: the day's own partial flag.
+        let partial: String? = calories.isPartial ? bar(Self.ringKey)?.reason : nil
         let spoken = [
             calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
-            calories.food.map { "\(BodyActivityViewModel.whole($0)) calories food" },
-            calories.burned.map { "\(BodyActivityViewModel.whole($0)) calories burned" },
-            calories.isPartial ? partialNote(Self.ringKey) : nil,
+            calories.food.map { "Food, \(BodyActivityViewModel.whole($0)) calories" },
+            calories.burned.map { "Burned, \(BodyActivityViewModel.whole($0)) calories" },
+            partial,
             ringFootnote,
         ].compactMap { $0 }.joined(separator: ", ")
         return VStack(alignment: .leading, spacing: DesignSpacing.s) {
@@ -97,7 +99,7 @@ public struct NourishTodayHeader: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textPrimary)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(BodyActivityViewModel.whole(food)) calories food")
+                    .accessibilityLabel("Food, \(BodyActivityViewModel.whole(food)) calories")
                 }
                 if let burned = calories.burned {
                     Label {
@@ -108,10 +110,10 @@ public struct NourishTodayHeader: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textPrimary)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(BodyActivityViewModel.whole(burned)) calories burned")
+                    .accessibilityLabel("Burned, \(BodyActivityViewModel.whole(burned)) calories")
                 }
             }
-            if calories.isPartial, let note = partialNote(Self.ringKey) {
+            if let note = partial {
                 Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
         }
