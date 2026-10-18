@@ -54,7 +54,11 @@ final class HealthKitReader: BodyActivityReading {
         var readings = BodyActivityReadings()
         readings.steps = await sum(.stepCount, unit: .count(), from: startOfDay, to: now)
         readings.activeEnergyKcal = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: startOfDay, to: now)
-        readings.outsideNutrients = await outsideNutrientTotals(from: startOfDay, to: now) ?? [:]
+        if let outside = await outsideNutrientTotals(from: startOfDay, to: now) {
+            readings.outsideNutrients = outside
+        } else {
+            readings.outsideReadFailed = true
+        }
         if let latest = await latestWeight(before: now) {
             readings.latestWeightKg = latest.kilograms
             readings.latestWeightDate = latest.date

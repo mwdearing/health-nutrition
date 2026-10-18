@@ -15,13 +15,16 @@ public struct BodyActivityReadings: Equatable, Sendable {
     /// Today's nutrient totals from entries other apps wrote to Health, per canonical nutrient key, in
     /// each key's unit. Entries this app wrote are left out, so nothing is counted twice.
     public var outsideNutrients: [String: Decimal]
+    /// True when reading other apps' entries failed, so the card says so instead of showing nothing.
+    public var outsideReadFailed: Bool
 
     public init(
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
         latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil,
-        outsideNutrients: [String: Decimal] = [:]
+        outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false
     ) {
         self.outsideNutrients = outsideNutrients
+        self.outsideReadFailed = outsideReadFailed
         self.steps = steps
         self.activeEnergyKcal = activeEnergyKcal
         self.latestWeightKg = latestWeightKg
@@ -111,6 +114,7 @@ public final class BodyActivityViewModel: ObservableObject {
 
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
     public var outsideText: String? {
+        if readings.outsideReadFailed { return "From other apps: could not be read" }
         var parts: [String] = []
         if let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) kcal") }
         if let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
