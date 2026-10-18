@@ -365,7 +365,8 @@ struct SharedProductFactsView: View {
                 if let serving = label.rawServingText { Text("Original serving: \(serving)") }
                 Text("Source: \(label.legacySource.rawValue)")
                 ForEach(label.nutrients.keys.sorted(), id: \.self) { key in
-                    Text("\(NutrientNames.displayName(for: key)): \(NSDecimalNumber(decimal: label.nutrients[key]!).stringValue) \(key == "energyKcal" ? "Calories" : key == "sodium" ? "mg" : "g")")
+                    let amount = NSDecimalNumber(decimal: label.nutrients[key]!).stringValue
+                    Text(key == "energyKcal" ? "Calories: \(amount)" : "\(NutrientNames.displayName(for: key)): \(amount) \(key == "sodium" ? "mg" : "g")")
                 }
             }
         }

@@ -99,6 +99,11 @@ public enum NutrientNames {
         "protein": "Protein",
         "carbohydrate": "Carbohydrate",
         "fiber": "Fiber",
+        "transFat": "Trans fat",
+        "saturatedFat": "Saturated fat",
+        "addedSugars": "Added sugars",
+        "sugars": "Total sugars",
+        "cholesterol": "Cholesterol",
         "fat": "Fat",
         "sugar": "Sugar",
         "sodium": "Sodium",
@@ -135,11 +140,19 @@ public enum NutrientNames {
     public static func displayName(for nutrient: String) -> String {
         if let name = names[nutrient] { return name }
         guard !nutrient.isEmpty else { return nutrient }
-        // A compound key is a slug of the printed name (`creatine-monohydrate`), so it is spelled back
-        // out rather than shown with its hyphens and one capital.
-        return nutrient.split(separator: "-")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
+        // A compound key is a slug of the printed name (`creatine-monohydrate`), or a camel-case key such as
+        // `transFat`. Both are spelled back out as words: "creatine monohydrate", "Trans fat".
+        var words: [String] = []
+        for piece in nutrient.split(separator: "-") {
+            var word = ""
+            for character in piece {
+                if character.isUppercase, !word.isEmpty { words.append(word.lowercased()); word = "" }
+                word.append(character)
+            }
+            if !word.isEmpty { words.append(word.lowercased()) }
+        }
+        guard let first = words.first else { return nutrient }
+        return ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst()).joined(separator: " ")
     }
 
     /// The name a nutrient key is shown under, preferring the words the label printed for it when the
