@@ -25,7 +25,7 @@ backups.
 
 If you pair an Apple Watch and install the app on it, the phone sends the Watch the same daily totals (calories,
 macros and water, your calorie goal and the time they were worked out), device to device through the system's
-Watch connection, and nothing else but whether you read US units, which of those figures are only partly known, a random label that names this install of the app (so a reinstall is
+Watch connection, and nothing else but whether you read US units, which of those figures are only partly known, your calories left and burned today, a random label that names this install of the app (so a reinstall is
 recognised) and a counter that follows Erase all data: no entry names,
 meal times, supplements or account details. The Watch keeps them in its own App Group storage for its app and its
 complications, and Erase all data replaces them with an empty day; a Watch that is off when you erase is cleared

@@ -20,6 +20,13 @@ struct WidgetSnapshot: Codable, Equatable {
     /// "protein", "carbohydrate", "fat"). Absent or empty means every figure is a whole-day figure. A figure listed
     /// here is drawn with a trailing "+" and spoken as "at least".
     var partialFigures: [String]?
+    /// Calories left today (goal less food plus counted burned). Nil without a goal or a known food total; never
+    /// zero for "unknown".
+    var remainingKcal: Double?
+    /// Calories burned today, present only when the person counts activity and Health has a reading.
+    var burnedKcal: Double?
+    /// True when `remainingKcal` is an upper bound because some entries have no calories.
+    var remainingIsPartial: Bool?
 
     func isPartial(_ figure: String) -> Bool { partialFigures?.contains(figure) == true }
 

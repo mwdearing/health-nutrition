@@ -5,7 +5,10 @@ sizes, protein, carbohydrate, fat and water, on the Home Screen (small, medium) 
 rectangular, inline). With nothing logged it reads "Nothing logged today". Tapping it opens the app.
 
 - **What it reads.** Only a small summary file the app writes (`Shared/WidgetSnapshot.swift`): the day's
-  totals as numbers and whether any entry exists. No entry, product name, time or note is in it.
+  totals as numbers, the calorie goal, calories left (goal less food plus counted burned) and burned, which figures
+  are only partly known, and whether any entry exists. The calories-left model is read once from Today, never
+  computed again for the widget; an unknown figure is absent, never zero. No entry, product name, time or note is
+  in it.
 - **Where it lives.** In the App Group container shared by the app and the widget extension, named
   `group.<the app's bundle identifier>`, with file protection "complete until first user authentication".
   It is rewritten each time Today's figures are read successfully (see "When the summary is written").

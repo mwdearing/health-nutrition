@@ -60,6 +60,23 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.number(0, partial: true), "0+")
     }
 
+    func testASummaryWithoutTheCalorieFieldsDecodesAndTheNewFieldsRoundTrip() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let old = Data(#"{"generatedAt":"2023-11-14T22:13:20Z","hasEntries":true,"energyKcal":1}"#.utf8)
+        let decoded = try decoder.decode(WidgetSnapshot.self, from: old)
+        XCTAssertNil(decoded.remainingKcal)
+        XCTAssertNil(decoded.burnedKcal)
+        XCTAssertNil(decoded.remainingIsPartial)
+        var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
+        snapshot.remainingKcal = -300
+        snapshot.burnedKcal = 250
+        snapshot.remainingIsPartial = true
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        XCTAssertEqual(try decoder.decode(WidgetSnapshot.self, from: encoder.encode(snapshot)), snapshot)
+    }
+
     func testOnlyTheListedFiguresAreTreatedAsPartial() {
         var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertFalse(snapshot.isPartial("energy"))
