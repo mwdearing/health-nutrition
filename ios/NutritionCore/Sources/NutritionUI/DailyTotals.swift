@@ -88,6 +88,18 @@ public enum DailyTotalsBuilder {
         return DailyTotals(totals: totals)
     }
 
+    /// A drink's water: each volume component times its share (its own, else the drink default). Non-volume
+    /// components are skipped, as Today skips them.
+    private static func drinkWaterContributions(_ components: [IntakeComponent]) -> [NutrientValue] {
+        components.compactMap { component -> NutrientValue? in
+            guard component.unit.dimension == .volume,
+                  let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
+            else { return nil }
+            let share = component.hydrationPercent ?? IntakeComponent.defaultDrinkHydrationPercent
+            return .known(converted.value * share / 100, .mL)
+        }
+    }
+
     /// What one entry contributes to one nutrient's day.
     private static func contributions(
         of entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
@@ -104,7 +116,10 @@ public enum DailyTotalsBuilder {
         // about any nutrient but water. Without this a food entry reaches the water line at all,
         // answers unknown there — a snapshot states no water unless the product states water — and a
         // day holding one food makes the day's water unknown rather than what was actually drunk.
-        guard nutrient != waterKey else { return [] }
+        // The one exception is a drink's water share, which counts toward the day's water as Today shows it.
+        guard nutrient != waterKey else {
+            return entry.snapshot?.kind == .drink ? drinkWaterContributions(entry.components) : []
+        }
         // A snapshot states the product's own values once, not once per component, so it is scaled
         // and summed once per entry. Summing it per component would count a two-component product's
         // protein twice.

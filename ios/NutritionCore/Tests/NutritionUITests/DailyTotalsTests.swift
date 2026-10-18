@@ -917,4 +917,28 @@ final class DailyTotalsTests: XCTestCase {
             ).text,
             "Sodium 2500 mg of 2.3 g")
     }
+
+    /// A drink counts its water share of the volume toward the day, as Today shows it, and a drink
+    /// with no share set counts the default share.
+    func testDrinkWaterCountsItsShareOfItsVolume() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "soda-share-1", productID: "soda", name: "7up", labelBasis: "per serving",
+            catalogOrigin: "manual", catalogVersion: "1", kind: .drink)
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "other", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "soda", name: "7up", amount: 200, unit: .mL, hydrationPercent: 50)],
+            product: product, now: when)
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "other", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "soda", name: "7up", amount: 100, unit: .mL)],
+            product: product, now: when)
+        let intakes = try store.activeIntakes()
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["water"])
+
+        // 200 mL at 50% is 100 mL; 100 mL with no share uses the 90% default, so 90 mL.
+        XCTAssertEqual(totals.total(for: "water")?.value, .known(Decimal(190), .mL))
+    }
 }
