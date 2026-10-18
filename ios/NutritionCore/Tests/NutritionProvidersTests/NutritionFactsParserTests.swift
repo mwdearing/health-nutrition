@@ -1047,6 +1047,179 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
     }
 
+    /// Reproduces the 0.1.31 Entry screen: a Supplement Facts capture keeps unrecognized rows, so OCR
+    /// fragments became "Also on the label" compounds ("Added Sugars ela 25 g", "Inchides 0 g",
+    /// "lum 260 mg", "minD 0 mcg"). A misread name of a recognized nutrient lands on its field, and a
+    /// misread qualifier or a fragment is never a compound.
+    func testSupplementPanelDoesNotKeepOCRFragmentsAsCompounds() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 tablet",
+            "Added Sugars ela 25g",
+            "Inchides 0g",
+            "lum 260mg",
+            "minD 0mcg",
+        ])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"), "a misread Added Sugars row lands on its field")
+        XCTAssertEqual(panel.unnamedRowCount, 3, "Inchides, minD and lum stay unread and are counted for review")
+        XCTAssertFalse(panel.additionalNutrients.contains { $0.name.contains("ela") }, "no 'Added Sugars ela' compound")
+        XCTAssertFalse(panel.additionalNutrients.contains { ["Inchides", "lum", "minD"].contains($0.name) },
+                       "qualifier and fragment names are not compounds")
+    }
+
+    /// Real supplement rows that look like noise must not be read as noise or as their nutrient.
+    func testSupplementRowsThatLookLikeNoiseSurvive() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 capsule",
+            "Vitamin E oil 400 IU",
+            "IgG 200mg",
+            "Include Blend 100mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin E oil", "IgG", "Include Blend"],
+                       "each row stays its own extra, none is read as a named nutrient")
+    }
+
+    /// Capitalised real words that end a nutrient name are rows: a fragment starts lowercase, so "Mind",
+    /// "Hydrate", "Sterol" and "MIND" stay extras while "minD" is unread.
+    func testCapitalisedWordsEndingANutrientNameStayRows() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Mind 200mg", "Hydrate 50mg", "Sterol 100mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Mind", "Hydrate", "Sterol"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// An uppercase row whose letters end a nutrient name is a row: the fragment rule needs a lowercase start.
+    func testUppercaseMINDIsAnExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "MIND 200mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["MIND"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// The OCR digit and letter swaps the fragment rule reads (1 as l, 0 as o, rn as m) still make a fragment.
+    func testOCRSwapFragmentsAreUnread() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "m1nD 0mcg", "rninD 0mcg", "pr0tein 5g"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 3)
+    }
+
+    /// A lowercase head of a nutrient name is a product or abbreviation, not an OCR tail: "mag" and "pro" stay extras.
+    func testLowercaseHeadsOfNutrientNamesStayRows() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "mag 100mg", "pro 5g"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["mag", "pro"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A bare qualifier misread on a supplement row is structural noise, so both rows are counted unread.
+    func testBareQualifierMisreadsAreCountedUnread() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Include 100mg", "Contain 50mg"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 2)
+    }
+
+    /// Short real words are rows, not fragments: only a piece of a known nutrient name is noise.
+    func testShortSupplementWordsThatAreNotNutrientPiecesSurvive() throws {
+        let panel = parse([
+            "Supplement Facts", "Serving size 1 capsule", "oat 100mg", "gum 50mg", "bcAA 200mg", "Mag 100mg", "Pro 5g",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["oat", "gum", "bcAA", "Mag", "Pro"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A food panel's output is unchanged by the supplement-only fragment rule: its misread rows stay unread.
+    func testFoodPanelOutputIsUnchangedByFragmentRule() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "Sugar Alcohol 3g", "Inchides 0g", "minD 0mcg", "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Sugar Alcohol"])
+        XCTAssertEqual(panel.unnamedRowCount, 3)
+    }
+
+    /// "Added Sugars pro 5g" reads its misread word as noise on the Added Sugars field.
+    func testAddedSugarsProductWordLandsOnAddedSugars() throws {
+        let panel = parse(["Total Sugars 12g", "Added Sugars pro 5g"])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("5"))
+    }
+
+    /// "Added Sugars oil" is a product of its own: a short word from the list is never absorbed.
+    func testAddedSugarsOilIsNotAddedSugars() throws {
+        let panel = parse(["Total Sugars 12g", "Added Sugars oil 5g"])
+
+        if case .known = panel.value(for: .addedSugars) {
+            XCTFail("Added Sugars oil must not set the Added Sugars field")
+        }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Added Sugars oil"])
+    }
+
+    /// A food panel's Added Sugars row with a misread word lands on its field, as a clean row would.
+    func testFoodPanelAddedSugarsWithNoiseWordLandsOnField() throws {
+        let panel = parse(["Nutrition Facts", "Total Sugars 12g", "Added Sugars ela 25g"])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A real ingredient word that is not one edit from the qualifiers is not read as a misread qualifier.
+    func testRealIngredientNearQualifierIsKept() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Inclusion 100mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Inclusion"])
+    }
+
+    /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
+    func testEPAAndDHAStandaloneRowsSurvive() throws {
+        let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["EPA", "DHA"])
+    }
+
+    /// A multi-word nutrient followed by a product word is that product, not the nutrient's amount.
+    func testVitaminDProductWordIsNotVitaminD() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin D pro 10mcg"])
+
+        if case .known = panel.value(for: .vitaminD) { XCTFail("Vitamin D pro is not Vitamin D") }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin D pro"])
+    }
+
+    /// A one-word product name that begins with a nutrient is its own compound, not that nutrient.
+    func testOneWordProductAfterSingleWordNutrientStaysACompound() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Iron pro 10mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Iron pro"])
+    }
+
+    /// A name that begins with a nutrient but is a product's own name stays a compound, not that nutrient.
+    func testIronSupportBlendIsACompoundNotIron() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Iron Support Blend 10mg"])
+
+        if case .known = panel.value(for: .iron) { XCTFail("Iron Support Blend is not iron") }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Iron Support Blend"])
+    }
+
+    /// A real supplement ingredient survives next to the OCR noise rows of the same capture.
+    func testSupplementIngredientSurvivesBesideOCRNoise() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 capsule",
+            "Ashwagandha root extract 300mg",
+            "Inchides 0g",
+            "minD 0mcg",
+            "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Ashwagandha root extract"])
+        XCTAssertEqual(panel.unnamedRowCount, 3, "the three noise rows stay unread and are counted")
+    }
+
     /// A food panel's real rows that the named table lacks keep their names, while misread fragments do not.
     func testFoodPanelKeepsPlausibleRowNamesAndDropsMisreadFragments() throws {
         let panel = parse([

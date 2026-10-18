@@ -953,6 +953,56 @@ public enum NutritionFactsParser {
         return true
     }
 
+    /// Whether an unrecognized name is OCR noise on any panel kind rather than a row a supplement states.
+    /// A misread qualifier ("Inchides") is noise, and so is a one-word fragment that is the end of a known
+    /// nutrient name, with OCR swaps read as one letter ("lum" ends "calcium", "minD" ends "vitamin d"). A
+    /// short word that starts a nutrient ("Pro", "Mag") and a real ingredient ("Taurine", "CoQ10") are not.
+    /// Short words that are real: panel and supplement words, forms and units. None is OCR noise, whether
+    /// it follows a nutrient ("Vitamin E oil 400 IU") or stands alone ("EPA 500mg", "DHA 300mg").
+    private static let shortRowWords: Set<String> = [
+        "oil", "tab", "as", "per", "and", "the", "with", "from", "of", "in", "for", "gel", "cap", "fat", "sat",
+        "iu", "mg", "mcg", "epa", "dha", "ala", "ph",
+    ]
+
+    private static func isOCRFragment(_ name: String) -> Bool {
+        let qualifiers = ["includes", "contains"]
+        // A qualifier misread stands alone as the whole name, so "Include Blend" is still an ingredient.
+        let words = name.split(separator: " ")
+        guard words.count == 1, let word = words.first else { return false }
+        // One edit from the qualifier, or a misread the one-edit rule misses ("Inchides", two edits away).
+        let lowered = word.lowercased()
+        if qualifiers.contains(where: { editDistance(lowered, $0) <= 1 }) || lowered == "inchides" { return true }
+        // A fragment is the end of a known nutrient name, with the common OCR swaps read as one letter: OCR
+        // cuts a word from its front, so "lum" ends "calcium" and "minD" ends "vitamin d". A short word that
+        // starts a nutrient ("Pro", "Mag") is a product or abbreviation of its own, and stays a row.
+        // A fragment is a word split mid-way, so it starts lowercase; a real ingredient starts with a capital
+        // ("Mind", "Hydrate", "MIND" stay rows).
+        guard word.first?.isLowercase == true else { return false }
+        let piece = ocrSkeleton(String(word))
+        guard piece.count >= 3, !shortRowWords.contains(word.lowercased()) else { return false }
+        // OCR splits a word mid-way, so the lowercase tail is the one that matches: the head keeps the capital.
+        return nutrientSkeletons.contains { $0.hasSuffix(piece) }
+    }
+
+    /// The lowercased letters of a word, with the common OCR swaps read as one letter: 1 and i as l, 0 as o,
+    /// and rn as m. Digits other than 0 and 1 are dropped, so "k2" reads as "k".
+    private static func ocrSkeleton(_ text: String) -> String {
+        let letters = text.lowercased().compactMap { character -> Character? in
+            switch character {
+            case "1", "i": return "l"
+            case "0": return "o"
+            case _ where character.isLetter: return character
+            default: return nil
+            }
+        }
+        return String(letters).replacingOccurrences(of: "rn", with: "m")
+    }
+
+    /// Every alias of every recognized nutrient row, as an OCR skeleton with its spaces removed.
+    private static let nutrientSkeletons: [String] = rows.flatMap(\.aliases).map {
+        ocrSkeleton($0.filter { $0 != " " })
+    }
+
     /// The Levenshtein distance between two words, used to recognize a misread panel word.
     private static func editDistance(_ a: String, _ b: String) -> Int {
         let x = Array(a), y = Array(b)
@@ -1144,7 +1194,9 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
-            } else if !keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name) {
+            } else if (keepsUnrecognizedRows && isOCRFragment(row.name))
+                || (!keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name))
+            {
                 // A row that carries an amount but no name this panel's kind recognizes is unread, not
                 // dropped silently: it is counted so the review screen still shows it as unfinished.
                 unnamedRows += 1
@@ -1279,7 +1331,20 @@ public enum NutritionFactsParser {
         // whose remaining word states a known chemical form (`Iron Bisglycinate`) is the nutrient it
         // is built on.
         let rest = String(name[match.end...])
-        let forms = rest.split(whereSeparator: \.isWhitespace).map { $0.lowercased() }
+        let restWords = rest.split(whereSeparator: \.isWhitespace)
+        // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
+        // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
+        // A common word, form or unit is never noise ("Vitamin E oil 400 IU" is not Vitamin E).
+        // Only Added Sugars qualifies: it is the row a label prints with its amount in front ("Includes 5g
+        // Added Sugars"), so a stray word after it is the misread. Any other nutrient followed by a word
+        // ("Vitamin D pro 10mcg", "Iron pro 10mg") is a product of its own, not that nutrient.
+        if restWords.count == 1, amountFirstRows.contains(match.row.key), let noise = restWords.first,
+           noise.count <= 3, noise.allSatisfy(\.isLowercase),
+           !shortRowWords.contains(String(noise).lowercased())
+        {
+            return (name, match.row)
+        }
+        let forms = restWords.map { $0.lowercased() }
         guard !forms.isEmpty, forms.allSatisfy({ knownForms.contains($0) }) else { return (name, nil) }
         return (name, match.row)
     }
