@@ -817,6 +817,7 @@ public final class AddIntakeViewModel: ObservableObject {
         servingOption = nil
         unitNotice = nil
         servingCount = ""
+        amountFromServings = false
         prefillBacking = nil
         labelValues = nil
         prefilledFromCapture = false
