@@ -288,15 +288,6 @@ public struct JournalView: View {
                 .buttonStyle(.borderless)
                 .accessibilityHint("Adds every entry of this day to today as new entries")
             }
-            HStack(spacing: DesignSpacing.s) {
-                Label("Add to this day", systemImage: "plus")
-                    .foregroundStyle(TokenColors.textPrimary)
-                Spacer(minLength: DesignSpacing.s)
-                LaterBadge()
-            }
-            .accessibilityElement(children: .combine)
-            .disabled(true)
-            .accessibilityValue("Not available yet")
         }
     }
 
