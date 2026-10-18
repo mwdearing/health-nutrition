@@ -150,7 +150,7 @@ public struct EntryDetailView: View {
                         Text("Water share \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))%")
                     }
                     if model.waterSharePercent == nil {
-                        Text("Not counted: saved before water shares")
+                        Text("Not counted toward water. Logged before water shares.")
                     } else {
                         Text("Counts as \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))% water")
                     }
