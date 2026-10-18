@@ -62,11 +62,19 @@ public struct NourishTodayHeader: View {
         return model.goalBars.filter { !shown.contains($0.id) }
     }
 
-    /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out.
+    /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It replaces
+    /// the goal ring whenever food is known, so a day without a goal shows food and burned only.
     /// Remaining is hidden without a goal; burned is hidden when there is no Health reading or the setting is off.
     /// A partly known day reuses the existing partial note; Remaining is then an upper bound.
     private var calorieSummary: some View {
         let calories = model.calorieRemaining
+        let spoken = [
+            calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
+            calories.food.map { "\(BodyActivityViewModel.whole($0)) calories food" },
+            calories.burned.map { "\(BodyActivityViewModel.whole($0)) calories burned" },
+            calories.isPartial ? partialNote(Self.ringKey) : nil,
+            ringFootnote,
+        ].compactMap { $0 }.joined(separator: ", ")
         return VStack(alignment: .leading, spacing: DesignSpacing.s) {
             if let remaining = calories.remaining {
                 Text(BodyActivityViewModel.whole(remaining))
@@ -107,6 +115,8 @@ public struct NourishTodayHeader: View {
                 Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
     }
 
     public var body: some View {
