@@ -47,4 +47,27 @@ final class JournalImportDrinkShareTests: JournalImportTestCase {
 
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: target, favorites: nil))
     }
+
+    /// A plain version 6 backup, with no share on any component, still imports. Its drink's share reads as
+    /// nil, which Today and Health treat as the 90 percent default.
+    func testAVersionSixBackupWithoutTheShareStillImportsAndReadsAsTheDefault() throws {
+        var root = try object(of: try exportedDrinkData())
+        root["schema_version"] = 6
+        func strip(_ value: Any) -> Any {
+            if var dict = value as? [String: Any] {
+                dict.removeValue(forKey: "hydration_percent")
+                return dict.mapValues(strip)
+            }
+            if let list = value as? [Any] { return list.map(strip) }
+            return value
+        }
+        let data = try JSONSerialization.data(withJSONObject: strip(root))
+        let target = try store(directory())
+
+        _ = try JournalImporter.importExport(data, into: target, favorites: nil)
+
+        let component = try XCTUnwrap(try target.revisions(of: oatsID).last?.components.first)
+        XCTAssertNil(component.hydrationPercent)
+        XCTAssertEqual(IntakeComponent.defaultDrinkHydrationPercent, 90)
+    }
 }
