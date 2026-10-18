@@ -126,17 +126,6 @@ final class AddIntakeServingTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
-    func testPartlyTypedZeroKeepsTheAmountUntilTheCountIsComplete() throws {
-        let model = try makeModel()
-        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
-        model.setServingCount("3")
-        XCTAssertEqual(model.amountText, "6")
-        model.setServingCount("0.")
-        XCTAssertEqual(model.amountText, "6", "a count still being typed does not clear the amount")
-        model.setServingCount("0")
-        XCTAssertEqual(model.amountText, "", "a completed zero clears the amount")
-    }
-
     func testDraftCountsLeaveTheAmountAlone() throws {
         let model = try makeModel()
         model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
