@@ -10,6 +10,13 @@ import WidgetKit
 @MainActor
 final class WidgetSnapshotPublisher {
     private var subscription: AnyCancellable?
+    private var unitsSubscription: AnyCancellable?
+    /// The unit flag in the summary last written, so a change of units republishes without rewriting on every
+    /// unrelated preference change.
+    private var publishedUSUnits: Bool?
+    /// The erase generation the last published load was stamped with. A unit change republishes under this one, so
+    /// an erase that happened since rejects it just as it rejects a pending load.
+    private var publishedGeneration: Int?
     private let store: WidgetSnapshotStore?
     private let erasure: WidgetSnapshotErasure
     private let watch: WatchSnapshotSender?
@@ -36,6 +43,19 @@ final class WidgetSnapshotPublisher {
         // is written when that moment changes and stamped with it. Nothing else (an undo expiring, a failed
         // reload, a notification after midnight) can make retained totals look fresh.
         // @Published delivers the current value on subscription, so a load that already happened is published too.
+        // Switching units changes how water is drawn but not what Today loaded, so it is watched on its own: the
+        // current summary is written again, with the new flag, when the flag differs from the one last written.
+        unitsSubscription = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
+            .sink { [weak self, weak today] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let today, let loadedAt = today.lastLoadedAt,
+                        let generation = self.publishedGeneration,
+                        self.publishedUSUnits != (today.unitSystem == .usCustomary)
+                    else { return }
+                    self.publish(from: today, loadedAt: loadedAt, generation: generation)
+                }
+            }
         subscription = today.$lastLoadedAt
             .compactMap { $0 }
             // Stamped with the erase generation when the load is announced, before the debounce, so a write that
@@ -64,6 +84,8 @@ final class WidgetSnapshotPublisher {
         // The same summary goes to a paired Watch whether or not the App Group write works; the sender drops it if
         // an erase has happened since this load.
         watch?.submit(snapshot, erasureGeneration: generation)
+        publishedUSUnits = snapshot.usUnits
+        publishedGeneration = generation
         do {
             try store.write(snapshot)
             WidgetCenter.shared.reloadAllTimelines()
@@ -87,7 +109,8 @@ final class WidgetSnapshotPublisher {
             generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: total("energy", in: .kcal),
             energyGoalKcal: energyGoal, proteinGrams: total("protein", in: .g),
             carbohydrateGrams: total("carbohydrate", in: .g), fatGrams: total("fat", in: .g),
-            waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue)
+            waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
+            usUnits: today.unitSystem == .usCustomary)
     }
 }
 

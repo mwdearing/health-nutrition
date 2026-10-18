@@ -13,6 +13,9 @@ struct WidgetSnapshot: Codable, Equatable {
     var carbohydrateGrams: Double?
     var fatGrams: Double?
     var waterMilliliters: Double?
+    /// Whether the person reads US customary units, so water is drawn in fluid ounces. Absent in a summary written
+    /// before this field existed, which is read as metric.
+    var usUnits: Bool?
 
     /// A summary with nothing in it: no entries and no figures, as after Erase all data.
     static func empty(at time: Date) -> WidgetSnapshot {
@@ -83,6 +86,28 @@ enum WidgetAppGroup {
 /// to be a daily total (so the conversion to Int below can never trap).
 enum WidgetFigure {
     static let largest = 1_000_000_000.0
+    static let millilitersPerUSFluidOunce = 29.5735295625
+
+    /// Calories as the widgets draw them: the bare number, because calories are the whole point of the app, or
+    /// a dash. Read out as "calories" by VoiceOver (see `caloriesSpoken`).
+    static func calories(_ kilocalories: Double?) -> String { wholeNumber(kilocalories) ?? "—" }
+
+    static func caloriesSpoken(_ kilocalories: Double?) -> String {
+        wholeNumber(kilocalories).map { "\($0) calories" } ?? "Calories unknown"
+    }
+
+    /// Water as the person reads it: whole fluid ounces under US units, whole millilitres otherwise; dashes when the
+    /// value is missing or cannot be shown.
+    static func water(_ milliliters: Double?, usUnits: Bool?) -> String {
+        if usUnits == true {
+            guard let milliliters, milliliters.isFinite else { return "—" }
+            let ounces = milliliters / millilitersPerUSFluidOunce
+            // A sip is still water: under half an ounce it reads "<1" rather than a rounded 0.
+            if ounces > 0, ounces < 0.5 { return "<1 fl oz" }
+            return (wholeNumber(ounces) ?? "—") + " fl oz"
+        }
+        return (wholeNumber(milliliters) ?? "—") + " mL"
+    }
 
     static func wholeNumber(_ value: Double?) -> String? {
         guard let value, value.isFinite, abs(value) <= largest else { return nil }

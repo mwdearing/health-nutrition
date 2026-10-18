@@ -63,10 +63,6 @@ final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
 struct WatchTodayView: View {
     let snapshot: WidgetSnapshot?
 
-    private func figure(_ value: Double?, _ unit: String) -> String {
-        guard let text = WidgetFigure.wholeNumber(value) else { return "—" }
-        return "\(text) \(unit)"
-    }
 
     var body: some View {
         // Redrawn every minute, so the day changing drops yesterday's figures to dashes without any new data.
@@ -81,11 +77,12 @@ struct WatchTodayView: View {
             if snapshot?.hasEntries == false {
                 Text("Nothing logged today").font(.footnote).foregroundStyle(.secondary)
             } else {
-                Text(figure(snapshot?.energyKcal, "kcal")).font(.title3).privacySensitive()
+                Text(WidgetFigure.calories(snapshot?.energyKcal)).font(.title3).privacySensitive()
+                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                 Text(
                     "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"
                 ).font(.footnote).privacySensitive()
-                Text(figure(snapshot?.waterMilliliters, "mL water")).font(.footnote).privacySensitive()
+                Text("\(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water").font(.footnote).privacySensitive()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
