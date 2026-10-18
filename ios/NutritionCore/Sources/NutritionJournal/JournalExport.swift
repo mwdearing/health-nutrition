@@ -374,7 +374,7 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
                 }
                 return JournalExportComponent(
                     componentID: component.componentID, name: component.name, amount: component.amountText,
-                    unit: component.unitSymbol, valueState: .known)
+                    unit: component.unitSymbol, valueState: .known, hydrationPercent: component.hydrationPercentText)
             })
     }
 

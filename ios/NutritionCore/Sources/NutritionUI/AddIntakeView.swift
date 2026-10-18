@@ -73,7 +73,7 @@ public struct AddIntakeView: View {
                             value: Binding(
                                 get: { Double(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber) },
                                 set: { model.waterSharePercent = Decimal($0) }),
-                            in: 0...100, step: 5
+                            in: 0...100, step: 1
                         ) {
                             Text("Water share \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))%")
                         }

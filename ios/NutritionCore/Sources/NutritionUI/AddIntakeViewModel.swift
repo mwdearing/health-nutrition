@@ -935,8 +935,6 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.
     @Published public var savesToLibrary = true
 
-    /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
-    @discardableResult
     /// The water share of a drink, 0 to 100. Set by picking a drink type (its preset) or edited by hand; a
     /// drink saves the share it shows, and nil falls back to `defaultDrinkHydrationPercent`.
     @Published public var waterSharePercent: Decimal? = nil
@@ -945,6 +943,8 @@ public final class AddIntakeViewModel: ObservableObject {
         didSet { if let drinkType { waterSharePercent = drinkType.hydrationPercent } }
     }
 
+    /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
+    @discardableResult
     public func save(now: Date) -> Bool {
         hasAttemptedSave = true
         let trimmedName = typedName
