@@ -179,20 +179,27 @@ public struct JournalView: View {
             .accessibilityHint("Opens a calendar to choose a day")
             Button { stepDay(-1) } label: {
                 Image(systemName: "chevron.left")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.borderless)
             .accessibilityLabel("Previous day")
             Button { stepDay(1) } label: {
                 Image(systemName: "chevron.right")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.borderless)
             .accessibilityLabel("Next day")
             .disabled(isShowingToday)
         }
     }
 
-    /// The top visible day, or the day the last arrow or jump asked for while the list still shows the section it revealed.
-    /// An empty day has no section of its own, so the list keeps showing the nearest day and the arrows keep the requested one.
+    /// The day the last arrow or jump asked for, while the list still has the same top section it had then.
+    /// An empty day reveals the nearest day, or nothing, so the anchor is the top section from before the step.
+    /// Once the user scrolls, the top visible day is used again.
     private var arrowBase: Date {
-        if let day = lastRequestedDay, lastRevealedSection == nil || topVisibleID == lastRevealedSection {
+        if let day = lastRequestedDay, topVisibleID == lastRevealedSection {
             return day
         }
         return JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
@@ -221,7 +228,7 @@ public struct JournalView: View {
         jumpSection = target.sectionID
         jumpSerial += 1
         lastRequestedDay = date
-        lastRevealedSection = target.sectionID
+        lastRevealedSection = target.sectionID ?? topVisibleID
     }
 
     /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
@@ -285,7 +292,7 @@ public struct JournalView: View {
         jumpSection = target.sectionID
         jumpSerial += 1
         lastRequestedDay = pickedDay
-        lastRevealedSection = target.sectionID
+        lastRevealedSection = target.sectionID ?? topVisibleID
         showingJumpSheet = false
     }
 
