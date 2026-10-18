@@ -975,6 +975,11 @@ public final class AddIntakeViewModel: ObservableObject {
         amountText = DecimalFormatting.text(count * display.quantity)
         amountFromServings = true
         unit = display.unit
+        // The same exact-backing rule setServingCount applies, so a settled count saves the stored serving, not a rounded figure.
+        if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
+           let shown = AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) {
+            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+        }
     }
 
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
