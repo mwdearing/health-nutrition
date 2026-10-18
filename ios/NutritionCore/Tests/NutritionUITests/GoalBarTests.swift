@@ -143,6 +143,6 @@ final class GoalBarTests: XCTestCase {
             knownSum: .known(Decimal(10), .g))
         let bar = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 1)
         XCTAssertEqual(bar.state, .progress)
-        XCTAssertEqual(bar.accessibilityText, "Fiber, 10 g of 30 g, 1 entry has no fiber value")
+        XCTAssertEqual(bar.accessibilityText, "Fiber, 10 grams of 30 grams, 1 entry has no fiber value")
     }
 }
