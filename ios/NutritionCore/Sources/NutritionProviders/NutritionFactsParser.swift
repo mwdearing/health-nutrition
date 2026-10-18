@@ -1334,7 +1334,10 @@ public enum NutritionFactsParser {
             // Spaces are ignored too, so "Saturated-Fat" matches the alias "saturated fat".
             let bare = name.filter { $0 != "-" && $0 != " " }.lowercased()
             if let row = rows.first(where: { row in row.aliases.contains { $0.filter { $0 != " " } == bare } }) {
-                return (name, row)
+                // The field reads its canonical name ("Sodium"), not the name split at the line break.
+                let alias = row.aliases.first { $0.filter { $0 != " " } == bare } ?? bare
+                let canonical = alias.split(separator: " ").map { String($0).capitalized }.joined(separator: " ")
+                return (canonical, row)
             }
         }
         guard let match = firstRow(in: name) else { return (name, nil) }
@@ -1348,6 +1351,12 @@ public enum NutritionFactsParser {
         // is built on.
         let rest = String(name[match.end...])
         let restWords = rest.split(whereSeparator: \.isWhitespace)
+        // A vitamin D form digit is part of vitamin D ("Vitamin D3", "Vitamin D 3"): the amount behind it is the
+        // vitamin D amount, read straight off the label. A digit with its own unit ("Vitamin D 3mcg") is an amount.
+        if match.row.key == .vitaminD, restWords.count == 1, let form = restWords.first, form.count == 1,
+           form.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            return (name, match.row)
+        }
         // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
         // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
         // A common word, form or unit is never noise ("Vitamin E oil 400 IU" is not Vitamin E).
