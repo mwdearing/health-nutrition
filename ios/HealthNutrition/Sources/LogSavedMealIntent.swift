@@ -145,15 +145,12 @@ enum ShortcutMeal: String, AppEnum {
 /// is an ordinary one, written to Apple Health once that is connected. There is no Undo here; the entries can
 /// be deleted in the Diary like any other.
 struct LogSavedMealIntent: AppIntent {
-    /// Running the action needs an unlocked device, as the supplement shortcut does. The meal list and its names are
-    /// held back while locked (SavedMealPickerPolicy and SavedMealQuery); a stored id still resolves and then
-    /// reaches this requirement, so the system asks for the unlock before anything is read or written.
-    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
     static let title: LocalizedStringResource = "Log a saved meal"
     static let description = IntentDescription("Adds every item of one of your saved meals to today's diary, as new entries.")
     static let openAppWhenRun = true
-    /// Running the action, and so logging the meal, needs an unlocked device. Choosing the saved meal (the picker
-    /// and Siri's prompts) happens before this applies, so the saved meal names can still be listed while locked.
+    /// Running the action, and so logging the meal, needs an unlocked device. The saved meal names are not listed
+    /// while locked (SavedMealPickerPolicy and SavedMealQuery); a stored id still resolves and then reaches this
+    /// requirement, so the system asks for the unlock before anything is read or written.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     /// Optional, so the action runs when there are no saved meals, or the one a shortcut names was deleted, and
