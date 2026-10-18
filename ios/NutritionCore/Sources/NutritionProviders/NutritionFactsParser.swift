@@ -1310,8 +1310,10 @@ public enum NutritionFactsParser {
         // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
         // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
         // A common word, form or unit is never noise ("Vitamin E oil 400 IU" is not Vitamin E).
-        // Only a multi-word nutrient name qualifies, so a one-word product name such as "Iron pro" stays a compound.
-        if restWords.count == 1, String(name[..<match.end]).contains(" "), let noise = restWords.first,
+        // Only Added Sugars qualifies: it is the row a label prints with its amount in front ("Includes 5g
+        // Added Sugars"), so a stray word after it is the misread. Any other nutrient followed by a word
+        // ("Vitamin D pro 10mcg", "Iron pro 10mg") is a product of its own, not that nutrient.
+        if restWords.count == 1, amountFirstRows.contains(match.row.key), let noise = restWords.first,
            noise.count <= 3, noise.allSatisfy(\.isLowercase),
            !shortRowWords.contains(String(noise).lowercased())
         {

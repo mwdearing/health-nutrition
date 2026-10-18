@@ -1089,6 +1089,14 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.additionalNutrients.map(\.name), ["EPA", "DHA"])
     }
 
+    /// A multi-word nutrient followed by a product word is that product, not the nutrient's amount.
+    func testVitaminDProductWordIsNotVitaminD() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin D pro 10mcg"])
+
+        if case .known = panel.value(for: .vitaminD) { XCTFail("Vitamin D pro is not Vitamin D") }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin D pro"])
+    }
+
     /// A one-word product name that begins with a nutrient is its own compound, not that nutrient.
     func testOneWordProductAfterSingleWordNutrientStaysACompound() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Iron pro 10mg"])
