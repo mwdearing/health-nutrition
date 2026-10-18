@@ -84,7 +84,7 @@ struct TodayWidgetView: View {
                         Text("Fat \(WidgetFigure.figure(snapshot?.fatGrams, unit: "g", partial: snapshot?.isPartial("fat") == true))")
                         Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
                         if snapshot?.partialFigures?.isEmpty == false {
-                            Text("+ some entries have no values").font(.caption2).foregroundStyle(.secondary)
+                            Text("+ Some entries are missing nutrients").font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                     .font(.footnote)
