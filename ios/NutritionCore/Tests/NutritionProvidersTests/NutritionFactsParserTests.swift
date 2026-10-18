@@ -1238,6 +1238,27 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Omega-3 Fatty Acids"])
     }
 
+    /// A hyphen inside a known nutrient name is a line-break artifact: "So-dium 200mg" is sodium at 200 mg.
+    func testHyphenInsideKnownNutrientNameLandsOnItsField() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "So-dium 200mg"])
+
+        XCTAssertEqual(try amount(.sodium, panel), dec("200"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A hyphenated supplement name that is not a known nutrient stays an extra with its printed hyphen.
+    func testHyphenatedUnknownNameStaysAnExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin-C 60mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin-C"])
+        if case .known(let amount, let unit)? = panel.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("60"))
+            XCTAssertEqual(unit, .mg)
+        } else {
+            XCTFail("Vitamin-C should carry 60 mg")
+        }
+    }
+
     /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
     func testEPAAndDHAStandaloneRowsSurvive() throws {
         let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
