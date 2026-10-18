@@ -44,7 +44,7 @@ public enum CustomProductMapping {
             name: template.displayName, brand: nil, barcode: nil, kind: nil, basis: nil,
             serving: nil, rawServingText: nil, facts: [])
         draft.historicalIntakeReference = template.components.map {
-            "\($0.name): \(NSDecimalNumber(decimal: $0.amount).stringValue) \($0.unit.screenSymbol) consumed"
+            "\($0.name): \(NSDecimalNumber(decimal: $0.amount).stringValue) \($0.unit.symbol) consumed"
         }
         return draft
     }

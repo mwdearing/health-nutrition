@@ -70,7 +70,7 @@ public struct ServingDefinition: Sendable, Hashable {
         if !trimmed.isEmpty { return trimmed }
         guard let quantity else { return "" }
         guard let unit else { return "\(quantity)" }
-        return "\(quantity) \(unit.screenSymbol)"
+        return "\(quantity) \(unit.symbol)"
     }
 
     public var isEmpty: Bool { label.isEmpty }
