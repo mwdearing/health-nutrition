@@ -1,0 +1,94 @@
+import NutritionDomain
+import XCTest
+@testable import NutritionJournal
+
+/// Undo of a delete: a delete waits out its window before it is offered to any destination, and Undo inside
+/// the window withdraws it without Health or the relay ever seeing it.
+final class JournalDeleteUndoTests: XCTestCase {
+    private let intakeID = "0b6f7d3e-5a1c-4c52-9a2e-3f1d8c7b6a11"
+    private let when = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeStore() throws -> SwiftDataJournalStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataJournalStore(
+            url: directory.appendingPathComponent("journal.store"), enabledDestinations: [.healthKit, .relay])
+    }
+
+    private func oats() -> IntakeComponent {
+        IntakeComponent(componentID: "oats", name: "Rolled oats", amount: 40, unit: .g)
+    }
+
+    private func createIntake(_ store: SwiftDataJournalStore) throws {
+        try store.create(
+            Intake(id: intakeID, category: "food", occurredAt: when, timeZoneIdentifier: "UTC", meal: "breakfast"),
+            components: [oats()], product: nil, now: when)
+    }
+
+    private func pendingDeletes(_ store: SwiftDataJournalStore) throws -> [OutboxOperation] {
+        try store.pendingOutbox().filter { $0.kind == .delete }
+    }
+
+    func testUndoInsideWindowRestoresEntryAndLeavesNoDeleteOperation() throws {
+        let store = try makeStore()
+        try createIntake(store)
+        let deletedAt = Date()
+        try store.delete(intakeID: intakeID, now: deletedAt)
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+
+        try store.undoDelete(intakeID: intakeID, now: deletedAt.addingTimeInterval(1))
+
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
+        XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.kind == .upsert })
+        let current = try store.projections(of: intakeID).filter(\.isCurrent)
+        XCTAssertFalse(current.isEmpty)
+        XCTAssertTrue(current.allSatisfy { $0.desiredAction == .upsert })
+    }
+
+    func testNoDeleteIsOfferedBeforeWindowEnds() throws {
+        let store = try makeStore()
+        try createIntake(store)
+        try store.delete(intakeID: intakeID, now: Date())
+        XCTAssertTrue(try pendingDeletes(store).isEmpty)
+    }
+
+    func testDeleteIsOfferedAfterWindowAndUndoIsRefused() throws {
+        let store = try makeStore()
+        try createIntake(store)
+        let deletedAt = Date().addingTimeInterval(-11)
+        try store.delete(intakeID: intakeID, now: deletedAt)
+        XCTAssertEqual(Set(try pendingDeletes(store).map(\.destination)), [.healthKit, .relay])
+        XCTAssertThrowsError(try store.undoDelete(intakeID: intakeID, now: Date())) {
+            XCTAssertEqual($0 as? JournalError, .undoUnavailable(self.intakeID))
+        }
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+    }
+
+    func testUndoRefusedOnceADeleteIsAcknowledged() throws {
+        let store = try makeStore()
+        try createIntake(store)
+        let deletedAt = Date().addingTimeInterval(-11)
+        try store.delete(intakeID: intakeID, now: deletedAt)
+        for operation in try pendingDeletes(store) {
+            try store.acknowledge(operationID: operation.operationID, at: Date())
+        }
+        XCTAssertThrowsError(try store.undoDelete(intakeID: intakeID, now: deletedAt.addingTimeInterval(1))) {
+            XCTAssertEqual($0 as? JournalError, .undoUnavailable(self.intakeID))
+        }
+    }
+
+    func testHeldDeleteStillDeliversAfterRestartOnceWindowHasPassed() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("journal.store")
+        let first = try SwiftDataJournalStore(url: url, enabledDestinations: [.healthKit, .relay])
+        try createIntake(first)
+        try first.delete(intakeID: intakeID, now: Date().addingTimeInterval(-11))
+        first.close()
+
+        let reopened = try SwiftDataJournalStore(url: url, enabledDestinations: [.healthKit, .relay])
+        XCTAssertEqual(try pendingDeletes(reopened).count, 2)
+    }
+}
