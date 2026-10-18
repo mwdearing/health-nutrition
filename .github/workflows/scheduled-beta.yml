@@ -1,0 +1,39 @@
+name: Scheduled beta
+
+# Twice a day, builds the newest main commit that has a green `ios` run, unless that commit is already the last
+# upload. It dispatches signed-beta on that exact commit with the next patch version, so merges that land while it
+# builds do not matter. The schedule lists the UTC times for both Chicago offsets (CDT and CST); the script
+# proceeds only in the Chicago hours of the noon and midnight builds (the firing's hour and the next, so a late
+# start still builds), and builds again only when six hours have passed since the last upload. The version and commit it continues from live in the pinned "TestFlight beta log" issue. This workflow
+# holds no signing secret: it only reads public repository data and asks signed-beta, in the protected
+# environment, to do the signing.
+on:
+  schedule:
+    - cron: "40 4,5,16,17 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  issues: read
+  contents: read
+
+concurrency:
+  group: scheduled-beta
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan and dispatch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Choose the commit and dispatch the signed beta
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: python3 .github/scripts/beta_state.py plan
