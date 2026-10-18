@@ -45,7 +45,7 @@ struct WatchTodayWidgetView: View {
 
     private var snapshot: WidgetSnapshot? { entry.snapshot }
     /// Remaining when there is one (a goal is set), otherwise Food, as Today puts them first.
-    private var headline: String { snapshot?.remainingText ?? snapshot?.foodText ?? "—" }
+    private var headline: String { snapshot?.gaugeHeadline ?? "—" }
     private var spoken: String { snapshot?.calorieSpoken ?? "Calories unknown" }
 
     var body: some View {
@@ -69,7 +69,7 @@ struct WatchTodayWidgetView: View {
         case .accessoryInline:
             if snapshot?.hasEntries == false {
                 Text("Nothing logged today")
-            } else if let remaining = snapshot?.remainingText {
+            } else if let remaining = snapshot?.remainingInlineText {
                 Text("Calories remaining \(remaining)").accessibilityLabel(spoken).privacySensitive()
             } else {
                 Text("\(snapshot?.foodText ?? "—") Food").accessibilityLabel(spoken).privacySensitive()

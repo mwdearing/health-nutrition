@@ -49,7 +49,7 @@ struct TodayWidgetView: View {
             Gauge(value: snapshot?.energyFraction ?? 0) {
                 Image(systemName: "fork.knife")
             } currentValueLabel: {
-                Text(snapshot?.remainingText ?? snapshot?.foodText ?? "—")
+                Text(snapshot?.gaugeHeadline ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
             .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
@@ -63,7 +63,7 @@ struct TodayWidgetView: View {
         case .accessoryInline:
             if isEmpty {
                 Text("Nothing logged today")
-            } else if let remaining = snapshot?.remainingText {
+            } else if let remaining = snapshot?.remainingInlineText {
                 Text("Calories remaining \(remaining)")
                     .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
                     .privacySensitive()

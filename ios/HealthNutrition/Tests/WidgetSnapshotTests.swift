@@ -96,6 +96,42 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.calorieSpoken, "Food, 800 calories")
     }
 
+    func testAPartialDayMarksFoodAndRemainingAsApproved() throws {
+        let grouped = { (value: Double) in value.formatted(.number.precision(.fractionLength(0))) }
+        var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
+        snapshot.energyKcal = 800
+        snapshot.remainingKcal = 1_200
+        snapshot.burnedKcal = 250
+        snapshot.partialFigures = ["energy"]
+        snapshot.remainingIsPartial = true
+        // Food is "N+", spoken "at least"; Remaining is "Up to N", spoken "up to".
+        XCTAssertEqual(snapshot.foodText, "800+")
+        XCTAssertEqual(snapshot.remainingDisplay, "Up to \(grouped(1_200))")
+        XCTAssertEqual(snapshot.remainingInlineText, "up to \(grouped(1_200))")
+        XCTAssertEqual(
+            snapshot.calorieSpoken,
+            "up to \(grouped(1_200)) calories remaining, Food, at least 800 calories, Burned, 250 calories")
+        // A small gauge holds Food ("800+") rather than an unmarked Remaining.
+        XCTAssertEqual(snapshot.gaugeHeadline, "800+")
+        // Burned never gets a marker.
+        XCTAssertEqual(snapshot.burnedText, "250")
+        // At or below zero while partial: a plain negative number, no marker.
+        snapshot.remainingKcal = -150
+        XCTAssertFalse(snapshot.remainingIsUpperBound)
+        XCTAssertEqual(snapshot.remainingDisplay, grouped(-150))
+        XCTAssertEqual(snapshot.gaugeHeadline, grouped(-150))
+        XCTAssertTrue(snapshot.calorieSpoken.hasPrefix("\(grouped(-150)) calories remaining"))
+        snapshot.remainingKcal = 0
+        XCTAssertFalse(snapshot.remainingIsUpperBound)
+        // A whole day has no markers at all.
+        snapshot.remainingKcal = 1_200
+        snapshot.remainingIsPartial = nil
+        snapshot.partialFigures = nil
+        XCTAssertEqual(snapshot.foodText, "800")
+        XCTAssertEqual(snapshot.remainingDisplay, grouped(1_200))
+        XCTAssertEqual(snapshot.gaugeHeadline, grouped(1_200))
+    }
+
     func testOnlyTheListedFiguresAreTreatedAsPartial() {
         var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertFalse(snapshot.isPartial("energy"))
