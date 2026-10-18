@@ -1390,4 +1390,17 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(byID["fav-soda-95"]?.components.first?.hydrationPercent, "95")
         XCTAssertNil(byID["fav-soda-old"]?.components.first?.hydrationPercent)
     }
+
+    /// A favorite whose share is outside 0 to 100, or not plain decimal text, cannot be exported.
+    func testAFavoriteWithAnInvalidShareCannotBeExported() throws {
+        for share in ["101", "9e1"] {
+            let favorites = StubFavoritesStore()
+            favorites.items = [FavoriteTemplate(
+                id: "fav-bad-share", displayName: "Bad", category: "drink",
+                components: [FavoriteComponent(
+                    componentID: "soda", name: "Soda", amountText: "200", unitSymbol: "mL",
+                    hydrationPercentText: share)])]
+            XCTAssertThrowsError(try makeExport(store: filledStore(), favorites: favorites), "share \(share) must be refused")
+        }
+    }
 }

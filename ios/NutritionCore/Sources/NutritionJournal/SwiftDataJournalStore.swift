@@ -2440,6 +2440,12 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard !component.amount.isNaN, component.amount >= 0 else {
                 throw JournalError.invalidAmount(component.componentID)
             }
+            // A water share is a percentage from 0 to 100, stored as plain decimal text, as the import requires.
+            if let share = component.hydrationPercent {
+                guard share >= 0, share <= 100, DecimalText.isValidDecimalText(DecimalText.encode(share)) else {
+                    throw JournalError.invalidAmount(component.componentID)
+                }
+            }
             stored.append(StoredComponent(
                 componentID: component.componentID, name: component.name,
                 amountText: DecimalText.encode(component.amount), unitSymbol: component.unit.symbol,

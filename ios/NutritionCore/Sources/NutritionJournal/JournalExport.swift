@@ -375,6 +375,13 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
                       DecimalText.decode(component.amountText) != nil else {
                     throw JournalExportError.malformedFavoriteAmount(favorite.id, component.amountText)
                 }
+                if let share = component.hydrationPercentText {
+                    guard DecimalText.isValidDecimalText(share), let value = DecimalText.decode(share),
+                          value >= 0, value <= 100
+                    else {
+                        throw JournalExportError.malformedFavoriteAmount(favorite.id, share)
+                    }
+                }
                 return JournalExportComponent(
                     componentID: component.componentID, name: component.name, amount: component.amountText,
                     unit: component.unitSymbol, valueState: .known, hydrationPercent: component.hydrationPercentText)
