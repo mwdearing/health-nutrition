@@ -643,7 +643,8 @@ public final class JournalViewModel: ObservableObject {
         goals.filter { $0.nutrient != DailyTotalsBuilder.waterKey && !hidden.contains($0.nutrient) }
             .prefix(3).map { goal -> GoalBarModel in
             let line = NutrientProgressLine.make(
-                nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal)
+                nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal,
+                knownSum: totals.knownSum(for: goal.nutrient))
             return GoalBarModel.make(
                 line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: 0,
                 unitSystem: unitSystem)

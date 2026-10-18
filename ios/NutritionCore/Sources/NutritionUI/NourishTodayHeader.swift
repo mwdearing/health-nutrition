@@ -33,7 +33,7 @@ public struct NourishTodayHeader: View {
     /// The figure under a macro column or inside the ring: the day's total, rounded for reading, or a dash
     /// where the day has no known total.
     static func figure(for line: NutrientProgressLine?) -> String {
-        guard let line, case .known(let value, let unit) = line.amount else { return "—" }
+        guard let line, case .known(let value, let unit) = line.shownAmount else { return "—" }
         return AmountDisplay.nutrient(value, unit: unit).text
     }
 
@@ -61,7 +61,7 @@ public struct NourishTodayHeader: View {
             if let ring = bar(Self.ringKey) {
                 CalorieRing(
                     fraction: fraction(ring), figure: figure(Self.ringKey), caption: "logged",
-                    footnote: ringFootnote, spoken: ring.accessibilityText)
+                    footnote: ring.reason ?? ringFootnote, spoken: ring.accessibilityText)
             }
             let macros = Self.macroKeys.compactMap { key in bar(key).map { (key, $0) } }
             if !macros.isEmpty {
@@ -69,7 +69,7 @@ public struct NourishTodayHeader: View {
                     ForEach(macros, id: \.0) { key, macro in
                         MacroColumn(
                             label: macro.label, figure: figure(key), fraction: fraction(macro),
-                            spoken: macro.accessibilityText)
+                            spoken: macro.accessibilityText, note: macro.reason)
                     }
                 }
             }
