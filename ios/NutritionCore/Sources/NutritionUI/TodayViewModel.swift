@@ -357,8 +357,7 @@ public final class TodayViewModel: ObservableObject {
                 var hasEntries = line.hasKnownAmount
                 var someKnown = line.hasKnownAmount
                 var missingCount = 0
-                // Every entry the known sum includes, supplements too, so the note counts what the figure sums.
-                for entry in foodEntries {
+                for entry in foodEntries where entry.kind != .supplement {
                     var entryMissing = false
                     for component in entry.components {
                         let value = DailyTotalsBuilder.value(

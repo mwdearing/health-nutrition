@@ -26,6 +26,12 @@ public struct NourishTodayHeader: View {
         model.goalBars.first { $0.id == key }
     }
 
+    /// The missing-value note, shown only on a partial day. A whole day's unknown keeps its own figure and no note.
+    private func partialNote(_ key: String) -> String? {
+        guard model.progress.first(where: { $0.nutrient == key })?.isPartial == true else { return nil }
+        return bar(key)?.reason
+    }
+
     private func figure(_ key: String) -> String {
         Self.figure(for: model.progress.first(where: { $0.nutrient == key }))
     }
@@ -61,7 +67,7 @@ public struct NourishTodayHeader: View {
             if let ring = bar(Self.ringKey) {
                 CalorieRing(
                     fraction: fraction(ring), figure: figure(Self.ringKey), caption: "logged",
-                    footnote: ring.reason ?? ringFootnote, spoken: ring.accessibilityText)
+                    footnote: partialNote(Self.ringKey) ?? ringFootnote, spoken: ring.accessibilityText)
             }
             let macros = Self.macroKeys.compactMap { key in bar(key).map { (key, $0) } }
             if !macros.isEmpty {
@@ -69,7 +75,7 @@ public struct NourishTodayHeader: View {
                     ForEach(macros, id: \.0) { key, macro in
                         MacroColumn(
                             label: macro.label, figure: figure(key), fraction: fraction(macro),
-                            spoken: macro.accessibilityText, note: macro.reason)
+                            spoken: macro.accessibilityText, note: partialNote(key))
                     }
                 }
             }

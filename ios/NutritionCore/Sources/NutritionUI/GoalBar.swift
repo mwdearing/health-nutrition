@@ -95,7 +95,8 @@ public struct GoalBarModel: Equatable, Identifiable {
         guard let goal = line.goal else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: figure, state: .noGoal, fraction: nil,
-                goalMarker: nil, accessibilityText: "\(label), \(spokenFigure)", reason: note)
+                goalMarker: nil, accessibilityText: note.map { "\(label), \(spokenFigure), \($0)" } ?? "\(label), \(spokenFigure)",
+                reason: note)
         }
         let displayGoal = shown(goal.target, goal.unit)
         let valueText = "\(figure) of \(displayGoal.text)"
