@@ -273,6 +273,21 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(zinc.amountText, "At least 0.65 mg")
     }
 
+    func testAnEntryWithTwoMissingComponentsCountsOnceAsMissing() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "toast", name: "Toast", amount: 30, unit: .g),
+                IntakeComponent(componentID: "jam", name: "Jam", amount: 15, unit: .g),
+            ], product: nil, now: noon)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsComponentFacts(values: [:]))
+        model.load(now: noon)
+        // Neither component states zinc, so the entry is one missing entry, not two.
+        let zinc = try XCTUnwrap(model.rows.first { $0.nutrient == "zinc" })
+        XCTAssertEqual(zinc.tally, NutrientDayTally(fromFood: 0, known: 0, missing: 1))
+    }
+
     func testAnEntryWhoseDayCannotBeToldIsCountedAndSaid() throws {
         let store = try makeStore()
         try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
