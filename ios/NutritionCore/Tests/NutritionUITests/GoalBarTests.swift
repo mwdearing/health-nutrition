@@ -127,4 +127,13 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(KindTag.title(for: .supplement), "Supplement")
         XCTAssertEqual(KindTag.title(for: .drink), "Drink")
     }
+
+    func testPartialKnownSumShowsTheSumWithTheMissingValueNote() {
+        let partial = NutrientProgressLine(
+            nutrient: "fiber", amount: .known(Decimal(5), .g), goal: nil, isPartial: true)
+        let bar = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 1)
+        XCTAssertEqual(bar.state, .noGoal)
+        XCTAssertEqual(bar.valueText, "5 g")
+        XCTAssertEqual(bar.reason, "1 entry has no fiber value")
+    }
 }

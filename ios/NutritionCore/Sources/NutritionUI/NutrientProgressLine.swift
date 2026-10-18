@@ -23,20 +23,33 @@ public struct NutrientProgressLine: Equatable, Identifiable {
     public let amount: NutrientValue
     /// The target, nil where none is set for this nutrient.
     public let goal: NutrientGoal?
+    /// True when some entries of the day have no value, so `amount` is the known part and not the whole day.
+    public let isPartial: Bool
 
     public var id: String { nutrient }
 
-    public init(nutrient: String, amount: NutrientValue, goal: NutrientGoal?, displayName: String? = nil) {
+    public init(
+        nutrient: String, amount: NutrientValue, goal: NutrientGoal?, displayName: String? = nil,
+        isPartial: Bool = false
+    ) {
         self.nutrient = nutrient
         self.label = displayName ?? NutrientNames.displayName(for: nutrient)
         self.amount = amount
         self.goal = goal
+        self.isPartial = isPartial
     }
 
+    /// `knownSum` is the day's known partial sum. It is used only when the total is unknown because some entries
+    /// have no value; then `amount` is that sum and `isPartial` is true. Otherwise the total decides, as before.
     public static func make(
-        nutrient: String, total: NutrientTotal?, goal: NutrientGoal?, displayName: String? = nil
+        nutrient: String, total: NutrientTotal?, goal: NutrientGoal?, displayName: String? = nil,
+        knownSum: NutrientValue? = nil
     ) -> NutrientProgressLine {
-        NutrientProgressLine(
+        if let knownSum, total?.coverage.hasUnknown == true {
+            return NutrientProgressLine(
+                nutrient: nutrient, amount: knownSum, goal: goal, displayName: displayName, isPartial: true)
+        }
+        return NutrientProgressLine(
             nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName)
     }
 
