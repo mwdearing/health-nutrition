@@ -8,7 +8,7 @@ final class CalorieSummarySpokenTests: XCTestCase {
         let calories = CalorieRemaining(goal: 2000, food: 500, isPartial: false, burned: 120, remaining: 1620)
         XCTAssertEqual(
             NourishTodayHeader.spokenSummary(calories, partial: nil, footnote: "of 2000 Calories goal"),
-            "1620 calories remaining, Food, 500 calories, Burned, 120 calories, of 2000 Calories goal")
+            "1,620 calories remaining, Food, 500 calories, Burned, 120 calories, of 2000 Calories goal")
     }
 
     /// Burned is left out when Health gave no reading, and the partial note joins the line when present.
@@ -16,6 +16,6 @@ final class CalorieSummarySpokenTests: XCTestCase {
         let calories = CalorieRemaining(goal: 2000, food: 500, isPartial: true, burned: nil, remaining: 1500)
         XCTAssertEqual(
             NourishTodayHeader.spokenSummary(calories, partial: "Some entries have no calories", footnote: nil),
-            "1500 calories remaining, Food, 500 calories, Some entries have no calories")
+            "1,500 calories remaining, Food, 500 calories, Some entries have no calories")
     }
 }
