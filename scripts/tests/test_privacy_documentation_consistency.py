@@ -172,7 +172,7 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     assert "reviewed by the catalog owner" in accounts
     assert "community agreement does not verify" in accounts
     assert "five people" not in accounts and "five accounts" not in accounts
-    assert "debug build" in privacy and "never reads other health data" in privacy and "steps, active energy and weight" in privacy
+    assert "debug build" in privacy and "other apps logged" in privacy and "steps, active energy and weight" in privacy and "never leave it" in privacy
 
     privacy_summary = view_model.split("public static let privacySummary =", 1)[1].split("public static let exportButtonTitle", 1)[0]
     summary_literals = " ".join(re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', privacy_summary))
@@ -221,8 +221,9 @@ def test_public_privacy_copy_discloses_apple_health_delivery_and_conditional_cam
     assert ".relay" not in destination_setup.split("enabledDestinations:", 1)[1]
     assert "deliverToHealthKit(now: now)" in root_view
     assert "#if DEBUG\n        deliverToHealthKit" not in root_view
-    # Write access only; the request names no read types.
-    assert "requestAuthorization(toShare: mapped.share, read: [])" in driver
+    # Write access for the mapped types, and read access to the same nutrient types so the day totals can
+    # include what other apps logged (Connect step only).
+    assert "requestAuthorization(toShare: mapped.share, read: mapped.read)" in driver
     assert "connect apple health" in project and "entries you log" in project and "nutrients" in project
     assert "steps, active energy and weight" in project
     assert "no release build writes" not in project
@@ -237,7 +238,7 @@ def test_public_privacy_copy_discloses_apple_health_delivery_and_conditional_cam
     for document in (privacy, erase):
         assert "already written" in document
         assert "does not remove" in document or "does not retract" in document
-    assert "never reads other health data" in privacy and "steps, active energy and weight" in privacy
+    assert "other apps logged" in privacy and "steps, active energy and weight" in privacy and "never leave it" in privacy
     for document in (privacy, accounts):
         assert "rare cases the challenge may request camera access" in document
 

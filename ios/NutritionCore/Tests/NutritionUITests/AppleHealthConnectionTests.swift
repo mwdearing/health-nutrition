@@ -53,6 +53,14 @@ final class AppleHealthConnectionTests: XCTestCase {
         }
     }
 
+    func testWriteOnlyBuildsOfferToAllowReadingNutrition() {
+        let writeOnly = AppleHealthAccess(undetermined: 0, authorized: 15, denied: 0, readAsked: false)
+        let model = AppleHealthConnectionViewModel(connector: FakeConnector(writeOnly))
+        XCTAssertEqual(model.statusText, "Connected")
+        XCTAssertEqual(model.actionTitle, "Allow reading nutrition")
+        XCTAssertTrue(model.canAct)
+    }
+
     func testConnectingAsksOnceAndShowsHealthsNewAnswer() async {
         let connector = FakeConnector(access(15, 0, 0))
         connector.afterConnect = access(0, 15, 0)

@@ -17,12 +17,18 @@ public struct AppleHealthAccess: Equatable, Sendable {
     /// with the same counts but a different set of allowed types (one type turned on, another turned
     /// off) still compare as a change.
     public var authorizedTypes: Set<String>
+    /// Whether the request that includes nutrient read access has been shown on this device. A build that
+    /// only ever asked for write access reads as not asked, so Connect stays on screen to ask for reading.
+    public var readAsked: Bool
 
-    public init(undetermined: Int, authorized: Int, denied: Int, authorizedTypes: Set<String> = []) {
+    public init(
+        undetermined: Int, authorized: Int, denied: Int, authorizedTypes: Set<String> = [], readAsked: Bool = true
+    ) {
         self.undetermined = undetermined
         self.authorized = authorized
         self.denied = denied
         self.authorizedTypes = authorizedTypes
+        self.readAsked = readAsked
     }
 
     /// No Health on this device, or no type to ask about.
@@ -74,18 +80,23 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
 
     @Published public private(set) var state: AppleHealthConnectionState
     @Published public private(set) var isBusy = false
+    /// Whether the read request has been shown on this device; see `AppleHealthAccess.readAsked`.
+    @Published private var readAsked: Bool
     private let connector: any AppleHealthConnecting
 
     public init(connector: any AppleHealthConnecting) {
         self.connector = connector
-        self.state = connector.currentAccess().state
+        let access = connector.currentAccess()
+        self.state = access.state
+        self.readAsked = access.readAsked
     }
 
     /// Reads Health's answer again. Called when the row appears and when the app comes back to the
     /// foreground, because the answer can change in the Health app while this one is in the background.
     public func refresh() {
-        let fresh = connector.currentAccess().state
-        if fresh != state { state = fresh }
+        let access = connector.currentAccess()
+        if access.state != state { state = access.state }
+        readAsked = access.readAsked
     }
 
     public var canAct: Bool { !isBusy && actionTitle != nil }
@@ -135,7 +146,8 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
     /// The button under the row, or nil when there is nothing for a person to do.
     public var actionTitle: String? {
         switch state {
-        case .unavailable, .connected: return nil
+        case .unavailable: return nil
+        case .connected: return readAsked ? nil : "Allow reading nutrition"
         case .notConnected: return "Connect Apple Health"
         case .needsReconnect: return "Finish connecting"
         case .partlyAllowed, .turnedOff: return "Check again"
