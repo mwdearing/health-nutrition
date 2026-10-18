@@ -13,10 +13,20 @@ public struct DailyTotals: Equatable {
     /// The sum of the known values for a nutrient whose day has some entries with no value. Opt-in: `total(for:)`
     /// stays unknown for such a day, so only a caller that reads this field sees a partial sum.
     public let knownSums: [String: NutrientValue]
+    /// How many entries of the day have no value for each nutrient, counted in the same pass as the sums.
+    public let missingCounts: [String: Int]
 
-    public init(totals: [String: NutrientTotal], knownSums: [String: NutrientValue] = [:]) {
+    public init(
+        totals: [String: NutrientTotal], knownSums: [String: NutrientValue] = [:], missingCounts: [String: Int] = [:]
+    ) {
         self.totals = totals
         self.knownSums = knownSums
+        self.missingCounts = missingCounts
+    }
+
+    /// The number of entries with no value for this nutrient. Zero when the nutrient was not asked for.
+    public func missingCount(for nutrient: String) -> Int {
+        missingCounts[nutrient] ?? 0
     }
 
     /// The known partial sum for one nutrient, or nil when the day is fully known or nothing is known.
@@ -87,18 +97,24 @@ public enum DailyTotalsBuilder {
         }
         var totals: [String: NutrientTotal] = [:]
         var knownSums: [String: NutrientValue] = [:]
+        var missingCounts: [String: Int] = [:]
         for nutrient in nutrients {
             var values: [NutrientValue] = []
+            var missing = 0
             for entry in entries {
-                values.append(contentsOf: contributions(
-                    of: entry, nutrient: nutrient, lookup: lookup))
+                let contribution = contributions(of: entry, nutrient: nutrient, lookup: lookup)
+                // An entry counts as missing when one of its values is unknown. A supplement never contributes
+                // an unknown food nutrient (see `contributions`), so it is never counted here.
+                if contribution.contains(.unknown) { missing += 1 }
+                values.append(contentsOf: contribution)
             }
+            missingCounts[nutrient] = missing
             totals[nutrient] = Self.sum(values, nutrient: nutrient)
             if let partial = Self.partialKnownSum(values, nutrient: nutrient) {
                 knownSums[nutrient] = partial
             }
         }
-        return DailyTotals(totals: totals, knownSums: knownSums)
+        return DailyTotals(totals: totals, knownSums: knownSums, missingCounts: missingCounts)
     }
 
     /// A drink's water: each volume component times its share (its own, else the drink default). Non-volume

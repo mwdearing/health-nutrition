@@ -27,12 +27,14 @@ public struct NutrientProgressLine: Equatable, Identifiable {
     public let isPartial: Bool
     /// The sum of the known entries, set only when `isPartial`. Readers that show a partial day read this.
     public let knownSum: NutrientValue?
+    /// How many entries of the day have no value for this nutrient, from the same pass that built the total.
+    public let missingCount: Int
 
     public var id: String { nutrient }
 
     public init(
         nutrient: String, amount: NutrientValue, goal: NutrientGoal?, displayName: String? = nil,
-        isPartial: Bool = false, knownSum: NutrientValue? = nil
+        isPartial: Bool = false, knownSum: NutrientValue? = nil, missingCount: Int = 0
     ) {
         self.nutrient = nutrient
         self.label = displayName ?? NutrientNames.displayName(for: nutrient)
@@ -40,6 +42,7 @@ public struct NutrientProgressLine: Equatable, Identifiable {
         self.goal = goal
         self.isPartial = isPartial
         self.knownSum = knownSum
+        self.missingCount = missingCount
     }
 
     /// The amount a partial-aware screen shows: the known sum on a partial day, otherwise `amount`.
@@ -51,15 +54,16 @@ public struct NutrientProgressLine: Equatable, Identifiable {
     /// have no value. Then `amount` stays unknown, `isPartial` is true and `knownSum` carries the known part.
     public static func make(
         nutrient: String, total: NutrientTotal?, goal: NutrientGoal?, displayName: String? = nil,
-        knownSum: NutrientValue? = nil
+        knownSum: NutrientValue? = nil, missingCount: Int = 0
     ) -> NutrientProgressLine {
         if let knownSum, total?.coverage.hasUnknown == true {
             return NutrientProgressLine(
                 nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName,
-                isPartial: true, knownSum: knownSum)
+                isPartial: true, knownSum: knownSum, missingCount: missingCount)
         }
         return NutrientProgressLine(
-            nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName)
+            nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName,
+            missingCount: missingCount)
     }
 
     /// True where a target is set, so a caller can tell a comparison from a plain total.
