@@ -167,11 +167,16 @@ public struct JournalView: View {
                 pickedDay = now()
                 showingJumpSheet = true
             } label: {
-                Label("Jump to date", systemImage: "calendar")
-                    .foregroundStyle(TokenColors.textPrimary)
+                // The label fills the row, so the whole empty stretch before the arrows is part of the target.
+                HStack(spacing: DesignSpacing.s) {
+                    Label("Jump to date", systemImage: "calendar")
+                        .foregroundStyle(TokenColors.textPrimary)
+                    Spacer(minLength: DesignSpacing.s)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .accessibilityHint("Opens a calendar to choose a day")
-            Spacer(minLength: DesignSpacing.s)
             Button { stepDay(-1) } label: {
                 Image(systemName: "chevron.left")
             }
