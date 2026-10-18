@@ -39,7 +39,11 @@ public struct RepeatTemplate: Equatable {
             // A saved share is read back as it was saved; a share that is not a percentage rejects the template.
             var share: Decimal?
             if let text = item.hydrationPercentText {
-                guard let value = AmountParser.parse(text), value >= 0, value <= 100 else { return nil }
+                // Plain unsigned decimal text, zero included; anything else rejects the template.
+                guard text.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
+                      let value = Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")),
+                      value >= 0, value <= 100
+                else { return nil }
                 share = value
             }
             parsed.append(IntakeComponent(

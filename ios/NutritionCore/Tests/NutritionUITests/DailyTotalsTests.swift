@@ -938,8 +938,8 @@ final class DailyTotalsTests: XCTestCase {
         let totals = try DailyTotalsBuilder.totals(
             for: intakes, store: store, lookup: SnapshotOnlyFacts(), nutrients: ["water"])
 
-        // 200 mL at 50% is 100 mL; 100 mL with no share uses the 90% default, so 90 mL.
-        XCTAssertEqual(totals.total(for: "water")?.value, .known(Decimal(190), .mL))
+        // 200 mL at 50% is 100 mL. The 100 mL entry has no stored share (logged before shares), so it adds nothing.
+        XCTAssertEqual(totals.total(for: "water")?.value, .known(Decimal(100), .mL))
     }
 
     /// A drink logged before shares has no stored share, so it adds no water to the day, as on main.
