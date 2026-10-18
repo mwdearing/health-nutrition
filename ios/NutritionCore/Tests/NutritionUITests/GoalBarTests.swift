@@ -136,4 +136,13 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(bar.valueText, "5 g")
         XCTAssertEqual(bar.reason, "1 entry has no fiber value")
     }
+
+    func testPartialGoalBarSpeaksThePartialNote() {
+        let partial = NutrientProgressLine(
+            nutrient: "fiber", amount: .unknown, goal: goal("fiber", Decimal(30), .g), isPartial: true,
+            knownSum: .known(Decimal(10), .g))
+        let bar = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 1)
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertEqual(bar.accessibilityText, "Fiber, 10 g of 30 g, 1 entry has no fiber value")
+    }
 }
