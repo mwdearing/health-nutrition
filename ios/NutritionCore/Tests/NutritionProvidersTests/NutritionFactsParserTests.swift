@@ -1243,6 +1243,7 @@ final class NutritionFactsParserTests: XCTestCase {
         let panel = parse(["Nutrition Facts", "Total Fat 8g", "So-dium 200mg"])
 
         XCTAssertEqual(try amount(.sodium, panel), dec("200"))
+        XCTAssertEqual(panel.displayName(for: .sodium), "Sodium")
         XCTAssertTrue(panel.additionalNutrients.isEmpty)
     }
 
@@ -1267,11 +1268,37 @@ final class NutritionFactsParserTests: XCTestCase {
         }
     }
 
+    /// Vitamin D form digits are vitamin D: "D3" and "D 3" with an amount behind them are vitamin D at that amount.
+    func testVitaminDFormDigitsLandOnVitaminD() throws {
+        func vitaminD(_ line: String) throws -> (Decimal, MeasureUnit) {
+            let panel = parse(["Nutrition Facts", "Total Fat 8g", line])
+            guard case .known(let value, let unit) = panel.value(for: .vitaminD) else {
+                XCTFail("\(line) should read as vitamin D")
+                return (0, .mcg)
+            }
+            return (value, unit)
+        }
+
+        let d3 = try vitaminD("Vitamin D3 25mcg")
+        XCTAssertEqual(d3.0, dec("25"))
+        XCTAssertEqual(d3.1, .mcg)
+        let spacedD3 = try vitaminD("Vitamin D 3 25mcg")
+        XCTAssertEqual(spacedD3.0, dec("25"))
+        XCTAssertEqual(spacedD3.1, .mcg)
+        let amountNoSpace = try vitaminD("Vitamin D 3mcg")
+        XCTAssertEqual(amountNoSpace.0, dec("3"))
+        XCTAssertEqual(amountNoSpace.1, .mcg)
+        let amountSpaced = try vitaminD("Vitamin D 3 mcg")
+        XCTAssertEqual(amountSpaced.0, dec("3"))
+        XCTAssertEqual(amountSpaced.1, .mcg)
+    }
+
     /// Non-ASCII digits are never a name's number: "Vitamin B１２" (fullwidth digits) is not an extra with that name.
     func testFullwidthDigitsAreNotANameNumber() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Vitamin B１２ 2mcg"])
 
-        XCTAssertFalse(panel.additionalNutrients.contains { $0.name.contains("１２") })
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "the fullwidth row is not an extra")
+        if case .known = panel.value(for: .vitaminD) { XCTFail("the fullwidth row is not vitamin D") }
     }
 
     /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
