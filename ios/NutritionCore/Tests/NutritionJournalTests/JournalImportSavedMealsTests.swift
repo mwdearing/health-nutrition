@@ -404,11 +404,12 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
             try JournalExporter.makeExport(
                 store: try filledStore(try directory()), favorites: nil,
                 savedMeals: MemorySavedMeals([shared]), appVersion: appVersion, exportedAt: exportedAt))
-        let target = try store(try directory())
+        let restoreDirectory = try directory()
+        let target = try store(restoreDirectory)
         let savedMeals = MemorySavedMeals()
 
         _ = try JournalImporter.importExport(
-            data, into: target, favorites: try favorites(target), savedMeals: savedMeals)
+            data, into: target, favorites: try favorites(restoreDirectory), savedMeals: savedMeals)
 
         XCTAssertEqual(
             savedMeals.meals.first?.items.first?.components.first?.hydrationPercentText, "95")
