@@ -961,6 +961,29 @@ final class DailyTotalsTests: XCTestCase {
     /// A negative logged amount makes its entry unknown on every path, so the known sum is what the positive
     /// entries alone add up to. Each lookup below returns the same value whatever the amount, so a negative
     /// entry that reached the sum would change the total.
+    /// A negative supplement row is unknown for what it declares, and an undeclared nutrient still does not count.
+    func testANegativeSupplementRowIsUnknownOnlyForWhatItDeclares() throws {
+        let store = try makeStore()
+        let vitaminD = ProductDefinition(
+            snapshotID: "snapshot-vitd", productID: "product-vitd", name: "Vitamin D", kind: .supplement,
+            labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["vitaminD": .known(Decimal(10), .mcg)])
+        let oats = ProductDefinition(
+            snapshotID: "snapshot-oats", productID: "product-oats", name: "Oats",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(380), .kcal), "protein": .known(Decimal(13), .g)])
+        try addFood(store, name: "Vitamin D", id: "vitd", at: when, amount: -1, unit: .serving, product: vitaminD)
+        try addFood(store, name: "Oats", id: "oats", at: when, amount: 100, product: oats)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["vitaminD", "energyKcal", "protein"])
+        XCTAssertEqual(totals.total(for: "vitaminD")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "protein")?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(380, .kcal))
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(13, .g))
+    }
+
     func testANegativeEntryIsUnknownOnEveryPath() throws {
         let facts = ComponentFacts(values: ["oats": .known(10, .kcal)])
         // No product snapshot: the lookup answers each component directly.

@@ -149,9 +149,18 @@ public enum DailyTotalsBuilder {
         // day holding one food makes the day's water unknown rather than what was actually drunk.
         // The one exception is a stored water share, which counts toward the day's water as Today shows it.
         guard nutrient != waterKey else { return drinkWaterContributions(entry.components) }
-        // An entry with a negative logged amount cannot be added up on any path, so each of its nutrients is
-        // unknown and the partial note says so. A zero amount is a known zero. Water is handled above.
-        if entry.components.contains(where: { $0.amount < 0 }) { return [.unknown] }
+        // A negative logged amount cannot be added up, so the row is distrusted as a whole. For a food entry, or
+        // one with no product, every nutrient is unknown and the partial note says so. For a supplement, only the
+        // nutrients it declares are unknown; an undeclared nutrient contributes nothing, as on a healthy supplement.
+        // A zero amount is a known zero. Water is handled above.
+        if entry.components.contains(where: { $0.amount < 0 }) {
+            guard let snapshot = entry.snapshot, snapshot.kind == .supplement else { return [.unknown] }
+            guard let component = entry.components.first(where: { $0.amount < 0 }) else { return [.unknown] }
+            if case .unknown = Self.value(for: component, snapshot: snapshot, nutrient: nutrient, lookup: lookup) {
+                return []
+            }
+            return [.unknown]
+        }
         // A snapshot states the product's own values once, not once per component, so it is scaled
         // and summed once per entry. Summing it per component would count a two-component product's
         // protein twice.
