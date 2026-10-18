@@ -88,7 +88,7 @@ final class HealthKitReader: BodyActivityReading {
             guard
                 let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }),
                 let hkUnit = Self.healthKitUnit(for: mapping.unit)
-            else { continue }
+            else { return nil }
             let found: [HKQuantitySample]
             do {
                 found = try await HKSampleQueryDescriptor(
