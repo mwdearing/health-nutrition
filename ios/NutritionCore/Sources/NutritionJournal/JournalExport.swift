@@ -64,7 +64,10 @@ public struct JournalExportComponent: Sendable, Hashable, Codable {
         try encodeNullable(amount, forKey: .amount, in: &container)
         try container.encode(unit, forKey: .unit)
         try container.encode(valueState, forKey: .valueState)
-        try encodeNullable(hydrationPercent, forKey: .hydrationPercent, in: &container)
+        // The share is a version 7 field, so a document written as an older version leaves it out, as that version does.
+        if (encoder.userInfo[exportSchemaVersionKey] as? Int ?? JournalExport.currentSchemaVersion) >= 7 {
+            try encodeNullable(hydrationPercent, forKey: .hydrationPercent, in: &container)
+        }
     }
 }
 
