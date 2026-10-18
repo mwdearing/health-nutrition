@@ -1,4 +1,6 @@
 import Foundation
+import NutritionDomain
+import NutritionJournal
 import NutritionUI
 import XCTest
 
@@ -73,5 +75,36 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure(), watch: nil)
         publisher.start(today: today, isErasing: { true })
         XCTAssertNil(store.read(), "the launch-time publish also waits out an erase")
+    }
+
+    // MARK: Partial days
+
+    private func line(
+        _ amount: NutrientValue, isPartial: Bool = false, knownSum: NutrientValue? = nil
+    ) -> NutrientProgressLine {
+        NutrientProgressLine(
+            nutrient: "protein", amount: amount, goal: nil, isPartial: isPartial, knownSum: knownSum)
+    }
+
+    func testAPartialDayPublishesTheKnownSumAndSaysItIsPartial() {
+        let partial = line(.unknown, isPartial: true, knownSum: .known(23, .g))
+        let figure = WidgetSnapshotPublisher.figure(partial, in: .g)
+        XCTAssertEqual(figure.value, 23)
+        XCTAssertTrue(figure.isPartial)
+    }
+
+    func testAWholeDayPublishesItsTotalAsWhole() {
+        let figure = WidgetSnapshotPublisher.figure(line(.known(40, .g)), in: .g)
+        XCTAssertEqual(figure.value, 40)
+        XCTAssertFalse(figure.isPartial)
+    }
+
+    func testAnUnknownFigureIsNilNeverZero() {
+        XCTAssertNil(WidgetSnapshotPublisher.figure(line(.unknown), in: .g).value)
+        XCTAssertNil(WidgetSnapshotPublisher.figure(nil, in: .g).value)
+        // A partial flag with no known sum behind it shows what the whole-day figure is: unknown.
+        let nothingKnown = WidgetSnapshotPublisher.figure(line(.unknown, isPartial: true), in: .g)
+        XCTAssertNil(nothingKnown.value)
+        XCTAssertFalse(nothingKnown.isPartial)
     }
 }

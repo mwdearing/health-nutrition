@@ -44,7 +44,8 @@ struct WatchTodayWidgetView: View {
     let entry: WatchTodayEntry
 
     private var snapshot: WidgetSnapshot? { entry.snapshot }
-    private var kcal: String { WidgetFigure.wholeNumber(snapshot?.energyKcal) ?? "—" }
+    private var energyPartial: Bool { snapshot?.isPartial("energy") == true }
+    private var kcal: String { WidgetFigure.calories(snapshot?.energyKcal, partial: energyPartial) }
 
     var body: some View {
         switch family {
@@ -55,11 +56,11 @@ struct WatchTodayWidgetView: View {
                 Text(kcal)
             }
             .gaugeStyle(.accessoryCircularCapacity)
-            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
+            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
             .privacySensitive()
         case .accessoryCorner:
             Text(kcal)
-                .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
+                .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial))
                 .widgetLabel {
                     Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "fork.knife") }
                 }
@@ -67,7 +68,7 @@ struct WatchTodayWidgetView: View {
         case .accessoryInline:
             Text(snapshot?.hasEntries == false ? "Nothing logged today" : kcal)
                 .accessibilityLabel(
-                    snapshot?.hasEntries == false ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal)
+                    snapshot?.hasEntries == false ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: energyPartial)
                 )
                 .privacySensitive()
         default:
@@ -79,7 +80,7 @@ struct WatchTodayWidgetView: View {
                     Text("\(kcal) · \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water")
                         .privacySensitive()
                     Text(
-                        "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"
+                        "P \(WidgetFigure.number(snapshot?.proteinGrams, partial: snapshot?.isPartial("protein") == true)) · C \(WidgetFigure.number(snapshot?.carbohydrateGrams, partial: snapshot?.isPartial("carbohydrate") == true)) · F \(WidgetFigure.number(snapshot?.fatGrams, partial: snapshot?.isPartial("fat") == true)) g"
                     ).font(.footnote).privacySensitive()
                 }
             }

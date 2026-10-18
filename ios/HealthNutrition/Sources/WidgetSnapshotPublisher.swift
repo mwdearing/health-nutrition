@@ -96,21 +96,39 @@ final class WidgetSnapshotPublisher {
     }
 
     static func snapshot(from today: TodayViewModel, now: Date) -> WidgetSnapshot {
+        var partial: [String] = []
+        // `shownAmount` is the known sum on a day where some entries have no value, the whole-day figure otherwise;
+        // a figure that is only the known part is listed so the widget can say so.
         func total(_ key: String, in unit: MeasureUnit) -> Double? {
-            guard let line = today.progress.first(where: { $0.nutrient == key }),
-                case .known(let value, let stored) = line.amount
-            else { return nil }
-            return WidgetSnapshotUnits.value(Quantity(value: value, unit: stored), in: unit)
+            let figure = Self.figure(today.progress.first { $0.nutrient == key }, in: unit)
+            if figure.isPartial { partial.append(key) }
+            return figure.value
         }
         let energyGoal = today.progress.first { $0.nutrient == "energy" }?.goal.flatMap {
             WidgetSnapshotUnits.value(Quantity(value: $0.target, unit: $0.unit), in: .kcal)
         }
+        let energy = total("energy", in: .kcal)
+        let protein = total("protein", in: .g)
+        let carbohydrate = total("carbohydrate", in: .g)
+        let fat = total("fat", in: .g)
         return WidgetSnapshot(
-            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: total("energy", in: .kcal),
-            energyGoalKcal: energyGoal, proteinGrams: total("protein", in: .g),
-            carbohydrateGrams: total("carbohydrate", in: .g), fatGrams: total("fat", in: .g),
+            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: energy,
+            energyGoalKcal: energyGoal, proteinGrams: protein,
+            carbohydrateGrams: carbohydrate, fatGrams: fat,
             waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
-            usUnits: today.unitSystem == .usCustomary)
+            usUnits: today.unitSystem == .usCustomary, partialFigures: partial.isEmpty ? nil : partial)
+    }
+}
+
+extension WidgetSnapshotPublisher {
+    /// One line's figure for the snapshot: the shown amount (the known sum on a partial day) in the snapshot's unit,
+    /// and whether it is only the known part. A figure that is unknown, or cannot be converted, is nil and never
+    /// counted as zero.
+    static func figure(_ line: NutrientProgressLine?, in unit: MeasureUnit) -> (value: Double?, isPartial: Bool) {
+        guard let line, case .known(let value, let stored) = line.shownAmount,
+            let converted = WidgetSnapshotUnits.value(Quantity(value: value, unit: stored), in: unit)
+        else { return (nil, false) }
+        return (converted, line.isPartial)
     }
 }
 
