@@ -1082,6 +1082,20 @@ final class NutritionFactsParserTests: XCTestCase {
                        "each row stays its own extra, none is read as a named nutrient")
     }
 
+    /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
+    func testEPAAndDHAStandaloneRowsSurvive() throws {
+        let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["EPA", "DHA"])
+    }
+
+    /// A one-word product name that begins with a nutrient is its own compound, not that nutrient.
+    func testOneWordProductAfterSingleWordNutrientStaysACompound() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Iron pro 10mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Iron pro"])
+    }
+
     /// A name that begins with a nutrient but is a product's own name stays a compound, not that nutrient.
     func testIronSupportBlendIsACompoundNotIron() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Iron Support Blend 10mg"])
