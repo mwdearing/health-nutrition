@@ -49,6 +49,20 @@ final class JournalDeleteUndoTests: XCTestCase {
         XCTAssertTrue(current.allSatisfy { $0.desiredAction == .upsert })
     }
 
+    func testFailedDeleteLeavesNoGapInTheCommitSequence() throws {
+        let store = try makeStore()
+        try createIntake(store)
+        let other = "0b6f7d3e-5a1c-4c52-9a2e-3f1d8c7b6a12"
+        try store.create(
+            Intake(id: other, category: "food", occurredAt: when, timeZoneIdentifier: "UTC", meal: "lunch"),
+            components: [oats()], product: nil, now: when)
+        store.failNextSaveForTesting = true
+        XCTAssertThrowsError(try store.deleteSequenced(intakeID: intakeID, now: Date()))
+        let first = try store.deleteSequenced(intakeID: other, now: Date())
+        XCTAssertEqual(first, 1)
+        XCTAssertEqual(store.deleteSequence, 1)
+    }
+
     func testNoDeleteIsOfferedBeforeWindowEnds() throws {
         let store = try makeStore()
         try createIntake(store)

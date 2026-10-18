@@ -484,6 +484,10 @@ public protocol JournalStore: AnyObject, Sendable {
     func delete(intakeID: String, now: Date) throws
     /// As `delete`, and returns the delete's place in the store's commit order.
     func deleteSequenced(intakeID: String, now: Date) throws -> UInt64
+    /// As `create`, and returns the write's place in the store's commit order.
+    func createSequenced(
+        _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws -> (IntakeRevision, UInt64)
     /// The place of the latest delete in the store's commit order.
     var deleteSequence: UInt64 { get }
     /// Takes back a delete inside the Undo window: withdraws its queued delete operations and restores the
@@ -514,6 +518,12 @@ extension JournalStore {
     }
 
     public var deleteSequence: UInt64 { 0 }
+
+    public func createSequenced(
+        _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws -> (IntakeRevision, UInt64) {
+        (try create(intake, components: components, product: product, now: now), 0)
+    }
 
     /// Stores without undo support refuse it rather than restoring an entry in the app alone.
     public func undoDelete(intakeID: String) throws {

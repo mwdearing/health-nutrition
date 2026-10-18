@@ -452,14 +452,13 @@ public final class TodayViewModel: ObservableObject {
             id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: timeZoneIdentifier)
         let component = IntakeComponent(componentID: "water", name: "Water", amount: milliliters, unit: .mL)
         do {
-            try store.create(intake, components: [component], product: nil, now: now)
+            // The place of the write in commit order is taken inside its own commit.
+            offerSequence = try store.createSequenced(intake, components: [component], product: nil, now: now).1
         } catch {
             errorMessage = "Could not save the water."
             return nil
         }
         let handle = UndoHandle(intakeID: intake.id, expiresAt: now.addingTimeInterval(Self.undoWindow))
-        // A water offer is newer than every delete committed so far.
-        offerSequence = store.deleteSequence
         undo = handle
         load(now: now)
         return handle
