@@ -246,19 +246,19 @@ public struct JournalView: View {
                 toggleRow(section)
             }
             if model.isExpanded(section) {
-                // The meals sit in one card under the day's header, so they read as that day's entries.
-                Card {
-                    VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                        ForEach(section.mealGroups) { group in
+                // Each meal is its own row in its own card, so the List still lays out and recycles rows per meal.
+                ForEach(section.mealGroups) { group in
+                    Card {
+                        VStack(alignment: .leading, spacing: DesignSpacing.m) {
                             mealHeader(group, in: section)
                             ForEach(group.rows) { row in
                                 entryButton(row)
                             }
                         }
                     }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(TokenColors.background)
                 }
-                .listRowSeparator(.hidden)
-                .listRowBackground(TokenColors.background)
             }
         }
         .id(section.id)
