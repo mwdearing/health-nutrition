@@ -1091,6 +1091,22 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.unnamedRowCount, 0)
     }
 
+    /// An uppercase row whose letters end a nutrient name is a row: the fragment rule needs a lowercase start.
+    func testUppercaseMINDIsAnExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "MIND 200mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["MIND"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// The OCR digit and letter swaps the fragment rule reads (1 as l, 0 as o, rn as m) still make a fragment.
+    func testOCRSwapFragmentsAreUnread() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "m1nD 0mcg", "rninD 0mcg", "pr0tein 5g"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 3)
+    }
+
     /// A lowercase head of a nutrient name is a product or abbreviation, not an OCR tail: "mag" and "pro" stay extras.
     func testLowercaseHeadsOfNutrientNamesStayRows() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 capsule", "mag 100mg", "pro 5g"])
