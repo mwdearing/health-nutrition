@@ -369,3 +369,14 @@ def test_the_failure_categories_name_the_watch_and_registration_problems_without
     for line in text.splitlines():
         if "category:" in line and line.strip().startswith("errors |"):
             assert "$" not in line.split("&&", 1)[1]
+
+
+def test_every_run_script_parses_as_shell() -> None:
+    """A stray quote in a failure category once made the whole step unparseable, which fails every run, successful
+    builds included, so each script is parsed (not run) here."""
+    import subprocess
+
+    for step in _steps():
+        if "run" in step:
+            result = subprocess.run(["bash", "-n"], input=str(step["run"]), text=True, capture_output=True, check=False)
+            assert result.returncode == 0, f"{step.get('name')}: {result.stderr[:200]}"

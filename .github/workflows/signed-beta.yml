@@ -174,7 +174,7 @@ jobs:
               errors | grep -qiE 'info.plist|infoplist' && echo "::error::  category: an Info.plist problem"
               errors | grep -qiE 'swift compiler|compileswift|swiftc|no such module|cannot find' && echo "::error::  category: a Swift compile error"
               errors | grep -qiE 'unable to find a destination|scheme' && echo "::error::  category: a scheme or destination problem"
-              errors | grep -qiE 'no such file|could not find|couldn't find' && echo "::error::  category: a missing file"
+              errors | grep -qiE 'no such file|could not find|couldn.t find' && echo "::error::  category: a missing file"
               errors | grep -qiE 'error:' && echo "::error::  category: a compile or build error"
               exit 1
             fi
@@ -350,7 +350,7 @@ jobs:
               errors | grep -qiE 'info.plist|infoplist' && echo "::error::  category: an Info.plist problem"
               errors | grep -qiE 'swift compiler|compileswift|swiftc|no such module|cannot find' && echo "::error::  category: a Swift compile error"
               errors | grep -qiE 'unable to find a destination|scheme' && echo "::error::  category: a scheme or destination problem"
-              errors | grep -qiE 'no such file|could not find|couldn't find' && echo "::error::  category: a missing file"
+              errors | grep -qiE 'no such file|could not find|couldn.t find' && echo "::error::  category: a missing file"
               errors | grep -qiE 'error:' && echo "::error::  category: an export or upload error"
               exit 1
             fi
