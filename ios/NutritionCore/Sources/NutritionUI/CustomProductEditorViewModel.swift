@@ -72,7 +72,10 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         var choices = CustomProductEditorViewModel.nutrientChoices.filter { $0.key == fact.key || !taken.contains($0.key) }
         let isKnown = fact.key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix)
             || CustomProductEditorViewModel.nutrientChoices.contains { $0.key == fact.key }
-        if !isKnown { choices.append(NutrientKeyChoice(key: CustomProductEditorViewModel.savedTag(fact.key), name: "\(fact.displayName) (saved)")) }
+        if !isKnown {
+            let label = fact.displayName.isEmpty ? "Saved fact" : "\(fact.displayName) (saved)"
+            choices.append(NutrientKeyChoice(key: CustomProductEditorViewModel.savedTag(fact.key), name: label))
+        }
         choices.append(NutrientKeyChoice(key: CustomProductEditorViewModel.otherIngredientTag, name: "Other ingredient…"))
         return choices
     }
@@ -92,6 +95,11 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         if tag == CustomProductEditorViewModel.otherIngredientTag {
             if !facts[index].key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix) {
                 facts[index].key = CustomProductEditorViewModel.ingredientPrefix
+                // A standard name left over from a nutrient pick is not the ingredient's name; clear it for the user to type.
+                let current = facts[index].displayName
+                if CustomProductEditorViewModel.nutrientChoices.contains(where: { $0.name == current }) {
+                    facts[index].displayName = ""
+                }
             }
             return
         }
