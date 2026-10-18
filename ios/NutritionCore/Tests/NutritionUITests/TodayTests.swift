@@ -123,6 +123,24 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(string: "330.5")!)
     }
 
+    func testRapidDeletesKeepUndoOnTheSecondAndRestoreOnlyIt() throws {
+        let store = try makeStore()
+        let first = try addFood(store, name: "Oats", id: "oats", at: now)
+        let second = try addFood(store, name: "Eggs", id: "eggs", at: now)
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertTrue(model.deleteEntry(intakeID: first, now: now))
+        XCTAssertTrue(model.deleteEntry(intakeID: second, now: now))
+        // The commit hooks arrive late, after both deletes have been made.
+        model.deleteCommitted(intakeID: first)
+        model.deleteCommitted(intakeID: second)
+        XCTAssertEqual(model.undo?.intakeID, second)
+        XCTAssertTrue(model.undoLastQuickAdd(now: now))
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [second])
+        // The first delete is still queued, so it reaches Health and the relay once its window ends.
+        XCTAssertEqual(try store.pendingDeleteRowCountForTesting(intakeID: first), 2)
+    }
+
     func testQuickAddWaterInvalidAmountsWriteNothing() throws {
         let store = try makeStore()
         let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")

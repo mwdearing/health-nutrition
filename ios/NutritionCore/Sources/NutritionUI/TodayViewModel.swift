@@ -504,7 +504,7 @@ public final class TodayViewModel: ObservableObject {
         }
         do {
             if handle.isDelete {
-                try store.undoDelete(intakeID: handle.intakeID, now: now)
+                try store.undoDelete(intakeID: handle.intakeID)
             } else {
                 try store.delete(intakeID: handle.intakeID, now: now)
             }
@@ -517,19 +517,27 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
+    /// Deletes made from Today, whose commit hooks have not yet arrived.
+    private var ownDeleteIDs: Set<String> = []
+
     /// A delete committed anywhere in the app. Undo is offered for the most recent change only, so an older
     /// offer here, a delete or a quick-added water, is dropped when another entry is deleted.
     public func deleteCommitted(intakeID: String) {
-        guard let undo, undo.intakeID != intakeID else { return }
-        self.undo = nil
+        // A delete made here has already set its offer, and a newer one may own it now: leave it alone.
+        if ownDeleteIDs.remove(intakeID) != nil { return }
+        // A delete made elsewhere is newer than any offer here, so the offer is dropped.
+        undo = nil
     }
 
     /// Deletes an entry from Today, offering Undo for the window. Nothing reaches Apple Health until it passes.
     @discardableResult
     public func deleteEntry(intakeID: String, now: Date) -> Bool {
+        // Recorded before the delete, because its commit hook may run before this method returns.
+        ownDeleteIDs.insert(intakeID)
         do {
             try store.delete(intakeID: intakeID, now: now)
         } catch {
+            ownDeleteIDs.remove(intakeID)
             errorMessage = "Could not delete the entry."
             return false
         }

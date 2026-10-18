@@ -1451,7 +1451,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             })).count
     }
 
-    public func undoDelete(intakeID: String, now: Date) throws {
+    public func undoDelete(intakeID: String) throws {
         try commit { context in
             guard let record = try Self.intakeRecord(intakeID, in: context) else {
                 throw JournalError.unknownIntake(intakeID)

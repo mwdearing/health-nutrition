@@ -38,7 +38,7 @@ final class JournalDeleteUndoTests: XCTestCase {
         XCTAssertTrue(try store.activeIntakes().isEmpty)
         XCTAssertEqual(try store.pendingDeleteRowCountForTesting(intakeID: intakeID), 2)
 
-        try store.undoDelete(intakeID: intakeID, now: deletedAt.addingTimeInterval(1))
+        try store.undoDelete(intakeID: intakeID)
 
         XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
         // The raw rows, not pendingOutbox: a held delete is hidden from pendingOutbox even when it is not withdrawn.
@@ -62,7 +62,7 @@ final class JournalDeleteUndoTests: XCTestCase {
         let deletedAt = Date().addingTimeInterval(-11)
         try store.delete(intakeID: intakeID, now: deletedAt)
         XCTAssertEqual(Set(try pendingDeletes(store).map(\.destination)), [.healthKit, .relay])
-        XCTAssertThrowsError(try store.undoDelete(intakeID: intakeID, now: Date())) {
+        XCTAssertThrowsError(try store.undoDelete(intakeID: intakeID)) {
             XCTAssertEqual($0 as? JournalError, .undoUnavailable(self.intakeID))
         }
         XCTAssertTrue(try store.activeIntakes().isEmpty)
@@ -76,7 +76,7 @@ final class JournalDeleteUndoTests: XCTestCase {
         for operation in try pendingDeletes(store) {
             try store.acknowledge(operationID: operation.operationID, at: Date())
         }
-        XCTAssertThrowsError(try store.undoDelete(intakeID: intakeID, now: deletedAt.addingTimeInterval(1))) {
+        XCTAssertThrowsError(try store.undoDelete(intakeID: intakeID)) {
             XCTAssertEqual($0 as? JournalError, .undoUnavailable(self.intakeID))
         }
     }
