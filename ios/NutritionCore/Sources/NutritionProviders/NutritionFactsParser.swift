@@ -970,15 +970,31 @@ public enum NutritionFactsParser {
         let words = name.split(separator: " ")
         guard words.count == 1, let word = words.first else { return false }
         if qualifiers.contains(where: { editDistance(word.lowercased(), $0) <= 2 }) { return true }
-        let letters = word.filter(\.isLetter)
-        // A lowercase word with a digit ("k2", "b12") is a real token, not a fragment.
-        if !letters.isEmpty, letters.count <= 3, word.allSatisfy({ $0.isLetter && $0.isLowercase }),
-           !shortRowWords.contains(word.lowercased())
-        {
-            return true
+        // A fragment is a piece of a known nutrient name, at its start or its end, with the common OCR swaps
+        // read as one letter: "lum" ends "calcium", "minD" ends "vitamin d". Any other short word is a row.
+        let piece = ocrSkeleton(word)
+        guard piece.count >= 3, !shortRowWords.contains(word.lowercased()) else { return false }
+        return nutrientSkeletons.contains { $0.hasPrefix(piece) || $0.hasSuffix(piece) }
+    }
+
+    /// The lowercased letters of a word, with the common OCR swaps read as one letter: 1 and i as l, 0 as o,
+    /// and rn as m. Digits other than 0 and 1 are dropped, so "k2" reads as "k".
+    private static func ocrSkeleton(_ text: String) -> String {
+        let letters = text.lowercased().compactMap { character -> Character? in
+            switch character {
+            case "1", "i": return "l"
+            case "0": return "o"
+            case _ where character.isLetter: return character
+            default: return nil
+            }
         }
-        // A fragment starts lowercase and ends in a capital ("minD"); "IgG" and "CoQ" start capitalised.
-        return letters.count == 4 && word.first?.isLowercase == true && word.last?.isUppercase == true
+        return String(letters).replacingOccurrences(of: "rn", with: "m")
+    }
+
+    /// Every alias of every recognized nutrient row, as an OCR skeleton with its spaces removed.
+    private static let nutrientSkeletons: [String] = rows.flatMap(\.aliases).map {
+        ocrSkeleton($0.filter { $0 != " " })
+    }
     }
 
     /// The Levenshtein distance between two words, used to recognize a misread panel word.
@@ -1172,7 +1188,7 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
-            } else if isOCRFragment(row.name)
+            } else if (keepsUnrecognizedRows && isOCRFragment(row.name))
                 || (!keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name))
             {
                 // A row that carries an amount but no name this panel's kind recognizes is unread, not

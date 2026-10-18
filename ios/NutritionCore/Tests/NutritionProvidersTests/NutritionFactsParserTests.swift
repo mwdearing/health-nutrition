@@ -1082,6 +1082,41 @@ final class NutritionFactsParserTests: XCTestCase {
                        "each row stays its own extra, none is read as a named nutrient")
     }
 
+    /// Short real words are rows, not fragments: only a piece of a known nutrient name is noise.
+    func testShortSupplementWordsThatAreNotNutrientPiecesSurvive() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "oat 100mg", "gum 50mg", "bcAA 200mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["oat", "gum", "bcAA"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A food panel's output is unchanged by the supplement-only fragment rule: its misread rows stay unread.
+    func testFoodPanelOutputIsUnchangedByFragmentRule() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "Sugar Alcohol 3g", "Inchides 0g", "minD 0mcg", "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Sugar Alcohol"])
+        XCTAssertEqual(panel.unnamedRowCount, 3)
+    }
+
+    /// "Added Sugars pro 5g" reads its misread word as noise on the Added Sugars field.
+    func testAddedSugarsProductWordLandsOnAddedSugars() throws {
+        let panel = parse(["Total Sugars 12g", "Added Sugars pro 5g"])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("5"))
+    }
+
+    /// "Added Sugars oil" is a product of its own: a short word from the list is never absorbed.
+    func testAddedSugarsOilIsNotAddedSugars() throws {
+        let panel = parse(["Total Sugars 12g", "Added Sugars oil 5g"])
+
+        if case .known(let value, _) = panel.value(for: .addedSugars), value == dec("5") {
+            XCTFail("Added Sugars oil is not Added Sugars")
+        }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Added Sugars oil"])
+    }
+
     /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
     func testEPAAndDHAStandaloneRowsSurvive() throws {
         let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
