@@ -36,6 +36,8 @@ public enum JournalError: Error, Sendable, Equatable {
     case unknownIntake(String)
     case intakeAlreadyExists(String)
     case intakeDeleted(String)
+    /// Undo of a delete is refused: the window has passed, or a delete already reached a destination.
+    case undoUnavailable(String)
     case snapshotConflict(String)
     case unknownOperation(String)
     case corruptRecord(String)
@@ -480,6 +482,9 @@ public protocol JournalStore: AnyObject, Sendable {
     ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws
+    /// Takes back a delete inside the Undo window: withdraws its queued delete operations and restores the
+    /// intake and its projections as they were. Refused once a delete has reached a destination.
+    func undoDelete(intakeID: String, now: Date) throws
 
     func activeIntakes() throws -> [Intake]
     func revisions(of intakeID: String) throws -> [IntakeRevision]
@@ -492,7 +497,17 @@ public protocol JournalStore: AnyObject, Sendable {
     func close()
 }
 
+/// How long a delete can still be taken back. A delete reaches Apple Health and the relay only after it.
+public enum JournalUndo {
+    public static let deleteWindow: TimeInterval = 10
+}
+
 extension JournalStore {
+    /// Stores without undo support refuse it rather than restoring an entry in the app alone.
+    public func undoDelete(intakeID: String, now: Date) throws {
+        throw JournalError.undoUnavailable(intakeID)
+    }
+
     /// Corrects the amounts only and leaves the entry's time as it was.
     @discardableResult
     public func edit(

@@ -1432,6 +1432,41 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         }
     }
 
+    public func undoDelete(intakeID: String, now: Date) throws {
+        try commit { context in
+            guard let record = try Self.intakeRecord(intakeID, in: context) else {
+                throw JournalError.unknownIntake(intakeID)
+            }
+            guard record.lifecycleRaw == IntakeLifecycle.deleted.rawValue else {
+                throw JournalError.undoUnavailable(intakeID)
+            }
+            let deleteKind = OutboxKind.delete.rawValue
+            let deleteRows = try context.fetch(FetchDescriptor<OutboxRecord>(
+                predicate: #Predicate<OutboxRecord> { $0.intakeID == intakeID && $0.kindRaw == deleteKind }))
+            // Nothing is withdrawn once a delete is acknowledged, and not after its Undo window.
+            if let deletedAt = deleteRows.first?.deletedAt {
+                let stillOpen = now < deletedAt.addingTimeInterval(JournalUndo.deleteWindow)
+                guard stillOpen, deleteRows.allSatisfy({ $0.acknowledgedAt == nil }) else {
+                    throw JournalError.undoUnavailable(intakeID)
+                }
+            }
+            for row in deleteRows { context.delete(row) }
+            record.lifecycleRaw = IntakeLifecycle.active.rawValue
+            // The delete superseded the projections of the current revision and queued its own; put the
+            // first back and drop the second.
+            let revision = record.currentRevision
+            let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
+                predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+            for row in projections where row.revision == revision {
+                if row.actionRaw == deleteKind {
+                    context.delete(row)
+                } else {
+                    row.isCurrent = true
+                }
+            }
+        }
+    }
+
     // MARK: Restore
 
     /// Writes the whole plan in one save: the product snapshots, every intake with all of its revisions,
@@ -2226,9 +2261,14 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Operations not yet acknowledged, oldest revision first, upsert before delete within a revision.
     public func pendingOutbox() throws -> [OutboxOperation] {
+        let now = Date()
         let context = ModelContext(try openContainer())
+        // A delete waits out its Undo window, so an undone delete never reaches Apple Health or the relay.
+        let holdCutoff = now.addingTimeInterval(-JournalUndo.deleteWindow)
         let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
-            predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil }))
+            predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil })).filter { row in
+            row.kindRaw != OutboxKind.delete.rawValue || (row.deletedAt ?? .distantPast) <= holdCutoff
+        }
         return try rows.map { row in
             guard let kind = OutboxKind(rawValue: row.kindRaw),
                   let destination = JournalDestination(rawValue: row.destinationRaw)

@@ -244,6 +244,13 @@ public struct TodayView: View {
                 actionTitle: AddIntakeAction.title,
                 action: onAddIntake)
         } else {
+            if model.undo?.isDelete == true, model.isUndoAvailable(now: now()) {
+                QuietCapsule("Undo delete") {
+                    model.undoLastQuickAdd(now: now())
+                }
+                .accessibilityLabel("Undo delete")
+                .accessibilityValue("Available for 10 seconds after deleting")
+            }
             ForEach(model.mealSections) { section in
                 mealSection(section)
             }
@@ -291,20 +298,26 @@ public struct TodayView: View {
     /// nothing in them says it is not food; a food carries none.
     @ViewBuilder
     private func entryRow(_ row: TodayRow) -> some View {
-        if let onSelect {
-            Button {
-                onSelect(row.id)
-            } label: {
-                EntryRow(title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(row.accessibilityText)
-            .accessibilityHint("Opens the entry")
-        } else {
-            EntryRow(
-                title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater, showsChevron: false)
-                .accessibilityElement(children: .combine)
+        SwipeToDeleteRow(
+            accessibilityName: "Delete \(row.title)",
+            onDelete: { _ = model.deleteEntry(intakeID: row.id, now: now()) }
+        ) {
+            if let onSelect {
+                Button {
+                    onSelect(row.id)
+                } label: {
+                    EntryRow(title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater)
+                }
+                .buttonStyle(.plain)
                 .accessibilityLabel(row.accessibilityText)
+                .accessibilityHint("Opens the entry")
+            } else {
+                EntryRow(
+                    title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater,
+                    showsChevron: false)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(row.accessibilityText)
+            }
         }
     }
 }
@@ -323,3 +336,47 @@ private struct FirstDayChecklistCard: View {
         }
     }
 }
+
+/// Reveals a Delete button on a leftward swipe. The meal cards are not a List, so `swipeActions` is not
+/// available; VoiceOver gets the same action without the swipe.
+private struct SwipeToDeleteRow<Content: View>: View {
+    let accessibilityName: String
+    let onDelete: () -> Void
+    @ViewBuilder let content: () -> Content
+    @State private var offset: CGFloat = 0
+    @State private var settled: CGFloat = 0
+    private let revealWidth: CGFloat = 84
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(role: .destructive) {
+                withAnimation(.snappy) { offset = 0; settled = 0 }
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.title3)
+                    .frame(width: revealWidth)
+                    .frame(maxHeight: .infinity)
+                    .foregroundStyle(.white)
+                    .background(TokenColors.error, in: RoundedRectangle(cornerRadius: DesignRadius.m))
+            }
+            .accessibilityLabel(accessibilityName)
+            .opacity(offset < 0 ? 1 : 0)
+            content()
+                .offset(x: offset)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            offset = min(0, max(-revealWidth, settled + value.translation.width))
+                        }
+                        .onEnded { _ in
+                            withAnimation(.snappy) {
+                                settled = offset < -revealWidth / 2 ? -revealWidth : 0
+                                offset = settled
+                            }
+                        })
+                .accessibilityAction(named: accessibilityName) { onDelete() }
+        }
+    }
+}
+
