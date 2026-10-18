@@ -1367,4 +1367,27 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertTrue(foodJSON["hydration_percent"] is NSNull)
         XCTAssertEqual(JournalExport.currentSchemaVersion, 7)
     }
+
+    /// A favorite's share is written on its component in the version 7 export, and a favorite saved before
+    /// shares existed writes null, so both read back the way they were saved.
+    func testFavoriteSharesRoundTripThroughTheExport() throws {
+        let favorites = StubFavoritesStore()
+        favorites.items = [
+            FavoriteTemplate(
+                id: "fav-soda-95", displayName: "7up", category: "other",
+                components: [FavoriteComponent(
+                    componentID: "soda", name: "7up", amountText: "200", unitSymbol: "mL",
+                    hydrationPercentText: "95")]),
+            FavoriteTemplate(
+                id: "fav-soda-old", displayName: "Old soda", category: "other",
+                components: [FavoriteComponent(
+                    componentID: "soda", name: "Old soda", amountText: "200", unitSymbol: "mL")]),
+        ]
+        let data = try JournalExporter.encode(try makeExport(store: filledStore(), favorites: favorites))
+
+        let decoded = try JournalExporter.decode(data)
+        let byID = Dictionary(uniqueKeysWithValues: decoded.favorites.map { ($0.id, $0) })
+        XCTAssertEqual(byID["fav-soda-95"]?.components.first?.hydrationPercent, "95")
+        XCTAssertNil(byID["fav-soda-old"]?.components.first?.hydrationPercent)
+    }
 }
