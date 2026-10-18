@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import NutritionUI
 
+@MainActor
 final class JournalArrowTests: XCTestCase {
     private func dayKey(_ date: Date) -> String {
         let formatter = DateFormatter()
