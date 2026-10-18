@@ -914,7 +914,9 @@ public final class AddIntakeViewModel: ObservableObject {
         guard let count = AmountParser.parseTyped(text) else {
             // A cleared field, or a completed zero, clears the amount; a partly typed count ("1.") leaves it.
             let trimmed = text.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || Decimal(string: trimmed, locale: AmountParser.locale) == 0 { amountText = "" }
+            // A trailing point ("0.") is a count still being typed, so it never clears the amount.
+            let isCompletedZero = Decimal(string: trimmed, locale: AmountParser.locale) == 0 && !trimmed.hasSuffix(".")
+            if trimmed.isEmpty || isCompletedZero { amountText = "" }
             return
         }
         amountText = DecimalFormatting.text(count * display.quantity)
