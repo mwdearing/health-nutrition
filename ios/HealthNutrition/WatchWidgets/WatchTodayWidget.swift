@@ -50,20 +50,25 @@ struct WatchTodayWidgetView: View {
         switch family {
         case .accessoryCircular:
             Gauge(value: snapshot?.energyFraction ?? 0) {
-                Text("kcal")
+                Image(systemName: "fork.knife")
             } currentValueLabel: {
                 Text(kcal)
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
             .privacySensitive()
         case .accessoryCorner:
             Text(kcal)
+                .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                 .widgetLabel {
-                    Gauge(value: snapshot?.energyFraction ?? 0) { Text("kcal") }
+                    Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "fork.knife") }
                 }
                 .privacySensitive()
         case .accessoryInline:
-            Text(snapshot?.hasEntries == false ? "Nothing logged today" : "\(kcal) kcal")
+            Text(snapshot?.hasEntries == false ? "Nothing logged today" : kcal)
+                .accessibilityLabel(
+                    snapshot?.hasEntries == false ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal)
+                )
                 .privacySensitive()
         default:
             VStack(alignment: .leading) {
@@ -71,7 +76,7 @@ struct WatchTodayWidgetView: View {
                 if snapshot?.hasEntries == false {
                     Text("Nothing logged today").font(.footnote)
                 } else {
-                    Text("\(kcal) kcal · \(WidgetFigure.wholeNumber(snapshot?.waterMilliliters) ?? "—") mL water")
+                    Text("\(kcal) · \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water")
                         .privacySensitive()
                     Text(
                         "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"

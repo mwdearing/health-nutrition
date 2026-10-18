@@ -52,11 +52,12 @@ struct TodayWidgetView: View {
         switch family {
         case .accessoryCircular:
             Gauge(value: snapshot?.energyFraction ?? 0) {
-                Text("kcal")
+                Image(systemName: "fork.knife")
             } currentValueLabel: {
                 Text(WidgetFigure.wholeNumber(snapshot?.energyKcal) ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
             .privacySensitive()
         case .accessoryRectangular:
             VStack(alignment: .leading) {
@@ -64,13 +65,15 @@ struct TodayWidgetView: View {
                 if isEmpty {
                     Text("Nothing logged today")
                 } else {
-                    Text(figure(snapshot?.energyKcal, unit: "kcal"))
-                    Text("Water \(figure(snapshot?.waterMilliliters, unit: "mL"))")
+                    Text(WidgetFigure.calories(snapshot?.energyKcal))
+                        .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
+                    Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
                 }
             }
             .privacySensitive()
         case .accessoryInline:
-            Text(isEmpty ? "Nothing logged today" : figure(snapshot?.energyKcal, unit: "kcal"))
+            Text(isEmpty ? "Nothing logged today" : WidgetFigure.calories(snapshot?.energyKcal))
+                .accessibilityLabel(isEmpty ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                 .privacySensitive()
         case .systemMedium:
             HStack(alignment: .top, spacing: 16) {
@@ -80,7 +83,7 @@ struct TodayWidgetView: View {
                         Text("Protein \(figure(snapshot?.proteinGrams, unit: "g"))")
                         Text("Carbohydrate \(figure(snapshot?.carbohydrateGrams, unit: "g"))")
                         Text("Fat \(figure(snapshot?.fatGrams, unit: "g"))")
-                        Text("Water \(figure(snapshot?.waterMilliliters, unit: "mL"))")
+                        Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
                     }
                     .font(.footnote)
                     .privacySensitive()
@@ -97,7 +100,8 @@ struct TodayWidgetView: View {
             if isEmpty {
                 Text("Nothing logged today").font(.footnote)
             } else {
-                Text(figure(snapshot?.energyKcal, unit: "kcal"))
+                Text(WidgetFigure.calories(snapshot?.energyKcal))
+                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                     .font(.title2.weight(.semibold))
                     .privacySensitive()
                 if let fraction = snapshot?.energyFraction {
