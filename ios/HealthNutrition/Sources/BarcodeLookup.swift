@@ -69,14 +69,14 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
         // A text naming neither gives no unit, so the amount is not opened on it.
         let lowered = trimmedText?.lowercased() ?? ""
         let unit: MeasureUnit?
-        if quantity == nil {
+        let names = (
+            volume: lowered.contains("ml"),
+            mass: lowered.range(of: #"\d\s*g\b"#, options: .regularExpression) != nil)
+        if quantity == nil || names.volume == names.mass {
+            // Neither unit, or both ("1 cup (240 ml) (30 g)"), leaves the unit unknown.
             unit = nil
-        } else if lowered.contains("ml") {
-            unit = .mL
-        } else if lowered.range(of: #"\d\s*g\b"#, options: .regularExpression) != nil {
-            unit = .g
         } else {
-            unit = nil
+            unit = names.volume ? .mL : .g
         }
         return ServingDefinition(quantity: quantity, unit: unit, text: trimmedText)
     }
