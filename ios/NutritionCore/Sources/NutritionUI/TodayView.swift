@@ -236,6 +236,14 @@ public struct TodayView: View {
 
     @ViewBuilder
     private var entries: some View {
+        // Above the empty state, so deleting the last entry still offers Undo.
+        if model.undo?.isDelete == true, model.isUndoAvailable(now: now()) {
+            QuietCapsule("Undo delete") {
+                model.undoLastQuickAdd(now: now())
+            }
+            .accessibilityLabel("Undo delete")
+            .accessibilityValue("Available for 10 seconds after deleting")
+        }
         if model.rows.isEmpty {
             EmptyState(
                 title: "Nothing logged today",
@@ -244,13 +252,6 @@ public struct TodayView: View {
                 actionTitle: AddIntakeAction.title,
                 action: onAddIntake)
         } else {
-            if model.undo?.isDelete == true, model.isUndoAvailable(now: now()) {
-                QuietCapsule("Undo delete") {
-                    model.undoLastQuickAdd(now: now())
-                }
-                .accessibilityLabel("Undo delete")
-                .accessibilityValue("Available for 10 seconds after deleting")
-            }
             ForEach(model.mealSections) { section in
                 mealSection(section)
             }
