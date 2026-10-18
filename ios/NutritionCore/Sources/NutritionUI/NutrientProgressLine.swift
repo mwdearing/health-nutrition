@@ -143,17 +143,23 @@ public enum NutrientNames {
         guard !nutrient.isEmpty else { return nutrient }
         // A compound key is a slug of the printed name (`creatine-monohydrate`), or a camel-case key such as
         // `transFat`. Both are spelled back out as words: "creatine monohydrate", "Trans fat".
-        var words: [String] = []
+        // Each hyphen piece starts with a capital, as a compound slug always has. A camel-case word inside a
+        // piece is split and read in lower case after the first word: "transFat" is "Trans fat".
+        var out: [String] = []
         for piece in nutrient.split(separator: "-") {
+            var sub: [String] = []
             var word = ""
             for character in piece {
-                if character.isUppercase, !word.isEmpty { words.append(word.lowercased()); word = "" }
+                if character.isUppercase, !word.isEmpty { sub.append(word); word = "" }
                 word.append(character)
             }
-            if !word.isEmpty { words.append(word.lowercased()) }
+            if !word.isEmpty { sub.append(word) }
+            for (index, part) in sub.enumerated() {
+                out.append(index == 0 ? part.prefix(1).uppercased() + part.dropFirst() : part.lowercased())
+            }
         }
-        guard let first = words.first else { return nutrient }
-        return ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst()).joined(separator: " ")
+        guard !out.isEmpty else { return nutrient }
+        return out.joined(separator: " ")
     }
 
     /// The name a nutrient key is shown under. A known nutrient always shows its canonical name, so a label

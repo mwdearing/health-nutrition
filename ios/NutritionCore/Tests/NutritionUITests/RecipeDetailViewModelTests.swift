@@ -15,7 +15,7 @@ final class RecipeDetailViewModelTests: XCTestCase {
 
     func testPerServingRowsAndProvenance() throws {
         let model = RecipeDetailViewModel(version: uiSampleVersion(), journal: try makeJournal())
-        XCTAssertEqual(model.rows.first(where: { $0.id == "energy" })?.text, "215 kcal")
+        XCTAssertEqual(model.rows.first(where: { $0.id == "energy" })?.text, "215 Calories")
         XCTAssertEqual(model.provenanceText, "Calculated from version 1")
     }
 
@@ -30,7 +30,7 @@ final class RecipeDetailViewModelTests: XCTestCase {
     func testPortionChangeRecalculatesAndBadPortionShowsError() throws {
         let model = RecipeDetailViewModel(version: uiSampleVersion(), journal: try makeJournal())
         model.portionText = "2"
-        XCTAssertEqual(model.rows.first(where: { $0.id == "energy" })?.text, "430 kcal")
+        XCTAssertEqual(model.rows.first(where: { $0.id == "energy" })?.text, "430 Calories")
         model.portionText = "0"
         XCTAssertTrue(model.rows.isEmpty)
         XCTAssertNotNil(model.errorMessage)
