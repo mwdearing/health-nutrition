@@ -100,6 +100,8 @@ public struct GoalBarModel: Equatable, Identifiable {
         let displayGoal = shown(goal.target, goal.unit)
         let valueText = "\(figure) of \(displayGoal.text)"
         let spoken = "\(label), \(spokenFigure) of \(spokenDisplay(displayGoal))"
+        // On a partial day the spoken text says so too, so a screen reader does not hear a short day.
+        let spokenPartial = note.map { "\(spoken), \($0)" } ?? spoken
         // The comparison is made in the unit the total is stated in, so a target set in another metric
         // unit is compared exactly while still being shown as it was set.
         let comparable: Decimal?
@@ -111,17 +113,17 @@ public struct GoalBarModel: Equatable, Identifiable {
         guard let target = comparable, target > 0 else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: valueText, state: .progress, fraction: nil,
-                goalMarker: nil, accessibilityText: spoken, reason: note)
+                goalMarker: nil, accessibilityText: spokenPartial, reason: note)
         }
         if total > target {
             return GoalBarModel(
                 id: line.id, label: label, valueText: valueText, state: .overGoal, fraction: 1,
-                goalMarker: target / total, accessibilityText: spoken + ", over goal", reason: note)
+                goalMarker: target / total, accessibilityText: spokenPartial + ", over goal", reason: note)
         }
         let fraction = total < 0 ? Decimal(0) : total / target
         return GoalBarModel(
             id: line.id, label: label, valueText: valueText, state: .progress, fraction: fraction,
-            goalMarker: nil, accessibilityText: spoken, reason: note)
+            goalMarker: nil, accessibilityText: spokenPartial, reason: note)
     }
 
     /// The nutrient's name inside a sentence: lower case, except a name that is all capitals.
