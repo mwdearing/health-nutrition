@@ -2,6 +2,7 @@ import AppIntents
 import Foundation
 import NutritionJournal
 import NutritionUI
+import UIKit
 
 /// What logging a saved meal from a shortcut says back, kept apart from the intent so it can be tested.
 enum SavedMealShortcut {
@@ -144,6 +145,10 @@ enum ShortcutMeal: String, AppEnum {
 /// is an ordinary one, written to Apple Health once that is connected. There is no Undo here; the entries can
 /// be deleted in the Diary like any other.
 struct LogSavedMealIntent: AppIntent {
+    /// Running the action needs an unlocked device, as the supplement shortcut does. The meal list and its names are
+    /// held back while locked (SavedMealPickerPolicy and SavedMealQuery); a stored id still resolves and then
+    /// reaches this requirement, so the system asks for the unlock before anything is read or written.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
     static let title: LocalizedStringResource = "Log a saved meal"
     static let description = IntentDescription("Adds every item of one of your saved meals to today's diary, as new entries.")
     static let openAppWhenRun = true
