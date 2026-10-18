@@ -975,9 +975,12 @@ public enum NutritionFactsParser {
         // A fragment is the end of a known nutrient name, with the common OCR swaps read as one letter: OCR
         // cuts a word from its front, so "lum" ends "calcium" and "minD" ends "vitamin d". A short word that
         // starts a nutrient ("Pro", "Mag") is a product or abbreviation of its own, and stays a row.
+        // A fragment is a word split mid-way, so it starts lowercase; a real ingredient starts with a capital
+        // ("Mind", "Hydrate", "MIND" stay rows).
+        guard word.first?.isLowercase == true else { return false }
         let piece = ocrSkeleton(String(word))
         guard piece.count >= 3, !shortRowWords.contains(word.lowercased()) else { return false }
-        return nutrientSkeletons.contains { $0.hasSuffix(piece) }
+        return nutrientSkeletons.contains { $0.hasPrefix(piece) || $0.hasSuffix(piece) }
     }
 
     /// The lowercased letters of a word, with the common OCR swaps read as one letter: 1 and i as l, 0 as o,
