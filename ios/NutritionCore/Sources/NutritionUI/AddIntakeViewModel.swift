@@ -959,11 +959,22 @@ public final class AddIntakeViewModel: ObservableObject {
         let isZero = Decimal(
             string: AmountParser.normalizedTyped(trimmed, decimalSeparator: countDecimalSeparator),
             locale: AmountParser.locale) == 0
-        guard isZero else { return }
+        if isZero {
+            isSettingServings = true
+            defer { isSettingServings = false }
+            amountText = ""
+            amountFromServings = false
+            return
+        }
+        // A draft that still ends in a separator ("1.", "3,") settles to the number it spells when the edit commits.
+        let settled = trimmed.hasSuffix(".") || trimmed.hasSuffix(",") ? String(trimmed.dropLast()) : trimmed
+        guard let count = AmountParser.parseTyped(settled, decimalSeparator: countDecimalSeparator),
+              let display = servingInDisplayUnit else { return }
         isSettingServings = true
         defer { isSettingServings = false }
-        amountText = ""
-        amountFromServings = false
+        amountText = DecimalFormatting.text(count * display.quantity)
+        amountFromServings = true
+        unit = display.unit
     }
 
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a

@@ -199,4 +199,14 @@ final class AddIntakeServingTests: XCTestCase {
         model.commitServingCount()
         XCTAssertEqual(model.amountText, "")
     }
+
+    func testCommittedTrailingPointCountSettlesTheAmount() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+        model.setServingCount("3")
+        XCTAssertEqual(model.amountText, "6")
+        model.setServingCount("1.")
+        model.commitServingCount()
+        XCTAssertEqual(model.amountText, "2")
+    }
 }
