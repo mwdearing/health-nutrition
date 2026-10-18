@@ -353,3 +353,19 @@ def test_account_settings_without_the_site_key_fail_the_signed_build() -> None:
     run = str(check["run"])
     assert 'fail "the account settings need HCAPTCHA_SITE_KEY' in run
     assert not re.search(r"(echo|printf|cat)[^\n]*HCAPTCHA_SITE_KEY", run)
+
+
+def test_the_failure_categories_name_the_watch_and_registration_problems_without_printing_the_log() -> None:
+    text = WORKFLOW.read_text()
+    for category in (
+        "no provisioning profile was found for a target",
+        "the error mentions a Watch target",
+        "the error mentions an App Group",
+        "Apple's service refused to create or register an identifier",
+        "an embedded-binary problem",
+    ):
+        assert text.count(f"category: {category}") == 2  # the archive step and the export step
+    # Every category is a fixed message chosen by a quiet grep; none of them echoes a matched line.
+    for line in text.splitlines():
+        if "category:" in line and line.strip().startswith("errors |"):
+            assert "$" not in line.split("&&", 1)[1]
