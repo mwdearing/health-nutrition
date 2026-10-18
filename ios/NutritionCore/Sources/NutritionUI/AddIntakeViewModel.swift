@@ -927,8 +927,10 @@ public final class AddIntakeViewModel: ObservableObject {
     /// empty or zero then clears the amount, since nothing is left to finish typing.
     public func commitServingCount() {
         let trimmed = servingCount.trimmingCharacters(in: .whitespaces)
+        // Nothing was counted in the Servings field, so there is nothing to settle and a typed amount stays.
+        guard !trimmed.isEmpty else { return }
         let isZero = Decimal(string: AmountParser.normalizedTyped(trimmed), locale: AmountParser.locale) == 0
-        guard trimmed.isEmpty || isZero else { return }
+        guard isZero else { return }
         isSettingServings = true
         defer { isSettingServings = false }
         amountText = ""
