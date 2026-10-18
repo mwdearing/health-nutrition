@@ -159,4 +159,14 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(bars.first?.reason, "1 entry has no protein value")
         XCTAssertEqual(bars.first?.state, .progress)
     }
+
+    func testBelowThresholdOnlyDayShowsZeroWithTheNote() {
+        let bounded = NutrientProgressLine(
+            nutrient: "fiber", amount: .unknown, goal: nil, isPartial: true, knownSum: .known(Decimal(0), .g),
+            missingCount: 0)
+        let bar = GoalBarModel.make(line: bounded, hasEntries: true, missingCount: 0)
+        XCTAssertEqual(bar.state, .noGoal)
+        XCTAssertEqual(bar.valueText, "0 g")
+        XCTAssertEqual(bar.reason, "Some entries can't be added up for fiber")
+    }
 }
