@@ -58,6 +58,8 @@ struct FoodDatabaseSearch: ProductNameSearching {
     }
 }
 
+extension USDAFoodDataClient: HouseholdPortionLookup {}
+
 /// Adapts the USDA client to the name-search protocol. USDA has no barcodes, so rows carry an empty barcode,
 /// which the draft stores as none.
 struct USDAProductNameSearch: ProductNameSearching {
@@ -95,6 +97,7 @@ struct USDAProductNameSearch: ProductNameSearching {
             basis: .per100g,
             nutrients: food.nutrientsPer100g,
             attribution: ProductAttribution(source: catalogOrigin, text: attributionText, url: attributionURL),
+            sourceID: String(food.fdcId),
             // The default serving is imperial: grams are converted to ounces for display and the amount stays
             // per 100 g internally.
             serving: food.servingGrams.map { ServingDefinition(quantity: $0 / Self.gramsPerOunce, unit: .oz, text: food.servingText) }

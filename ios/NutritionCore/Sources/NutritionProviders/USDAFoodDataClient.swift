@@ -118,6 +118,61 @@ public actor USDAFoodDataClient {
         }
     }
 
+    /// The household measures a USDA food lists with a gram weight: grams for one cup, tablespoon and teaspoon.
+    /// A unit the record does not list is absent, and a failed request yields nothing, so logging never waits on it.
+    public func listedPortions(fdcId: Int) async -> [MeasureUnit: Decimal] {
+        guard let url = URL(string: "https://api.nal.usda.gov/fdc/v1/food/\(fdcId)") else { return [:] }
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "X-Api-Key")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let reply: (Data, HTTPURLResponse)
+        do {
+            reply = try await transport.get(request, maxBytes: Self.maxResponseBytes)
+        } catch {
+            return [:]
+        }
+        let (data, response) = reply
+        guard (200..<300).contains(response.statusCode) else { return [:] }
+        return (try? Self.parsePortions(data)) ?? [:]
+    }
+
+    /// Reads foodPortions into grams per unit. Only cup, tablespoon and teaspoon are kept, the first listing of each.
+    static func parsePortions(_ data: Data) throws -> [MeasureUnit: Decimal] {
+        let reply = try JSONDecoder().decode(DetailReply.self, from: data)
+        var grams: [MeasureUnit: Decimal] = [:]
+        for portion in reply.foodPortions ?? [] {
+            guard let weight = portion.gramWeight, weight > 0 else { continue }
+            let amount = portion.amount ?? 1
+            guard amount > 0 else { continue }
+            let text = (portion.modifier ?? portion.measureUnit?.name ?? "").lowercased()
+            let word = text.split(whereSeparator: { $0 == " " || $0 == "," }).first.map(String.init) ?? ""
+            let unit: MeasureUnit
+            switch word {
+            case "cup", "cups": unit = .cup
+            case "tbsp", "tablespoon", "tablespoons": unit = .tablespoon
+            case "tsp", "teaspoon", "teaspoons": unit = .teaspoon
+            default: continue
+            }
+            if grams[unit] == nil { grams[unit] = weight / amount }
+        }
+        return grams
+    }
+
+    private struct DetailReply: Decodable {
+        let foodPortions: [Portion]?
+    }
+
+    private struct Portion: Decodable {
+        let amount: Decimal?
+        let gramWeight: Decimal?
+        let modifier: String?
+        let measureUnit: MeasureUnitName?
+    }
+
+    private struct MeasureUnitName: Decodable {
+        let name: String?
+    }
+
     /// Retry-After is either delta-seconds or an HTTP date (RFC 9110). Negative, infinite or unreadable
     /// values give nil; a date already past gives zero.
     static func retryAfter(_ header: String?, now: Date = Date()) -> TimeInterval? {
