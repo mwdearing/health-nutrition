@@ -421,7 +421,8 @@ public final class EntryDetailViewModel: ObservableObject {
             }
             // The drafts were typed against the revision this screen loaded. If another write has made a newer one
             // since, saving would overwrite it without the person having seen it, so the save stops here instead.
-            guard intake.currentRevision == currentRevision else {
+            // Revision numbers start at 1, so 0 means no load has happened and there is no screen state to check.
+            guard currentRevision == 0 || intake.currentRevision == currentRevision else {
                 fieldErrors = [:]
                 errorMessage = "This entry changed since you opened it. Reopen it to see the latest amounts."
                 return false
