@@ -294,8 +294,8 @@ public enum DailyTotalsBuilder {
         return values
     }
 
-    /// The known part of a day with some unknown entries: the sum of the known values, only when no value is a
-    /// below-threshold bound (a bound is not an amount) and at least one value is known.
+    /// The known part of a day with some unknown entries: the sum of the known values. A below-threshold entry is
+    /// a bound ("at least 0") and adds nothing; a day whose only known information is bounds is 0 in the unit.
     static func partialKnownSum(_ values: [NutrientValue], nutrient: String) -> NutrientValue? {
         let partialDay = values.contains { value in
             switch value {
@@ -317,11 +317,13 @@ public enum DailyTotalsBuilder {
         // Only bounds (or nothing) are known: the zero needs a unit to be stated in.
         let mapping = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
             ? HealthKitWritePlanner.mapping(for: nutrient) : nil
-        let bound = values.lazy.compactMap { value -> MeasureUnit?? in
-            if case .belowReportingThreshold(let unit) = value { return .some(unit) }
+        // Only a bound makes a zero known: a day with nothing known at all stays unknown.
+        let bounds: [MeasureUnit?] = values.compactMap { value in
+            if case .belowReportingThreshold(let unit) = value { return unit }
             return nil
-        }.first
-        guard let unit = bound.flatMap({ $0 }) ?? mapping?.unit else { return nil }
+        }
+        guard !bounds.isEmpty else { return nil }
+        guard let unit = bounds.compactMap({ $0 }).first ?? mapping?.unit else { return nil }
         return .known(0, unit)
     }
 
