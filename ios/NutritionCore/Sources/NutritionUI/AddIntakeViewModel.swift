@@ -144,11 +144,17 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public var amountText: String = "" {
         didSet {
             editedFields.insert(.amount)
-            if !isPrefilling && !isSettingServings && AmountParser.parseTyped(amountText) != nil { unitNotice = nil }
+            if !isPrefilling && !isSettingServings,
+               AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) != nil {
+                unitNotice = nil
+            }
             // A figure written by anything but the prefill no longer stands for the stored amount.
             if !isPrefilling { prefillBacking = nil }
             // An amount typed by hand no longer equals a count of servings.
-            if !isPrefilling && !isSettingServings { servingCount = "" }
+            if !isPrefilling && !isSettingServings {
+                servingCount = ""
+                amountFromServings = false
+            }
         }
     }
     /// How many servings the amount stands for, when the picked product gave a serving size. Typing a
@@ -157,13 +163,20 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The serving size the source gave, kept whatever the basis, so the amount can open on one serving.
     @Published public private(set) var servingOption: ServingDefinition?
     private var isSettingServings = false
+    /// The separator a typed count is read with: the device's, unless a test sets another.
+    private let countDecimalSeparator: String?
+    /// True while the amount is the one a count of servings set, so an emptied Servings field can clear it.
+    private var amountFromServings = false
     /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
     /// goes once the person types an amount.
     @Published public private(set) var unitNotice: String?
     @Published public var unit: MeasureUnit = .g {
         didSet {
             // A count of servings was for the unit it was typed against; a different unit clears it.
-            if !isPrefilling && !isSettingServings { servingCount = "" }
+            if !isPrefilling && !isSettingServings {
+                servingCount = ""
+                amountFromServings = false
+            }
         }
     }
     @Published public var category: String = "food"
@@ -324,9 +337,11 @@ public final class AddIntakeViewModel: ObservableObject {
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         labelScannerAvailable: Bool = true,
         labelSubmitter: CommunityLabelSubmitting? = nil,
-        isSharingAllowed: @escaping @MainActor () -> Bool = { false }
+        isSharingAllowed: @escaping @MainActor () -> Bool = { false },
+        countDecimalSeparator: String? = Locale.current.decimalSeparator
     ) {
         self.store = store
+        self.countDecimalSeparator = countDecimalSeparator
         self.occurredAt = now
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
@@ -809,6 +824,7 @@ public final class AddIntakeViewModel: ObservableObject {
         servingOption = nil
         unitNotice = nil
         servingCount = ""
+        amountFromServings = false
         prefillBacking = nil
         labelValues = nil
         prefilledFromCapture = false
@@ -860,7 +876,7 @@ public final class AddIntakeViewModel: ObservableObject {
             }
         }
         // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
-        if AmountParser.parseTyped(amountText) == nil { openOnOneServing() }
+        if AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) == nil { openOnOneServing() }
     }
 
     /// Opens the amount on one serving when the source gave its weight. The person still confirms the
@@ -877,6 +893,8 @@ public final class AddIntakeViewModel: ObservableObject {
         unit = display.unit
         isPrefilling = false
         servingCount = "1"
+        // The opened amount is the serving, so emptying the Servings field later clears it.
+        amountFromServings = true
         // Saved as the exact serving the source gave, so the rounded figure shown never restates it.
         if let servingOption, let shown = AmountParser.parseTyped(amountText) {
             prefillBacking = (shown, display.unit, servingOption.quantity ?? shown, servingOption.unit ?? display.unit)
@@ -911,16 +929,55 @@ public final class AddIntakeViewModel: ObservableObject {
         servingCount = text
         isSettingServings = true
         defer { isSettingServings = false }
-        guard let count = AmountParser.parseTyped(text) else {
-            // A cleared field, or a completed zero, clears the amount; a partly typed count ("1.") leaves it.
-            let trimmed = text.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || Decimal(string: trimmed, locale: AmountParser.locale) == 0 { amountText = "" }
-            return
-        }
+        // While the count is a draft, only a complete positive number changes the amount. Anything else
+        // ("", "0", "0.", "0.0", "0,") is still being typed and leaves the amount alone; commitServingCount
+        // settles it when the edit commits.
+        guard let count = AmountParser.parseTyped(text, decimalSeparator: countDecimalSeparator) else { return }
         amountText = DecimalFormatting.text(count * display.quantity)
+        amountFromServings = true
         unit = display.unit
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText) {
+            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+        }
+    }
+
+    /// Called when the Servings edit commits: on save, or when focus leaves the field. A count that is
+    /// empty or zero then clears the amount, since nothing is left to finish typing.
+    public func commitServingCount() {
+        let trimmed = servingCount.trimmingCharacters(in: .whitespaces)
+        // An emptied Servings field clears the amount it had set, and only that; a typed amount stays.
+        guard !trimmed.isEmpty else {
+            if amountFromServings {
+                isSettingServings = true
+                defer { isSettingServings = false }
+                amountText = ""
+                amountFromServings = false
+            }
+            return
+        }
+        let isZero = Decimal(
+            string: AmountParser.normalizedTyped(trimmed, decimalSeparator: countDecimalSeparator),
+            locale: AmountParser.locale) == 0
+        if isZero {
+            isSettingServings = true
+            defer { isSettingServings = false }
+            amountText = ""
+            amountFromServings = false
+            return
+        }
+        // A draft that still ends in a separator ("1.", "3,") settles to the number it spells when the edit commits.
+        let settled = trimmed.hasSuffix(".") || trimmed.hasSuffix(",") ? String(trimmed.dropLast()) : trimmed
+        guard let count = AmountParser.parseTyped(settled, decimalSeparator: countDecimalSeparator),
+              let display = servingInDisplayUnit else { return }
+        isSettingServings = true
+        defer { isSettingServings = false }
+        amountText = DecimalFormatting.text(count * display.quantity)
+        amountFromServings = true
+        unit = display.unit
+        // The same exact-backing rule setServingCount applies, so a settled count saves the stored serving, not a rounded figure.
+        if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
+           let shown = AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) {
             prefillBacking = (shown, display.unit, count * quantity, servingUnit)
         }
     }
@@ -939,6 +996,7 @@ public final class AddIntakeViewModel: ObservableObject {
     @discardableResult
     public func save(now: Date) -> Bool {
         hasAttemptedSave = true
+        commitServingCount()
         let trimmedName = typedName
         let amount = AmountParser.parseTyped(amountText)
         saveError = nil
