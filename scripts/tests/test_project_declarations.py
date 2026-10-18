@@ -217,3 +217,11 @@ def test_the_watch_targets_are_embedded_only_and_never_installed_on_their_own() 
         settings = cast("dict[str, dict[str, object]]", _target(name)["settings"])["base"]
         # An unquoted YES in the project description reads as a YAML boolean.
         assert settings["SKIP_INSTALL"] in (True, "YES"), name
+
+
+def test_the_unsigned_device_build_uses_the_scheme_so_the_watch_targets_build_for_watchos() -> None:
+    text = (ROOT / ".github/workflows/ios.yml").read_text()
+    # An SDK override on a target build is applied to every dependency, Watch targets included.
+    assert "-sdk iphoneos" not in text
+    assert "-target HealthNutrition" not in text
+    assert "-scheme HealthNutrition -destination 'generic/platform=iOS'" in text
