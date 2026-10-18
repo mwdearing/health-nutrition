@@ -150,6 +150,8 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var kind: ProductKind = .food
     /// A drink's water share, 0 to 100, as the edit screen shows it. Nil means the stored share is kept.
     @Published public var waterSharePercent: Decimal? = nil
+    /// The share the entry states when it loads, so a share changed alone counts as an unsaved change.
+    private var loadedWaterSharePercent: Decimal? = nil
     /// The entry's changes, newest first.
     @Published public private(set) var changes: [EntryChangeRow] = []
     @Published public private(set) var revisions: [EntryRevisionRow] = []
@@ -261,6 +263,7 @@ public final class EntryDetailViewModel: ObservableObject {
             brand = snapshot?.brand
             kind = snapshot?.kind ?? .food
             waterSharePercent = current.components.compactMap(\.hydrationPercent).first
+            loadedWaterSharePercent = waterSharePercent
             loggedUnits = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
@@ -357,6 +360,7 @@ public final class EntryDetailViewModel: ObservableObject {
     /// Whether the screen holds a change the person has not saved: an amount draft that differs from
     /// the one the entry states, or a time that differs from the stored one. Save is offered only then.
     public var isDirty: Bool {
+        if kind == .drink, waterSharePercent != loadedWaterSharePercent { return true }
         for id in Set(drafts.keys).union(loadedDrafts.keys)
         where !Self.sameAmountText(loadedDrafts[id] ?? "", drafts[id] ?? "") {
             return true
