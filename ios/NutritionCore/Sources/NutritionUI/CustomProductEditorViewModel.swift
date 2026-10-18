@@ -49,7 +49,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     static let otherIngredientTag = "other-ingredient"
     static let savedTagPrefix = "saved:"
     static let nutrientChoices: [NutrientKeyChoice] = [
-        NutrientKeyChoice(key: "energyKcal", name: "Energy (kcal)"),
+        NutrientKeyChoice(key: "energyKcal", name: "Calories"),
         NutrientKeyChoice(key: "fat", name: "Total fat"),
         NutrientKeyChoice(key: "saturatedFat", name: "Saturated fat"),
         NutrientKeyChoice(key: "transFat", name: "Trans fat"),
