@@ -183,18 +183,22 @@ public struct JournalView: View {
 
     /// The day the arrows step from: the earliest day at the top of the visible list, or today.
     private var arrowBase: Date {
-        JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: .current, now: now())
+        JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
     }
 
     /// Forward is disabled when the arrows already point at today.
     private var isShowingToday: Bool {
-        Calendar.current.isDate(arrowBase, inSameDayAs: now()) || arrowBase > now()
+        JournalViewModel.dayKey(arrowBase, zone: model.dayZone) >= JournalViewModel.dayKey(now(), zone: model.dayZone)
     }
 
     /// Moves one calendar day back or forward from the day at the top of the list, using the same jump as the sheet.
     /// Forward stops at today.
     private func stepDay(_ days: Int) {
-        guard let date = Calendar.current.date(byAdding: .day, value: days, to: arrowBase), date <= now() || days < 0 else { return }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = model.dayZone
+        guard let date = calendar.date(byAdding: .day, value: days, to: arrowBase),
+              days < 0 || JournalViewModel.dayKey(date, zone: model.dayZone) <= JournalViewModel.dayKey(now(), zone: model.dayZone)
+        else { return }
         let target = model.jumpTarget(for: date, now: now())
         model.reveal(target)
         jumpNotice = target.message

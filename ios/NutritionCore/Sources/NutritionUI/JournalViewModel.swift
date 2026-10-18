@@ -153,6 +153,8 @@ public final class JournalViewModel: ObservableObject {
     /// The zone a picked day is read in, and the zone "today" is read in for a future date. The same
     /// resolved zone the repeater uses, so the device zone in production and "UTC" in tests.
     private let journalZoneID: () -> String
+    /// The zone the Diary groups its days in. The arrows and the jump both use it, so they agree with the sections.
+    public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
     private let locale: Locale
     private let preferences: DisplayPreferences
 
