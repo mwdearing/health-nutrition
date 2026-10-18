@@ -55,15 +55,20 @@ struct WatchTodayWidgetView: View {
                 Text(kcal)
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
             .privacySensitive()
         case .accessoryCorner:
             Text(kcal)
+                .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                 .widgetLabel {
                     Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "fork.knife") }
                 }
                 .privacySensitive()
         case .accessoryInline:
             Text(snapshot?.hasEntries == false ? "Nothing logged today" : kcal)
+                .accessibilityLabel(
+                    snapshot?.hasEntries == false ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal)
+                )
                 .privacySensitive()
         default:
             VStack(alignment: .leading) {

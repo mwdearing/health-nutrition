@@ -63,10 +63,6 @@ final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
 struct WatchTodayView: View {
     let snapshot: WidgetSnapshot?
 
-    private func figure(_ value: Double?, _ unit: String) -> String {
-        guard let text = WidgetFigure.wholeNumber(value) else { return "—" }
-        return "\(text) \(unit)"
-    }
 
     var body: some View {
         // Redrawn every minute, so the day changing drops yesterday's figures to dashes without any new data.

@@ -57,6 +57,7 @@ struct TodayWidgetView: View {
                 Text(WidgetFigure.wholeNumber(snapshot?.energyKcal) ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
             .privacySensitive()
         case .accessoryRectangular:
             VStack(alignment: .leading) {
@@ -72,6 +73,7 @@ struct TodayWidgetView: View {
             .privacySensitive()
         case .accessoryInline:
             Text(isEmpty ? "Nothing logged today" : WidgetFigure.calories(snapshot?.energyKcal))
+                .accessibilityLabel(isEmpty ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                 .privacySensitive()
         case .systemMedium:
             HStack(alignment: .top, spacing: 16) {

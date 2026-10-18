@@ -14,6 +14,9 @@ final class WidgetSnapshotPublisher {
     /// The unit flag in the summary last written, so a change of units republishes without rewriting on every
     /// unrelated preference change.
     private var publishedUSUnits: Bool?
+    /// The erase generation the last published load was stamped with. A unit change republishes under this one, so
+    /// an erase that happened since rejects it just as it rejects a pending load.
+    private var publishedGeneration: Int?
     private let store: WidgetSnapshotStore?
     private let erasure: WidgetSnapshotErasure
     private let watch: WatchSnapshotSender?
@@ -47,9 +50,10 @@ final class WidgetSnapshotPublisher {
             .sink { [weak self, weak today] _ in
                 MainActor.assumeIsolated {
                     guard let self, let today, let loadedAt = today.lastLoadedAt,
+                        let generation = self.publishedGeneration,
                         self.publishedUSUnits != (today.unitSystem == .usCustomary)
                     else { return }
-                    self.publish(from: today, loadedAt: loadedAt, generation: self.erasure.generation)
+                    self.publish(from: today, loadedAt: loadedAt, generation: generation)
                 }
             }
         subscription = today.$lastLoadedAt
@@ -81,6 +85,7 @@ final class WidgetSnapshotPublisher {
         // an erase has happened since this load.
         watch?.submit(snapshot, erasureGeneration: generation)
         publishedUSUnits = snapshot.usUnits
+        publishedGeneration = generation
         do {
             try store.write(snapshot)
             WidgetCenter.shared.reloadAllTimelines()
