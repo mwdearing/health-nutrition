@@ -419,6 +419,13 @@ public final class EntryDetailViewModel: ObservableObject {
                 errorMessage = "This entry is no longer available."
                 return false
             }
+            // The drafts were typed against the revision this screen loaded. If another write has made a newer one
+            // since, saving would overwrite it without the person having seen it, so the save stops here instead.
+            guard intake.currentRevision == currentRevision else {
+                fieldErrors = [:]
+                errorMessage = "This entry changed since you opened it. Reopen it to see the latest amounts."
+                return false
+            }
             let current = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }
             var errors: [String: String] = [:]
             var parsed: [IntakeComponent] = []

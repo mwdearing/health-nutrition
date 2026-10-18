@@ -258,6 +258,24 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertEqual(try inner.loggedUnits().map(\.componentID), ["protein"], "only the changed unit is forgotten")
     }
 
+    /// A save made from a screen whose entry changed underneath it is refused, not written over the newer revision.
+    func testAStaleScreenRefusesToOverwriteANewerRevision() throws {
+        let inner = try makeJournal()
+        let intake = try fiberEntry(inner)
+        let detail = EntryDetailViewModel(store: inner, intakeID: intake.id, timeZoneIdentifier: "UTC")
+        detail.load(now: now)
+        let componentID = try XCTUnwrap(detail.components.first).id
+        detail.drafts[componentID] = "250"
+        _ = try inner.edit(
+            intakeID: intake.id,
+            components: [IntakeComponent(componentID: "fiber", name: "Fiber", amount: 4, unit: .mL)],
+            product: nil, changeReason: "Edited elsewhere", now: now, occurredAt: nil, timeZoneIdentifier: nil)
+
+        XCTAssertFalse(detail.saveDrafts(now: now))
+        XCTAssertEqual(detail.errorMessage, "This entry changed since you opened it. Reopen it to see the latest amounts.")
+        XCTAssertEqual(try inner.revisions(of: intake.id).last?.changeReason, "Edited elsewhere")
+    }
+
     func testAnUnreadableEntryRefusesTheWholeSave() throws {
         let inner = try makeJournal()
         let journal = FaultyJournal(inner)
