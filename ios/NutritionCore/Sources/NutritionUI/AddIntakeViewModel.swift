@@ -168,7 +168,10 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public var unit: MeasureUnit = .g {
         didSet {
             // A count of servings was for the unit it was typed against; a different unit clears it.
-            if !isPrefilling && !isSettingServings { servingCount = "" }
+            if !isPrefilling && !isSettingServings {
+                servingCount = ""
+                amountFromServings = false
+            }
         }
     }
     @Published public var category: String = "food"
@@ -882,6 +885,8 @@ public final class AddIntakeViewModel: ObservableObject {
         unit = display.unit
         isPrefilling = false
         servingCount = "1"
+        // The opened amount is the serving, so emptying the Servings field later clears it.
+        amountFromServings = true
         // Saved as the exact serving the source gave, so the rounded figure shown never restates it.
         if let servingOption, let shown = AmountParser.parseTyped(amountText) {
             prefillBacking = (shown, display.unit, servingOption.quantity ?? shown, servingOption.unit ?? display.unit)
@@ -948,6 +953,7 @@ public final class AddIntakeViewModel: ObservableObject {
         isSettingServings = true
         defer { isSettingServings = false }
         amountText = ""
+        amountFromServings = false
     }
 
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
