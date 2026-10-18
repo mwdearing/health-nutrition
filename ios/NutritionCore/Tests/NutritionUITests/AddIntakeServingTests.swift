@@ -253,4 +253,31 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertFalse(model.unitOptions.contains(.cup), "a food that lists no cup gets no cup")
         XCTAssertFalse(model.unitOptions.contains(.teaspoon))
     }
+
+    func testPerHundredMillilitrePickConvertsCupExactlyToMillilitres() throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(LookedUpProduct(
+            barcode: "", name: "Oat drink", brand: nil, basis: .per100ml,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(45), .kcal)],
+            attribution: nil, serving: nil, version: nil, sourceID: nil))
+        model.unit = .cup
+        model.amountText = "1"
+        let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
+        // One US cup is 236.5882365 mL, so 45 kcal per 100 mL is about 106.4647 kcal.
+        let shown = try XCTUnwrap(energy).value
+        guard case .known(let kcal, _) = shown else { return XCTFail("energy should total") }
+        XCTAssertLessThan(abs(kcal - Decimal(string: "106.4647")!), Decimal(string: "0.001")!)
+    }
+
+    func testFailedPortionRequestHidesMeasuresAndGramsStillLog() async throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(usdaPick())
+        await model.loadListedPortions()
+        XCTAssertFalse(model.unitOptions.contains(.cup))
+        XCTAssertFalse(model.unitOptions.contains(.tablespoon))
+        model.unit = .g
+        model.amountText = "100"
+        let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
+        XCTAssertEqual(energy?.value, .known(200, .kcal), "grams log normally with no measures listed")
+    }
 }

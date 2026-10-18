@@ -168,6 +168,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Grams for one cup, tablespoon or teaspoon, as the picked food's own record lists them. Empty when none is listed.
     @Published public private(set) var listedPortions: [MeasureUnit: Decimal] = [:]
     private let portionLookup: (any HouseholdPortionLookup)?
+    /// Whether the picked food's measures have been asked for, so focusing the amount again sends nothing new.
+    private var portionsAsked = false
     /// True while the amount is the one a count of servings set, so an emptied Servings field can clear it.
     private var amountFromServings = false
     /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
@@ -439,7 +441,8 @@ public final class AddIntakeViewModel: ObservableObject {
         objectWillChange.send()
         leftFields.remove(field)
         // The household measures are asked for only once the person starts an amount, not when a food is picked.
-        if field == .amount, listedPortions.isEmpty, portionLookup != nil {
+        if field == .amount, !portionsAsked, portionLookup != nil {
+            portionsAsked = true
             Task { await loadListedPortions() }
         }
     }
@@ -848,6 +851,7 @@ public final class AddIntakeViewModel: ObservableObject {
         // A serving from an earlier product must not stay on the Servings control or count the next entry.
         servingOption = nil
         listedPortions = [:]
+        portionsAsked = false
         unitNotice = nil
         servingCount = ""
         amountFromServings = false

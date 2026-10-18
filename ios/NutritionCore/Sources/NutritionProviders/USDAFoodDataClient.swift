@@ -144,15 +144,18 @@ public actor USDAFoodDataClient {
             guard let weight = portion.gramWeight, weight > 0 else { continue }
             let amount = portion.amount ?? 1
             guard amount > 0 else { continue }
-            let text = (portion.modifier ?? portion.measureUnit?.name ?? "").lowercased()
-            let word = text.split(whereSeparator: { $0 == " " || $0 == "," }).first.map(String.init) ?? ""
-            let unit: MeasureUnit
-            switch word {
-            case "cup", "cups": unit = .cup
-            case "tbsp", "tablespoon", "tablespoons": unit = .tablespoon
-            case "tsp", "teaspoon", "teaspoons": unit = .teaspoon
-            default: continue
-            }
+            // The modifier may be a preparation ("chopped") while the measure name is the cup; check both.
+            let candidates = [portion.modifier, portion.measureUnit?.name].compactMap { $0?.lowercased() }
+            let unit = candidates.lazy.compactMap { text -> MeasureUnit? in
+                let word = text.split(whereSeparator: { $0 == " " || $0 == "," }).first.map(String.init) ?? ""
+                switch word {
+                case "cup", "cups": return .cup
+                case "tbsp", "tablespoon", "tablespoons": return .tablespoon
+                case "tsp", "teaspoon", "teaspoons": return .teaspoon
+                default: return nil
+                }
+            }.first
+            guard let unit else { continue }
             if grams[unit] == nil { grams[unit] = weight / amount }
         }
         return grams
