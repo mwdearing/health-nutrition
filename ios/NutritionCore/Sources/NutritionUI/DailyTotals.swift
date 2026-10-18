@@ -297,8 +297,23 @@ public enum DailyTotalsBuilder {
     /// The known part of a day with some unknown entries: the sum of the known values, only when no value is a
     /// below-threshold bound (a bound is not an amount) and at least one value is known.
     static func partialKnownSum(_ values: [NutrientValue], nutrient: String) -> NutrientValue? {
-        let raw = rawSum(values, nutrient: nutrient)
-        guard raw.coverage.hasUnknown, !raw.coverage.hasBelowReportingThreshold else { return nil }
+        let partialDay = values.contains { value in
+            switch value {
+            case .unknown, .belowReportingThreshold: return true
+            case .known, .notApplicable: return false
+            }
+        }
+        guard partialDay else { return nil }
+        let mapping = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
+            ? HealthKitWritePlanner.mapping(for: nutrient) : nil
+        // A below-threshold value is a bound, not an amount: it adds 0 to the known sum, and the day stays partial.
+        let bounded: [NutrientValue] = values.map { value in
+            if case .belowReportingThreshold(let unit) = value {
+                return .known(0, unit ?? mapping?.unit ?? .g)
+            }
+            return value
+        }
+        let raw = rawSum(bounded, nutrient: nutrient)
         if case .known = raw.value { return raw.value }
         return nil
     }
