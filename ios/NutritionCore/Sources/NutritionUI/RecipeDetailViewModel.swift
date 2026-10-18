@@ -48,7 +48,7 @@ public final class RecipeDetailViewModel: ObservableObject {
     public var portionUnitText: String {
         switch version.yield {
         case .servings: return "servings"
-        case .total(let quantity): return quantity.unit.symbol
+        case .total(let quantity): return quantity.unit.screenSymbol
         }
     }
 

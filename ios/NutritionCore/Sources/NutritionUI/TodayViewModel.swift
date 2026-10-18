@@ -318,7 +318,7 @@ public final class TodayViewModel: ObservableObject {
                let index = storedGoals.firstIndex(where: { $0.nutrient == Self.energyKey && $0.unit == .kcal }) {
                 let goal = storedGoals[index]
                 storedGoals[index] = NutrientGoal(nutrient: goal.nutrient, target: goal.target + bonus, unit: goal.unit)
-                activityGoalNote = "Calorie goal includes \(BodyActivityViewModel.whole(bonus)) kcal from activity"
+                activityGoalNote = "Calorie goal includes \(BodyActivityViewModel.whole(bonus)) calories from activity"
             }
             let tracked = Self.totalsNutrients(goals: storedGoals, fallback: trackedNutrients)
             // Coverage is built from the same goal-expanded list the totals are, so a nutrient with

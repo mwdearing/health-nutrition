@@ -36,7 +36,7 @@ final class QuickAddTests: XCTestCase {
         let intake = try XCTUnwrap(store.activeIntakes().first)
         XCTAssertEqual(try store.activeIntakes().count, 1)
         XCTAssertEqual(token.intakeID, intake.id)
-        XCTAssertEqual(token.message, "Added Quick add, 250 kcal")
+        XCTAssertEqual(token.message, "Added Quick add, 250 Calories")
         XCTAssertEqual(intake.category, "food")
         XCTAssertEqual(intake.meal, "lunch")
         XCTAssertEqual(intake.occurredAt, now)
@@ -220,18 +220,18 @@ final class QuickAddTests: XCTestCase {
         XCTAssertNotNil(second.save())
 
         let titles = try RecentItemsProvider(store: store).recents().map(\.template.displayName)
-        XCTAssertEqual(Set(titles), ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+        XCTAssertEqual(Set(titles), ["Quick add · 250 Calories", "Quick add · 400 Calories, 30 g protein"])
 
         let journal = JournalViewModel(store: store)
         journal.load(now: now)
         XCTAssertEqual(
             Set(journal.sections.flatMap(\.rows).map(\.title)),
-            ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+            ["Quick add · 250 Calories", "Quick add · 400 Calories, 30 g protein"])
 
         let today = TodayViewModel(store: store, lookup: SnapshotNutrientFacts(), timeZoneIdentifier: "UTC")
         today.load(now: now)
         XCTAssertEqual(
-            Set(today.rows.map(\.title)), ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+            Set(today.rows.map(\.title)), ["Quick add · 250 Calories", "Quick add · 400 Calories, 30 g protein"])
     }
 
     /// The region's own digits and separator are read, as the decimal pad types them.
@@ -255,7 +255,7 @@ final class QuickAddTests: XCTestCase {
     /// A typed name can never read as another field, so two different entries never share a snapshot id.
     func testSnapshotIdentityCannotBeForgedByTheName() throws {
         let forged = QuickAddViewModel.snapshotIdentity(
-            name: "foo|energyKcal=100 kcal", nutrients: ["protein": .known(1, .g)])
+            name: "foo|energyKcal=100 Calories", nutrients: ["protein": .known(1, .g)])
         let plain = QuickAddViewModel.snapshotIdentity(
             name: "foo", nutrients: ["energyKcal": .known(100, .kcal), "protein": .known(1, .g)])
         XCTAssertNotEqual(forged, plain)
@@ -264,7 +264,7 @@ final class QuickAddTests: XCTestCase {
 
         let store = try makeStore()
         let first = makeModel(store)
-        first.name = "foo|energyKcal=100 kcal"
+        first.name = "foo|energyKcal=100 Calories"
         first.proteinText = "1"
         XCTAssertNotNil(first.save())
         let second = makeModel(store)
@@ -297,7 +297,7 @@ final class QuickAddTests: XCTestCase {
             snapshotID: "quick-x", productID: "quick-x", name: "Quick add", labelBasis: "per serving",
             catalogOrigin: "quick_add", catalogVersion: "1", nutrients: ["energyKcal": .known(250, .kcal)])
         let two = [IntakeComponent(componentID: "quick-add", name: "Quick add", amount: 2, unit: .serving)]
-        XCTAssertEqual(QuickAddViewModel.rowTitle(components: two, product: product), "Quick add · 500 kcal")
+        XCTAssertEqual(QuickAddViewModel.rowTitle(components: two, product: product), "Quick add · 500 Calories")
     }
 
     /// A store that fails leaves no entry and says so.

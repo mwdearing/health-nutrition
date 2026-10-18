@@ -58,7 +58,7 @@ final class AllValuesFigureTests: XCTestCase {
         XCTAssertNotEqual(DisplayRounding.rounded(sodium, fractionDigits: 10), sodium, "the value is the long quotient")
         XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "sodium")), "40 mg")
         XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "carbohydrate")), "1.3 g")
-        XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "energy")), "13 kcal")
+        XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "energy")), "13 Calories")
 
         let existing = Set(try store.activeIntakes().map(\.id))
         XCTAssertTrue(details.save(now: now))
@@ -107,7 +107,7 @@ final class AllValuesFigureTests: XCTestCase {
     func testSixFractionDigitsSeparateAStatedFigureFromAWorkedOutOne() {
         XCTAssertEqual(AmountDisplay.stated(decimal("1.25"), unit: .g).text, "1.25 g")
         XCTAssertEqual(AmountDisplay.stated(decimal("0.000123"), unit: .g).text, "0.000123 g")
-        XCTAssertEqual(AmountDisplay.stated(decimal("107.728187875"), unit: .kcal).text, "108 kcal")
+        XCTAssertEqual(AmountDisplay.stated(decimal("107.728187875"), unit: .kcal).text, "108 Calories")
         XCTAssertEqual(AmountDisplay.stated(decimal("0.0000004"), unit: .mg).text, "< 0.01 mg")
         XCTAssertEqual(AmountDisplay.stated(0, unit: .mg).text, "0 mg")
     }

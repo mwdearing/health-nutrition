@@ -348,12 +348,12 @@ struct SharedProductFactsView: View {
                 Text(product.kind.displayName)
                 Text(product.basis.rawValue)
                 if let serving = product.serving {
-                    Text("Product serving: \(serving.quantity) \(serving.unit.symbol)")
+                    Text("Product serving: \(serving.quantity) \(serving.unit.screenSymbol)")
                     if let text = serving.text { Text(text) }
                 }
                 if product.facts.isEmpty { Text("No facts stated") }
                 ForEach(product.facts, id: \.rawKeyIdentity) { fact in
-                    Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.symbol ?? "")")
+                    Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.screenSymbol ?? "")")
                 }
             case .legacyLabel(let label):
                 Text(label.name).font(.headline)
@@ -365,7 +365,8 @@ struct SharedProductFactsView: View {
                 if let serving = label.rawServingText { Text("Original serving: \(serving)") }
                 Text("Source: \(label.legacySource.rawValue)")
                 ForEach(label.nutrients.keys.sorted(), id: \.self) { key in
-                    Text("\(key): \(NSDecimalNumber(decimal: label.nutrients[key]!).stringValue) \(key == "energyKcal" ? "kcal" : key == "sodium" ? "mg" : "g")")
+                    let amount = NSDecimalNumber(decimal: label.nutrients[key]!).stringValue
+                    Text(key == "energyKcal" ? "Calories: \(amount)" : "\(NutrientNames.displayName(for: key)): \(amount) \(key == "sodium" ? "mg" : "g")")
                 }
             }
         }

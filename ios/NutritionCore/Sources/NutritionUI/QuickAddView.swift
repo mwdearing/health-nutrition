@@ -62,7 +62,7 @@ public struct QuickAddView: View {
     }
 
     private func amountField(_ field: QuickAddViewModel.Field, text: Binding<String>) -> some View {
-        LabeledField("\(field.label) (\(field.unit.symbol))", error: model.error(for: field)) { focus in
+        LabeledField("\(field.label) (\(field.unit.screenSymbol))", error: model.error(for: field)) { focus in
             TextField(text: text, prompt: Text("0")) {
                 Text(field.label)
             }

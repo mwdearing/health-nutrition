@@ -105,7 +105,7 @@ public final class BodyActivityViewModel: ObservableObject {
     }
 
     public var activeEnergyText: String? {
-        readings.activeEnergyKcal.map { "\(Self.whole($0)) kcal active" }
+        readings.activeEnergyKcal.map { "\(Self.whole($0)) Calories active" }
     }
 
     public var weightText: String? {
@@ -116,7 +116,7 @@ public final class BodyActivityViewModel: ObservableObject {
     public var outsideText: String? {
         if readings.outsideReadFailed { return "From other apps: could not be read" }
         var parts: [String] = []
-        if let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) kcal") }
+        if let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) Calories") }
         if let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
         if let water = readings.outsideNutrients["water"] {
             if unitSystem() == .usCustomary {

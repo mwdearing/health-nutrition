@@ -531,7 +531,7 @@ public struct LabelCaptureView: View {
                 }
                 Picker("Unit", selection: $additionalUnit) {
                     ForEach(LabelCaptureViewModel.additionalUnits, id: \.symbol) { candidate in
-                        Text(candidate.symbol).tag(candidate)
+                        Text(candidate.screenSymbol).tag(candidate)
                     }
                 }
                 .pickerStyle(.menu)
@@ -672,7 +672,7 @@ public struct LabelCaptureView: View {
 
     /// The unit a correction will keep: the one the panel printed, or the one this row usually carries.
     private func unitSymbol(for row: LabelCaptureRow) -> String {
-        LabelCaptureViewModel.unit(of: row.value, for: row.key).symbol
+        LabelCaptureViewModel.unit(of: row.value, for: row.key).screenSymbol
     }
 
     /// Opens the amount field for one row. The model closes any compound editor beside it, and the

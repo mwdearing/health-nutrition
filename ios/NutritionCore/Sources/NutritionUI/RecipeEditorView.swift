@@ -135,7 +135,7 @@ public struct RecipeEditorView: View {
                         .accessibilityLabel(RecipeLabels.nutrientField(field.label, position: position))
                     }
                     // A value kept in its own unit says so, rather than sitting under the default one.
-                    Text(draft.nutrientUnits[field.id]?.symbol ?? field.unit.symbol)
+                    Text(draft.nutrientUnits[field.id]?.screenSymbol ?? field.unit.screenSymbol)
                         .font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
             }

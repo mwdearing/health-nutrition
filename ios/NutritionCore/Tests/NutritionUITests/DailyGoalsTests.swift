@@ -640,13 +640,13 @@ final class DailyGoalsTests: XCTestCase {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal))
-        // 200 g of a product stating 400 kcal per 100 g carries 800 kcal.
+        // 200 g of a product stating 400 Calories per 100 g carries 800 Calories.
         try logBar(journal, grams: 200)
 
         let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
         model.load(now: when)
 
-        XCTAssertEqual(line(model, "energy"), "Energy 800 kcal of 2000 kcal")
+        XCTAssertEqual(line(model, "energy"), "Energy 800 Calories of 2000 Calories")
     }
 
     /// The Goals screen offers and stores energy in kilocalories, so the target a person types there
@@ -657,7 +657,7 @@ final class DailyGoalsTests: XCTestCase {
         model.load()
 
         XCTAssertTrue(model.setTarget("2000", for: "energy"))
-        XCTAssertEqual(model.rows.first { $0.nutrient == "energy" }?.targetText, "2000 kcal")
+        XCTAssertEqual(model.rows.first { $0.nutrient == "energy" }?.targetText, "2000 Calories")
         XCTAssertEqual(try goals.goal(for: "energy")?.unit, .kcal)
     }
 
@@ -808,7 +808,7 @@ final class DailyGoalsTests: XCTestCase {
     // MARK: A target has to be in the nutrient's own dimension
 
     /// A target in a dimension the nutrient is never counted in is refused rather than stored: "2 g"
-    /// of energy and "2000 kcal" of water compare against nothing, and the screen could neither show
+    /// of energy and "2000 Calories" of water compare against nothing, and the screen could neither show
     /// them as met nor as missed. The expected dimension comes from the canonical nutrient mapping,
     /// so it is the unit the totals provider and the HealthKit writer already use.
     func testAGoalInTheWrongDimensionIsRefusedAndNothingIsStored() throws {

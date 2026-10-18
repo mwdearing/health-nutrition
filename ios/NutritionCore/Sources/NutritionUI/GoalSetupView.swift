@@ -199,7 +199,7 @@ public struct GoalSetupView: View {
 
     private var resultRows: [ResultRow] {
         [
-            ResultRow(key: "energy", label: "Energy (kcal)"),
+            ResultRow(key: "energy", label: "Calories"),
             ResultRow(key: "protein", label: "Protein (g)"),
             ResultRow(key: "carbohydrate", label: "Carbohydrate (g)"),
             ResultRow(key: "fat", label: "Fat (g)"),

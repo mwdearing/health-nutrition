@@ -97,7 +97,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
             let energy = GoalBarModel.make(
                 line: line(totals, "energy", goal: 2000, unit: .kcal), hasEntries: true, missingCount: 0,
                 unitSystem: system)
-            XCTAssertEqual(energy.valueText, "10 kcal of 2000 kcal")
+            XCTAssertEqual(energy.valueText, "10 Calories of 2000 Calories")
         }
     }
 
@@ -113,11 +113,11 @@ final class ScaledAmountDisplayTests: XCTestCase {
     func testTodayHeaderFiguresAreRounded() throws {
         let totals = try dayTotals()
         XCTAssertEqual(NourishTodayHeader.figure(for: line(totals, "carbohydrate")), "1 g")
-        XCTAssertEqual(NourishTodayHeader.figure(for: line(totals, "energy")), "10 kcal")
+        XCTAssertEqual(NourishTodayHeader.figure(for: line(totals, "energy")), "10 Calories")
         XCTAssertEqual(NourishTodayHeader.figure(for: nil), "—")
         XCTAssertEqual(
             NourishTodayHeader.ringFootnote(for: NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)),
-            "of 2000 kcal goal")
+            "of 2000 Calories goal")
     }
 
     // MARK: Journal
@@ -127,7 +127,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
         let totals = try dayTotals()
         XCTAssertEqual(line(totals, "carbohydrate", goal: 250).text, "Carbohydrate 1 g of 250 g")
         XCTAssertEqual(line(totals, "sodium").text, "Sodium 30 mg")
-        XCTAssertEqual(JournalViewModel.energyText(totals: totals), "10 kcal")
+        XCTAssertEqual(JournalViewModel.energyText(totals: totals), "10 Calories")
     }
 
     // MARK: A scaled label value
@@ -153,7 +153,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
 
         let adds = EntryDetailViewModel.adds(of: bottle(), logged: components)
         XCTAssertEqual(adds.first { $0.key == "sodium" }?.amountText, "30 mg")
-        XCTAssertEqual(adds.first { $0.key == LookedUpProduct.energyKcal }?.amountText, "10 kcal")
+        XCTAssertEqual(adds.first { $0.key == LookedUpProduct.energyKcal }?.amountText, "10 Calories")
     }
 
     /// A quick add edited to a third of its serving says so in its row title without the long quotient,
@@ -167,11 +167,11 @@ final class ScaledAmountDisplayTests: XCTestCase {
             componentID: "quick-add", name: "Quick add", amount: Decimal(1) / Decimal(3), unit: .serving)]
         XCTAssertEqual(
             QuickAddViewModel.rowTitle(components: third, product: product),
-            "\(AmountText.title(third)) · 83 kcal, 3.3 g protein")
+            "\(AmountText.title(third)) · 83 Calories, 3.3 g protein")
         let one = [IntakeComponent(componentID: "quick-add", name: "Quick add", amount: 1, unit: .serving)]
         XCTAssertEqual(
             QuickAddViewModel.rowTitle(components: one, product: product),
-            "\(AmountText.title(one)) · 250 kcal, 10 g protein")
+            "\(AmountText.title(one)) · 250 Calories, 10 g protein")
     }
 
     // MARK: The rule
@@ -182,7 +182,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
         let tiny = AmountDisplay.nutrient(Decimal(string: "0.004")!, unit: .mg)
         XCTAssertEqual(tiny.text, "< 0.01 mg")
         XCTAssertEqual(tiny.spokenAmount, "less than 0.01")
-        XCTAssertEqual(AmountDisplay.nutrient(Decimal(string: "0.4")!, unit: .kcal).text, "< 1 kcal")
+        XCTAssertEqual(AmountDisplay.nutrient(Decimal(string: "0.4")!, unit: .kcal).text, "< 1 Calories")
         XCTAssertEqual(AmountDisplay.nutrient(0, unit: .mg).text, "0 mg")
     }
 

@@ -98,7 +98,13 @@ public enum NutrientNames {
         "energy": "Energy",
         "protein": "Protein",
         "carbohydrate": "Carbohydrate",
+        "energy-kcal": "Calories",
         "fiber": "Fiber",
+        "transFat": "Trans fat",
+        "saturatedFat": "Saturated fat",
+        "addedSugars": "Added sugars",
+        "sugars": "Total sugars",
+        "cholesterol": "Cholesterol",
         "fat": "Fat",
         "sugar": "Sugar",
         "sodium": "Sodium",
@@ -135,17 +141,35 @@ public enum NutrientNames {
     public static func displayName(for nutrient: String) -> String {
         if let name = names[nutrient] { return name }
         guard !nutrient.isEmpty else { return nutrient }
-        // A compound key is a slug of the printed name (`creatine-monohydrate`), so it is spelled back
-        // out rather than shown with its hyphens and one capital.
-        return nutrient.split(separator: "-")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
+        // A compound key is a slug of the printed name (`creatine-monohydrate`), or a camel-case key such as
+        // `transFat`. Both are spelled back out as words: "creatine monohydrate", "Trans fat".
+        // Each hyphen piece starts with a capital, as a compound slug always has. A camel-case word inside a
+        // piece is split and read in lower case after the first word: "transFat" is "Trans fat".
+        var out: [String] = []
+        for piece in nutrient.split(separator: "-") {
+            var sub: [String] = []
+            var word = ""
+            var previous: Character?
+            for character in piece {
+                // A capital starts a new word after a lower-case letter or digit, so an acronym run ("EPA") stays whole.
+                if character.isUppercase, !word.isEmpty, let before = previous, !before.isUppercase { sub.append(word); word = "" }
+                word.append(character)
+                previous = character
+            }
+            if !word.isEmpty { sub.append(word) }
+            for (index, part) in sub.enumerated() {
+                out.append(index == 0 ? part.prefix(1).uppercased() + part.dropFirst() : (part == part.uppercased() ? part : part.lowercased()))
+            }
+        }
+        guard !out.isEmpty else { return nutrient }
+        return out.joined(separator: " ")
     }
 
-    /// The name a nutrient key is shown under, preferring the words the label printed for it when the
-    /// snapshots this screen read carry them. A key with no printed name falls back to the name it
-    /// spells out.
+    /// The name a nutrient key is shown under. A known nutrient always shows its canonical name, so a label
+    /// that printed "protein" in lower case still reads "Protein". Only an extra with no canonical name uses
+    /// the words the label printed for it, and a key with neither falls back to the name it spells out.
     public static func displayName(for nutrient: String, displayNames: [String: String]) -> String {
-        displayNames[nutrient] ?? displayName(for: nutrient)
+        if names[nutrient] != nil { return displayName(for: nutrient) }
+        return displayNames[nutrient] ?? displayName(for: nutrient)
     }
 }

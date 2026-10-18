@@ -196,8 +196,8 @@ public struct NutrientGapRow: Equatable, Identifiable {
     static func figure(_ amount: Decimal, _ unit: MeasureUnit) -> String {
         let digits = amount < 1 ? 2 : 1
         let rounded = DisplayRounding.rounded(amount, fractionDigits: digits)
-        if rounded == 0, amount > 0 { return "< 0.01 \(unit.symbol)" }
-        return "\(DecimalFormatting.text(rounded)) \(unit.symbol)"
+        if rounded == 0, amount > 0 { return "< 0.01 \(unit.screenSymbol)" }
+        return "\(DecimalFormatting.text(rounded)) \(unit.screenSymbol)"
     }
 }
 
