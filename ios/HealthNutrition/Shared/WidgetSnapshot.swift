@@ -88,6 +88,14 @@ enum WidgetFigure {
     static let largest = 1_000_000_000.0
     static let millilitersPerUSFluidOunce = 29.5735295625
 
+    /// Calories as the widgets draw them: the bare number, because calories are the whole point of the app, or
+    /// a dash. Read out as "calories" by VoiceOver (see `caloriesSpoken`).
+    static func calories(_ kilocalories: Double?) -> String { wholeNumber(kilocalories) ?? "—" }
+
+    static func caloriesSpoken(_ kilocalories: Double?) -> String {
+        wholeNumber(kilocalories).map { "\($0) calories" } ?? "Calories unknown"
+    }
+
     /// Water as the person reads it: whole fluid ounces under US units, whole millilitres otherwise; dashes when the
     /// value is missing or cannot be shown.
     static func water(_ milliliters: Double?, usUnits: Bool?) -> String {

@@ -50,7 +50,7 @@ struct WatchTodayWidgetView: View {
         switch family {
         case .accessoryCircular:
             Gauge(value: snapshot?.energyFraction ?? 0) {
-                Text("kcal")
+                Image(systemName: "flame.fill")
             } currentValueLabel: {
                 Text(kcal)
             }
@@ -59,11 +59,11 @@ struct WatchTodayWidgetView: View {
         case .accessoryCorner:
             Text(kcal)
                 .widgetLabel {
-                    Gauge(value: snapshot?.energyFraction ?? 0) { Text("kcal") }
+                    Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "flame.fill") }
                 }
                 .privacySensitive()
         case .accessoryInline:
-            Text(snapshot?.hasEntries == false ? "Nothing logged today" : "\(kcal) kcal")
+            Text(snapshot?.hasEntries == false ? "Nothing logged today" : kcal)
                 .privacySensitive()
         default:
             VStack(alignment: .leading) {
@@ -71,7 +71,7 @@ struct WatchTodayWidgetView: View {
                 if snapshot?.hasEntries == false {
                     Text("Nothing logged today").font(.footnote)
                 } else {
-                    Text("\(kcal) kcal · \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water")
+                    Text("\(kcal) · \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water")
                         .privacySensitive()
                     Text(
                         "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"

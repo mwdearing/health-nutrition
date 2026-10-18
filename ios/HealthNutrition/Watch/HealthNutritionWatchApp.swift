@@ -81,7 +81,8 @@ struct WatchTodayView: View {
             if snapshot?.hasEntries == false {
                 Text("Nothing logged today").font(.footnote).foregroundStyle(.secondary)
             } else {
-                Text(figure(snapshot?.energyKcal, "kcal")).font(.title3).privacySensitive()
+                Text(WidgetFigure.calories(snapshot?.energyKcal)).font(.title3).privacySensitive()
+                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                 Text(
                     "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"
                 ).font(.footnote).privacySensitive()

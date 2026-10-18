@@ -40,6 +40,14 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.water(nil, usUnits: nil), "— mL")
     }
 
+    func testCaloriesAreDrawnAsTheBareNumberAndSpokenAsCalories() {
+        XCTAssertEqual(WidgetFigure.calories(87.4), "87")
+        XCTAssertEqual(WidgetFigure.calories(nil), "—")
+        XCTAssertEqual(WidgetFigure.calories(.infinity), "—")
+        XCTAssertEqual(WidgetFigure.caloriesSpoken(87.4), "87 calories")
+        XCTAssertEqual(WidgetFigure.caloriesSpoken(nil), "Calories unknown")
+    }
+
     func testASummaryWrittenBeforeTheUnitFieldStillDecodes() throws {
         let old = Data(
             #"{"generatedAt":"2023-11-14T22:13:20Z","hasEntries":true,"energyKcal":1,"waterMilliliters":2}"#.utf8)

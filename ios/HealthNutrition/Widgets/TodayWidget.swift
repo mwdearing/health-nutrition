@@ -52,7 +52,7 @@ struct TodayWidgetView: View {
         switch family {
         case .accessoryCircular:
             Gauge(value: snapshot?.energyFraction ?? 0) {
-                Text("kcal")
+                Image(systemName: "flame.fill")
             } currentValueLabel: {
                 Text(WidgetFigure.wholeNumber(snapshot?.energyKcal) ?? "—")
             }
@@ -64,13 +64,14 @@ struct TodayWidgetView: View {
                 if isEmpty {
                     Text("Nothing logged today")
                 } else {
-                    Text(figure(snapshot?.energyKcal, unit: "kcal"))
+                    Text(WidgetFigure.calories(snapshot?.energyKcal))
+                        .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                     Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
                 }
             }
             .privacySensitive()
         case .accessoryInline:
-            Text(isEmpty ? "Nothing logged today" : figure(snapshot?.energyKcal, unit: "kcal"))
+            Text(isEmpty ? "Nothing logged today" : WidgetFigure.calories(snapshot?.energyKcal))
                 .privacySensitive()
         case .systemMedium:
             HStack(alignment: .top, spacing: 16) {
@@ -97,7 +98,8 @@ struct TodayWidgetView: View {
             if isEmpty {
                 Text("Nothing logged today").font(.footnote)
             } else {
-                Text(figure(snapshot?.energyKcal, unit: "kcal"))
+                Text(WidgetFigure.calories(snapshot?.energyKcal))
+                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
                     .font(.title2.weight(.semibold))
                     .privacySensitive()
                 if let fraction = snapshot?.energyFraction {
