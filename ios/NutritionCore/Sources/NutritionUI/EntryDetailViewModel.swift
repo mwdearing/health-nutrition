@@ -459,6 +459,10 @@ public final class EntryDetailViewModel: ObservableObject {
             if kind == .drink, let share = waterSharePercent {
                 parsed = parsed.map { component in
                     guard component.unit.dimension == .volume else { return component }
+                    // A component whose stored share differs from the one shown keeps its own share.
+                    guard component.hydrationPercent == loadedWaterSharePercent || component.hydrationPercent == nil else {
+                        return component
+                    }
                     var updated = component
                     updated.hydrationPercent = share
                     return updated

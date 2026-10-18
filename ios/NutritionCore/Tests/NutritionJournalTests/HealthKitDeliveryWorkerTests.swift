@@ -2025,4 +2025,21 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
         XCTAssertEqual(recorded["water"], .known(dec("100"), .mL), "half of 200 mL is the water Health receives")
     }
+
+    /// A drink logged before shares has no stored share, so its Health write carries no water, as on main.
+    func testALegacyDrinkWithNoStoredShareWritesNoHealthWater() async throws {
+        let store = try makeStore(try makeDirectory())
+        let drink = ProductDefinition(
+            snapshotID: "snap-legacy-drink", productID: "product-legacy-drink", name: "Old soda", brand: nil,
+            barcode: nil, labelBasis: "per serving", catalogOrigin: "sample", catalogVersion: "1", kind: .drink)
+        try store.create(
+            Intake(id: intakeID, category: "other", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "soda", name: "Old soda", amount: 200, unit: .mL)],
+            product: drink, now: when)
+        let totals = JournalSnapshotTotals(store: store)
+
+        let recorded = try await totals.totals(intakeID: intakeID, revision: 1)
+
+        XCTAssertNil(recorded["water"])
+    }
 }

@@ -941,4 +941,20 @@ final class DailyTotalsTests: XCTestCase {
         // 200 mL at 50% is 100 mL; 100 mL with no share uses the 90% default, so 90 mL.
         XCTAssertEqual(totals.total(for: "water")?.value, .known(Decimal(190), .mL))
     }
+
+    /// A drink logged before shares has no stored share, so it adds no water to the day, as on main.
+    func testALegacyDrinkWithNoStoredShareAddsNoWater() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "soda-legacy-1", productID: "soda", name: "Old soda", labelBasis: "per serving",
+            catalogOrigin: "manual", catalogVersion: "1", kind: .drink)
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "other", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "soda", name: "Old soda", amount: 200, unit: .mL)],
+            product: product, now: when)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["water"])
+
+        XCTAssertEqual(totals.total(for: "water")?.value, .unknown)
+    }
 }

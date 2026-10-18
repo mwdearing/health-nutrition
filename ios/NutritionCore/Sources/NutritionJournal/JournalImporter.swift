@@ -848,7 +848,7 @@ public enum JournalImporter {
             // The share is read back as it was exported, and must be a percentage; an old export has none.
             var share: String?
             if let shareText = component.hydrationPercent {
-                guard let value = DecimalText.decode(shareText), value >= 0, value <= 100 else {
+                guard DecimalText.isValidDecimalText(shareText), let value = DecimalText.decode(shareText), value >= 0, value <= 100 else {
                     throw JournalImportError.corrupt(
                         "\(label) has the water share \(shareText), which is not a percentage from 0 to 100")
                 }
@@ -943,7 +943,7 @@ public enum JournalImporter {
                 }
                 var hydration: Decimal?
                 if let text = component.hydrationPercent {
-                    guard let share = DecimalText.decode(text), share >= 0, share <= 100 else {
+                    guard DecimalText.isValidDecimalText(text), let share = DecimalText.decode(text), share >= 0, share <= 100 else {
                         throw JournalImportError.corrupt(
                             "revision \(revision.number) of \(intakeID) has the water share \(text) for "
                                 + "\(component.componentID), which is not a percentage from 0 to 100")

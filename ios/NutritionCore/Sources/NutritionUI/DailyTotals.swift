@@ -95,7 +95,8 @@ public enum DailyTotalsBuilder {
             guard component.unit.dimension == .volume,
                   let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
             else { return nil }
-            let share = component.hydrationPercent ?? IntakeComponent.defaultDrinkHydrationPercent
+            // A drink logged before shares has no stored share, and adds no water, as on main.
+            guard let share = component.hydrationPercent else { return nil }
             return .known(converted.value * share / 100, .mL)
         }
     }

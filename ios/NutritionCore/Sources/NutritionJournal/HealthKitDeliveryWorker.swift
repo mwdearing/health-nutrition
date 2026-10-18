@@ -191,7 +191,9 @@ public struct JournalSnapshotTotals: Sendable {
             guard let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
             else { continue }
             // A water entry counts its whole volume; a drink counts its share of it.
-            let share = category == waterCategory ? Decimal(100) : (component.hydrationPercent ?? IntakeComponent.defaultDrinkHydrationPercent)
+            // A water entry counts its whole volume. A drink counts its stored share, and a drink logged before
+            // shares (no share stored) writes no water, as on main.
+            guard let share = category == waterCategory ? Decimal(100) : component.hydrationPercent else { continue }
             milliliters += converted.value * share / 100
             found = true
         }

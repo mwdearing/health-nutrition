@@ -248,7 +248,8 @@ public final class TodayViewModel: ObservableObject {
                                 let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                                 Self.isPositive(converted.value)
                             else { continue }
-                            let share = component.hydrationPercent ?? IntakeComponent.defaultDrinkHydrationPercent
+                            // A drink logged before shares (no share stored) adds no water, as on main.
+                            guard let share = component.hydrationPercent else { continue }
                             waterTotal += converted.value * share / 100
                         }
                     }

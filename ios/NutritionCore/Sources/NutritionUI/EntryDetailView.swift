@@ -139,7 +139,7 @@ public struct EntryDetailView: View {
                     }
                 }
             }
-            if model.kind == .drink {
+            if model.kind == .drink, model.components.contains(where: { $0.unit.dimension == .volume }) {
                 Section {
                     Stepper(
                         value: Binding(

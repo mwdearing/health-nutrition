@@ -61,7 +61,7 @@ public struct AddIntakeView: View {
                     .pickerStyle(.segmented)
                     .accessibilityLabel("Kind of product")
                     .accessibilityHint("Food, drink or supplement. A supplement is left out of the day's food coverage")
-                    if model.kind == .drink {
+                    if model.kind == .drink, model.unit.dimension == .volume {
                         Picker("Drink type", selection: $model.drinkType) {
                             Text("Choose a type").tag(DrinkType?.none)
                             ForEach(DrinkType.allCases, id: \.self) { type in
