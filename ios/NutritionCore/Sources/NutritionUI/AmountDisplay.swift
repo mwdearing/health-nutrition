@@ -54,10 +54,12 @@ public struct DisplayAmount: Equatable {
     /// The amount and its symbol, as one line of text. An amount too small to name says so instead of
     /// showing a zero, because a non-zero stored amount must never read as none of it.
     public var text: String {
+        // Energy is read as "Calories" on screen; the kcal symbol never reaches a screen.
+        let word = unit == .kcal ? "Calories" : unit.symbol
         guard isBelowSmallest else {
-            return "\(self.numberText) \(unit.symbol)"
+            return "\(self.numberText) \(word)"
         }
-        return "< \(DecimalFormatting.text(self.smallestAmount)) \(unit.symbol)"
+        return "< \(DecimalFormatting.text(self.smallestAmount)) \(word)"
     }
 
     /// The figures alone, for a sentence that spells the unit out in words.

@@ -211,8 +211,8 @@ public struct AddIntakeView: View {
                         }
                         if !model.additionalLabelNutrients.isEmpty {
                             Text("Also on the label")
-                                .font(.footnote)
-                                .foregroundStyle(TokenColors.textSecondary)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(TokenColors.textPrimary)
                                 .accessibilityLabel("Also on the label")
                             ForEach(model.additionalLabelNutrients, id: \.self) { key in
                                 LabeledContent(

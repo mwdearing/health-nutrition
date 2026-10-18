@@ -172,8 +172,8 @@ public struct EntryDetailView: View {
                         // The compounds a captured panel printed, shown under their own heading.
                         if !model.additionalNutrients.isEmpty {
                             Text("Also on the label")
-                                .font(.footnote)
-                                .foregroundStyle(TokenColors.textSecondary)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(TokenColors.textPrimary)
                                 .accessibilityLabel("Also on the label")
                             ForEach(model.additionalNutrients) { row in
                                 LabeledContent(row.name, value: row.amountText)
