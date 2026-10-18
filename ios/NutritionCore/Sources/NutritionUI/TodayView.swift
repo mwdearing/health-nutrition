@@ -181,7 +181,7 @@ public struct TodayView: View {
                     }
                     .accessibilityLabel(model.quickWaterAccessibilityLabel)
                     .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
-                    if model.isUndoAvailable(now: now()) {
+                    if model.isUndoAvailable(now: now()), model.undo?.isDelete != true {
                         QuietCapsule("Undo") {
                             model.undoLastQuickAdd(now: now())
                         }
@@ -237,12 +237,17 @@ public struct TodayView: View {
     @ViewBuilder
     private var entries: some View {
         // Above the empty state, so deleting the last entry still offers Undo.
-        if model.undo?.isDelete == true, model.isUndoAvailable(now: now()) {
-            QuietCapsule("Undo delete") {
-                model.undoLastQuickAdd(now: now())
+        if model.undo?.isDelete == true {
+            // Re-read once a second, so the control goes away when its window closes.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                if model.isUndoAvailable(now: context.date) {
+                    QuietCapsule("Undo delete") {
+                        model.undoLastQuickAdd(now: now())
+                    }
+                    .accessibilityLabel("Undo delete")
+                    .accessibilityValue("Available for 10 seconds after deleting")
+                }
             }
-            .accessibilityLabel("Undo delete")
-            .accessibilityValue("Available for 10 seconds after deleting")
         }
         if model.rows.isEmpty {
             EmptyState(
@@ -363,6 +368,8 @@ private struct SwipeToDeleteRow<Content: View>: View {
             }
             .accessibilityLabel(accessibilityName)
             .opacity(offset < 0 ? 1 : 0)
+            // VoiceOver uses the row's "Delete" action instead of this button.
+            .accessibilityHidden(true)
             content()
                 .offset(x: offset)
                 .simultaneousGesture(

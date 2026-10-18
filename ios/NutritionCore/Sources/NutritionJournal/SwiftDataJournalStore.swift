@@ -1443,12 +1443,14 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             let deleteKind = OutboxKind.delete.rawValue
             let deleteRows = try context.fetch(FetchDescriptor<OutboxRecord>(
                 predicate: #Predicate<OutboxRecord> { $0.intakeID == intakeID && $0.kindRaw == deleteKind }))
-            // Nothing is withdrawn once a delete is acknowledged, and not after its Undo window.
-            if let deletedAt = deleteRows.first?.deletedAt {
-                let stillOpen = now < deletedAt.addingTimeInterval(JournalUndo.deleteWindow)
-                guard stillOpen, deleteRows.allSatisfy({ $0.acknowledgedAt == nil }) else {
-                    throw JournalError.undoUnavailable(intakeID)
+            // Nothing is withdrawn once a delete is acknowledged, and not after its Undo window. A delete row
+            // without its instant cannot be placed in the window, so it is refused rather than guessed at.
+            if !deleteRows.isEmpty {
+                let stillOpen = deleteRows.allSatisfy {
+                    $0.acknowledgedAt == nil
+                        && now < ($0.deletedAt ?? .distantPast).addingTimeInterval(JournalUndo.deleteWindow)
                 }
+                guard stillOpen else { throw JournalError.undoUnavailable(intakeID) }
             }
             for row in deleteRows { context.delete(row) }
             record.lifecycleRaw = IntakeLifecycle.active.rawValue
