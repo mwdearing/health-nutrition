@@ -181,7 +181,7 @@ public struct TodayView: View {
                     }
                     .accessibilityLabel(model.quickWaterAccessibilityLabel)
                     .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
-                    if model.isUndoAvailable(now: now()) {
+                    if model.isUndoAvailable(now: now()), model.undo?.isDelete != true {
                         QuietCapsule("Undo") {
                             model.undoLastQuickAdd(now: now())
                         }
@@ -236,6 +236,20 @@ public struct TodayView: View {
 
     @ViewBuilder
     private var entries: some View {
+        // Above the empty state, so deleting the last entry still offers Undo.
+        if model.undo?.isDelete == true {
+            // Re-read once a second, so the control goes away when its window closes.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                if model.isUndoAvailable(now: context.date) {
+                    QuietCapsule("Undo delete") {
+                        model.undoLastQuickAdd(now: now())
+                        checklist?.load()
+                    }
+                    .accessibilityLabel("Undo delete")
+                    .accessibilityValue("Available for 10 seconds after deleting")
+                }
+            }
+        }
         if model.rows.isEmpty {
             EmptyState(
                 title: "Nothing logged today",
@@ -291,20 +305,29 @@ public struct TodayView: View {
     /// nothing in them says it is not food; a food carries none.
     @ViewBuilder
     private func entryRow(_ row: TodayRow) -> some View {
-        if let onSelect {
-            Button {
-                onSelect(row.id)
-            } label: {
-                EntryRow(title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater)
+        SwipeToDeleteRow(
+            accessibilityName: "Delete \(row.title)",
+            onDelete: {
+                _ = model.deleteEntry(intakeID: row.id, now: now())
+                checklist?.load()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(row.accessibilityText)
-            .accessibilityHint("Opens the entry")
-        } else {
-            EntryRow(
-                title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater, showsChevron: false)
-                .accessibilityElement(children: .combine)
+        ) {
+            if let onSelect {
+                Button {
+                    onSelect(row.id)
+                } label: {
+                    EntryRow(title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater)
+                }
+                .buttonStyle(.plain)
                 .accessibilityLabel(row.accessibilityText)
+                .accessibilityHint("Opens the entry")
+            } else {
+                EntryRow(
+                    title: row.title, detail: row.detailLine, kind: row.kind, isWater: row.isWater,
+                    showsChevron: false)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(row.accessibilityText)
+            }
         }
     }
 }
@@ -323,3 +346,61 @@ private struct FirstDayChecklistCard: View {
         }
     }
 }
+
+/// Reveals a Delete button on a leftward swipe. The meal cards are not a List, so `swipeActions` is not
+/// available; VoiceOver gets the same action without the swipe.
+private struct SwipeToDeleteRow<Content: View>: View {
+    let accessibilityName: String
+    let onDelete: () -> Void
+    @ViewBuilder let content: () -> Content
+    @State private var offset: CGFloat = 0
+    @State private var settled: CGFloat = 0
+    private let revealWidth: CGFloat = 84
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(role: .destructive) {
+                closeAndDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.title3)
+                    .frame(width: revealWidth)
+                    .frame(maxHeight: .infinity)
+                    .foregroundStyle(.white)
+                    .background(TokenColors.error, in: RoundedRectangle(cornerRadius: DesignRadius.control))
+            }
+            .accessibilityLabel(accessibilityName)
+            .opacity(offset < 0 ? 1 : 0)
+            // At rest the button is under the row; a tap on the row's empty trailing edge must not reach it.
+            .allowsHitTesting(offset < 0)
+            // VoiceOver uses the row's "Delete" action instead of this button.
+            .accessibilityHidden(true)
+            content()
+                .offset(x: offset)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            // Only a mostly horizontal drag moves the row, so a vertical scroll does not reveal it.
+                            guard abs(value.translation.width) > abs(value.translation.height) else {
+                                offset = settled
+                                return
+                            }
+                            offset = min(0, max(-revealWidth, settled + value.translation.width))
+                        }
+                        .onEnded { _ in
+                            withAnimation(.snappy) {
+                                settled = offset < -revealWidth / 2 ? -revealWidth : 0
+                                offset = settled
+                            }
+                        })
+                .accessibilityAction(named: accessibilityName) { closeAndDelete() }
+        }
+    }
+
+    /// Both paths close the row before deleting, so a failed delete does not leave it revealed.
+    private func closeAndDelete() {
+        withAnimation(.snappy) { offset = 0; settled = 0 }
+        onDelete()
+    }
+}
+

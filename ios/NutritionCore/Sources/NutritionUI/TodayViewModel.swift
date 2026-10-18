@@ -2,10 +2,12 @@ import Foundation
 import NutritionDomain
 import NutritionJournal
 
-/// A water entry that can still be taken back.
+/// A water entry or a deleted entry that can still be taken back.
 public struct UndoHandle: Equatable {
     public let intakeID: String
     public let expiresAt: Date
+    /// True for a delete, which Undo restores; false for a quick-added water entry, which Undo removes.
+    public var isDelete = false
 }
 
 /// One row on the Today screen.
@@ -76,7 +78,7 @@ public final class TodayViewModel: ObservableObject {
     /// What Today totals for everyone, goal or not, in label order. Energy, carbohydrate and fat are here so
     /// the calorie ring and the macro columns show from the first day rather than only once a goal is set.
     public static let defaultTrackedNutrients = ["energy", "protein", "carbohydrate", "fat", "fiber", "sodium", "potassium"]
-    public static let undoWindow: TimeInterval = 10
+    public static let undoWindow: TimeInterval = JournalUndo.deleteWindow
     /// Shown when a water amount is zero, negative or not a number.
     public static let waterAmountInvalidMessage = "Enter a water amount above zero."
 
@@ -466,7 +468,8 @@ public final class TodayViewModel: ObservableObject {
             id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: timeZoneIdentifier)
         let component = IntakeComponent(componentID: "water", name: "Water", amount: milliliters, unit: .mL)
         do {
-            try store.create(intake, components: [component], product: nil, now: now)
+            // The place of the write in commit order is taken inside its own commit.
+            offerSequence = try store.createSequenced(intake, components: [component], product: nil, now: now).1
         } catch {
             errorMessage = "Could not save the water."
             return nil
@@ -517,12 +520,43 @@ public final class TodayViewModel: ObservableObject {
             return false
         }
         do {
-            try store.delete(intakeID: handle.intakeID, now: now)
+            if handle.isDelete {
+                try store.undoDelete(intakeID: handle.intakeID)
+            } else {
+                try store.delete(intakeID: handle.intakeID, now: now)
+            }
         } catch {
             errorMessage = "Could not undo."
             return false
         }
         undo = nil
+        load(now: now)
+        return true
+    }
+
+    /// Where the offer on screen sits in the store's commit order: the delete it offers, or the latest water.
+    private var offerSequence: UInt64 = 0
+
+    /// A delete committed anywhere in the app, reported with its place in commit order. Undo is offered for the
+    /// most recent change only, so the offer goes only when a delete committed after it. A late hook for an
+    /// earlier delete, or for the offered delete itself, carries a lower or equal place and leaves it alone.
+    public func deleteCommitted(sequence: UInt64) {
+        guard undo != nil, sequence > offerSequence else { return }
+        undo = nil
+    }
+
+    /// Deletes an entry from Today, offering Undo for the window. Nothing reaches Apple Health until it passes.
+    @discardableResult
+    public func deleteEntry(intakeID: String, now: Date) -> Bool {
+        do {
+            offerSequence = try store.deleteSequenced(intakeID: intakeID, now: now)
+        } catch {
+            errorMessage = "Could not delete the entry."
+            return false
+        }
+        errorMessage = nil
+        undo = UndoHandle(
+            intakeID: intakeID, expiresAt: now.addingTimeInterval(Self.undoWindow), isDelete: true)
         load(now: now)
         return true
     }
