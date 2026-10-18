@@ -144,7 +144,10 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public var amountText: String = "" {
         didSet {
             editedFields.insert(.amount)
-            if !isPrefilling && !isSettingServings && AmountParser.parseTyped(amountText) != nil { unitNotice = nil }
+            if !isPrefilling && !isSettingServings,
+               AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) != nil {
+                unitNotice = nil
+            }
             // A figure written by anything but the prefill no longer stands for the stored amount.
             if !isPrefilling { prefillBacking = nil }
             // An amount typed by hand no longer equals a count of servings.
