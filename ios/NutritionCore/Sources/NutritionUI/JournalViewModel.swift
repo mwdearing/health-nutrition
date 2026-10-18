@@ -224,7 +224,7 @@ public final class JournalViewModel: ObservableObject {
                     isWater: intake.category == "water")
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
-                    titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale)
+                    titles[key] = Self.dayTitle(intake.occurredAt, zone: zone, locale: locale, now: now)
                 }
                 groups[key, default: []].append(row)
                 intakesByDay[key, default: []].append(intake)
@@ -339,10 +339,19 @@ public final class JournalViewModel: ObservableObject {
         guard let closest, let pickedDay = Self.utcDate(fromDayKey: key) else {
             return JournalJumpTarget(sectionID: sections.first?.id, message: nil)
         }
-        let title = Self.dayTitle(pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale)
+        // The picked day is a day key in the journal's zone, so "yesterday" is judged in that same zone.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        let isYesterday = Self.dayKey(yesterday, zone: zone) == key
+        // distantPast turns off dayTitle's own "Yesterday" check, which is UTC here and so wrong.
+        let dayPhrase = isYesterday
+            ? "yesterday"
+            : "on " + Self.dayTitle(
+                pickedDay, zone: TimeZone(secondsFromGMT: 0) ?? .current, locale: locale, now: .distantPast)
         return JournalJumpTarget(
             sectionID: closest.id,
-            message: "Nothing logged on \(title). Showing the closest day with entries.")
+            message: "Nothing logged \(dayPhrase). Showing the closest day with entries.")
     }
 
     /// Whole days between two yyyy-MM-dd keys, or Int.max when either key cannot be read.
@@ -676,12 +685,18 @@ public final class JournalViewModel: ObservableObject {
         return calendar.date(from: components)
     }
 
-    static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale) -> String {
+    static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale, now: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let isYesterday = calendar.date(byAdding: .day, value: -1, to: now)
+            .map { calendar.isDate(date, inSameDayAs: $0) } ?? false
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.timeZone = zone
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
+        // The system words the previous day in the person's language ("Yesterday" in English).
+        formatter.doesRelativeDateFormatting = isYesterday
         return formatter.string(from: date)
     }
 
