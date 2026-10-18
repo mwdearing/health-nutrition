@@ -108,7 +108,13 @@ extension StoredShareCountingTests {
     func testTheWaterGoalBarReadsAShareCountedDrinkAsLogged() throws {
         let store = try makeStore()
         _ = try log(store, category: "other", amount: 200, share: 90)
-        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        // The goal bar exists only where a water goal is set, so the test sets one in a goal store.
+        let goalsDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: goalsDirectory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: goalsDirectory) }
+        let goals = try SwiftDataGoalStore(url: goalsDirectory.appendingPathComponent("goals.store"))
+        try goals.setGoal(TodayViewModel.defaultWaterGoal)
+        let today = TodayViewModel(store: store, goals: goals, timeZoneIdentifier: "UTC")
         today.load(now: now)
 
         let bar = try XCTUnwrap(today.waterBar)
