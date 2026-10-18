@@ -96,21 +96,29 @@ final class WidgetSnapshotPublisher {
     }
 
     static func snapshot(from today: TodayViewModel, now: Date) -> WidgetSnapshot {
+        var partial: [String] = []
+        // `shownAmount` is the known sum on a day where some entries have no value, the whole-day figure otherwise;
+        // a figure that is only the known part is listed so the widget can say so.
         func total(_ key: String, in unit: MeasureUnit) -> Double? {
             guard let line = today.progress.first(where: { $0.nutrient == key }),
-                case .known(let value, let stored) = line.amount
+                case .known(let value, let stored) = line.shownAmount
             else { return nil }
+            if line.isPartial { partial.append(key) }
             return WidgetSnapshotUnits.value(Quantity(value: value, unit: stored), in: unit)
         }
         let energyGoal = today.progress.first { $0.nutrient == "energy" }?.goal.flatMap {
             WidgetSnapshotUnits.value(Quantity(value: $0.target, unit: $0.unit), in: .kcal)
         }
+        let energy = total("energy", in: .kcal)
+        let protein = total("protein", in: .g)
+        let carbohydrate = total("carbohydrate", in: .g)
+        let fat = total("fat", in: .g)
         return WidgetSnapshot(
-            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: total("energy", in: .kcal),
-            energyGoalKcal: energyGoal, proteinGrams: total("protein", in: .g),
-            carbohydrateGrams: total("carbohydrate", in: .g), fatGrams: total("fat", in: .g),
+            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: energy,
+            energyGoalKcal: energyGoal, proteinGrams: protein,
+            carbohydrateGrams: carbohydrate, fatGrams: fat,
             waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
-            usUnits: today.unitSystem == .usCustomary)
+            usUnits: today.unitSystem == .usCustomary, partialFigures: partial.isEmpty ? nil : partial)
     }
 }
 

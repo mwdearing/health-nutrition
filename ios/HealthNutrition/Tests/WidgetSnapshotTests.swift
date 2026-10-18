@@ -50,6 +50,25 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.caloriesSpoken(nil), "Calories unknown")
     }
 
+    func testAPartialFigureGetsAPlusAndIsSpokenAsAtLeast() {
+        XCTAssertEqual(WidgetFigure.calories(87, partial: true), "87+")
+        XCTAssertEqual(WidgetFigure.calories(87), "87")
+        XCTAssertEqual(WidgetFigure.calories(nil, partial: true), "—", "nothing known stays a dash")
+        XCTAssertEqual(WidgetFigure.caloriesSpoken(87, partial: true), "at least 87 calories")
+        XCTAssertEqual(WidgetFigure.figure(23, unit: "g", partial: true), "23+ g")
+        XCTAssertEqual(WidgetFigure.figure(23, unit: "g"), "23 g")
+        XCTAssertEqual(WidgetFigure.number(0, partial: true), "0+")
+    }
+
+    func testOnlyTheListedFiguresAreTreatedAsPartial() {
+        var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertFalse(snapshot.isPartial("energy"))
+        snapshot.partialFigures = ["energy", "fat"]
+        XCTAssertTrue(snapshot.isPartial("energy"))
+        XCTAssertTrue(snapshot.isPartial("fat"))
+        XCTAssertFalse(snapshot.isPartial("protein"))
+    }
+
     func testASummaryWrittenBeforeTheUnitFieldStillDecodes() throws {
         let old = Data(
             #"{"generatedAt":"2023-11-14T22:13:20Z","hasEntries":true,"energyKcal":1,"waterMilliliters":2}"#.utf8)
