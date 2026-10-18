@@ -51,7 +51,8 @@ final class StoredShareCountingTests: XCTestCase {
 
         XCTAssertEqual(todayWater(store), 180)
         XCTAssertEqual(try dailyWater(store), .known(180, .mL))
-        XCTAssertEqual(try await healthWater(store, id), .known(180, .mL))
+        let health = try await healthWater(store, id)
+        XCTAssertEqual(health, .known(180, .mL))
     }
 
     /// A drink stored before shares, with no product and no share, counts nothing, as on main.
@@ -61,7 +62,8 @@ final class StoredShareCountingTests: XCTestCase {
 
         XCTAssertEqual(todayWater(store), 0)
         XCTAssertEqual(try dailyWater(store), .unknown)
-        XCTAssertNil(try await healthWater(store, id))
+        let health = try await healthWater(store, id)
+        XCTAssertNil(health)
     }
 
     /// A pre-update water entry counts its full volume in all three places, as on main.
@@ -71,7 +73,8 @@ final class StoredShareCountingTests: XCTestCase {
 
         XCTAssertEqual(todayWater(store), 200)
         XCTAssertEqual(try dailyWater(store), .known(200, .mL))
-        XCTAssertEqual(try await healthWater(store, id), .known(200, .mL))
+        let health = try await healthWater(store, id)
+        XCTAssertEqual(health, .known(200, .mL))
     }
 
     /// An old drink given a share counts in all three places. The edit is modelled as the entry carrying the
@@ -82,7 +85,8 @@ final class StoredShareCountingTests: XCTestCase {
 
         XCTAssertEqual(todayWater(store), 100)
         XCTAssertEqual(try dailyWater(store), .known(100, .mL))
-        XCTAssertEqual(try await healthWater(store, id), .known(100, .mL))
+        let health = try await healthWater(store, id)
+        XCTAssertEqual(health, .known(100, .mL))
     }
 }
 
@@ -94,7 +98,8 @@ extension StoredShareCountingTests {
 
         XCTAssertEqual(todayWater(store), 100)
         XCTAssertEqual(try dailyWater(store), .known(100, .mL))
-        XCTAssertEqual(try await healthWater(store, id), .known(100, .mL))
+        let health = try await healthWater(store, id)
+        XCTAssertEqual(health, .known(100, .mL))
     }
 }
 
