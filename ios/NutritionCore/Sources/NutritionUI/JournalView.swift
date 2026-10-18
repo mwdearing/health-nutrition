@@ -16,6 +16,11 @@ public struct JournalView: View {
     /// even when two jumps choose the same day.
     @State private var jumpSection: String?
     @State private var jumpSerial = 0
+    /// The day sections currently on screen, kept as the list scrolls. The arrows step from the top one.
+    @State private var visibleDayIDs: Set<String> = []
+    /// The day the last arrow or jump asked for, and the section it revealed (nil when that day has no section).
+    @State private var lastRequestedDay: Date?
+    @State private var lastRevealedSection: String?
     /// The meal group "Save as meal" is naming, while its name prompt is up.
     @State private var saveMealTarget: SaveMealTarget?
     @State private var saveMealName = ""
@@ -155,19 +160,75 @@ public struct JournalView: View {
         .presentationDetents([.medium])
     }
 
-    /// Opens the jump sheet on today. The row is a button, so a screen reader hears what it does.
+    /// Opens the jump sheet on today, with one-day arrows beside it. The arrows step from the day last shown.
     private var jumpToDateRow: some View {
-        Button {
-            pickedDay = now()
-            showingJumpSheet = true
-        } label: {
-            HStack(spacing: DesignSpacing.s) {
-                Label("Jump to date", systemImage: "calendar")
-                    .foregroundStyle(TokenColors.textPrimary)
-                Spacer(minLength: DesignSpacing.s)
+        HStack(spacing: DesignSpacing.s) {
+            Button {
+                pickedDay = now()
+                showingJumpSheet = true
+            } label: {
+                // The label fills the row, so the whole empty stretch before the arrows is part of the target.
+                HStack(spacing: DesignSpacing.s) {
+                    Label("Jump to date", systemImage: "calendar")
+                        .foregroundStyle(TokenColors.textPrimary)
+                    Spacer(minLength: DesignSpacing.s)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .accessibilityHint("Opens a calendar to choose a day")
+            Button { stepDay(-1) } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Previous day")
+            Button { stepDay(1) } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Next day")
+            .disabled(isShowingToday)
         }
-        .accessibilityHint("Opens a calendar to choose a day")
+    }
+
+    /// The day the last arrow or jump asked for, while the list still has the same top section it had then.
+    /// An empty day reveals the nearest day, or nothing, so the anchor is the top section from before the step.
+    /// Once the user scrolls, the top visible day is used again.
+    private var arrowBase: Date {
+        if let day = lastRequestedDay, topVisibleID == lastRevealedSection {
+            return day
+        }
+        return JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
+    }
+
+    private var topVisibleID: String? {
+        model.sections.map(\.id).first { visibleDayIDs.contains($0) }
+    }
+
+    /// Forward is disabled when the arrows already point at today.
+    private var isShowingToday: Bool {
+        JournalViewModel.dayKey(arrowBase, zone: model.dayZone) >= JournalViewModel.dayKey(now(), zone: model.dayZone)
+    }
+
+    /// Moves one calendar day back or forward from the day at the top of the list, using the same jump as the sheet.
+    /// Forward stops at today.
+    private func stepDay(_ days: Int) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = model.dayZone
+        guard let date = calendar.date(byAdding: .day, value: days, to: arrowBase),
+              days < 0 || JournalViewModel.dayKey(date, zone: model.dayZone) <= JournalViewModel.dayKey(now(), zone: model.dayZone)
+        else { return }
+        let target = model.jumpTarget(for: date, now: now())
+        model.reveal(target)
+        jumpNotice = target.message
+        jumpSection = target.sectionID
+        jumpSerial += 1
+        lastRequestedDay = date
+        lastRevealedSection = target.sectionID ?? topVisibleID
     }
 
     /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
@@ -230,6 +291,8 @@ public struct JournalView: View {
         jumpNotice = target.message
         jumpSection = target.sectionID
         jumpSerial += 1
+        lastRequestedDay = pickedDay
+        lastRevealedSection = target.sectionID ?? topVisibleID
         showingJumpSheet = false
     }
 
@@ -262,6 +325,8 @@ public struct JournalView: View {
             }
         }
         .id(section.id)
+        .onAppear { visibleDayIDs.insert(section.id) }
+        .onDisappear { visibleDayIDs.remove(section.id) }
     }
 
     /// The title, the day's energy when it is known, one bar per goal, and the disabled add action.
@@ -288,15 +353,6 @@ public struct JournalView: View {
                 .buttonStyle(.borderless)
                 .accessibilityHint("Adds every entry of this day to today as new entries")
             }
-            HStack(spacing: DesignSpacing.s) {
-                Label("Add to this day", systemImage: "plus")
-                    .foregroundStyle(TokenColors.textPrimary)
-                Spacer(minLength: DesignSpacing.s)
-                LaterBadge()
-            }
-            .accessibilityElement(children: .combine)
-            .disabled(true)
-            .accessibilityValue("Not available yet")
         }
     }
 

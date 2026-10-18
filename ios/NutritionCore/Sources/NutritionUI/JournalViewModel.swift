@@ -153,6 +153,8 @@ public final class JournalViewModel: ObservableObject {
     /// The zone a picked day is read in, and the zone "today" is read in for a future date. The same
     /// resolved zone the repeater uses, so the device zone in production and "UTC" in tests.
     private let journalZoneID: () -> String
+    /// The zone the Diary groups its days in. The arrows and the jump both use it, so they agree with the sections.
+    public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
     private let locale: Locale
     private let preferences: DisplayPreferences
 
@@ -310,6 +312,23 @@ public final class JournalViewModel: ObservableObject {
         } else {
             expandedDays.insert(id)
         }
+    }
+
+    /// The day the Diary arrows step from: the earliest visible day in list order, clamped to today, or `now`
+    /// when none is visible. A section with an entry dated in the future is clamped, so the arrows never start there.
+    public static func arrowBaseDay(sectionIDs: [String], visible: Set<String>, zone: TimeZone, now: Date) -> Date {
+        guard let top = sectionIDs.first(where: { visible.contains($0) }), let day = dayDate(top, zone: zone) else { return now }
+        return min(day, now)
+    }
+
+    /// The local midnight of a day key such as "2026-10-14", read in the given zone.
+    static func dayDate(_ key: String, zone: TimeZone) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = zone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: key)
     }
 
     /// Where a picked day lands. A day with entries is its own section with no sentence. A day with none
