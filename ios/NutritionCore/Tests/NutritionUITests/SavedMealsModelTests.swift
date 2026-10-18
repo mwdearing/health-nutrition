@@ -230,21 +230,32 @@ final class SavedMealsModelTests: XCTestCase {
     }
 
     /// The unit of a changed amount is forgotten in the same commit as the edit, so an unreadable unit index no
-    /// longer stops the edit: the commit removes that component's unit rows without reading them.
-    func testAFailedUnitReadStillSavesTheEditAndForgetsItsUnit() throws {
+    /// longer stops the edit. Only the changed component's unit goes; the unchanged one survives (#430).
+    func testAFailedUnitReadStillSavesTheEditAndForgetsOnlyItsChangedUnit() throws {
         let inner = try makeJournal()
         let journal = FaultyJournal(inner)
-        let intake = try fiberEntry(inner)
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC",
+            meal: "breakfast")
+        try inner.create(
+            intake,
+            components: [
+                IntakeComponent(componentID: "fiber", name: "Fiber", amount: Decimal(string: "19.715686375")!, unit: .mL),
+                IntakeComponent(componentID: "protein", name: "Protein", amount: 3, unit: .mL),
+            ],
+            product: nil, now: now)
+        try inner.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "fiber", unit: .teaspoon))
+        try inner.recordLoggedUnit(JournalLoggedUnit(intakeID: intake.id, componentID: "protein", unit: .teaspoon))
         let detail = EntryDetailViewModel(store: journal, intakeID: intake.id, timeZoneIdentifier: "UTC")
         detail.load(now: now)
-        let componentID = try XCTUnwrap(detail.components.first).id
-        detail.drafts[componentID] = "250"
+        let fiberID = try XCTUnwrap(detail.components.first { $0.id == "fiber" }).id
+        detail.drafts[fiberID] = "250"
         journal.failUnitReads = true
 
         XCTAssertTrue(detail.saveDrafts(now: now))
-        let saved = try XCTUnwrap(inner.revisions(of: intake.id).last?.components.first)
+        let saved = try XCTUnwrap(inner.revisions(of: intake.id).last?.components.first { $0.componentID == "fiber" })
         XCTAssertEqual(saved.amount, Decimal(250))
-        XCTAssertEqual(try inner.loggedUnits().map(\.unit), [], "the changed component's unit is forgotten")
+        XCTAssertEqual(try inner.loggedUnits().map(\.componentID), ["protein"], "only the changed unit is forgotten")
     }
 
     func testAnUnreadableEntryRefusesTheWholeSave() throws {
