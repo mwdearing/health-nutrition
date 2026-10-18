@@ -1067,6 +1067,20 @@ final class NutritionFactsParserTests: XCTestCase {
                        "qualifier and fragment names are not compounds")
     }
 
+    /// Real supplement rows that look like noise must not be read as noise or as their nutrient.
+    func testSupplementRowsThatLookLikeNoiseSurvive() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 capsule",
+            "Vitamin E oil 400 IU",
+            "IgG 200mg",
+            "Include Blend 100mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin E oil", "IgG", "Include Blend"],
+                       "each row stays its own extra, none is read as a named nutrient")
+    }
+
     /// A real supplement ingredient survives next to the OCR noise rows of the same capture.
     func testSupplementIngredientSurvivesBesideOCRNoise() throws {
         let panel = parse([
