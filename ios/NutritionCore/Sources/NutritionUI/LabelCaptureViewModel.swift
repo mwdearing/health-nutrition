@@ -985,6 +985,8 @@ public final class LabelCaptureViewModel: ObservableObject {
         guard servingNeedsReview else { return }
         isServingConfirmed = true
         servingNeedsReview = false
+        // An open correction field would keep `isCorrecting` true and disable the values, so it closes too.
+        isEditingServing = false
         correctionError = nil
     }
 
