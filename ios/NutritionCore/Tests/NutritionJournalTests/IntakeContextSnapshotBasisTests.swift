@@ -58,14 +58,6 @@ final class IntakeContextSnapshotBasisTests: XCTestCase {
             logged: [logged("40", .mL)]))
     }
 
-    func testANegativeLoggedAmountIsUnknownNotANegativeFactor() {
-        // Older builds could store a negative amount. It must not give a negative per-100 g total.
-        let basis = IntakeContextSnapshotBasis.perHundred(.g)
-        XCTAssertNil(basis.factor(forLogged: [logged("-40", .g)]))
-        XCTAssertNil(basis.factor(forLogged: [logged("60", .g), logged("-40", .g)]))
-        XCTAssertEqual(basis.factor(forLogged: [logged("40", .g)]), dec("0.4"))
-    }
-
     func testStructuredServingDenominatorPrecedesGenericServingCount() {
         let cases: [(String, MeasureUnit, Decimal)] = [
             ("per serving (3 serving)", .serving, 2),

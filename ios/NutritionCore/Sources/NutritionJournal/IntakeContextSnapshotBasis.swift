@@ -107,9 +107,6 @@ public enum IntakeContextSnapshotBasis: Equatable {
     private static func loggedAmount(_ components: [IntakeComponent], in unit: MeasureUnit) -> Decimal? {
         var total = Decimal(0)
         var found = false
-        // A negative amount in this dimension cannot be added up. Older builds could store one, so the basis is
-        // unknown rather than a negative total, and the entry counts under the partial-totals note.
-        if components.contains(where: { $0.amount < 0 && $0.unit.dimension == unit.dimension }) { return nil }
         for component in components {
             guard component.unit.dimension == unit.dimension,
                   let converted = try? Quantity(

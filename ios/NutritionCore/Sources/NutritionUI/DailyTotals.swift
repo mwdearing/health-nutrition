@@ -190,6 +190,9 @@ public enum DailyTotalsBuilder {
     static func scalingFactor(
         labelBasis: String, logged components: [IntakeComponent]
     ) -> Decimal? {
+        // A negative logged amount cannot be added up, so the totals treat its entry as unknown rather than
+        // summing a negative. Export and Health keep the factor as stored: they call the shared basis directly.
+        if components.contains(where: { $0.amount < 0 }) { return nil }
         if let factor = IntakeContextSnapshotBasis.scalingFactor(
             labelBasis: labelBasis, logged: components)
         {

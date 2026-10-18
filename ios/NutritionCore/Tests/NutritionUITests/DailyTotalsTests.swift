@@ -957,4 +957,16 @@ final class DailyTotalsTests: XCTestCase {
 
         XCTAssertEqual(totals.total(for: "water")?.value, .unknown)
     }
+
+    func testANegativeLoggedAmountIsUnknownForTotalsOnly() {
+        let grams = IntakeComponent(componentID: "fiber", name: "Oats", amount: -40, unit: .g)
+        let counted = IntakeComponent(componentID: "gummy", name: "Gummy", amount: -2, unit: .serving)
+        // Totals treat the entry as unknown rather than summing a negative.
+        XCTAssertNil(DailyTotalsBuilder.scalingFactor(labelBasis: "per 100 g", logged: [grams]))
+        XCTAssertNil(DailyTotalsBuilder.scalingFactor(labelBasis: "per serving", logged: [counted]))
+        // Export and Health use the shared basis, which keeps the stored factor as it is on main.
+        XCTAssertEqual(
+            IntakeContextSnapshotBasis.scalingFactor(labelBasis: "per 100 g", logged: [grams]),
+            Decimal(string: "-0.4"))
+    }
 }
