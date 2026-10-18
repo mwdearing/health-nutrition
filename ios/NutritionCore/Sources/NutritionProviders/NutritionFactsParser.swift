@@ -960,7 +960,7 @@ public enum NutritionFactsParser {
     /// Short words that are real: panel and supplement words, forms and units. None is OCR noise, whether
     /// it follows a nutrient ("Vitamin E oil 400 IU") or stands alone ("EPA 500mg", "DHA 300mg").
     private static let shortRowWords: Set<String> = [
-        "oil", "tab", "as", "per", "and", "the", "with", "from", "of", "in", "for", "gel", "cap",
+        "oil", "tab", "as", "per", "and", "the", "with", "from", "of", "in", "for", "gel", "cap", "fat", "sat",
         "iu", "mg", "mcg", "epa", "dha", "ala", "ph",
     ]
 
@@ -971,7 +971,10 @@ public enum NutritionFactsParser {
         guard words.count == 1, let word = words.first else { return false }
         if qualifiers.contains(where: { editDistance(word.lowercased(), $0) <= 2 }) { return true }
         let letters = word.filter(\.isLetter)
-        if !letters.isEmpty, letters.count <= 3, letters.allSatisfy(\.isLowercase), !shortRowWords.contains(word.lowercased()) {
+        // A lowercase word with a digit ("k2", "b12") is a real token, not a fragment.
+        if !letters.isEmpty, letters.count <= 3, word.allSatisfy({ $0.isLetter && $0.isLowercase }),
+           !shortRowWords.contains(word.lowercased())
+        {
             return true
         }
         // A fragment starts lowercase and ends in a capital ("minD"); "IgG" and "CoQ" start capitalised.
