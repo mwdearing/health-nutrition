@@ -210,6 +210,8 @@ public final class TodayViewModel: ObservableObject {
             // the tracked nutrients are known.
             var foodEntries: [(components: [IntakeComponent], snapshot: ProductDefinition?, kind: ProductKind)] = []
             var waterEntries = 0
+            // Water components that counted as a volume: the only water that is known.
+            var countedWater = 0
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
             let loggedUnits = LoggedUnitIndex.load(from: store)
@@ -232,6 +234,7 @@ public final class TodayViewModel: ObservableObject {
                             Self.isPositive(converted.value)
                         {
                             waterTotal += converted.value
+                            countedWater += 1
                         } else {
                             skipped += 1
                         }
@@ -366,7 +369,7 @@ public final class TodayViewModel: ObservableObject {
             }.map { line in
                 GoalBarModel.make(
                     line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped,
-                    someKnown: waterEntries > 0, unitSystem: self.preferences.unitSystem)
+                    someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
             }
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
