@@ -1356,8 +1356,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
                 product: product, changeReason: changeReason, now: now,
                 occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
-            // The units of changed components go last, after every step that can throw, so a failure anywhere
-            // above leaves them in place. Nothing below can throw, so the commit saves them with the revision.
+            // The units of changed components go last, after the revision is written. A throw here still discards the
+            // whole unsaved context, so the revision and the removals are saved together or not at all.
             for componentID in unitRemovals {
                 for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
                     predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
