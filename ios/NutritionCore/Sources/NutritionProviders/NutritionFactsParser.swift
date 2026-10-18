@@ -1318,7 +1318,7 @@ public enum NutritionFactsParser {
             let lower = token.text.lowercased()
             // A hyphen is part of a name ("Vitamin B-12"), and a bare number is part of one only directly after a
             // single letter ("Vitamin B 12"), so "Calories 30" and similar text is never read as a name.
-            let numberAfterLetter = token.text.allSatisfy(\.isNumber) && previous?.count == 1
+            let numberAfterLetter = token.text.allSatisfy({ $0.isASCII && $0.isNumber }) && previous?.count == 1
                 && previous?.first?.isLetter == true
             let startsWord = token.text.first?.isLetter == true || numberAfterLetter
             guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower),
@@ -1328,6 +1328,12 @@ public enum NutritionFactsParser {
             previous = token.text
         }
         let name = words.map(\.text).joined(separator: " ")
+        // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it: "So-dium" is sodium.
+        // The extra keeps its printed name when the name is not a known nutrient.
+        if name.contains("-") {
+            let bare = name.filter { $0 != "-" }.lowercased()
+            if let row = rows.first(where: { $0.aliases.contains(bare) }) { return (name, row) }
+        }
         guard let match = firstRow(in: name) else { return (name, nil) }
         // The whole name is one named row, so it is that nutrient and not a compound of its own.
         if match.nameStart == name.startIndex, match.end == name.endIndex { return nil }
