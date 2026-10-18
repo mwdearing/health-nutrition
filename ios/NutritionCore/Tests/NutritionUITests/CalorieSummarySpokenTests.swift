@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import NutritionUI
 
+@MainActor
 final class CalorieSummarySpokenTests: XCTestCase {
     /// VoiceOver reads remaining, then "Food, N calories" and "Burned, N calories", as one line.
     func testSpokenSummaryNamesFoodAndBurnedAsLabels() throws {
