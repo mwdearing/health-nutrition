@@ -52,7 +52,7 @@ struct TodayWidgetView: View {
         switch family {
         case .accessoryCircular:
             Gauge(value: snapshot?.energyFraction ?? 0) {
-                Image(systemName: "flame.fill")
+                Image(systemName: "fork.knife")
             } currentValueLabel: {
                 Text(WidgetFigure.wholeNumber(snapshot?.energyKcal) ?? "—")
             }

@@ -50,7 +50,7 @@ struct WatchTodayWidgetView: View {
         switch family {
         case .accessoryCircular:
             Gauge(value: snapshot?.energyFraction ?? 0) {
-                Image(systemName: "flame.fill")
+                Image(systemName: "fork.knife")
             } currentValueLabel: {
                 Text(kcal)
             }
@@ -59,7 +59,7 @@ struct WatchTodayWidgetView: View {
         case .accessoryCorner:
             Text(kcal)
                 .widgetLabel {
-                    Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "flame.fill") }
+                    Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "fork.knife") }
                 }
                 .privacySensitive()
         case .accessoryInline:
