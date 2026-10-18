@@ -954,9 +954,9 @@ public enum NutritionFactsParser {
     }
 
     /// Whether an unrecognized name is OCR noise on any panel kind rather than a row a supplement states.
-    /// A misread qualifier ("Inchides") is noise, and so is a one-word fragment of a nutrient name:
-    /// lowercase and at most three letters ("lum"), or a short word ending in a capital after lowercase
-    /// ("minD"). A real ingredient such as "Taurine" or "CoQ10" is not.
+    /// A misread qualifier ("Inchides") is noise, and so is a one-word fragment that is the end of a known
+    /// nutrient name, with OCR swaps read as one letter ("lum" ends "calcium", "minD" ends "vitamin d"). A
+    /// short word that starts a nutrient ("Pro", "Mag") and a real ingredient ("Taurine", "CoQ10") are not.
     /// Short words that are real: panel and supplement words, forms and units. None is OCR noise, whether
     /// it follows a nutrient ("Vitamin E oil 400 IU") or stands alone ("EPA 500mg", "DHA 300mg").
     private static let shortRowWords: Set<String> = [
