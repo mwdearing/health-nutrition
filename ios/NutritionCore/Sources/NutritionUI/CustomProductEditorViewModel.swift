@@ -47,6 +47,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
 @MainActor public extension CustomProductEditorViewModel {
     static let ingredientPrefix = "ingredient:"
     static let otherIngredientTag = "other-ingredient"
+    static let savedTagPrefix = "saved:"
     static let nutrientChoices: [NutrientKeyChoice] = [
         NutrientKeyChoice(key: "energyKcal", name: "Energy (kcal)"),
         NutrientKeyChoice(key: "fat", name: "Total fat"),
@@ -71,18 +72,23 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         var choices = CustomProductEditorViewModel.nutrientChoices.filter { $0.key == fact.key || !taken.contains($0.key) }
         let isKnown = fact.key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix)
             || CustomProductEditorViewModel.nutrientChoices.contains { $0.key == fact.key }
-        if !isKnown { choices.append(NutrientKeyChoice(key: fact.key, name: "Saved fact")) }
+        if !isKnown { choices.append(NutrientKeyChoice(key: CustomProductEditorViewModel.savedTag(fact.key), name: "\(fact.displayName) (saved)")) }
         choices.append(NutrientKeyChoice(key: CustomProductEditorViewModel.otherIngredientTag, name: "Other ingredient…"))
         return choices
     }
 
+    /// Saved keys this build does not offer get their own tag, so they can never collide with a real choice.
+    static func savedTag(_ key: String) -> String { savedTagPrefix + key }
+
     /// The picker value that matches a row's current key.
     static func pickerTag(for fact: ProductFactInput) -> String {
-        fact.key.hasPrefix(ingredientPrefix) ? otherIngredientTag : fact.key
+        if fact.key.hasPrefix(ingredientPrefix) { return otherIngredientTag }
+        if nutrientChoices.contains(where: { $0.key == fact.key }) { return fact.key }
+        return savedTag(fact.key)
     }
 
     func chooseKey(_ tag: String, for id: UUID) {
-        guard let index = facts.firstIndex(where: { $0.id == id }) else { return }
+        guard let index = facts.firstIndex(where: { $0.id == id }), !tag.hasPrefix(CustomProductEditorViewModel.savedTagPrefix) else { return }
         if tag == CustomProductEditorViewModel.otherIngredientTag {
             if !facts[index].key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix) {
                 facts[index].key = CustomProductEditorViewModel.ingredientPrefix
@@ -91,7 +97,11 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         }
         facts[index].key = tag
         if let choice = CustomProductEditorViewModel.nutrientChoices.first(where: { $0.key == tag }) {
-            facts[index].displayName = choice.name
+            // Fill the name only when it is blank or still a standard name, so a name the user typed survives.
+            let current = facts[index].displayName
+            if current.isEmpty || CustomProductEditorViewModel.nutrientChoices.contains(where: { $0.name == current }) {
+                facts[index].displayName = choice.name
+            }
         }
     }
 
