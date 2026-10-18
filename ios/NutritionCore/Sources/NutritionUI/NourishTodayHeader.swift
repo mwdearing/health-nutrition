@@ -104,7 +104,6 @@ public struct NourishTodayHeader: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textPrimary)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Food, \(BodyActivityViewModel.whole(food)) calories")
                 }
                 if let burned = calories.burned {
                     Label {
@@ -115,7 +114,6 @@ public struct NourishTodayHeader: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textPrimary)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Burned, \(BodyActivityViewModel.whole(burned)) calories")
                 }
             }
             if let note = partial {
