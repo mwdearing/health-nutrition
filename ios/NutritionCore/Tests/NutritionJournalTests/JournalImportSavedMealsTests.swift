@@ -390,4 +390,27 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         }
         XCTAssertEqual(savedMeals.meals, [])
     }
+
+    /// A saved meal item keeps its water share through the export and the restore, as a favorite does.
+    func testASavedMealItemKeepsItsWaterShareThroughExportAndImport() throws {
+        let shared = JournalSavedMeal(
+            id: "meal-share", name: "Soda lunch", meal: nil,
+            items: [FavoriteTemplate(
+                id: "item-soda", displayName: "7up", category: "other",
+                components: [FavoriteComponent(
+                    componentID: "soda", name: "7up", amountText: "200", unitSymbol: "mL",
+                    hydrationPercentText: "95")])])
+        let data = try JournalExporter.encode(
+            try JournalExporter.makeExport(
+                store: try filledStore(try directory()), favorites: nil,
+                savedMeals: MemorySavedMeals([shared]), appVersion: appVersion, exportedAt: exportedAt))
+        let target = try store(try directory())
+        let savedMeals = MemorySavedMeals()
+
+        _ = try JournalImporter.importExport(
+            data, into: target, favorites: try favorites(target), savedMeals: savedMeals)
+
+        XCTAssertEqual(
+            savedMeals.meals.first?.items.first?.components.first?.hydrationPercentText, "95")
+    }
 }
