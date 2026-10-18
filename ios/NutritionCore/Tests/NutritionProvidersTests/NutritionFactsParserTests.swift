@@ -1175,6 +1175,21 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Inclusion"])
     }
 
+    /// B-vitamins printed with a hyphen or a space before their number are read as one named row, with their amount.
+    func testHyphenatedAndNumberOnlyNamesAreRead() throws {
+        let hyphen = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B-12 2mcg"])
+        XCTAssertEqual(hyphen.additionalNutrients.map(\.name), ["Vitamin B-12"])
+        if case .known(let amount, let unit)? = hyphen.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("2"))
+            XCTAssertEqual(unit, .mcg)
+        } else {
+            XCTFail("Vitamin B-12 should carry 2 mcg")
+        }
+
+        let spaced = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 12 2mcg"])
+        XCTAssertEqual(spaced.additionalNutrients.map(\.name), ["Vitamin B 12"])
+    }
+
     /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
     func testEPAAndDHAStandaloneRowsSurvive() throws {
         let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
