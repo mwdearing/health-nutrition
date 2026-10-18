@@ -1,3 +1,4 @@
+import NutritionDomain
 import XCTest
 @testable import NutritionJournal
 
