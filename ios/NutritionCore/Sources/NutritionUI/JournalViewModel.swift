@@ -314,12 +314,11 @@ public final class JournalViewModel: ObservableObject {
         }
     }
 
-    /// Where a picked day lands. A day with entries is its own section with no sentence. A day with none
-    /// goes to the closest day that has entries (a tie goes to the newer day) with the sentence naming the
-    /// The day the Diary arrows step from: the earliest visible day in list order, or `now` when none is visible.
+    /// The day the Diary arrows step from: the earliest visible day in list order, clamped to today, or `now`
+    /// when none is visible. A section with an entry dated in the future is clamped, so the arrows never start there.
     public static func arrowBaseDay(sectionIDs: [String], visible: Set<String>, zone: TimeZone, now: Date) -> Date {
         guard let top = sectionIDs.first(where: { visible.contains($0) }), let day = dayDate(top, zone: zone) else { return now }
-        return day
+        return min(day, now)
     }
 
     /// The local midnight of a day key such as "2026-10-14", read in the given zone.
@@ -332,7 +331,9 @@ public final class JournalViewModel: ObservableObject {
         return formatter.date(from: key)
     }
 
-    /// The picked day. A date after today is treated as today. With no entries at all there is no section.
+    /// Where a picked day lands. A day with entries is its own section with no sentence. A day with none
+    /// goes to the closest day that has entries (a tie goes to the newer day) with the sentence naming the
+    /// picked day. A date after today is treated as today. With no entries at all there is no section.
     /// Sections are keyed by each entry's own local day, so the picked day is compared as a day key.
     public func jumpTarget(for date: Date, now: Date) -> JournalJumpTarget {
         guard !sections.isEmpty else {

@@ -18,6 +18,9 @@ public struct JournalView: View {
     @State private var jumpSerial = 0
     /// The day sections currently on screen, kept as the list scrolls. The arrows step from the top one.
     @State private var visibleDayIDs: Set<String> = []
+    /// The day the last arrow or jump asked for, and the section it revealed (nil when that day has no section).
+    @State private var lastRequestedDay: Date?
+    @State private var lastRevealedSection: String?
     /// The meal group "Save as meal" is naming, while its name prompt is up.
     @State private var saveMealTarget: SaveMealTarget?
     @State private var saveMealName = ""
@@ -181,9 +184,17 @@ public struct JournalView: View {
         }
     }
 
-    /// The day the arrows step from: the earliest day at the top of the visible list, or today.
+    /// The top visible day, or the day the last arrow or jump asked for while the list still shows the section it revealed.
+    /// An empty day has no section of its own, so the list keeps showing the nearest day and the arrows keep the requested one.
     private var arrowBase: Date {
-        JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
+        if let day = lastRequestedDay, lastRevealedSection == nil || topVisibleID == lastRevealedSection {
+            return day
+        }
+        return JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
+    }
+
+    private var topVisibleID: String? {
+        model.sections.map(\.id).first { visibleDayIDs.contains($0) }
     }
 
     /// Forward is disabled when the arrows already point at today.
@@ -204,6 +215,8 @@ public struct JournalView: View {
         jumpNotice = target.message
         jumpSection = target.sectionID
         jumpSerial += 1
+        lastRequestedDay = date
+        lastRevealedSection = target.sectionID
     }
 
     /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
@@ -266,6 +279,8 @@ public struct JournalView: View {
         jumpNotice = target.message
         jumpSection = target.sectionID
         jumpSerial += 1
+        lastRequestedDay = pickedDay
+        lastRevealedSection = target.sectionID
         showingJumpSheet = false
     }
 
