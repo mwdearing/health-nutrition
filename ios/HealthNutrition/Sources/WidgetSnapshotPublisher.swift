@@ -111,16 +111,30 @@ final class WidgetSnapshotPublisher {
         let protein = total("protein", in: .g)
         let carbohydrate = total("carbohydrate", in: .g)
         let fat = total("fat", in: .g)
+        let calories = Self.calorieFigures(today.calorieRemaining)
         return WidgetSnapshot(
             generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: energy,
             energyGoalKcal: energyGoal, proteinGrams: protein,
             carbohydrateGrams: carbohydrate, fatGrams: fat,
             waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
-            usUnits: today.unitSystem == .usCustomary, partialFigures: partial.isEmpty ? nil : partial)
+            usUnits: today.unitSystem == .usCustomary, partialFigures: partial.isEmpty ? nil : partial,
+            remainingKcal: calories.remaining, burnedKcal: calories.burned, remainingIsPartial: calories.isPartial)
     }
 }
 
 extension WidgetSnapshotPublisher {
+    /// The calories-left model as snapshot figures. Each value is nil when the model has none (never zero), and the
+    /// partial flag is only set when there is a Remaining for it to qualify.
+    static func calorieFigures(_ model: CalorieRemaining) -> (remaining: Double?, burned: Double?, isPartial: Bool?) {
+        func number(_ value: Decimal?) -> Double? {
+            guard let value else { return nil }
+            let number = NSDecimalNumber(decimal: value).doubleValue
+            return number.isFinite ? number : nil
+        }
+        let remaining = number(model.remaining)
+        return (remaining, number(model.burned), remaining == nil ? nil : (model.isPartial ? true : nil))
+    }
+
     /// One line's figure for the snapshot: the shown amount (the known sum on a partial day) in the snapshot's unit,
     /// and whether it is only the known part. A figure that is unknown, or cannot be converted, is nil and never
     /// counted as zero.

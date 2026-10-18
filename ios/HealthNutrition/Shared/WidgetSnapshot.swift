@@ -20,6 +20,13 @@ struct WidgetSnapshot: Codable, Equatable {
     /// "protein", "carbohydrate", "fat"). Absent or empty means every figure is a whole-day figure. A figure listed
     /// here is drawn with a trailing "+" and spoken as "at least".
     var partialFigures: [String]?
+    /// Calories left today (goal less food plus counted burned). Nil without a goal or a known food total; never
+    /// zero for "unknown".
+    var remainingKcal: Double?
+    /// Calories burned today, present only when the person counts activity and Health has a reading.
+    var burnedKcal: Double?
+    /// True when `remainingKcal` is an upper bound because some entries have no calories.
+    var remainingIsPartial: Bool?
 
     func isPartial(_ figure: String) -> Bool { partialFigures?.contains(figure) == true }
 
@@ -94,20 +101,18 @@ enum WidgetFigure {
     static let largest = 1_000_000_000.0
     static let millilitersPerUSFluidOunce = 29.5735295625
 
-    /// Calories as the widgets draw them: the bare number, because calories are the whole point of the app, or
-    /// a dash. Read out as "calories" by VoiceOver (see `caloriesSpoken`).
-    static func calories(_ kilocalories: Double?, partial: Bool = false) -> String {
-        number(kilocalories, partial: partial)
+    /// A whole number in the person's number format ("1,200"), as Today draws its calorie figures, or nil when the
+    /// value is missing, not finite or too large to be a daily total.
+    static func groupedWholeNumber(_ value: Double?) -> String? {
+        guard let value, value.isFinite, abs(value) <= largest else { return nil }
+        // Adding zero turns a rounded -0 into 0, so a hair under zero never reads "-0".
+        return (value.rounded() + 0).formatted(.number.precision(.fractionLength(0)))
     }
 
     /// A bare whole number, "+" after it when it is only the known part of the day, or a dash.
     static func number(_ value: Double?, partial: Bool = false) -> String {
         guard let text = wholeNumber(value) else { return "—" }
         return partial ? text + "+" : text
-    }
-
-    static func caloriesSpoken(_ kilocalories: Double?, partial: Bool = false) -> String {
-        wholeNumber(kilocalories).map { (partial ? "at least " : "") + "\($0) calories" } ?? "Calories unknown"
     }
 
     /// A whole-number figure with its unit, "+" after the number when it is only the known part of the day.

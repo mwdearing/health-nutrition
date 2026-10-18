@@ -1,11 +1,21 @@
 # Widgets
 
-The **Today** widget shows the day's calories (against the energy goal when there is one) and, in the larger
-sizes, protein, carbohydrate, fat and water, on the Home Screen (small, medium) and the Lock Screen (circular,
-rectangular, inline). With nothing logged it reads "Nothing logged today". Tapping it opens the app.
+The **Today** widget shows the day's calories as Today does: "Calories remaining" in large type (when there is a
+goal) with Food (fork and knife) and Burned (flame) under it, and, in the medium size, protein, carbohydrate, fat and
+water beside it, on the Home Screen (small, medium) and the Lock Screen (circular, rectangular, inline). Remaining is
+hidden without a goal, Burned without a burned value, and over goal it is a plain negative number. On a day where
+some entries have no calories, Food reads "N+" (VoiceOver "at least N calories") and, while there is something left,
+Remaining reads "Up to N" ("up to N calories remaining"); the medium widget adds its note line. Burned never has a marker. The circular
+widget's ring is the share of the goal eaten and its centre is Food ("N+" on a partial day). The rectangular
+widgets (Lock Screen and Watch) show the calorie block only; the medium widget keeps protein, carbohydrate, fat and
+water beside it, and the Watch app lists them under it. With nothing logged it reads "Nothing logged today". Tapping it opens
+the app.
 
 - **What it reads.** Only a small summary file the app writes (`Shared/WidgetSnapshot.swift`): the day's
-  totals as numbers and whether any entry exists. No entry, product name, time or note is in it.
+  totals as numbers, the calorie goal, calories left (goal less food plus counted burned) and burned, which figures
+  are only partly known, and whether any entry exists. The calories-left model is read once from Today, never
+  computed again for the widget; an unknown figure is absent, never zero. No entry, product name, time or note is
+  in it.
 - **Where it lives.** In the App Group container shared by the app and the widget extension, named
   `group.<the app's bundle identifier>`, with file protection "complete until first user authentication".
   It is rewritten each time Today's figures are read successfully (see "When the summary is written").
