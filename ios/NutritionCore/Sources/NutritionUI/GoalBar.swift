@@ -89,10 +89,13 @@ public struct GoalBarModel: Equatable, Identifiable {
         let displayTotal = shown(total, unit)
         let figure = displayTotal.text
         let spokenFigure = spokenDisplay(displayTotal)
+        // A partial day shows its known sum with the same note the unknown case uses, so the reader sees why.
+        let note: String? = line.isPartial
+            ? reasonText(line: line, missingCount: missingCount, skippedWaterCount: skippedWaterCount) : nil
         guard let goal = line.goal else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: figure, state: .noGoal, fraction: nil,
-                goalMarker: nil, accessibilityText: "\(label), \(spokenFigure)", reason: nil)
+                goalMarker: nil, accessibilityText: "\(label), \(spokenFigure)", reason: note)
         }
         let displayGoal = shown(goal.target, goal.unit)
         let valueText = "\(figure) of \(displayGoal.text)"
@@ -108,17 +111,17 @@ public struct GoalBarModel: Equatable, Identifiable {
         guard let target = comparable, target > 0 else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: valueText, state: .progress, fraction: nil,
-                goalMarker: nil, accessibilityText: spoken, reason: nil)
+                goalMarker: nil, accessibilityText: spoken, reason: note)
         }
         if total > target {
             return GoalBarModel(
                 id: line.id, label: label, valueText: valueText, state: .overGoal, fraction: 1,
-                goalMarker: target / total, accessibilityText: spoken + ", over goal", reason: nil)
+                goalMarker: target / total, accessibilityText: spoken + ", over goal", reason: note)
         }
         let fraction = total < 0 ? Decimal(0) : total / target
         return GoalBarModel(
             id: line.id, label: label, valueText: valueText, state: .progress, fraction: fraction,
-            goalMarker: nil, accessibilityText: spoken, reason: nil)
+            goalMarker: nil, accessibilityText: spoken, reason: note)
     }
 
     /// The nutrient's name inside a sentence: lower case, except a name that is all capitals.

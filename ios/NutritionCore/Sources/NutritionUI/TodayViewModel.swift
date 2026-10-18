@@ -636,7 +636,8 @@ public final class TodayViewModel: ObservableObject {
             NutrientProgressLine.make(
                 nutrient: nutrient, total: totals.total(for: nutrient),
                 goal: goals.first { $0.nutrient == nutrient },
-                displayName: NutrientNames.displayName(for: nutrient, displayNames: displayNames))
+                displayName: NutrientNames.displayName(for: nutrient, displayNames: displayNames),
+                knownSum: totals.knownSum(for: nutrient))
         }
     }
 
