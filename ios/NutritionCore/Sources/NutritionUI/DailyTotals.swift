@@ -307,6 +307,11 @@ public enum DailyTotalsBuilder {
         let mapping = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
             ? HealthKitWritePlanner.mapping(for: nutrient) : nil
         // A below-threshold value is a bound, not an amount: it adds 0 to the known sum, and the day stays partial.
+        // With no unit to state the zero in, the bound cannot be written as an amount, so the day stays unknown.
+        if values.contains(where: { value in
+            if case .belowReportingThreshold(nil) = value { return mapping?.unit == nil }
+            return false
+        }) { return nil }
         let bounded: [NutrientValue] = values.map { value in
             if case .belowReportingThreshold(let unit) = value {
                 return .known(0, unit ?? mapping?.unit ?? .g)
