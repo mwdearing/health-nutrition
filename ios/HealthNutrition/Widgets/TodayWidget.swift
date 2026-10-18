@@ -34,9 +34,6 @@ struct TodayProvider: TimelineProvider {
     }
 }
 
-    return "\(text) \(unit)"
-}
-
 struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: TodayEntry
