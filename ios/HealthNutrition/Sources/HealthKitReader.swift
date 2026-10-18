@@ -98,10 +98,24 @@ final class HealthKitReader: BodyActivityReading {
                 return nil
             }
             for sample in found {
+                // Another app may store a sample in international units. Each sample is read in a unit it is
+                // compatible with (checked first, so no incompatible conversion is attempted), and IU is passed
+                // through so OutsideIntakeTotals restates it.
+                let value: Double
+                let unit: MeasureUnit
+                if sample.quantity.is(compatibleWith: hkUnit) {
+                    value = sample.quantity.doubleValue(for: hkUnit)
+                    unit = mapping.unit
+                } else if sample.quantity.is(compatibleWith: .internationalUnit()) {
+                    value = sample.quantity.doubleValue(for: .internationalUnit())
+                    unit = .iu
+                } else {
+                    continue
+                }
                 samples.append(OutsideNutrientSample(
                     quantityTypeIdentifier: identifier,
-                    value: Decimal(sample.quantity.doubleValue(for: hkUnit)),
-                    unit: mapping.unit,
+                    value: Decimal(value),
+                    unit: unit,
                     isWrittenByThisApp: sample.sourceRevision.source == own))
             }
         }
