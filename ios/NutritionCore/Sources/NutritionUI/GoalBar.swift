@@ -76,7 +76,7 @@ public struct GoalBarModel: Equatable, Identifiable {
                 id: line.id, label: label, valueText: "Nothing logged yet", state: .nothingLogged,
                 fraction: nil, goalMarker: nil, accessibilityText: spoken, reason: nil)
         }
-        guard case .known(let total, let unit) = line.amount else {
+        guard case .known(let total, let unit) = line.shownAmount else {
             let reason = reasonText(line: line, missingCount: missingCount, skippedWaterCount: skippedWaterCount)
             // "No data" only when nothing is known. Otherwise the figure is the existing "Can't total yet" and the
             // reason sits once, in the footnote, which says which entries lack a value.
@@ -89,14 +89,20 @@ public struct GoalBarModel: Equatable, Identifiable {
         let displayTotal = shown(total, unit)
         let figure = displayTotal.text
         let spokenFigure = spokenDisplay(displayTotal)
+        // A partial day shows its known sum with the same note the unknown case uses, so the reader sees why.
+        let note: String? = line.isPartial
+            ? reasonText(line: line, missingCount: missingCount, skippedWaterCount: skippedWaterCount) : nil
         guard let goal = line.goal else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: figure, state: .noGoal, fraction: nil,
-                goalMarker: nil, accessibilityText: "\(label), \(spokenFigure)", reason: nil)
+                goalMarker: nil, accessibilityText: note.map { "\(label), \(spokenFigure), \($0)" } ?? "\(label), \(spokenFigure)",
+                reason: note)
         }
         let displayGoal = shown(goal.target, goal.unit)
         let valueText = "\(figure) of \(displayGoal.text)"
         let spoken = "\(label), \(spokenFigure) of \(spokenDisplay(displayGoal))"
+        // On a partial day the spoken text says so too, so a screen reader does not hear a short day.
+        let spokenPartial = note.map { "\(spoken), \($0)" } ?? spoken
         // The comparison is made in the unit the total is stated in, so a target set in another metric
         // unit is compared exactly while still being shown as it was set.
         let comparable: Decimal?
@@ -108,17 +114,17 @@ public struct GoalBarModel: Equatable, Identifiable {
         guard let target = comparable, target > 0 else {
             return GoalBarModel(
                 id: line.id, label: label, valueText: valueText, state: .progress, fraction: nil,
-                goalMarker: nil, accessibilityText: spoken, reason: nil)
+                goalMarker: nil, accessibilityText: spokenPartial, reason: note)
         }
         if total > target {
             return GoalBarModel(
                 id: line.id, label: label, valueText: valueText, state: .overGoal, fraction: 1,
-                goalMarker: target / total, accessibilityText: spoken + ", over goal", reason: nil)
+                goalMarker: target / total, accessibilityText: spokenPartial + ", over goal", reason: note)
         }
         let fraction = total < 0 ? Decimal(0) : total / target
         return GoalBarModel(
             id: line.id, label: label, valueText: valueText, state: .progress, fraction: fraction,
-            goalMarker: nil, accessibilityText: spoken, reason: nil)
+            goalMarker: nil, accessibilityText: spokenPartial, reason: note)
     }
 
     /// The nutrient's name inside a sentence: lower case, except a name that is all capitals.

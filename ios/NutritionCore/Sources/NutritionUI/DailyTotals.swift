@@ -10,9 +10,28 @@ import NutritionJournal
 public struct DailyTotals: Equatable {
     /// One total per tracked nutrient, in the order the caller asked for them.
     public let totals: [String: NutrientTotal]
+    /// The sum of the known values for a nutrient whose day has some entries with no value. Opt-in: `total(for:)`
+    /// stays unknown for such a day, so only a caller that reads this field sees a partial sum.
+    public let knownSums: [String: NutrientValue]
+    /// How many entries of the day have no value for each nutrient, counted in the same pass as the sums.
+    public let missingCounts: [String: Int]
 
-    public init(totals: [String: NutrientTotal]) {
+    public init(
+        totals: [String: NutrientTotal], knownSums: [String: NutrientValue] = [:], missingCounts: [String: Int] = [:]
+    ) {
         self.totals = totals
+        self.knownSums = knownSums
+        self.missingCounts = missingCounts
+    }
+
+    /// The number of entries with no value for this nutrient. Zero when the nutrient was not asked for.
+    public func missingCount(for nutrient: String) -> Int {
+        missingCounts[nutrient] ?? 0
+    }
+
+    /// The known partial sum for one nutrient, or nil when the day is fully known or nothing is known.
+    public func knownSum(for nutrient: String) -> NutrientValue? {
+        knownSums[nutrient]
     }
 
     /// The total for one nutrient, or nil when it was not among those asked for.
@@ -77,15 +96,26 @@ public enum DailyTotalsBuilder {
             entries.append((current.components, snapshot, intake.category))
         }
         var totals: [String: NutrientTotal] = [:]
+        var knownSums: [String: NutrientValue] = [:]
+        var missingCounts: [String: Int] = [:]
         for nutrient in nutrients {
             var values: [NutrientValue] = []
+            var missing = 0
             for entry in entries {
-                values.append(contentsOf: contributions(
-                    of: entry, nutrient: nutrient, lookup: lookup))
+                let contribution = contributions(of: entry, nutrient: nutrient, lookup: lookup)
+                // An entry counts as missing when one of its values is unknown, which is exactly the case the sum
+                // leaves out. A supplement with an undeclared nutrient contributes nothing, so it is not counted;
+                // one whose label basis cannot be scaled does contribute unknown, and is counted.
+                if contribution.contains(.unknown) { missing += 1 }
+                values.append(contentsOf: contribution)
             }
+            missingCounts[nutrient] = missing
             totals[nutrient] = Self.sum(values, nutrient: nutrient)
+            if let partial = Self.partialKnownSum(values, nutrient: nutrient) {
+                knownSums[nutrient] = partial
+            }
         }
-        return DailyTotals(totals: totals)
+        return DailyTotals(totals: totals, knownSums: knownSums, missingCounts: missingCounts)
     }
 
     /// A drink's water: each volume component times its share (its own, else the drink default). Non-volume
@@ -264,6 +294,15 @@ public enum DailyTotalsBuilder {
         return values
     }
 
+    /// The known part of a day with some unknown entries: the sum of the known values, only when no value is a
+    /// below-threshold bound (a bound is not an amount) and at least one value is known.
+    static func partialKnownSum(_ values: [NutrientValue], nutrient: String) -> NutrientValue? {
+        let raw = rawSum(values, nutrient: nutrient)
+        guard raw.coverage.hasUnknown, !raw.coverage.hasBelowReportingThreshold else { return nil }
+        if case .known = raw.value { return raw.value }
+        return nil
+    }
+
     /// `NutrientTotal.sum`, with any unknown left in the day making the whole nutrient unknown.
     ///
     /// The sum adds what it can and reports the rest in its coverage; that coverage is what decides
@@ -282,6 +321,14 @@ public enum DailyTotalsBuilder {
     /// least 5 g of 60 g" cannot tell whether the day is met. Unknown is the one answer that cannot
     /// be mistaken for the day being short.
     private static func sum(_ values: [NutrientValue], nutrient: String) -> NutrientTotal {
+        let total = rawSum(values, nutrient: nutrient)
+        guard total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold else {
+            return total
+        }
+        return NutrientTotal(value: .unknown, coverage: total.coverage)
+    }
+
+    private static func rawSum(_ values: [NutrientValue], nutrient: String) -> NutrientTotal {
         // The nutrient's canonical unit comes from the same mapping the goals and the HealthKit writer use.
         // A known value in another dimension (protein in IU, say) makes the sum throw, and a throw is
         // answered as unknown, the same as a mismatched pair. Without a mapping nothing is checked.
@@ -297,10 +344,7 @@ public enum DailyTotalsBuilder {
             coverage: Coverage(
                 knownCount: 0, totalCount: values.count, hasBelowReportingThreshold: false,
                 hasUnknown: true))
-        guard total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold else {
-            return total
-        }
-        return NutrientTotal(value: .unknown, coverage: total.coverage)
+        return total
     }
 
     /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that

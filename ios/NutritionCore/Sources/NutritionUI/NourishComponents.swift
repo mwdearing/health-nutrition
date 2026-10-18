@@ -71,12 +71,15 @@ public struct MacroColumn: View {
     private let figure: String
     private let fraction: Double
     private let spoken: String?
+    /// The missing-value note on a partial day, shown once under the figure. Nil on a whole day.
+    private let note: String?
 
-    public init(label: String, figure: String, fraction: Double, spoken: String? = nil) {
+    public init(label: String, figure: String, fraction: Double, spoken: String? = nil, note: String? = nil) {
         self.spoken = spoken
         self.label = label
         self.figure = figure
         self.fraction = NourishGauge.clamped(fraction)
+        self.note = note
     }
 
     public var body: some View {
@@ -84,6 +87,9 @@ public struct MacroColumn: View {
             Text(label).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             Text(figure).font(.title3.weight(.semibold)).foregroundStyle(TokenColors.textPrimary)
             ThinBar(fraction: fraction)
+            if let note {
+                Text(note).font(.caption2).foregroundStyle(TokenColors.textSecondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)

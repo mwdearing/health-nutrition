@@ -26,6 +26,12 @@ public struct NourishTodayHeader: View {
         model.goalBars.first { $0.id == key }
     }
 
+    /// The missing-value note, shown only on a partial day. A whole day's unknown keeps its own figure and no note.
+    private func partialNote(_ key: String) -> String? {
+        guard model.progress.first(where: { $0.nutrient == key })?.isPartial == true else { return nil }
+        return bar(key)?.reason
+    }
+
     private func figure(_ key: String) -> String {
         Self.figure(for: model.progress.first(where: { $0.nutrient == key }))
     }
@@ -33,7 +39,7 @@ public struct NourishTodayHeader: View {
     /// The figure under a macro column or inside the ring: the day's total, rounded for reading, or a dash
     /// where the day has no known total.
     static func figure(for line: NutrientProgressLine?) -> String {
-        guard let line, case .known(let value, let unit) = line.amount else { return "—" }
+        guard let line, case .known(let value, let unit) = line.shownAmount else { return "—" }
         return AmountDisplay.nutrient(value, unit: unit).text
     }
 
@@ -61,7 +67,8 @@ public struct NourishTodayHeader: View {
             if let ring = bar(Self.ringKey) {
                 CalorieRing(
                     fraction: fraction(ring), figure: figure(Self.ringKey), caption: "logged",
-                    footnote: ringFootnote, spoken: ring.accessibilityText)
+                    footnote: [partialNote(Self.ringKey), ringFootnote].compactMap { $0 }.joined(separator: " "),
+                    spoken: ring.accessibilityText)
             }
             let macros = Self.macroKeys.compactMap { key in bar(key).map { (key, $0) } }
             if !macros.isEmpty {
@@ -69,7 +76,7 @@ public struct NourishTodayHeader: View {
                     ForEach(macros, id: \.0) { key, macro in
                         MacroColumn(
                             label: macro.label, figure: figure(key), fraction: fraction(macro),
-                            spoken: macro.accessibilityText)
+                            spoken: macro.accessibilityText, note: partialNote(key))
                     }
                 }
             }

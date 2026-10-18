@@ -127,4 +127,36 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(KindTag.title(for: .supplement), "Supplement")
         XCTAssertEqual(KindTag.title(for: .drink), "Drink")
     }
+
+    func testPartialKnownSumShowsTheSumWithTheMissingValueNote() {
+        let partial = NutrientProgressLine(
+            nutrient: "fiber", amount: .known(Decimal(5), .g), goal: nil, isPartial: true)
+        let bar = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 1)
+        XCTAssertEqual(bar.state, .noGoal)
+        XCTAssertEqual(bar.valueText, "5 g")
+        XCTAssertEqual(bar.reason, "1 entry has no fiber value")
+    }
+
+    func testPartialGoalBarSpeaksThePartialNote() {
+        let partial = NutrientProgressLine(
+            nutrient: "fiber", amount: .unknown, goal: goal("fiber", Decimal(30), .g), isPartial: true,
+            knownSum: .known(Decimal(10), .g))
+        let bar = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 1)
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertEqual(bar.accessibilityText, "Fiber, 10 grams of 30 grams, 1 entry has no fiber value")
+    }
+
+    func testDiaryPartialDayNotesTheCountFromTheSameTotal() {
+        let total = NutrientTotal(
+            value: .unknown,
+            coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))
+        let totals = DailyTotals(
+            totals: ["protein": total], knownSums: ["protein": .known(Decimal(12), .g)],
+            missingCounts: ["protein": 1])
+        let bars = JournalViewModel.headerBars(
+            totals: totals, goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)],
+            hasFoodEntries: true, unitSystem: .metric)
+        XCTAssertEqual(bars.first?.reason, "1 entry has no protein value")
+        XCTAssertEqual(bars.first?.state, .progress)
+    }
 }

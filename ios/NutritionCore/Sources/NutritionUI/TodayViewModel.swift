@@ -356,17 +356,13 @@ public final class TodayViewModel: ObservableObject {
                 guard line.nutrient != DailyTotalsBuilder.waterKey else { return nil }
                 var hasEntries = line.hasKnownAmount
                 var someKnown = line.hasKnownAmount
-                var missingCount = 0
                 for entry in foodEntries where entry.kind != .supplement {
-                    var entryMissing = false
                     for component in entry.components {
                         let value = DailyTotalsBuilder.value(
                             for: component, snapshot: entry.snapshot, nutrient: line.nutrient, lookup: self.lookup)
                         if value != .notApplicable { hasEntries = true }
                         if value != .notApplicable && value != .unknown { someKnown = true }
-                        if value == .unknown { entryMissing = true }
                     }
-                    if entryMissing { missingCount += 1 }
                 }
                 // Only a line that still has a goal can be hidden: with the goal gone, its plain total stays.
                 // A goal-less row with nothing known has nothing to show. One with some entry known stays,
@@ -374,7 +370,7 @@ public final class TodayViewModel: ObservableObject {
                 if line.hasGoal && hiddenGoals.contains(line.nutrient) { return nil }
                 guard line.hasGoal || someKnown else { return nil }
                 return GoalBarModel.make(
-                    line: line, hasEntries: hasEntries, missingCount: missingCount, someKnown: someKnown)
+                    line: line, hasEntries: hasEntries, missingCount: line.missingCount, someKnown: someKnown)
             }
             waterBar = progress.first {
                 $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
@@ -649,7 +645,8 @@ public final class TodayViewModel: ObservableObject {
             NutrientProgressLine.make(
                 nutrient: nutrient, total: totals.total(for: nutrient),
                 goal: goals.first { $0.nutrient == nutrient },
-                displayName: NutrientNames.displayName(for: nutrient, displayNames: displayNames))
+                displayName: NutrientNames.displayName(for: nutrient, displayNames: displayNames),
+                knownSum: totals.knownSum(for: nutrient), missingCount: totals.missingCount(for: nutrient))
         }
     }
 
