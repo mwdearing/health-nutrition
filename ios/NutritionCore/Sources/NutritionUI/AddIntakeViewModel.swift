@@ -144,11 +144,28 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public var amountText: String = "" {
         didSet {
             editedFields.insert(.amount)
+            if !isPrefilling && !isSettingServings && AmountParser.parseTyped(amountText) != nil { unitNotice = nil }
             // A figure written by anything but the prefill no longer stands for the stored amount.
             if !isPrefilling { prefillBacking = nil }
+            // An amount typed by hand no longer equals a count of servings.
+            if !isPrefilling && !isSettingServings { servingCount = "" }
         }
     }
-    @Published public var unit: MeasureUnit = .g
+    /// How many servings the amount stands for, when the picked product gave a serving size. Typing a
+    /// count writes the amount; typing an amount clears the count.
+    @Published public private(set) var servingCount: String = ""
+    /// The serving size the source gave, kept whatever the basis, so the amount can open on one serving.
+    @Published public private(set) var servingOption: ServingDefinition?
+    private var isSettingServings = false
+    /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
+    /// goes once the person types an amount.
+    @Published public private(set) var unitNotice: String?
+    @Published public var unit: MeasureUnit = .g {
+        didSet {
+            // A count of servings was for the unit it was typed against; a different unit clears it.
+            if !isPrefilling && !isSettingServings { servingCount = "" }
+        }
+    }
     @Published public var category: String = "food"
     @Published public var occurredAt: Date
     /// Which meal of the day this entry was eaten at. Nil by default and never inferred from the
@@ -269,6 +286,16 @@ public final class AddIntakeViewModel: ObservableObject {
     public var units: [MeasureUnit] { UnitSelection.offered(for: preferences.unitSystem) }
     /// The unit system the offered list is built from.
     public var unitSystem: UnitSystem { preferences.unitSystem }
+
+    /// The units the Unit menu offers. A product stated per 100 g or per 100 mL can only be totalled in the
+    /// dimension it is stated in; a "serving" or a count logged against it saves unknown values for the day.
+    public var unitOptions: [MeasureUnit] {
+        switch lookedUp?.basis {
+        case .per100g?: return units.filter { $0.dimension == .mass }
+        case .per100ml?: return units.filter { $0.dimension == .volume }
+        default: return units
+        }
+    }
 
     private let store: JournalStore
     private let preferences: DisplayPreferences
@@ -462,10 +489,29 @@ public final class AddIntakeViewModel: ObservableObject {
     }
 
     /// Recomputed from the same metric components and basis rules used for the saved total.
+    /// The heading over the nutrient list. Once an amount exists it says what the entry adds; before that
+    /// the list shows the product's own values, so it is titled with their basis rather than as an addition.
+    public var thisAddsTitle: String {
+        if AmountParser.parseTyped(amountText) != nil { return "This adds" }
+        guard let label = (lookupBasis ?? lookedUp?.basis)?.label else { return "Imported values" }
+        return label.prefix(1).uppercased() + label.dropFirst()
+    }
+
     public var thisAdds: [ThisAddsLine] {
-        guard hasPrefilledValues, let amount = AmountParser.parseTyped(amountText),
+        guard hasPrefilledValues else { return [] }
+        // Until a usable amount exists, the imported values stand as the product states them, so the
+        // section never shows a column of "can't be worked out" for an empty field.
+        guard let amount = AmountParser.parseTyped(amountText),
             let basis = lookedUp?.labelBasis ?? prefilledProduct?.labelBasis
-        else { return [] }
+        else {
+            return Self.thisAddsKeys.compactMap { key in
+                let value = self.prefilledValue(for: key)
+                guard value != .unknown else { return nil }
+                return ThisAddsLine(
+                    key: key, displayName: LookedUpProduct.displayNames[key] ?? NutrientNames.displayName(for: key),
+                    value: value, cannotScale: false)
+            }
+        }
         let stored = storedQuantity(amount: amount, unit: unit, name: typedName)
         let components = [IntakeComponent(
             componentID: Self.componentID(forFoodNamed: typedName, unit: stored.unit),
@@ -759,6 +805,11 @@ public final class AddIntakeViewModel: ObservableObject {
         serving = nil
         attribution = nil
         lookedUp = nil
+        // A serving from an earlier product must not stay on the Servings control or count the next entry.
+        servingOption = nil
+        unitNotice = nil
+        servingCount = ""
+        prefillBacking = nil
         labelValues = nil
         prefilledFromCapture = false
         storedProduct = nil
@@ -795,6 +846,90 @@ public final class AddIntakeViewModel: ObservableObject {
         serving = product.basis == .perServing ? product.serving : nil
         attribution = product.attribution
         lookedUp = product
+        servingOption = product.serving
+        // A unit chosen before this pick may not total against this product. The typed figure was in that unit,
+        // so it cannot be carried over: the unit moves to one that totals and the amount is cleared to be re-entered.
+        if !unitOptions.contains(unit), let first = unitOptions.first {
+            let typed = unit
+            // The notice is for a typed amount that was cleared; an empty field only changes the unit.
+            let hadAmount = AmountParser.parseTyped(amountText) != nil
+            unit = first
+            amountText = ""
+            if hadAmount {
+                unitNotice = "Amount cleared. This food can't be measured in \(typed.symbol)."
+            }
+        }
+        // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
+        if AmountParser.parseTyped(amountText) == nil { openOnOneServing() }
+    }
+
+    /// Opens the amount on one serving when the source gave its weight. The person still confirms the
+    /// amount; this only starts it on a serving they can count up from.
+    private func openOnOneServing() {
+        guard let display = servingInDisplayUnit else {
+            servingCount = ""
+            // A backing from an earlier product must not carry over to this one.
+            prefillBacking = nil
+            return
+        }
+        isPrefilling = true
+        amountText = DecimalFormatting.text(display.quantity)
+        unit = display.unit
+        isPrefilling = false
+        servingCount = "1"
+        // Saved as the exact serving the source gave, so the rounded figure shown never restates it.
+        if let servingOption, let shown = AmountParser.parseTyped(amountText) {
+            prefillBacking = (shown, display.unit, servingOption.quantity ?? shown, servingOption.unit ?? display.unit)
+        }
+    }
+
+    /// The serving in the person's mass unit: ounces under US units, grams under metric. The amount that
+    /// is stored is the same mass either way; only the figure shown changes.
+    private var servingInDisplayUnit: (quantity: Decimal, unit: MeasureUnit)? {
+        guard let quantity = servingOption?.quantity, quantity > 0,
+              let servingUnit = servingOption?.unit, servingUnit.dimension == .mass,
+              lookedUp?.basis != .per100ml
+        else { return nil }
+        let target = AmountDisplay.massUnit(for: preferences.unitSystem)
+        guard let converted = try? Quantity(value: quantity, unit: servingUnit).converted(to: target)
+        else { return (quantity, servingUnit) }
+        return (converted.value, target)
+    }
+
+    /// Whether the picked product has a serving weight the servings count can use: a mass, given as a
+    /// number. A volume or a count serving does not, so the count is not offered for it.
+    public var canCountServings: Bool {
+        guard let quantity = servingOption?.quantity, quantity > 0, let servingUnit = servingOption?.unit,
+              lookedUp?.basis != .per100ml
+        else { return false }
+        return servingUnit.dimension == .mass
+    }
+
+    /// Sets the amount to a count of servings: the count times one serving, in the serving's unit.
+    public func setServingCount(_ text: String) {
+        guard canCountServings, let display = servingInDisplayUnit else { return }
+        servingCount = text
+        isSettingServings = true
+        defer { isSettingServings = false }
+        guard let count = AmountParser.parseTyped(text) else {
+            // A cleared field, or a completed zero, clears the amount; a partly typed count ("1.") leaves it.
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || Decimal(string: trimmed, locale: AmountParser.locale) == 0 { amountText = "" }
+            return
+        }
+        amountText = DecimalFormatting.text(count * display.quantity)
+        unit = display.unit
+        if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
+           let shown = AmountParser.parseTyped(amountText) {
+            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+        }
+    }
+
+    /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
+    /// mass or the values are not per 100 g; per-serving values are not scaled here.
+    public var amountPreview: AmountPreview? {
+        AmountPreview.make(
+            nutrients: prefilledNutrients, basis: lookupBasis ?? lookedUp?.basis, amountText: amountText, unit: unit)
     }
 
     /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.

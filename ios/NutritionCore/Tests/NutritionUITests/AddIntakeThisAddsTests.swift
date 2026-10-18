@@ -26,8 +26,11 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertEqual(model.thisAdds.first { $0.key == "protein" }?.text, "6.5 g")
         model.amountText = "100"
         XCTAssertEqual(model.thisAdds.first { $0.key == "protein" }?.value, .known(13, .g))
+        // Text that is not an amount shows the imported values, as before any amount exists.
         model.amountText = "invalid"
-        XCTAssertTrue(model.thisAdds.isEmpty)
+        XCTAssertEqual(model.thisAdds.first { $0.key == "energyKcal" }?.value, .known(380, .kcal))
+        XCTAssertEqual(model.thisAdds.first { $0.key == "protein" }?.value, .known(13, .g))
+        XCTAssertFalse(model.thisAdds.contains { $0.cannotScale })
     }
 
     func testThisAddsIsEmptyWhenNothingIsStated() async throws {

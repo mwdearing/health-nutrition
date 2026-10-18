@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 import NutritionProviders
 import NutritionUI
 
@@ -64,7 +65,20 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
         let trimmedText = (text?.isEmpty == false) ? text : nil
         let quantity = product.servingQuantity.flatMap { $0 > 0 ? $0 : nil }
         guard trimmedText != nil || quantity != nil else { return nil }
-        return ServingDefinition(quantity: quantity, unit: quantity == nil ? nil : .g, text: trimmedText)
+        // The source's quantity is in the unit its text names: millilitres for "250 ml", grams for "30 g".
+        // A text naming neither gives no unit, so the amount is not opened on it.
+        let lowered = trimmedText?.lowercased() ?? ""
+        let unit: MeasureUnit?
+        let names = (
+            volume: lowered.contains("ml"),
+            mass: lowered.range(of: #"\d\s*g\b"#, options: .regularExpression) != nil)
+        if quantity == nil || names.volume == names.mass {
+            // Neither unit, or both ("1 cup (240 ml) (30 g)"), leaves the unit unknown.
+            unit = nil
+        } else {
+            unit = names.volume ? .mL : .g
+        }
+        return ServingDefinition(quantity: quantity, unit: unit, text: trimmedText)
     }
 
     /// The last-modified timestamp, so an entry can be traced to the version of the data it was

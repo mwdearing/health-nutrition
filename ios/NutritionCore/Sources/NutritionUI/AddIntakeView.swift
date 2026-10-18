@@ -6,6 +6,8 @@ import SwiftUI
 
 public struct AddIntakeView: View {
     @ObservedObject var model: AddIntakeViewModel
+    /// The imported values open by default; the person can fold them away.
+    @State private var allValuesOpen = true
     private let now: () -> Date
     private let onSaved: () -> Void
     /// Opens the pushed label scanner while keeping this form's edits.
@@ -123,7 +125,7 @@ public struct AddIntakeView: View {
                                 .foregroundStyle(TokenColors.textSecondary)
                                 .accessibilityHidden(true)
                             Picker("Unit", selection: $model.unit) {
-                                ForEach(model.units, id: \.symbol) { unit in
+                                ForEach(model.unitOptions, id: \.symbol) { unit in
                                     Text(unit.symbol).tag(unit)
                                 }
                             }
@@ -158,6 +160,7 @@ public struct AddIntakeView: View {
                 }
                 DatePicker("When", selection: $model.occurredAt)
             }
+            AddServingControls(model: model)
 
             // A product the catalog lists but states no nutrition facts for is one sentence rather than
             // rows of "unknown". Its attribution still travels with it.
@@ -171,14 +174,14 @@ public struct AddIntakeView: View {
                 }
             }
             if model.hasPrefilledValues {
-                Section("This adds") {
+                Section(model.thisAddsTitle) {
                     ForEach(model.thisAdds, id: \.key) { line in
                         LabeledContent(line.displayName, value: line.text)
                     }
                     // Beside the values, not inside the collapsed list: some sources license their data
                     // only if the attribution is shown wherever the values are.
                     sourceAndLicense
-                    DisclosureGroup("All values") {
+                    DisclosureGroup("All values", isExpanded: $allValuesOpen) {
                         ForEach(model.labelValues != nil || model.lookedUp == nil
                             ? Self.capturedKeys : LookedUpProduct.standardKeys, id: \.self) { key in
                             LabeledContent(
