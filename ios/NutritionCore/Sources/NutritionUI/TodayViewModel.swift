@@ -93,6 +93,9 @@ public final class TodayViewModel: ObservableObject {
     /// One bar per tracked nutrient except water, in tracked order. A nutrient with a goal draws a bar;
     /// one without shows its value alone. Built from `progress` and `coverage`, which stay published.
     @Published public private(set) var goalBars: [GoalBarModel] = []
+    /// Calories left today: the stored goal, less food, plus burned when the setting counts it. Nil fields are
+    /// not stated; `remaining` is nil without a goal or without a known food total.
+    @Published public private(set) var calorieRemaining: CalorieRemaining = .none
     /// Today's active energy from Apple Health, set by the activity card after it reads. Only used
     /// when the person switched on adding it to the calorie goal.
     public var activeEnergyKcal: Decimal?
@@ -313,6 +316,8 @@ public final class TodayViewModel: ObservableObject {
             // Today's active energy, when the person asked for it to count: the calorie target grows by
             // what Health reports burned so far. The stored goal is never changed.
             activityGoalNote = nil
+            // The stored calorie target before activity is added, for "Calories remaining".
+            let storedEnergyTarget = storedGoals.first { $0.nutrient == Self.energyKey && $0.unit == .kcal }?.target
             if let bonus = activeEnergyKcal, bonus > 0,
                (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true,
                let index = storedGoals.firstIndex(where: { $0.nutrient == Self.energyKey && $0.unit == .kcal }) {
@@ -380,6 +385,16 @@ public final class TodayViewModel: ObservableObject {
                     line: line, hasEntries: waterEntries > 0 || countedWater > 0, missingCount: 0,
                     skippedWaterCount: skipped, someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
             }
+            let burnedCounted = (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true
+            let foodLine = progress.first { $0.nutrient == Self.energyKey }
+            calorieRemaining = CalorieRemaining.make(
+                goal: storedEnergyTarget,
+                food: foodLine.flatMap { line -> Decimal? in
+                    if case .known(let value, _) = line.shownAmount { return value }
+                    return nil
+                },
+                isPartial: foodLine?.isPartial ?? false,
+                burned: burnedCounted ? activeEnergyKcal : nil)
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
