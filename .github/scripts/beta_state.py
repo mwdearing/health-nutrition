@@ -50,9 +50,10 @@ def _vkey(version: str) -> tuple[int, int, int]:
 
 def _time(value: str | None) -> datetime | None:
     try:
-        return datetime.fromisoformat((value or "").replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat((value or "").replace("Z", "+00:00"))
     except ValueError:
         return None
+    return parsed if parsed.tzinfo else None
 
 
 def parse_state(body: str | None) -> dict[str, str] | None:

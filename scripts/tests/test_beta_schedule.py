@@ -243,6 +243,8 @@ def test_state_remembers_the_time_and_ignores_a_garbled_one() -> None:
     assert beta["parse_state"](body)["last_time"] == "2026-10-19T04:50:00Z"
     garbled = body.replace("2026-10-19T04:50:00Z", "yesterday")
     assert "last_time" not in beta["parse_state"](garbled)
+    naive = body.replace("2026-10-19T04:50:00Z", "2026-10-19T04:50:00")
+    assert "last_time" not in beta["parse_state"](naive)
     assert "last_time" not in beta["parse_state"](beta["render_state"]("", "0.1.30", A))
 
 
