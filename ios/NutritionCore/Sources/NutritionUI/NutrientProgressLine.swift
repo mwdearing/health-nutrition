@@ -98,6 +98,7 @@ public enum NutrientNames {
         "energy": "Energy",
         "protein": "Protein",
         "carbohydrate": "Carbohydrate",
+        "energy-kcal": "Calories",
         "fiber": "Fiber",
         "transFat": "Trans fat",
         "saturatedFat": "Saturated fat",

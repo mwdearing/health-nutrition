@@ -104,7 +104,7 @@ extension LookedUpProduct {
         case .unknown: return "Not on the label"
         case .notApplicable: return "Does not apply"
         case .belowReportingThreshold(let unit):
-            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
+            return "Less than the label reports" + (unit.map { " (\($0.screenSymbol))" } ?? "")
         }
     }
 

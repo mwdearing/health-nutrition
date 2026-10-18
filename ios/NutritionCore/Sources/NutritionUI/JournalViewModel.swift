@@ -674,7 +674,9 @@ public final class JournalViewModel: ObservableObject {
     static func energyText(totals: DailyTotals) -> String? {
         let line = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
         guard case .known(let value, _) = line.amount else { return nil }
-        // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen.
+        // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
+        // amount reads "under 1", never "0", the same as Today's ring.
+        if value > 0 && value < 1 { return "under 1 Calories" }
         return "\(BodyActivityViewModel.whole(value)) Calories"
     }
 

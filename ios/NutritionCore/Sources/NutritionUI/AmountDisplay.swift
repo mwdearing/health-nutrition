@@ -281,3 +281,7 @@ public enum AmountDisplay {
         }
     }
 }
+extension MeasureUnit {
+    /// The unit as a screen shows it. Energy reads as "Calories"; the kcal symbol stays for storage and Health.
+    public var screenSymbol: String { self == .kcal ? "Calories" : symbol }
+}

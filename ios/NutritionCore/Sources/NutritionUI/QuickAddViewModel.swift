@@ -151,7 +151,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         Field.allCases.compactMap { field -> String? in
             guard case .known(let value, let unit) = nutrients[field.nutrientKey] else { return nil }
             let amount = rounded
-                ? AmountDisplay.nutrient(value, unit: unit).text : "\(DecimalFormatting.text(value)) \(unit.symbol)"
+                ? AmountDisplay.nutrient(value, unit: unit).text : "\(DecimalFormatting.text(value)) \(unit.screenSymbol)"
             return field == .calories ? amount : amount + " " + field.label.lowercased()
         }.joined(separator: ", ")
     }

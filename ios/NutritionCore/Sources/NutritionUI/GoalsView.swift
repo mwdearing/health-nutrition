@@ -104,7 +104,7 @@ public struct GoalsView: View {
                     get: { self.model.selectedUnits[row.nutrient] ?? row.unit },
                     set: { self.model.selectedUnits[row.nutrient] = $0 })) {
                     ForEach(model.units(for: row.nutrient), id: \.symbol) { candidate in
-                        Text(candidate.symbol).tag(candidate)
+                        Text(candidate.screenSymbol).tag(candidate)
                     }
                 }
                 .pickerStyle(.menu)

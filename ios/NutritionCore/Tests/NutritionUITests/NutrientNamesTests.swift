@@ -21,4 +21,14 @@ final class NutrientNamesTests: XCTestCase {
         XCTAssertEqual(NutrientNames.displayName(for: "sugars"), "Total sugars")
         XCTAssertEqual(NutrientNames.displayName(for: "cholesterol"), "Cholesterol")
     }
+
+    /// A camel-case key that no table names still spells out as words, not one capital.
+    func testUnlistedCamelCaseKeySpellsOutAsWords() throws {
+        XCTAssertEqual(NutrientNames.displayName(for: "monoFat"), "Mono fat")
+    }
+
+    /// The catalog's energy key never reads "kcal" on screen.
+    func testCatalogEnergyKeyReadsCalories() throws {
+        XCTAssertEqual(NutrientNames.displayName(for: "energy-kcal"), "Calories")
+    }
 }

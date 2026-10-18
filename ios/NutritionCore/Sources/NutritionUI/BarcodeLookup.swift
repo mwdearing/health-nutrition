@@ -70,7 +70,7 @@ public struct ServingDefinition: Sendable, Hashable {
         if !trimmed.isEmpty { return trimmed }
         guard let quantity else { return "" }
         guard let unit else { return "\(quantity)" }
-        return "\(quantity) \(unit.symbol)"
+        return "\(quantity) \(unit.screenSymbol)"
     }
 
     public var isEmpty: Bool { label.isEmpty }
@@ -169,13 +169,13 @@ public struct LookedUpProduct: Sendable, Hashable {
     static func describe(_ value: NutrientValue) -> String {
         switch value {
         case .known(let amount, let unit):
-            return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.symbol)"
+            return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.screenSymbol)"
         case .unknown:
             return "unknown"
         case .notApplicable:
             return "not applicable"
         case .belowReportingThreshold(let unit):
-            return "below reporting threshold" + (unit.map { " \($0.symbol)" } ?? "")
+            return "below reporting threshold" + (unit.map { " \($0.screenSymbol)" } ?? "")
         }
     }
 

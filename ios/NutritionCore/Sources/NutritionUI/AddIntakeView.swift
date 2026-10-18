@@ -146,7 +146,7 @@ public struct AddIntakeView: View {
                                 .accessibilityHidden(true)
                             Picker("Unit", selection: $model.unit) {
                                 ForEach(model.unitOptions, id: \.symbol) { unit in
-                                    Text(unit.symbol).tag(unit)
+                                    Text(unit.screenSymbol).tag(unit)
                                 }
                             }
                             .labelsHidden()
@@ -340,7 +340,7 @@ public struct AddIntakeView: View {
         case .notApplicable:
             return "Does not apply"
         case .belowReportingThreshold(let unit):
-            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
+            return "Less than the label reports" + (unit.map { " (\($0.screenSymbol))" } ?? "")
         case nil:
             return "Not on the label"
         }

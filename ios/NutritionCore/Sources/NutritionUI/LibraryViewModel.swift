@@ -550,7 +550,7 @@ public final class LibraryViewModel: ObservableObject {
         let components = item.template.components.map {
             FavoriteComponent(
                 componentID: $0.componentID, name: $0.name, amountText: DecimalFormatting.text($0.amount),
-                unitSymbol: $0.unit.symbol, hydrationPercentText: $0.hydrationPercent.map(DecimalFormatting.text))
+                unitSymbol: $0.unit.screenSymbol, hydrationPercentText: $0.hydrationPercent.map(DecimalFormatting.text))
         }
         let favorite = FavoriteTemplate(
             id: UUID().uuidString.lowercased(), displayName: item.title, category: item.template.category,
