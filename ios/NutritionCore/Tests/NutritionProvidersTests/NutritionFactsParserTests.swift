@@ -1084,9 +1084,11 @@ final class NutritionFactsParserTests: XCTestCase {
 
     /// Short real words are rows, not fragments: only a piece of a known nutrient name is noise.
     func testShortSupplementWordsThatAreNotNutrientPiecesSurvive() throws {
-        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "oat 100mg", "gum 50mg", "bcAA 200mg"])
+        let panel = parse([
+            "Supplement Facts", "Serving size 1 capsule", "oat 100mg", "gum 50mg", "bcAA 200mg", "Mag 100mg", "Pro 5g",
+        ])
 
-        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["oat", "gum", "bcAA"])
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["oat", "gum", "bcAA", "Mag", "Pro"])
         XCTAssertEqual(panel.unnamedRowCount, 0)
     }
 
