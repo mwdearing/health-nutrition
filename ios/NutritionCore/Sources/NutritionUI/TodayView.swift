@@ -359,7 +359,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
                     .frame(width: revealWidth)
                     .frame(maxHeight: .infinity)
                     .foregroundStyle(.white)
-                    .background(TokenColors.error, in: RoundedRectangle(cornerRadius: DesignRadius.m))
+                    .background(TokenColors.error, in: RoundedRectangle(cornerRadius: DesignRadius.control))
             }
             .accessibilityLabel(accessibilityName)
             .opacity(offset < 0 ? 1 : 0)
