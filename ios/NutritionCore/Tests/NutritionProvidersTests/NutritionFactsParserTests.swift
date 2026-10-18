@@ -1267,6 +1267,13 @@ final class NutritionFactsParserTests: XCTestCase {
         }
     }
 
+    /// Non-ASCII digits are never a name's number: "Vitamin B１２" (fullwidth digits) is not an extra with that name.
+    func testFullwidthDigitsAreNotANameNumber() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Vitamin B１２ 2mcg"])
+
+        XCTAssertFalse(panel.additionalNutrients.contains { $0.name.contains("１２") })
+    }
+
     /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
     func testEPAAndDHAStandaloneRowsSurvive() throws {
         let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
