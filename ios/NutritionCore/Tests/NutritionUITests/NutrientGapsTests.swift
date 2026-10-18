@@ -288,6 +288,29 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(zinc.tally, NutrientDayTally(fromFood: 0, known: 0, missing: 1))
     }
 
+    func testABelowThresholdBoundCountsAsMissingNotAsKnownOnTheGapsScreen() throws {
+        let store = try makeStore()
+        try log(store, "Seasoning", at: noon, product: product("seasoning", kind: .food, nutrients: [
+            "vitaminC": .belowReportingThreshold(.mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        model.load(now: noon)
+        // A bound says the amount is small, not what it is: the entry is one missing entry and adds no known amount.
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 0, known: 0, missing: 1))
+    }
+
+    func testAFullyKnownEntryIsTalliedOnItsOwnWithNoMissingEntry() throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 60, known: 1, missing: 0))
+    }
+
     func testAnEntryWhoseDayCannotBeToldIsCountedAndSaid() throws {
         let store = try makeStore()
         try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
