@@ -49,6 +49,15 @@ final class JournalDeleteUndoTests: XCTestCase {
         XCTAssertTrue(current.allSatisfy { $0.desiredAction == .upsert })
     }
 
+    func testDeleteWithAStaleCallerTimeIsStillHeld() throws {
+        let store = try makeStore()
+        try createIntake(store)
+        // A caller time a minute in the past must not shorten the hold: the store stamps its own clock.
+        try store.delete(intakeID: intakeID, now: Date().addingTimeInterval(-60))
+        XCTAssertTrue(try pendingDeletes(store).isEmpty)
+        XCTAssertEqual(try store.pendingDeleteRowCountForTesting(intakeID: intakeID), 2)
+    }
+
     func testNoDeleteIsOfferedBeforeWindowEnds() throws {
         let store = try makeStore()
         try createIntake(store)

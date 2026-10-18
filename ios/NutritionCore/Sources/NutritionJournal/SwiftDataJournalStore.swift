@@ -1422,6 +1422,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         lock.withLock { deleteCommittedHandler = handler }
     }
 
+    /// Marks the intake deleted and queues its delete operations. The hold is stamped from the store's own clock
+    /// inside the commit, so it cannot be shortened by a stale caller time. `now` is kept for existing callers
+    /// and is not used for the hold.
     public func delete(intakeID: String, now: Date) throws {
         try commit { context in
             guard let record = try Self.intakeRecord(intakeID, in: context) else {
@@ -1435,7 +1438,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             let revision = record.currentRevision
             queueWork(
                 intakeID: intakeID, revision: revision, kind: .delete,
-                payload: "delete:\(intakeID):\(revision)", deletedAt: now, context: context)
+                payload: "delete:\(intakeID):\(revision)", deletedAt: Date(), context: context)
         }
         let handler = lock.withLock { deleteCommittedHandler }
         handler?(intakeID)
