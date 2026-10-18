@@ -35,6 +35,8 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.water(1_000, usUnits: false), "1000 mL")
         XCTAssertEqual(WidgetFigure.water(1_000, usUnits: nil), "1000 mL", "a summary from before the field is metric")
         XCTAssertEqual(WidgetFigure.water(0, usUnits: true), "0 fl oz")
+        XCTAssertEqual(WidgetFigure.water(10, usUnits: true), "<1 fl oz", "a sip is not zero")
+        XCTAssertEqual(WidgetFigure.water(15, usUnits: true), "1 fl oz")
         XCTAssertEqual(WidgetFigure.water(nil, usUnits: true), "—")
         XCTAssertEqual(WidgetFigure.water(.infinity, usUnits: true), "—")
         XCTAssertEqual(WidgetFigure.water(nil, usUnits: nil), "— mL")
