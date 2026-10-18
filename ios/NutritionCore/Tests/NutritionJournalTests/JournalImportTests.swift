@@ -128,6 +128,19 @@ class JournalImportTestCase: XCTestCase {
                 store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
     }
 
+    /// Removes every component's water share, as a version 1 to 6 file has none.
+    func removeShares(_ value: inout [String: Any]) {
+        func strip(_ node: Any) -> Any {
+            if var dict = node as? [String: Any] {
+                dict.removeValue(forKey: "hydration_percent")
+                return dict.mapValues(strip)
+            }
+            if let list = node as? [Any] { return list.map(strip) }
+            return node
+        }
+        value = strip(value) as? [String: Any] ?? value
+    }
+
     /// A real legacy export: neither top-level products nor revision provenance had a kind.
     func versionOneExportData() throws -> Data {
         var root = try object(of: exportData(favorites: false))
@@ -138,6 +151,7 @@ class JournalImportTestCase: XCTestCase {
         var products = try XCTUnwrap(root["products"] as? [[String: Any]])
         for index in products.indices { products[index].removeValue(forKey: "kind") }
         root["products"] = products
+        removeShares(&root)
         var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
         for index in intakes.indices {
             var revisions = try XCTUnwrap(intakes[index]["revisions"] as? [[String: Any]])
