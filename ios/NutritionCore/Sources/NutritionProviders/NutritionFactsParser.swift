@@ -953,6 +953,22 @@ public enum NutritionFactsParser {
         return true
     }
 
+    /// Whether an unrecognized name is OCR noise on any panel kind rather than a row a supplement states.
+    /// A misread qualifier ("Inchides") is noise, and so is a one-word fragment of a nutrient name:
+    /// lowercase and at most three letters ("lum"), or a short word ending in a capital after lowercase
+    /// ("minD"). A real ingredient such as "Taurine" or "CoQ10" is not.
+    private static func isOCRFragment(_ name: String) -> Bool {
+        let qualifiers = ["includes", "contains"]
+        let words = name.split(separator: " ")
+        if words.contains(where: { word in qualifiers.contains { editDistance(word.lowercased(), $0) <= 2 } }) {
+            return true
+        }
+        guard words.count == 1, let word = words.first else { return false }
+        let letters = word.filter(\.isLetter)
+        if !letters.isEmpty, letters.count <= 3, letters.allSatisfy(\.isLowercase) { return true }
+        return letters.count <= 5 && word.last?.isUppercase == true && word.contains(where: \.isLowercase)
+    }
+
     /// The Levenshtein distance between two words, used to recognize a misread panel word.
     private static func editDistance(_ a: String, _ b: String) -> Int {
         let x = Array(a), y = Array(b)
@@ -1144,7 +1160,9 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
-            } else if !keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name) {
+            } else if isOCRFragment(row.name)
+                || (!keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name))
+            {
                 // A row that carries an amount but no name this panel's kind recognizes is unread, not
                 // dropped silently: it is counted so the review screen still shows it as unfinished.
                 unnamedRows += 1
@@ -1279,7 +1297,13 @@ public enum NutritionFactsParser {
         // whose remaining word states a known chemical form (`Iron Bisglycinate`) is the nutrient it
         // is built on.
         let rest = String(name[match.end...])
-        let forms = rest.split(whereSeparator: \.isWhitespace).map { $0.lowercased() }
+        let restWords = rest.split(whereSeparator: \.isWhitespace)
+        // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
+        // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
+        if restWords.count == 1, let noise = restWords.first, noise.count <= 4, noise.allSatisfy(\.isLowercase) {
+            return (name, match.row)
+        }
+        let forms = restWords.map { $0.lowercased() }
         guard !forms.isEmpty, forms.allSatisfy({ knownForms.contains($0) }) else { return (name, nil) }
         return (name, match.row)
     }

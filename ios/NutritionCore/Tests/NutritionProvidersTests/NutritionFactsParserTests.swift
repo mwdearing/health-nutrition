@@ -1067,6 +1067,21 @@ final class NutritionFactsParserTests: XCTestCase {
                        "qualifier and fragment names are not compounds")
     }
 
+    /// A real supplement ingredient survives next to the OCR noise rows of the same capture.
+    func testSupplementIngredientSurvivesBesideOCRNoise() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 capsule",
+            "Ashwagandha root extract 300mg",
+            "Inchides 0g",
+            "minD 0mcg",
+            "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Ashwagandha root extract"])
+        XCTAssertEqual(panel.unnamedRowCount, 3, "the three noise rows stay unread and are counted")
+    }
+
     /// A food panel's real rows that the named table lacks keep their names, while misread fragments do not.
     func testFoodPanelKeepsPlausibleRowNamesAndDropsMisreadFragments() throws {
         let panel = parse([
