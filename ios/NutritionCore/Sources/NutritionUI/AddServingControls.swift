@@ -23,7 +23,7 @@ struct AddServingControls: View {
     @ViewBuilder private var servingsSection: some View {
         if model.canCountServings, let serving = model.servingOption {
             Section {
-                LabeledField("Servings") { focus in
+                LabeledField("Servings", onFocusEnd: { model.commitServingCount() }) { focus in
                     TextField(
                         "Servings",
                         text: Binding(get: { model.servingCount }, set: { model.setServingCount($0) })

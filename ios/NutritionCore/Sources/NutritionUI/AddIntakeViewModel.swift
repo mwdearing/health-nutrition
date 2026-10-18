@@ -911,20 +911,27 @@ public final class AddIntakeViewModel: ObservableObject {
         servingCount = text
         isSettingServings = true
         defer { isSettingServings = false }
-        guard let count = AmountParser.parseTyped(text) else {
-            // A cleared field, or a completed zero, clears the amount; a partly typed count ("1.") leaves it.
-            let trimmed = text.trimmingCharacters(in: .whitespaces)
-            // A trailing point ("0.") is a count still being typed, so it never clears the amount.
-            let isCompletedZero = Decimal(string: trimmed, locale: AmountParser.locale) == 0 && !trimmed.hasSuffix(".")
-            if trimmed.isEmpty || isCompletedZero { amountText = "" }
-            return
-        }
+        // While the count is a draft, only a complete positive number changes the amount. Anything else
+        // ("", "0", "0.", "0.0", "0,") is still being typed and leaves the amount alone; commitServingCount
+        // settles it when the edit commits.
+        guard let count = AmountParser.parseTyped(text) else { return }
         amountText = DecimalFormatting.text(count * display.quantity)
         unit = display.unit
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText) {
             prefillBacking = (shown, display.unit, count * quantity, servingUnit)
         }
+    }
+
+    /// Called when the Servings edit commits: on save, or when focus leaves the field. A count that is
+    /// empty or zero then clears the amount, since nothing is left to finish typing.
+    public func commitServingCount() {
+        let trimmed = servingCount.trimmingCharacters(in: .whitespaces)
+        let isZero = Decimal(string: AmountParser.normalizedTyped(trimmed), locale: AmountParser.locale) == 0
+        guard trimmed.isEmpty || isZero else { return }
+        isSettingServings = true
+        defer { isSettingServings = false }
+        amountText = ""
     }
 
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
@@ -941,6 +948,7 @@ public final class AddIntakeViewModel: ObservableObject {
     @discardableResult
     public func save(now: Date) -> Bool {
         hasAttemptedSave = true
+        commitServingCount()
         let trimmedName = typedName
         let amount = AmountParser.parseTyped(amountText)
         saveError = nil
