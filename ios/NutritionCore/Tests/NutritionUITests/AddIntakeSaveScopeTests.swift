@@ -187,6 +187,31 @@ final class LibraryChoiceExportTests: XCTestCase {
         XCTAssertEqual(copy.note, "after the run")
     }
 
+    /// A drink repeated from a template saved before shares gets the default share on the new entry, so it
+    /// counts its water from here on. The template itself keeps no share.
+    func testRepeatingALegacyDrinkTemplateStoresTheDefaultShare() throws {
+        let store = try makeStore()
+        let drink = ProductDefinition(
+            snapshotID: "snap-legacy-repeat", productID: "product-legacy-repeat", name: "Old soda", labelBasis: "per serving",
+            catalogOrigin: "manual", catalogVersion: "1", kind: .drink)
+        let template = RepeatTemplate(
+            displayName: "Old soda", category: "other", meal: nil,
+            components: [IntakeComponent(componentID: "soda", name: "Old soda", amount: 200, unit: .mL)],
+            productSnapshotID: drink.snapshotID)
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "other", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "soda", name: "Old soda", amount: 200, unit: .mL)],
+            product: drink, now: when)
+
+        let copyID = try IntakeRepeater(
+            store: store, timeZoneProvider: { "UTC" }, makeID: { UUID().uuidString.lowercased() }
+        ).create(from: template, now: when)
+
+        let revision = try XCTUnwrap(try store.revisions(of: copyID).first)
+        XCTAssertEqual(revision.components.first?.hydrationPercent, IntakeComponent.defaultDrinkHydrationPercent)
+        XCTAssertEqual(template.components.first?.hydrationPercent, nil, "the template itself is not changed")
+    }
+
     /// Repeating an entry kept out of Library keeps the copy out of Library too.
     func testRepeatOfASwitchedOffEntryStaysOutOfProducts() throws {
         let id = UUID().uuidString.lowercased()

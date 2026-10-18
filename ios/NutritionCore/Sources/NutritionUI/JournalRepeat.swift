@@ -99,7 +99,18 @@ struct IntakeRepeater {
             }
             try exclusions.keepOutOfLibrary(intakeID: intake.id)
         }
-        try store.create(intake, components: template.components, product: product, now: now)
+        // A drink repeated from a template saved before shares gets the default share now, as a new drink does,
+        // so every drink logged from here on counts its water. The stored template itself is not changed.
+        let isDrink = product?.kind == .drink || template.category == "drink"
+        let components = template.components.map { component -> IntakeComponent in
+            guard isDrink, component.hydrationPercent == nil, component.unit.dimension == .volume,
+                  template.category != "water"
+            else { return component }
+            var explicit = component
+            explicit.hydrationPercent = IntakeComponent.defaultDrinkHydrationPercent
+            return explicit
+        }
+        try store.create(intake, components: components, product: product, now: now)
         return intake.id
     }
 
