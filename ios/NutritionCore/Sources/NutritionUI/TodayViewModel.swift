@@ -240,18 +240,15 @@ public final class TodayViewModel: ObservableObject {
                         }
                     }
                 } else {
-                    // A drink counts its water share toward the day, as Waterllama does: each volume
-                    // component adds its volume times its hydration share (its own, else the preset).
-                    if kind == .drink {
-                        for component in components where component.unit.dimension == .volume {
-                            guard Self.isPositive(component.amount),
-                                let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
-                                Self.isPositive(converted.value)
-                            else { continue }
-                            // A drink logged before shares (no share stored) adds no water, as on main.
-                            guard let share = component.hydrationPercent else { continue }
-                            waterTotal += converted.value * share / 100
-                        }
+                    // A volume component with a stored water share counts volume times share, whatever its product kind.
+                    // A component with no stored share (logged before shares) adds no water, as on main.
+                    for component in components where component.unit.dimension == .volume {
+                        guard Self.isPositive(component.amount),
+                            let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
+                            Self.isPositive(converted.value),
+                            let share = component.hydrationPercent
+                        else { continue }
+                        waterTotal += converted.value * share / 100
                     }
                     if kind != .supplement {
                         for component in components { foodComponents.append((component, snapshot, kind)) }

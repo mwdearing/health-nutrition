@@ -135,9 +135,7 @@ public struct JournalSnapshotTotals: Sendable {
             : nil
         let category = intake?.category ?? deleted?.category ?? Self.waterCategory
         var totals: [String: NutrientValue] = [:]
-        // A drink writes its water share, not its full volume: the share is what the day counts too.
-        let isDrink = try entry.productSnapshotID.flatMap { try store.product(snapshotID: $0) }?.kind == .drink
-        if let water = Self.recordedWater(in: entry.components, category: category, drink: isDrink) {
+        if let water = Self.recordedWater(in: entry.components, category: category) {
             totals["water"] = water
         }
         // The water the components record wins a contested key: it is what was actually poured, where
@@ -181,18 +179,16 @@ public struct JournalSnapshotTotals: Sendable {
 
     /// The milliliters the revision's components record, summed, and only for a drink.
     private static func recordedWater(
-        in components: [IntakeComponent], category: String, drink: Bool
+        in components: [IntakeComponent], category: String
     ) -> NutrientValue? {
-        guard category == waterCategory || drink else { return nil }
         var milliliters = Decimal(0)
         var found = false
         for component in components {
             guard component.unit.dimension == .volume else { continue }
             guard let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL)
             else { continue }
-            // A water entry counts its whole volume; a drink counts its share of it.
-            // A water entry counts its whole volume. A drink counts its stored share, and a drink logged before
-            // shares (no share stored) writes no water, as on main.
+            // A water entry counts its whole volume. Any other entry counts volume times its stored share, and a
+            // component with no stored share (logged before shares) counts nothing, as on main.
             guard let share = category == waterCategory ? Decimal(100) : component.hydrationPercent else { continue }
             milliliters += converted.value * share / 100
             found = true

@@ -117,10 +117,8 @@ public enum DailyTotalsBuilder {
         // about any nutrient but water. Without this a food entry reaches the water line at all,
         // answers unknown there — a snapshot states no water unless the product states water — and a
         // day holding one food makes the day's water unknown rather than what was actually drunk.
-        // The one exception is a drink's water share, which counts toward the day's water as Today shows it.
-        guard nutrient != waterKey else {
-            return entry.snapshot?.kind == .drink ? drinkWaterContributions(entry.components) : []
-        }
+        // The one exception is a stored water share, which counts toward the day's water as Today shows it.
+        guard nutrient != waterKey else { return drinkWaterContributions(entry.components) }
         // A snapshot states the product's own values once, not once per component, so it is scaled
         // and summed once per entry. Summing it per component would count a two-component product's
         // protein twice.
