@@ -1322,7 +1322,7 @@ public enum NutritionFactsParser {
                 && previous?.first?.isLetter == true
             let startsWord = token.text.first?.isLetter == true || numberAfterLetter
             guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower),
-                  token.text.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" })
+                  token.text.allSatisfy({ $0.isLetter || ($0.isASCII && $0.isNumber) || $0 == "-" })
             else { return nil }
             guard countedUnit(for: token.text) == nil else { return nil }
             previous = token.text
