@@ -304,23 +304,25 @@ public enum DailyTotalsBuilder {
             }
         }
         guard partialDay else { return nil }
+        // A below-threshold bound adds 0, so it is left out of the sum rather than stated as a zero.
+        let knownOnly = values.filter {
+            if case .known = $0 { return true }
+            return false
+        }
+        if !knownOnly.isEmpty {
+            let raw = rawSum(knownOnly, nutrient: nutrient)
+            if case .known = raw.value { return raw.value }
+            return nil
+        }
+        // Only bounds (or nothing) are known: the zero needs a unit to be stated in.
         let mapping = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
             ? HealthKitWritePlanner.mapping(for: nutrient) : nil
-        // A below-threshold value is a bound, not an amount: it adds 0 to the known sum, and the day stays partial.
-        // With no unit to state the zero in, the bound cannot be written as an amount, so the day stays unknown.
-        if values.contains(where: { value in
-            if case .belowReportingThreshold(nil) = value { return mapping?.unit == nil }
-            return false
-        }) { return nil }
-        let bounded: [NutrientValue] = values.map { value in
-            if case .belowReportingThreshold(let unit) = value {
-                return .known(0, unit ?? mapping?.unit ?? .g)
-            }
-            return value
-        }
-        let raw = rawSum(bounded, nutrient: nutrient)
-        if case .known = raw.value { return raw.value }
-        return nil
+        let bound = values.lazy.compactMap { value -> MeasureUnit?? in
+            if case .belowReportingThreshold(let unit) = value { return .some(unit) }
+            return nil
+        }.first
+        guard let unit = bound.flatMap({ $0 }) ?? mapping?.unit else { return nil }
+        return .known(0, unit)
     }
 
     /// `NutrientTotal.sum`, with any unknown left in the day making the whole nutrient unknown.
