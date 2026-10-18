@@ -333,19 +333,6 @@ private struct SettingsContent: View {
         return parts.date ?? Date()
     }
 
-    /// Looks a placeholder row up by its id, so the rows can change without shifting the others.
-    private func placeholderText(_ id: String) -> some View {
-        let row = model.placeholderRows.first { $0.id == id }
-        return VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-            Text(row?.title ?? "")
-            Text(row?.detail ?? "").font(.footnote).foregroundStyle(TokenColors.textSecondary)
-        }
-    }
-
-    private func placeholderDetail(_ id: String) -> String {
-        model.placeholderRows.first { $0.id == id }?.detail ?? ""
-    }
-
     private func importPickedFile(_ result: Result<[URL], Error>) {
         cancelFileImport()
         guard case .success(let urls) = result, let url = urls.first else {
