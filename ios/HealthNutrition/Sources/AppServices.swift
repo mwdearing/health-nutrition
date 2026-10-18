@@ -196,7 +196,9 @@ final class AppServices {
         self.healthKitDeliveryStatus = healthKitDeliveryStatus
         // A delete is held for the Undo window; once it ends, run the same pass a write triggers, so the
         // delete reaches Health without waiting for the next foreground.
-        today.onDeleteHeld = { [weak healthKitDeliveryStatus] in
+        let todayModel = today
+        journalStore.setOnDeleteCommitted { [weak healthKitDeliveryStatus] intakeID in
+            Task { @MainActor in todayModel.deleteCommitted(intakeID: intakeID) }
             Task {
                 try? await Task.sleep(for: .seconds(JournalUndo.deleteWindow + 0.5))
                 await healthKitDeliveryStatus?.run(now: Date(), automatic: true)

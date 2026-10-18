@@ -1084,6 +1084,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     @unchecked Sendable
 {
     private let lock = NSLock()
+    private var deleteCommittedHandler: (@Sendable (String) -> Void)?
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
     private var failFlag = false
@@ -1415,6 +1416,12 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         }
     }
 
+    /// Called after a delete commits, with the intake it removed. The app uses it for every delete, whatever
+    /// screen made it, to start delivery once the Undo window ends and to drop an older Undo offer.
+    public func setOnDeleteCommitted(_ handler: @escaping @Sendable (String) -> Void) {
+        lock.withLock { deleteCommittedHandler = handler }
+    }
+
     public func delete(intakeID: String, now: Date) throws {
         try commit { context in
             guard let record = try Self.intakeRecord(intakeID, in: context) else {
@@ -1430,6 +1437,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                 intakeID: intakeID, revision: revision, kind: .delete,
                 payload: "delete:\(intakeID):\(revision)", deletedAt: now, context: context)
         }
+        let handler = lock.withLock { deleteCommittedHandler }
+        handler?(intakeID)
     }
 
     public func undoDelete(intakeID: String, now: Date) throws {

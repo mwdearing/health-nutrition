@@ -517,8 +517,12 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// Called when a delete starts its Undo window, so the app can deliver it once the window ends.
-    public var onDeleteHeld: (() -> Void)?
+    /// A delete committed anywhere in the app. Undo is offered for the most recent delete only, so an older
+    /// delete offer here is dropped when another entry is deleted.
+    public func deleteCommitted(intakeID: String) {
+        guard let undo, undo.isDelete, undo.intakeID != intakeID else { return }
+        self.undo = nil
+    }
 
     /// Deletes an entry from Today, offering Undo for the window. Nothing reaches Apple Health until it passes.
     @discardableResult
@@ -533,7 +537,6 @@ public final class TodayViewModel: ObservableObject {
         undo = UndoHandle(
             intakeID: intakeID, expiresAt: now.addingTimeInterval(Self.undoWindow), isDelete: true)
         load(now: now)
-        onDeleteHeld?()
         return true
     }
 
