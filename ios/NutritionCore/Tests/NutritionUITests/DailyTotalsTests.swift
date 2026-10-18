@@ -970,7 +970,8 @@ final class DailyTotalsTests: XCTestCase {
             try addFood(store, name: "Oats", id: "oats", at: when, amount: -40, unit: .g)
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
-            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(10, .kcal), "no-snapshot path")
+            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "no-snapshot path")
+            XCTAssertEqual(totals.knownSum(for: "energyKcal"), .known(10, .kcal), "no-snapshot path")
         }
         // Mass snapshot: the stated 10 kcal per 100 g is scaled by the logged grams.
         do {
@@ -983,8 +984,9 @@ final class DailyTotalsTests: XCTestCase {
             try addFood(store, name: "Oats", id: "oats", at: when, amount: -40, unit: .g, product: product)
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
-            guard case .known(let kcal, _) = totals.total(for: "energyKcal")?.value else {
-                return XCTFail("the positive mass entry must still total known energy")
+            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "mass path")
+            guard case .known(let kcal, _) = totals.knownSum(for: "energyKcal") else {
+                return XCTFail("the positive mass entry must still sum to known energy")
             }
             XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 4, accuracy: 0.001, "mass path")
         }
@@ -999,8 +1001,9 @@ final class DailyTotalsTests: XCTestCase {
             try addFood(store, name: "Gummy", id: "gummy", at: when, amount: -2, unit: .serving, product: product)
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
-            guard case .known(let kcal, _) = totals.total(for: "energyKcal")?.value else {
-                return XCTFail("the positive count entry must still total known energy")
+            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "count path")
+            guard case .known(let kcal, _) = totals.knownSum(for: "energyKcal") else {
+                return XCTFail("the positive count entry must still sum to known energy")
             }
             XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 20, accuracy: 0.001, "count path")
         }
