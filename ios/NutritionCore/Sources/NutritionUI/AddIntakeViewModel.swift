@@ -851,9 +851,13 @@ public final class AddIntakeViewModel: ObservableObject {
         // so it cannot be carried over: the unit moves to one that totals and the amount is cleared to be re-entered.
         if !unitOptions.contains(unit), let first = unitOptions.first {
             let typed = unit
+            // The notice is for a typed amount that was cleared; an empty field only changes the unit.
+            let hadAmount = AmountParser.parseTyped(amountText) != nil
             unit = first
             amountText = ""
-            unitNotice = "Amount cleared. This food can't be measured in \(typed.symbol)."
+            if hadAmount {
+                unitNotice = "Amount cleared. This food can't be measured in \(typed.symbol)."
+            }
         }
         // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
         if AmountParser.parseTyped(amountText) == nil { openOnOneServing() }
