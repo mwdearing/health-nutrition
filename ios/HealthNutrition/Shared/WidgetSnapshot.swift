@@ -16,6 +16,12 @@ struct WidgetSnapshot: Codable, Equatable {
     /// Whether the person reads US customary units, so water is drawn in fluid ounces. Absent in a summary written
     /// before this field existed, which is read as metric.
     var usUnits: Bool?
+    /// The figures that are only the known part of the day because some entries have no values ("energy",
+    /// "protein", "carbohydrate", "fat"). Absent or empty means every figure is a whole-day figure. A figure listed
+    /// here is drawn with a trailing "+" and spoken as "at least".
+    var partialFigures: [String]?
+
+    func isPartial(_ figure: String) -> Bool { partialFigures?.contains(figure) == true }
 
     /// A summary with nothing in it: no entries and no figures, as after Erase all data.
     static func empty(at time: Date) -> WidgetSnapshot {
@@ -90,10 +96,24 @@ enum WidgetFigure {
 
     /// Calories as the widgets draw them: the bare number, because calories are the whole point of the app, or
     /// a dash. Read out as "calories" by VoiceOver (see `caloriesSpoken`).
-    static func calories(_ kilocalories: Double?) -> String { wholeNumber(kilocalories) ?? "—" }
+    static func calories(_ kilocalories: Double?, partial: Bool = false) -> String {
+        number(kilocalories, partial: partial)
+    }
 
-    static func caloriesSpoken(_ kilocalories: Double?) -> String {
-        wholeNumber(kilocalories).map { "\($0) calories" } ?? "Calories unknown"
+    /// A bare whole number, "+" after it when it is only the known part of the day, or a dash.
+    static func number(_ value: Double?, partial: Bool = false) -> String {
+        guard let text = wholeNumber(value) else { return "—" }
+        return partial ? text + "+" : text
+    }
+
+    static func caloriesSpoken(_ kilocalories: Double?, partial: Bool = false) -> String {
+        wholeNumber(kilocalories).map { (partial ? "at least " : "") + "\($0) calories" } ?? "Calories unknown"
+    }
+
+    /// A whole-number figure with its unit, "+" after the number when it is only the known part of the day.
+    static func figure(_ value: Double?, unit: String, partial: Bool = false) -> String {
+        guard let text = wholeNumber(value) else { return "—" }
+        return text + (partial ? "+" : "") + " " + unit
     }
 
     /// Water as the person reads it: whole fluid ounces under US units, whole millilitres otherwise; dashes when the

@@ -77,10 +77,10 @@ struct WatchTodayView: View {
             if snapshot?.hasEntries == false {
                 Text("Nothing logged today").font(.footnote).foregroundStyle(.secondary)
             } else {
-                Text(WidgetFigure.calories(snapshot?.energyKcal)).font(.title3).privacySensitive()
-                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
+                Text(WidgetFigure.calories(snapshot?.energyKcal, partial: snapshot?.isPartial("energy") == true)).font(.title3).privacySensitive()
+                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal, partial: snapshot?.isPartial("energy") == true))
                 Text(
-                    "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"
+                    "P \(WidgetFigure.number(snapshot?.proteinGrams, partial: snapshot?.isPartial("protein") == true)) · C \(WidgetFigure.number(snapshot?.carbohydrateGrams, partial: snapshot?.isPartial("carbohydrate") == true)) · F \(WidgetFigure.number(snapshot?.fatGrams, partial: snapshot?.isPartial("fat") == true)) g"
                 ).font(.footnote).privacySensitive()
                 Text("\(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water").font(.footnote).privacySensitive()
             }
