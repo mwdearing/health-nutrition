@@ -1341,15 +1341,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
             }
-            // The units of changed components go in this same commit, so a failed edit removes none of them.
-            for componentID in unitRemovals {
-                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
-                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
-                        $0.intakeID == intakeID && $0.componentID == componentID
-                    })) {
-                    context.delete(row)
-                }
-            }
             let number = record.currentRevision + 1
             record.currentRevision = number
             // The corrected time moves the entry's own row, in the same save as the revision that
@@ -1361,10 +1352,21 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             if let occurredAt { record.occurredAt = occurredAt }
             if let timeZoneIdentifier { record.timeZoneIdentifier = timeZoneIdentifier }
             try Self.supersedeProjections(of: intakeID, in: context)
-            return try appendRevision(
+            let revision = try appendRevision(
                 intakeID: intakeID, number: number, componentsJSON: json, components: components,
                 product: product, changeReason: changeReason, now: now,
                 occurredAt: record.occurredAt, timeZoneIdentifier: record.timeZoneIdentifier, context: context)
+            // The units of changed components go last, after every step that can throw, so a failure anywhere
+            // above leaves them in place. Nothing below can throw, so the commit saves them with the revision.
+            for componentID in unitRemovals {
+                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
+                        $0.intakeID == intakeID && $0.componentID == componentID
+                    })) {
+                    context.delete(row)
+                }
+            }
+            return revision
         }
     }
 

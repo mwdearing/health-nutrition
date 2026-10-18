@@ -13,7 +13,9 @@ final class EditRemovingUnitsTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("edit.store"))
     }
 
-    func testAFailedEditLeavesTheUnitRowsExactlyAsTheyWere() throws {
+    /// An edit refused before any change (here, a deleted entry) leaves its unit rows where they were.
+    /// The removals run last, after every step that can throw, so a failure anywhere earlier keeps them.
+    func testAnEditRefusedBeforeAnyChangeLeavesTheUnitRows() throws {
         let store = try makeStore()
         let id = "00000000-0000-4000-8000-0000000000c1"
         try store.create(
