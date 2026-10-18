@@ -1047,6 +1047,26 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
     }
 
+    /// Reproduces the 0.1.31 Entry screen: a Supplement Facts capture keeps unrecognized rows, so OCR
+    /// fragments became "Also on the label" compounds ("Added Sugars ela 25 g", "Inchides 0 g",
+    /// "lum 260 mg", "minD 0 mcg"). A misread name of a recognized nutrient lands on its field, and a
+    /// misread qualifier or a fragment is never a compound.
+    func testSupplementPanelDoesNotKeepOCRFragmentsAsCompounds() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 tablet",
+            "Added Sugars ela 25g",
+            "Inchides 0g",
+            "lum 260mg",
+            "minD 0mcg",
+        ])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"), "a misread Added Sugars row lands on its field")
+        XCTAssertFalse(panel.additionalNutrients.contains { $0.name.contains("ela") }, "no 'Added Sugars ela' compound")
+        XCTAssertFalse(panel.additionalNutrients.contains { ["Inchides", "lum", "minD"].contains($0.name) },
+                       "qualifier and fragment names are not compounds")
+    }
+
     /// A food panel's real rows that the named table lacks keep their names, while misread fragments do not.
     func testFoodPanelKeepsPlausibleRowNamesAndDropsMisreadFragments() throws {
         let panel = parse([
