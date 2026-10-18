@@ -103,7 +103,6 @@ public struct AddHomeView: View {
                     }
                 }
                 Text("More ways").font(.headline).accessibilityAddTraits(.isHeader)
-                placeholder("Describe or photograph a meal")
                 tile("Amounts only", help: "Log calories and macros without choosing a food.") {
                     self.quickAdd = self.model.makeQuickAdd()
                 }
@@ -155,14 +154,5 @@ public struct AddHomeView: View {
         .buttonStyle(.plain)
         .disabled(!available)
         .accessibilityElement(children: .combine)
-    }
-
-    private func placeholder(_ title: String) -> some View {
-        Card {
-            HStack { Text(title); Spacer(); LaterBadge() }
-        }
-        .disabled(true)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue("Not available yet")
     }
 }

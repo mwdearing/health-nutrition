@@ -143,15 +143,12 @@ private struct SettingsContent: View {
                 }
                 reminderRows
             }
-            Section("Connections") {
-                if let appleHealth {
-                    AppleHealthRows(model: appleHealth)
-                } else {
-                    HStack { placeholderText("appleHealth"); Spacer(); LaterBadge() }
-                        .disabled(true).accessibilityValue("Not available yet")
+            if appleHealth != nil {
+                Section("Connections") {
+                    if let appleHealth {
+                        AppleHealthRows(model: appleHealth)
+                    }
                 }
-                HStack { placeholderText("healthRelay"); Spacer(); LaterBadge() }
-                    .disabled(true).accessibilityValue("Not available yet")
             }
             Section("Privacy") {
                 NavigationLink {
@@ -159,14 +156,6 @@ private struct SettingsContent: View {
                 } label: {
                     Text(model.privacyStatement)
                 }
-                Toggle(isOn: .constant(false)) {
-                    VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-                        HStack { Text("Share product labels with the community"); LaterBadge() }
-                        Text(placeholderDetail("communitySharing"))
-                            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
-                    }
-                }
-                .disabled(true).accessibilityValue("Not available yet")
                 Link("Privacy policy", destination: URL(string: "https://github.com/mwdearing/health-nutrition/blob/main/PRIVACY.md")!)
             }
             Section {
@@ -196,8 +185,6 @@ private struct SettingsContent: View {
                    warning != connections.importMessage {
                     Text(warning).font(.footnote).foregroundStyle(TokenColors.error)
                 }
-                HStack { placeholderText("keepHistory"); Spacer(); LaterBadge() }
-                    .disabled(true).accessibilityValue("Not available yet")
                 if connections.canEraseAll {
                     Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
                         self.confirmingErase = true
@@ -215,9 +202,6 @@ private struct SettingsContent: View {
                 HStack { Text("Version"); Spacer(); Text(model.versionText) }
                 if let onShowWelcome {
                     Button("Show welcome again") { onShowWelcome() }
-                } else {
-                    HStack { Text("Show welcome again"); Spacer(); LaterBadge() }
-                        .disabled(true).accessibilityValue("Not available yet")
                 }
                 NavigationLink("Licenses") {
                     Form {
