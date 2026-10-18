@@ -36,10 +36,13 @@ final class JournalDeleteUndoTests: XCTestCase {
         let deletedAt = Date()
         try store.delete(intakeID: intakeID, now: deletedAt)
         XCTAssertTrue(try store.activeIntakes().isEmpty)
+        XCTAssertEqual(try store.pendingDeleteRowCountForTesting(intakeID: intakeID), 2)
 
         try store.undoDelete(intakeID: intakeID, now: deletedAt.addingTimeInterval(1))
 
         XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
+        // The raw rows, not pendingOutbox: a held delete is hidden from pendingOutbox even when it is not withdrawn.
+        XCTAssertEqual(try store.pendingDeleteRowCountForTesting(intakeID: intakeID), 0)
         XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.kind == .upsert })
         let current = try store.projections(of: intakeID).filter(\.isCurrent)
         XCTAssertFalse(current.isEmpty)

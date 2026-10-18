@@ -1441,6 +1441,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         handler?(intakeID)
     }
 
+    /// Test support: the delete rows still queued for an intake, held or not.
+    public func pendingDeleteRowCountForTesting(intakeID: String) throws -> Int {
+        let context = ModelContext(try openContainer())
+        let deleteKind = OutboxKind.delete.rawValue
+        return try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> {
+                $0.intakeID == intakeID && $0.kindRaw == deleteKind && $0.acknowledgedAt == nil
+            })).count
+    }
+
     public func undoDelete(intakeID: String, now: Date) throws {
         try commit { context in
             guard let record = try Self.intakeRecord(intakeID, in: context) else {
@@ -2275,10 +2285,13 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Operations not yet acknowledged, oldest revision first, upsert before delete within a revision.
     public func pendingOutbox() throws -> [OutboxOperation] {
-        let now = Date()
         let context = ModelContext(try openContainer())
+        // The clock is read and the rows fetched under writeLock, the lock a commit holds. An undo therefore
+        // either lands first, and the row is withdrawn, or waits and then sees the window closed and refuses.
+        writeLock.lock()
+        defer { writeLock.unlock() }
         // A delete waits out its Undo window, so an undone delete never reaches Apple Health or the relay.
-        let holdCutoff = now.addingTimeInterval(-JournalUndo.deleteWindow)
+        let holdCutoff = Date().addingTimeInterval(-JournalUndo.deleteWindow)
         let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
             predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil })).filter { row in
             row.kindRaw != OutboxKind.delete.rawValue || (row.deletedAt ?? .distantPast) <= holdCutoff
