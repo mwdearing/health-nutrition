@@ -228,7 +228,7 @@ public struct SavedMealBook {
             }
             return FavoriteComponent(
                 componentID: component.componentID, name: component.name, amountText: text,
-                unitSymbol: component.unit.screenSymbol, hydrationPercentText: component.hydrationPercent.map(DecimalFormatting.text))
+                unitSymbol: component.unit.symbol, hydrationPercentText: component.hydrationPercent.map(DecimalFormatting.text))
         }
         return FavoriteTemplate(
             id: id, displayName: template.displayName, category: template.category, components: components,

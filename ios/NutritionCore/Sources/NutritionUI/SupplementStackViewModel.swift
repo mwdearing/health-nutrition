@@ -705,7 +705,7 @@ public final class SupplementStackViewModel: ObservableObject {
             components: template.components.map {
                 FavoriteComponent(
                     componentID: $0.componentID, name: $0.name, amountText: DecimalFormatting.text($0.amount),
-                    unitSymbol: $0.unit.screenSymbol)
+                    unitSymbol: $0.unit.symbol)
             },
             productSnapshotID: template.productSnapshotID, meal: template.meal)
     }
