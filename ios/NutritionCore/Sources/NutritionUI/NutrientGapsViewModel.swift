@@ -491,13 +491,13 @@ public final class NutrientGapsViewModel: ObservableObject {
             let totals = try DailyTotalsBuilder.totals(for: [intake], store: store, lookup: lookup, nutrients: nutrients)
             for nutrient in nutrients {
                 guard let total = totals.total(for: nutrient), total.coverage.totalCount > 0 else { continue }
-                // A bound counts as missing, not as a known amount, as it did before this path changed. A partial
-                // entry keeps its known part. A fully known entry is its total.
+                // A fully known entry is its total. Otherwise the known part comes from the same totals value Today
+                // uses, and a bound or an unknown adds only the missing note. A bound never zeroes a known part.
                 var values: [NutrientValue] = []
-                if total.coverage.hasBelowReportingThreshold {
-                    values = [.unknown]
-                } else if total.coverage.hasUnknown {
-                    if let known = totals.knownSum(for: nutrient) { values.append(known) }
+                if total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold {
+                    if total.coverage.knownCount > 0, let known = totals.knownSum(for: nutrient) {
+                        values.append(known)
+                    }
                     values.append(.unknown)
                 } else {
                     values = [total.value]

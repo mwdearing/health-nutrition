@@ -300,6 +300,28 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 0, known: 0, missing: 1))
     }
 
+    func testAKnownAmountAndABoundOfTheSameNutrientKeepTheKnownPartAndAddTheNote() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "typedVitC", name: "Typed", amount: 30, unit: .g),
+                IntakeComponent(componentID: "boundVitC", name: "Bound", amount: 10, unit: .g),
+            ], product: nil, now: noon)
+        let lookup = GapsComponentFacts(values: [
+            "typedVitC": ["vitaminC": .known(30, .mg)],
+            "boundVitC": ["vitaminC": .belowReportingThreshold(.mg)],
+        ])
+        let model = NutrientGapsViewModel(store: store, lookup: lookup)
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 30, known: 1, missing: 1))
+        // The same entry on the totals path Today uses: 30 mg known, with the bound unknown.
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: lookup, nutrients: ["vitaminC"])
+        XCTAssertEqual(totals.knownSum(for: "vitaminC"), .known(30, .mg))
+    }
+
     func testAFullyKnownEntryIsTalliedOnItsOwnWithNoMissingEntry() throws {
         let store = try makeStore()
         try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [

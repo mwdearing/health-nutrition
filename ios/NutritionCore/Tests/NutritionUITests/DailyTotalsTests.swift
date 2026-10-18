@@ -961,6 +961,20 @@ final class DailyTotalsTests: XCTestCase {
     /// A negative logged amount makes its entry unknown on every path, so the known sum is what the positive
     /// entries alone add up to. Each lookup below returns the same value whatever the amount, so a negative
     /// entry that reached the sum would change the total.
+    /// A food row with a negative volume and a 100% water share must not lower the day's water.
+    func testANegativeVolumeWithAWaterShareIsUnknownWaterNotDrunk() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [IntakeComponent(
+                componentID: "soup", name: "Soup", amount: -250, unit: .mL, hydrationPercent: 100)],
+            product: nil, now: when)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: [DailyTotalsBuilder.waterKey])
+        XCTAssertEqual(totals.total(for: DailyTotalsBuilder.waterKey)?.value, .unknown)
+    }
+
     /// A negative supplement row is unknown for what it declares, and an undeclared nutrient still does not count.
     func testANegativeSupplementRowIsUnknownOnlyForWhatItDeclares() throws {
         let store = try makeStore()
