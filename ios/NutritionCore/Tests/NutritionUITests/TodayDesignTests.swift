@@ -191,15 +191,16 @@ final class TodayDesignTests: XCTestCase {
         XCTAssertEqual(today.rows.count, 1, "the supplement is still listed")
     }
 
-    func testGoalBarCannotTotalWhenAnEntryStatesNoValueAndSaysWhichKind() throws {
+    func testGoalBarShowsTheKnownPartialSumWhenAnEntryStatesNoValue() throws {
         let store = try makeStore()
         try log(store, product: oats(withValues: true))
         try log(store, name: "Plain toast", product: oats(withValues: false))
         let today = model(store, goals: [NutrientGoal(nutrient: "fiber", target: Decimal(30), unit: .g)])
         today.load(now: now)
         let fiber = try XCTUnwrap(today.goalBars.first { $0.id == "fiber" })
-        XCTAssertEqual(fiber.state, .cannotTotal)
-        XCTAssertNil(fiber.fraction)
+        // The known entry's fiber is shown against the goal, with the note saying which entry has no value.
+        XCTAssertEqual(fiber.state, .progress)
+        XCTAssertNotNil(fiber.fraction)
         XCTAssertEqual(fiber.reason, "1 entry has no fiber value")
     }
 
