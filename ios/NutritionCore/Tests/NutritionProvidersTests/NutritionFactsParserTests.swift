@@ -1188,16 +1188,29 @@ final class NutritionFactsParserTests: XCTestCase {
 
         let spaced = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 12 2mcg"])
         XCTAssertEqual(spaced.additionalNutrients.map(\.name), ["Vitamin B 12"])
+        if case .known(let amount, let unit)? = spaced.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("2"))
+            XCTAssertEqual(unit, .mcg)
+        } else {
+            XCTFail("Vitamin B 12 should carry 2 mcg")
+        }
     }
 
-    /// A number joins a name only after a letter, so a second number is never part of the name.
+    /// A number joins a name only after a letter. "Vitamin B 1 2 mcg" reads "1" as part of the name and "2 mcg"
+    /// as the amount: the row is the extra "Vitamin B 1", not a known field, so the second number is never a name.
     func testSecondNumberIsNotPartOfAName() throws {
-        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 1 2mcg"])
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 1 2 mcg"])
 
-        XCTAssertFalse(panel.additionalNutrients.contains { $0.name.hasSuffix(" 2") })
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin B 1"])
+        if case .known(let amount, let unit)? = panel.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("2"))
+            XCTAssertEqual(unit, .mcg)
+        } else {
+            XCTFail("Vitamin B 1 should carry 2 mcg")
+        }
     }
 
-    /// A supplement's vitamin with its unit reads its name without the amount: "Vitamin A" with 500 IU.
+    /// Regression guard, not fail-first: a supplement's vitamin with its unit keeps its name without the amount.
     func testVitaminAWithUnitKeepsItsNameWithoutTheAmount() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 softgel", "Vitamin A 500 IU"])
 
@@ -1210,10 +1223,11 @@ final class NutritionFactsParserTests: XCTestCase {
         }
     }
 
-    /// A number-only word after a nutrient is a value, not a name: "Calories 30" is the calorie row, not a name.
+    /// Regression guard, not fail-first: "Calories 30" is the calorie field at 30, with no extra row.
     func testCaloriesWithAmountIsNotAName() throws {
         let panel = parse(["Nutrition Facts", "Total Fat 8g", "Calories 30"])
 
+        XCTAssertEqual(try amount(.calories, panel), dec("30"))
         XCTAssertTrue(panel.additionalNutrients.isEmpty)
     }
 
