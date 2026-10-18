@@ -243,6 +243,7 @@ public struct TodayView: View {
                 if model.isUndoAvailable(now: context.date) {
                     QuietCapsule("Undo delete") {
                         model.undoLastQuickAdd(now: now())
+                        checklist?.load()
                     }
                     .accessibilityLabel("Undo delete")
                     .accessibilityValue("Available for 10 seconds after deleting")
@@ -306,7 +307,10 @@ public struct TodayView: View {
     private func entryRow(_ row: TodayRow) -> some View {
         SwipeToDeleteRow(
             accessibilityName: "Delete \(row.title)",
-            onDelete: { _ = model.deleteEntry(intakeID: row.id, now: now()) }
+            onDelete: {
+                _ = model.deleteEntry(intakeID: row.id, now: now())
+                checklist?.load()
+            }
         ) {
             if let onSelect {
                 Button {
@@ -368,6 +372,8 @@ private struct SwipeToDeleteRow<Content: View>: View {
             }
             .accessibilityLabel(accessibilityName)
             .opacity(offset < 0 ? 1 : 0)
+            // At rest the button is under the row; a tap on the row's empty trailing edge must not reach it.
+            .allowsHitTesting(offset < 0)
             // VoiceOver uses the row's "Delete" action instead of this button.
             .accessibilityHidden(true)
             content()
