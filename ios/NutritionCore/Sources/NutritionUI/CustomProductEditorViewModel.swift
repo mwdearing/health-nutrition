@@ -37,6 +37,93 @@ public struct ProductFactInput: Identifiable, Equatable {
     }
 }
 
+/// A nutrient the fact picker offers, shown by the name users see rather than its raw key.
+public struct NutrientKeyChoice: Identifiable, Equatable {
+    public let key: String
+    public let name: String
+    public var id: String { key }
+}
+
+@MainActor public extension CustomProductEditorViewModel {
+    static let ingredientPrefix = "ingredient:"
+    static let otherIngredientTag = "other-ingredient"
+    static let savedTagPrefix = "saved:"
+    static let nutrientChoices: [NutrientKeyChoice] = [
+        NutrientKeyChoice(key: "energyKcal", name: "Calories"),
+        NutrientKeyChoice(key: "fat", name: "Total fat"),
+        NutrientKeyChoice(key: "saturatedFat", name: "Saturated fat"),
+        NutrientKeyChoice(key: "transFat", name: "Trans fat"),
+        NutrientKeyChoice(key: "cholesterol", name: "Cholesterol"),
+        NutrientKeyChoice(key: "sodium", name: "Sodium"),
+        NutrientKeyChoice(key: "carbohydrates", name: "Total carbohydrate"),
+        NutrientKeyChoice(key: "fiber", name: "Fiber"),
+        NutrientKeyChoice(key: "sugars", name: "Total sugars"),
+        NutrientKeyChoice(key: "addedSugars", name: "Added sugars"),
+        NutrientKeyChoice(key: "protein", name: "Protein"),
+        NutrientKeyChoice(key: "vitaminD", name: "Vitamin D"),
+        NutrientKeyChoice(key: "calcium", name: "Calcium"),
+        NutrientKeyChoice(key: "iron", name: "Iron"),
+        NutrientKeyChoice(key: "potassium", name: "Potassium"),
+    ]
+
+    /// Choices for one fact row: standard nutrients no other row uses, this row's own key (even a legacy one), and "Other ingredient…".
+    func keyChoices(for fact: ProductFactInput) -> [NutrientKeyChoice] {
+        let taken = Set(facts.filter { $0.id != fact.id }.map(\.key))
+        var choices = CustomProductEditorViewModel.nutrientChoices.filter { $0.key == fact.key || !taken.contains($0.key) }
+        let isKnown = fact.key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix)
+            || CustomProductEditorViewModel.nutrientChoices.contains { $0.key == fact.key }
+        if !isKnown {
+            let label = fact.displayName.isEmpty ? "Saved fact" : "\(fact.displayName) (saved)"
+            choices.append(NutrientKeyChoice(key: CustomProductEditorViewModel.savedTag(fact.key), name: label))
+        }
+        choices.append(NutrientKeyChoice(key: CustomProductEditorViewModel.otherIngredientTag, name: "Other ingredient…"))
+        return choices
+    }
+
+    /// Saved keys this build does not offer get their own tag, so they can never collide with a real choice.
+    static func savedTag(_ key: String) -> String { savedTagPrefix + key }
+
+    /// The picker value that matches a row's current key.
+    static func pickerTag(for fact: ProductFactInput) -> String {
+        if fact.key.hasPrefix(ingredientPrefix) { return otherIngredientTag }
+        if nutrientChoices.contains(where: { $0.key == fact.key }) { return fact.key }
+        return savedTag(fact.key)
+    }
+
+    func chooseKey(_ tag: String, for id: UUID) {
+        guard let index = facts.firstIndex(where: { $0.id == id }), !tag.hasPrefix(CustomProductEditorViewModel.savedTagPrefix) else { return }
+        if tag == CustomProductEditorViewModel.otherIngredientTag {
+            if !facts[index].key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix) {
+                facts[index].key = CustomProductEditorViewModel.ingredientPrefix
+                // A standard name left over from a nutrient pick is not the ingredient's name; clear it for the user to type.
+                let current = facts[index].displayName
+                if CustomProductEditorViewModel.nutrientChoices.contains(where: { $0.name == current }) {
+                    facts[index].displayName = ""
+                }
+            }
+            return
+        }
+        facts[index].key = tag
+        if let choice = CustomProductEditorViewModel.nutrientChoices.first(where: { $0.key == tag }) {
+            // Fill the name only when it is blank or still a standard name, so a name the user typed survives.
+            let current = facts[index].displayName
+            if current.isEmpty || CustomProductEditorViewModel.nutrientChoices.contains(where: { $0.name == current }) {
+                facts[index].displayName = choice.name
+            }
+        }
+    }
+
+    func ingredientName(for id: UUID) -> String {
+        guard let fact = facts.first(where: { $0.id == id }) else { return "" }
+        return String(fact.key.dropFirst(CustomProductEditorViewModel.ingredientPrefix.count))
+    }
+
+    func setIngredientName(_ name: String, for id: UUID) {
+        guard let index = facts.firstIndex(where: { $0.id == id }) else { return }
+        facts[index].key = CustomProductEditorViewModel.ingredientPrefix + name
+    }
+}
+
 @MainActor public final class CustomProductEditorViewModel: ObservableObject, Identifiable {
     public nonisolated let id = UUID()
     @Published public var name = ""

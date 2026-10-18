@@ -62,8 +62,17 @@ public struct CustomProductEditorView: View {
                 if model.missingFacts { Text("No stated facts yet. You can save a name-only product.").foregroundStyle(TokenColors.textSecondary) }
                 ForEach($model.facts) { $fact in
                     VStack(alignment: .leading) {
-                        LabeledField("Fact key") { focus in
-                            TextField("Fact key", text: $fact.key).focused(focus)
+                        Picker("Nutrient", selection: Binding(
+                            get: { CustomProductEditorViewModel.pickerTag(for: fact) },
+                            set: { model.chooseKey($0, for: fact.id) })) {
+                            ForEach(model.keyChoices(for: fact)) { choice in Text(choice.name).tag(choice.key) }
+                        }
+                        if fact.key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix) {
+                            LabeledField("Ingredient name") { focus in
+                                TextField("Ingredient name", text: Binding(
+                                    get: { model.ingredientName(for: fact.id) },
+                                    set: { model.setIngredientName($0, for: fact.id) })).focused(focus)
+                            }
                         }
                         LabeledField("Display name") { focus in
                             TextField("Display name", text: $fact.displayName).focused(focus)
@@ -84,13 +93,13 @@ public struct CustomProductEditorView: View {
                                 Text("No unit stated").tag(MeasureUnit?.none)
                                 ForEach(CustomProductEditorViewModel.units, id: \.self) { Text($0.symbol).tag(Optional($0)) }
                             }
+                            Text("IU amounts stay in IU.").font(.footnote)
                         }
                         Button("Remove fact", role: .destructive) { model.facts.removeAll { $0.id == fact.id } }
                     }
                     .accessibilityElement(children: .contain)
                 }
                 Button("Add fact") { model.facts.append(ProductFactInput()) }.disabled(model.facts.count >= 64)
-                Text("Standard keys include protein, sodium and energyKcal. For another compound use ingredient: followed by its name. IU stays IU.").font(.footnote)
             }
             Section {
                 Toggle("Open intake details after saving", isOn: $openDetails)
