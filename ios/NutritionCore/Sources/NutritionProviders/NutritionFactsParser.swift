@@ -957,6 +957,13 @@ public enum NutritionFactsParser {
     /// A misread qualifier ("Inchides") is noise, and so is a one-word fragment of a nutrient name:
     /// lowercase and at most three letters ("lum"), or a short word ending in a capital after lowercase
     /// ("minD"). A real ingredient such as "Taurine" or "CoQ10" is not.
+    /// Short words that are real: panel and supplement words, forms and units. None is OCR noise, whether
+    /// it follows a nutrient ("Vitamin E oil 400 IU") or stands alone ("EPA 500mg", "DHA 300mg").
+    private static let shortRowWords: Set<String> = [
+        "oil", "tab", "as", "per", "and", "the", "with", "from", "of", "in", "for", "gel", "cap",
+        "iu", "mg", "mcg", "epa", "dha", "ala", "ph",
+    ]
+
     private static func isOCRFragment(_ name: String) -> Bool {
         let qualifiers = ["includes", "contains"]
         // A qualifier misread stands alone as the whole name, so "Include Blend" is still an ingredient.
@@ -964,9 +971,11 @@ public enum NutritionFactsParser {
         guard words.count == 1, let word = words.first else { return false }
         if qualifiers.contains(where: { editDistance(word.lowercased(), $0) <= 2 }) { return true }
         let letters = word.filter(\.isLetter)
-        if !letters.isEmpty, letters.count <= 3, letters.allSatisfy(\.isLowercase) { return true }
+        if !letters.isEmpty, letters.count <= 3, letters.allSatisfy(\.isLowercase), !shortRowWords.contains(word.lowercased()) {
+            return true
+        }
         // A fragment starts lowercase and ends in a capital ("minD"); "IgG" and "CoQ" start capitalised.
-        return letters.count <= 5 && word.first?.isLowercase == true && word.last?.isUppercase == true
+        return letters.count == 4 && word.first?.isLowercase == true && word.last?.isUppercase == true
     }
 
     /// The Levenshtein distance between two words, used to recognize a misread panel word.
@@ -1301,9 +1310,8 @@ public enum NutritionFactsParser {
         // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
         // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
         // A common word, form or unit is never noise ("Vitamin E oil 400 IU" is not Vitamin E).
-        let commonWords: Set<String> = ["oil", "tab", "as", "per", "and", "the", "with", "from", "of", "in", "for", "gel", "cap", "iu", "mg", "mcg"]
         if restWords.count == 1, let noise = restWords.first, noise.count <= 3, noise.allSatisfy(\.isLowercase),
-           !commonWords.contains(String(noise))
+           !shortRowWords.contains(String(noise).lowercased())
         {
             return (name, match.row)
         }

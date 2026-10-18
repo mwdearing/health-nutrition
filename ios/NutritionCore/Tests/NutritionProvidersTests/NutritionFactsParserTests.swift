@@ -1062,6 +1062,7 @@ final class NutritionFactsParserTests: XCTestCase {
         ])
 
         XCTAssertEqual(try amount(.addedSugars, panel), dec("25"), "a misread Added Sugars row lands on its field")
+        XCTAssertEqual(panel.unnamedRowCount, 3, "Inchides, minD and lum stay unread and are counted for review")
         XCTAssertFalse(panel.additionalNutrients.contains { $0.name.contains("ela") }, "no 'Added Sugars ela' compound")
         XCTAssertFalse(panel.additionalNutrients.contains { ["Inchides", "lum", "minD"].contains($0.name) },
                        "qualifier and fragment names are not compounds")
@@ -1079,6 +1080,14 @@ final class NutritionFactsParserTests: XCTestCase {
 
         XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin E oil", "IgG", "Include Blend"],
                        "each row stays its own extra, none is read as a named nutrient")
+    }
+
+    /// A name that begins with a nutrient but is a product's own name stays a compound, not that nutrient.
+    func testIronSupportBlendIsACompoundNotIron() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Iron Support Blend 10mg"])
+
+        if case .known = panel.value(for: .iron) { XCTFail("Iron Support Blend is not iron") }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Iron Support Blend"])
     }
 
     /// A real supplement ingredient survives next to the OCR noise rows of the same capture.
