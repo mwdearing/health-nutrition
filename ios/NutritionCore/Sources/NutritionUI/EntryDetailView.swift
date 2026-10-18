@@ -151,11 +151,13 @@ public struct EntryDetailView: View {
                     }
                     if model.waterSharePercent == nil {
                         Text("Not counted toward water. Logged before water shares.")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
                     } else {
                         Text("Counts as \(Int(truncating: (model.waterSharePercent ?? IntakeComponent.defaultDrinkHydrationPercent) as NSDecimalNumber))% water")
+                            .font(.footnote)
+                            .foregroundStyle(TokenColors.textSecondary)
                     }
-                        .font(.footnote)
-                        .foregroundStyle(TokenColors.textSecondary)
                 }
             }
             if !model.allValues.isEmpty {
