@@ -1,6 +1,6 @@
 import NutritionDomain
-import NutritionJournal
 import XCTest
+@testable import NutritionJournal
 @testable import NutritionUI
 
 private struct FixedFacts: NutrientFactsLookup {
@@ -125,17 +125,19 @@ final class TodayTests: XCTestCase {
 
     func testRapidDeletesKeepUndoOnTheSecondAndRestoreOnlyIt() throws {
         let store = try makeStore()
-        let first = try addFood(store, name: "Oats", id: "oats", at: now)
-        let second = try addFood(store, name: "Eggs", id: "eggs", at: now)
+        // The window is checked against the commit clock, so this test uses the real clock throughout.
+        let stamp = Date()
+        let first = try addFood(store, name: "Oats", id: "oats", at: stamp)
+        let second = try addFood(store, name: "Eggs", id: "eggs", at: stamp)
         let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
-        model.load(now: now)
-        XCTAssertTrue(model.deleteEntry(intakeID: first, now: now))
-        XCTAssertTrue(model.deleteEntry(intakeID: second, now: now))
+        model.load(now: stamp)
+        XCTAssertTrue(model.deleteEntry(intakeID: first, now: stamp))
+        XCTAssertTrue(model.deleteEntry(intakeID: second, now: stamp))
         // The commit hooks arrive late, after both deletes have been made.
         model.deleteCommitted(intakeID: first)
         model.deleteCommitted(intakeID: second)
         XCTAssertEqual(model.undo?.intakeID, second)
-        XCTAssertTrue(model.undoLastQuickAdd(now: now))
+        XCTAssertTrue(model.undoLastQuickAdd(now: stamp))
         XCTAssertEqual(try store.activeIntakes().map(\.id), [second])
         // The first delete is still queued, so it reaches Health and the relay once its window ends.
         XCTAssertEqual(try store.pendingDeleteRowCountForTesting(intakeID: first), 2)

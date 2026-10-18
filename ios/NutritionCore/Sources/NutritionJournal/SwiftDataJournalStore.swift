@@ -1442,7 +1442,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     }
 
     /// Test support: the delete rows still queued for an intake, held or not.
-    public func pendingDeleteRowCountForTesting(intakeID: String) throws -> Int {
+    func pendingDeleteRowCountForTesting(intakeID: String) throws -> Int {
         let context = ModelContext(try openContainer())
         let deleteKind = OutboxKind.delete.rawValue
         return try context.fetch(FetchDescriptor<OutboxRecord>(
