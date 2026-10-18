@@ -78,6 +78,15 @@ final class JournalDeleteUndoTests: XCTestCase {
         }
     }
 
+    func testDeleteMadeWhileOpenIsDeliveredOnceWindowEnds() async throws {
+        let store = try makeStore()
+        try createIntake(store)
+        try store.delete(intakeID: intakeID, now: Date())
+        XCTAssertTrue(try pendingDeletes(store).isEmpty)
+        try await Task.sleep(for: .seconds(JournalUndo.deleteWindow + 0.5))
+        XCTAssertEqual(Set(try pendingDeletes(store).map(\.destination)), [.healthKit, .relay])
+    }
+
     func testHeldDeleteStillDeliversAfterRestartOnceWindowHasPassed() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

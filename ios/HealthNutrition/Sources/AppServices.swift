@@ -194,6 +194,14 @@ final class AppServices {
         let healthKitDeliveryStatus = HealthKitDeliveryStatus(
             healthKitDelivery: healthKitDelivery, store: journalStore, accessDefaults: .standard)
         self.healthKitDeliveryStatus = healthKitDeliveryStatus
+        // A delete is held for the Undo window; once it ends, run the same pass a write triggers, so the
+        // delete reaches Health without waiting for the next foreground.
+        today.onDeleteHeld = { [weak healthKitDeliveryStatus] in
+            Task {
+                try? await Task.sleep(for: .seconds(JournalUndo.deleteWindow + 0.5))
+                await healthKitDeliveryStatus?.run(now: Date(), automatic: true)
+            }
+        }
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
         bodyActivity = BodyActivityViewModel(
             reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })

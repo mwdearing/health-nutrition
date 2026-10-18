@@ -375,6 +375,8 @@ private struct SwipeToDeleteRow<Content: View>: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 12)
                         .onChanged { value in
+                            // Only a mostly horizontal drag moves the row, so a vertical scroll does not reveal it.
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
                             offset = min(0, max(-revealWidth, settled + value.translation.width))
                         }
                         .onEnded { _ in
