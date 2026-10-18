@@ -66,7 +66,8 @@ final class GoalBarTests: XCTestCase {
             line: line("fiber", .unknown, goal: goal("fiber", Decimal(30), .g)),
             hasEntries: true, missingCount: 1, someKnown: true)
         XCTAssertEqual(partly.state, .cannotTotal)
-        XCTAssertEqual(partly.valueText, "1 entry has no fiber value", "some entries known: the note, not No data")
+        XCTAssertEqual(partly.valueText, "Can't total yet", "some entries known: not No data")
+        XCTAssertEqual(partly.reason, "1 entry has no fiber value")
         XCTAssertNil(partly.fraction)
         XCTAssertEqual(partly.accessibilityText, "Fiber, 1 entry has no fiber value")
         let two = GoalBarModel.make(
