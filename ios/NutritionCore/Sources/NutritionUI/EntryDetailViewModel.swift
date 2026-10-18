@@ -142,8 +142,6 @@ public final class EntryDetailViewModel: ObservableObject {
     @Published public private(set) var sourceLine: String = EntryDetailViewModel.sourceLine(for: nil)
     /// The rows under "Where this came from": the input, and what the snapshot stores about the values.
     @Published public private(set) var sourceDetailRows: [SourceDetailRow] = EntryDetailViewModel.sourceDetails(for: nil)
-    /// True for an entry with no values of its own: typed by hand, with no snapshot or a manual one.
-    @Published public private(set) var isTypedEntry = true
     /// The product's name and brand, and what kind of thing it is, for the header. Nil when there is no snapshot.
     @Published public private(set) var productName: String?
     @Published public private(set) var brand: String?
@@ -258,7 +256,6 @@ public final class EntryDetailViewModel: ObservableObject {
             additionalNutrients = Self.additionalNutrients(of: snapshot)
             sourceLine = Self.sourceLine(for: snapshot)
             sourceDetailRows = Self.sourceDetails(for: snapshot)
-            isTypedEntry = snapshot == nil || snapshot?.catalogOrigin == "manual"
             productName = snapshot?.name
             brand = snapshot?.brand
             kind = snapshot?.kind ?? .food
