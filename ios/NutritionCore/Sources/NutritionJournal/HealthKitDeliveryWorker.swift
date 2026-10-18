@@ -189,7 +189,9 @@ public struct JournalSnapshotTotals: Sendable {
             else { continue }
             // A water entry counts its whole volume. Any other entry counts volume times its stored share, and a
             // component with no stored share (logged before shares) counts nothing, as on main.
-            guard let share = category == waterCategory ? Decimal(100) : component.hydrationPercent else { continue }
+            // A water entry with a stored share counts that share of its volume, and one without counts all of it.
+            guard let share = component.hydrationPercent ?? (category == waterCategory ? Decimal(100) : nil)
+            else { continue }
             milliliters += converted.value * share / 100
             found = true
         }

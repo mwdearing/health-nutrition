@@ -18,7 +18,7 @@ final class StoredShareCountingTests: XCTestCase {
     }
 
     /// Logs one entry with no product, and returns its id.
-    private func log(_ store: SwiftDataJournalStore, category: String, amount: Decimal, share: Decimal?) throws -> String {
+    func log(_ store: SwiftDataJournalStore, category: String, amount: Decimal, share: Decimal?) throws -> String {
         let id = UUID().uuidString.lowercased()
         try store.create(
             Intake(id: id, category: category, occurredAt: now, timeZoneIdentifier: "UTC"),
@@ -27,19 +27,19 @@ final class StoredShareCountingTests: XCTestCase {
         return id
     }
 
-    private func todayWater(_ store: SwiftDataJournalStore) -> Decimal {
+    func todayWater(_ store: SwiftDataJournalStore) -> Decimal {
         let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
         today.load(now: now)
         return today.waterTotalMilliliters
     }
 
-    private func dailyWater(_ store: SwiftDataJournalStore) throws -> NutrientValue? {
+    func dailyWater(_ store: SwiftDataJournalStore) throws -> NutrientValue? {
         try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: NoFacts(), nutrients: ["water"]
         ).total(for: "water")?.value
     }
 
-    private func healthWater(_ store: SwiftDataJournalStore, _ id: String) async throws -> NutrientValue? {
+    func healthWater(_ store: SwiftDataJournalStore, _ id: String) async throws -> NutrientValue? {
         let revision = try XCTUnwrap(try store.revisions(of: id).first)
         return try await JournalSnapshotTotals(store: store).totals(intakeID: id, revision: revision.number)["water"]
     }
@@ -79,6 +79,18 @@ final class StoredShareCountingTests: XCTestCase {
     func testAnOldDrinkGivenAShareCountsInAllThreePlaces() async throws {
         let store = try makeStore()
         let id = try log(store, category: "other", amount: 200, share: 50)
+
+        XCTAssertEqual(todayWater(store), 100)
+        XCTAssertEqual(try dailyWater(store), .known(100, .mL))
+        XCTAssertEqual(try await healthWater(store, id), .known(100, .mL))
+    }
+}
+
+extension StoredShareCountingTests {
+    /// A water entry with a stored share counts that share of its volume in all three places.
+    func testAWaterEntryWithAShareCountsThatShare() async throws {
+        let store = try makeStore()
+        let id = try log(store, category: "water", amount: 200, share: 50)
 
         XCTAssertEqual(todayWater(store), 100)
         XCTAssertEqual(try dailyWater(store), .known(100, .mL))

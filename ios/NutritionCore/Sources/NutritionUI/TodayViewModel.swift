@@ -233,7 +233,8 @@ public final class TodayViewModel: ObservableObject {
                             let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                             Self.isPositive(converted.value)
                         {
-                            waterTotal += converted.value
+                            // A water entry counts its full volume, or volume times its stored share when one is set.
+                            waterTotal += converted.value * (component.hydrationPercent ?? 100) / 100
                             countedWater += 1
                         } else {
                             skipped += 1

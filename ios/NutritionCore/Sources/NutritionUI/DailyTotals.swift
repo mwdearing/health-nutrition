@@ -258,7 +258,8 @@ public enum DailyTotalsBuilder {
                 values.append(.unknown)
                 continue
             }
-            values.append(.known(converted.value, waterUnit))
+            // A water entry counts its full volume, or volume times its stored share when one is set.
+            values.append(.known(converted.value * (component.hydrationPercent ?? 100) / 100, waterUnit))
         }
         return values
     }
