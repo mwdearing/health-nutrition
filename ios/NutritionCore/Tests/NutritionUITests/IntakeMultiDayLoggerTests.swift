@@ -33,6 +33,14 @@ private final class FailingCreatesJournal: JournalStore, @unchecked Sendable {
             intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
     }
+
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String])throws -> IntakeRevision {
+        try inner.editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+    }
     func delete(intakeID: String, now: Date) throws {
         if failDeletes { throw Failure() }
         try inner.delete(intakeID: intakeID, now: now)

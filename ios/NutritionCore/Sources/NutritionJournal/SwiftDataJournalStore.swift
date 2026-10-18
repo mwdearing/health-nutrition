@@ -1322,6 +1322,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?
     ) throws -> IntakeRevision {
+        try editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: [])
+    }
+
+    @discardableResult
+    public func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]
+    ) throws -> IntakeRevision {
         guard !components.isEmpty else { throw JournalError.noComponents(intakeID) }
         let json = try Self.encode(components)
         return try commit { context in
@@ -1330,6 +1340,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             }
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
+            }
+            // The units of changed components go in this same commit, so a failed edit removes none of them.
+            for componentID in unitRemovals {
+                for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>(
+                    predicate: #Predicate<JournalSchemaV10.LoggedUnitRecord> {
+                        $0.intakeID == intakeID && $0.componentID == componentID
+                    })) {
+                    context.delete(row)
+                }
             }
             let number = record.currentRevision + 1
             record.currentRevision = number

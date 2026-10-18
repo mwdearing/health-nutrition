@@ -33,6 +33,12 @@ private final class StubJournalStore: JournalStore, @unchecked Sendable {
     ) throws -> IntakeRevision {
         throw Unsupported()
     }
+
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String])throws -> IntakeRevision {
+        throw Unsupported()
+    }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
     func activeIntakes() throws -> [Intake] { intakes }
     func revisions(of intakeID: String) throws -> [IntakeRevision] {
