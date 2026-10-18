@@ -1331,8 +1331,11 @@ public enum NutritionFactsParser {
         // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it: "So-dium" is sodium.
         // The extra keeps its printed name when the name is not a known nutrient.
         if name.contains("-") {
-            let bare = name.filter { $0 != "-" }.lowercased()
-            if let row = rows.first(where: { $0.aliases.contains(bare) }) { return (name, row) }
+            // Spaces are ignored too, so "Saturated-Fat" matches the alias "saturated fat".
+            let bare = name.filter { $0 != "-" && $0 != " " }.lowercased()
+            if let row = rows.first(where: { row in row.aliases.contains { $0.filter { $0 != " " } == bare } }) {
+                return (name, row)
+            }
         }
         guard let match = firstRow(in: name) else { return (name, nil) }
         // The whole name is one named row, so it is that nutrient and not a compound of its own.
