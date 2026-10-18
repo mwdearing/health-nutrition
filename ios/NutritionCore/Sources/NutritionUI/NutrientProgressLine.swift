@@ -149,13 +149,16 @@ public enum NutrientNames {
         for piece in nutrient.split(separator: "-") {
             var sub: [String] = []
             var word = ""
+            var previous: Character?
             for character in piece {
-                if character.isUppercase, !word.isEmpty { sub.append(word); word = "" }
+                // A capital starts a new word after a lower-case letter or digit, so an acronym run ("EPA") stays whole.
+                if character.isUppercase, !word.isEmpty, let before = previous, !before.isUppercase { sub.append(word); word = "" }
                 word.append(character)
+                previous = character
             }
             if !word.isEmpty { sub.append(word) }
             for (index, part) in sub.enumerated() {
-                out.append(index == 0 ? part.prefix(1).uppercased() + part.dropFirst() : part.lowercased())
+                out.append(index == 0 ? part.prefix(1).uppercased() + part.dropFirst() : (part == part.uppercased() ? part : part.lowercased()))
             }
         }
         guard !out.isEmpty else { return nutrient }

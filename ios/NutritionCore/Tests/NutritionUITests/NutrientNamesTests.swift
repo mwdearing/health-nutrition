@@ -27,6 +27,11 @@ final class NutrientNamesTests: XCTestCase {
         XCTAssertEqual(NutrientNames.displayName(for: "monoFat"), "Mono fat")
     }
 
+    /// An acronym run inside a camel-case key stays whole.
+    func testAcronymRunStaysWhole() throws {
+        XCTAssertEqual(NutrientNames.displayName(for: "omega3EPA"), "Omega3 EPA")
+    }
+
     /// The catalog's energy key never reads "kcal" on screen.
     func testCatalogEnergyKeyReadsCalories() throws {
         XCTAssertEqual(NutrientNames.displayName(for: "energy-kcal"), "Calories")
