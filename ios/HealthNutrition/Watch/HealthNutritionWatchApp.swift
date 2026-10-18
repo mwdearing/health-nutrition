@@ -85,7 +85,7 @@ struct WatchTodayView: View {
                 Text(
                     "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"
                 ).font(.footnote).privacySensitive()
-                Text(figure(snapshot?.waterMilliliters, "mL water")).font(.footnote).privacySensitive()
+                Text("\(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water").font(.footnote).privacySensitive()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

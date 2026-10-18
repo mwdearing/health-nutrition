@@ -30,6 +30,26 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(widgets, app)
     }
 
+    func testWaterIsDrawnInFluidOuncesUnderUSUnitsAndMillilitresOtherwise() {
+        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: true), "34 fl oz")
+        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: false), "1000 mL")
+        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: nil), "1000 mL", "a summary from before the field is metric")
+        XCTAssertEqual(WidgetFigure.water(0, usUnits: true), "0 fl oz")
+        XCTAssertEqual(WidgetFigure.water(nil, usUnits: true), "—")
+        XCTAssertEqual(WidgetFigure.water(.infinity, usUnits: true), "—")
+        XCTAssertEqual(WidgetFigure.water(nil, usUnits: nil), "— mL")
+    }
+
+    func testASummaryWrittenBeforeTheUnitFieldStillDecodes() throws {
+        let old = Data(
+            #"{"generatedAt":"2023-11-14T22:13:20Z","hasEntries":true,"energyKcal":1,"waterMilliliters":2}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let snapshot = try decoder.decode(WidgetSnapshot.self, from: old)
+        XCTAssertNil(snapshot.usUnits)
+        XCTAssertEqual(snapshot.waterMilliliters, 2)
+    }
+
     func testTheWatchAppAndItsWidgetsResolveToTheSameGroupAsThePhoneApp() {
         let app = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.HealthNutrition", isExtension: false)
         let watch = WidgetAppGroup.identifier(

@@ -132,6 +132,9 @@ public final class TodayViewModel: ObservableObject {
     /// changed on another screen is honored by the next tap rather than by the next launch.
     private let preferences: DisplayPreferences
 
+    /// The unit system the person reads, for surfaces outside the app (the widgets).
+    public var unitSystem: UnitSystem { preferences.unitSystem }
+
     public init(
         store: JournalStore,
         goals: GoalStore? = nil,

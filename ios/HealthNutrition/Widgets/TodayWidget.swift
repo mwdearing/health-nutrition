@@ -65,7 +65,7 @@ struct TodayWidgetView: View {
                     Text("Nothing logged today")
                 } else {
                     Text(figure(snapshot?.energyKcal, unit: "kcal"))
-                    Text("Water \(figure(snapshot?.waterMilliliters, unit: "mL"))")
+                    Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
                 }
             }
             .privacySensitive()
@@ -80,7 +80,7 @@ struct TodayWidgetView: View {
                         Text("Protein \(figure(snapshot?.proteinGrams, unit: "g"))")
                         Text("Carbohydrate \(figure(snapshot?.carbohydrateGrams, unit: "g"))")
                         Text("Fat \(figure(snapshot?.fatGrams, unit: "g"))")
-                        Text("Water \(figure(snapshot?.waterMilliliters, unit: "mL"))")
+                        Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
                     }
                     .font(.footnote)
                     .privacySensitive()

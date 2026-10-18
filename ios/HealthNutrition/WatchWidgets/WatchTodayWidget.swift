@@ -71,7 +71,7 @@ struct WatchTodayWidgetView: View {
                 if snapshot?.hasEntries == false {
                     Text("Nothing logged today").font(.footnote)
                 } else {
-                    Text("\(kcal) kcal · \(WidgetFigure.wholeNumber(snapshot?.waterMilliliters) ?? "—") mL water")
+                    Text("\(kcal) kcal · \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water")
                         .privacySensitive()
                     Text(
                         "P \(WidgetFigure.wholeNumber(snapshot?.proteinGrams) ?? "—") · C \(WidgetFigure.wholeNumber(snapshot?.carbohydrateGrams) ?? "—") · F \(WidgetFigure.wholeNumber(snapshot?.fatGrams) ?? "—") g"

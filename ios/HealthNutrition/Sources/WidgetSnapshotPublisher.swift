@@ -87,7 +87,8 @@ final class WidgetSnapshotPublisher {
             generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: total("energy", in: .kcal),
             energyGoalKcal: energyGoal, proteinGrams: total("protein", in: .g),
             carbohydrateGrams: total("carbohydrate", in: .g), fatGrams: total("fat", in: .g),
-            waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue)
+            waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
+            usUnits: today.unitSystem == .usCustomary)
     }
 }
 
