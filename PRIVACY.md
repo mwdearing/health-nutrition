@@ -22,10 +22,3 @@ The Today widget on the Home Screen and Lock Screen shows the day's calories, ma
 them as plain totals into a file in an App Group container on this device, the only place the widget reads. The
 widget has no network access, the file is cleared when you use Erase all data, and it is left out of device
 backups.
-
-If you pair an Apple Watch and install the app on it, the phone sends the Watch the same daily totals (calories,
-macros and water, your calorie goal and the time they were worked out), device to device through the system's
-Watch connection, and nothing else but a random label that names this install of the app (so a reinstall is recognised) and a counter that follows Erase all data: no entry names,
-meal times, supplements or account details. The Watch keeps them in its own App Group storage for its app and its
-complications, and Erase all data replaces them with an empty day; a Watch that is off when you erase is cleared
-when it next connects.

@@ -47,35 +47,22 @@ struct WidgetSnapshot: Codable, Equatable {
 }
 
 /// The App Group the app and its widgets share, named after the app's own bundle identifier so a
-/// differently-signed build gets its own group. The Watch app and its widgets name the same group (a group
-/// identifier is shared across devices by name; each device keeps its own container).
+/// differently-signed build gets its own group.
 enum WidgetAppGroup {
     private static let extensionSuffix = ".widgets"
-    private static let watchSuffix = ".watchkitapp"
 
     /// `group.<app bundle id>`. The widget extension's bundle id is the app's plus `.widgets`, so in the extension
-    /// that one suffix is removed and both processes name the same group. The Watch app's is the app's plus
-    /// `.watchkitapp` and its widgets' that plus `.widgets`, removed the same way. The app's own identifier is used
-    /// as it is, even when it happens to end in `.widgets`.
-    static func identifier(forBundleIdentifier bundleIdentifier: String, isExtension: Bool, isWatch: Bool = false)
-        -> String
-    {
+    /// that one suffix is removed and both processes name the same group. The app's own identifier is used as it
+    /// is, even when it happens to end in `.widgets`.
+    static func identifier(forBundleIdentifier bundleIdentifier: String, isExtension: Bool) -> String {
         var base = bundleIdentifier
         if isExtension, base.hasSuffix(extensionSuffix) { base.removeLast(extensionSuffix.count) }
-        if isWatch, base.hasSuffix(watchSuffix) { base.removeLast(watchSuffix.count) }
         return "group." + base
     }
 
     static var current: String? {
         let isExtension = Bundle.main.bundleURL.pathExtension == "appex"
-        #if os(watchOS)
-        let isWatch = true
-        #else
-        let isWatch = false
-        #endif
-        return Bundle.main.bundleIdentifier.map {
-            identifier(forBundleIdentifier: $0, isExtension: isExtension, isWatch: isWatch)
-        }
+        return Bundle.main.bundleIdentifier.map { identifier(forBundleIdentifier: $0, isExtension: isExtension) }
     }
 }
 
