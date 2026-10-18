@@ -1190,6 +1190,40 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(spaced.additionalNutrients.map(\.name), ["Vitamin B 12"])
     }
 
+    /// A number joins a name only after a letter, so a second number is never part of the name.
+    func testSecondNumberIsNotPartOfAName() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 1 2mcg"])
+
+        XCTAssertFalse(panel.additionalNutrients.contains { $0.name.hasSuffix(" 2") })
+    }
+
+    /// A supplement's vitamin with its unit reads its name without the amount: "Vitamin A" with 500 IU.
+    func testVitaminAWithUnitKeepsItsNameWithoutTheAmount() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 softgel", "Vitamin A 500 IU"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin A"])
+        if case .known(let amount, let unit)? = panel.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("500"))
+            XCTAssertEqual(unit, .iu)
+        } else {
+            XCTFail("Vitamin A should carry 500 IU")
+        }
+    }
+
+    /// A number-only word after a nutrient is a value, not a name: "Calories 30" is the calorie row, not a name.
+    func testCaloriesWithAmountIsNotAName() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Calories 30"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A hyphen is part of a name outside the B-vitamins too: a supplement's "Omega-3" row is a named extra.
+    func testHyphenatedSupplementNameIsAnExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Omega-3 Fatty Acids 500mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Omega-3 Fatty Acids"])
+    }
+
     /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
     func testEPAAndDHAStandaloneRowsSurvive() throws {
         let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
