@@ -23,31 +23,40 @@ public struct NutrientProgressLine: Equatable, Identifiable {
     public let amount: NutrientValue
     /// The target, nil where none is set for this nutrient.
     public let goal: NutrientGoal?
-    /// True when some entries of the day have no value, so `amount` is the known part and not the whole day.
+    /// True when some entries of the day have no value. `amount` stays the whole-day value, which is unknown then.
     public let isPartial: Bool
+    /// The sum of the known entries, set only when `isPartial`. Readers that show a partial day read this.
+    public let knownSum: NutrientValue?
 
     public var id: String { nutrient }
 
     public init(
         nutrient: String, amount: NutrientValue, goal: NutrientGoal?, displayName: String? = nil,
-        isPartial: Bool = false
+        isPartial: Bool = false, knownSum: NutrientValue? = nil
     ) {
         self.nutrient = nutrient
         self.label = displayName ?? NutrientNames.displayName(for: nutrient)
         self.amount = amount
         self.goal = goal
         self.isPartial = isPartial
+        self.knownSum = knownSum
+    }
+
+    /// The amount a partial-aware screen shows: the known sum on a partial day, otherwise `amount`.
+    public var shownAmount: NutrientValue {
+        isPartial ? (knownSum ?? amount) : amount
     }
 
     /// `knownSum` is the day's known partial sum. It is used only when the total is unknown because some entries
-    /// have no value; then `amount` is that sum and `isPartial` is true. Otherwise the total decides, as before.
+    /// have no value. Then `amount` stays unknown, `isPartial` is true and `knownSum` carries the known part.
     public static func make(
         nutrient: String, total: NutrientTotal?, goal: NutrientGoal?, displayName: String? = nil,
         knownSum: NutrientValue? = nil
     ) -> NutrientProgressLine {
         if let knownSum, total?.coverage.hasUnknown == true {
             return NutrientProgressLine(
-                nutrient: nutrient, amount: knownSum, goal: goal, displayName: displayName, isPartial: true)
+                nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName,
+                isPartial: true, knownSum: knownSum)
         }
         return NutrientProgressLine(
             nutrient: nutrient, amount: total?.value ?? .unknown, goal: goal, displayName: displayName)
@@ -59,7 +68,7 @@ public struct NutrientProgressLine: Equatable, Identifiable {
     /// False where the day cannot be stated for this nutrient. Unknown is not zero, and a line that
     /// printed a number here would be reporting something the app does not know.
     public var hasKnownAmount: Bool {
-        if case .known = amount { return true }
+        if case .known = shownAmount { return true }
         return false
     }
 

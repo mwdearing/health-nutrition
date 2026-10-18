@@ -76,7 +76,7 @@ public struct GoalBarModel: Equatable, Identifiable {
                 id: line.id, label: label, valueText: "Nothing logged yet", state: .nothingLogged,
                 fraction: nil, goalMarker: nil, accessibilityText: spoken, reason: nil)
         }
-        guard case .known(let total, let unit) = line.amount else {
+        guard case .known(let total, let unit) = line.shownAmount else {
             let reason = reasonText(line: line, missingCount: missingCount, skippedWaterCount: skippedWaterCount)
             // "No data" only when nothing is known. Otherwise the figure is the existing "Can't total yet" and the
             // reason sits once, in the footnote, which says which entries lack a value.
