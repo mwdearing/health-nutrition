@@ -161,9 +161,15 @@ final class GoalBarTests: XCTestCase {
     }
 
     func testPartialSumCountsBelowThresholdAsZeroAndKeepsTheKnownPart() {
-        XCTAssertEqual(
-            DailyTotalsBuilder.partialKnownSum([.known(Decimal(5), .g), .belowReportingThreshold(nil)], nutrient: "fiber"),
-            .known(Decimal(5), .g))
+        let values: [NutrientValue] = [.known(Decimal(5), .g), .belowReportingThreshold(nil)]
+        XCTAssertEqual(DailyTotalsBuilder.partialKnownSum(values, nutrient: "fiber"), .known(Decimal(5), .g))
+        let total = NutrientTotal(
+            value: .unknown,
+            coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: true, hasUnknown: false))
+        let line = NutrientProgressLine.make(
+            nutrient: "fiber", total: total, goal: nil, knownSum: .known(Decimal(5), .g))
+        XCTAssertTrue(line.isPartial, "a bound makes the day partial, not whole")
+        XCTAssertEqual(line.shownAmount, .known(Decimal(5), .g))
     }
 
     func testPartialSumIsZeroWhenEveryEntryIsBelowThreshold() {
