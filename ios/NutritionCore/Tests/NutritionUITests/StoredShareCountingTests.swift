@@ -103,6 +103,19 @@ extension StoredShareCountingTests {
     }
 }
 
+extension StoredShareCountingTests {
+    /// A post-update drink with a stored share reads on the water goal bar as logged, not "Nothing logged yet".
+    func testTheWaterGoalBarReadsAShareCountedDrinkAsLogged() throws {
+        let store = try makeStore()
+        _ = try log(store, category: "other", amount: 200, share: 90)
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.load(now: now)
+
+        let bar = try XCTUnwrap(today.waterBar)
+        XCTAssertNotEqual(bar.valueText, "Nothing logged yet")
+    }
+}
+
 /// The lookup for a test that needs no product facts.
 private struct NoFacts: NutrientFactsLookup {
     func value(for component: IntakeComponent, nutrient: String) -> NutrientValue { .unknown }

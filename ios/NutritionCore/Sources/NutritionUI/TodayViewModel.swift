@@ -250,6 +250,8 @@ public final class TodayViewModel: ObservableObject {
                             let share = component.hydrationPercent
                         else { continue }
                         waterTotal += converted.value * share / 100
+                        // A stored share counts toward the goal bar too, so the bar reads it as a logged amount.
+                        countedWater += 1
                     }
                     if kind != .supplement {
                         for component in components { foodComponents.append((component, snapshot, kind)) }
@@ -379,8 +381,8 @@ public final class TodayViewModel: ObservableObject {
                     && !hiddenGoals.contains(DailyTotalsBuilder.waterKey)
             }.map { line in
                 GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0, missingCount: 0, skippedWaterCount: skipped,
-                    someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
+                    line: line, hasEntries: waterEntries > 0 || countedWater > 0, missingCount: 0,
+                    skippedWaterCount: skipped, someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
             }
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
