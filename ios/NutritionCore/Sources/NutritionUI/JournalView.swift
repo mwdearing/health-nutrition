@@ -16,8 +16,8 @@ public struct JournalView: View {
     /// even when two jumps choose the same day.
     @State private var jumpSection: String?
     @State private var jumpSerial = 0
-    /// The day the last jump or arrow chose; nil until one is used, which means today.
-    @State private var shownDay: Date?
+    /// The day sections currently on screen, kept as the list scrolls. The arrows step from the top one.
+    @State private var visibleDayIDs: Set<String> = []
     /// The meal group "Save as meal" is naming, while its name prompt is up.
     @State private var saveMealTarget: SaveMealTarget?
     @State private var saveMealName = ""
@@ -181,23 +181,25 @@ public struct JournalView: View {
         }
     }
 
-    /// The day the arrows step from: the last day jumped or stepped to, or today.
-    private var isShowingToday: Bool {
-        guard let shown = shownDay else { return true }
-        return Calendar.current.isDate(shown, inSameDayAs: now()) || shown > now()
+    /// The day the arrows step from: the earliest day at the top of the visible list, or today.
+    private var arrowBase: Date {
+        JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: .current, now: now())
     }
 
-    /// Moves one calendar day back or forward from the day last shown, using the same jump as the sheet.
+    /// Forward is disabled when the arrows already point at today.
+    private var isShowingToday: Bool {
+        Calendar.current.isDate(arrowBase, inSameDayAs: now()) || arrowBase > now()
+    }
+
+    /// Moves one calendar day back or forward from the day at the top of the list, using the same jump as the sheet.
     /// Forward stops at today.
     private func stepDay(_ days: Int) {
-        let base = shownDay ?? now()
-        guard let date = Calendar.current.date(byAdding: .day, value: days, to: base), date <= now() || days < 0 else { return }
+        guard let date = Calendar.current.date(byAdding: .day, value: days, to: arrowBase), date <= now() || days < 0 else { return }
         let target = model.jumpTarget(for: date, now: now())
         model.reveal(target)
         jumpNotice = target.message
         jumpSection = target.sectionID
         jumpSerial += 1
-        shownDay = date
     }
 
     /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
@@ -260,7 +262,6 @@ public struct JournalView: View {
         jumpNotice = target.message
         jumpSection = target.sectionID
         jumpSerial += 1
-        shownDay = pickedDay
         showingJumpSheet = false
     }
 
@@ -293,6 +294,8 @@ public struct JournalView: View {
             }
         }
         .id(section.id)
+        .onAppear { visibleDayIDs.insert(section.id) }
+        .onDisappear { visibleDayIDs.remove(section.id) }
     }
 
     /// The title, the day's energy when it is known, one bar per goal, and the disabled add action.
