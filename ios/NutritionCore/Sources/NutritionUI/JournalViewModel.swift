@@ -688,15 +688,15 @@ public final class JournalViewModel: ObservableObject {
     static func dayTitle(_ date: Date, zone: TimeZone, locale: Locale, now: Date) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(date, inSameDayAs: yesterday) {
-            return "Yesterday"
-        }
+        let isYesterday = calendar.date(byAdding: .day, value: -1, to: now)
+            .map { calendar.isDate(date, inSameDayAs: $0) } ?? false
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.timeZone = zone
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
+        // The system words the previous day in the person's language ("Yesterday" in English).
+        formatter.doesRelativeDateFormatting = isYesterday
         return formatter.string(from: date)
     }
 

@@ -98,6 +98,7 @@ public struct JournalView: View {
             .navigationTitle("Journal")
             .saveConfirmation(saveNotice)
             .onAppear {
+                reloadingOnReturn = false
                 model.load(now: now())
                 jumpNotice = nil
             }
