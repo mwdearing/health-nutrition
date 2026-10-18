@@ -67,7 +67,8 @@ public struct NourishTodayHeader: View {
             if let ring = bar(Self.ringKey) {
                 CalorieRing(
                     fraction: fraction(ring), figure: figure(Self.ringKey), caption: "logged",
-                    footnote: partialNote(Self.ringKey) ?? ringFootnote, spoken: ring.accessibilityText)
+                    footnote: [partialNote(Self.ringKey), ringFootnote].compactMap { $0 }.joined(separator: " "),
+                    spoken: ring.accessibilityText)
             }
             let macros = Self.macroKeys.compactMap { key in bar(key).map { (key, $0) } }
             if !macros.isEmpty {
