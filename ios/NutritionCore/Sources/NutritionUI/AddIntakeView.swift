@@ -263,7 +263,6 @@ public struct AddIntakeView: View {
         }
     }
 
-
     /// Where the values came from and, when the source requires it, a titled link to its license.
     @ViewBuilder
     private var sourceAndLicense: some View {
