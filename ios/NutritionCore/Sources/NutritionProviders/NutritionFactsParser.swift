@@ -1313,8 +1313,8 @@ public enum NutritionFactsParser {
         guard tokens.count >= 4 else { return false }
         func isBare(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
         for index in 0..<(tokens.count - 3) {
-            guard tokens[index].text.count == 1, tokens[index].text.first?.isLetter == true,
-                  isBare(tokens[index + 1].text), isBare(tokens[index + 2].text),
+            // Only the B complex has the B1/B12 ambiguity; a vitamin D form digit ("Vitamin D 3 25 mcg") is not this shape.
+            guard tokens[index].text == "B", isBare(tokens[index + 1].text), isBare(tokens[index + 2].text),
                   tokens[index + 3].text.first?.isLetter == true
             else { continue }
             return true

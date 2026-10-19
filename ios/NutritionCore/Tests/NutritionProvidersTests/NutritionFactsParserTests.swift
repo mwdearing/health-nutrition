@@ -1797,4 +1797,9 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertTrue(attached.additionalNutrients.isEmpty)
         XCTAssertEqual(attached.unnamedRowCount, 0, "the attached form gives nothing")
     }
+
+    func testSpacedVitaminD3RowIsNotCountedAsUnread() {
+        let panel = parse(["Supplement Facts", "Serving size 1 softgel", "Vitamin D 3 25 mcg"])
+        XCTAssertEqual(panel.unnamedRowCount, 0, "a vitamin D form digit is not the B1/B12 ambiguity")
+    }
 }
