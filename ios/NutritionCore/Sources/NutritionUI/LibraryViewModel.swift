@@ -442,6 +442,16 @@ public final class LibraryViewModel: ObservableObject {
         guard let id = item.template.productSnapshotID, let product = try store.product(snapshotID: id) else { throw IntakeRepeatError.productUnavailable }
         return try CustomProductMapping.legacyDraft(from: product)
     }
+    /// True when a search has no match: the list is empty only because of the typed text, so the empty state names
+    /// the search rather than the segment (a typo must not read as "no favorites").
+    public var isSearchEmpty: Bool {
+        Self.isSearchEmpty(visibleCount: visibleItems.count, searchText: searchText)
+    }
+
+    static func isSearchEmpty(visibleCount: Int, searchText: String) -> Bool {
+        visibleCount == 0 && !searchText.isEmpty
+    }
+
     public var visibleItems: [LibraryItem] {
         segmentItems.filter { searchText.isEmpty || $0.title.localizedCaseInsensitiveContains(searchText) }
     }
