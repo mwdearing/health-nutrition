@@ -280,4 +280,19 @@ final class AddIntakeServingTests: XCTestCase {
         let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
         XCTAssertEqual(energy?.value, .known(200, .kcal), "grams log normally with no measures listed")
     }
+
+    func testDensityNoteWaitsForTheListedMeasures() async throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(LookedUpProduct(
+            barcode: "", name: "Zzz unlisted food", brand: nil, basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(100), .kcal)],
+            attribution: nil, serving: nil, version: nil, sourceID: "9"))
+        model.fieldDidBegin(.amount)
+        model.unit = .cup
+        // While the food's measures are still being asked for, no density line is shown either way.
+        XCTAssertNil(model.densityUnavailableNote, "the note waits until the listed measures have loaded")
+        await model.loadListedPortions()
+        // Once they have come back empty, the note says what is true for this food.
+        XCTAssertEqual(model.densityUnavailableNote, "No typical density is known for this food, so it is saved in mL.")
+    }
 }
