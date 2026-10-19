@@ -66,7 +66,8 @@ extension UnitReadFailingStore {
 
     func loggedUnits() throws -> [JournalLoggedUnit] {
         if failsUnitReads { throw UnitsUnreadable() }
-        return try (inner as? JournalLoggedUnits)?.loggedUnits() ?? []
+        guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
+        return try units.loggedUnits()
     }
 
     func removeLoggedUnit(intakeID: String, componentID: String) throws {
