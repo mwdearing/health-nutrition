@@ -697,4 +697,18 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         await available.lookUpBarcode()
         XCTAssertEqual(available.noStatedNutrientsSentence, AddIntakeViewModel.noStatedNutrientsMessage)
     }
+
+    /// No connection says so, and is not the generic failure.
+    func testOfflineLookupSaysNoInternetConnection() throws {
+        let model = try makeModel(nil)
+        model.lookupState = .offline
+        XCTAssertEqual(model.lookupMessage, "No internet connection. Try again when you're online.")
+    }
+
+    /// Any other failure keeps its current wording.
+    func testGenericFailureKeepsItsWording() throws {
+        let model = try makeModel(nil)
+        model.lookupState = .failed("HTTP 500")
+        XCTAssertEqual(model.lookupMessage, "The lookup did not finish. Try again in a moment.")
+    }
 }
