@@ -295,6 +295,7 @@ public final class JournalViewModel: ObservableObject {
             sections = []
             skippedCount = 0
             weekSummary = nil
+            goalsErrorMessage = nil
             errorMessage = "Could not read the journal."
         }
     }

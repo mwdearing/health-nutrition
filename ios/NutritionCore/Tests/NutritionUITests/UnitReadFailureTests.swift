@@ -53,5 +53,7 @@ final class UnitReadFailureTests: XCTestCase {
         XCTAssertNil(model.todaySection)
         XCTAssertTrue(model.sections.isEmpty)
         XCTAssertNil(model.weekSummary)
+        XCTAssertEqual(model.skippedCount, 0)
+        XCTAssertNil(model.goalsErrorMessage)
     }
 }
