@@ -196,13 +196,16 @@ public struct LibraryItem: Equatable, Identifiable {
 
     public func accessibilityLabel(forPick: Bool) -> String {
         guard forPick else { return accessibilityLabel }
-        let label = "\(title), opens details"
+        let label = "Opens \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
     /// The label for a tap that logs at once: the name, the amounts and, for a supplement, its kind.
+    /// The amounts a row or its Log control reads as the accessibility value, so VoiceOver still states them (#503).
+    public var accessibilityValue: String { detail }
+
     public var logAccessibilityLabel: String {
-        let label = detail.isEmpty ? "Log \(title) now" : "Log \(title) now, \(detail)"
+        let label = "Log \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
