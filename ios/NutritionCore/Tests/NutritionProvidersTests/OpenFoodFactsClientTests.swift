@@ -356,4 +356,22 @@ final class OpenFoodFactsClientTests: XCTestCase {
             return XCTFail("expected transport, got \(outcome)")
         }
     }
+
+    func testNoConnectionIsOfflineOutcome() async throws {
+        let outcome = await client(ThrowingOpenFoodFactsTransport(error: URLError(.notConnectedToInternet)))
+            .lookup(barcode: foundCode)
+        XCTAssertEqual(outcome, .offline)
+    }
+
+    func testServerErrorIsTransportNotOffline() async throws {
+        let outcome = await client(StubTransport(status: 500, body: Data())).lookup(barcode: foundCode)
+        guard case .transport = outcome else {
+            return XCTFail("a server status is not connection loss, got \(outcome)")
+        }
+    }
+}
+
+private struct ThrowingOpenFoodFactsTransport: OpenFoodFactsTransport {
+    let error: URLError
+    func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { throw error }
 }

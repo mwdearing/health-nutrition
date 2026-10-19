@@ -31,8 +31,9 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
             // The form checks the barcode before calling, so this only means the two checks
             // disagree; report it rather than looking up nothing.
             return .failed("invalid barcode")
-        case .transport:
-            // A request that could not reach the source is offline; the form says so instead of "did not finish".
+        case .transport(let reason):
+            return .failed(reason)
+        case .offline:
             return .offline
         }
     }
