@@ -400,7 +400,7 @@ public final class GoalsViewModel: ObservableObject {
     public func setTarget(_ targetText: String, for nutrient: String, unit: MeasureUnit? = nil) -> Bool {
         let chosen = unit ?? self.unit(for: nutrient)
         guard let target = AmountParser.parseTyped(targetText) else {
-            errorMessage = "Enter a target above zero."
+            errorMessage = "Enter a number above zero."
             return false
         }
         do {

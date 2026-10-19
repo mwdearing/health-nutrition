@@ -130,7 +130,7 @@ public struct NourishTodayHeader: View {
                 calorieSummary
             } else if let ring = bar(Self.ringKey) {
                 CalorieRing(
-                    fraction: fraction(ring), figure: figure(Self.ringKey), caption: "logged",
+                    fraction: fraction(ring), figure: figure(Self.ringKey), caption: "Food",
                     footnote: [partialNote(Self.ringKey), ringFootnote].compactMap { $0 }.joined(separator: " "),
                     spoken: ring.accessibilityText)
             }
