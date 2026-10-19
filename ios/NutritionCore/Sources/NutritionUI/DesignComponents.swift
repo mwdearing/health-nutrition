@@ -321,7 +321,5 @@ public struct UndoToast: View {
         .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
         // VoiceOver hears the toast's own message when it appears.
         .onAppear { AccessibilityNotification.Announcement(message).post() }
-        // A replaced undo offer keeps this view, so announce its new message too.
-        .onChange(of: message) { _, newMessage in AccessibilityNotification.Announcement(newMessage).post() }
     }
 }
