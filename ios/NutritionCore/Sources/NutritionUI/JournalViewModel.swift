@@ -546,6 +546,26 @@ public final class JournalViewModel: ObservableObject {
         }
     }
 
+    /// The meals a Diary day lists: the four named meals in their fixed order, empty ones included so each can
+    /// take an add, then "Other" only when an entry has no named meal. Today keeps `mealGroups(for:)`, which hides
+    /// empty meals.
+    static func diaryMealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
+        let named = MealLabel.allCases.map(\.displayName)
+        var buckets: [String: [JournalRow]] = [:]
+        for row in rows {
+            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
+            buckets[title, default: []].append(row)
+        }
+        let namedGroups = named.map { JournalMealGroup(id: $0, title: $0, rows: buckets[$0] ?? []) }
+        guard let other = buckets["Other"] else { return namedGroups }
+        return namedGroups + [JournalMealGroup(id: "Other", title: "Other", rows: other)]
+    }
+
+    /// The meal an add opens with for a group: the named meal, or nil for "Other", which has no add of its own.
+    static func addMeal(forGroupTitle title: String) -> MealLabel? {
+        MealLabel.allCases.first { $0.displayName == title }
+    }
+
     /// A day counts as logged when it holds a food or drink entry. Water and supplements do not count.
     /// The day header and the week summary both use this rule.
     static func hasFoodEntries(_ rows: [JournalRow]) -> Bool {
