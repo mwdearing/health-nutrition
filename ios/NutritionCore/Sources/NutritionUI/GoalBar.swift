@@ -142,9 +142,14 @@ public struct GoalBarModel: Equatable, Identifiable {
             }
             return "Some entries can't be added up for \(name)"
         }
-        if missingCount == 1 { return "1 entry has no \(name) value" }
-        if missingCount > 1 { return "\(missingCount) entries have no \(name) value" }
-        return "Some entries can't be added up for \(name)"
+        return Self.missingValueNote(count: missingCount, name: name) ?? "Some entries can't be added up for \(name)"
+    }
+
+    /// "1 entry has no energy value", "2 entries have no energy value", or nil when no entry is missing a value.
+    static func missingValueNote(count: Int, name: String) -> String? {
+        if count == 1 { return "1 entry has no \(name) value" }
+        if count > 1 { return "\(count) entries have no \(name) value" }
+        return nil
     }
 }
 

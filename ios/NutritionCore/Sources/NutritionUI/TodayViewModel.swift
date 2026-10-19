@@ -395,6 +395,7 @@ public final class TodayViewModel: ObservableObject {
                     if case .known(let value, _) = line.shownAmount { return value }
                     return nil
                 },
+                partial: foodLine?.isPartial ?? false,
                 missingCount: foodLine?.missingCount ?? 0,
                 burned: burnedCounted ? activeEnergyKcal.flatMap { $0 >= 0 ? $0 : nil } : nil,
                 energyLabel: foodLine?.label ?? "Energy")

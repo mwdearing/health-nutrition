@@ -16,11 +16,11 @@ final class CalorieSummarySpokenTests: XCTestCase {
 
     /// Burned is left out when Health gave no reading, and the partial note joins the line when present.
     func testSpokenSummaryOmitsBurnedWithoutAReadingAndKeepsThePartialNote() throws {
-        let calories = CalorieRemaining(
-            goal: 2000, food: 500, isPartial: true, partialNote: "Some entries have no calories", burned: nil, remaining: 1500)
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: 500, partial: true, missingCount: 1, burned: nil, energyLabel: "Energy")
         let remaining = BodyActivityViewModel.whole(1500), food = BodyActivityViewModel.whole(500)
         XCTAssertEqual(
-            NourishTodayHeader.spokenSummary(calories, partial: "Some entries have no calories", footnote: nil),
+            NourishTodayHeader.spokenSummary(calories, partial: calories.partialNote, footnote: nil),
             "\(remaining) calories remaining, Food, \(food) calories, Some entries have no calories")
     }
 }

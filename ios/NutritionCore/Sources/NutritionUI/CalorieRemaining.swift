@@ -32,26 +32,25 @@ public struct CalorieRemaining: Equatable, Sendable {
         self.remaining = remaining
     }
 
-    /// Builds the summary from the energy line's missing-entry count, so the flag and the note come from one value.
+    /// Builds the summary from the energy line alone: its partial flag and its missing-entry count. The note is
+    /// present exactly when the line is partial, so the flag and the note cannot disagree.
     public static func make(
-        goal: Decimal?, food: Decimal?, missingCount: Int, burned: Decimal?, energyLabel: String
+        goal: Decimal?, food: Decimal?, partial: Bool, missingCount: Int, burned: Decimal?, energyLabel: String
     ) -> CalorieRemaining {
-        let note = partialNote(missingCount: missingCount, label: energyLabel)
-        let isPartial = note != nil
+        let note = partial ? partialNote(missingCount: missingCount, label: energyLabel) : nil
         guard let goal, let food else {
             return CalorieRemaining(
-                goal: goal, food: food, isPartial: isPartial, partialNote: note, burned: burned, remaining: nil)
+                goal: goal, food: food, isPartial: partial, partialNote: note, burned: burned, remaining: nil)
         }
         let remaining = goal - food + (burned ?? 0)
         return CalorieRemaining(
-            goal: goal, food: food, isPartial: isPartial, partialNote: note, burned: burned, remaining: remaining)
+            goal: goal, food: food, isPartial: partial, partialNote: note, burned: burned, remaining: remaining)
     }
 
-    /// The shipped partial wording: "1 entry has no energy value" and "2 entries have no energy value".
-    static func partialNote(missingCount: Int, label: String) -> String? {
+    /// The partial note in the goal rows' own wording. A partial line with no missing entry (a below-threshold
+    /// amount) gets the rows' fallback wording, so the summary never shows a partial day without a note.
+    static func partialNote(missingCount: Int, label: String) -> String {
         let name = label.prefix(1).lowercased() + label.dropFirst()
-        if missingCount == 1 { return "1 entry has no \(name) value" }
-        if missingCount > 1 { return "\(missingCount) entries have no \(name) value" }
-        return nil
+        return GoalBar.missingValueNote(count: missingCount, name: name) ?? "Some entries can't be added up for \(name)"
     }
 }
