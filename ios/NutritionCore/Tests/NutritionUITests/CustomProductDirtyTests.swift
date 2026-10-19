@@ -9,13 +9,11 @@ final class CustomProductDirtyTests: XCTestCase {
 
     func testUnchangedProductAfterBeingShownHasNoTypedInput() {
         let model = makeModel()
-        model.markShown()
         XCTAssertFalse(model.hasTypedInput)
     }
 
     func testEditingTheNameAfterBeingShownCountsAsTypedInput() {
         let model = makeModel()
-        model.markShown()
         model.name = "Vitamin D"
         XCTAssertTrue(model.hasTypedInput)
     }

@@ -118,7 +118,6 @@ public struct CustomProductEditorView: View {
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }
         }
         .navigationTitle("Product editor")
-        .onAppear { model.markShown() }
         // Changes are only at risk once made: a changed product asks before leaving.
         .navigationBarBackButtonHidden(model.hasTypedInput)
         .toolbar {

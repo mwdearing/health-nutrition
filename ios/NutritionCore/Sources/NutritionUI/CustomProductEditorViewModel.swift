@@ -139,7 +139,6 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     private var shownWith: String?
     /// Whether the person changed the product since it was first shown. Leaving then asks first.
     public var hasTypedInput: Bool { shownWith != nil && fingerprint != shownWith }
-    public func markShown() { if shownWith == nil { shownWith = fingerprint } }
     private var fingerprint: String {
         let head = [name, brand, barcode, servingQuantity, servingText, servingUnit.symbol]
         let rows = facts.flatMap { [$0.key, $0.displayName, $0.amount, $0.unit?.symbol ?? ""] }
@@ -164,6 +163,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
             name = legacy.name; brand = legacy.brand ?? ""; barcode = legacy.barcode ?? ""; kind = legacy.kind; basis = legacy.basis
             facts = legacy.facts.map(ProductFactInput.init); fillServing(legacy.serving); servingText = legacy.rawServingText ?? servingText
         }
+        shownWith = fingerprint
     }
     private func fillServing(_ serving: ProductServing?) {
         guard let serving else { return }
