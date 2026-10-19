@@ -1180,7 +1180,11 @@ public enum NutritionFactsParser {
         var rest = trimmed(line)
         var usedNextLine = false
         while !rest.isEmpty {
-            guard let row = firstAdditionalRow(in: rest, next: usedNextLine ? nil : nextLine) else { break }
+            guard let row = firstAdditionalRow(in: rest, next: usedNextLine ? nil : nextLine) else {
+                // The spaced B1/B12 shape is ambiguous and cannot be placed, so the row counts as unread.
+                if hasSpacedAmbiguousNumbers(rest) { unnamedRows += 1 }
+                break
+            }
             if let nutrient = row.nutrient {
                 recordCompound(row, as: nutrient, amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
             } else if let existingIndex = collected.firstIndex(where: { $0.key == row.key }) {
@@ -1282,6 +1286,15 @@ public enum NutritionFactsParser {
                    isBareNumber(tokens[end].text) {
                     continue
                 }
+                // "Vitamin B 1 2mcg" with the unit attached is the same ambiguity, and gives nothing at all. Only a
+                // single digit joined to its unit is ambiguous: "Vitamin B 12 10mcg" names B12 with its own amount.
+                if end >= 2, end < tokens.count, isBareNumber(tokens[end - 1].text),
+                   tokens[end - 1].text.count == 1,
+                   tokens[end - 2].text.count == 1, tokens[end - 2].text.first?.isLetter == true,
+                   let attached = Optional(tokens[end].text.prefix { $0.isASCII && $0.isNumber }),
+                   attached.count == 1, attached.count < tokens[end].text.count {
+                    continue
+                }
                 guard let amount = additionalAmount(at: end, in: tokens, line: text, next: nextLine)
                 else { continue }
                 return AdditionalRow(
@@ -1292,6 +1305,21 @@ public enum NutritionFactsParser {
             }
         }
         return nil
+    }
+
+    /// True for the spaced B1/B12 shape ("Vitamin B 1 2 mcg"): a single letter, two bare numbers, then a word.
+    private static func hasSpacedAmbiguousNumbers(_ text: String) -> Bool {
+        let tokens = tokens(in: text)
+        guard tokens.count >= 4 else { return false }
+        func isBare(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
+        for index in 0..<(tokens.count - 3) {
+            // Only the B complex has the B1/B12 ambiguity; a vitamin D form digit ("Vitamin D 3 25 mcg") is not this shape.
+            guard tokens[index].text == "B", isBare(tokens[index + 1].text), isBare(tokens[index + 2].text),
+                  tokens[index + 3].text.first?.isLetter == true
+            else { continue }
+            return true
+        }
+        return false
     }
 
     /// The text of `line` split on whitespace, with the range each token occupies in it.
@@ -1362,13 +1390,13 @@ public enum NutritionFactsParser {
         // compound of its own, and promoting it to iron would drop the label's own row. Only a name
         // whose remaining word states a known chemical form (`Iron Bisglycinate`) is the nutrient it
         // is built on.
-        let rest = String(name[match.end...])
+        let rest = String(name[match.end...]).replacingOccurrences(of: "-", with: " ")
         let restWords = rest.split(whereSeparator: \.isWhitespace)
         // A vitamin D form digit is part of vitamin D ("Vitamin D3", "Vitamin D 3"): the amount behind it is the
         // vitamin D amount, read straight off the label. A digit with its own unit ("Vitamin D 3mcg") is an amount.
         if match.row.key == .vitaminD, restWords.count == 1, let form = restWords.first, form.count == 1,
            form.allSatisfy({ $0.isASCII && $0.isNumber }) {
-            return (name, match.row)
+            return ("Vitamin D", match.row)
         }
         // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
         // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
@@ -1741,6 +1769,14 @@ public enum NutritionFactsParser {
     /// One line with its surrounding whitespace removed and its inner runs of whitespace collapsed, so a
     /// name and its amount read the same whether the capture wrote "Total Fat 7g" or "Total Fat  7 g".
     private static func cleanLine(_ line: String) -> String {
-        line.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        // A word that starts with a fullwidth digit is an amount ("５０", "２g"), read as its ASCII form. A fullwidth
+        // digit inside a name ("Vitamin B１２") is left as printed, so the name is not read as a row.
+        line.split(whereSeparator: \.isWhitespace).map { word -> String in
+            guard let first = word.first, ("\u{FF10}"..."\u{FF19}").contains(first) else { return String(word) }
+            // Each fullwidth digit maps to its ASCII digit by code point, so no transform can fail and fall back.
+            return String(String.UnicodeScalarView(word.unicodeScalars.map { scalar -> Unicode.Scalar in
+                (0xFF10...0xFF19).contains(scalar.value) ? Unicode.Scalar(scalar.value - 0xFF10 + 0x30)! : scalar
+            }))
+        }.joined(separator: " ")
     }
 }
