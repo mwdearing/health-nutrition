@@ -39,7 +39,7 @@ public struct CalorieRing: View {
             Circle().stroke(TokenColors.track, lineWidth: 18)
             Circle()
                 .trim(from: 0, to: fraction)
-                .stroke(TokenColors.mint, style: StrokeStyle(lineWidth: 18, lineCap: .round))
+                .stroke(TokenColors.accent, style: StrokeStyle(lineWidth: 18, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: DesignSpacing.xs) {
                 Text(figure)
@@ -109,7 +109,7 @@ public struct ThinBar: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule().fill(TokenColors.track)
-                Capsule().fill(TokenColors.mint).frame(width: proxy.size.width * fraction)
+                Capsule().fill(TokenColors.accent).frame(width: proxy.size.width * fraction)
             }
         }
         .frame(height: 6)
