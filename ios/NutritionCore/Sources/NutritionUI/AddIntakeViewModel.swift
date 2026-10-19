@@ -476,7 +476,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The line under the amount when a typical density converts the volume: the grams and the food
     /// whose density gave them. Nil when no conversion applies.
     public var densityNote: String? {
-        guard let conversion = volumeToMass else { return nil }
+        // A measure the food lists converts through its own gram weight, so no density is described for it.
+        guard listedPortions[unit] == nil, let conversion = volumeToMass else { return nil }
         return "About \(DecimalFormatting.text(conversion.grams)) g, using a typical density for "
             + "\(conversion.ingredientName)."
     }
@@ -484,8 +485,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The line shown when a volume is chosen for a food the catalog does not name, so the amount is saved in
     /// milliliters. Nil for a mass, or for a volume the density rule does not reach.
     public var densityUnavailableNote: String? {
-        guard UnitSelection.typedVolumes.contains(unit), densityApplies, !typedName.isEmpty,
-            IngredientDensityCatalog.match(typedName) == nil
+        guard listedPortions[unit] == nil, UnitSelection.typedVolumes.contains(unit), densityApplies,
+            !typedName.isEmpty, IngredientDensityCatalog.match(typedName) == nil
         else { return nil }
         return "No typical density is known for this food, so it is saved in mL."
     }
