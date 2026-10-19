@@ -1110,6 +1110,31 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(revision.components.first?.amount, -40)
     }
 
+    /// A distrusted food with no water share contributes nothing to water, so a day's 1000 mL of water stays known.
+    func testANegativeFoodRowDoesNotMakeTheDaysWaterUnknown() throws {
+        let store = try makeStore()
+        let drink = Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            drink, components: [IntakeComponent(componentID: "water1", name: "Water", amount: 1000, unit: .mL)],
+            product: nil, now: when)
+        let product = ProductDefinition(
+            snapshotID: "snapshot-protein", productID: "product-protein", name: "Protein food",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(100), .kcal), "protein": .known(Decimal(-1), .g)])
+        let foodID = try addFood(store, name: "Protein food", id: "proteinfood", at: when, amount: 100, product: product)
+        _ = foodID
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: [DailyTotalsBuilder.waterKey, "energyKcal", "protein"])
+        guard case .known(let ml, _) = totals.total(for: DailyTotalsBuilder.waterKey)?.value else {
+            return XCTFail("the day's water must stay known")
+        }
+        XCTAssertEqual(NSDecimalNumber(decimal: ml).doubleValue, 1000, accuracy: 0.001)
+        XCTAssertEqual(totals.total(for: DailyTotalsBuilder.waterKey)?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+    }
+
     /// A food row with a negative volume and a 100% water share must not lower the day's water.
     func testANegativeVolumeWithAWaterShareIsUnknownWaterNotDrunk() throws {
         let store = try makeStore()
@@ -1154,7 +1179,6 @@ final class DailyTotalsTests: XCTestCase {
         // No product snapshot: the lookup answers each component directly.
         do {
             let store = try makeStore()
-            try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
             let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
             try store.seedLegacyAmountsForTesting(intakeID: oatsID, amountsByComponent: ["oats": "-40"])
             let totals = try DailyTotalsBuilder.totals(

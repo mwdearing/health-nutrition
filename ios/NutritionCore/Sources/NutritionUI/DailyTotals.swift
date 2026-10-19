@@ -133,7 +133,10 @@ public enum DailyTotalsBuilder {
         return keys.sorted()
     }()
 
-    /// Whether one entry is distrusted: any logged amount, stated value, or lookup value that is negative.
+    /// Whether one entry is distrusted: a logged amount that is negative, a stated value on its product snapshot
+    /// that is negative, or, for an entry with no product, a lookup value over the universe that is negative. A
+    /// product's lookup values are not re-read here: the snapshot scan already covers every value the lookup can
+    /// answer from it.
     static func isDistrusted(
         _ entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
         lookup: NutrientFactsLookup
@@ -197,6 +200,11 @@ public enum DailyTotalsBuilder {
         // every nutrient. A distrusted supplement row is unknown for the nutrients it declares, and undeclared ones
         // still contribute nothing, as on a healthy supplement. A zero is a known zero.
         if distrusted {
+            // A food with no water share never contributed to water, so a distrusted food still contributes nothing
+            // to water. An entry that carries a water share, or a distrusted drink, makes its water unknown.
+            if nutrient == waterKey {
+                return entry.components.contains(where: { $0.hydrationPercent != nil }) ? [.unknown] : []
+            }
             guard let snapshot = entry.snapshot, snapshot.kind == .supplement,
                 let component = entry.components.first
             else { return [.unknown] }
