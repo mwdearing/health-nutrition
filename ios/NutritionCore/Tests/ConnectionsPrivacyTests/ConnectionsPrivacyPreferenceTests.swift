@@ -127,8 +127,6 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertEqual(model.quickWaterEquivalenceText, "= 12 fl oz")
     }
 
-    /// Switching the unit system restates a typed amount rather than leaving it to be read as a
-    /// different measure: the same glass, in the unit the field is now labeled in.
     /// Issue 389: switching units and saving without typing must keep the exact stored milliliters.
     func testSwitchingUnitsAndSavingWithoutTypingKeepsTheExactStoredMilliliters() throws {
         let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(string: "400.55")!)
@@ -139,6 +137,8 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "400.55")!)
     }
 
+    /// Switching the unit system restates a typed amount rather than leaving it to be read as a
+    /// different measure: the same glass, in the unit the field is now labeled in.
     func testQuickWaterUnitConversionFollowsTheUnitSystemChange() throws {
         let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(250))
         let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
