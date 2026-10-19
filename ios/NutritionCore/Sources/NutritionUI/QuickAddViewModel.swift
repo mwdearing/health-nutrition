@@ -62,8 +62,8 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     @Published public var carbohydratesText = ""
     @Published public var fatText = ""
     @Published public var meal: MealLabel?
-    /// When the amounts were eaten. Defaults to now; a late meal is logged at its own time.
-    @Published public var occurredAt: Date
+    /// When the amounts were eaten. Nil until the picker is changed, so an untouched entry is dated to the moment of saving.
+    @Published public var occurredAt: Date?
     @Published public private(set) var saveError: String?
 
     private let store: JournalStore
@@ -80,7 +80,6 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         self.store = store
         self.meal = meal
         self.now = now
-        self.occurredAt = now()
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
     }
@@ -132,7 +131,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         let identity = Self.snapshotIdentity(name: entryName, nutrients: nutrients)
         let date = now()
         // Log means what was already eaten or drunk: a future time is clamped to now.
-        let when = min(occurredAt, date)
+        let when = min(occurredAt ?? date, date)
         let intake = Intake(
             id: makeID(), category: ProductKind.food.rawValue, occurredAt: when,
             timeZoneIdentifier: timeZoneIdentifier(), meal: meal?.rawValue)

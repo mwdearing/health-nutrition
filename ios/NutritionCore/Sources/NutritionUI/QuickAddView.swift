@@ -26,7 +26,9 @@ public struct QuickAddView: View {
                 Text("Fill in what you know. An empty field stays unknown rather than counting as zero.")
             }
             Section {
-                DatePicker("When", selection: $model.occurredAt, in: ...Date())
+                DatePicker("When", selection: Binding(
+                    get: { self.model.occurredAt ?? Date() },
+                    set: { self.model.occurredAt = $0 }), in: ...Date())
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
                     ForEach(MealLabel.allCases, id: \.self) { label in
