@@ -46,12 +46,22 @@ struct TodayWidgetView: View {
     var body: some View {
         switch family {
         case .accessoryCircular:
-            Gauge(value: snapshot?.energyFraction ?? 0) {
-                Image(systemName: "fork.knife")
-            } currentValueLabel: {
-                Text(snapshot?.gaugeHeadline ?? "—")
+            // Without a known energy figure the ring is not drawn: an empty ring would read as zero calories.
+            Group {
+                if let fraction = snapshot?.energyFraction {
+                    Gauge(value: fraction) {
+                        Image(systemName: "fork.knife")
+                    } currentValueLabel: {
+                        Text(snapshot?.gaugeHeadline ?? "—")
+                    }
+                    .gaugeStyle(.accessoryCircularCapacity)
+                } else {
+                    ZStack {
+                        Image(systemName: "fork.knife")
+                        Text("—")
+                    }
+                }
             }
-            .gaugeStyle(.accessoryCircularCapacity)
             .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
             .privacySensitive()
         case .accessoryRectangular:
