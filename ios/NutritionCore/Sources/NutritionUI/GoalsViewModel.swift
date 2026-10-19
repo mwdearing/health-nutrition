@@ -469,6 +469,16 @@ public final class GoalsViewModel: ObservableObject {
         }
     }
 
+    /// Removes the goal for `nutrient` on an explicit clear, and clears its field.
+    @discardableResult
+    public func clearTarget(for nutrient: String) -> Bool {
+        rowError[nutrient] = nil
+        guard removeTarget(for: nutrient) else { return false }
+        draftText[nutrient] = ""
+        noteSaved()
+        return true
+    }
+
     /// Commits one inline field without discarding drafts in other fields.
     @discardableResult
     public func commitTarget(for nutrient: String) -> Bool {
@@ -500,9 +510,10 @@ public final class GoalsViewModel: ObservableObject {
             }
         }
         if text.isEmpty {
-            guard removeTarget(for: nutrient) else { return false }
-            draftText[nutrient] = ""
-            noteSaved()
+            // Leaving an empty field keeps the stored goal (#506). Removal is `clearTarget`. The field
+            // goes back to what is stored, so the screen does not show a goal that is not there.
+            draftText[nutrient] = nil
+            load()
             return true
         }
         guard let target = AmountParser.parseTyped(text), !target.isNaN, target > 0 else {
