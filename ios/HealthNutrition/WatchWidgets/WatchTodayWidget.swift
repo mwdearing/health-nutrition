@@ -51,13 +51,22 @@ struct WatchTodayWidgetView: View {
     var body: some View {
         switch family {
         case .accessoryCircular:
-            Gauge(value: snapshot?.energyFraction ?? 0) {
-                Image(systemName: "fork.knife")
-            } currentValueLabel: {
-                Text(headline)
+            if let fraction = snapshot?.energyFraction {
+                Gauge(value: fraction) {
+                    Image(systemName: "fork.knife")
+                } currentValueLabel: {
+                    Text(headline)
+                }
+                .gaugeStyle(.accessoryCircularCapacity)
+                .accessibilityLabel(spoken)
+            } else {
+                // No known energy figure: no ring, so an empty ring cannot read as zero calories.
+                ZStack {
+                    Image(systemName: "fork.knife")
+                    Text(headline)
+                }
+                .accessibilityLabel(spoken)
             }
-            .gaugeStyle(.accessoryCircularCapacity)
-            .accessibilityLabel(spoken)
             .privacySensitive()
         case .accessoryCorner:
             Text(headline)

@@ -137,7 +137,8 @@ enum WidgetFigure {
             if ounces > 0, ounces < 0.5 { return "<1 fl oz" }
             return (wholeNumber(ounces) ?? "—") + " fl oz"
         }
-        return (wholeNumber(milliliters) ?? "—") + " mL"
+        guard let whole = wholeNumber(milliliters) else { return "—" }
+        return whole + " mL"
     }
 
     static func wholeNumber(_ value: Double?) -> String? {

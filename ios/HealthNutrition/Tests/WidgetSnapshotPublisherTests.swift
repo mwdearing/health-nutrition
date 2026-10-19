@@ -90,7 +90,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         let snapshot = WidgetSnapshotPublisher.snapshot(from: today, now: loadedAt)
 
         XCTAssertNil(snapshot.waterMilliliters, "no read means no water total, not zero")
-        XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: false), "— mL")
+        XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: false), "—")
         XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: true), "—")
     }
 
