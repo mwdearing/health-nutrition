@@ -32,6 +32,9 @@ enum BarcodeScanner {
     // Both properties are main-actor isolated, so this is too. It is read from the form's Scan
     // action, which runs on the main actor like the rest of the view.
     @MainActor
+    static var isSupported: Bool { DataScannerViewController.isSupported }
+
+    @MainActor
     static var isAvailable: Bool {
         DataScannerViewController.isSupported && DataScannerViewController.isAvailable
     }
