@@ -618,6 +618,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // clearing afterwards would throw that away - and it is the only thing on the screen explaining why
         // the file they chose did nothing.
         defer { isErasing = false }
+        importTask?.cancel()
         clearImport()
         // A restore flag left behind would let the next import of that file put back favorites the person is
         // erasing, so it goes before any store is touched and before the import is cancelled. A flag that cannot be
