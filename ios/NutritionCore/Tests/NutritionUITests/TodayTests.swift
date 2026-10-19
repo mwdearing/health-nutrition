@@ -40,7 +40,11 @@ private final class StubJournalStore: JournalStore, @unchecked Sendable {
         throw Unsupported()
     }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
-    func activeIntakes() throws -> [Intake] { intakes }
+    var failReadsForTesting = false
+    func activeIntakes() throws -> [Intake] {
+        if failReadsForTesting { throw Unsupported() }
+        return intakes
+    }
     func revisions(of intakeID: String) throws -> [IntakeRevision] {
         [IntakeRevision(
             intakeID: intakeID, number: 1, components: components[intakeID] ?? [], productSnapshotID: nil,
@@ -91,6 +95,47 @@ final class TodayTests: XCTestCase {
                 kind: .supplement, nutrients: nutrients),
             now: date)
         return intakeID
+    }
+
+    /// A failed journal read is never shown as an empty day or as zero water.
+    func testAFailedReadIsNotAnEmptyDayAndWaterIsUnknown() throws {
+        let store = StubJournalStore(intakes: [], components: [:])
+        store.failReadsForTesting = true
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+
+        model.load(now: now)
+
+        XCTAssertEqual(model.errorMessage, "Could not read the journal.")
+        XCTAssertFalse(model.showsEmptyState, "a failed read is not an empty day")
+        XCTAssertTrue(model.waterIsUnknown, "a failed read has no water total to show")
+        XCTAssertEqual(model.waterUnknownSpokenValue, "Water not available today")
+    }
+
+    /// Try again reloads the same day: a read that now succeeds clears the error and shows the empty day.
+    func testTryAgainAfterAFailedReadShowsAnEmptyDay() throws {
+        let store = StubJournalStore(intakes: [], components: [:])
+        store.failReadsForTesting = true
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertTrue(model.waterIsUnknown)
+
+        store.failReadsForTesting = false
+        model.load(now: now)
+
+        XCTAssertNil(model.errorMessage)
+        XCTAssertTrue(model.showsEmptyState)
+        XCTAssertFalse(model.waterIsUnknown)
+    }
+
+    /// A genuinely empty day, read successfully, is the empty state with zero water.
+    func testAnEmptyDayIsTheEmptyStateWithZeroWater() throws {
+        let model = TodayViewModel(store: StubJournalStore(intakes: [], components: [:]), timeZoneIdentifier: "UTC")
+
+        model.load(now: now)
+
+        XCTAssertTrue(model.showsEmptyState)
+        XCTAssertFalse(model.waterIsUnknown)
+        XCTAssertEqual(model.waterTotalMilliliters, 0)
     }
 
     func testQuickAddWaterCreatesOneIntakeAtRevisionOneAndQueuesOutbox() throws {
