@@ -1094,6 +1094,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// Where `markRestoreInProgress(fileDigest:)` keeps its flag, beside the store file.
     private let restoreMarkerURL: URL
     private let enabledDestinations: Set<JournalDestination>
+    /// The store's own clock, read only for a delete's tombstone instant (#521 item 4). Everything else keeps the
+    /// caller's `now`.
+    private let storeClock: () -> Date
 
     public var failNextSaveForTesting: Bool {
         get { lock.withLock { failFlag } }
@@ -1102,8 +1105,12 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Opens or creates the store file at `url`. Destinations not in `enabledDestinations` get a
     /// disabled projection and no outbox operation.
-    public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
+    public init(
+        url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay],
+        clock: @escaping () -> Date = { Date() }
+    ) throws {
         self.enabledDestinations = enabledDestinations
+        self.storeClock = clock
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
         let schema = Schema(versionedSchema: JournalSchemaV10.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
@@ -1452,7 +1459,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             let revision = record.currentRevision
             queueWork(
                 intakeID: intakeID, revision: revision, kind: .delete,
-                payload: "delete:\(intakeID):\(revision)", deletedAt: now, context: context)
+                payload: "delete:\(intakeID):\(revision)", deletedAt: storeClock(), context: context)
             // Published only by onSaved, so a failed save leaves no gap in the numbers.
             staged = deleteCounter + 1
         }
