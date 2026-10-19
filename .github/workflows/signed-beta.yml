@@ -49,6 +49,8 @@ jobs:
       # signed. It is compared with the commit this run was dispatched from (the head of main, because the job runs
       # only from main), not with the name "main", which a tag could shadow.
       - name: Check the commit to build is on main
+        # Nothing is checked out yet, so the step cannot start in the default workspace directory.
+        working-directory: ${{ runner.temp }}
         env:
           SHA: ${{ inputs.sha }}
           GH_TOKEN: ${{ github.token }}
