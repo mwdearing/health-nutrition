@@ -14,6 +14,13 @@ enum SavedMealShortcut {
     static let notReadyMessage = WaterShortcut.notReadyMessage
     static let noSavedMealsMessage = "You have no saved meals yet. Save one from a meal in the Diary."
     static let unavailableMessage = SavedMealError.notFound.message
+    /// Said instead of logging while an erase or an import runs; nothing is written (#480).
+    static let busyMessage = "The app is busy with an erase or import. Try again in a moment."
+
+    /// The reply that stops a run before any write when the app is busy, or nil when the run may go on.
+    static func busyReply(isBusy: Bool) -> String? {
+        isBusy ? busyMessage : nil
+    }
 
     /// Whether the shortcut has to ask which saved meal: it named none and there are some to choose from. With
     /// none saved, or the list unavailable, `log` answers instead, so its reply is what the person hears.
@@ -163,6 +170,10 @@ struct LogSavedMealIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        // Checked first, before any read or write: an erase or import running must not gain a meal (#480).
+        if let busy = SavedMealShortcut.busyReply(isBusy: AppServicesRegistry.isBusy) {
+            return .result(dialog: IntentDialog(stringLiteral: busy))
+        }
         let services = AppServicesRegistry.current
         let meals: [SavedMeal]?
         if let services {
