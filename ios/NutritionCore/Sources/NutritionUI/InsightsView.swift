@@ -75,7 +75,7 @@ public struct InsightsView: View {
                         Text("What this is based on")
                             .font(.headline)
                             .foregroundStyle(TokenColors.textPrimary)
-                        Text("7 days").foregroundStyle(TokenColors.textPrimary)
+                        Text("Last 7 days").foregroundStyle(TokenColors.textPrimary)
                         Text(week.entriesText).foregroundStyle(TokenColors.textPrimary)
                         Text(week.emptyDaysText).foregroundStyle(TokenColors.textPrimary)
                         Text("Missing logs may affect this summary.")
