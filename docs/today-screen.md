@@ -426,8 +426,8 @@ reads "Fix the fields marked above." and never repeats a field's own error. A re
 per-field history (`resetFieldErrors()`).
 
 `scripts/tests/test_field_clarity.py` fails on any text field in `NutritionUI` that is outside a `LabeledField` call
-and not listed in its allowlist with a reason. The Add home search field (a disabled placeholder row) and the goals
-rows are listed; the goals rows are to be converted in a follow-up.
+and not listed in its allowlist with a reason. Only the goals rows (`GoalsView.swift`) are listed, to be converted in a
+follow-up. The Add home search is a row that opens product search, where the field takes focus, so it holds no bare field.
 
 ## Boundaries
 `NutritionUI` imports no HealthKit and no networking. Colors come only from the design tokens through
