@@ -76,7 +76,7 @@ public struct QuickAddView: View {
             .font(.body)
             .decimalAmountKeyboard()
             .focused(focus)
-            .accessibilityHint("Amount in \(field.unit.screenSymbol)")
+            .accessibilityHint(field == .calories ? "Amount in calories" : (self.model.error(for: field) ?? ""))
         }
     }
 }
