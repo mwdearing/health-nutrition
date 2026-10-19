@@ -72,7 +72,12 @@ struct WatchTodayWidgetView: View {
             Text(headline)
                 .accessibilityLabel(spoken)
                 .widgetLabel {
-                    Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "fork.knife") }
+                    // No known energy fraction: no ring, so an empty ring cannot read as zero calories.
+                    if let fraction = snapshot?.energyFraction {
+                        Gauge(value: fraction) { Image(systemName: "fork.knife") }
+                    } else {
+                        Image(systemName: "fork.knife")
+                    }
                 }
                 .privacySensitive()
         case .accessoryInline:
