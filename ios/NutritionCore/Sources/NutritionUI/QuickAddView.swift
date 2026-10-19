@@ -26,7 +26,7 @@ public struct QuickAddView: View {
                 Text("Fill in what you know. An empty field stays unknown rather than counting as zero.")
             }
             Section {
-                DatePicker("When", selection: $model.occurredAt)
+                DatePicker("When", selection: $model.occurredAt, in: ...Date())
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
                     ForEach(MealLabel.allCases, id: \.self) { label in
@@ -76,7 +76,7 @@ public struct QuickAddView: View {
             .font(.body)
             .decimalAmountKeyboard()
             .focused(focus)
-            .accessibilityHint(self.model.error(for: field) ?? "")
+            .accessibilityHint("Amount in \(field.unit.screenSymbol)")
         }
     }
 }

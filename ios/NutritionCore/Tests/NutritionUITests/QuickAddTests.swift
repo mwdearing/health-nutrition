@@ -59,6 +59,18 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(intake.occurredAt, eaten)
     }
 
+    /// Log means what was already eaten: a future time is clamped to the moment of saving.
+    func testAFutureWhenIsClampedToNow() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.caloriesText = "100"
+        model.occurredAt = now.addingTimeInterval(3_600)
+
+        _ = try XCTUnwrap(model.save())
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        XCTAssertEqual(intake.occurredAt, now)
+    }
+
     /// With nothing typed, the screen says what is missing; it is not a silent disabled button.
     func testNothingTypedIsReportedAsNoAmount() {
         let store = try! makeStore()

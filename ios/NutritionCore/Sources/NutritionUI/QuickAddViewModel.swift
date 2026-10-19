@@ -131,8 +131,10 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         let entryName = storedName
         let identity = Self.snapshotIdentity(name: entryName, nutrients: nutrients)
         let date = now()
+        // Log means what was already eaten or drunk: a future time is clamped to now.
+        let when = min(occurredAt, date)
         let intake = Intake(
-            id: makeID(), category: ProductKind.food.rawValue, occurredAt: occurredAt,
+            id: makeID(), category: ProductKind.food.rawValue, occurredAt: when,
             timeZoneIdentifier: timeZoneIdentifier(), meal: meal?.rawValue)
         let component = IntakeComponent(
             componentID: Self.componentID, name: entryName, amount: 1, unit: .serving)
