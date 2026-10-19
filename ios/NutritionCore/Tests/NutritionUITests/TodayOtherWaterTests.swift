@@ -86,7 +86,8 @@ final class TodayOtherWaterTests: XCTestCase {
             XCTAssertTrue(try store.activeIntakes().isEmpty, "typed \"\(text)\"")
             XCTAssertTrue(try store.pendingOutbox().isEmpty, "typed \"\(text)\"")
         }
-        XCTAssertEqual(model.waterTotalMilliliters, 0)
+        // Nothing was read or written, so there is no water total yet, not a zero one.
+        XCTAssertNil(model.waterTotalMilliliters)
     }
 
     func testOtherWaterCanBeUndoneLikeTheQuickButton() throws {
