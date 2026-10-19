@@ -360,6 +360,9 @@ public final class EntryDetailViewModel: ObservableObject {
 
     /// Whether the screen holds a change the person has not saved: an amount draft that differs from
     /// the one the entry states, or a time that differs from the stored one. Save is offered only then.
+    /// Whether Close must ask first: unsaved changes would be lost by closing the entry.
+    public var closeAsksFirst: Bool { isDirty }
+
     public var isDirty: Bool {
         if kind == .drink, waterSharePercent != loadedWaterSharePercent { return true }
         for id in Set(drafts.keys).union(loadedDrafts.keys)

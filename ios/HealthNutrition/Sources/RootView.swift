@@ -217,11 +217,6 @@ struct RootView: View {
                         // reloads its own model when it settles, so it shows what the pass decided.
                         onRetried: { await healthKitDeliveryStatus.runAndSettle() }
                     )
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { selectedIntakeID = nil }
-                        }
-                    }
                 }
             }
         }
