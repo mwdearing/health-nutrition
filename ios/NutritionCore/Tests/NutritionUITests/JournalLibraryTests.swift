@@ -218,14 +218,9 @@ final class JournalLibraryTests: XCTestCase {
     func testRowTapRoutesByMode() {
         // Pick mode only ever opens details; it never logs. Normal mode only ever logs.
         XCTAssertEqual(LibraryRowTap.forRow(pickMode: true), .openDetails)
-        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .logOnce)
+        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .openDetails, "a row never logs by itself (#503)")
     }
 
-    func testDetailsOfferedOnlyWhereTapLogsAndHandlerExists() {
-        XCTAssertTrue(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: true))
-        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: true, hasOpenHandler: true))
-        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: false))
-    }
 
     // MARK: Journal
 

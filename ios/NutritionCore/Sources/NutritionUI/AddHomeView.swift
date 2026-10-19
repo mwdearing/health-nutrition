@@ -75,9 +75,9 @@ public struct AddHomeView: View {
                 ForEach(model.recents) { recent in
                     Card {
                         HStack {
-                            // A tap on the row logs once, the same as the Add capsule, with Undo.
+                            // A tap on the row opens its details; the Add control beside it logs once, with Undo (#503).
                             Button {
-                                if self.model.quickAdd(recent) != nil { self.onChanged() }
+                                onOpen?(recent.template)
                             } label: {
                                 VStack(alignment: .leading) {
                                     Text(recent.template.displayName).font(.headline)
@@ -86,14 +86,8 @@ public struct AddHomeView: View {
                                 }
                             }
                             .buttonStyle(.borderless)
-                            .accessibilityLabel("Log \(recent.template.displayName) now, \(model.amountSummary(of: recent.template))")
-                            .accessibilityHint("Logs once. You can undo for 10 seconds.")
-                            .contextMenu {
-                                if let onOpen { Button("Details") { onOpen(recent.template) } }
-                            }
-                            .accessibilityActions {
-                                if let onOpen { Button("Details") { onOpen(recent.template) } }
-                            }
+                            .accessibilityLabel("\(recent.template.displayName), opens details")
+                            .accessibilityHint("Opens details without adding an entry")
                             Spacer()
                             QuietCapsule("Add") {
                                 if self.model.quickAdd(recent) != nil { self.onChanged() }
