@@ -32,6 +32,10 @@ public struct CalorieRemaining: Equatable, Sendable {
         self.remaining = remaining
     }
 
+    /// True only when Remaining is shown: a goal and a known food total. The summary's goal footnote belongs with
+    /// Remaining, so the view reads this rather than checking Remaining itself.
+    public var showsRemaining: Bool { remaining != nil }
+
     /// Builds the summary from the energy line alone: its partial flag and its missing-entry count. The note is
     /// present exactly when the line is partial, so the flag and the note cannot disagree.
     public static func make(

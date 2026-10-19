@@ -79,4 +79,14 @@ final class CalorieRemainingTests: XCTestCase {
         XCTAssertNil(value.remaining)
         XCTAssertEqual(value.partialNote, "Some entries can't be added up for energy")
     }
+
+    /// Remaining is shown only with a goal and a known food total. Counting activity changes Remaining's value,
+    /// not whether it is shown, so the flag holds with the active-energy setting on (burned given) and off (nil).
+    func testShowsRemainingOnlyWithAGoalAndAKnownFood() {
+        XCTAssertTrue(CalorieRemaining.make(goal: 2000, food: 500, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy").showsRemaining)
+        XCTAssertTrue(CalorieRemaining.make(goal: 2000, food: 500, partial: false, missingCount: 0, burned: 120, energyLabel: "Energy").showsRemaining)
+        XCTAssertFalse(CalorieRemaining.make(goal: nil, food: 500, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy").showsRemaining)
+        XCTAssertFalse(CalorieRemaining.make(goal: nil, food: 500, partial: false, missingCount: 0, burned: 120, energyLabel: "Energy").showsRemaining)
+        XCTAssertFalse(CalorieRemaining.make(goal: 2000, food: nil, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy").showsRemaining)
+    }
 }

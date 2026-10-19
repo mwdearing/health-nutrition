@@ -81,7 +81,7 @@ public struct NourishTodayHeader: View {
         let calories = model.calorieRemaining
         // The note comes from the calorie model, which builds it from the same missing count as its partial flag.
         let partial = calories.partialNote
-        let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.remaining == nil ? nil : ringFootnote)
+        let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.showsRemaining ? ringFootnote : nil)
         return VStack(alignment: .leading, spacing: DesignSpacing.s) {
             if let remaining = calories.remaining {
                 Text(BodyActivityViewModel.whole(remaining))
