@@ -8,7 +8,7 @@ public struct JournalView: View {
     private let onSelect: (String) -> Void
     /// Adds an entry from the empty journal. Nil leaves the empty state without a button.
     private let onAdd: (() -> Void)?
-    /// Opens the add flow on today with a meal chosen. Nil hides the "+ Add food" rows.
+    /// Opens the add flow on today with a meal chosen. Nil hides the add rows under empty meals.
     private let onAddToMeal: ((MealLabel) -> Void)?
     /// The day picked in the jump sheet, read when the sheet opens.
     @State private var pickedDay = Date()
@@ -362,17 +362,17 @@ public struct JournalView: View {
         }
     }
 
-    /// "+ Add food" under an empty meal. Only today's section offers it: the add flow logs to now, and a past
+    /// The add row under an empty meal, labelled with the shared add action. Only today's section offers it: the add flow logs to now, and a past
     /// day's add belongs to the add owner's routing work.
     @ViewBuilder
     private func addFoodRow(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {
         if let onAddToMeal, let meal = JournalViewModel.addMeal(forGroupTitle: group.title),
-           section.id == JournalViewModel.dayKey(now(), zone: model.dayZone) {
+           JournalViewModel.isAddDay(section.id, now: now()) {
             Button { onAddToMeal(meal) } label: {
-                Label("Add food", systemImage: "plus").font(.subheadline)
+                Label(AddIntakeAction.title, systemImage: "plus").font(.subheadline)
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Add food to \(group.title)")
+            .accessibilityLabel("\(AddIntakeAction.title) for \(group.title)")
         }
     }
 

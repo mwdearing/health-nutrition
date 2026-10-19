@@ -561,6 +561,12 @@ public final class JournalViewModel: ObservableObject {
         return namedGroups + [JournalMealGroup(id: "Other", title: "Other", rows: other)]
     }
 
+    /// Whether a section is the day an add flow logs to: today in the device's own zone, which is the zone a new
+    /// entry is stamped with. Section ids are each intake's own local day, so the comparison uses the same zone.
+    static func isAddDay(_ sectionID: String, now: Date, zone: TimeZone = .current) -> Bool {
+        sectionID == dayKey(now, zone: zone)
+    }
+
     /// The meal an add opens with for a group: the named meal, or nil for "Other", which has no add of its own.
     static func addMeal(forGroupTitle title: String) -> MealLabel? {
         MealLabel.allCases.first { $0.displayName == title }
