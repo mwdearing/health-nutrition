@@ -37,14 +37,14 @@ public struct CommunityProductSearchView: View {
                 LabeledField("Search foods and products", focus: $searchFocused) { focus in
                     TextField("Search foods and products", text: $query).focused(focus).submitLabel(.search)
                 }.onSubmit { search() }
+                if query.trimmingCharacters(in: .whitespaces).count >= 2 {
+                    Button("Search food databases", action: search)
+                }
                 Picker("Kind", selection: $kind) {
                     Text("All kinds").tag(ProductKind?.none)
                     ForEach(ProductKind.allCases, id: \.self) { Text($0.displayName).tag(Optional($0)) }
                 }
                 Button("Search", action: search)
-                if query.trimmingCharacters(in: .whitespaces).count >= 2 {
-                    Button("Search food databases", action: search)
-                }
             } footer: {
                 Text("Your foods and products on this phone narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
             }
