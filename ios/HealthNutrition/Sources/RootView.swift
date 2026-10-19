@@ -45,7 +45,6 @@ struct RootView: View {
     @State private var addHome: AddHomeViewModel?
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
-    @State private var confirmDiscardAdd = false
     @State private var labelCapture: LabelCaptureViewModel?
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
@@ -344,18 +343,9 @@ struct RootView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            // Typed input is only at risk once a pushed form has it: ask before dropping it.
-                            if self.addIntakeModel?.hasTypedInput == true {
-                                self.confirmDiscardAdd = true
-                            } else {
-                                self.finishAdding()
-                            }
-                        }
+                        // Only Add home carries this Cancel: a pushed form is left with its own Back, which asks.
+                        Button("Cancel") { self.finishAdding() }
                     }
-                }
-                .confirmationDialog("Discard this entry?", isPresented: $confirmDiscardAdd, titleVisibility: .visible) {
-                    Button("Discard", role: .destructive) { self.finishAdding() }
                 }
             }
             .saveConfirmation(addNotice)
