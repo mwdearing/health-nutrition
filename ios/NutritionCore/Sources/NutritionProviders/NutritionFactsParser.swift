@@ -1274,6 +1274,14 @@ public enum NutritionFactsParser {
             let longest = min(start + 4, tokens.count)
             for end in stride(from: longest, through: start + 1, by: -1) {
                 guard let named = compoundName(tokens[start..<end]) else { continue }
+                // "Vitamin B 1 2 mcg": a number joined after a letter, then a separate number, is ambiguous (B1 at
+                // 2 mcg, or B12 with its amount lost), so the line gives nothing rather than a guessed extra.
+                func isBareNumber(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
+                if end >= 2, end < tokens.count, isBareNumber(tokens[end - 1].text),
+                   tokens[end - 2].text.count == 1, tokens[end - 2].text.first?.isLetter == true,
+                   isBareNumber(tokens[end].text) {
+                    continue
+                }
                 guard let amount = additionalAmount(at: end, in: tokens, line: text, next: nextLine)
                 else { continue }
                 return AdditionalRow(
@@ -1313,14 +1321,38 @@ public enum NutritionFactsParser {
         _ words: ArraySlice<(text: String, range: Range<String.Index>)>
     ) -> (name: String, nutrient: PanelRow?)? {
         guard !words.isEmpty, words.count <= 4 else { return nil }
+        // A lone vitamin D form ("D3" after "Vitamin") belongs to the named vitamin D row, never to an extra.
+        if words.count == 1, ["d", "d2", "d3"].contains(words.first?.text.lowercased() ?? "") { return nil }
+        // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it. This runs before the
+        // word checks, so "Total-Fat" (whose part "total" is a panel word) still reaches its field. Spaces are ignored
+        // too, so "Saturated-Fat" matches the alias "saturated fat"; the field reads its canonical name ("Sodium").
+        let joined = words.map(\.text).joined(separator: " ")
+        if joined.contains("-") {
+            let bare = joined.filter { $0 != "-" && $0 != " " }.lowercased()
+            if let row = rows.first(where: { row in row.aliases.contains { $0.filter { $0 != " " } == bare } }) {
+                let alias = row.aliases.first { $0.filter { $0 != " " } == bare } ?? bare
+                let canonical = alias.split(separator: " ").map { String($0).capitalized }.joined(separator: " ")
+                return (canonical, row)
+            }
+        }
+        var previous: String?
         for token in words {
             let lower = token.text.lowercased()
-            guard token.text.first?.isLetter == true, !leadingWords.contains(lower), !panelWords.contains(lower),
-                  token.text.allSatisfy({ $0.isLetter || $0.isNumber })
+            // A hyphen is part of a name ("Vitamin B-12"), and a bare number is part of one only directly after a
+            // single letter ("Vitamin B 12"), so "Calories 30" and similar text is never read as a name.
+            let numberAfterLetter = token.text.allSatisfy({ $0.isASCII && $0.isNumber }) && previous?.count == 1
+                && previous?.first?.isLetter == true
+            let startsWord = token.text.first?.isLetter == true || numberAfterLetter
+            // A hyphen joins words of a name, so each part is checked as a word: "Net-Wt" is a label, not a name.
+            let hasPanelPart = token.text.split(separator: "-").contains { panelWords.contains($0.lowercased()) }
+            guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower), !hasPanelPart,
+                  token.text.allSatisfy({ $0.isLetter || ($0.isASCII && $0.isNumber) || $0 == "-" })
             else { return nil }
             guard countedUnit(for: token.text) == nil else { return nil }
+            previous = token.text
         }
         let name = words.map(\.text).joined(separator: " ")
+        // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it: "So-dium" is sodium.
         guard let match = firstRow(in: name) else { return (name, nil) }
         // The whole name is one named row, so it is that nutrient and not a compound of its own.
         if match.nameStart == name.startIndex, match.end == name.endIndex { return nil }
@@ -1332,6 +1364,12 @@ public enum NutritionFactsParser {
         // is built on.
         let rest = String(name[match.end...])
         let restWords = rest.split(whereSeparator: \.isWhitespace)
+        // A vitamin D form digit is part of vitamin D ("Vitamin D3", "Vitamin D 3"): the amount behind it is the
+        // vitamin D amount, read straight off the label. A digit with its own unit ("Vitamin D 3mcg") is an amount.
+        if match.row.key == .vitaminD, restWords.count == 1, let form = restWords.first, form.count == 1,
+           form.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            return (name, match.row)
+        }
         // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
         // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
         // A common word, form or unit is never noise ("Vitamin E oil 400 IU" is not Vitamin E).
@@ -1664,6 +1702,11 @@ public enum NutritionFactsParser {
         if range.lowerBound != lower.startIndex {
             let before = lower[lower.index(before: range.lowerBound)]
             if before.isLetter || before.isNumber { return false }
+            // A hyphen joins the word before it ("Saturated-Fat"), so the alias after it is part of that name.
+            if before == "-", range.lowerBound != lower.startIndex, lower.index(before: range.lowerBound) != lower.startIndex,
+               lower[lower.index(lower.index(before: range.lowerBound), offsetBy: -1)].isLetter {
+                return false
+            }
         }
         if range.upperBound != lower.endIndex {
             let after = lower[range.upperBound]
