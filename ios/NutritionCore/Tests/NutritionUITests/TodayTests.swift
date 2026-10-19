@@ -111,6 +111,22 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.waterUnknownSpokenValue, "Water not available")
     }
 
+    /// Nothing built from a failed read is 0 or a full goal: the calorie summary, goal bars and water bar are all absent.
+    func testAFailedReadShowsNoCalorieSummaryGoalBarsOrWaterBar() throws {
+        let store = StubJournalStore(intakes: [], components: [:])
+        store.failReadsForTesting = true
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+
+        model.load(now: now)
+
+        XCTAssertNil(model.calorieRemaining.remaining, "no Remaining: not 0 and not the whole goal")
+        XCTAssertNil(model.calorieRemaining.food, "no Food figure from a failed read")
+        XCTAssertNil(model.calorieRemaining.burned, "no Burned figure from a failed read")
+        XCTAssertTrue(model.progress.isEmpty, "no ring or progress from a failed read")
+        XCTAssertTrue(model.goalBars.isEmpty, "no goal bars from a failed read")
+        XCTAssertNil(model.waterBar, "no water goal bar from a failed read")
+    }
+
     /// Try again reloads the same day: a read that now succeeds clears the error and shows the empty day.
     func testTryAgainAfterAFailedReadShowsAnEmptyDay() throws {
         let store = StubJournalStore(intakes: [], components: [:])
