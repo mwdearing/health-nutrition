@@ -582,13 +582,14 @@ public final class TodayViewModel: ObservableObject {
     public var waterUnknownSpokenValue: String { "Water not available" }
 
     /// The water figure on the card: a dash while the total is unknown, the total otherwise.
-    public var waterDisplayText: String { waterIsUnknown ? "–" : waterTotalDisplay.text }
+    public var waterDisplayText: String { waterIsUnknown ? "–" : (waterTotalDisplay?.text ?? "–") }
 
     /// The spoken water value on the card, whichever figure it shows.
     public var waterCardAccessibilityValue: String { waterIsUnknown ? waterUnknownSpokenValue : waterAccessibilityValue }
 
-    public var waterTotalDisplay: DisplayAmount {
-        AmountDisplay.water(self.waterTotalMilliliters ?? 0, system: self.preferences.unitSystem)
+    /// The water total as a display, or nil while the total is unknown: a missing total is never shown as 0.
+    public var waterTotalDisplay: DisplayAmount? {
+        waterTotalMilliliters.map { AmountDisplay.water($0, system: self.preferences.unitSystem) }
     }
 
     /// The quick-water amount in the unit the reader chose.
@@ -611,8 +612,8 @@ public final class TodayViewModel: ObservableObject {
     /// figures as the label, so an amount too small for the shown unit is spoken as less than that
     /// rather than as a zero that is not there.
     public var waterAccessibilityValue: String {
-        "\(waterTotalDisplay.spokenAmount) "
-            + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
+        guard let display = waterTotalDisplay else { return waterUnknownSpokenValue }
+        return "\(display.spokenAmount) " + "\(AmountDisplay.spokenName(for: display.unit)) today"
     }
 
     /// The meal sections for a list of rows. Water rows are left out; a meal that is not one of the four

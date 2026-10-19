@@ -461,7 +461,7 @@ final class QuickWaterPreferenceTests: XCTestCase {
         // Storage and export stay metric: what is written is the configured milliliter amount.
         XCTAssertEqual(component.amount, Decimal(300))
         XCTAssertEqual(component.unit, .mL)
-        XCTAssertEqual(model.waterTotalDisplay.text, "10.1 fl oz")
+        XCTAssertEqual(model.waterTotalDisplay?.text, "10.1 fl oz")
     }
 
     /// A preference changed after the model was built is used by the next tap, not by the next launch.
@@ -493,7 +493,7 @@ final class QuickWaterPreferenceTests: XCTestCase {
         XCTAssertEqual(model.quickWaterAccessibilityLabel, "Add less than 0.0001 fluid ounces of water")
 
         XCTAssertNotNil(model.quickAddWater(now: now))
-        XCTAssertEqual(model.waterTotalDisplay.text, "< 0.0001 fl oz")
+        XCTAssertEqual(model.waterTotalDisplay?.text, "< 0.0001 fl oz")
         XCTAssertEqual(model.waterAccessibilityValue, "less than 0.0001 fluid ounces today")
         // What was written is still the exact stored amount: nothing was rounded on the way in.
         let component = try XCTUnwrap(store.revisions(of: "water-1").first?.components.first)

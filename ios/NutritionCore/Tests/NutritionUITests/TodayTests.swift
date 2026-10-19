@@ -155,6 +155,16 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(0))
     }
 
+    /// A model that has not read yet has no water total: it shows a dash and "Water not available", never 0 mL.
+    func testAFreshModelShowsWaterUnknownNotZero() throws {
+        let model = TodayViewModel(store: StubJournalStore(intakes: [], components: [:]), timeZoneIdentifier: "UTC")
+
+        XCTAssertNil(model.waterTotalMilliliters)
+        XCTAssertTrue(model.waterIsUnknown)
+        XCTAssertEqual(model.waterDisplayText, "–")
+        XCTAssertEqual(model.waterCardAccessibilityValue, "Water not available")
+    }
+
     /// Try again reloads the same day: a read that now succeeds clears the error and shows the empty day.
     func testTryAgainAfterAFailedReadShowsAnEmptyDay() throws {
         let store = StubJournalStore(intakes: [], components: [:])

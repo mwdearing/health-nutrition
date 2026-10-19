@@ -170,6 +170,7 @@ public struct TodayView: View {
                         Text(model.waterDisplayText)
                             .font(.title3)
                             .foregroundStyle(TokenColors.textPrimary)
+                            .accessibilityLabel(model.waterIsUnknown ? "Water" : model.waterDisplayText)
                             .accessibilityValue(model.waterCardAccessibilityValue)
                     }
                     if model.waterSkippedCount > 0 {
