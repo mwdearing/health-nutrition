@@ -14,6 +14,12 @@ struct PopGestureGate: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: UIViewController, context: Context) {
+        apply(to: controller)
+        // The controller may not be in the navigation stack yet on the first update, so apply again once it is.
+        DispatchQueue.main.async { apply(to: controller) }
+    }
+
+    private func apply(to controller: UIViewController) {
         controller.navigationController?.interactivePopGestureRecognizer?.isEnabled = !blocked
     }
 
