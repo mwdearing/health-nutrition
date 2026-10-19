@@ -184,6 +184,37 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
     }
 
+    /// Clearing the field and tapping away must not delete the stored goal. Removal is an explicit
+    /// clear (issue #506), so an empty field on focus loss puts the stored target back.
+    func testEmptyingAGoalFieldAndLeavingItKeepsTheStoredGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["protein"] = ""
+
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertEqual(model.draftText["protein"], "60")
+        XCTAssertNil(model.rowError["protein"])
+    }
+
+    /// The explicit clear removes the goal and says so; the undo path restores it through `setTarget`.
+    func testClearingAGoalRemovesItExplicitly() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+
+        XCTAssertNil(try goals.goal(for: "protein"))
+        XCTAssertEqual(model.draftText["protein"], "")
+    }
+
     /// Metric display, water typed in fl oz: 8 fl oz is stored as 236.588 mL and shown as 237, so the
     /// field text never matches the read. An outside change must still be followed, not written back.
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideChange() throws {

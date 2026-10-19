@@ -129,8 +129,7 @@ final class MacroSplitFollowTests: XCTestCase {
 
     func testRemovingTheEnergyGoalOrClearingAllStopsFollowing() throws {
         let removed = try appliedModel(InMemoryGoalStore(goals: [energyGoal(2000)]))
-        removed.draftText["energy"] = ""
-        XCTAssertTrue(removed.commitTarget(for: "energy"))
+        XCTAssertTrue(removed.clearTarget(for: "energy"))
         XCTAssertNil(removed.followedMacroSplit)
 
         let cleared = try appliedModel(InMemoryGoalStore(goals: [energyGoal(2000)]))
