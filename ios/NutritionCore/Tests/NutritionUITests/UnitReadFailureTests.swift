@@ -18,6 +18,13 @@ final class UnitReadFailureTests: XCTestCase {
         return UnitReadFailingStore(inner: inner)
     }
 
+    private func makeFavoritesURL() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory.appendingPathComponent("favorites.store")
+    }
+
     /// Today's totals read the logged units first; a failed read shows no totals and says the journal is unreadable.
     func testTodayShowsNoTotalsWhenTheUnitReadFails() throws {
         let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
@@ -36,7 +43,8 @@ final class UnitReadFailureTests: XCTestCase {
 
     /// The library's rows read the logged units to repeat an item; a failed read shows no sections.
     func testLibraryShowsNoSectionsWhenTheUnitReadFails() throws {
-        let model = LibraryViewModel(store: try makeJournal())
+        let favorites = try SwiftDataFavoritesStore(url: try makeFavoritesURL())
+        let model = LibraryViewModel(store: try makeJournal(), favorites: favorites, timeZoneIdentifier: "UTC")
         model.load()
         XCTAssertEqual(model.errorMessage, "Could not read the library.")
         XCTAssertTrue(model.sections.isEmpty)
