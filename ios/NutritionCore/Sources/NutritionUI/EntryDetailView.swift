@@ -259,7 +259,7 @@ public struct EntryDetailView: View {
             Section {
                 if loggedAgain {
                     // The sheet stays open to confirm the new entry, so a second tap is not a second log.
-                    InlineNotice("Logged again.", tone: .waiting)
+                    InlineNotice("Logged again", tone: .waiting)
                     Button("Done", action: onFinished).font(.headline)
                 } else {
                     Button {
