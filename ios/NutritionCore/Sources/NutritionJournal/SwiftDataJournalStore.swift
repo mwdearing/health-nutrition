@@ -1807,7 +1807,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
         }
-        try removeStoreFiles()
     }
 
     /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the
